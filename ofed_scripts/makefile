@@ -51,7 +51,7 @@ ifneq ($(kconfig_h),)
 KCONFIG_H = -include $(kconfig_h)
 endif
 
-V ?= 1
+V ?= 0
 
 #########################
 #	make kernel	#
