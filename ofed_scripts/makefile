@@ -1,5 +1,3 @@
-# $Id: Makefile 9120 2006-08-28 13:01:07Z vlad $
-
 PHONY += all kernel install_kernel install clean clean_kernel
 	
 all:
@@ -8,8 +6,37 @@ all:
 .DELETE_ON_ERROR:
 
 include ./configure.mk.kernel
-include ./config.mk
 include ./ofed_scripts/compat.mk
+
+export CREL=$(shell cat $(CWD)/compat_version)
+export CREL_PRE:=.compat_autoconf_
+export CREL_CHECK:=$(CREL_PRE)$(CREL)
+CFLAGS += \
+	-DCOMPAT_BASE="\"$(shell cat compat_base)\"" \
+	-DCOMPAT_BASE_TREE="\"$(shell cat compat_base_tree)\"" \
+	-DCOMPAT_BASE_TREE_VERSION="\"$(shell cat compat_base_tree_version)\"" \
+	-DCOMPAT_PROJECT="\"Compat-mlnx-ofed\"" \
+	-DCOMPAT_VERSION="\"$(shell cat compat_version)\"" \
+
+ifneq ($(CONFIG_COMPAT_SLES_11_2),)
+CFLAGS += \
+	-DCONFIG_COMPAT_SLES_11_2
+endif
+
+ifneq ($(CONFIG_COMPAT_XPRTRDMA_NEEDED),)
+CFLAGS += \
+	-DCONFIG_COMPAT_XPRTRDMA_NEEDED
+endif
+
+ifneq ($(NEED_MIN_DUMP_ALLOC_ARG),)
+CFLAGS += \
+	-DNEED_MIN_DUMP_ALLOC_ARG
+endif
+
+ifneq ($(CONFIG_COMPAT_SKB_FRAG_NEEDED),)
+CFLAGS += \
+	-DCONFIG_COMPAT_SKB_FRAG_NEEDED
+endif
 
 DEPMOD  = /sbin/depmod
 INSTALL_MOD_DIR ?= $(shell test -f /etc/SuSE-release && echo updates || echo extra/mlnx-ofa_kernel)
@@ -37,8 +64,8 @@ all: kernel
 install: install_kernel
 install_kernel: install_modules
 
-autoconf_h=$(shell /bin/ls -1 $(KSRC)/include/*/autoconf.h | head -1)
-kconfig_h=$(shell /bin/ls -1 $(KSRC)/include/*/kconfig.h | head -1)
+autoconf_h=$(shell /bin/ls -1 $(KSRC)/include/*/autoconf.h 2> /dev/null | head -1)
+kconfig_h=$(shell /bin/ls -1 $(KSRC)/include/*/kconfig.h 2> /dev/null | head -1)
 
 ifneq ($(kconfig_h),)
 KCONFIG_H = -include $(kconfig_h)
@@ -141,9 +168,11 @@ kernel:
 		CONFIG_NFSD_RDMA=$(CONFIG_NFSD_RDMA) \
 		LINUXINCLUDE=' \
 		-D__OFED_BUILD__ \
+		$(CFLAGS) \
 		-include $(autoconf_h) \
 		-include $(CWD)/include/linux/autoconf.h \
 		$(KCONFIG_H) \
+		-include $(CWD)/include/linux/compat-2.6.h \
 		$(BACKPORT_INCLUDES) \
 		$(KERNEL_MEMTRACK_CFLAGS) \
 		$(KERNEL_NFS_FS_CFLAGS) \
@@ -152,12 +181,15 @@ kernel:
 		-I$(CWD)/drivers/infiniband/debug \
 		-I/usr/local/include/scst \
 		-I$(CWD)/drivers/infiniband/ulp/srpt \
-		-I$(CWD)/drivers/net/ethernet/chelsio/cxgb3 \
-		-I$(CWD)/drivers/net/ethernet/chelsio/cxgb4 \
 		$$(if $$(CONFIG_XEN),-D__XEN_INTERFACE_VERSION__=$$(CONFIG_XEN_INTERFACE_VERSION)) \
 		$$(if $$(CONFIG_XEN),-I$$(srctree)/arch/x86/include/mach-xen) \
-		-I$$(srctree)/arch/$$(hdr-arch)/include \
+		-I$$(srctree)/arch/$$(SRCARCH)/include \
+		-Iarch/$$(SRCARCH)/include/generated \
 		-Iinclude \
+		-I$$(srctree)/arch/$(SRCARCH)/include/uapi \
+		-Iarch/$$(SRCARCH)/include/generated/uapi \
+		-I$$(srctree)/include/uapi \
+		-Iinclude/generated/uapi \
 		$$(if $$(KBUILD_SRC),-Iinclude2 -I$$(srctree)/include) \
 		-I$$(srctree)/arch/$$(SRCARCH)/include \
 		-Iarch/$$(SRCARCH)/include/generated \

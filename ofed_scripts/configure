@@ -466,7 +466,6 @@ main()
                         --with-mlx4_en-mod)
                             CONFIG_MLX4_CORE="m"
                             CONFIG_MLX4_EN="m"
-                            CONFIG_MLX4_EN_DCB="y"
                         ;;
                         --with-mlx4_vnic-mod)
                             CONFIG_MLX4_CORE="m"
@@ -633,10 +632,10 @@ main()
                             CONFIG_NFS_FS="m"
                             CONFIG_NFS_V3="y"
                             CONFIG_NFS_V3_ACL="y"
-			    CONFIG_NFS_V4="y"
+                            CONFIG_NFS_V4="y"
                             CONFIG_NFS_ACL_SUPPORT="m"
                             CONFIG_NFS_DIRECTIO="y"
-			    CONFIG_EXPORTFS="m"
+                            CONFIG_EXPORTFS="m"
                             CONFIG_LOCKD="m"
                             CONFIG_LOCKD_V4="y"
                             CONFIG_NFSD="m"
@@ -697,6 +696,15 @@ KSRC=${KSRC:-/lib/modules/${KVERSION}/build}
 
 ARCH=${ARCH:-$(uname -m)}
 
+case $ARCH in
+	ppc*)
+	ARCH=powerpc
+	;;
+	i?86)
+	ARCH=i386
+	;;
+esac
+
 # Additional parameters to be passed to configure command
 CWD=$(pwd)
 CONFIG="configure.mk.kernel"
@@ -722,7 +730,6 @@ CONFIG_INFINIBAND_MTHCA=${CONFIG_INFINIBAND_MTHCA:-''}
 CONFIG_MLX4_CORE=${CONFIG_MLX4_CORE:-''}
 CONFIG_MLX5_CORE=${CONFIG_MLX5_CORE:-''}
 CONFIG_MLX4_EN=${CONFIG_MLX4_EN:-''}
-CONFIG_MLX4_EN_DCB=${CONFIG_MLX4_EN_DCB:-''}
 CONFIG_MLX4_VNIC=${CONFIG_MLX4_VNIC:-''}
 CONFIG_MLX4_INFINIBAND=${CONFIG_MLX4_INFINIBAND:-''}
 CONFIG_MLX5_INFINIBAND=${CONFIG_MLX5_INFINIBAND:-''}
@@ -790,21 +797,28 @@ CONFIG_INFINIBAND_QLGC_VNIC_STATS=${CONFIG_INFINIBAND_QLGC_VNIC_STATS:-''}
 CONFIG_INFINIBAND_CXGB3_DEBUG=${CONFIG_INFINIBAND_CXGB3_DEBUG:-''}
 CONFIG_INFINIBAND_NES_DEBUG=${CONFIG_INFINIBAND_NES_DEBUG:-''}
 CONFIG_INFINIBAND_AMSO1100=${CONFIG_INFINIBAND_AMSO1100:-''}
+CONFIG_MLX4_EN_DCB=''
+if [ "X${CONFIG_MLX4_EN}" == "Xm" ]; then
+    if (grep -q "^CONFIG_DCB=y" $KSRC/.config > /dev/null 2>&1); then
+        CONFIG_MLX4_EN_DCB=y
+    fi
+fi
 
-        # Check for minimal supported kernel version
-        if ! check_kerver ${KVERSION} ${MIN_KVERSION}; then
-                echo "Kernel version ${KVERSION} is less then supported kernel ${MIN_KVERSION}. Exiting..."
-                exit 1
-        fi
+# Check for minimal supported kernel version
+if ! check_kerver ${KVERSION} ${MIN_KVERSION}; then
+    echo "Kernel version ${KVERSION} is less then supported kernel ${MIN_KVERSION}. Exiting..."
+    exit 1
+fi
 
-	if [ ! -e config.mk ]; then
-		echo "config.mk does not exist. running ofed_patch.sh"
+
+	if [ ! -e .backports_applied ]; then
+		echo ".backports_applied does not exist. running ofed_patch.sh"
 		ex ${CWD}/ofed_scripts/ofed_patch.sh ${ofed_patch_params}
 	fi
 
-        # Create configure.mk
-        /bin/rm -f ${CWD}/${CONFIG}
-        cat >> ${CWD}/${CONFIG} << EOFCONFIG
+# Create configure.mk
+/bin/rm -f ${CWD}/${CONFIG}
+cat >> ${CWD}/${CONFIG} << EOFCONFIG
 # Current working directory
 CWD=${CWD}
 
@@ -901,6 +915,7 @@ CONFIG_INFINIBAND_QLGC_VNIC_STATS=${CONFIG_INFINIBAND_QLGC_VNIC_STATS}
 CONFIG_INFINIBAND_CXGB3_DEBUG=${CONFIG_INFINIBAND_CXGB3_DEBUG}
 CONFIG_INFINIBAND_NES_DEBUG=${CONFIG_INFINIBAND_NES_DEBUG}
 CONFIG_INFINIBAND_AMSO1100=${CONFIG_INFINIBAND_AMSO1100}
+CONFIG_MLX4_EN_DCB=${CONFIG_MLX4_EN_DCB}
 
 EOFCONFIG
         echo "Created ${CONFIG}:"
@@ -1176,6 +1191,11 @@ if [ "X${CONFIG_INFINIBAND_AMSO1100}" == "Xm" ]; then
 else
         DEFINE_INFINIBAND_AMSO1100="#undef CONFIG_INFINIBAND_AMSO1100"
 fi
+if [ "X${CONFIG_MLX4_EN_DCB}" == "Xy" ]; then
+        DEFINE_MLX4_EN_DCB="#undef CONFIG_MLX4_EN_DCB\n#define CONFIG_MLX4_EN_DCB 1"
+else
+        DEFINE_MLX4_EN_DCB="#undef CONFIG_MLX4_EN_DCB"
+fi
 if [ "X${CONFIG_SUNRPC_XPRT_RDMA}" == "Xm" ]; then
         DEFINE_SUNRPC_XPRT_RDMA="#undef CONFIG_SUNRPC_XPRT_RDMA\n#define CONFIG_SUNRPC_XPRT_RDMA 1"
         DEFINE_SUNRPC="#undef CONFIG_SUNRPC\n#define CONFIG_SUNRPC 1"
@@ -1377,6 +1397,7 @@ $(echo -e "${DEFINE_INFINIBAND_AMSO1100}" | grep -v undef)
 #undef CONFIG_INFINIBAND_QIB
 #undef CONFIG_INFINIBAND_MTHCA_DEBUG
 #undef CONFIG_INFINIBAND_AMSO1100
+#undef CONFIG_MLX4_EN_DCB
 
 $(echo -e "${DEFINE_INFINIBAND}")
 $(echo -e "${DEFINE_INFINIBAND_IPOIB}")
@@ -1457,6 +1478,7 @@ $(echo -e "${DEFINE_INFINIBAND_QIB}")
 $(echo -e "${DEFINE_INFINIBAND_MTHCA_DEBUG}")
 $(echo -e "${DEFINE_INFINIBAND_MADEYE}")
 $(echo -e "${DEFINE_INFINIBAND_AMSO1100}")
+$(echo -e "${DEFINE_MLX4_EN_DCB}")
 #endif
 
 EOFAUTOCONF
