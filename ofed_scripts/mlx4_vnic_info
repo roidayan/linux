@@ -1,0 +1,507 @@
+#! /usr/bin/python
+# -*- python -*-
+#
+# Author: Ali Ayoub ali@mellanox.com
+# Description: This script prints information for vNic interfaces
+
+import sys
+import os
+import time
+
+# NOTE: if vNic driver sysfs content changes
+#       the folloing flags must be updated: -s/-u
+
+SCRIPT_VERSION	= "1.4.0000"
+SCRIPT		= os.path.basename(sys.argv[0])
+SCRIPT_DIR	= os.path.dirname(sys.argv[0])
+MOD		= "mlx4_vnic"
+MOD_LIST_CMD	= "/sbin/lsmod"		# Linux
+SYSFS_ROOT	= "/sys"		# Linux
+ERR_MSG		= "ERROR"
+LOG		= "/tmp/%s.log" % SCRIPT
+
+# hidden flags
+debug = "--debug" in sys.argv
+if debug:
+	sys.argv.remove("--debug")
+
+log = "--log" in sys.argv
+if log:
+	sys.argv.remove("--log")
+
+wait = "--wait" in sys.argv
+if wait:
+	sys.argv.remove("--wait")
+
+_netdev_name = "NETDEV_NAME"
+_mac = "MAC"
+_vlan = "VLAN"
+_ioa_port = "IOA_PORT"
+_bx_prefix = "BX_"
+_bx_name = "BX_NAME"
+_bx_guid = "BX_GUID"
+_eport_name = "EPORT_NAME"
+_eport_id = "EPORT_ID"
+_eport_state = "EPORT_STATE"
+_na = "N/A"
+
+# tokens for -s flag
+SHORT_TOKENS = \
+[
+	_netdev_name,
+	_mac,
+	_vlan,
+	_ioa_port,
+	_bx_prefix, # will show either BX_NAME or BX_GUID
+	_eport_name,
+]
+
+USAGE = "\
+Usage:							\n\
+     %s <option> [vnic]					\n\
+     print Mellanox vNic driver and interfaces info.	\n\
+							\n\
+Options:						\n\
+  -h, --help             show help message and exit	\n\
+  -v, --version          show script version		\n\
+  -l, --list             list all vNics			\n\
+  -i, --info             print info			\n\
+  -s, --short            print short info		\n\
+  -u, --uname            print vNic unique name		\n\
+  -m, --macs             print vNic MAC table		\n\
+  -g, --gateways         print accessible gateways info	\n\
+  -o, --ioas             print list of IOAs (ports)	\n\
+  -I, --modinfo          print driver information	\n\
+  -P, --param            print driver parameters	\n\
+							\n\
+Example:						\n\
+  %s -s eth2" % (SCRIPT, SCRIPT)
+
+# static functions
+def vprint(msg):
+	if debug > 0:
+		sys.stdout.write(str(msg) + '\n')
+	if log > 0:
+		fd = open(LOG, 'a')
+		now =  time.strftime("%Y.%m.%d-%H.%M.%S", time.localtime())
+		fd.write("%s:%s: %s\n" % (now, str(sys.argv), msg))
+		fd.close()
+
+	return
+
+def run_cmd(cmd, retry = 0, nap = 1):
+	if wait: # if wait flag set, use longer nap
+		nap = 10
+	p = os.popen(cmd)
+	out = p.read()
+	rc = p.close()
+	if rc == None:
+		rc = 0
+	else:
+		out = ERR_MSG
+	vprint("-V- cmd [%s], rc [%s], out_len [%d], retry [%d]" % \
+		(str(cmd), str(rc), len(out), retry))
+	if (rc or len(out) == 0) and retry > 0:
+		retry = retry -1
+		try:
+			time.sleep(nap)
+		except:
+			return (rc, out)
+		return run_cmd(cmd, retry, nap)
+
+	return (rc, out)
+
+def is_loaded(mod):
+	is_mod_loaded = run_cmd(MOD_LIST_CMD + '| /bin/grep %s' % mod)[0]
+
+	return not is_mod_loaded
+
+def get_param_list():
+	hlist = []
+	dirname = "/sys/module/%s/parameters" % MOD
+	if not os.path.exists(dirname):
+		vprint("-V- couldn't find %s" % dirname)
+		return []
+	files = os.listdir(dirname)
+	for file in files:
+		hlist += [dirname + os.sep + file]
+	hlist.sort()
+
+	return hlist
+
+def get_gws_info():
+	gws = []
+	dirname = "/sys/module/%s" % MOD
+	if not os.path.exists(dirname):
+		return gws
+	files = os.listdir(dirname)
+	files.sort()
+	for file in files:
+		if not file.startswith("gws_"):
+			continue
+		file = dirname + os.sep + file
+		vprint("-V- GW file %s" % file)
+		(rc, out) = run_cmd("/bin/cat %s" % file)
+		if rc or len(out) == 0:
+			continue
+		gws += [out.strip() + "\n" ]
+	return gws
+
+def get_ioas_info ():
+	ioas = []
+	fns = "/sys/module/mlx4_vnic/host_add_*_[0-9]_[0-9]"
+	cmd = "/bin/ls %s &> /dev/null" % fns
+	cmd += " && "
+	cmd += "/bin/ls %s" % fns
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return ioas
+	for fn in out.split():
+		vprint("-V- fn: %s" % str(fn))
+		basename = os.path.basename(fn)
+		vprint("-V- basename: %s" % str(basename))
+		basename = basename.replace("host_add_", '')
+		basename_split = basename.split('_')
+		if len(basename_split) != 3:
+			continue
+		dev = basename_split[0] + "_" + basename_split[1]
+		port = basename_split[2]
+		ioa =  dev + ":" + port
+		vprint("-V- ioa: %s" % str(ioa))
+		ioas += [ioa]
+	return ioas
+
+def get_vnic_list():
+	hlist = []
+	fn = "/sys/class/net"
+	if not os.path.exists(fn):
+		vprint("-V- couldn't find %s" % fn)
+		return []
+	cmd = "/bin/ls %s | /bin/sort -u" % fn
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return hlist
+	interfaces = out.split()
+	for interface in interfaces:
+		if interface == "lo" or interface.startswith("sit"):
+			vprint("-V- skip %s" % interface)
+			continue
+		cmd = "/sbin/ethtool -i %s  2> /dev/null | /bin/grep %s" % (interface, MOD)
+		(rc, out) = run_cmd(cmd)
+		if not rc:
+			hlist += [interface]
+			continue
+		cmd = "/bin/grep ' %s$' /sys/module/%s/*-info 2> /dev/null" % \
+			(interface, MOD)
+		(rc, out) = run_cmd(cmd)
+		if not rc:
+			hlist += [interface]
+			continue
+	hlist.sort()
+
+	return hlist
+
+
+def get_vnic_info_file(vnic, prefix = "info"):
+	_prefix = "info"
+	cmd = "/usr/bin/find " + SYSFS_ROOT + " | /bin/grep  \\\-" + _prefix + "$  | " + \
+	      "/usr/bin/xargs " + "/bin/grep -H ' " + vnic + "$' | " + \
+	      "/bin/grep " + _netdev_name + " | /bin/awk -F:" + _netdev_name + " " + \
+	      "'{print $1}'"
+	(rc, out) = run_cmd(cmd)
+	out = out.strip()
+	vprint("-V- INFO_FILE: %s [rc %s]" % (str(out), str(rc)))
+	if rc or len(out) == 0:
+		vprint("-V- Couldn't find info file for %s" % vnic)
+		return None
+	fn = out.replace(_prefix, prefix)
+	if not os.path.exists(fn):
+		vprint("-V- Couldn't find %s for %s" % (fn, str(vnic)))
+		return None
+
+	vprint("-V- INFO_FILE with %s prefix: %s" % (prefix, fn))
+	return fn
+
+def get_vnic_info(vnics, vnic, retry = 0):
+	fn = get_vnic_info_file(vnic)
+	if fn == None:
+		return None
+	if retry:
+		cmd = "/bin/cat " + fn + " | /bin/grep " + _eport_state + \
+		      " | /bin/awk '{print $2}' | /bin/grep -E 'down|up'"
+		(rc, out) = run_cmd(cmd, retry, 1)
+		if rc or len(out) == 0:
+			return None
+	cmd = "/bin/cat " + fn
+	(rc, out) = run_cmd(cmd, retry, 2)
+	if rc or len(out) == 0:
+		return None
+
+	return out.strip()
+
+def get_vnic_macs(vnic):
+	macs = ''
+	fn = get_vnic_info_file(vnic)
+	dirname = os.path.dirname(fn)
+	fns = os.listdir(dirname)
+
+	# add parent mac
+	cmd = "/bin/grep -w MAC %s | /bin/awk '{print $2}'" % fn
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return macs
+	macs += "%-7s %s\n" % (vnic + ':', out.strip())
+
+	# add child mac
+	for fn in fns:
+		if not fn.count("cmd"):
+			continue
+		fn = dirname + os.sep + fn
+		cmd = "/bin/grep -w parent=" + vnic + " " + fn + " 2>&1 | " + \
+		      "/bin/grep -wo mac=[A-Za-z0-9:]*"
+		(rc, out) = run_cmd(cmd)
+		if rc or len(out) == 0:
+			continue
+		out = out.replace('mac=', '').strip()
+		macs += "%-7s %s\n" % (vnic + ':', out)
+
+	return macs.strip()
+
+def get_vnic_short(vnic, info):
+	short_info = ""
+	for token in SHORT_TOKENS:
+		for line in info.split('\n'):
+			if len(line.split()) < 2:
+				break
+			var = line.split()[0]
+			val = line.split()[1]
+			if var.startswith(token) and val != _na:
+				short_info += line + '\n'
+				break
+	return short_info.strip()
+
+def get_vnic_pci (vnic):
+	cmd = "/sbin/ethtool -i " + vnic + " | /bin/grep bus | " + \
+	      "/bin/awk '{print $2}' | /bin/awk -F: '{print $2}'"
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return ERR_MSG
+	pci_hex = "0x%s" % out
+	pci = int(pci_hex, 16)
+
+	return pci
+
+def get_unique_name(vnic, info):
+	name		= 'eth'
+	ib_port		= None
+	gw_port_id	= None
+	vid		= None
+
+	pci = get_vnic_pci(vnic)
+	for line in info.split('\n'):
+		param = line.split()[0]
+		if   param == _ioa_port:
+			ib_port = line.split()[1].split(':')[1]
+		elif param == _eport_id:
+			gw_port_id = line.split()[-1]
+		elif param == _vlan:
+			vid_hex = line.split()[-1]
+			try:
+				vid = int(vid_hex, 16)
+			except:
+				vid = -1
+
+	if ib_port == None or gw_port_id == None or vid == None:
+		print "-E- Missing tokens, cannot construct vNic name"
+		return None
+
+	name += "%s.%s.%s" % (pci, ib_port, gw_port_id)
+	if int(vid) >= 0:
+		name += ".%s" % vid
+
+	if vnic != name:
+		cnt = 0
+		_name = name
+		while (os.path.exists("/sys/class/net/" + _name) and vnic != _name):
+			cnt = cnt + 1
+			_name = name + "-%d" % cnt
+		name = _name
+
+	return name
+
+# main
+def main():
+	do_uname	= 0
+	do_short	= 0
+	do_info		= 0
+	do_help		= 0
+	do_ver		= 0
+	do_vnic_list	= 0
+	do_mparam	= 0
+	do_minfo	= 0
+	do_gws		= 0
+	do_ioas		= 0
+	do_macs		= 0
+	do_file_info	= 0
+	vnic_name	= None
+
+	# parse args
+	if len(sys.argv) == 1:
+		print "-E- Missing option"
+		print USAGE
+		return 1
+	elif len(sys.argv) > 3:
+		print "-E- Too many options"
+		print USAGE
+		return 1
+	elif len(sys.argv) == 3:
+		vnic_name = sys.argv[2]
+
+	arg = sys.argv[1]
+	vprint("-V- arg %s" % arg)
+	if   arg == "-h" or arg == "--help":
+		do_help = 1
+	elif arg == "-l" or arg == "--list":
+		do_vnic_list = 1
+	elif arg == "-i" or arg == "--info":
+		do_info = 1
+	elif arg == "-P" or arg == "--param":
+		do_mparam = 1
+	elif arg == "-v" or arg == "--version":
+		do_ver = 1
+	elif arg == "-I" or arg == "--modinfo":
+		do_minfo = 1
+	elif arg == "-s" or arg == "--short":
+		do_short = 1
+	elif arg == "-u" or arg == "--uname":
+		do_uname = 1
+	elif arg == "-g" or arg == "--gateways":
+		do_gws = 1
+	elif arg == "-o" or arg == "--ioas":
+		do_ioas = 1
+	elif arg == "-m" or arg == "--macs":
+		do_macs = 1
+	elif arg == "-F" or arg == "--file-info": # hidden flag
+		do_file_info = 1
+	else:
+		print "-E- Invalid option [%s]" % arg
+		print USAGE
+		return 1
+
+	# action:
+	if do_help:
+		print USAGE
+		return 0
+	elif do_ver:
+		print "%s-v%s" % (SCRIPT, SCRIPT_VERSION)
+		return 0
+	elif do_minfo:
+		(rc, out) = run_cmd("modinfo %s" % MOD)
+		print "%s" % out.strip()
+		return 0
+
+	## check if module needed for remainig actions
+	elif not is_loaded(MOD):
+		print "-E- %s Module is not loaded" % MOD
+		return 1
+
+	elif do_mparam:
+		plist = get_param_list()
+		for param in plist:
+			(rc, out) = run_cmd("/bin/cat %s" % param)
+			print "%-20s %s" % (os.path.basename(param), \
+					    out.strip())
+		return 0
+
+	## print GWs info (vNic may not present)
+	if do_gws:
+		gws = get_gws_info()
+		if not len(gws):
+			print "-E- Couldn't find any GWs"
+			return 1
+		else:
+			print "\n".join(gws)
+		return 0
+
+	## print IOAs info (vNic may not present)
+	if do_ioas:
+		ioas = get_ioas_info()
+		if not len(ioas):
+			print "-E- Couldn't find any IOAs"
+			return 1
+		else:
+			print "\n".join(ioas)
+		return 0
+
+	## get vnic list for remainig actions
+	all_vnic_names = get_vnic_list()
+	if len(all_vnic_names) == 0:
+		msg = "-E- Couldn't find any vNic interfaces"
+		vprint(msg)
+		print msg
+		return 1
+
+	## print vNic list
+	if do_vnic_list:
+		print "\n".join(all_vnic_names)
+		return 0
+
+	## check vnic name for remainig actions
+	if vnic_name == None:
+		vnics = all_vnic_names
+	elif vnic_name in all_vnic_names:
+		vnics = [vnic_name]
+	else:
+		msg = "-E- Bad interface name %s" % vnic_name
+		vprint(msg)
+		print msg
+		return 1
+
+	## print info using sysfs
+	rc = 0
+	for vnic in vnics:
+		# udev rules may need some time to find the sysfs files
+		# use run_cmd retry as a function of vnics number
+		retry = 0
+		if do_uname:
+			retry = 10 * len(vnics)
+		info = get_vnic_info(all_vnic_names, vnic, retry)
+		if  info == None:
+			msg = "-E- Failed to get %s info" % vnic
+			vprint(msg)
+			print msg
+			if len(vnics) == 1:
+				rc = 1
+		elif do_info:
+			print info
+		elif do_short:
+			print get_vnic_short(vnic, info)
+		elif do_macs:
+			print get_vnic_macs(vnic)
+		elif do_uname:
+			print "%-16s %s" % (vnic, get_unique_name(vnic, info))
+		elif do_file_info:
+			print "%-16s %s" % (vnic, get_vnic_info_file(vnic))
+		else:
+			print info
+
+		### print empty line seperator
+		if (vnic != vnics[-1]) and (do_info + do_short):
+			print ''
+
+	vprint("-V- done [rc %d]" % rc)
+	return rc
+
+if __name__ == '__main__':
+	if debug:
+		rc = main()
+		sys.exit(rc)
+	try:
+		rc = main()
+	except Exception, e:
+		rc = 2
+		print ""
+		print "-E- Interrupted! %s" % str(e)
+		print "-E- Abort."
+	sys.exit(rc)
+

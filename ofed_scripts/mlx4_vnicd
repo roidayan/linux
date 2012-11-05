@@ -1,0 +1,638 @@
+#! /usr/bin/python
+# -*- python -*-
+#
+# Author: Ali Ayoub ali@mellanox.com
+# Description: This daemon maintains current active vNics
+# NOTES:
+# * For each hypervisor you wish to add:
+#   Open the functions: get_mgmt_bin() & get_os() to accept the new env
+#   Update the functions: get_domains() & get_vif_mac() using the new utils
+
+import sys
+import os
+import time
+import logging
+import string
+import libxml2
+import re
+
+SCRIPT_VERSION	= "1.2.2310"
+SCRIPT		= os.path.basename(sys.argv[0])
+SCRIPT_DIR	= os.path.dirname(sys.argv[0])
+ERR_MSG		= "ERROR"
+UNKNOWN		= "UNKNOWN"
+NA 		= "N/A"
+MOD		= "mlx4_vnic"
+SYSFS_DIR	= "/sys/module/%s" % MOD
+
+xenstore_bin = "/usr/bin/xenstore"
+virsh_bin = "/usr/bin/virsh"
+vnic_info = "/sbin/mlx4_vnic_info"
+vnic_confd = "/etc/init.d/mlx4_vnic_confd"
+sys_logger = "/bin/logger"
+interval = 5
+all_str = "all"
+ioa = all_str
+max_iter = 0
+gc_enable = 'yes'
+vif_detect = 'no'
+log_cmd = 1
+log_file = None
+log_levels = {'debug': logging.DEBUG,
+	      'info': logging.INFO,
+	      'warning': logging.WARNING,
+	      'error': logging.ERROR,
+	      'critical': logging.CRITICAL}
+log_level_str = 'info'
+log_level = log_levels.get(log_level_str)
+
+USAGE = "\
+Usage:									\n\
+     %s [--help|--version|option=var]					\n\
+     Run vNics daemon for child vNics managment.			\n\
+									\n\
+Options:								\n\
+  ioa            IOA (port) to use, seperated by commas (default: %s)	\n\
+  interval       How frequently the daemon runs	{secs} (default: %s)	\n\
+  max_iter       Max number of iterataions, 0=unlimited (default: %s)	\n\
+  gc_enable      Enable Garbage Collector {yes|no} (default: %s) 	\n\
+  vif_detect     Detect new guest virtual interfaces (default: %s)      \n\
+  log_level      Log level {error|info|debug} (default: %s)		\n\
+  log_file       Log file name (default: %s)				\n\
+  " % \
+(SCRIPT, ioa, interval, max_iter, gc_enable, vif_detect, log_level_str, log_file)
+
+# check privilege
+if os.geteuid() != 0:
+	print "-E- you must be root to run this script."
+	sys.exit(1)
+
+# static functions
+def run_cmd(cmd, retry = 0, nap = 1, level = logging.DEBUG):
+	p = os.popen(cmd)
+	out = p.read()
+	rc = p.close()
+
+	if rc == None:
+		rc = 0
+	else:
+		out = ERR_MSG
+	if log_cmd:
+		logging.log(level, "cmd [%s], rc [%s], out_len [%d], retry [%d]" % \
+			(str(cmd), str(rc), len(out), retry))
+	if (rc or len(out) == 0) and retry > 0:
+		retry = retry -1
+		try:
+			time.sleep(nap)
+		except:
+			return (rc, out)
+		return run_cmd(cmd, retry, nap)
+
+	return (rc, out)
+
+def namestr(obj, namespace):
+	return [name for name in namespace if namespace[name] is obj]
+
+def logging_var(var, level = logging.DEBUG):
+	names = namestr(var, globals())
+	if len(names) == 0:
+		logging.log(level, "failed to get var name of value %s" % str(var));
+		return # var should be global
+	else:
+		name = names[-1]
+	logging.log(level, "%-20s %s" % (name, str(var)));
+
+def logging_sys(msg, level = logging.INFO):
+	if os.path.exists(sys_logger):
+		cmd = "%s -p daemon.info -t %s" % (sys_logger, SCRIPT)
+		cmd += ' "%s"' % msg
+		run_cmd(cmd)
+	logging.log(level, msg)
+
+def is_int(val):
+	try:
+		val = int(val)
+		return 1
+	except:
+		return 0
+
+def is_ucast_eth_mac(mac):
+	mac_len = 6
+	mac_hex_len = 2 * mac_len
+	if len(mac.replace(':', '')) != mac_hex_len:
+		return False
+	if not mac[1] in string.hexdigits:
+		return False
+	if mac.replace(':', '') == ("0" * mac_hex_len):
+		return False
+	return True
+
+def get_os_desc():
+	fn = "/etc/issue"
+	if not os.path.exists(fn):
+		return UNKNOWN
+	cmd = '/bin/cat %s' % fn
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return UNKNOWN
+	return out
+
+def get_os():
+	os_desc = get_os_desc()
+	if os_desc == UNKNOWN:
+		return UNKNOWN
+	elif os_desc.count("Oracle VM server"):
+		return "OVS"
+	elif os_desc.count("XenServer"):
+		return "XS"
+	# KVM/XEN may run on top of std Linux or CentOS
+	elif os_desc.count("Linux") or os_desc.count("CentOS"):
+		return "LINUX"
+	else:
+		return UNKNOWN
+
+def get_mgmt_bin():
+	# If xenstore is avaiable, use it
+	# (OVS/XS do not have libvirt, but has xenstore)
+	if os.path.exists(xenstore_bin):
+		return xenstore_bin
+	# if not (e.g. KVM) then we require virsh (via libvirt)
+	if os.path.exists(virsh_bin):
+		return virsh_bin
+	return UNKNOWN
+
+def get_domains():
+	domains = []
+	if mgmt == xenstore_bin:
+		cmd = "for i in `%s list /local/domain`; do %s ls /local/domain/$i/name; done" % (mgmt, mgmt)
+	elif mgmt == virsh_bin:
+		cmd = mgmt + \
+		      " list | /bin/sed 's/^[ \t]*//;s/[ \t]*$//' | " + \
+		      "/bin/grep ^[0-9] | /bin/awk '{print $2}'"
+	else:
+		sys.stderr.write("%s: unexpected mgmt bin %s\n" % (ERR_MSG, mgmt))
+		sys.exit(1)
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return domains
+	domains = out.strip().split('\n')
+	return domains
+
+def get_ioas():
+	ioas = []
+	cmd = "%s -o" % vnic_info
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return ioas
+	ioas = out.strip().split('\n')
+	return ioas
+
+def get_vnics():
+	vnics = []
+	cmd = "%s -l" % vnic_info
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return vnics
+	return out.strip().split('\n')
+
+def get_ioa_vnics(ioa):
+	ioa_vnics = []
+	vnics = get_vnics()
+	if len(vnics) == 0:
+		return ioa_vnics
+	for vnic in vnics:
+		cmd = "%s -i %s | /bin/grep %s " % (vnic_info, vnic, ioa)
+		(rc, out) = run_cmd(cmd)
+		if rc == 0:
+			ioa_vnics += [vnic]
+	return ioa_vnics
+
+def get_vnic_macs(vnic):
+	macs = []
+	cmd = "%s -m %s" % (vnic_info, vnic)
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return macs
+	macs_lines = out.strip().lower().split('\n')
+	for line in macs_lines:
+		macs += [line.strip().split()[1]]
+	return macs
+
+def get_dev_mac(vnic):
+	cmd = "/sbin/ip link show %s | /bin/grep -o -E '([[:xdigit:]]{1,2}:){5}[[:xdigit:]]{1,2} | /usr/bin/head -1'" % vnic
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return None
+	return out.strip().lower()
+
+def get_vnic_child_macs(vnic):
+	macs = []
+	_macs = get_vnic_macs(vnic)
+	mac_interface =  get_dev_mac(vnic)
+	for mac in _macs[1:]:
+		if mac != str(mac_interface):
+			macs += [mac]
+	return macs
+
+def get_brs():
+	brs = []
+	cmd = "/bin/ls -d /sys/class/net/*/bridge"
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return brs
+	brs_fn = out.strip().split('\n')
+	for br_fn in brs_fn:
+		(head, tail) = os.path.split(br_fn)
+		(head, tail) = os.path.split(head)
+		if len(tail) == 0:
+			continue
+		brs += [tail]
+	logging.debug("bridges list %s" % (str(brs)))
+	return brs
+
+def get_br_slaves(br):
+	fn =  "/sys/class/net/%s/brif" % br
+	if not os.path.exists(fn):
+		return []
+	cmd = "/bin/ls %s" % fn
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return []
+	_slaves = out.strip().split()
+
+	# if slave is bond, replace it with its slaves
+	slaves = []
+	for slave in _slaves:
+		fn = "/sys/class/net/%s/bonding/slaves" % slave
+		if not os.path.exists(fn):
+			slaves += [slave]
+			continue
+		cmd = "/bin/cat %s" % fn
+		(rc, out) = run_cmd(cmd)
+		if rc or len(out) == 0:
+			continue
+		slaves += out.strip().split()
+	return slaves
+
+def get_slave_br(slave):
+	brs = get_brs()
+	for br in brs:
+		slaves = get_br_slaves(br)
+		if slave in slaves:
+			return br
+	return None
+
+def get_vif_mac(vif):
+	if mgmt == xenstore_bin:
+		_vif_name = filter(lambda x: not x.isdigit(), vif.split('.')[0])
+		_vif = _vif_name + os.sep + vif.replace(_vif_name, '').replace('.', os.sep)
+		fn = "/local/domain/0/backend/%s/mac" % _vif
+		cmd = "%s read %s 2>&1" % (mgmt, fn)
+		(rc, out) = run_cmd(cmd)
+		if rc or len(out) == 0:
+			# non-vif slaves are ok to fail here
+			return None
+		mac = out.strip().lower()
+		if is_ucast_eth_mac(mac):
+			return mac
+	elif mgmt == virsh_bin:
+		domains = get_domains()
+		for dom in domains:
+			# dump xml (per domain); and check the vif's mac in the xml output
+			cmd = "%s dumpxml %s" % (mgmt, dom)
+			(rc, out) = run_cmd(cmd)
+			if rc or len(out) == 0:
+				continue
+			# run xml xpath query, example output:
+			## <mac address="02:00:05:3e:aa:6a"/>
+			## <target dev="vnet0"/>
+			## ..
+			try: doc = libxml2.parseDoc(out)
+			except: continue
+			mac = None
+			dev = None
+			for node in doc.xpathEval('//interface/target|//interface/mac'):
+				node = str(node)
+				attr = node.split('=')[-1].strip()
+				attr = attr.replace('"', '')
+				attr = attr.replace("/>", '')
+				if node.count("target dev"):
+					dev = attr
+				if node.count("mac address"):
+					mac = attr
+				if mac != None and dev == vif:
+					mac = mac.lower()
+					if is_ucast_eth_mac(mac):
+						doc.freeDoc()
+						return mac
+			doc.freeDoc()
+	else:
+		sys.stderr.write("%s: unexpected mgmt_bin %s\n" % (ERR_MSG, mgmt))
+		sys.exit(2)
+
+	return None
+
+def get_vnic_taps(vnic):
+	# In KVM: macvtap(s) can be connected directly to the vNic
+	cmd = '/sbin/ip link show | /bin/grep "@%s:" ' % vnic
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return []
+	regex = re.compile('(?P<macvtap>\w+)@%s:'% vnic)
+	lines = out.split("\n")
+	taps = []
+	for line in lines:
+		search = regex.search(line)
+		if search != None:
+			tap = search.group("macvtap").strip()
+			taps += [tap]
+
+	return taps
+
+def get_vnic_vif_macs(vnic):
+	macs = []
+	# is vbr used?
+	br = get_slave_br(vnic)
+	if br != None:
+		logging.debug("vNic %s linked with bridge %s" % (vnic, br))
+		slaves = get_br_slaves(br)
+		logging.debug("%s slaves list %s" % (br, str(slaves)))
+		for slave in slaves:
+			# if slave is not vif it will return None
+			mac = get_vif_mac(slave)
+			if mac == None:
+				continue
+			logging.debug("Guest %s mac %s" % (slave, str(mac)))
+			macs += [mac]
+			return macs
+
+	# is direct tap used (i.e. macvtap on KVM)?
+	taps = get_vnic_taps(vnic)
+	if len(taps):
+		logging.debug("vNic %s linked with taps %s" % (vnic, str(taps)))
+		for tap in taps:
+			mac = get_dev_mac(tap)
+			if mac == None:
+				continue
+			logging.debug("tap %s mac %s" % (tap, str(mac)))
+			macs += [mac]
+
+	return macs
+
+def vnic_child_update(mac, parent, remove = 0):
+	# update remove/add parameters
+	if remove:
+		op = '-'
+		op_name = "destroyed"
+		retry_max = 10
+		retry_nap = 1
+		retry_cnt = 0
+	else:
+		op = '+'
+		op_name = "created"
+		retry_max = 5
+		retry_nap = 2
+		retry_cnt = 0
+
+	cmd = "%s -F %s | /bin/awk '{print $2}'" % (vnic_info, parent)
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		logging.warning("could not find parent %s sysfs file (%s, rc %d)" % (parent, cmd, rc))
+		return 1
+	sysfs_fn = out.strip().replace("info", "child")
+	if not os.path.exists(sysfs_fn):
+		logging.warning("could not find sysfs file (%s)!" % sysfs_fn)
+		return 2
+	cmd = "/bin/echo %s%s > %s" % (op, mac, sysfs_fn)
+	(rc, out) = run_cmd(cmd)
+	if rc:
+		logging.warning("%s cmd failed!" % vnic_confd)
+		return 1
+
+	# confirm that mac was destroyed/created
+	while retry_cnt <= retry_max:
+		time.sleep(retry_nap)
+		retry_cnt = retry_cnt + 1
+		logging.debug("Confirm that mac was %s: iter %d, max %d, nap %d" % (op_name, retry_cnt, retry_max, retry_nap))
+		cmd = "%s status | /bin/grep %s | /bin/grep parent=%s" % (vnic_confd, mac, parent)
+		(rc, out) = run_cmd(cmd)
+		if remove:
+			_rc = ((rc != 0) or (len(out.strip()) == 0))
+		else:
+			_rc = (rc == 0 and len(out.strip()))
+		if _rc:
+			logging.debug("Child vNic %s of parent %s was %s" % (op_name, mac, parent))
+			break
+	if retry_cnt > retry_max:
+		logging.debug("Child vNic %s of parent %s was not %s" % (op_name, mac, parent))
+		return 1
+	return 0
+
+# main
+def main():
+	# global vars (params)
+	global ioa
+	global interval
+	global log_level
+	global log_file
+	global max_iter
+	global gc_enable
+	global vif_detect
+	global system
+	global mgmt
+
+	# check for single option param
+	if len(sys.argv) == 2 and sys.argv[1].startswith("-"):
+		arg = sys.argv[1]
+		if   arg == "-h" or arg == "--help":
+			print USAGE
+			return 0
+		elif arg == "-v" or arg == "--version":
+			print "%s-v%s" % (SCRIPT, SCRIPT_VERSION)
+			return 0
+		else:
+			print USAGE
+			logging.error("Bad argument (%s)" % arg)
+			return 1
+
+	# parse args (opt=var)
+	for arg in sys.argv[1:]:
+		argl = arg.split('=')
+		if len(argl) != 2:
+			logging.error("Bad argument (%s)" % arg)
+			return 1
+		opt = argl[0]
+		var = argl[1]
+
+		if   opt == "ioa":
+			ioa = var
+		elif opt == "interval" and is_int(var) and int(var) > 0:
+			interval = var
+		elif opt == "log_level" and var in log_levels.keys():
+			log_level = log_levels.get(var)
+		elif opt == "log_file":
+			log_file = var
+		elif opt == "max_iter" and is_int(var) and int(var) >= 0:
+			max_iter = var
+		elif opt == "gc_enable" and (var.lower() in ['yes', 'no']):
+			gc_enable = var
+		elif opt == "vif_detect" and (var.lower() in ['yes', 'no']):
+			vif_detect = var
+		else:
+			logging.error("Bad argument (%s)" % arg)
+			return 1
+
+	# init logger
+	try:
+		logging.basicConfig(filename=log_file, level=log_level, format='%(asctime)s [%(name)s] %(levelname)s: %(message)s')
+	except:
+		msg = "Could not initialize the logger (log_file: %s)" % str(log_file)
+		sys.stdout.write(str(msg) + '\n')
+		return 1
+
+	# print vars info
+	if log_file != None:
+		logging.info("cmdline %s" % " ".join(sys.argv))
+	else:
+		logging.debug("cmdline %s" % " ".join(sys.argv))
+	logging_sys("%s daemon (pid %d) started -- version %s" % (SCRIPT, os.getpid(), SCRIPT_VERSION))
+	logging_var(ioa)
+	logging_var(interval)
+	logging_var(max_iter)
+	logging_var(gc_enable)
+	logging_var(vif_detect)
+	logging_var(log_level)
+
+	# check OS and tools
+	system = get_os()
+	logging_var(system)
+	mgmt = get_mgmt_bin()
+	logging_var(mgmt)
+
+	if system == UNKNOWN:
+		logging.error("This OS is not supported (%s)" % system)
+		logging.error("OS description %s" % get_os_desc().split('\n')[0])
+		return 1
+	if mgmt == UNKNOWN:
+		logging.error("Couldn't find managment tools (e.g. virsh/xenstore)")
+		return 1
+	if not os.path.exists(vnic_info):
+		logging.error("Could not find %s" % vnic_info)
+		return 1
+	if not os.path.exists(vnic_confd):
+		logging.error("Could not find %s" % vnic_confd)
+		return 1
+
+	# check if another instance is running
+	cmd = "/sbin/pidof -x -o %s %s" % (os.getpid(), SCRIPT)
+	(rc, out) = run_cmd(cmd)
+	if rc == 0:
+		logging.error("Another instance of %s (pid %s) is already running!" % (SCRIPT, out.strip()))
+		return 2
+
+	# main loop
+	i = 0
+	_ioas = None
+	_vnics = None
+	_doms = None
+
+	max = int(max_iter)
+	while (max == 0 or i < max):
+		i = i + 1
+
+		logging.debug("### [%d] Iteration started ###" % i)
+		# sleep between iterations for $interval
+		if i > 1:
+			logging.debug("sleeping %s secs..." % str(interval))
+			time.sleep(int(interval))
+
+		# get IOAs in a loop to support hot-plug
+		ioas = get_ioas()
+		if _ioas != ioas:
+			logging.info("IOA list %s" % str(ioas))
+			_ioas = ioas
+		if len(ioas) == 0:
+			logging.debug("could not find any IOAs.. continue")
+			continue
+
+		# if user requested specific ioa, check that it presents
+		if ioa.lower() != all_str:
+			if not ioa in ioas:
+				logging.debug("could not find requested IOA (%s).. continue" % ioa)
+				continue
+			else:
+				ioas = [ioa]
+				logging.debug("checking IOA %s" % str(ioa))
+
+		# get vNics list
+		vnics = get_vnics()
+		if _vnics != vnics:
+			logging.info("Parent vNics list %s" % str(vnics))
+			_vnics = vnics
+		if len(vnics) == 0:
+			logging.debug("could not find any vNic.. continue")
+			continue
+
+		# get U domains list (for info only)
+		doms = get_domains()
+		if _doms != doms:
+			logging.info("Domains list %s" % str(doms))
+			_doms = doms
+
+		# start vnics loop
+		for vnic in vnics:
+			logging.debug("Testing parent vnic %s" % vnic)
+			child_macs = get_vnic_child_macs(vnic)
+			logging.debug("%s child macs %s" % (vnic, str(child_macs)))
+			vif_macs = get_vnic_vif_macs(vnic)
+			logging.debug("%s vif macs %s" % (vnic, str(vif_macs)))
+			if len(vif_macs) + len(child_macs) == 0:
+				logging.debug("%s has no active child/vifs, skip it" % vnic)
+				continue
+			# Garbage Collection
+			if gc_enable == "yes":
+				logging.debug("==> Garbage Collection cycle")
+				# destroy child mac w/o guest vif mac
+				if not len(child_macs):
+					logging.debug("Parent %s has no child vNics to clean, nop" % vnic)
+				for child_mac in child_macs:
+					if child_mac in vif_macs:
+						logging.debug("%s child vNic %s is active, nop" % (vnic, child_mac))
+						continue
+					logging_sys("%s child vNic %s has no guest vif" % (vnic, child_mac))
+					rc = vnic_child_update(child_mac, vnic, 1)
+					if rc:
+						logging_sys("%s child vNic mac %s destruction failed" % (vnic, child_mac), logging.WARNING)
+					else:
+						logging_sys("%s child vNic mac %s was destroyed" % (vnic, child_mac))
+
+			# Detect new guest virtual interfaces
+			if vif_detect == "yes":
+				logging.debug("==> Detect new guest vifs cycle")
+				# if no child vnic for guest vif, create it
+				if not len(vif_macs):
+					logging.debug("Parent %s has no associated guest vifs, nop" % vnic)
+				for vif_mac in vif_macs:
+					if vif_mac in child_macs:
+						logging.debug("Guest mac %s already has child vNic under %s, nop" % (vif_mac, vnic))
+						continue
+					logging_sys("Guest vif mac %s has no child vNic under %s" % (vif_mac, vnic))
+					rc = vnic_child_update(vif_mac, vnic, 0)
+					if rc:
+						logging_sys("%s child vNic mac %s creation failed" % (vnic, vif_mac), logging.WARNING)
+					else:
+						logging_sys("%s child vNic mac %s was created" % (vnic, vif_mac))
+
+	# done iterations
+	logging_sys("%s daemon (pid %d) stopped" % (SCRIPT, os.getpid()))
+	return 0
+
+if __name__ == '__main__':
+	try:
+		rc = main()
+	except KeyboardInterrupt, e:
+		print "" # start new line after ^C
+		logging_sys("%s daemon (pid %d) interrupted!" % (SCRIPT, os.getpid()))
+		rc = 2
+	sys.exit(rc)
+

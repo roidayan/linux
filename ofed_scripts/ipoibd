@@ -1,0 +1,989 @@
+#! /usr/bin/python
+# -*- python -*-
+#
+# Author: Ali Ayoub ali@mellanox.com
+# Description: This daemon maintains current active eth.ipoib slaves
+# 
+# Notes:
+# - The script supports KVM only (requires libvirt)
+# - Xen code was not tested yet (requires xenstore)
+
+import sys
+import os
+import time
+import logging
+import string
+import libxml2
+import re
+import fileinput
+
+SCRIPT_VERSION	= "1.2.2302"
+SCRIPT		= os.path.basename(sys.argv[0])
+SCRIPT_DIR	= os.path.dirname(sys.argv[0])
+ERR_MSG		= "ERROR"
+UNKNOWN		= "UNKNOWN"
+NA 		= "N/A"
+MOD		= "eth_ipoib"
+SYSFS_DIR	= "/sys/module/%s" % MOD
+xenstore_bin = "/usr/bin/xenstore"
+virsh_bin = "/usr/bin/virsh"
+ibinfo = "/usr/bin/ibv_devinfo"
+sys_logger = "/bin/logger"
+interval = 2
+all_str = "all"
+ioa = all_str
+max_iter = 0
+gc_enable = 'yes'
+vif_detect = 'yes'
+log_cmd = 1
+log_file = None
+log_levels = {'debug': logging.DEBUG,
+	      'info': logging.INFO,
+	      'warning': logging.WARNING,
+	      'error': logging.ERROR,
+	      'critical': logging.CRITICAL}
+log_level_str = 'info'
+log_level = log_levels.get(log_level_str)
+
+parent_slave_map = {}
+
+USAGE = "\
+Usage:									\n\
+     %s [--help|--version|option=var]					\n\
+     Run eth_ipoib daemon for Child nics managment.			\n\
+									\n\
+Options:								\n\
+  ioa            IOA (port) to use, seperated by commas (default: %s)	\n\
+  interval       How frequently the daemon runs	{secs} (default: %s)	\n\
+  max_iter       Max number of iterataions, 0=unlimited (default: %s)	\n\
+  gc_enable      Enable Garbage Collector {yes|no} (default: %s) 	\n\
+  vif_detect     Detect new guest virtual interfaces (default: %s)      \n\
+  log_level      Log level {error|info|debug} (default: %s)		\n\
+  log_file       Log file name (default: %s)				\n\
+  " % \
+(SCRIPT, ioa, interval, max_iter, gc_enable, vif_detect, log_level_str, log_file)
+
+# check privilege
+if os.geteuid() != 0:
+	print "-E- you must be root to run this script."
+	sys.exit(1)
+
+# static functions
+def run_cmd(cmd, retry = 0, nap = 1, level = logging.DEBUG):
+	p = os.popen(cmd)
+	out = p.read()
+	rc = p.close()
+
+	if rc == None:
+		rc = 0
+	else:
+		out = ERR_MSG
+	if log_cmd:
+		logging.log(level, "cmd [%s], rc [%s], out_len [%d], retry [%d]" % \
+			(str(cmd), str(rc), len(out), retry))
+	if (rc or len(out) == 0) and retry > 0:
+		retry = retry -1
+		try:
+			time.sleep(nap)
+		except:
+			return (rc, out)
+		return run_cmd(cmd, retry, nap)
+
+	return (rc, out)
+
+def namestr(obj, namespace):
+	return [name for name in namespace if namespace[name] is obj]
+
+def logging_var(var, level = logging.DEBUG):
+	names = namestr(var, globals())
+	if len(names) == 0:
+		logging.log(level, "failed to get var name of value %s" % str(var));
+		return # var should be global
+	else:
+		name = names[-1]
+	logging.log(level, "%-20s %s" % (name, str(var)));
+
+def logging_sys(msg, level = logging.INFO):
+	if os.path.exists(sys_logger):
+		cmd = "%s -p daemon.info -t %s" % (sys_logger, SCRIPT)
+		cmd += ' "%s"' % msg
+		run_cmd(cmd)
+	logging.log(level, msg)
+
+def is_int(val):
+	try:
+		val = int(val)
+		return 1
+	except:
+		return 0
+
+def is_ucast_eth_mac(mac):
+	mac_len = 6
+	mac_hex_len = 2 * mac_len
+	if len(mac.replace(':', '')) != mac_hex_len:
+		return False
+	if not mac[1] in string.hexdigits:
+		return False
+	if mac.replace(':', '') == ("0" * mac_hex_len):
+		return False
+	return True
+
+def get_os_desc():
+	fn = "/etc/issue"
+	if not os.path.exists(fn):
+		return UNKNOWN
+	cmd = '/bin/cat %s' % fn
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return UNKNOWN
+	return out
+
+def get_os():
+	os_desc = get_os_desc()
+	if os_desc == UNKNOWN:
+		return UNKNOWN
+	elif os_desc.count("Oracle VM server"):
+		return "OVS"
+	elif os_desc.count("XenServer"):
+		return "XS"
+	# KVM/XEN may run on top of std Linux
+	elif os_desc.count("Linux"):
+		return "LINUX"
+	else:
+		return UNKNOWN
+
+def get_mgmt_bin():
+	# If xenstore is avaiable, use it
+	# (OVS/XS do not have libvirt, but has xenstore)
+	if os.path.exists(xenstore_bin):
+		return xenstore_bin
+	# if not (e.g. KVM) then we require virsh (via libvirt)
+	if os.path.exists(virsh_bin):
+		return virsh_bin
+	logging.debug("NO MANAGMENT !!!")
+	return UNKNOWN
+
+def get_domains():
+	domains = []
+	if mgmt == xenstore_bin:
+		cmd = "for i in `%s list /local/domain`; do %s ls /local/domain/$i/name; done" % (mgmt, mgmt)
+	elif mgmt == virsh_bin:
+		cmd = mgmt + \
+		      " list | /bin/sed 's/^[ \t]*//;s/[ \t]*$//' | " + \
+		      "/bin/grep ^[0-9] | /bin/awk '{print $2}'"
+	else:
+		sys.stderr.write("%s: unexpected mgmt bin %s\n" % (ERR_MSG, mgmt))
+		sys.exit(1)
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return domains
+	domains = out.strip().split('\n')
+	return domains
+
+def get_ioas():
+	ioas = []
+	cmd = "%s | /bin/grep hca_id | /bin/awk '{print $2}'" % ibinfo
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return ioas
+	hcas = out.strip().split('\n')
+
+	for hca in hcas:
+		cmd = "%s -d %s| /bin/grep phys_port_cnt | /bin/awk '{print $2}'" % (ibinfo, hca)
+		(rc, out) = run_cmd(cmd)
+		if rc or len(out) == 0:
+			return ioas
+		port_num = out.strip()
+		for port in range(0, int(port_num)):
+			ioas += [hca + ":" + str(port + 1)]
+
+	return ioas
+
+def get_parents():
+	parents = []
+	fn = get_sysfs_path(None, "eth_ipoib_interfaces")
+	if not os.path.exists(fn):
+		return parents
+	cmd = "/bin/cat %s | /bin/awk '{print $1}'" % fn
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return parents
+	return out.strip().split('\n')
+
+############################################################
+# via the ethtool the daemon can get which shim layer parent
+# to which ibX interface.
+############################################################
+def get_parent_slave(parent):
+	cmd = "/usr/sbin/ethtool -i %s | /bin/grep driver:" % parent
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		logging.warning("get_parent_slave: Failed to find parent: %s:" % parent)
+		return None
+	logging.debug("get_parent_slave: parent %s Got line: %s:" % (parent, out))
+	m = re.findall('(ib\d+)', out)
+	if len(m) != 1:
+		logging.warning("get_parent_slave: parent %s Got line: %s:" % (parent, out))
+		return None
+	return m[0]
+
+def get_slaves(parents):
+	slaves = []
+	slave = ""
+	for parent in parents:
+		slave = get_parent_slave(parent)
+		if None != slave:
+			logging.debug("get_slaves: parent %s got slave: %s:" % (parent, slave))
+			slaves += [slave]
+	return slaves
+
+############################################################
+# returns all the mac for each parent specific by vlan id
+# 
+def get_parent_vlan_macs(parent, vlan_id):
+	macs = []
+	cmd = "/bin/cat %s | /bin/awk '{print $2 $3}'" % get_sysfs_path(parent, "vifs")
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return macs
+	macs_lines = out.strip().split('\n')
+	for line in macs_lines:
+		#format: MAC=02:02:c9:4b:da:5bVLAN=N/A
+		m = re.findall("\s*MAC=(\S+)VLAN=(\S+)", line)
+		if len(m) != 1:
+			logging.debug("get_parent_vlan_macs: PROBLEM: parent %s vlan: %s line: %s: " % (parent, vlan_id, line))
+			continue
+		if m[0][1] == 'N/A':
+			continue
+		vid = str(m[0][1])
+		if vid == vlan_id:
+			macs += [m[0][0]]
+		else:
+			logging.debug("get_parent_vlan_macs: parent %s vlan: %s is not:: %s:" % (parent, vlan_id, str(m[0][1])))
+	logging.debug("get_parent_vlan_macs: parent %s vlan: %s macs: %s:" % (parent, vlan_id, str(macs)))
+	return macs
+#############################################################
+def get_parent_macs(parent):
+	macs = []
+	cmd = "/bin/cat %s | /bin/awk '{print $2}'" % get_sysfs_path(parent, "vifs")
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return macs
+	macs_lines = out.strip().lower().split('\n')
+	for line in macs_lines:
+		_mac = line.strip().split('=')[1]
+		if _mac.count(":") != 5:
+			continue
+		macs += [_mac]
+	return macs
+
+def get_dev_mac(nic):
+	cmd = "/sbin/ip link show %s 2> /dev/null | grep -o -E '([[:xdigit:]]{1,2}:){5}[[:xdigit:]]{1,2} | /usr/bin/head -1'" % nic
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return None
+	return out.strip().lower()
+
+def get_parent_child_macs(parent):
+	return get_parent_macs(parent)
+
+def get_brs():
+	brs = []
+	cmd = "/bin/ls -d /sys/class/net/*/bridge"
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return brs
+	brs_fn = out.strip().split('\n')
+	for br_fn in brs_fn:
+		(head, tail) = os.path.split(br_fn)
+		(head, tail) = os.path.split(head)
+		if len(tail) == 0:
+			continue
+		brs += [tail]
+	logging.debug("bridges list %s" % (str(brs)))
+	return brs
+
+def get_br_slaves(br):
+	fn =  "/sys/class/net/%s/brif" % br
+	if not os.path.exists(fn):
+		logging.debug("get_br_slaves: Failed to find path: %s: for br: %s" % (fn, br))
+		return []
+	cmd = "/bin/ls %s" % fn
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		logging.debug("get_br_slaves: Failed to run cmd:%s: for br: %s" % (cmd, br))
+		return []
+	_slaves = out.strip().split()
+
+	# if slave is bond, replace it with its slaves
+	slaves = []
+	for slave in _slaves:
+		fn = "/sys/class/net/%s/bonding/slaves" % slave
+		if not os.path.exists(fn):
+			slaves += [slave]
+			continue
+		cmd = "/bin/cat %s" % fn
+		(rc, out) = run_cmd(cmd)
+		if rc or len(out) == 0:
+			logging.debug("get_br_slaves: Failed to find bonding path: %s: for br: %s" % (fn, br))
+			continue
+		slaves += out.strip().split()
+	return slaves
+
+def get_br_vlan_slaves(br):
+	fn =  "/sys/class/net/%s/brif" % br
+	if not os.path.exists(fn):
+		return []
+	cmd = "/bin/ls %s" % fn
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		return []
+	_slaves = out.strip().split()
+
+	# if slave is bond, replace it with its slaves
+	slaves = []
+	for slave in _slaves:
+		fn = "/sys/class/net/%s/bonding/slaves" % slave
+		if not os.path.exists(fn):
+			slaves += [slave]
+			continue
+		cmd = "/bin/cat %s" % fn
+		(rc, out) = run_cmd(cmd)
+		if rc or len(out) == 0:
+			continue
+		slaves += out.strip().split()
+	return slaves
+
+def get_slave_br(slave):
+	brs = get_brs()
+	for br in brs:
+		slaves = get_br_slaves(br)
+		if slave in slaves:
+			return br
+	return None
+
+###################################################################
+# The function returns all the slaves for each vlan of that interface.
+# returns array of bridges that contains the vlan interfaces
+# if vid != None the function will return only the bridge with
+# that specific vlan id.
+def get_slave_vlan_br(slave, vid = None):
+	in_brs = []
+	brs = get_brs()
+	logging.debug("get_slave_vlan_br: ALL bridges %s slave is: %s" % (str(brs), slave))
+	for br in brs:
+		slaves = get_br_slaves(br)
+		logging.debug("get_slave_vlan_br: for bridge %s found slaves %s" % (br, str(slaves)))
+		if None == slaves:
+			logging.debug("get_slave_vlan_br: NO slaves for bridge %s " % (br))
+			continue
+		logging.debug("get_slave_vlan_br: for bridge %s found slaves %s" % (br, str(slaves)))
+		# assumption that all vlan interfaces from format: ethx.y for vlan y
+		m = re.search('%s\.\d+' % slave, str(slaves))
+		if None != vid:
+			logging.debug("get_slave_vlan_br: Search for slave %s vlan_id %s" % (slave, vid))
+			m = re.search('%s\.%s' % (slave, vid), str(slaves))
+		if m != None:
+			if m.group(0) != None:
+				logging.debug("get_slave_vlan_br: for slave %s found bridge %s and inf: %s " % (slave, br, str(m.group(0))))
+				in_brs = in_brs + [br]
+	return in_brs
+
+# returns array of vlan interfaces for that parent.
+# assumption: vlan format is: <parent>.vlanID
+# for example: for eth0.ipoib returns (if exists):
+#  eth0.ipoib.7, eth0.ipoib.99 etc.
+def get_all_vlan_interfaces_per_parent(parent):
+	all_vlans = []
+	brs = get_brs()
+	logging.debug("get_all_vlan_interfaces_per_parent: ALL bridges %s parent is: %s" % (str(brs), parent))
+	for br in brs:
+		slaves = get_br_slaves(br)
+		logging.debug("get_slave_vlan_br: for bridge %s found slaves %s" % (br, str(slaves)))
+		if None == slaves:
+			logging.debug("get_slave_vlan_br: NO slaves for bridge %s " % (br))
+			continue
+		logging.debug("get_slave_vlan_br: for bridge %s found slaves %s" % (br, str(slaves)))
+		m = re.findall('%s\.\d+' % parent, str(slaves))
+		if m != None:
+			#if m.group(0) != None:
+			logging.debug("get_slave_vlan_br: for parent %s found bridge %s and inf: %s " % (parent, br, str(m)))
+			all_vlans = all_vlans + m
+	return all_vlans
+
+def get_vif_mac(vif):
+	if mgmt == xenstore_bin:
+		_vif_name = filter(lambda x: not x.isdigit(), vif.split('.')[0])
+		_vif = _vif_name + os.sep + vif.replace(_vif_name, '').replace('.', os.sep)
+		fn = "/local/domain/0/backend/%s/mac" % _vif
+		cmd = "%s read %s 2>&1" % (mgmt, fn)
+		(rc, out) = run_cmd(cmd)
+		if rc or len(out) == 0:
+			# non-vif slaves are ok to fail here
+			return None
+		mac = out.strip().lower()
+		if is_ucast_eth_mac(mac):
+			return mac
+	elif mgmt == virsh_bin:
+		domains = get_domains()
+		for dom in domains:
+			# dump xml (per domain); and check the vif's mac in the xml output
+			cmd = "%s dumpxml %s" % (mgmt, dom)
+			(rc, out) = run_cmd(cmd)
+			if rc or len(out) == 0:
+				continue
+			# run xml xpath query, example output:
+			## <mac address="02:00:05:3e:aa:6a"/>
+			## <target dev="vnet0"/>
+			## ..
+			try: doc = libxml2.parseDoc(out)
+			except: continue
+			mac = None
+			dev = None
+			for node in doc.xpathEval('//interface/target|//interface/mac'):
+				node = str(node)
+				attr = node.split('=')[-1].strip()
+				attr = attr.replace('"', '')
+				attr = attr.replace("/>", '')
+				if node.count("target dev"):
+					dev = attr
+				if node.count("mac address"):
+					mac = attr
+				if mac != None and dev == vif:
+					mac = mac.lower()
+					if is_ucast_eth_mac(mac):
+						doc.freeDoc()
+						return mac
+			doc.freeDoc()
+	else:
+		sys.stderr.write("%s: unexpected mgmt_bin %s\n" % (ERR_MSG, mgmt))
+		sys.exit(2)
+
+	return None
+
+def get_nic_vif_macs(nic):
+	macs = []
+	br = get_slave_br(nic)
+	if br == None:
+		return []
+	logging.debug("Parent %s linked with bridge %s" % (nic, br))
+	slaves = get_br_slaves(br)
+	logging.debug("%s slaves list %s" % (br, str(slaves)))
+	for slave in slaves:
+		# if slave is not vif it will return None
+		mac = get_vif_mac(slave)
+		if mac == None:
+			continue
+		logging.debug("Guest %s mac %s" % (slave, str(mac)))
+		macs += [mac]
+	return macs
+
+############################################################################
+# the function returns all the vlan macs that connected to the main interface.
+# for example, for eth3 will return all the macs for eth3.2,
+# eth3.3, etc.
+# if vid != None the function will return only the macs on specific vlan id.
+def get_nic_vlan_vif_macs(nic, vid = None):
+	macs = []
+	brs = get_slave_vlan_br(nic, vid)
+	if brs == None:
+		return []
+	logging.debug("Parent %s has vlans in bridges %s" % (nic, str(brs)))
+	for br in brs:
+		slaves = get_br_slaves(br)
+		logging.debug("%s slaves list %s" % (br, str(slaves)))
+		for slave in slaves:
+			# if slave is not vif it will return None
+			mac = get_vif_mac(slave)
+			if mac == None:
+				continue
+			logging.debug("Guest %s mac %s" % (slave, str(mac)))
+			macs += [mac]
+	logging.debug("Parent %s has new vlans-mav %s" % (nic, str(macs)))
+	return macs
+
+def get_sysfs_path(nic, leaf):
+	if nic != None:
+		return "/sys/class/net/%s/eth/%s" % (nic, leaf)
+	return "/sys/class/net/%s" % leaf
+
+def nic_child_update(mac, parent, remove, master_parent = None):
+	# update remove/add parameters
+	adding_vlan_childs = 0
+
+	if None == master_parent:
+		logging.debug("+===>nic_child_update(parent=%s, remove=%s, master_parent=None)" %(parent, remove))
+		master_parent = parent
+	else:
+		logging.debug("+===>nic_child_update(parent=%s, remove=%s, master_parent=%s)" %(parent, remove, master_parent))
+		adding_vlan_childs = 1
+
+	if remove:
+		op = '-'
+		op_name = "destroyed"
+		fn = "delete_child"
+		retry_max = 10
+		retry_nap = 1
+		retry_cnt = 0
+	else:
+		op = '+'
+		op_name = "created"
+		fn = "create_child"
+		retry_max = 5
+		retry_nap = 2
+		retry_cnt = 0
+
+	sysfs_fn = get_sysfs_path(master_parent, "vifs")
+	sysfs_fn_slave = get_sysfs_path(master_parent, "slaves")
+	if not os.path.exists(sysfs_fn):
+		logging.warning("could not find sysfs file (%s)!" % sysfs_fn)
+		return 2
+	cmd = "/bin/cat %s" % get_sysfs_path(master_parent, "slaves")
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		slaves = []
+	slaves = out.strip().split('\n')
+
+	# destroy vif if remove flag is set
+	if remove:
+		cmd = "/bin/grep %s %s | /bin/awk '{print $1}'" % (mac, sysfs_fn)
+		(rc, out) = run_cmd(cmd)
+		if rc or len(out) == 0:
+			logging.warning("could not find mac %s at parent %s" % (mac, master_parent))
+			return 1
+		sysfs_line = out.strip()
+		slave_child = sysfs_line.replace("SLAVE=", "")
+		cmd = "/bin/echo %s%s > %s" % (op, slave_child, sysfs_fn)
+		logging.debug(" (nic_child_update[remove])running command:%s" % cmd)
+		rc = os.system(cmd)
+		if rc:
+			logging.warning("cmd failed! (%s)" % cmd)
+			return 1
+
+	actual_slave = None
+	slave_child = None
+	vlan_slave_index = ""
+	i = 1
+
+	# create/destroy native child
+	if remove:
+		slave_child = sysfs_line.replace("SLAVE=", "")
+		if not slave_child.count('.'):
+			logging.warning("cannot delete %s" % slave_child)
+			return 3
+		slave_child_index = slave_child.split('.')[1]
+		slave = slave_child.split('.')[0]
+		sysfs_line = "%s %s" % (slave_child, mac)
+		vlan_slave_index = slave_child
+	else:
+		slave_index = get_pif_index(master_parent, 0)
+		slave = "ib%s" % slave_index
+		if 1 == adding_vlan_childs:
+			vlan_slave_index = "0x%x" %get_pif_ib_vlan_index(parent)
+		while True:
+			slave_child_index = i
+			slave_child = slave + "." + str(i)
+			actual_slave = slave_child
+			if 1 == adding_vlan_childs:
+				actual_slave = slave + "." + str("%x" % get_pif_ib_vlan_index(parent)) + "." + str(i)
+			# if clone not found, or found but not used, use it:
+			logging.debug("(nic_child_update): Checking slave: %s\n" % actual_slave)
+			if get_dev_mac(actual_slave) == None:
+				logging.debug("(nic_child_update): after get_dev_mac: not exists: %s\n" % actual_slave)
+				break
+			elif (not actual_slave in slaves):
+				logging.debug("(nic_child_update): slave:%s, slaves: %s\n" % (actual_slave, str(slaves)))
+				break
+			i = i + 1
+		sysfs_line = "%s %s" % (actual_slave, mac)
+		logging.debug("(nic_child_update): sysfs_line:%s\n" % sysfs_line)
+	if get_dev_mac(actual_slave) == None:
+		ib_slave_idx = vlan_slave_index.replace(slave, '')
+		ib_slave_idx = get_vlan_inf_from_ib_intf(ib_slave_idx)
+		cmd = "/bin/echo %s > %s" % (ib_slave_idx, "/sys/class/net/" + slave + os.sep + fn)
+		if not remove:
+			cmd = "/bin/echo %s.%s > %s" % (vlan_slave_index, str(i), "/sys/class/net/" + slave + os.sep + fn)
+		logging.debug("(nic_child_update): cmd:%s\n" % cmd)
+		rc = os.system(cmd)
+		if rc:
+			logging.warning("cmd failed! (%s)" % cmd)
+			return 1
+		logging_sys("Clone nic %s was %s" % (slave_child, op_name))
+
+	# create vif if remove flag is clear
+	if not remove:
+		cmd = "/sbin/ip link set %s up" % master_parent
+		(rc, out) = run_cmd(cmd)
+		if rc:
+			logging.warning("cmd failed! (%s)" % cmd)
+			return 1
+		cmd = "/bin/echo %s%s > %s" % (op, actual_slave, sysfs_fn_slave)
+		logging.debug("(nic_child_update): cmd:%s\n" % cmd)
+		rc = os.system(cmd)
+		if rc:
+			logging.warning("cmd failed! (%s)" % cmd)
+			return 1
+		cmd = "/bin/echo %s%s > %s" % (op, sysfs_line, sysfs_fn)
+		logging.debug("(nic_child_update): cmd:%s\n" % cmd)
+		rc = os.system(cmd)
+		if rc:
+			logging.warning("cmd failed! (%s)" % cmd)
+			return 1
+
+	# confirm that mac was destroyed/created
+	while retry_cnt <= retry_max:
+		time.sleep(retry_nap)
+		retry_cnt = retry_cnt + 1
+		logging.debug("Confirm that mac was %s: iter %d, max %d, nap %d" % (op_name, retry_cnt, retry_max, retry_nap))
+		cmd = "/bin/grep %s %s" % (mac, sysfs_fn)
+		(rc, out) = run_cmd(cmd)
+		if remove:
+			_rc = ((rc != 0) or (len(out.strip()) == 0))
+		else:
+			_rc = (rc == 0 and len(out.strip()))
+		if _rc:
+			logging.debug("Child nic %s of parent %s was %s" % (op_name, mac, parent))
+			break
+	if retry_cnt > retry_max:
+		logging.debug("Child nic %s of parent %s was not %s" % (op_name, mac, parent))
+		return 1
+	return 0
+
+###################################################
+# VLAN funcs.
+##################################################
+#####################################################
+# the functions gets ib interface format .8006.1
+# and returns 0x8006.1 or gets .1 and returns .1
+def get_vlan_inf_from_ib_intf(ib_intf):
+	logging.debug("get_vlan_inf_from_ib_intf: got %s " % (ib_intf))
+	m = re.findall("(\d+\.\d+)", ib_intf)
+	if len(m) == 1:
+		return "0x" + m[0]
+	return ib_intf
+
+#########################################
+def get_pif_index(parent, is_vlan_if = 0):
+	if is_vlan_if:
+		#format: eth0.X, seeking for the X
+		m = re.findall("(\d+)", parent)
+		if len(m) != 2:
+			if len(m) != 1:
+				logging.debug("===> get_pif_index - None")
+			else:
+				logging.debug("===> get_pif_index - m[0]: %s" % m[0])
+			return None
+		logging.debug("===> get_pif_index - m[0]:%s, m[1]:%s" % (m[0], m[1]))
+		return m[1]
+	#format eth0.ipoib
+	if parent_slave_map.has_key(parent):
+		slave = parent_slave_map[parent]
+		logging.debug("===> Mapping for parent %s %s" % (parent, slave))
+		return slave.replace("ib", '')
+	else:
+		logging.debug("===> No mapping for parent %s" % parent)
+		return parent.replace("eth", '')
+
+def get_pif_ib_vlan_index(parent):
+	eth_index = get_pif_index(parent, 1)
+	# full member vlan:
+	ib_index = int(eth_index) | 0x8000
+	return ib_index
+
+def add_vlan_for_parent(parent):
+	is_first_time = 0
+	logging.debug("add_vlan_for_parent: Testing parent %s" % parent)
+	# get all the vlan interfaces, that attached to bridges:
+	# for example: vlan 6: seek for eth0.ipoib.6
+	all_vlan_interfaces = get_all_vlan_interfaces_per_parent(parent)
+	logging.debug("%s has vlans: %s" % (parent, str(all_vlan_interfaces)))
+	# run over all the vlans, add slave per node:
+	parent_index = get_pif_index(parent)
+	i = 0
+	# parent loop:
+	for vlan_pif in all_vlan_interfaces:
+		parent_mac = get_dev_mac(vlan_pif)
+		logging.debug("Over itf: %s, mac: %s" % (vlan_pif, str(parent_mac)))
+		i +=1
+		logging.debug("add_vlan_for_parent: Seeking vlan: %s" % (vlan_pif))
+		# create the main (ib child)child interface for that vlan
+		# for example ib0.8006
+		vlan_index = get_pif_ib_vlan_index(vlan_pif)
+		cmd = "/bin/echo  0x%x > /sys/class/net/ib%s/create_child" %(vlan_index, parent_index)
+		logging.debug("New IB vlans: 0x%x cmd:%s" % (vlan_index, cmd))
+		ib_vlan_intf_path = str("/sys/class/net/ib%s.%x" % (parent_index, vlan_index))
+		logging.debug("add_vlan_for_parent PATH : %s " %ib_vlan_intf_path)
+		if os.path.exists(ib_vlan_intf_path):
+			logging.debug("The child interface %x: for ib%s already exists:" % (vlan_index, parent_index))
+		else:
+			(rc, out) = run_cmd(cmd)
+			is_first_time = 1
+			if rc :
+				logging.warning("Failed to run command: %s\n\t\t rc: %d: out: %s" % (cmd, rc, out))
+				continue
+			rc = nic_child_update(parent_mac, vlan_pif, 0, parent)
+			if rc:
+				logging.debug("%s VLAN: child nic mac %s creation failed" % (parent, parent_mac), logging.WARNING)
+			else:
+					logging.debug("%s VLAN child nic mac %s was created" % (parent, parent_mac))
+
+	# now go over all the bridges and add for that vlan new slave
+	for vlan_pif in all_vlan_interfaces:
+		vlan_id = get_pif_index(vlan_pif,1)
+		vif_macs = get_nic_vlan_vif_macs(parent, vlan_id)
+		#vif_macs contains all the macs that attached to the same br as that parent parent.
+		child_macs = get_parent_vlan_macs(parent, vlan_id)
+		logging.debug("VLAN: iteration: vlan id: %s  vif_macs: %s : child_macs_in_that_vlan: %s" % (vlan_id, str(vif_macs), str(child_macs)))
+		# one per vif, and the master should be the parent and not the vlan parent.
+		# Detect new guest virtual interfaces
+		if not len(vif_macs):
+			logging.debug("Parent %s has no associated guest vifs, nop" % parent)
+			continue
+		for vif_mac in vif_macs:
+			logging.debug("VLAN: ==> START vif_mac: %s " % vif_mac)
+			owner = "Guest"
+			if vif_mac in child_macs:
+				logging.debug(owner + " mac %s is already exists no need to create new slave %s, nop" % (vif_mac, parent))
+				continue
+			logging.debug(owner+ " vif mac %s has no child nic under %s" % (vif_mac, parent))
+			logging.debug("vif_mac %s parent:%s\n" %(vif_mac, parent))
+			rc = nic_child_update(vif_mac, vlan_pif, 0, parent)
+			if rc:
+				logging.debug("%s VLAN: child nic mac %s creation failed" % (parent, vif_mac), logging.WARNING)
+			else:
+				logging.debug("%s VLAN child nic mac %s was created" % (parent, vif_mac))
+	return 1
+
+# main
+def main():
+	# global vars (params)
+	global ioa
+	global interval
+	global log_level
+	global log_file
+	global max_iter
+	global gc_enable
+	global vif_detect
+	global system
+	global mgmt
+	global parent_slave_map
+
+	# check for single option param
+	if len(sys.argv) == 2 and sys.argv[1].startswith("-"):
+		arg = sys.argv[1]
+		if   arg == "-h" or arg == "--help":
+			print USAGE
+			return 0
+		elif arg == "-v" or arg == "--version":
+			print "%s-v%s" % (SCRIPT, SCRIPT_VERSION)
+			return 0
+		else:
+			print USAGE
+			logging.error("Bad argument (%s)" % arg)
+			return 1
+
+	# parse args (opt=var)
+	for arg in sys.argv[1:]:
+		argl = arg.split('=')
+		if len(argl) != 2:
+			logging.error("Bad argument (%s)" % arg)
+			return 1
+		opt = argl[0]
+		var = argl[1]
+
+		if   opt == "ioa":
+			ioa = var
+		elif opt == "interval" and is_int(var) and int(var) > 0:
+			interval = var
+		elif opt == "log_level" and var in log_levels.keys():
+			log_level = log_levels.get(var)
+		elif opt == "log_file":
+			log_file = var
+		elif opt == "max_iter" and is_int(var) and int(var) >= 0:
+			max_iter = var
+		elif opt == "gc_enable" and (var.lower() in ['yes', 'no']):
+			gc_enable = var
+		elif opt == "vif_detect" and (var.lower() in ['yes', 'no']):
+			vif_detect = var
+		else:
+			logging.error("Bad argument (%s)" % arg)
+			return 1
+
+	# init logger
+	try:
+		logging.basicConfig(filename=log_file, level=log_level, format='%(asctime)s [%(name)s] %(levelname)s: %(message)s')
+	except:
+		msg = "Could not initialize the logger (log_file: %s)" % str(log_file)
+		sys.stdout.write(str(msg) + '\n')
+		return 1
+
+	# print vars info
+	if log_file != None:
+		logging.info("cmdline %s" % " ".join(sys.argv))
+	else:
+		logging.debug("cmdline %s" % " ".join(sys.argv))
+	logging_sys("%s daemon (pid %d) started -- version %s" % (SCRIPT, os.getpid(), SCRIPT_VERSION))
+	logging_var(ioa)
+	logging_var(interval)
+	logging_var(max_iter)
+	logging_var(gc_enable)
+	logging_var(vif_detect)
+	logging_var(log_level)
+
+	# check OS and tools
+	system = get_os()
+	logging_var(system)
+	mgmt = get_mgmt_bin()
+	logging_var(mgmt)
+
+	if system == UNKNOWN:
+		logging.error("This OS is not supported (%s)" % system)
+		logging.error("OS description %s" % get_os_desc().split('\n')[0])
+		return 1
+	if mgmt == UNKNOWN:
+		logging.error("Couldn't find managment tools (e.g. virsh/xenstore)")
+		return 1
+	if not os.path.exists(ibinfo):
+		logging.error("Could not find %s" % ibinfo)
+		return 1
+
+	# check if another instance is running
+	cmd = "/sbin/pidof -x -o %s %s" % (os.getpid(), SCRIPT)
+	(rc, out) = run_cmd(cmd)
+	if rc == 0:
+		logging.error("Another instance of %s (pid %s) is already running!" % (SCRIPT, out.strip()))
+		return 2
+
+	# main loop
+	i = 0
+	_ioas = None
+	_parents = None
+	_slaves = None
+	_doms = None
+
+	max = int(max_iter)
+	while (max == 0 or i < max):
+		i = i + 1
+
+		logging.debug("### [%d] Iteration started ###" % i)
+		# sleep between iterations for $interval
+		if i > 1:
+			logging.debug("sleeping %s secs..." % str(interval))
+			time.sleep(int(interval))
+
+		# get IOAs in a loop to support hot-plug
+		ioas = get_ioas()
+		if _ioas != ioas:
+			logging.info("IOA list %s" % str(ioas))
+			_ioas = ioas
+		if len(ioas) == 0:
+			logging.debug("could not find any IOAs.. continue")
+			continue
+
+		# if user requested specific ioa, check that it presents
+		if ioa.lower() != all_str:
+			if not ioa in ioas:
+				logging.debug("could not find requested IOA (%s).. continue" % ioa)
+				continue
+			else:
+				ioas = [ioa]
+				logging.debug("checking IOA %s" % str(ioa))
+
+		# get parents list
+		parents = get_parents()
+		if _parents != parents:
+			logging.info("Parents list %s" % str(parents))
+			_parents = parents
+		if len(parents) == 0:
+			logging.debug("could not find any parents.. continue")
+			continue
+		slaves = get_slaves(parents)
+		if _slaves != slaves:
+			logging.info("Slaves list %s" % str(slaves))
+			_slaves = slaves
+		if len(slaves) == 0:
+			logging.debug("could not find any slaves.. continue")
+			continue
+		if len(parents) != len(slaves):
+			logging.debug("Parents and slave number differ")
+			continue
+		#Parents can be eth2 eth4, whatever is avaliavle
+		#Slaves are ib0, ib1
+		parent_slave_map = dict(zip(parents, slaves))
+		for key in parent_slave_map.keys():
+			logging.debug("key(%s) value(%s)" % (key, parent_slave_map[key]))
+
+		# get U domains list (for info only)
+		doms = get_domains()
+		if _doms != doms:
+			logging.info("Domains list %s" % str(doms))
+			_doms = doms
+
+		# start parents loop
+		for parent in parents:
+			logging.debug("Testing parent %s" % parent)
+			parent_mac = get_dev_mac(parent)
+			logging.debug("%s own mac is %s" % (parent, parent_mac))
+			child_macs = get_parent_child_macs(parent)
+			logging.debug("%s child macs %s" % (parent, str(child_macs)))
+			vif_macs = [parent_mac] + get_nic_vif_macs(parent)
+			logging.debug("%s vif macs %s" % (parent, str(vif_macs)))
+			if len(vif_macs) + len(child_macs) == 0:
+				logging.debug("%s has no active child/vifs, skip it" % parent)
+				continue
+			# Garbage Collection
+			if gc_enable == "yes":
+				all_interfaces_include_vlans = get_nic_vlan_vif_macs(parent)
+				logging.debug("==> Garbage Collection cycle")
+				# destroy child mac w/o guest vif mac
+				if not len(child_macs):
+					logging.debug("Parent %s has no child nics to clean, nop" % parent)
+				for child_mac in child_macs:
+					if child_mac in vif_macs + all_interfaces_include_vlans:
+						logging.debug("%s child nic %s is active, nop all inf: %s" % (parent, child_mac, str(all_interfaces_include_vlans)))
+						continue
+					logging_sys("%s child nic %s has no guest vif" % (parent, child_mac))
+					rc = nic_child_update(child_mac, parent, 1)
+					if rc:
+						logging_sys("%s child nic mac %s destruction failed" % (parent, child_mac), logging.WARNING)
+					else:
+						logging_sys("%s child nic mac %s was destroyed" % (parent, child_mac))
+
+			# Detect new guest virtual interfaces
+			if vif_detect == "yes":
+				logging.debug("==> Detect new guest vifs cycle")
+				# if no Child nic for guest vif, create it
+				if not len(vif_macs):
+					logging.debug("Parent %s has no associated guest vifs, nop" % parent)
+				for vif_mac in vif_macs:
+					owner = "Guest"
+					if vif_mac == parent_mac:
+						owner = "Parent"
+					if vif_mac in child_macs:
+						logging.debug(owner + " mac %s already has child nic under %s, nop" % (vif_mac, parent))
+						continue
+					logging_sys(owner+ " vif mac %s has no child nic under %s" % (vif_mac, parent))
+					rc = nic_child_update(vif_mac, parent, 0)
+					if rc:
+						logging_sys("%s child nic mac %s creation failed" % (parent, vif_mac), logging.WARNING)
+					else:
+						logging_sys("%s child nic mac %s was created" % (parent, vif_mac))
+		#start parent-vlan loop:
+		logging.debug("(main): VLAN loop for parent:%s\n" %(parent))
+		#for each parent check if there are vlans that attached to some bridges:
+		for parent in parents:
+			add_vlan_for_parent(parent)
+
+	# done iterations
+	logging_sys("%s daemon (pid %d) stopped" % (SCRIPT, os.getpid()))
+	return 0
+
+if __name__ == '__main__':
+	try:
+		rc = main()
+	except KeyboardInterrupt, e:
+		print "" # start new line after ^C
+		logging_sys("%s daemon (pid %d) interrupted!" % (SCRIPT, os.getpid()))
+		rc = 2	
+	sys.exit(rc)
+
