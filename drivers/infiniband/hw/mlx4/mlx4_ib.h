@@ -342,7 +342,7 @@ struct mlx4_ib_qp {
 	struct mlx4_db		db;
 	struct mlx4_ib_wq	rq;
 
-	u32			doorbell_qpn;
+	__be32			doorbell_qpn;
 	__be32			sq_signal_bits;
 	unsigned		sq_next_wqe;
 	int			sq_max_wqes_per_wr;
@@ -370,6 +370,8 @@ struct mlx4_ib_qp {
 	struct mlx4_ib_buf	*sqp_proxy_rcv;
 	struct mlx4_roce_smac_vlan_info pri;
 	struct mlx4_roce_smac_vlan_info alt;
+	int                     max_inline_data;
+	struct mlx4_bf          bf;
 	u64			reg_id;
 	/*
 	 * Experimental data
@@ -600,8 +602,6 @@ struct mlx4_ib_dev {
 	struct ib_device	ib_dev;
 	struct mlx4_dev	       *dev;
 	int			num_ports;
-	void __iomem	       *uar_map;
-
 	struct mlx4_uar		priv_uar;
 	u32			priv_pdn;
 	MLX4_DECLARE_DOORBELL_LOCK(uar_lock);
