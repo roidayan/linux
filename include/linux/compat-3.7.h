@@ -89,6 +89,10 @@ static inline int pcie_capability_clear_dword(struct pci_dev *dev, int pos,
 
 #define PCI_EXP_LNKSTA2			50      /* Link Status 2 */
 
+#define MAX_IDR_SHIFT (sizeof(int)*8 - 1)
+#define MAX_IDR_BIT (1U << MAX_IDR_SHIFT)
+#define MAX_IDR_MASK (MAX_IDR_BIT - 1)
+
 #else /* (LINUX_VERSION_CODE > KERNEL_VERSION(3,7,0)) */
 #define netlink_notify_portid(__notify) (__notify->portid)
 #define genl_info_snd_portid(__genl_info) (__genl_info->snd_portid)
