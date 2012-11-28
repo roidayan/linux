@@ -6,6 +6,7 @@
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3,7,0))
 
 #include <linux/workqueue.h>
+#include <linux/timer.h>
 #include <linux/tty.h>
 #include <linux/pci.h>
 #include <linux/pci_regs.h>
@@ -92,6 +93,23 @@ static inline int pcie_capability_clear_dword(struct pci_dev *dev, int pos,
 #define MAX_IDR_SHIFT (sizeof(int)*8 - 1)
 #define MAX_IDR_BIT (1U << MAX_IDR_SHIFT)
 #define MAX_IDR_MASK (MAX_IDR_BIT - 1)
+
+/* IPoIB section */
+
+enum {
+	IFLA_IPOIB_UNSPEC,
+	IFLA_IPOIB_PKEY,
+	IFLA_IPOIB_MODE,
+	IFLA_IPOIB_UMCAST,
+	__IFLA_IPOIB_MAX
+};
+
+enum {
+	IPOIB_MODE_DATAGRAM  = 0, /* using unreliable datagram QPs */
+	IPOIB_MODE_CONNECTED = 1, /* using connected QPs */
+};
+
+#define IFLA_IPOIB_MAX (__IFLA_IPOIB_MAX - 1)
 
 #else /* (LINUX_VERSION_CODE > KERNEL_VERSION(3,7,0)) */
 #define netlink_notify_portid(__notify) (__notify->portid)
