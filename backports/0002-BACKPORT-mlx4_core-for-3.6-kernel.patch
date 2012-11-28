@@ -1,0 +1,27 @@
+From e9aebb7b0510376cd52782da604e4d53326efda8 Mon Sep 17 00:00:00 2001
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Date: Wed, 28 Nov 2012 14:27:48 +0200
+Subject: [PATCH 2/2] BACKPORT: mlx4_core for 3.6 kernel
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ drivers/net/ethernet/mellanox/mlx4/sense.c |    4 ++++
+ 1 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/ethernet/mellanox/mlx4/sense.c b/drivers/net/ethernet/mellanox/mlx4/sense.c
+index 094773d..028a883 100644
+--- a/drivers/net/ethernet/mellanox/mlx4/sense.c
++++ b/drivers/net/ethernet/mellanox/mlx4/sense.c
+@@ -139,5 +139,9 @@ void  mlx4_sense_init(struct mlx4_dev *dev)
+ 	for (port = 1; port <= dev->caps.num_ports; port++)
+ 		sense->do_sense_port[port] = 1;
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0) 
+ 	INIT_DEFERRABLE_WORK(&sense->sense_poll, mlx4_sense_port);
++#else
++	INIT_DELAYED_WORK_DEFERRABLE(&sense->sense_poll, mlx4_sense_port);
++#endif
+ }
+-- 
+1.7.1
+

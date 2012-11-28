@@ -1,0 +1,206 @@
+From ec0b3fa329c2b3ba7601cbf1499c04bd2bef2c4d Mon Sep 17 00:00:00 2001
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Date: Wed, 28 Nov 2012 14:27:05 +0200
+Subject: [PATCH 1/2] BACKPORT: ib/core for 3.6 kernel
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ drivers/infiniband/core/netlink.c     |    6 ++++++
+ drivers/infiniband/core/ucma.c        |   17 +++++++++++++++++
+ drivers/infiniband/core/uverbs_cmd.c  |   28 ++++++++++++++++++++++++++++
+ drivers/infiniband/core/uverbs_main.c |   24 ++++++++++++++++++++++++
+ 4 files changed, 75 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/infiniband/core/netlink.c b/drivers/infiniband/core/netlink.c
+index 32f65fa..99d1cff 100644
+--- a/drivers/infiniband/core/netlink.c
++++ b/drivers/infiniband/core/netlink.c
+@@ -157,7 +157,9 @@ static int ibnl_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
+ 			{
+ 				struct netlink_dump_control c = {
+ 					.dump = client->cb_table[op].dump,
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+ 					.module = client->cb_table[op].module,
++#endif
+ 				};
+ 				return netlink_dump_start(nls, skb, nlh, &c);
+ 			}
+@@ -181,7 +183,11 @@ int __init ibnl_init(void)
+ 		.input	= ibnl_rcv,
+ 	};
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+ 	nls = netlink_kernel_create(&init_net, NETLINK_RDMA, &cfg);
++#else
++	nls = netlink_kernel_create(&init_net, NETLINK_RDMA, THIS_MODULE, &cfg);
++#endif
+ 	if (!nls) {
+ 		pr_warn("Failed to create netlink socket\n");
+ 		return -ENOMEM;
+diff --git a/drivers/infiniband/core/ucma.c b/drivers/infiniband/core/ucma.c
+index 4b362f1..c9e7428 100644
+--- a/drivers/infiniband/core/ucma.c
++++ b/drivers/infiniband/core/ucma.c
+@@ -1216,7 +1216,11 @@ static ssize_t ucma_migrate_id(struct ucma_file *new_file,
+ 	struct rdma_ucm_migrate_id cmd;
+ 	struct rdma_ucm_migrate_resp resp;
+ 	struct ucma_context *ctx;
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+ 	struct fd f;
++#else
++	struct file *filp;
++#endif
+ 	struct ucma_file *cur_file;
+ 	int ret = 0;
+ 
+@@ -1224,12 +1228,21 @@ static ssize_t ucma_migrate_id(struct ucma_file *new_file,
+ 		return -EFAULT;
+ 
+ 	/* Get current fd to protect against it being closed */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+ 	f = fdget(cmd.fd);
+ 	if (!f.file)
++#else
++	filp = fget(cmd.fd);
++	if (!filp)
++#endif
+ 		return -ENOENT;
+ 
+ 	/* Validate current fd and prevent destruction of id. */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+ 	ctx = ucma_get_ctx(f.file->private_data, cmd.id);
++#else
++	ctx = ucma_get_ctx(filp->private_data, cmd.id);
++#endif
+ 	if (IS_ERR(ctx)) {
+ 		ret = PTR_ERR(ctx);
+ 		goto file_put;
+@@ -1263,7 +1276,11 @@ response:
+ 
+ 	ucma_put_ctx(ctx);
+ file_put:
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+ 	fdput(f);
++#else
++	fput(filp);
++#endif
+ 	return ret;
+ }
+ 
+diff --git a/drivers/infiniband/core/uverbs_cmd.c b/drivers/infiniband/core/uverbs_cmd.c
+index 5581fb5..052c0f3 100644
+--- a/drivers/infiniband/core/uverbs_cmd.c
++++ b/drivers/infiniband/core/uverbs_cmd.c
+@@ -712,7 +712,11 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
+ 	struct ib_udata			udata;
+ 	struct ib_uxrcd_object         *obj;
+ 	struct ib_xrcd                 *xrcd = NULL;
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+ 	struct fd			f = {NULL, 0};
++#else
++	struct file                    *f = NULL;
++#endif
+ 	struct inode                   *inode = NULL;
+ 	int				ret = 0;
+ 	int				new_xrcd = 0;
+@@ -731,6 +735,7 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
+ 
+ 	if (cmd.fd != -1) {
+ 		/* search for file descriptor */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+ 		f = fdget(cmd.fd);
+ 		if (!f.file) {
+ 			ret = -EBADF;
+@@ -738,6 +743,19 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
+ 		}
+ 
+ 		inode = f.file->f_path.dentry->d_inode;
++#else
++		f = fget(cmd.fd);
++		if (!f) {
++			ret = -EBADF;
++			goto err_tree_mutex_unlock;
++		}
++
++		inode = f->f_dentry->d_inode;
++		if (!inode) {
++			ret = -EBADF;
++			goto err_tree_mutex_unlock;
++		}
++#endif
+ 		xrcd = find_xrcd(file->device, inode);
+ 		if (!xrcd && !(cmd.oflags & O_CREAT)) {
+ 			/* no file descriptor. Need CREATE flag */
+@@ -802,8 +820,13 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
+ 		goto err_copy;
+ 	}
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+ 	if (f.file)
+ 		fdput(f);
++#else
++	if (f)
++		fput(f);
++#endif
+ 
+ 	mutex_lock(&file->mutex);
+ 	list_add_tail(&obj->uobject.list, &file->ucontext->xrcd_list);
+@@ -832,8 +855,13 @@ err:
+ 	put_uobj_write(&obj->uobject);
+ 
+ err_tree_mutex_unlock:
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+ 	if (f.file)
+ 		fdput(f);
++#else
++	if (f)
++		fput(f);
++#endif
+ 
+ 	mutex_unlock(&file->device->xrcd_tree_mutex);
+ 
+diff --git a/drivers/infiniband/core/uverbs_main.c b/drivers/infiniband/core/uverbs_main.c
+index 374e8a6..6637502 100644
+--- a/drivers/infiniband/core/uverbs_main.c
++++ b/drivers/infiniband/core/uverbs_main.c
+@@ -556,6 +556,7 @@ struct file *ib_uverbs_alloc_event_file(struct ib_uverbs_file *uverbs_file,
+ struct ib_uverbs_event_file *ib_uverbs_lookup_comp_file(int fd)
+ {
+ 	struct ib_uverbs_event_file *ev_file = NULL;
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+ 	struct fd f = fdget(fd);
+ 
+ 	if (!f.file)
+@@ -575,6 +576,29 @@ struct ib_uverbs_event_file *ib_uverbs_lookup_comp_file(int fd)
+ out:
+ 	fdput(f);
+ 	return ev_file;
++#else
++	struct file *filp;
++	int fput_needed;
++
++	filp = fget_light(fd, &fput_needed);
++	if (!filp)
++		return NULL;
++
++	if (filp->f_op != &uverbs_event_fops)
++		goto out;
++
++	ev_file = filp->private_data;
++	if (ev_file->is_async) {
++		ev_file = NULL;
++		goto out;
++	}
++
++	kref_get(&ev_file->ref);
++
++out:
++	fput_light(filp, fput_needed);
++	return ev_file;
++#endif
+ }
+ 
+ static ssize_t ib_uverbs_write(struct file *filp, const char __user *buf,
+-- 
+1.7.1
+
