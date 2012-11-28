@@ -95,6 +95,8 @@ static inline void eth_random_addr(u8 *addr)
  */
 #define led_set_brightness(_dev, _switch) led_brightness_set(_dev, _switch)
 
+extern int netif_get_num_default_rss_queues(void);
+
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3,6,0)) */
 
 #endif /* LINUX_3_6_COMPAT_H */

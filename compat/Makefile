@@ -42,8 +42,8 @@ compat-$(CONFIG_COMPAT_KERNEL_3_3) += \
 	compat-3.3.o \
 	flow_dissector.o
 compat-$(CONFIG_COMPAT_KERNEL_3_4) += compat-3.4.o
-compat-$(CONFIG_COMPAT_KERNEL_3_5) += \
-	compat-3.5.o
+compat-$(CONFIG_COMPAT_KERNEL_3_5) += compat-3.5.o
+compat-$(CONFIG_COMPAT_KERNEL_3_6) += compat-3.6.o
 compat-$(CONFIG_COMPAT_KERNEL_3_7) += compat-3.7.o
 
 compat-$(CONFIG_COMPAT_CORDIC) += cordic.o
