@@ -1,0 +1,36 @@
+From 09f2b01e6541d22899a3d5dc30ce8d5d0bd695fb Mon Sep 17 00:00:00 2001
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Date: Wed, 28 Nov 2012 16:33:45 +0200
+Subject: [PATCH 3/4] BACKPORT: Add ib/core support for 3.5 kernel
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ drivers/infiniband/core/netlink.c |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/infiniband/core/netlink.c b/drivers/infiniband/core/netlink.c
+index 99d1cff..4871a16 100644
+--- a/drivers/infiniband/core/netlink.c
++++ b/drivers/infiniband/core/netlink.c
+@@ -179,6 +179,7 @@ static void ibnl_rcv(struct sk_buff *skb)
+ 
+ int __init ibnl_init(void)
+ {
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
+ 	struct netlink_kernel_cfg cfg = {
+ 		.input	= ibnl_rcv,
+ 	};
+@@ -188,6 +189,10 @@ int __init ibnl_init(void)
+ #else
+ 	nls = netlink_kernel_create(&init_net, NETLINK_RDMA, THIS_MODULE, &cfg);
+ #endif
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0) */
++	nls = netlink_kernel_create(&init_net, NETLINK_RDMA, 0, ibnl_rcv,
++				    NULL, THIS_MODULE);
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0) */
+ 	if (!nls) {
+ 		pr_warn("Failed to create netlink socket\n");
+ 		return -ENOMEM;
+-- 
+1.7.1
+
