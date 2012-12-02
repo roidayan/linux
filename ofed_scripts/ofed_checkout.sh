@@ -29,14 +29,7 @@ xex()
 # branch defaults to ofed_kernel
 branch=${1:-ofed_kernel}
 
-
-# make sure we have the list of all the other files and dirs
-if [ ! -e ofed_scripts/checkout_files ]; then
-	ex git checkout ${branch} ofed_scripts/checkout_files
-fi
-
-xex xargs -rt git ls-tree -r --name-only ${branch} <ofed_scripts/checkout_files |
-	xex xargs -rt git checkout ${branch}
+git checkout ${branch}
 
 ex git update-ref HEAD ${branch}
 
