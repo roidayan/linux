@@ -177,10 +177,8 @@ for flavor in %flavors_to_build; do
 	mkdir -p $RPM_BUILD_ROOT/$PREFIX/src/$NAME/$flavor
 	mkdir -p $RPM_BUILD_DIR/src/$NAME/$flavor
 	cp -ar include/ $RPM_BUILD_DIR/src/$NAME/$flavor
-	cp -ar kernel_addons/ $RPM_BUILD_DIR/src/$NAME/$flavor
-	cp -ar configure.mk.kernel $RPM_BUILD_DIR/src/$NAME/$flavor
-	cp -ar config.mk  $RPM_BUILD_DIR/src/$NAME/$flavor
-	sed -i -e "s@\${CWD}@$PREFIX/src/ofa_kernel/$flavor@g" $RPM_BUILD_DIR/src/$NAME/$flavor/config.mk
+	cp -ar config* $RPM_BUILD_DIR/src/$NAME/$flavor
+	cp -ar compat*  $RPM_BUILD_DIR/src/$NAME/$flavor
 
 	modsyms=`find . -name Module.symvers -o -name Modules.symvers`
 	if [ -n "$modsyms" ]; then
