@@ -21,6 +21,6 @@ obj-$(CONFIG_MLX4_CORE)         += drivers/net/ethernet/mellanox/mlx4/
 # obj-$(CONFIG_MLX5_CORE)         += drivers/net/ethernet/mellanox/mlx5/core/
 # obj-$(CONFIG_MLX4_VNIC)         += drivers/net/ethernet/mellanox/mlx4_vnic/
 obj-$(CONFIG_RDS)               += net/rds/
-# obj-$(CONFIG_E_IPOIB)           += drivers/net/eipoib/
+obj-$(CONFIG_E_IPOIB)           += drivers/net/eipoib/
 obj-$(CONFIG_MEMTRACK)          += drivers/infiniband/debug/
 obj-$(CONFIG_SUNRPC_XPRT_RDMA)  += net/sunrpc/xprtrdma/
