@@ -38,6 +38,11 @@ CFLAGS += \
 	-DCONFIG_COMPAT_SKB_FRAG_NEEDED
 endif
 
+ifneq ($(CONFIG_COMPAT_NETLINK_DUMP_START_6),)
+CFLAGS += \
+	-DCONFIG_COMPAT_NETLINK_DUMP_START_6
+endif
+
 DEPMOD  = /sbin/depmod
 INSTALL_MOD_DIR ?= $(shell test -f /etc/SuSE-release && echo updates || echo extra/mlnx-ofa_kernel)
 
