@@ -209,6 +209,10 @@ static inline void compat_system_workqueue_destroy(void)
  */
 #define br_port_exists(dev)	(dev->priv_flags & IFF_BRIDGE_PORT)
 
+#ifndef __rcu
+#define __rcu
+#endif
+
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36)) */
 
 #endif /* LINUX_26_36_COMPAT_H */

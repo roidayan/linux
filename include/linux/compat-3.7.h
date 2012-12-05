@@ -13,6 +13,7 @@
 #include <linux/mm.h>
 #include <linux/user_namespace.h>
 #include <linux/file.h>
+#include <linux/fdtable.h>
 #include <linux/seq_file.h>
 
 #define VM_DONTDUMP    VM_NODUMP
@@ -110,6 +111,8 @@ enum {
 };
 
 #define IFLA_IPOIB_MAX (__IFLA_IPOIB_MAX - 1)
+
+#define FMODE_PATH		((__force fmode_t)0x4000)
 
 #else /* (LINUX_VERSION_CODE > KERNEL_VERSION(3,7,0)) */
 #define netlink_notify_portid(__notify) (__notify->portid)

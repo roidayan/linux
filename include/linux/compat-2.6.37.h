@@ -8,6 +8,8 @@
 #include <linux/skbuff.h>
 #include <linux/leds.h>
 #include <linux/in.h>
+#include <linux/rcupdate.h>
+#include <linux/netdevice.h>
 #include <linux/errno.h>
 
 static inline int proto_ports_offset(int proto)
@@ -159,6 +161,16 @@ extern void *vzalloc(unsigned long size);
 #define rtnl_dereference(p)                                     \
         rcu_dereference_protected(p, lockdep_rtnl_is_held())
 
+#ifndef rcu_dereference_protected
+#define rcu_dereference_protected(p, c) \
+		rcu_dereference((p))
+#endif
+
+#ifndef rcu_dereference_bh
+#define rcu_dereference_bh(p) \
+		rcu_dereference((p))
+#endif
+
 /**
  * RCU_INIT_POINTER() - initialize an RCU protected pointer
  *
@@ -188,6 +200,9 @@ enum additional_ethtool_flags {
     ETH_FLAG_TXVLAN         = (1 << 7),     /* TX VLAN offload enabled */
     ETH_FLAG_RXVLAN         = (1 << 8),     /* RX VLAN offload enabled */
 };
+
+extern void             unregister_netdevice_queue(struct net_device *dev,
+						   struct list_head *head);
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,37)) */
 

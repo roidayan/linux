@@ -184,6 +184,16 @@ static inline void __clear_bit_le(int nr, void *addr)
 	__clear_bit(nr ^ BITOP_LE_SWIZZLE, addr);
 }
 
+#ifndef __ASSEMBLY__
+static inline int __must_check PTR_RET(const void *ptr)
+{
+	if (IS_ERR(ptr))
+		return PTR_ERR(ptr);
+	else
+		return 0;
+}
+#endif
+
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,39)) */
 
 #endif /* LINUX_26_39_COMPAT_H */

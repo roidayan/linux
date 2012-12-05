@@ -97,6 +97,8 @@ static inline void eth_random_addr(u8 *addr)
 
 extern int netif_get_num_default_rss_queues(void);
 
+#define DEFAULT_MAX_NUM_RSS_QUEUES      (8)
+
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3,6,0)) */
 
 #endif /* LINUX_3_6_COMPAT_H */
