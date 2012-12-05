@@ -255,7 +255,7 @@ index 74dd914..704c9a7 100644
  	 * set flag for further reference
  	 */
  	if (ring->hwtstamp_tx_type == HWTSTAMP_TX_ON &&
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 2, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37)
  	    skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP) {
  		skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
 +#else
