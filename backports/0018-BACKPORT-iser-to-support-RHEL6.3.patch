@@ -1,7 +1,7 @@
-From dc0790a98d55e6510b6cf46cfeb71aa136296eee Mon Sep 17 00:00:00 2001
+From d3411c2ab355fa1429e8749154b8baff866b56c8 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 5 Dec 2012 13:32:41 +0200
-Subject: [PATCH 18/19] BACKPORT: iser to support RHEL6.3
+Subject: [PATCH 18/20] BACKPORT: iser to support RHEL6.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---

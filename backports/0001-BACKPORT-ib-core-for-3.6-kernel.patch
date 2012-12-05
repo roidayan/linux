@@ -1,7 +1,7 @@
-From 22e306331e488d0c323607502d22e7e768150222 Mon Sep 17 00:00:00 2001
+From 9b88b8bed631631f2291802afaf256a0d72da7b3 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 28 Nov 2012 14:27:05 +0200
-Subject: [PATCH 01/19] BACKPORT: ib/core for 3.6 kernel
+Subject: [PATCH 01/20] BACKPORT: ib/core for 3.6 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---

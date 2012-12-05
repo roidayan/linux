@@ -1,7 +1,7 @@
-From 438efe02a98349a2540894602f3d75ded5a2ee4d Mon Sep 17 00:00:00 2001
+From d10c398ebad52e369025c234c93927d7dfac16f4 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 5 Dec 2012 13:32:12 +0200
-Subject: [PATCH 17/19] BACKPORT: ipoib to support RHEL6.3
+Subject: [PATCH 17/20] BACKPORT: ipoib to support RHEL6.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---

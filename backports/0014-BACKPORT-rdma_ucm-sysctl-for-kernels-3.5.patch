@@ -1,7 +1,7 @@
-From 5e2182a086c2200f9d2c2fc8e07f8162f734adb2 Mon Sep 17 00:00:00 2001
+From aebdb7ce8bdb3e1f693a2ae6c122f771331506fc Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 5 Dec 2012 13:27:56 +0200
-Subject: [PATCH 14/19] BACKPORT: rdma_ucm sysctl for kernels < 3.5
+Subject: [PATCH 14/20] BACKPORT: rdma_ucm sysctl for kernels < 3.5
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---

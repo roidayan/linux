@@ -1,7 +1,7 @@
-From 792c1ea83f41025a2642364fba50552048d4d01c Mon Sep 17 00:00:00 2001
+From cad9e5c41399afe69bc82b181507af5c510ed3e7 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Mon, 3 Dec 2012 17:39:51 +0200
-Subject: [PATCH 06/19] BACKPORT: ipoib for 3.2 kernel
+Subject: [PATCH 06/20] BACKPORT: ipoib for 3.2 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
