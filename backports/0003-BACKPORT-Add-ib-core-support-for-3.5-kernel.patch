@@ -1,7 +1,7 @@
-From 2eaa1fd121b2b4fb3035637ca60cbdd21a4ec336 Mon Sep 17 00:00:00 2001
+From eb53fab7e7607c328890a5d8605dbd9dcc92aafe Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 28 Nov 2012 16:33:45 +0200
-Subject: [PATCH 3/7] BACKPORT: Add ib/core support for 3.5 kernel
+Subject: [PATCH 03/19] BACKPORT: Add ib/core support for 3.5 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---

@@ -1,0 +1,340 @@
+From 9c30db237697fb32e9c700ed54829731a7cffc01 Mon Sep 17 00:00:00 2001
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Date: Wed, 5 Dec 2012 13:31:23 +0200
+Subject: [PATCH 16/19] BACKPORT: mlx4_en to support RHEL6.3
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ drivers/net/ethernet/mellanox/mlx4/en_cq.c      |    4 ++
+ drivers/net/ethernet/mellanox/mlx4/en_ethtool.c |   20 ++++++++++++
+ drivers/net/ethernet/mellanox/mlx4/en_netdev.c  |   36 +++++++++++++++++++++++
+ drivers/net/ethernet/mellanox/mlx4/en_tx.c      |    9 ++++++
+ drivers/net/ethernet/mellanox/mlx4/eq.c         |    8 +++++
+ include/linux/mlx4/device.h                     |    6 ++++
+ 6 files changed, 83 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_cq.c b/drivers/net/ethernet/mellanox/mlx4/en_cq.c
+index 4b172a9..16814e5 100644
+--- a/drivers/net/ethernet/mellanox/mlx4/en_cq.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_cq.c
+@@ -119,8 +119,12 @@ int mlx4_en_activate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq,
+ 				sprintf(name, "%s-%d", priv->dev->name,
+ 					cq->ring);
+ 				/* Set IRQ for specific name (per ring) */
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ 				if (mlx4_assign_eq(mdev->dev, name, rmap,
+ 						   &cq->vector)) {
++#else
++				if (mlx4_assign_eq(mdev->dev, name, &cq->vector)) {
++#endif
+ 					cq->vector = (cq->ring + 1 + priv->port)
+ 					    % mdev->dev->caps.num_comp_vectors;
+ 					mlx4_warn(mdev, "Failed Assigning an EQ to "
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
+index ffe4e77..dcccfbf 100644
+--- a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
+@@ -614,14 +614,20 @@ static int mlx4_en_validate_flow(struct net_device *dev,
+ {
+ 	struct ethtool_usrip4_spec *l3_mask;
+ 	struct ethtool_tcpip4_spec *l4_mask;
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
+ 	struct ethhdr *eth_mask;
+ 	u64 full_mac = ~0ull;
+ 	u64 zero_mac = 0;
++#endif
+ 
+ 	if (cmd->fs.location >= MAX_NUM_OF_FS_RULES)
+ 		return -EINVAL;
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
+ 	switch (cmd->fs.flow_type & ~FLOW_EXT) {
++#else
++	switch (cmd->fs.flow_type) {
++#endif
+ 	case TCP_V4_FLOW:
+ 	case UDP_V4_FLOW:
+ 		if (cmd->fs.m_u.tcp_ip4_spec.tos)
+@@ -643,6 +649,7 @@ static int mlx4_en_validate_flow(struct net_device *dev,
+ 		    !all_zeros_or_all_ones(l3_mask->ip4dst))
+ 			return -EINVAL;
+ 		break;
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
+ 	case ETHER_FLOW:
+ 		eth_mask = &cmd->fs.m_u.ether_spec;
+ 		/* source mac mask must not be set */
+@@ -656,16 +663,19 @@ static int mlx4_en_validate_flow(struct net_device *dev,
+ 		if (!all_zeros_or_all_ones(eth_mask->h_proto))
+ 			return -EINVAL;
+ 		break;
++#endif
+ 	default:
+ 		return -EINVAL;
+ 	}
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
+ 	if ((cmd->fs.flow_type & FLOW_EXT)) {
+ 		if (cmd->fs.m_ext.vlan_etype ||
+ 		    !(cmd->fs.m_ext.vlan_tci == 0 ||
+ 		      cmd->fs.m_ext.vlan_tci == cpu_to_be16(0xfff)))
+ 			return -EINVAL;
+ 	}
++#endif
+ 
+ 	return 0;
+ }
+@@ -751,7 +761,9 @@ static int mlx4_en_ethtool_to_net_trans_rule(struct net_device *dev,
+ 	int err;
+ 	u64 mac;
+ 	__be64 be_mac;
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
+ 	struct ethhdr *eth_spec;
++#endif
+ 	struct mlx4_en_priv *priv = netdev_priv(dev);
+ 	struct mlx4_spec_list *spec_l2;
+ 	__be64 mac_msk = cpu_to_be64(MLX4_MAC_MASK << 16);
+@@ -769,6 +781,7 @@ static int mlx4_en_ethtool_to_net_trans_rule(struct net_device *dev,
+ 
+ 	spec_l2->id = MLX4_NET_TRANS_RULE_ID_ETH;
+ 	memcpy(spec_l2->eth.dst_mac_msk, &mac_msk, ETH_ALEN);
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
+ 	if ((cmd->fs.flow_type & ~FLOW_EXT) != ETHER_FLOW)
+ 		memcpy(spec_l2->eth.dst_mac, &be_mac, ETH_ALEN);
+ 
+@@ -776,9 +789,13 @@ static int mlx4_en_ethtool_to_net_trans_rule(struct net_device *dev,
+ 		spec_l2->eth.vlan_id = cmd->fs.h_ext.vlan_tci;
+ 		spec_l2->eth.vlan_id_msk = cpu_to_be16(0xfff);
+ 	}
++#else
++	memcpy(spec_l2->eth.dst_mac, &be_mac, ETH_ALEN);
++#endif
+ 
+ 	list_add_tail(&spec_l2->list, rule_list_h);
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
+ 	switch (cmd->fs.flow_type & ~FLOW_EXT) {
+ 	case ETHER_FLOW:
+ 		eth_spec = &cmd->fs.h_u.ether_spec;
+@@ -787,6 +804,9 @@ static int mlx4_en_ethtool_to_net_trans_rule(struct net_device *dev,
+ 		if (eth_spec->h_proto)
+ 			spec_l2->eth.ether_type_enable = 1;
+ 		break;
++#else
++	switch (cmd->fs.flow_type) {
++#endif
+ 	case IP_USER_FLOW:
+ 		err = add_ip_rule(priv, cmd, rule_list_h);
+ 		break;
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
+index f4bd5cc..c27cf49 100644
+--- a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
+@@ -47,6 +47,7 @@
+ #include "mlx4_en.h"
+ #include "en_port.h"
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ static int mlx4_en_setup_tc(struct net_device *dev, u8 up)
+ {
+ 	struct mlx4_en_priv *priv = netdev_priv(dev);
+@@ -67,6 +68,7 @@ static int mlx4_en_setup_tc(struct net_device *dev, u8 up)
+ 
+ 	return 0;
+ }
++#endif
+ 
+ #ifdef CONFIG_RFS_ACCEL
+ 
+@@ -476,18 +478,30 @@ static void mlx4_en_clear_list(struct net_device *dev)
+ static void mlx4_en_cache_mclist(struct net_device *dev)
+ {
+ 	struct mlx4_en_priv *priv = netdev_priv(dev);
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
+ 	struct netdev_hw_addr *ha;
++#else
++	struct dev_mc_list *mclist;
++#endif
+ 	struct mlx4_en_mc_list *tmp;
+ 
+ 	mlx4_en_clear_list(dev);
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
+ 	netdev_for_each_mc_addr(ha, dev) {
++#else
++	for (mclist = dev->mc_list; mclist; mclist = mclist->next) {
++#endif
+ 		tmp = kzalloc(sizeof(struct mlx4_en_mc_list), GFP_ATOMIC);
+ 		if (!tmp) {
+ 			en_err(priv, "failed to allocate multicast list\n");
+ 			mlx4_en_clear_list(dev);
+ 			return;
+ 		}
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
+ 		memcpy(tmp->addr, ha->addr, ETH_ALEN);
++#else
++		memcpy(tmp->addr, mclist->dmi_addr, ETH_ALEN);
++#endif
+ 		list_add_tail(&tmp->list, &priv->mc_list);
+ 	}
+ }
+@@ -1603,6 +1617,7 @@ static int mlx4_en_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+ 	}
+ }
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ static int mlx4_en_set_features(struct net_device *netdev,
+ 		netdev_features_t features)
+ {
+@@ -1617,6 +1632,7 @@ static int mlx4_en_set_features(struct net_device *netdev,
+ 	return 0;
+ 
+ }
++#endif
+ 
+ static const struct net_device_ops mlx4_netdev_ops = {
+ 	.ndo_open		= mlx4_en_open,
+@@ -1635,8 +1651,10 @@ static const struct net_device_ops mlx4_netdev_ops = {
+ #ifdef CONFIG_NET_POLL_CONTROLLER
+ 	.ndo_poll_controller	= mlx4_en_netpoll,
+ #endif
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ 	.ndo_set_features	= mlx4_en_set_features,
+ 	.ndo_setup_tc		= mlx4_en_setup_tc,
++#endif
+ #ifdef CONFIG_RFS_ACCEL
+ 	.ndo_rx_flow_steer	= mlx4_en_filter_rfs,
+ #endif
+@@ -1751,6 +1769,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+ 	/*
+ 	 * Set driver features
+ 	 */
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ 	dev->hw_features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM | NETIF_F_GRO;
+ 	if (mdev->LSO_support)
+ 		dev->hw_features |= NETIF_F_TSO | NETIF_F_TSO6;
+@@ -1766,6 +1785,23 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+ 	if (mdev->dev->caps.steering_mode ==
+ 	    MLX4_STEERING_MODE_DEVICE_MANAGED)
+ 		dev->hw_features |= NETIF_F_NTUPLE;
++#else
++	dev->features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM;
++	if (mdev->LSO_support)
++		dev->features |= NETIF_F_TSO | NETIF_F_TSO6;
++
++	dev->vlan_features = dev->features;
++
++	dev->features |= NETIF_F_RXCSUM | NETIF_F_RXHASH;
++	dev->features |= NETIF_F_HIGHDMA |
++			NETIF_F_HW_VLAN_TX | NETIF_F_HW_VLAN_RX |
++			NETIF_F_HW_VLAN_FILTER;
++	dev->features |= NETIF_F_LOOPBACK;
++
++	if (mdev->dev->caps.steering_mode ==
++	    MLX4_STEERING_MODE_DEVICE_MANAGED)
++		dev->features |= NETIF_F_NTUPLE;
++#endif
+ 
+ 	mdev->pndev[port] = dev;
+ 
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_tx.c b/drivers/net/ethernet/mellanox/mlx4/en_tx.c
+index 74dd914..704c9a7 100644
+--- a/drivers/net/ethernet/mellanox/mlx4/en_tx.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_tx.c
+@@ -594,7 +594,11 @@ u16 mlx4_en_select_queue(struct net_device *dev, struct sk_buff *skb)
+ 	u16 rings_p_up = priv->mdev->profile.num_tx_rings_p_up;
+ 	u8 up = 0;
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ 	if (dev->num_tc)
++#else
++	if (netdev_get_num_tc(dev))
++#endif
+ 		return skb_tx_hash(dev, skb);
+ 
+ 	if (vlan_tx_tag_present(skb))
+@@ -695,8 +699,13 @@ netdev_tx_t mlx4_en_xmit(struct sk_buff *skb, struct net_device *dev)
+ 	 * set flag for further reference
+ 	 */
+ 	if (ring->hwtstamp_tx_type == HWTSTAMP_TX_ON &&
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 2, 0)
+ 	    skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP) {
+ 		skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
++#else
++	    skb_shinfo(skb)->tx_flags.flags & SKBTX_HW_TSTAMP) {
++		skb_shinfo(skb)->tx_flags.flags |= SKBTX_IN_PROGRESS;
++#endif
+ 		tx_info->ts_requested = 1;
+ 	}
+ 
+diff --git a/drivers/net/ethernet/mellanox/mlx4/eq.c b/drivers/net/ethernet/mellanox/mlx4/eq.c
+index 390b343..1b48a18 100644
+--- a/drivers/net/ethernet/mellanox/mlx4/eq.c
++++ b/drivers/net/ethernet/mellanox/mlx4/eq.c
+@@ -39,7 +39,9 @@
+ #include <linux/dma-mapping.h>
+ 
+ #include <linux/mlx4/cmd.h>
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ #include <linux/cpu_rmap.h>
++#endif
+ 
+ #include "mlx4.h"
+ #include "fw.h"
+@@ -1306,8 +1308,12 @@ int mlx4_test_interrupts(struct mlx4_dev *dev)
+ }
+ EXPORT_SYMBOL(mlx4_test_interrupts);
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ int mlx4_assign_eq(struct mlx4_dev *dev, char *name, struct cpu_rmap *rmap,
+ 		   int *vector)
++#else
++int mlx4_assign_eq(struct mlx4_dev *dev, char* name, int * vector)
++#endif
+ {
+ 
+ 	struct mlx4_priv *priv = mlx4_priv(dev);
+@@ -1321,6 +1327,7 @@ int mlx4_assign_eq(struct mlx4_dev *dev, char *name, struct cpu_rmap *rmap,
+ 			snprintf(priv->eq_table.irq_names +
+ 					vec * MLX4_IRQNAME_SIZE,
+ 					MLX4_IRQNAME_SIZE, "%s", name);
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ #ifdef CONFIG_RFS_ACCEL
+ 			if (rmap) {
+ 				err = irq_cpu_rmap_add(rmap,
+@@ -1329,6 +1336,7 @@ int mlx4_assign_eq(struct mlx4_dev *dev, char *name, struct cpu_rmap *rmap,
+ 					mlx4_warn(dev, "Failed adding irq rmap\n");
+ 			}
+ #endif
++#endif
+ 			err = request_irq(priv->eq_table.eq[vec].irq,
+ 					  mlx4_msi_x_interrupt, 0,
+ 					  &priv->eq_table.irq_names[vec<<5],
+diff --git a/include/linux/mlx4/device.h b/include/linux/mlx4/device.h
+index 3db8d7f..bfbea17 100644
+--- a/include/linux/mlx4/device.h
++++ b/include/linux/mlx4/device.h
+@@ -36,7 +36,9 @@
+ #include <linux/pci.h>
+ #include <linux/completion.h>
+ #include <linux/radix-tree.h>
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ #include <linux/cpu_rmap.h>
++#endif
+ 
+ #include <linux/atomic.h>
+ 
+@@ -993,8 +995,12 @@ int mlx4_query_diag_counters(struct mlx4_dev *mlx4_dev, int array_length,
+ 			     u32 counter_out[]);
+ 
+ int mlx4_test_interrupts(struct mlx4_dev *dev);
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ int mlx4_assign_eq(struct mlx4_dev *dev, char *name, struct cpu_rmap *rmap,
+ 		   int *vector);
++#else
++int mlx4_assign_eq(struct mlx4_dev *dev, char* name , int* vector);
++#endif
+ void mlx4_release_eq(struct mlx4_dev *dev, int vec);
+ 
+ int mlx4_wol_read(struct mlx4_dev *dev, u64 *config, int port);
+-- 
+1.7.1
+

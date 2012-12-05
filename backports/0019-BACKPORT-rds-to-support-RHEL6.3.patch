@@ -1,0 +1,268 @@
+From a2df85d26567cac40b9563ad0dd715fc43ff5beb Mon Sep 17 00:00:00 2001
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Date: Wed, 5 Dec 2012 13:33:10 +0200
+Subject: [PATCH 19/19] BACKPORT: rds to support RHEL6.3
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ net/rds/ib_recv.c    |    8 ++++++++
+ net/rds/ib_sysctl.c  |   17 +++++++++++++++++
+ net/rds/info.c       |   12 ++++++++++++
+ net/rds/iw_recv.c    |    8 ++++++++
+ net/rds/iw_sysctl.c  |   17 +++++++++++++++++
+ net/rds/sysctl.c     |   16 ++++++++++++++++
+ net/rds/tcp_listen.c |   11 +++++++++++
+ 7 files changed, 89 insertions(+), 0 deletions(-)
+
+diff --git a/net/rds/ib_recv.c b/net/rds/ib_recv.c
+index 8d19491..eb4f158 100644
+--- a/net/rds/ib_recv.c
++++ b/net/rds/ib_recv.c
+@@ -763,7 +763,11 @@ static void rds_ib_cong_recv(struct rds_connection *conn,
+ 		to_copy = min(RDS_FRAG_SIZE - frag_off, PAGE_SIZE - map_off);
+ 		BUG_ON(to_copy & 7); /* Must be 64bit aligned. */
+ 
++#if  (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+ 		addr = kmap_atomic(sg_page(&frag->f_sg));
++#else
++		addr = kmap_atomic(sg_page(&frag->f_sg), KM_USER0);
++#endif
+ 
+ 		src = addr + frag_off;
+ 		dst = (void *)map->m_page_addrs[map_page] + map_off;
+@@ -773,7 +777,11 @@ static void rds_ib_cong_recv(struct rds_connection *conn,
+ 			uncongested |= ~(*src) & *dst;
+ 			*dst++ = *src++;
+ 		}
++#if  (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+ 		kunmap_atomic(addr);
++#else
++		kunmap_atomic(addr, KM_USER0);
++#endif
+ 
+ 		copied += to_copy;
+ 
+diff --git a/net/rds/ib_sysctl.c b/net/rds/ib_sysctl.c
+index 7e643ba..939d2fc 100644
+--- a/net/rds/ib_sysctl.c
++++ b/net/rds/ib_sysctl.c
+@@ -38,6 +38,15 @@
+ 
+ static struct ctl_table_header *rds_ib_sysctl_hdr;
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0)
++static struct ctl_path rds_ib_sysctl_path[] = {
++	{ .procname = "net", },
++	{ .procname = "rds", },
++	{ .procname = "ib", },
++	{ }
++};
++#endif
++
+ unsigned long rds_ib_sysctl_max_send_wr = RDS_IB_DEFAULT_SEND_WR;
+ unsigned long rds_ib_sysctl_max_recv_wr = RDS_IB_DEFAULT_RECV_WR;
+ unsigned long rds_ib_sysctl_max_recv_allocation = (128 * 1024 * 1024) / RDS_FRAG_SIZE;
+@@ -109,12 +118,20 @@ static ctl_table rds_ib_sysctl_table[] = {
+ void rds_ib_sysctl_exit(void)
+ {
+ 	if (rds_ib_sysctl_hdr)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
+ 		unregister_net_sysctl_table(rds_ib_sysctl_hdr);
++#else
++		unregister_sysctl_table(rds_ib_sysctl_hdr);
++#endif
+ }
+ 
+ int rds_ib_sysctl_init(void)
+ {
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
+ 	rds_ib_sysctl_hdr = register_net_sysctl(&init_net, "net/rds/ib", rds_ib_sysctl_table);
++#else
++	rds_ib_sysctl_hdr = register_net_sysctl_table(&init_net, rds_ib_sysctl_path, rds_ib_sysctl_table);
++#endif
+ 	if (!rds_ib_sysctl_hdr)
+ 		return -ENOMEM;
+ 	return 0;
+diff --git a/net/rds/info.c b/net/rds/info.c
+index 9a6b4f6..31ab067 100644
+--- a/net/rds/info.c
++++ b/net/rds/info.c
+@@ -104,7 +104,11 @@ EXPORT_SYMBOL_GPL(rds_info_deregister_func);
+ void rds_info_iter_unmap(struct rds_info_iterator *iter)
+ {
+ 	if (iter->addr) {
++#if  (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+ 		kunmap_atomic(iter->addr);
++#else
++		kunmap_atomic(iter->addr, KM_USER0);
++#endif
+ 		iter->addr = NULL;
+ 	}
+ }
+@@ -119,7 +123,11 @@ void rds_info_copy(struct rds_info_iterator *iter, void *data,
+ 
+ 	while (bytes) {
+ 		if (!iter->addr)
++#if  (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+ 			iter->addr = kmap_atomic(*iter->pages);
++#else
++			iter->addr = kmap_atomic(*iter->pages,KM_USER0);
++#endif
+ 
+ 		this = min(bytes, PAGE_SIZE - iter->offset);
+ 
+@@ -134,7 +142,11 @@ void rds_info_copy(struct rds_info_iterator *iter, void *data,
+ 		iter->offset += this;
+ 
+ 		if (iter->offset == PAGE_SIZE) {
++#if  (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+ 			kunmap_atomic(iter->addr);
++#else
++			kunmap_atomic(iter->addr, KM_USER0);
++#endif
+ 			iter->addr = NULL;
+ 			iter->offset = 0;
+ 			iter->pages++;
+diff --git a/net/rds/iw_recv.c b/net/rds/iw_recv.c
+index 4503335..e731be7 100644
+--- a/net/rds/iw_recv.c
++++ b/net/rds/iw_recv.c
+@@ -598,7 +598,11 @@ static void rds_iw_cong_recv(struct rds_connection *conn,
+ 		to_copy = min(RDS_FRAG_SIZE - frag_off, PAGE_SIZE - map_off);
+ 		BUG_ON(to_copy & 7); /* Must be 64bit aligned. */
+ 
++#if  (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+ 		addr = kmap_atomic(frag->f_page);
++#else
++		addr = kmap_atomic(frag->f_page, KM_USER0);
++#endif
+ 
+ 		src = addr + frag_off;
+ 		dst = (void *)map->m_page_addrs[map_page] + map_off;
+@@ -608,7 +612,11 @@ static void rds_iw_cong_recv(struct rds_connection *conn,
+ 			uncongested |= ~(*src) & *dst;
+ 			*dst++ = *src++;
+ 		}
++#if  (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+ 		kunmap_atomic(addr);
++#else
++		kunmap_atomic(addr, KM_USER0);
++#endif
+ 
+ 		copied += to_copy;
+ 
+diff --git a/net/rds/iw_sysctl.c b/net/rds/iw_sysctl.c
+index 5d5ebd5..3898500 100644
+--- a/net/rds/iw_sysctl.c
++++ b/net/rds/iw_sysctl.c
+@@ -38,6 +38,15 @@
+ 
+ static struct ctl_table_header *rds_iw_sysctl_hdr;
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0)
++static struct ctl_path rds_iw_sysctl_path[] = {
++	{ .procname = "net", },
++	{ .procname = "rds", },
++	{ .procname = "iw", },
++	{ }
++};
++#endif
++
+ unsigned long rds_iw_sysctl_max_send_wr = RDS_IW_DEFAULT_SEND_WR;
+ unsigned long rds_iw_sysctl_max_recv_wr = RDS_IW_DEFAULT_RECV_WR;
+ unsigned long rds_iw_sysctl_max_recv_allocation = (128 * 1024 * 1024) / RDS_FRAG_SIZE;
+@@ -112,12 +121,20 @@ static ctl_table rds_iw_sysctl_table[] = {
+ void rds_iw_sysctl_exit(void)
+ {
+ 	if (rds_iw_sysctl_hdr)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
+ 		unregister_net_sysctl_table(rds_iw_sysctl_hdr);
++#else
++		unregister_sysctl_table(rds_iw_sysctl_hdr);
++#endif
+ }
+ 
+ int rds_iw_sysctl_init(void)
+ {
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
+ 	rds_iw_sysctl_hdr = register_net_sysctl(&init_net, "net/rds/iw", rds_iw_sysctl_table);
++#else
++	rds_iw_sysctl_hdr = register_net_sysctl_table(&init_net, rds_iw_sysctl_path, rds_iw_sysctl_table);
++#endif
+ 	if (!rds_iw_sysctl_hdr)
+ 		return -ENOMEM;
+ 	return 0;
+diff --git a/net/rds/sysctl.c b/net/rds/sysctl.c
+index 907214b..1c7403d 100644
+--- a/net/rds/sysctl.c
++++ b/net/rds/sysctl.c
+@@ -38,6 +38,14 @@
+ 
+ static struct ctl_table_header *rds_sysctl_reg_table;
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0)
++static struct ctl_path rds_sysctl_path[] = {
++	{ .procname = "net", },
++	{ .procname = "rds", },
++	{ }
++};
++#endif
++
+ static unsigned long rds_sysctl_reconnect_min = 1;
+ static unsigned long rds_sysctl_reconnect_max = ~0UL;
+ 
+@@ -95,7 +103,11 @@ static ctl_table rds_sysctl_rds_table[] = {
+ void rds_sysctl_exit(void)
+ {
+ 	if (rds_sysctl_reg_table)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
+ 		unregister_net_sysctl_table(rds_sysctl_reg_table);
++#else
++		unregister_sysctl_table(rds_sysctl_reg_table);
++#endif
+ }
+ 
+ int rds_sysctl_init(void)
+@@ -103,7 +115,11 @@ int rds_sysctl_init(void)
+ 	rds_sysctl_reconnect_min = msecs_to_jiffies(1);
+ 	rds_sysctl_reconnect_min_jiffies = rds_sysctl_reconnect_min;
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
+ 	rds_sysctl_reg_table = register_net_sysctl(&init_net,"net/rds", rds_sysctl_rds_table);
++#else
++	rds_sysctl_reg_table = register_net_sysctl_table(&init_net, rds_sysctl_path, rds_sysctl_rds_table);
++#endif
+ 	if (!rds_sysctl_reg_table)
+ 		return -ENOMEM;
+ 	return 0;
+diff --git a/net/rds/tcp_listen.c b/net/rds/tcp_listen.c
+index 7787537..44f6db5 100644
+--- a/net/rds/tcp_listen.c
++++ b/net/rds/tcp_listen.c
+@@ -67,12 +67,23 @@ static int rds_tcp_accept_one(struct socket *sock)
+ 
+ 	inet = inet_sk(new_sock->sk);
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ 	rdsdebug("accepted tcp %pI4:%u -> %pI4:%u\n",
+ 		 &inet->inet_saddr, ntohs(inet->inet_sport),
+ 		 &inet->inet_daddr, ntohs(inet->inet_dport));
++#else
++	rdsdebug("accepted tcp %pI4:%u -> %pI4:%u\n",
++		 &inet->saddr, ntohs(inet->sport),
++		 &inet->daddr, ntohs(inet->dport));
++#endif
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ 	conn = rds_conn_create(inet->inet_saddr, inet->inet_daddr,
+ 			       &rds_tcp_transport, GFP_KERNEL);
++#else
++	conn = rds_conn_create(inet->saddr, inet->daddr,
++			       &rds_tcp_transport, GFP_KERNEL);
++#endif
+ 	if (IS_ERR(conn)) {
+ 		ret = PTR_ERR(conn);
+ 		goto out;
+-- 
+1.7.1
+

@@ -1,7 +1,7 @@
-From 33e9b7895cdc5a0aadc6d042675949d11b3cb112 Mon Sep 17 00:00:00 2001
+From 5d3a6bb510ffb99a51a28b11b9f788e9d6b07347 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 28 Nov 2012 16:34:38 +0200
-Subject: [PATCH 4/7] BACKPORTS: Added ipoib support for 3.5 kernel
+Subject: [PATCH 04/19] BACKPORT: Added ipoib support for 3.5 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---

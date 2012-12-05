@@ -1,7 +1,7 @@
-From f8f2aef27e0344e0f962f2cee4b02758d0037c33 Mon Sep 17 00:00:00 2001
+From 8e8fad3e9b5d01ed3b04983a6281fdf953efc362 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Mon, 3 Dec 2012 17:40:55 +0200
-Subject: [PATCH 7/7] BACKPORT: mlx4_en for 3.2 kernel
+Subject: [PATCH 07/19] BACKPORT: mlx4_en for 3.2 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---

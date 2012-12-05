@@ -1,0 +1,237 @@
+From 438efe02a98349a2540894602f3d75ded5a2ee4d Mon Sep 17 00:00:00 2001
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Date: Wed, 5 Dec 2012 13:32:12 +0200
+Subject: [PATCH 17/19] BACKPORT: ipoib to support RHEL6.3
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ drivers/infiniband/ulp/ipoib/ipoib_cm.c        |    4 +++
+ drivers/infiniband/ulp/ipoib/ipoib_ethtool.c   |    4 +++
+ drivers/infiniband/ulp/ipoib/ipoib_main.c      |   32 ++++++++++++++++++++++++
+ drivers/infiniband/ulp/ipoib/ipoib_multicast.c |   15 +++++++++++
+ drivers/infiniband/ulp/ipoib/ipoib_netlink.c   |    8 ++++++
+ 5 files changed, 63 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_cm.c b/drivers/infiniband/ulp/ipoib/ipoib_cm.c
+index 96d7778..aa3b712 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib_cm.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_cm.c
+@@ -1448,7 +1448,11 @@ static void ipoib_cm_skb_reap(struct work_struct *work)
+ 			icmp_send(skb, ICMP_DEST_UNREACH, ICMP_FRAG_NEEDED, htonl(mtu));
+ #if IS_ENABLED(CONFIG_IPV6)
+ 		else if (skb->protocol == htons(ETH_P_IPV6))
++#if  (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
+ 			icmpv6_send(skb, ICMPV6_PKT_TOOBIG, 0, mtu);
++#else
++			icmpv6_send(skb, ICMPV6_PKT_TOOBIG, 0, mtu, priv->dev);
++#endif
+ #endif
+ 		dev_kfree_skb_any(skb);
+ 
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
+index 9d40e1c..beb8956 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
+@@ -223,6 +223,7 @@ static void ipoib_get_ethtool_stats(struct net_device *dev,
+ 	}
+ }
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
+ static void ipoib_get_channels(struct net_device *dev,
+ 			struct ethtool_channels *channel)
+ {
+@@ -283,6 +284,7 @@ static int ipoib_set_channels(struct net_device *dev,
+ 
+ 	return ipoib_reinit(dev, channel->rx_count, channel->tx_count);
+ }
++#endif
+ 
+ static const struct ethtool_ops ipoib_ethtool_ops = {
+ 	.get_drvinfo		= ipoib_get_drvinfo,
+@@ -291,8 +293,10 @@ static const struct ethtool_ops ipoib_ethtool_ops = {
+ 	.get_strings		= ipoib_get_strings,
+ 	.get_sset_count		= ipoib_get_sset_count,
+ 	.get_ethtool_stats	= ipoib_get_ethtool_stats,
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
+ 	.get_channels		= ipoib_get_channels,
+ 	.set_channels		= ipoib_set_channels,
++#endif
+ };
+ 
+ void ipoib_set_ethtool_ops(struct net_device *dev)
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
+index e2e0557..c062b97 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
+@@ -220,6 +220,7 @@ static void ipoib_uninit(struct net_device *dev)
+ 	ipoib_dev_cleanup(dev);
+ }
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0))
+ static netdev_features_t ipoib_fix_features(struct net_device *dev, netdev_features_t features)
+ {
+ 	struct ipoib_dev_priv *priv = netdev_priv(dev);
+@@ -229,6 +230,7 @@ static netdev_features_t ipoib_fix_features(struct net_device *dev, netdev_featu
+ 
+ 	return features;
+ }
++#endif
+ 
+ static int ipoib_change_mtu(struct net_device *dev, int new_mtu)
+ {
+@@ -268,7 +270,15 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
+ 		set_bit(IPOIB_FLAG_ADMIN_CM, &priv->flags);
+ 		ipoib_warn(priv, "enabling connected mode "
+ 			   "will cause multicast packet drops\n");
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ 		netdev_update_features(dev);
++#else
++		dev->features &= ~(NETIF_F_IP_CSUM | NETIF_F_SG | NETIF_F_TSO);
++		if (ipoib_cm_max_mtu(dev) > priv->mcast_mtu)
++			ipoib_warn(priv, "mtu > %d will cause multicast packet drops.\n",
++				   priv->mcast_mtu);
++		dev_set_mtu(dev, ipoib_cm_max_mtu(dev));
++#endif
+ 		rtnl_unlock();
+ 
+ 		send_ring = priv->send_ring;
+@@ -284,7 +294,15 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
+ 
+ 	if (!strcmp(buf, "datagram\n")) {
+ 		clear_bit(IPOIB_FLAG_ADMIN_CM, &priv->flags);
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ 		netdev_update_features(dev);
++#else
++		dev->features &= ~(NETIF_F_IP_CSUM | NETIF_F_SG | NETIF_F_TSO);
++		if (ipoib_cm_max_mtu(dev) > priv->mcast_mtu)
++			ipoib_warn(priv, "mtu > %d will cause multicast packet drops.\n",
++				   priv->mcast_mtu);
++		dev_set_mtu(dev, ipoib_cm_max_mtu(dev));
++#endif
+ 		dev_set_mtu(dev, min(priv->mcast_mtu, dev->mtu));
+ 		rtnl_unlock();
+ 		ipoib_flush_paths(dev);
+@@ -1876,7 +1894,9 @@ static const struct net_device_ops ipoib_netdev_ops_no_tss = {
+ 	.ndo_open		 = ipoib_open,
+ 	.ndo_stop		 = ipoib_stop,
+ 	.ndo_change_mtu		 = ipoib_change_mtu,
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0))
+ 	.ndo_fix_features	 = ipoib_fix_features,
++#endif
+ 	.ndo_start_xmit	 	 = ipoib_start_xmit,
+ 	.ndo_tx_timeout		 = ipoib_timeout,
+ 	.ndo_get_stats		= ipoib_get_stats,
+@@ -1888,7 +1908,9 @@ static const struct net_device_ops ipoib_netdev_ops_hw_tss = {
+ 	.ndo_open	= ipoib_open,
+ 	.ndo_stop	= ipoib_stop,
+ 	.ndo_change_mtu		= ipoib_change_mtu,
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0))
+ 	.ndo_fix_features		= ipoib_fix_features,
++#endif
+ 	.ndo_start_xmit		= ipoib_start_xmit,
+ 	.ndo_select_queue		= ipoib_select_queue_hw,
+ 	.ndo_tx_timeout		= ipoib_timeout,
+@@ -1901,7 +1923,9 @@ static const struct net_device_ops ipoib_netdev_ops_sw_tss = {
+ 	.ndo_open	= ipoib_open,
+ 	.ndo_stop	= ipoib_stop,
+ 	.ndo_change_mtu		= ipoib_change_mtu,
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0))
+ 	.ndo_fix_features		= ipoib_fix_features,
++#endif
+ 	.ndo_start_xmit		= ipoib_start_xmit,
+ 	.ndo_select_queue		= ipoib_select_queue_sw,
+ 	.ndo_tx_timeout		= ipoib_timeout,
+@@ -2306,6 +2330,7 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
+ 		return result;
+ 
+ 	if (priv->hca_caps & IB_DEVICE_UD_IP_CSUM) {
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ 		priv->dev->hw_features = NETIF_F_SG |
+ 			NETIF_F_IP_CSUM | NETIF_F_RXCSUM;
+ 
+@@ -2313,6 +2338,13 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
+ 			priv->dev->hw_features |= NETIF_F_TSO;
+ 
+ 		priv->dev->features |= priv->dev->hw_features;
++#else
++		priv->dev->features |= NETIF_F_SG |
++			NETIF_F_IP_CSUM | NETIF_F_RXCSUM;
++
++		if (priv->hca_caps & IB_DEVICE_UD_TSO)
++			priv->dev->features |= NETIF_F_TSO;
++#endif
+ 	}
+ 
+ 	return 0;
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_multicast.c b/drivers/infiniband/ulp/ipoib/ipoib_multicast.c
+index 672a7a0..a4f3590 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib_multicast.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_multicast.c
+@@ -817,7 +817,11 @@ void ipoib_mcast_restart_task(struct work_struct *work)
+ 	struct ipoib_dev_priv *priv =
+ 		container_of(work, struct ipoib_dev_priv, restart_task);
+ 	struct net_device *dev = priv->dev;
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
+ 	struct netdev_hw_addr *ha;
++#else
++	struct dev_mc_list *mclist;
++#endif
+ 	struct ipoib_mcast *mcast, *tmcast;
+ 	LIST_HEAD(remove_list);
+ 	unsigned long flags;
+@@ -842,6 +846,7 @@ void ipoib_mcast_restart_task(struct work_struct *work)
+ 		clear_bit(IPOIB_MCAST_FLAG_FOUND, &mcast->flags);
+ 
+ 	/* Mark all of the entries that are found or don't exist */
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
+ 	netdev_for_each_mc_addr(ha, dev) {
+ 		union ib_gid mgid;
+ 
+@@ -849,6 +854,16 @@ void ipoib_mcast_restart_task(struct work_struct *work)
+ 			continue;
+ 
+ 		memcpy(mgid.raw, ha->addr + 4, sizeof mgid);
++#else
++	for (mclist = dev->mc_list; mclist; mclist = mclist->next) {
++		union ib_gid mgid;
++
++		if (!ipoib_mcast_addr_is_valid(mclist->dmi_addr,
++						dev->broadcast))
++			continue;
++
++		memcpy(mgid.raw, mclist->dmi_addr + 4, sizeof mgid);
++#endif
+ 
+ 		mcast = __ipoib_mcast_find(dev, &mgid);
+ 		if (!mcast || test_bit(IPOIB_MCAST_FLAG_SENDONLY, &mcast->flags)) {
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_netlink.c b/drivers/infiniband/ulp/ipoib/ipoib_netlink.c
+index 7468593..dcef9b6 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib_netlink.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_netlink.c
+@@ -126,7 +126,11 @@ static int ipoib_new_child_link(struct net *src_net, struct net_device *dev,
+ 	return err;
+ }
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33)
+ static void ipoib_unregister_child_dev(struct net_device *dev, struct list_head *head)
++#else
++static void ipoib_unregister_child_dev(struct net_device *dev)
++#endif
+ {
+ 	struct ipoib_dev_priv *priv, *ppriv;
+ 
+@@ -134,7 +138,11 @@ static void ipoib_unregister_child_dev(struct net_device *dev, struct list_head
+ 	ppriv = netdev_priv(priv->parent);
+ 
+ 	mutex_lock(&ppriv->vlan_mutex);
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33)
+ 	unregister_netdevice_queue(dev, head);
++#else
++	unregister_netdevice(dev);
++#endif
+ 	list_del(&priv->list);
+ 	mutex_unlock(&ppriv->vlan_mutex);
+ }
+-- 
+1.7.1
+

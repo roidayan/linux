@@ -1,0 +1,55 @@
+From 5e2182a086c2200f9d2c2fc8e07f8162f734adb2 Mon Sep 17 00:00:00 2001
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Date: Wed, 5 Dec 2012 13:27:56 +0200
+Subject: [PATCH 14/19] BACKPORT: rdma_ucm sysctl for kernels < 3.5
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ drivers/infiniband/core/ucma.c |   15 +++++++++++++++
+ 1 files changed, 15 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/infiniband/core/ucma.c b/drivers/infiniband/core/ucma.c
+index 602363b..0547027 100644
+--- a/drivers/infiniband/core/ucma.c
++++ b/drivers/infiniband/core/ucma.c
+@@ -66,6 +66,13 @@ static ctl_table ucma_ctl_table[] = {
+ 	},
+ 	{ }
+ };
++#if LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0)
++static struct ctl_path ucma_ctl_path[] = {
++	{ .procname = "net" },
++	{ .procname = "rdma_ucm" },
++	{ }
++};
++#endif
+ #endif
+ 
+ struct ucma_file {
+@@ -1441,7 +1448,11 @@ static int __init ucma_init(void)
+ 	}
+ 
+ #ifndef CONFIG_SYSCTL_SYSCALL_CHECK
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
+ 	ucma_ctl_table_hdr = register_net_sysctl(&init_net, "net/rdma_ucm", ucma_ctl_table);
++#else
++	ucma_ctl_table_hdr = register_sysctl_paths(ucma_ctl_path, ucma_ctl_table);
++#endif
+ 	if (!ucma_ctl_table_hdr) {
+ 		printk(KERN_ERR "rdma_ucm: couldn't register sysctl paths\n");
+ 		ret = -ENOMEM;
+@@ -1461,7 +1472,11 @@ err1:
+ static void __exit ucma_cleanup(void)
+ {
+ #ifndef CONFIG_SYSCTL_SYSCALL_CHECK
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
+ 	unregister_net_sysctl_table(ucma_ctl_table_hdr);
++#else
++	unregister_sysctl_table(ucma_ctl_table_hdr);
++#endif
+ #endif
+ 	device_remove_file(ucma_misc.this_device, &dev_attr_abi_version);
+ 	misc_deregister(&ucma_misc);
+-- 
+1.7.1
+

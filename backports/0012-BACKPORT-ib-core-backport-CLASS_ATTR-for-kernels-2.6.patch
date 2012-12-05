@@ -1,0 +1,138 @@
+From f2521645872a23ae1da4943eb0e656c6ec7fd24f Mon Sep 17 00:00:00 2001
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Date: Tue, 10 Jul 2012 18:06:16 +0300
+Subject: [PATCH 12/19] BACKPORT: ib/core backport CLASS_ATTR for kernels < 2.6.34
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ drivers/infiniband/core/ucm.c         |   20 ++++++++++++++++++++
+ drivers/infiniband/core/user_mad.c    |   12 ++++++++++++
+ drivers/infiniband/core/uverbs_main.c |   12 ++++++++++++
+ 3 files changed, 44 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/infiniband/core/ucm.c b/drivers/infiniband/core/ucm.c
+index 49b15ac..b6d7fa9 100644
+--- a/drivers/infiniband/core/ucm.c
++++ b/drivers/infiniband/core/ucm.c
+@@ -1329,8 +1329,16 @@ static void ib_ucm_remove_one(struct ib_device *device)
+ 	device_unregister(&ucm_dev->dev);
+ }
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
+ static CLASS_ATTR_STRING(abi_version, S_IRUGO,
+ 			 __stringify(IB_USER_CM_ABI_VERSION));
++#else
++static ssize_t show_abi_version(struct class *class, char *buf)
++{
++	return sprintf(buf, "%d\n", IB_USER_CM_ABI_VERSION);
++}
++static CLASS_ATTR(abi_version, S_IRUGO, show_abi_version, NULL);
++#endif
+ 
+ static int __init ib_ucm_init(void)
+ {
+@@ -1343,7 +1351,11 @@ static int __init ib_ucm_init(void)
+ 		goto error1;
+ 	}
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
+ 	ret = class_create_file(&cm_class, &class_attr_abi_version.attr);
++#else
++	ret = class_create_file(&cm_class, &class_attr_abi_version);
++#endif
+ 	if (ret) {
+ 		printk(KERN_ERR "ucm: couldn't create abi_version attribute\n");
+ 		goto error2;
+@@ -1357,7 +1369,11 @@ static int __init ib_ucm_init(void)
+ 	return 0;
+ 
+ error3:
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
+ 	class_remove_file(&cm_class, &class_attr_abi_version.attr);
++#else
++	class_remove_file(&cm_class, &class_attr_abi_version);
++#endif
+ error2:
+ 	unregister_chrdev_region(IB_UCM_BASE_DEV, IB_UCM_MAX_DEVICES);
+ error1:
+@@ -1367,7 +1383,11 @@ error1:
+ static void __exit ib_ucm_cleanup(void)
+ {
+ 	ib_unregister_client(&ucm_client);
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
+ 	class_remove_file(&cm_class, &class_attr_abi_version.attr);
++#else
++	class_remove_file(&cm_class, &class_attr_abi_version);
++#endif
+ 	unregister_chrdev_region(IB_UCM_BASE_DEV, IB_UCM_MAX_DEVICES);
+ 	if (overflow_maj)
+ 		unregister_chrdev_region(overflow_maj, IB_UCM_MAX_DEVICES);
+diff --git a/drivers/infiniband/core/user_mad.c b/drivers/infiniband/core/user_mad.c
+index f0d588f..2a31027 100644
+--- a/drivers/infiniband/core/user_mad.c
++++ b/drivers/infiniband/core/user_mad.c
+@@ -969,8 +969,16 @@ static ssize_t show_port(struct device *dev, struct device_attribute *attr,
+ }
+ static DEVICE_ATTR(port, S_IRUGO, show_port, NULL);
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
+ static CLASS_ATTR_STRING(abi_version, S_IRUGO,
+ 			 __stringify(IB_USER_MAD_ABI_VERSION));
++#else
++static ssize_t show_abi_version(struct class *class, char *buf)
++{
++	return sprintf(buf, "%d\n", IB_USER_MAD_ABI_VERSION);
++}
++static CLASS_ATTR(abi_version, S_IRUGO, show_abi_version, NULL);
++#endif
+ 
+ static dev_t overflow_maj;
+ static DECLARE_BITMAP(overflow_map, IB_UMAD_MAX_PORTS);
+@@ -1200,7 +1208,11 @@ static int __init ib_umad_init(void)
+ 
+ 	umad_class->devnode = umad_devnode;
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
+ 	ret = class_create_file(umad_class, &class_attr_abi_version.attr);
++#else
++	ret = class_create_file(umad_class, &class_attr_abi_version);
++#endif
+ 	if (ret) {
+ 		printk(KERN_ERR "user_mad: couldn't create abi_version attribute\n");
+ 		goto out_class;
+diff --git a/drivers/infiniband/core/uverbs_main.c b/drivers/infiniband/core/uverbs_main.c
+index 6637502..286d67a 100644
+--- a/drivers/infiniband/core/uverbs_main.c
++++ b/drivers/infiniband/core/uverbs_main.c
+@@ -773,8 +773,16 @@ static ssize_t show_dev_abi_version(struct device *device,
+ }
+ static DEVICE_ATTR(abi_version, S_IRUGO, show_dev_abi_version, NULL);
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
+ static CLASS_ATTR_STRING(abi_version, S_IRUGO,
+ 			 __stringify(IB_USER_VERBS_ABI_VERSION));
++#else
++static ssize_t show_abi_version(struct class *class, char *buf)
++{
++	return sprintf(buf, "%d\n", IB_USER_VERBS_ABI_VERSION);
++}
++static CLASS_ATTR(abi_version, S_IRUGO, show_abi_version, NULL);
++#endif
+ 
+ static dev_t overflow_maj;
+ static DECLARE_BITMAP(overflow_map, IB_UVERBS_MAX_DEVICES);
+@@ -931,7 +939,11 @@ static int __init ib_uverbs_init(void)
+ 
+ 	uverbs_class->devnode = uverbs_devnode;
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
+ 	ret = class_create_file(uverbs_class, &class_attr_abi_version.attr);
++#else
++	ret = class_create_file(uverbs_class, &class_attr_abi_version);
++#endif
+ 	if (ret) {
+ 		printk(KERN_ERR "user_verbs: couldn't create abi_version attribute\n");
+ 		goto out_class;
+-- 
+1.7.1
+

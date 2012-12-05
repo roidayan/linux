@@ -1,0 +1,74 @@
+From dc0790a98d55e6510b6cf46cfeb71aa136296eee Mon Sep 17 00:00:00 2001
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Date: Wed, 5 Dec 2012 13:32:41 +0200
+Subject: [PATCH 18/19] BACKPORT: iser to support RHEL6.3
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ drivers/infiniband/ulp/iser/iser_initiator.c |    4 ++++
+ drivers/infiniband/ulp/iser/iser_memory.c    |   16 ++++++++++++++++
+ 2 files changed, 20 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/infiniband/ulp/iser/iser_initiator.c b/drivers/infiniband/ulp/iser/iser_initiator.c
+index a00ccd1..47dd15c 100644
+--- a/drivers/infiniband/ulp/iser/iser_initiator.c
++++ b/drivers/infiniband/ulp/iser/iser_initiator.c
+@@ -266,7 +266,11 @@ int iser_send_command(struct iscsi_conn *conn,
+ 	unsigned long edtl;
+ 	int err;
+ 	struct iser_data_buf *data_buf;
++#if  (LINUX_VERSION_CODE >= KERNEL_VERSION(3,1,0))
+ 	struct iscsi_scsi_req *hdr = (struct iscsi_scsi_req *)task->hdr;
++#else
++	struct iscsi_cmd *hdr =  (struct iscsi_cmd *)task->hdr;
++#endif
+ 	struct scsi_cmnd *sc  =  task->sc;
+ 	struct iser_tx_desc *tx_desc = &iser_task->desc;
+ 
+diff --git a/drivers/infiniband/ulp/iser/iser_memory.c b/drivers/infiniband/ulp/iser/iser_memory.c
+index 2033a92..527db86 100644
+--- a/drivers/infiniband/ulp/iser/iser_memory.c
++++ b/drivers/infiniband/ulp/iser/iser_memory.c
+@@ -73,11 +73,19 @@ static int iser_start_rdma_unaligned_sg(struct iscsi_iser_task *iser_task,
+ 
+ 		p = mem;
+ 		for_each_sg(sgl, sg, data->size, i) {
++#if  (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+ 			from = kmap_atomic(sg_page(sg));
++#else
++			from = kmap_atomic(sg_page(sg), KM_USER0);
++#endif
+ 			memcpy(p,
+ 			       from + sg->offset,
+ 			       sg->length);
++#if  (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+ 			kunmap_atomic(from);
++#else
++			kunmap_atomic(from, KM_USER0);
++#endif
+ 			p += sg->length;
+ 		}
+ 	}
+@@ -133,11 +141,19 @@ void iser_finalize_rdma_unaligned_sg(struct iscsi_iser_task *iser_task,
+ 
+ 		p = mem;
+ 		for_each_sg(sgl, sg, sg_size, i) {
++#if  (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+ 			to = kmap_atomic(sg_page(sg));
++#else
++			to = kmap_atomic(sg_page(sg), KM_USER0);
++#endif
+ 			memcpy(to + sg->offset,
+ 			       p,
+ 			       sg->length);
++#if  (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+ 			kunmap_atomic(to);
++#else
++			kunmap_atomic(to, KM_USER0);
++#endif
+ 			p += sg->length;
+ 		}
+ 	}
+-- 
+1.7.1
+

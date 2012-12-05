@@ -1,0 +1,35 @@
+From 69c2240d336b472a29eb473827249ce127d30ad0 Mon Sep 17 00:00:00 2001
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Date: Mon, 3 Dec 2012 18:55:08 +0200
+Subject: [PATCH 11/19] BACKPORT: core/multicast for kernels < 2.6.36
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ drivers/infiniband/core/multicast.c |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/infiniband/core/multicast.c b/drivers/infiniband/core/multicast.c
+index a78782d..f335ed2 100644
+--- a/drivers/infiniband/core/multicast.c
++++ b/drivers/infiniband/core/multicast.c
+@@ -45,12 +45,17 @@
+ 
+ static int mcast_leave_retries = 3;
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
+ static const struct kernel_param_ops retry_ops = {
+ 	.set = param_set_int,
+ 	.get = param_get_int,
+ };
+ 
+ module_param_cb(mcast_leave_retries, &retry_ops, &mcast_leave_retries, 0644);
++#else
++module_param_call(mcast_leave_retries, param_set_int, param_get_int,
++		  &mcast_leave_retries, 0644);
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36)) */
+ MODULE_PARM_DESC(mcast_leave_retries, "Number of retries for multicast leave "
+ 				      "requests before giving up (default: 3)");
+ 
+-- 
+1.7.1
+
