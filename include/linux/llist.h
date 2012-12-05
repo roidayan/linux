@@ -10,7 +10,7 @@ extern bool llist_add_batch(struct llist_node *new_first,
 extern struct llist_node *llist_del_first(struct llist_head *head);
 #else
 
-#ifdef CONFIG_COMPAT_SLES_11_2
+#if defined(CONFIG_SUSE_KERNEL) && defined(CONFIG_COMPAT_SLES_11_2)
 #include_next <linux/llist.h>
 #else
 
