@@ -32,17 +32,11 @@ COMPAT_RHEL_VERSIONS := $(shell I=$(RHEL_MINOR); while [ "$$I" -ge 0 ]; do echo 
 $(foreach ver,$(COMPAT_RHEL_VERSIONS),$(eval CONFIG_COMPAT_RHEL_$(RHEL_MAJOR)_$(ver)=y))
 endif
 
-KLIB_SOURCE := $(subst build,source,$(KLIB_BUILD))
-NAME := $(shell grep ^NAME $(KLIB_SOURCE)/Makefile | sed -n 's/.*= *\(.*\)/\1/p')
-SUSE := $(shell test -e /etc/SuSE-release && echo y || echo n)
-ifneq ($(NAME),)
-ifeq ("$(strip $(NAME))","Sneaky Weasel")
-ifeq ($(SUSE),"y")
+SLES_11_2_KERNEL := $(shell echo $(KVERSION) | sed -n 's/^\(3\.0\.[0-9]\+\)\-\(.*\)\-\(.*\)/\1-\2-\3/p')
+ifneq ($(SLES_11_2_KERNEL),)
 SLES_MAJOR := "11"
 SLES_MINOR := "2"
 CONFIG_COMPAT_SLES_11_2 := y
-endif
-endif
 endif
 
 endif # kernel Makefile check
