@@ -2,7 +2,7 @@
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0))
 #include_next <linux/llist.h>
 
-#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(3,1,0))
+#elif (LINUX_VERSION_CODE > KERNEL_VERSION(3,1,0))
 #include_next <linux/llist.h>
 extern bool llist_add_batch(struct llist_node *new_first,
 			    struct llist_node *new_last,
