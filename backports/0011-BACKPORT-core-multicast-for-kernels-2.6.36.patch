@@ -1,7 +1,7 @@
-From 28c675171f2078944b93bb9e47bad5d9694f1868 Mon Sep 17 00:00:00 2001
+From 547411ba856a947661511b49cc825f6c4e131529 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Mon, 3 Dec 2012 18:55:08 +0200
-Subject: [PATCH 11/20] BACKPORT: core/multicast for kernels < 2.6.36
+Subject: [PATCH] BACKPORT: core/multicast for kernels < 2.6.36
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -31,5 +31,5 @@ index a78782d..f335ed2 100644
  				      "requests before giving up (default: 3)");
  
 -- 
-1.7.1
+1.6.0.2
 

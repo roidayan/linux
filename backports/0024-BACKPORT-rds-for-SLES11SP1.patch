@@ -1,0 +1,117 @@
+From 6bada37b3efcef5177efea2228914cb9c09f634a Mon Sep 17 00:00:00 2001
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Date: Mon, 10 Dec 2012 13:41:50 +0200
+Subject: [PATCH] BACKPORT: rds for SLES11SP1
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ net/rds/bind.c    |    3 +++
+ net/rds/ib_cm.c   |    3 +++
+ net/rds/ib_send.c |    3 +++
+ net/rds/iw_cm.c   |    3 +++
+ net/rds/iw_rdma.c |    3 +++
+ net/rds/iw_send.c |    3 +++
+ net/rds/send.c    |    3 +++
+ 7 files changed, 21 insertions(+), 0 deletions(-)
+
+diff --git a/net/rds/bind.c b/net/rds/bind.c
+index 637bde5..9fb9b31 100644
+--- a/net/rds/bind.c
++++ b/net/rds/bind.c
+@@ -36,6 +36,9 @@
+ #include <linux/if_arp.h>
+ #include <linux/jhash.h>
+ #include <linux/ratelimit.h>
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38))
++#include <linux/printk.h>
++#endif
+ #include "rds.h"
+ 
+ #define BIND_HASH_SIZE 1024
+diff --git a/net/rds/ib_cm.c b/net/rds/ib_cm.c
+index a1e1162..40a3c51 100644
+--- a/net/rds/ib_cm.c
++++ b/net/rds/ib_cm.c
+@@ -35,6 +35,9 @@
+ #include <linux/slab.h>
+ #include <linux/vmalloc.h>
+ #include <linux/ratelimit.h>
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38))
++#include <linux/printk.h>
++#endif
+ 
+ #include "rds.h"
+ #include "ib.h"
+diff --git a/net/rds/ib_send.c b/net/rds/ib_send.c
+index e590949..6ad631f 100644
+--- a/net/rds/ib_send.c
++++ b/net/rds/ib_send.c
+@@ -35,6 +35,9 @@
+ #include <linux/device.h>
+ #include <linux/dmapool.h>
+ #include <linux/ratelimit.h>
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38))
++#include <linux/printk.h>
++#endif
+ 
+ #include "rds.h"
+ #include "ib.h"
+diff --git a/net/rds/iw_cm.c b/net/rds/iw_cm.c
+index a91e1db..35669e4 100644
+--- a/net/rds/iw_cm.c
++++ b/net/rds/iw_cm.c
+@@ -35,6 +35,9 @@
+ #include <linux/slab.h>
+ #include <linux/vmalloc.h>
+ #include <linux/ratelimit.h>
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38))
++#include <linux/printk.h>
++#endif
+ 
+ #include "rds.h"
+ #include "iw.h"
+diff --git a/net/rds/iw_rdma.c b/net/rds/iw_rdma.c
+index a817705..f57f360 100644
+--- a/net/rds/iw_rdma.c
++++ b/net/rds/iw_rdma.c
+@@ -33,6 +33,9 @@
+ #include <linux/kernel.h>
+ #include <linux/slab.h>
+ #include <linux/ratelimit.h>
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38))
++#include <linux/printk.h>
++#endif
+ 
+ #include "rds.h"
+ #include "iw.h"
+diff --git a/net/rds/iw_send.c b/net/rds/iw_send.c
+index e40c3c5..dc4f7e2 100644
+--- a/net/rds/iw_send.c
++++ b/net/rds/iw_send.c
+@@ -35,6 +35,9 @@
+ #include <linux/device.h>
+ #include <linux/dmapool.h>
+ #include <linux/ratelimit.h>
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38))
++#include <linux/printk.h>
++#endif
+ 
+ #include "rds.h"
+ #include "iw.h"
+diff --git a/net/rds/send.c b/net/rds/send.c
+index 88eace5..d3e889e 100644
+--- a/net/rds/send.c
++++ b/net/rds/send.c
+@@ -38,6 +38,9 @@
+ #include <linux/list.h>
+ #include <linux/ratelimit.h>
+ #include <linux/export.h>
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38))
++#include <linux/printk.h>
++#endif
+ 
+ #include "rds.h"
+ 
+-- 
+1.6.0.2
+

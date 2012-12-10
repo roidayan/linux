@@ -1,7 +1,7 @@
-From d10c398ebad52e369025c234c93927d7dfac16f4 Mon Sep 17 00:00:00 2001
+From f097626f3dd667557d560d3bdb4e3ec81627b17e Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 5 Dec 2012 13:32:12 +0200
-Subject: [PATCH 17/20] BACKPORT: ipoib to support RHEL6.3
+Subject: [PATCH] BACKPORT: ipoib to support RHEL6.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -60,7 +60,7 @@ index 9d40e1c..beb8956 100644
  
  void ipoib_set_ethtool_ops(struct net_device *dev)
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-index e2e0557..c062b97 100644
+index 93a4107..dbb6e54 100644
 --- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
 @@ -220,6 +220,7 @@ static void ipoib_uninit(struct net_device *dev)
@@ -233,5 +233,5 @@ index 7468593..dcef9b6 100644
  	mutex_unlock(&ppriv->vlan_mutex);
  }
 -- 
-1.7.1
+1.6.0.2
 

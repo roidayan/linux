@@ -1,0 +1,378 @@
+From 106a4290b098e744bf4149f6d6321f6984ba0663 Mon Sep 17 00:00:00 2001
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Date: Mon, 10 Dec 2012 13:41:10 +0200
+Subject: [PATCH] BACKPORT: mlx4_en for SLES11SP1
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ drivers/net/ethernet/mellanox/mlx4/Makefile       |    2 +
+ drivers/net/ethernet/mellanox/mlx4/en_main.c      |    7 ++++++
+ drivers/net/ethernet/mellanox/mlx4/en_netdev.c    |   24 +++++++++++++++++++++
+ drivers/net/ethernet/mellanox/mlx4/en_resources.c |    6 +++++
+ drivers/net/ethernet/mellanox/mlx4/en_rx.c        |   14 ++++++++++++
+ drivers/net/ethernet/mellanox/mlx4/en_tx.c        |   23 ++++++++++++++++++++
+ drivers/net/ethernet/mellanox/mlx4/mlx4_en.h      |   20 +++++++++++++++++
+ 7 files changed, 96 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/ethernet/mellanox/mlx4/Makefile b/drivers/net/ethernet/mellanox/mlx4/Makefile
+index 8e03f81..29eb7ed 100644
+--- a/drivers/net/ethernet/mellanox/mlx4/Makefile
++++ b/drivers/net/ethernet/mellanox/mlx4/Makefile
+@@ -8,4 +8,6 @@ obj-$(CONFIG_MLX4_EN)               += mlx4_en.o
+ 
+ mlx4_en-y := 	en_main.o en_tx.o en_rx.o en_ethtool.o en_port.o en_cq.o \
+ 		en_resources.o en_netdev.o en_selftest.o en_timestamp.o
++ifeq ($(CONFIG_COMPAT_DISABLE_DCB),)
+ mlx4_en-$(CONFIG_MLX4_EN_DCB) += en_dcb_nl.o
++endif
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_main.c b/drivers/net/ethernet/mellanox/mlx4/en_main.c
+index 697e6a3..ee3f4fb 100644
+--- a/drivers/net/ethernet/mellanox/mlx4/en_main.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_main.c
+@@ -101,8 +101,10 @@ static int mlx4_en_get_profile(struct mlx4_en_dev *mdev)
+ 	int i;
+ 
+ 	params->udp_rss = udp_rss;
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
+ 	params->num_tx_rings_p_up = min_t(int, num_online_cpus(),
+ 			MLX4_EN_MAX_TX_RING_P_UP);
++#endif
+ 	if (params->udp_rss && !(mdev->dev->caps.flags
+ 					& MLX4_DEV_CAP_FLAG_UDP_RSS)) {
+ 		mlx4_warn(mdev, "UDP RSS is not supported on this device.\n");
+@@ -115,8 +117,13 @@ static int mlx4_en_get_profile(struct mlx4_en_dev *mdev)
+ 		params->prof[i].tx_ppp = pfctx;
+ 		params->prof[i].tx_ring_size = MLX4_EN_DEF_TX_RING_SIZE;
+ 		params->prof[i].rx_ring_size = MLX4_EN_DEF_RX_RING_SIZE;
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
+ 		params->prof[i].tx_ring_num = params->num_tx_rings_p_up *
+ 			MLX4_EN_NUM_UP;
++#else
++		params->prof[i].tx_ring_num = MLX4_EN_NUM_TX_RINGS +
++			(!!pfcrx) * MLX4_EN_NUM_PPP_RINGS;
++#endif
+ 		params->prof[i].rss_rings = 0;
+ 	}
+ 
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
+index c27cf49..821e7e3 100644
+--- a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
+@@ -1128,8 +1128,12 @@ int mlx4_en_start_port(struct net_device *dev)
+ 
+ 		/* Configure ring */
+ 		tx_ring = priv->tx_ring[i];
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
+ 		err = mlx4_en_activate_tx_ring(priv, tx_ring, cq->mcq.cqn,
+ 			i / priv->mdev->profile.num_tx_rings_p_up);
++#else
++		err = mlx4_en_activate_tx_ring(priv, tx_ring, cq->mcq.cqn);
++#endif
+ 		if (err) {
+ 			en_err(priv, "Failed allocating Tx ring\n");
+ 			mlx4_en_deactivate_cq(priv, cq);
+@@ -1522,8 +1526,10 @@ void mlx4_en_destroy_netdev(struct net_device *dev)
+ 
+ 	mlx4_en_free_resources(priv);
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
+ 	kfree(priv->tx_ring);
+ 	kfree(priv->tx_cq);
++#endif
+ 
+ 	free_netdev(dev);
+ }
+@@ -1668,8 +1674,12 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+ 	int i;
+ 	int err;
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ 	dev = alloc_etherdev_mqs(sizeof(struct mlx4_en_priv),
+ 	    prof->tx_ring_num, prof->rx_ring_num);
++#else
++	dev = alloc_etherdev_mq(sizeof(struct mlx4_en_priv), prof->tx_ring_num);
++#endif
+ 	if (dev == NULL)
+ 		return -ENOMEM;
+ 
+@@ -1692,6 +1702,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+ 	priv->ctrl_flags = cpu_to_be32(MLX4_WQE_CTRL_CQ_UPDATE |
+ 			MLX4_WQE_CTRL_SOLICITED);
+ 	priv->tx_ring_num = prof->tx_ring_num;
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
+ 	priv->tx_ring = kzalloc(sizeof(struct mlx4_en_tx_ring *) *
+ 			priv->tx_ring_num, GFP_KERNEL);
+ 	if (!priv->tx_ring) {
+@@ -1704,6 +1715,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+ 		err = -ENOMEM;
+ 		goto out;
+ 	}
++#endif
+ 	priv->rx_ring_num = prof->rx_ring_num;
+ 	priv->cqe_factor = (mdev->dev->caps.cqe_size == 64) ? 1 : 0;
+ 	priv->mac_index = -1;
+@@ -1714,10 +1726,12 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+ 	INIT_WORK(&priv->watchdog_task, mlx4_en_restart);
+ 	INIT_WORK(&priv->linkstate_task, mlx4_en_linkstate);
+ 	INIT_DELAYED_WORK(&priv->stats_task, mlx4_en_do_get_stats);
++#ifndef CONFIG_COMPAT_DISABLE_DCB
+ #ifdef CONFIG_MLX4_EN_DCB
+ 	if (!mlx4_is_slave(priv->mdev->dev))
+ 		dev->dcbnl_ops = &mlx4_en_dcbnl_ops;
+ #endif
++#endif
+ 
+ 	/* Query for default mac and max mtu */
+ 	priv->max_mtu = mdev->dev->caps.eth_mtu_cap[priv->port];
+@@ -1754,7 +1768,9 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+ 	 */
+ 	dev->netdev_ops = &mlx4_netdev_ops;
+ 	dev->watchdog_timeo = MLX4_EN_WATCHDOG_TIMEOUT;
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)) || defined (CONFIG_COMPAT_IS_NUM_TX_QUEUES)
+ 	netif_set_real_num_tx_queues(dev, priv->tx_ring_num);
++#endif
+ 	netif_set_real_num_rx_queues(dev, priv->rx_ring_num);
+ 
+ 	SET_ETHTOOL_OPS(dev, &mlx4_en_ethtool_ops);
+@@ -1776,7 +1792,11 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+ 
+ 	dev->vlan_features = dev->hw_features;
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35)
+ 	dev->hw_features |= NETIF_F_RXCSUM | NETIF_F_RXHASH;
++#else
++	dev->hw_features |= NETIF_F_RXCSUM;
++#endif
+ 	dev->features = dev->hw_features | NETIF_F_HIGHDMA |
+ 			NETIF_F_HW_VLAN_TX | NETIF_F_HW_VLAN_RX |
+ 			NETIF_F_HW_VLAN_FILTER;
+@@ -1792,7 +1812,11 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+ 
+ 	dev->vlan_features = dev->features;
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35)
+ 	dev->features |= NETIF_F_RXCSUM | NETIF_F_RXHASH;
++#else
++	dev->features |= NETIF_F_RXCSUM;
++#endif
+ 	dev->features |= NETIF_F_HIGHDMA |
+ 			NETIF_F_HW_VLAN_TX | NETIF_F_HW_VLAN_RX |
+ 			NETIF_F_HW_VLAN_FILTER;
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_resources.c b/drivers/net/ethernet/mellanox/mlx4/en_resources.c
+index 70bea55..f186575 100644
+--- a/drivers/net/ethernet/mellanox/mlx4/en_resources.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_resources.c
+@@ -39,7 +39,11 @@
+ 
+ void mlx4_en_fill_qp_context(struct mlx4_en_priv *priv, int size, int stride,
+ 			     int is_tx, int rss, int qpn, int cqn,
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
+ 			     int user_prio, struct mlx4_qp_context *context,
++#else
++			     struct mlx4_qp_context *context,
++#endif
+ 			     int disable_vstrip)
+ {
+ 	struct mlx4_en_dev *mdev = priv->mdev;
+@@ -58,10 +62,12 @@ void mlx4_en_fill_qp_context(struct mlx4_en_priv *priv, int size, int stride,
+ 	context->local_qpn = cpu_to_be32(qpn);
+ 	context->pri_path.ackto = 1 & 0x07;
+ 	context->pri_path.sched_queue = 0x83 | (priv->port - 1) << 6;
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
+ 	if (user_prio >= 0) {
+ 		context->pri_path.sched_queue |= user_prio << 3;
+ 		context->pri_path.feup = 1 << 6;
+ 	}
++#endif
+ 	context->pri_path.counter_index = 0xff;
+ 	context->cqn_send = cpu_to_be32(cqn);
+ 	context->cqn_recv = cpu_to_be32(cqn);
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_rx.c b/drivers/net/ethernet/mellanox/mlx4/en_rx.c
+index 742e7d9..c47ceb4 100644
+--- a/drivers/net/ethernet/mellanox/mlx4/en_rx.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_rx.c
+@@ -693,8 +693,10 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+ 						__vlan_hwaccel_put_tag(gro_skb, vid);
+ 					}
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35)
+ 					if (dev->features & NETIF_F_RXHASH)
+ 						gro_skb->rxhash = be32_to_cpu(cqe->immed_rss_invalid);
++#endif
+ 
+ 					skb_record_rx_queue(gro_skb, cq->ring);
+ 
+@@ -734,8 +736,10 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+ 		skb->protocol = eth_type_trans(skb, dev);
+ 		skb_record_rx_queue(skb, cq->ring);
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35)
+ 		if (dev->features & NETIF_F_RXHASH)
+ 			skb->rxhash = be32_to_cpu(cqe->immed_rss_invalid);
++#endif
+ 
+ 		if ((be32_to_cpu(cqe->vlan_my_qpn) & MLX4_CQE_VLAN_PRESENT_MASK)
+ 		    && (ring->hwtstamp_rx_filter == HWTSTAMP_FILTER_NONE))
+@@ -896,8 +900,13 @@ static int mlx4_en_config_rss_qp(struct mlx4_en_priv *priv, int qpn,
+ 	qp->event = mlx4_en_sqp_event;
+ 
+ 	memset(context, 0, sizeof *context);
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
+ 	mlx4_en_fill_qp_context(priv, ring->actual_size, ring->stride, 0, 0,
+ 				qpn, ring->cqn, -1, context, disable_vstrip);
++#else
++	mlx4_en_fill_qp_context(priv, ring->actual_size, ring->stride, 0, 0,
++				qpn, ring->cqn, context, disable_vstrip);
++#endif
+ 	context->db_rec_addr = cpu_to_be64(ring->wqres.db.dma);
+ 
+ 	/* Cancel FCS removal if FW allows */
+@@ -993,8 +1002,13 @@ int mlx4_en_config_rss_steer(struct mlx4_en_priv *priv)
+ 		goto rss_err;
+ 	}
+ 	rss_map->indir_qp.event = mlx4_en_sqp_event;
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
+ 	mlx4_en_fill_qp_context(priv, 0, 0, 0, 1, priv->base_qpn,
+ 				priv->rx_ring[0]->cqn, -1, &context, 0);
++#else
++	mlx4_en_fill_qp_context(priv, 0, 0, 0, 1, priv->base_qpn,
++				priv->rx_ring[0]->cqn, &context, 0);
++#endif
+ 
+ 	if (!priv->prof->rss_rings || priv->prof->rss_rings > priv->rx_ring_num)
+ 		rss_rings = priv->rx_ring_num;
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_tx.c b/drivers/net/ethernet/mellanox/mlx4/en_tx.c
+index 067ba04..135d637 100644
+--- a/drivers/net/ethernet/mellanox/mlx4/en_tx.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_tx.c
+@@ -178,7 +178,11 @@ void mlx4_en_destroy_tx_ring(struct mlx4_en_priv *priv,
+ 
+ int mlx4_en_activate_tx_ring(struct mlx4_en_priv *priv,
+ 			     struct mlx4_en_tx_ring *ring,
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
+ 			     int cq, int user_prio)
++#else
++			     int cq)
++#endif
+ {
+ 	struct mlx4_en_dev *mdev = priv->mdev;
+ 	int err;
+@@ -195,8 +199,13 @@ int mlx4_en_activate_tx_ring(struct mlx4_en_priv *priv,
+ 	ring->qp_state = MLX4_QP_STATE_RST;
+ 	ring->doorbell_qpn = ring->qp.qpn << 8;
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
+ 	mlx4_en_fill_qp_context(priv, ring->size, ring->stride, 1, 0, ring->qpn,
+ 				ring->cqn, user_prio, &ring->context, 0);
++#else
++	mlx4_en_fill_qp_context(priv, ring->size, ring->stride, 1, 0, ring->qpn,
++				ring->cqn, &ring->context, 0);
++#endif
+ 	if (ring->bf_enabled)
+ 		ring->context.usr_page = cpu_to_be32(ring->bf.uar->index);
+ 
+@@ -591,6 +600,7 @@ static void build_inline_wqe(struct mlx4_en_tx_desc *tx_desc, struct sk_buff *sk
+ u16 mlx4_en_select_queue(struct net_device *dev, struct sk_buff *skb)
+ {
+ 	struct mlx4_en_priv *priv = netdev_priv(dev);
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
+ 	u16 rings_p_up = priv->mdev->profile.num_tx_rings_p_up;
+ 	u8 up = 0;
+ 
+@@ -605,6 +615,19 @@ u16 mlx4_en_select_queue(struct net_device *dev, struct sk_buff *skb)
+ 		up = vlan_tx_tag_get(skb) >> VLAN_PRIO_SHIFT;
+ 
+ 	return __skb_tx_hash(dev, skb, rings_p_up) + up * rings_p_up;
++#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME) */
++	u16 vlan_tag = 0;
++
++	/* If we support per priority flow control and the packet contains
++	 * a vlan tag, send the packet to the TX ring assigned to that priority
++	 */
++	if (priv->prof->rx_ppp && vlan_tx_tag_present(skb)) {
++		vlan_tag = vlan_tx_tag_get(skb);
++		return MLX4_EN_NUM_TX_RINGS + (vlan_tag >> 13);
++	}
++
++	return skb_tx_hash(dev, skb);
++#endif
+ }
+ 
+ static void mlx4_bf_copy(void __iomem *dst, unsigned long *src, unsigned bytecnt)
+diff --git a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
+index 1b645bf..3bc443d 100644
+--- a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
++++ b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
+@@ -122,8 +122,16 @@ enum {
+ #define MLX4_EN_MIN_TX_SIZE	(4096 / TXBB_SIZE)
+ 
+ #define MLX4_EN_SMALL_PKT_SIZE		64
++
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)) || defined (CONFIG_COMPAT_IS_NUM_TX_QUEUES)
+ #define MLX4_EN_MAX_TX_RING_P_UP	32
+ #define MLX4_EN_NUM_UP			8
++#else
++#define MLX4_EN_NUM_TX_RINGS           8
++#define MLX4_EN_NUM_PPP_RINGS          8
++#define MAX_TX_RINGS                   (MLX4_EN_NUM_TX_RINGS + MLX4_EN_NUM_PPP_RINGS)
++#endif
++
+ #define MLX4_EN_DEF_TX_RING_SIZE	512
+ #define MLX4_EN_DEF_RX_RING_SIZE  	1024
+ 
+@@ -447,6 +455,7 @@ struct mlx4_en_frag_info {
+ 
+ };
+ 
++#ifndef CONFIG_COMPAT_DISABLE_DCB
+ #ifdef CONFIG_MLX4_EN_DCB
+ /* Minimal TC BW - setting to 0 will block traffic */
+ #define MLX4_EN_BW_MIN 1
+@@ -455,6 +464,7 @@ struct mlx4_en_frag_info {
+ #define MLX4_EN_TC_ETS 7
+ 
+ #endif
++#endif
+ 
+ struct ethtool_flow_id {
+ 	struct ethtool_rx_flow_spec flow_spec;
+@@ -541,10 +551,12 @@ struct mlx4_en_priv {
+ 	int base_tx_qpn;
+ 	struct hwtstamp_config hwtstamp_config;
+ 
++#ifndef CONFIG_COMPAT_DISABLE_DCB
+ #ifdef CONFIG_MLX4_EN_DCB
+ 	struct ieee_ets ets;
+ 	u16 maxrate[IEEE_8021QAZ_MAX_TCS];
+ #endif
++#endif
+ #ifdef CONFIG_RFS_ACCEL
+ 	spinlock_t filters_lock;
+ 	int last_filter_id;
+@@ -591,7 +603,11 @@ void mlx4_en_destroy_tx_ring(struct mlx4_en_priv *priv,
+ 			     struct mlx4_en_tx_ring **pring);
+ int mlx4_en_activate_tx_ring(struct mlx4_en_priv *priv,
+ 			     struct mlx4_en_tx_ring *ring,
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
+ 			     int cq, int user_prio);
++#else
++			     int cq);
++#endif
+ void mlx4_en_deactivate_tx_ring(struct mlx4_en_priv *priv,
+ 				struct mlx4_en_tx_ring *ring);
+ 
+@@ -610,7 +626,11 @@ int mlx4_en_process_rx_cq(struct net_device *dev,
+ int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget);
+ int mlx4_en_poll_tx_cq(struct napi_struct *napi, int budget);
+ void mlx4_en_fill_qp_context(struct mlx4_en_priv *priv, int size, int stride,
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
+ 		int is_tx, int rss, int qpn, int cqn, int user_prio,
++#else
++		int is_tx, int rss, int qpn, int cqn,
++#endif
+ 		struct mlx4_qp_context *context, int disable_vstrip);
+ void mlx4_en_sqp_event(struct mlx4_qp *qp, enum mlx4_event event);
+ int mlx4_en_map_buffer(struct mlx4_buf *buf);
+-- 
+1.6.0.2
+

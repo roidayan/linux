@@ -1,7 +1,7 @@
-From 2be36caad141036a7a279362c76abdecac80d963 Mon Sep 17 00:00:00 2001
+From 8a6663be5710cc80829da599f18d270204a116c0 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Tue, 10 Jul 2012 17:41:31 +0300
-Subject: [PATCH 10/20] BACKPORT: ib/core backport pinned_vm for kernels < 3.2
+Subject: [PATCH] BACKPORT: ib/core backport pinned_vm for kernels < 3.2
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -145,5 +145,5 @@ index d00da78..9b4a919 100644
  	mmput(mm);
  	kfree(umem);
 -- 
-1.7.1
+1.6.0.2
 

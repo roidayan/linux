@@ -1,7 +1,7 @@
-From 0a262902bca380835a2d18033fd89e0efa379f4a Mon Sep 17 00:00:00 2001
+From aa543a0132174107925ffc78224fe462c0f73c1d Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Thu, 12 Jul 2012 22:31:24 +0300
-Subject: [PATCH 13/20] BACKPORT: mlx4_ib backport dev_mc_add/delete
+Subject: [PATCH] BACKPORT: mlx4_ib backport dev_mc_add/delete
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -37,5 +37,5 @@ index 39c76d2..52fc02c 100644
  			dev_put(ndev);
  		}
 -- 
-1.7.1
+1.6.0.2
 

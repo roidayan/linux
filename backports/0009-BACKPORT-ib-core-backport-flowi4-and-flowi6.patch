@@ -1,7 +1,7 @@
-From 87ebd6bc11a7a478409e47e6c14e441a2ae67c52 Mon Sep 17 00:00:00 2001
+From f1d643cb7a7684f64cc45c392d8d025f6f6f4bfd Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Tue, 10 Jul 2012 17:21:25 +0300
-Subject: [PATCH 09/20] BACKPORT: ib/core backport flowi4 and flowi6
+Subject: [PATCH] BACKPORT: ib/core backport flowi4 and flowi6
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -99,5 +99,5 @@ index fabf6a8..9db2e4b 100644
  	if (dst->dev->flags & IFF_LOOPBACK) {
  		ret = rdma_translate_ip((struct sockaddr *) dst_in, addr);
 -- 
-1.7.1
+1.6.0.2
 

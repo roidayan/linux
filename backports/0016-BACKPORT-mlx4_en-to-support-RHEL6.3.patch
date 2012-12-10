@@ -1,7 +1,7 @@
-From 45f79f398d27eececa98a9c3fe3029ff8b28a72c Mon Sep 17 00:00:00 2001
+From 104a1365472ae9a5d711675db15591745780d2fe Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 5 Dec 2012 13:31:23 +0200
-Subject: [PATCH 16/20] BACKPORT: mlx4_en to support RHEL6.3
+Subject: [PATCH] BACKPORT: mlx4_en to support RHEL6.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -266,7 +266,7 @@ index 74dd914..067ba04 100644
  	}
  
 diff --git a/drivers/net/ethernet/mellanox/mlx4/eq.c b/drivers/net/ethernet/mellanox/mlx4/eq.c
-index 390b343..1b48a18 100644
+index afd29a6..74954d5 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/eq.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/eq.c
 @@ -39,7 +39,9 @@
@@ -279,7 +279,7 @@ index 390b343..1b48a18 100644
  
  #include "mlx4.h"
  #include "fw.h"
-@@ -1306,8 +1308,12 @@ int mlx4_test_interrupts(struct mlx4_dev *dev)
+@@ -1308,8 +1310,12 @@ int mlx4_test_interrupts(struct mlx4_dev *dev)
  }
  EXPORT_SYMBOL(mlx4_test_interrupts);
  
@@ -292,7 +292,7 @@ index 390b343..1b48a18 100644
  {
  
  	struct mlx4_priv *priv = mlx4_priv(dev);
-@@ -1321,6 +1327,7 @@ int mlx4_assign_eq(struct mlx4_dev *dev, char *name, struct cpu_rmap *rmap,
+@@ -1323,6 +1329,7 @@ int mlx4_assign_eq(struct mlx4_dev *dev, char *name, struct cpu_rmap *rmap,
  			snprintf(priv->eq_table.irq_names +
  					vec * MLX4_IRQNAME_SIZE,
  					MLX4_IRQNAME_SIZE, "%s", name);
@@ -300,7 +300,7 @@ index 390b343..1b48a18 100644
  #ifdef CONFIG_RFS_ACCEL
  			if (rmap) {
  				err = irq_cpu_rmap_add(rmap,
-@@ -1329,6 +1336,7 @@ int mlx4_assign_eq(struct mlx4_dev *dev, char *name, struct cpu_rmap *rmap,
+@@ -1331,6 +1338,7 @@ int mlx4_assign_eq(struct mlx4_dev *dev, char *name, struct cpu_rmap *rmap,
  					mlx4_warn(dev, "Failed adding irq rmap\n");
  			}
  #endif
@@ -309,7 +309,7 @@ index 390b343..1b48a18 100644
  					  mlx4_msi_x_interrupt, 0,
  					  &priv->eq_table.irq_names[vec<<5],
 diff --git a/include/linux/mlx4/device.h b/include/linux/mlx4/device.h
-index 3db8d7f..bfbea17 100644
+index 6abb96e..fa5cd1b 100644
 --- a/include/linux/mlx4/device.h
 +++ b/include/linux/mlx4/device.h
 @@ -36,7 +36,9 @@
@@ -322,7 +322,7 @@ index 3db8d7f..bfbea17 100644
  
  #include <linux/atomic.h>
  
-@@ -993,8 +995,12 @@ int mlx4_query_diag_counters(struct mlx4_dev *mlx4_dev, int array_length,
+@@ -994,8 +996,12 @@ int mlx4_query_diag_counters(struct mlx4_dev *mlx4_dev, int array_length,
  			     u32 counter_out[]);
  
  int mlx4_test_interrupts(struct mlx4_dev *dev);
@@ -336,5 +336,5 @@ index 3db8d7f..bfbea17 100644
  
  int mlx4_wol_read(struct mlx4_dev *dev, u64 *config, int port);
 -- 
-1.7.1
+1.6.0.2
 

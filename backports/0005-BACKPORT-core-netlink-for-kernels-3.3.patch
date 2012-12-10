@@ -1,7 +1,7 @@
-From 79c238d65eff8d47d665396f18dbaa448a4addcf Mon Sep 17 00:00:00 2001
+From 699e37fe9494f5a2e7b55a5af564da804cb17c33 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Mon, 3 Dec 2012 14:25:46 +0200
-Subject: [PATCH 05/20] BACKPORT: core/netlink for kernels <= 3.3
+Subject: [PATCH] BACKPORT: core/netlink for kernels <= 3.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -33,5 +33,5 @@ index 4871a16..f8d5b0b 100644
  		}
  	}
 -- 
-1.7.1
+1.6.0.2
 

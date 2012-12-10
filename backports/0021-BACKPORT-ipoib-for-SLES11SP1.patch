@@ -1,0 +1,49 @@
+From 36a846edb332d5f41da1da1f85f276ea89e9635a Mon Sep 17 00:00:00 2001
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Date: Mon, 10 Dec 2012 13:38:22 +0200
+Subject: [PATCH] BACKPORT: ipoib for SLES11SP1
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ drivers/infiniband/ulp/ipoib/ipoib_main.c |    8 ++++++++
+ 1 files changed, 8 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
+index dbb6e54..07ca93c 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
+@@ -1002,7 +1002,11 @@ static u16 ipoib_select_queue_sw(struct net_device *dev, struct sk_buff *skb)
+ 	header->tss_qpn_mask_sz |= priv->tss_qpn_mask_sz;
+ 
+ 	/* don't use special ring in TX */
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38)) || defined (CONFIG_COMPAT_IS___SKB_TX_HASH)
+ 	return __skb_tx_hash(dev, skb, priv->tss_qp_num);
++#else
++	return skb_tx_hash(dev, skb);
++#endif
+ }
+ 
+ static void ipoib_timeout(struct net_device *dev)
+@@ -1856,7 +1860,9 @@ int ipoib_reinit(struct net_device *dev, int num_rx, int num_tx)
+ 		priv->tss_qp_num = num_tx - 1;
+ 	else
+ 		priv->tss_qp_num = num_tx;
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)) || defined (CONFIG_COMPAT_IS_NUM_TX_QUEUES)
+ 	netif_set_real_num_tx_queues(dev, num_tx);
++#endif
+ 	netif_set_real_num_rx_queues(dev, num_rx);
+ 	/*
+ 	 * prevent ipoib_ib_dev_init call ipoib_ib_dev_open
+@@ -2016,7 +2022,9 @@ struct ipoib_dev_priv *ipoib_intf_alloc(const char *name,
+ 	if (!dev)
+ 		return NULL;
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)) || defined (CONFIG_COMPAT_IS_NUM_TX_QUEUES)
+ 	netif_set_real_num_tx_queues(dev, template_priv->num_tx_queues);
++#endif
+ 	netif_set_real_num_rx_queues(dev, template_priv->num_rx_queues);
+ 
+ 	return netdev_priv(dev);
+-- 
+1.6.0.2
+
