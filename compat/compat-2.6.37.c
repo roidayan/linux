@@ -355,4 +355,22 @@ void *compat_vzalloc(unsigned long size)
 }
 EXPORT_SYMBOL_GPL(compat_vzalloc);
 
+/**
+ * vzalloc_node - allocate memory on a specific node with zero fill
+ * @size:       allocation size
+ * @node:       numa node
+ *
+ * Allocate enough pages to cover @size from the page level
+ * allocator and map them into contiguous kernel virtual space.
+ * The memory allocated is set to zero.
+ *
+ * For tight control over page level allocator and protection flags
+ * use __vmalloc() instead.
+ */
+void *compat_vzalloc_node(unsigned long size, int node)
+{
+        return compat_vzalloc(size);
+}
+EXPORT_SYMBOL(compat_vzalloc_node);
+
 #endif

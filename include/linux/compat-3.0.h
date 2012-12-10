@@ -141,6 +141,10 @@ enum ethtool_phys_id_state {
     ETHTOOL_ID_OFF
 };
 
+#ifndef NETLINK_RDMA
+#define NETLINK_RDMA		20
+#endif
+
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3,0,0)) */
 
 #endif /* LINUX_3_0_COMPAT_H */

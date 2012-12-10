@@ -321,6 +321,10 @@ static inline int lockdep_rtnl_is_held(void)
 }
 #endif /* #ifdef CONFIG_PROVE_LOCKING */
 
+#ifndef NETIF_F_NTUPLE
+#define NETIF_F_NTUPLE		(1 << 27) /* N-tuple filters supported */
+#endif
+
 #else /* Kernels >= 2.6.34 */
 
 static inline void init_compat_mmc_pm_flags(void)

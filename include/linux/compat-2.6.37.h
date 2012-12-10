@@ -153,10 +153,12 @@ extern void compat_led_brightness_set(struct led_classdev *led_cdev,
 
 #define netdev_refcnt_read(a) atomic_read(&a->refcnt)
 
-/* mask vzalloc as RHEL6 backports this */
+/* mask vzalloc vzalloc_node as RHEL6 backports this */
 #define vzalloc(a) compat_vzalloc(a)
+#define vzalloc_node(a, b) compat_vzalloc_node(a, b)
 
 extern void *vzalloc(unsigned long size);
+extern void *vzalloc_node(unsigned long size, int node);
 
 #define rtnl_dereference(p)                                     \
         rcu_dereference_protected(p, lockdep_rtnl_is_held())
@@ -203,6 +205,17 @@ enum additional_ethtool_flags {
 
 extern void             unregister_netdevice_queue(struct net_device *dev,
 						   struct list_head *head);
+
+#ifndef max3
+#define max3(x, y, z) ({			\
+	typeof(x) _max1 = (x);			\
+	typeof(y) _max2 = (y);			\
+	typeof(z) _max3 = (z);			\
+	(void) (&_max1 == &_max2);		\
+	(void) (&_max1 == &_max3);		\
+	_max1 > _max2 ? (_max1 > _max3 ? _max1 : _max3) : \
+		(_max2 > _max3 ? _max2 : _max3); })
+#endif
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,37)) */
 
