@@ -46,6 +46,11 @@ SLES_MINOR := "1"
 CONFIG_COMPAT_SLES_11_1 := y
 endif
 
+FC14_KERNEL := $(shell echo $(KVERSION) | grep fc14)
+ifneq ($(FC14_KERNEL),)
+ CONFIG_COMPAT_DISABLE_DCB=y
+endif
+
 endif # kernel Makefile check
 
 ifdef CONFIG_COMPAT_KERNEL_2_6_36
