@@ -156,6 +156,7 @@ static inline long __must_check IS_ERR_OR_NULL(const void *ptr)
 
 #define tsk_cpus_allowed(tsk) (&(tsk)->cpus_allowed)
 
+#ifndef CONFIG_COMPAT_IS_BITMAP
 extern void bitmap_set(unsigned long *map, int i, int len);
 extern void bitmap_clear(unsigned long *map, int start, int nr);
 extern unsigned long bitmap_find_next_zero_area(unsigned long *map,
@@ -163,6 +164,7 @@ extern unsigned long bitmap_find_next_zero_area(unsigned long *map,
 					 unsigned long start,
 					 unsigned int nr,
 					 unsigned long align_mask);
+#endif
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,33)) */
 

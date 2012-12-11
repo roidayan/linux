@@ -68,6 +68,11 @@ CFLAGS += \
 	-DCONFIG_COMPAT_IS___SKB_TX_HASH
 endif
 
+ifneq ($(CONFIG_COMPAT_IS_BITMAP),)
+CFLAGS += \
+	-DCONFIG_COMPAT_IS_BITMAP
+endif
+
 DEPMOD  = /sbin/depmod
 INSTALL_MOD_DIR ?= $(shell test -f /etc/SuSE-release && echo updates || echo extra/mlnx-ofa_kernel)
 
