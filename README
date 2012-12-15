@@ -1,0 +1,131 @@
+Content:
+1. Overview
+2. Directory structure
+3. HOWTO add backport patches
+4. Adding a feature based on Distro/kernel
+
+
+Overview:
+---------
+The general idea is based on compat-wireless project https://lkml.org/lkml/2011/9/9/327
+Compat Wiki:
+https://backports.wiki.kernel.org/index.php/Main_Page
+https://backports.wiki.kernel.org/index.php/Documentation
+
+Directory structure:
+--------------------
+MLNX_OFED-2.0 git tree structure:
+Compat files:
+	compat/
+	include/linux/compat*h
+	ofed_scripts/compat.mk
+
+Backport patches:
+	backports/
+
+Kernel subtree based on kernel.org 3.7:
+	include/
+	drivers/
+	net/
+	Documentation/
+
+Compilation procedure (same as before):
+# configure <params>
+# make
+# make install
+
+HOWTO add backport patches:
+---------------------------
+Start with updated branch (equal to “mlnx_ofed_next”)
+
+$ /bin/rm -f .backports_applied
+Run configure (check parameters)
+$ ./ofed_scripts/configure --with-core-mod --with-user_mad-mod --with-user_access-mod --with-addr_trans-mod --with-mlx4-mod --with-mlx4_en-mod --with-ipoib-mod --with-srp-mod --with-rds-mod --with-iser-mod
+
+The new branch will be created: “backport-backports”
+All backports are applied.
+
+$ make KBUILD_NOCMDDEP=1 2>&1 | tee log
+
+In case of undefined variable/function refer to:
+https://backports.wiki.kernel.org/index.php/Documentation/compat
+
+If some functionality was backported to some supported Distro need to add CONFIG_COMPAT_... flag:
+For example, "netdev_get_prio_tc_map" was added in 2.6.39 but backported to RHEL6.[23]
+ifeq ($(RHEL_MAJOR),6)
+ CFLAGS += -DCONFIG_COMPAT_IS_PRIO_TC_MAP
+ ...
+endif
+
+diff --git a/drivers/infiniband/core/cma.c b/drivers/infiniband/core/cma.c
+index 0bf5a9d..f0f75b6 100644
+--- a/drivers/infiniband/core/cma.c
++++ b/drivers/infiniband/core/cma.c
+@@ -1844,10 +1844,14 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
+        route->path_rec->reversible = 1;
+        route->path_rec->pkey = cpu_to_be16(0xffff);
+        route->path_rec->mtu_selector = IB_SA_EQ;
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined(CONFIG_COMPAT_IS_PRIO_TC_MAP)
+        route->path_rec->sl = netdev_get_prio_tc_map(
+                        ndev->priv_flags & IFF_802_1Q_VLAN ?
+                                vlan_dev_real_dev(ndev) : ndev,
+                        rt_tos2priority(id_priv->tos));
++#else
++       route->path_rec->sl = id_priv->tos >> 5;
++#endif
+
+
+Adding a feature based on Distro/kernel:
+----------------------------------------
+E.g. Adding LRO to RHEL6.x Distros:
+Add to ofed_scripts/compat.mk:
+
+ifeq ($(RHEL_MAJOR),6)
+...
+CFLAGS += -DCONFIG_COMPAT_USE_LRO
+...
+endif
+
+Edit drivers/infiniband/ulp/ipoib/ipoib.h
+#ifdef CONFIG_COMPAT_USE_LRO
+#include <linux/inet_lro.h>
+#endif
+…
+#ifdef CONFIG_COMPAT_USE_LRO
+… LRO code…
+#else
+… original GRO code …
+#endif
+…
+
+Add CONFIG_COMPAT_USE_LRO definition in ofed_scripts/compat.mk
+Set:
+CONFIG_COMPAT_USE_LRO=y
+
+And in ofed_scripts/makefile:
+ifneq ($(CONFIG_COMPAT_USE_LRO),)
+CFLAGS += \
+        -DCONFIG_COMPAT_USE_LRO
+endif
+
+Run make to compile
+make install
+openibd restart
+
+Create new backport patch from the diff above
+1.	Commit the change
+2.	Get the patch/all patches:
+$ mkdir -p /tmp/backports/
+$ rm -f /tmp/backports/*
+$ git format-patch -o /tmp/backports/ mlnx_ofed_next..
+Change branch to the original “mlnx_ofed_next”
+$ rm -f backports/*
+$ cp -a /tmp/backports/* backports
+$ git add backports
+$ git commit -s -m”BACKPORTS: Added LRO support” backports/
+
+Check compilation:
+$ cd /mswg/projects/art
+$ git_url=<git url> git_branch=mlnx_ofed_next ./build mofed_kernel
+
+Send email to Vladimir.
