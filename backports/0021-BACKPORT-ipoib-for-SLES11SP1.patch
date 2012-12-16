@@ -1,7 +1,7 @@
-From 36a846edb332d5f41da1da1f85f276ea89e9635a Mon Sep 17 00:00:00 2001
+From 3c3bc72e1c4dfe5d180e77bb8c609a021d18fd0f Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Mon, 10 Dec 2012 13:38:22 +0200
-Subject: [PATCH] BACKPORT: ipoib for SLES11SP1
+Subject: [PATCH 21/25] BACKPORT: ipoib for SLES11SP1
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -45,5 +45,5 @@ index dbb6e54..07ca93c 100644
  
  	return netdev_priv(dev);
 -- 
-1.6.0.2
+1.7.1
 

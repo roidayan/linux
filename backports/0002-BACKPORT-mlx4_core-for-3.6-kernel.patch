@@ -1,7 +1,7 @@
-From 7735c8eec75ec82981fe170347d02465bd884ef4 Mon Sep 17 00:00:00 2001
+From 56666d91376752638d8724ff7475bef00015655d Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 28 Nov 2012 14:27:48 +0200
-Subject: [PATCH] BACKPORT: mlx4_core for 3.6 kernel
+Subject: [PATCH 02/25] BACKPORT: mlx4_core for 3.6 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -23,5 +23,5 @@ index 094773d..1d63f93 100644
 +#endif
  }
 -- 
-1.6.0.2
+1.7.1
 

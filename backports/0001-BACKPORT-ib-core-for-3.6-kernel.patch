@@ -1,7 +1,7 @@
-From 9cb73234caa86d5271b970375824c6b1c91dc05d Mon Sep 17 00:00:00 2001
+From 25169edccdc703a33f99e479504279477298f21f Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 28 Nov 2012 14:27:05 +0200
-Subject: [PATCH] BACKPORT: ib/core for 3.6 kernel
+Subject: [PATCH 01/25] BACKPORT: ib/core for 3.6 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -202,5 +202,5 @@ index 374e8a6..6637502 100644
  
  static ssize_t ib_uverbs_write(struct file *filp, const char __user *buf,
 -- 
-1.6.0.2
+1.7.1
 

@@ -1,0 +1,328 @@
+From f788030771acae713330a586b6fb57132f646dc6 Mon Sep 17 00:00:00 2001
+From: Yishai Hadas <yishaih@mellanox.com>
+Date: Thu, 13 Dec 2012 15:56:27 +0200
+Subject: [PATCH 25/25] BACKPORT: ipoib - LRO support
+
+Signed-off-by: Yishai Hadas <yishaih@mellanox.com>
+---
+ drivers/infiniband/ulp/ipoib/ipoib.h         |   19 +++++-
+ drivers/infiniband/ulp/ipoib/ipoib_ethtool.c |   20 +++++
+ drivers/infiniband/ulp/ipoib/ipoib_ib.c      |   14 ++++-
+ drivers/infiniband/ulp/ipoib/ipoib_main.c    |  100 +++++++++++++++++++++++++-
+ ofed_scripts/compat.mk                       |    2 +
+ ofed_scripts/makefile                        |    5 ++
+ 6 files changed, 156 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib.h b/drivers/infiniband/ulp/ipoib/ipoib.h
+index e0bbdbc..123919b 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib.h
++++ b/drivers/infiniband/ulp/ipoib/ipoib.h
+@@ -43,6 +43,9 @@
+ #include <linux/if_infiniband.h>
+ #include <linux/mutex.h>
+ 
++#ifdef CONFIG_COMPAT_USE_LRO
++#include <linux/inet_lro.h>
++#endif
+ #include <net/neighbour.h>
+ #include <net/sch_generic.h>
+ 
+@@ -104,7 +107,10 @@ enum {
+ 	IPOIB_MCAST_FLAG_BUSY	  = 2,	/* joining or already joined */
+ 	IPOIB_MCAST_FLAG_ATTACHED = 3,
+ 	IPOIB_MCAST_JOIN_STARTED  = 4,
+-
++#ifdef CONFIG_COMPAT_USE_LRO
++	IPOIB_MAX_LRO_DESCRIPTORS = 8,
++	IPOIB_LRO_MAX_AGGR	= 64,
++#endif
+ 	MAX_SEND_CQE		  = 16,
+ 	IPOIB_CM_COPYBREAK	  = 256,
+ 	IPOIB_MAX_INLINE_SIZE     = 800,
+@@ -113,6 +119,14 @@ enum {
+ 	IPOIB_RTNL_CHILD	  = 2,
+ };
+ 
++#ifdef CONFIG_COMPAT_USE_LRO
++struct ipoib_lro {
++	struct net_lro_mgr lro_mgr;
++	struct net_lro_desc lro_desc[IPOIB_MAX_LRO_DESCRIPTORS];
++};
++#endif
++
++
+ #define	IPOIB_OP_RECV   (1ul << 31)
+ #ifdef CONFIG_INFINIBAND_IPOIB_CM
+ #define	IPOIB_OP_CM     (1ul << 30)
+@@ -392,6 +406,9 @@ struct ipoib_recv_ring {
+ 	struct ipoib_rx_ring_stats stats;
+ 	unsigned		index;
+ 	struct ipoib_ethtool_last_st ethtool;
++#ifdef CONFIG_COMPAT_USE_LRO
++	struct ipoib_lro lro;
++#endif
+ };
+ 
+ struct ipoib_arp_repath {
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
+index beb8956..f9bff20 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
+@@ -286,6 +286,23 @@ static int ipoib_set_channels(struct net_device *dev,
+ }
+ #endif
+ 
++#ifdef CONFIG_COMPAT_USE_LRO
++int ipoib_set_flags(struct net_device *dev, u32 data)
++{
++	struct ipoib_dev_priv *priv = netdev_priv(dev);
++
++	ethtool_op_set_flags(dev, data);
++	/*no support in LRO with 4k mtu.*/
++	if (ipoib_ud_need_sg(priv->max_ib_mtu) && (data & NETIF_F_LRO)) {
++
++		priv->dev->features  &= ~NETIF_F_LRO;
++		return -EOPNOTSUPP;
++	}
++
++	return 0;
++}
++#endif
++
+ static const struct ethtool_ops ipoib_ethtool_ops = {
+ 	.get_drvinfo		= ipoib_get_drvinfo,
+ 	.get_coalesce		= ipoib_get_coalesce,
+@@ -297,6 +314,9 @@ static const struct ethtool_ops ipoib_ethtool_ops = {
+ 	.get_channels		= ipoib_get_channels,
+ 	.set_channels		= ipoib_set_channels,
+ #endif
++#ifdef CONFIG_COMPAT_USE_LRO
++	.set_flags		= ipoib_set_flags,
++#endif
+ };
+ 
+ void ipoib_set_ethtool_ops(struct net_device *dev)
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ib.c b/drivers/infiniband/ulp/ipoib/ipoib_ib.c
+index 75b5961..1bb3e23 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib_ib.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_ib.c
+@@ -380,8 +380,16 @@ static void ipoib_ib_handle_rx_wc(struct net_device *dev,
+ 		set_skb_oob_cb_data(skb, wc, &recv_ring->napi);
+ 		/*the registered handler will take care of the skb.*/
+ 		netif_receive_skb(skb);
+-	} else
++	}
++#ifdef CONFIG_COMPAT_USE_LRO
++	else if (dev->features & NETIF_F_LRO)
++		lro_receive_skb(&recv_ring->lro.lro_mgr, skb, NULL);
++	else
++		netif_receive_skb(skb);
++#else
++	else
+ 		napi_gro_receive(&recv_ring->napi, skb);
++#endif
+ 
+ repost:
+ 	if (unlikely(ipoib_ib_post_receive(dev, recv_ring, wr_id)))
+@@ -534,6 +542,10 @@ poll_more:
+ 	}
+ 
+ 	if (n < budget) {
++#ifdef CONFIG_COMPAT_USE_LRO
++		if (dev->features & NETIF_F_LRO)
++			lro_flush_all(&rx_ring->lro.lro_mgr);
++#endif
+ 		napi_complete(napi);
+ 		if (unlikely(ib_req_notify_cq(rx_ring->recv_cq,
+ 					      IB_CQ_NEXT_COMP |
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
+index 07ca93c..72e804e 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
+@@ -61,6 +61,17 @@ MODULE_PARM_DESC(send_queue_size, "Number of descriptors in send queue");
+ module_param_named(recv_queue_size, ipoib_recvq_size, int, 0444);
+ MODULE_PARM_DESC(recv_queue_size, "Number of descriptors in receive queue");
+ 
++#ifdef CONFIG_COMPAT_USE_LRO
++static int lro = 1;
++module_param_named(lro, lro, int, 0444);
++MODULE_PARM_DESC(lro,  "Enable LRO (Large Receive Offload)");
++
++static int lro_max_aggr = IPOIB_LRO_MAX_AGGR;
++module_param_named(lro_max_aggr, lro_max_aggr, int, 0444);
++MODULE_PARM_DESC(lro_max_aggr, "LRO: Max packets to be aggregated "
++				"(default = 64)");
++#endif
++
+ #ifdef CONFIG_INFINIBAND_IPOIB_DEBUG
+ int ipoib_debug_level;
+ 
+@@ -86,6 +97,10 @@ struct ib_sa_client ipoib_sa_client;
+ static void ipoib_add_one(struct ib_device *device);
+ static void ipoib_remove_one(struct ib_device *device);
+ static void ipoib_neigh_reclaim(struct rcu_head *rp);
++#ifdef CONFIG_COMPAT_USE_LRO
++static void ipoib_lro_setup(struct ipoib_recv_ring *recv_ring,
++				struct ipoib_dev_priv *priv);
++#endif
+ 
+ static struct ib_client ipoib_client = {
+ 	.name   = "ipoib",
+@@ -1736,6 +1751,9 @@ int ipoib_dev_init(struct net_device *dev, struct ib_device *ca, int port)
+ 		}
+ 		recv_ring->dev = dev;
+ 		recv_ring->index = i;
++#ifdef CONFIG_COMPAT_USE_LRO
++		ipoib_lro_setup(recv_ring, priv);
++#endif
+ 		recv_ring++;
+ 		rx_allocated++;
+ 	}
+@@ -1891,6 +1909,67 @@ int ipoib_reinit(struct net_device *dev, int num_rx, int num_tx)
+ 	return ret;
+ }
+ 
++#ifdef CONFIG_COMPAT_USE_LRO
++static int get_skb_hdr(struct sk_buff *skb, void **iphdr,
++			void **tcph, u64 *hdr_flags, void *priv)
++{
++	unsigned int ip_len;
++	struct iphdr *iph;
++
++	if (unlikely(skb->protocol != htons(ETH_P_IP)))
++		return -1;
++
++	/*
++	* In the future we may add an else clause that verifies the
++	* checksum and allows devices which do not calculate checksum
++	* to use LRO.
++	*/
++	if (unlikely(skb->ip_summed != CHECKSUM_UNNECESSARY))
++		return -1;
++
++	/* Check for non-TCP packet */
++	skb_reset_network_header(skb);
++	iph = ip_hdr(skb);
++	if (iph->protocol != IPPROTO_TCP)
++		return -1;
++
++	ip_len = ip_hdrlen(skb);
++	skb_set_transport_header(skb, ip_len);
++	*tcph = tcp_hdr(skb);
++
++	/* check if IP header and TCP header are complete */
++	if (ntohs(iph->tot_len) < ip_len + tcp_hdrlen(skb))
++		return -1;
++
++	*hdr_flags = LRO_IPV4 | LRO_TCP;
++	*iphdr = iph;
++
++	return 0;
++}
++
++
++static void ipoib_lro_setup(struct ipoib_recv_ring *recv_ring,
++				struct ipoib_dev_priv *priv)
++{
++	recv_ring->lro.lro_mgr.max_aggr  = lro_max_aggr;
++	recv_ring->lro.lro_mgr.max_desc  = IPOIB_MAX_LRO_DESCRIPTORS;
++	recv_ring->lro.lro_mgr.lro_arr   = recv_ring->lro.lro_desc;
++	recv_ring->lro.lro_mgr.get_skb_header = get_skb_hdr;
++	recv_ring->lro.lro_mgr.features  = LRO_F_NAPI;
++	recv_ring->lro.lro_mgr.dev               = priv->dev;
++	recv_ring->lro.lro_mgr.ip_summed_aggr = CHECKSUM_UNNECESSARY;
++}
++
++void set_lro_features_bit(struct ipoib_dev_priv *priv)
++{
++	if (lro)
++		priv->dev->features |= NETIF_F_LRO;
++	/*no support in LRO with 4k mtu.*/
++	if (ipoib_ud_need_sg(priv->max_ib_mtu))
++		priv->dev->features  &= ~NETIF_F_LRO;
++}
++#endif
++
+ static const struct header_ops ipoib_header_ops = {
+ 	.create	= ipoib_hard_header,
+ };
+@@ -2354,7 +2433,9 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
+ 			priv->dev->features |= NETIF_F_TSO;
+ #endif
+ 	}
+-
++#ifdef CONFIG_COMPAT_USE_LRO
++	set_lro_features_bit(priv);
++#endif
+ 	return 0;
+ }
+ 
+@@ -2382,8 +2463,17 @@ static struct net_device *ipoib_add_port(const char *format,
+ 	SET_NETDEV_DEV(priv->dev, hca->dma_device);
+ 	priv->dev->dev_id = port - 1;
+ 
+-	if (!ib_query_port(hca, port, &attr))
++	if (!ib_query_port(hca, port, &attr)) {
+ 		priv->max_ib_mtu = ib_mtu_enum_to_int(attr.max_mtu);
++#ifdef CONFIG_COMPAT_USE_LRO
++	/* To enable LRO we set max MTU to 2K*/
++		if (lro) {
++			printk(KERN_WARNING "LRO forced max mtu to be 2K for ipoib, port=%d",
++				port);
++			priv->max_ib_mtu = 2048;
++		}
++#endif
++	}
+ 	else {
+ 		printk(KERN_WARNING "%s: ib_query_port %d failed\n",
+ 		       hca->name, port);
+@@ -2456,6 +2546,12 @@ static struct net_device *ipoib_add_port(const char *format,
+ 		goto register_failed;
+ 	}
+ 
++#ifdef CONFIG_COMPAT_USE_LRO
++	/*force lro on the dev->features, because the function
++	register_netdev disable it according to our private lro*/
++	set_lro_features_bit(priv);
++#endif
++
+ 	ipoib_create_debug_files(priv->dev);
+ 
+ 	result = -ENOMEM;
+diff --git a/ofed_scripts/compat.mk b/ofed_scripts/compat.mk
+index ae9ef5b..fb8bc2b 100644
+--- a/ofed_scripts/compat.mk
++++ b/ofed_scripts/compat.mk
+@@ -73,6 +73,7 @@ endif #CONFIG_COMPAT_KERNEL_2_6_38
+ 
+ ifdef CONFIG_COMPAT_SLES_11_1
+  CONFIG_COMPAT_DISABLE_DCB=y
++ CONFIG_COMPAT_USE_LRO=y
+ endif
+ 
+ ifdef CONFIG_COMPAT_SLES_11_2
+@@ -96,4 +97,5 @@ ifeq ($(RHEL_MAJOR),6)
+  CONFIG_COMPAT_ISER_ATTR_IS_VISIBLE=y
+  CONFIG_COMPAT_ISCSI_ISER_GET_EP_PARAM=y
+  CONFIG_COMPAT_IS_BITMAP=y
++ CONFIG_COMPAT_USE_LRO=y
+ endif
+diff --git a/ofed_scripts/makefile b/ofed_scripts/makefile
+index f4ccbef..b760dff 100644
+--- a/ofed_scripts/makefile
++++ b/ofed_scripts/makefile
+@@ -38,6 +38,11 @@ CFLAGS += \
+ 	-DCONFIG_COMPAT_NEW_TX_RING_SCHEME
+ endif
+ 
++ifneq ($(CONFIG_COMPAT_USE_LRO),)
++CFLAGS += \
++        -DCONFIG_COMPAT_USE_LRO
++endif
++
+ ifneq ($(CONFIG_COMPAT_SKB_FRAG_NEEDED),)
+ CFLAGS += \
+ 	-DCONFIG_COMPAT_SKB_FRAG_NEEDED
+-- 
+1.7.1
+

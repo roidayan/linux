@@ -1,7 +1,7 @@
-From 7496f559b5d260ded582cbb9ea0aa377350f3ad9 Mon Sep 17 00:00:00 2001
+From 146bab725e9cbc7a64c1516ae7b59814489aa685 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Mon, 3 Dec 2012 17:39:51 +0200
-Subject: [PATCH] BACKPORT: ipoib for 3.2 kernel
+Subject: [PATCH 06/25] BACKPORT: ipoib for 3.2 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -23,5 +23,5 @@ index c1dfbf1..93a4107 100644
  	result = ib_query_pkey(hca, port, 0, &priv->pkey);
  	if (result) {
 -- 
-1.6.0.2
+1.7.1
 
