@@ -1,12 +1,12 @@
-From 78371700a637c838316e643e105ab3c0d5e11d3a Mon Sep 17 00:00:00 2001
+From 53bce1a035ccea1f75e8479cb1463b17fb4d9c24 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Mon, 3 Dec 2012 18:55:08 +0200
-Subject: [PATCH 11/25] BACKPORT: core/multicast for kernels < 2.6.36
+Subject: [PATCH 11/26] BACKPORT: core/multicast for kernels < 2.6.36
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
  drivers/infiniband/core/multicast.c |    5 +++++
- 1 files changed, 5 insertions(+), 0 deletions(-)
+ 1 file changed, 5 insertions(+)
 
 diff --git a/drivers/infiniband/core/multicast.c b/drivers/infiniband/core/multicast.c
 index a78782d..f335ed2 100644
@@ -31,5 +31,5 @@ index a78782d..f335ed2 100644
  				      "requests before giving up (default: 3)");
  
 -- 
-1.7.1
+1.7.9.5
 

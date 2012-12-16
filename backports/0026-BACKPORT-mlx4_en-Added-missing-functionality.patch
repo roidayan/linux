@@ -1,0 +1,319 @@
+From 8b71a8938f86ef98a68fed493f50b7c20ae018e6 Mon Sep 17 00:00:00 2001
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Date: Sun, 16 Dec 2012 16:02:50 +0200
+Subject: [PATCH 26/26] BACKPORT: mlx4_en: Added missing functionality
+
+Added missing offloads and ethtool configurations for RHEL6.x
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ drivers/net/ethernet/mellanox/mlx4/en_ethtool.c |   76 +++++++++++++++++++++++
+ drivers/net/ethernet/mellanox/mlx4/en_netdev.c  |   33 +++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_rx.c      |   39 +++++++++++-
+ drivers/net/ethernet/mellanox/mlx4/mlx4_en.h    |    6 ++
+ 4 files changed, 150 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
+index dcccfbf..d826e91 100644
+--- a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
+@@ -64,6 +64,70 @@ mlx4_en_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *drvinfo)
+ 	drvinfo->eedump_len = 0;
+ }
+ 
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,0,0))
++static u32 mlx4_en_get_tso(struct net_device *dev)
++{
++	return (dev->features & NETIF_F_TSO) != 0;
++}
++
++static int mlx4_en_set_tso(struct net_device *dev, u32 data)
++{
++	struct mlx4_en_priv *priv = netdev_priv(dev);
++
++	if (data) {
++		if (!priv->mdev->LSO_support)
++			return -EPERM;
++		dev->features |= (NETIF_F_TSO | NETIF_F_TSO6);
++#ifdef HAVE_NETDEV_VLAN_FEATURES
++		dev->vlan_features |= (NETIF_F_TSO | NETIF_F_TSO6);
++#else
++		if (priv->vlgrp) {
++			int i;
++			struct net_device *vdev;
++			for (i = 0; i < VLAN_GROUP_ARRAY_LEN; i++) {
++				vdev = vlan_group_get_device(priv->vlgrp, i);
++				if (vdev) {
++					vdev->features |= (NETIF_F_TSO | NETIF_F_TSO6);
++					vlan_group_set_device(priv->vlgrp, i, vdev);
++				}
++			}
++		}
++#endif
++	} else {
++		dev->features &= ~(NETIF_F_TSO | NETIF_F_TSO6);
++#ifdef HAVE_NETDEV_VLAN_FEATURES
++		dev->vlan_features &= ~(NETIF_F_TSO | NETIF_F_TSO6);
++#else
++		if (priv->vlgrp) {
++			int i;
++			struct net_device *vdev;
++			for (i = 0; i < VLAN_GROUP_ARRAY_LEN; i++) {
++				vdev = vlan_group_get_device(priv->vlgrp, i);
++				if (vdev) {
++					vdev->features &= ~(NETIF_F_TSO | NETIF_F_TSO6);
++					vlan_group_set_device(priv->vlgrp, i, vdev);
++				}
++			}
++		}
++#endif
++	}
++	return 0;
++}
++
++static u32 mlx4_en_get_rx_csum(struct net_device *dev)
++{
++	struct mlx4_en_priv *priv = netdev_priv(dev);
++	return priv->rx_csum;
++}
++
++static int mlx4_en_set_rx_csum(struct net_device *dev, u32 data)
++{
++	struct mlx4_en_priv *priv = netdev_priv(dev);
++	priv->rx_csum = (data != 0);
++	return 0;
++}
++#endif
++
+ static const char main_strings[][ETH_GSTRING_LEN] = {
+ 	"rx_packets", "tx_packets", "rx_bytes", "tx_bytes", "rx_errors",
+ 	"tx_errors", "rx_dropped", "tx_dropped", "multicast", "collisions",
+@@ -1025,6 +1089,18 @@ const struct ethtool_ops mlx4_en_ethtool_ops = {
+ 	.get_drvinfo = mlx4_en_get_drvinfo,
+ 	.get_settings = mlx4_en_get_settings,
+ 	.set_settings = mlx4_en_set_settings,
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,0,0))
++#ifdef NETIF_F_TSO
++	.get_tso = mlx4_en_get_tso,
++	.set_tso = mlx4_en_set_tso,
++#endif
++	.get_sg = ethtool_op_get_sg,
++	.set_sg = ethtool_op_set_sg,
++	.get_rx_csum = mlx4_en_get_rx_csum,
++	.set_rx_csum = mlx4_en_set_rx_csum,
++	.get_tx_csum = ethtool_op_get_tx_csum,
++	.set_tx_csum = ethtool_op_set_tx_ipv6_csum,
++#endif
+ 	.get_link = ethtool_op_get_link,
+ 	.get_strings = mlx4_en_get_strings,
+ 	.get_sset_count = mlx4_en_get_sset_count,
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
+index 821e7e3..9ea6d0b 100644
+--- a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
+@@ -363,7 +363,22 @@ static void mlx4_en_filter_rfs_expire(struct mlx4_en_priv *priv)
+ }
+ #endif
+ 
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,1,0))
++static void mlx4_en_vlan_rx_register(struct net_device *dev, struct vlan_group *grp)
++{
++        struct mlx4_en_priv *priv = netdev_priv(dev);
++
++        en_dbg(HW, priv, "Registering VLAN group:%p\n", grp);
++
++        priv->vlgrp = grp;
++}
++#endif
++
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0))
+ static int mlx4_en_vlan_rx_add_vid(struct net_device *dev, unsigned short vid)
++#else
++static void mlx4_en_vlan_rx_add_vid(struct net_device *dev, unsigned short vid)
++#endif
+ {
+ 	struct mlx4_en_priv *priv = netdev_priv(dev);
+ 	struct mlx4_en_dev *mdev = priv->mdev;
+@@ -385,10 +400,16 @@ static int mlx4_en_vlan_rx_add_vid(struct net_device *dev, unsigned short vid)
+ 		en_dbg(HW, priv, "failed adding vlan %d\n", vid);
+ 	mutex_unlock(&mdev->state_lock);
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0))
+ 	return 0;
++#endif
+ }
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0))
+ static int mlx4_en_vlan_rx_kill_vid(struct net_device *dev, unsigned short vid)
++#else
++static void mlx4_en_vlan_rx_kill_vid(struct net_device *dev, unsigned short vid)
++#endif
+ {
+ 	struct mlx4_en_priv *priv = netdev_priv(dev);
+ 	struct mlx4_en_dev *mdev = priv->mdev;
+@@ -413,7 +434,9 @@ static int mlx4_en_vlan_rx_kill_vid(struct net_device *dev, unsigned short vid)
+ 	}
+ 	mutex_unlock(&mdev->state_lock);
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0))
+ 	return 0;
++#endif
+ }
+ 
+ u64 mlx4_en_mac_to_u64(u8 *addr)
+@@ -1652,6 +1675,9 @@ static const struct net_device_ops mlx4_netdev_ops = {
+ 	.ndo_change_mtu		= mlx4_en_change_mtu,
+ 	.ndo_do_ioctl		= mlx4_en_ioctl,
+ 	.ndo_tx_timeout		= mlx4_en_tx_timeout,
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,1,0))
++	.ndo_vlan_rx_register	= mlx4_en_vlan_rx_register,
++#endif
+ 	.ndo_vlan_rx_add_vid	= mlx4_en_vlan_rx_add_vid,
+ 	.ndo_vlan_rx_kill_vid	= mlx4_en_vlan_rx_kill_vid,
+ #ifdef CONFIG_NET_POLL_CONTROLLER
+@@ -1698,6 +1724,9 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+ 	priv->prof = prof;
+ 	priv->port = port;
+ 	priv->port_up = false;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,0,0))
++	priv->rx_csum = 1;
++#endif
+ 	priv->flags = prof->flags;
+ 	priv->ctrl_flags = cpu_to_be32(MLX4_WQE_CTRL_CQ_UPDATE |
+ 			MLX4_WQE_CTRL_SOLICITED);
+@@ -1806,13 +1835,13 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+ 	    MLX4_STEERING_MODE_DEVICE_MANAGED)
+ 		dev->hw_features |= NETIF_F_NTUPLE;
+ #else
+-	dev->features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM;
++	dev->features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM | NETIF_F_GRO;
+ 	if (mdev->LSO_support)
+ 		dev->features |= NETIF_F_TSO | NETIF_F_TSO6;
+ 
+ 	dev->vlan_features = dev->features;
+ 
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35) || defined (CONFIG_COMPAT_NETIF_F_RXHASH)
+ 	dev->features |= NETIF_F_RXCSUM | NETIF_F_RXHASH;
+ #else
+ 	dev->features |= NETIF_F_RXCSUM;
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_rx.c b/drivers/net/ethernet/mellanox/mlx4/en_rx.c
+index c47ceb4..53ede7b 100644
+--- a/drivers/net/ethernet/mellanox/mlx4/en_rx.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_rx.c
+@@ -684,6 +684,7 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+ 					gro_skb->data_len = length;
+ 					gro_skb->ip_summed = CHECKSUM_UNNECESSARY;
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,1,0)
+ 					if ((cqe->vlan_my_qpn &
+ 					    cpu_to_be32(MLX4_CQE_VLAN_PRESENT_MASK))
+ 					    && (ring->hwtstamp_rx_filter
+@@ -692,20 +693,37 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+ 
+ 						__vlan_hwaccel_put_tag(gro_skb, vid);
+ 					}
++#endif
+ 
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35) || defined (CONFIG_COMPAT_NETIF_F_RXHASH)
+ 					if (dev->features & NETIF_F_RXHASH)
+ 						gro_skb->rxhash = be32_to_cpu(cqe->immed_rss_invalid);
+ #endif
+ 
+ 					skb_record_rx_queue(gro_skb, cq->ring);
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,1,0)
+ 					if (ring->hwtstamp_rx_filter == HWTSTAMP_FILTER_ALL) {
+ 						timestamp = mlx4_en_get_cqe_ts(cqe);
+ 						mlx4_en_fill_hwtstamps(mdev, skb_hwtstamps(gro_skb),
+ 							timestamp);
+ 					}
+ 					napi_gro_frags(&cq->napi);
++#else
++					if (priv->vlgrp && (cqe->vlan_my_qpn &
++					     cpu_to_be32(MLX4_CQE_VLAN_PRESENT_MASK))
++					     && (ring->hwtstamp_rx_filter
++						== HWTSTAMP_FILTER_NONE))
++						vlan_gro_frags(&cq->napi, priv->vlgrp, be16_to_cpu(cqe->sl_vid));
++					else {
++						if (ring->hwtstamp_rx_filter == HWTSTAMP_FILTER_ALL) {
++							timestamp = mlx4_en_get_cqe_ts(cqe);
++							mlx4_en_fill_hwtstamps(mdev, skb_hwtstamps(gro_skb),
++								timestamp);
++						}
++						napi_gro_frags(&cq->napi);
++					}
++#endif
+ 
+ 					goto next;
+ 				}
+@@ -736,14 +754,16 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+ 		skb->protocol = eth_type_trans(skb, dev);
+ 		skb_record_rx_queue(skb, cq->ring);
+ 
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35) || defined (CONFIG_COMPAT_NETIF_F_RXHASH)
+ 		if (dev->features & NETIF_F_RXHASH)
+ 			skb->rxhash = be32_to_cpu(cqe->immed_rss_invalid);
+ #endif
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,1,0)
+ 		if ((be32_to_cpu(cqe->vlan_my_qpn) & MLX4_CQE_VLAN_PRESENT_MASK)
+ 		    && (ring->hwtstamp_rx_filter == HWTSTAMP_FILTER_NONE))
+ 			__vlan_hwaccel_put_tag(skb, be16_to_cpu(cqe->sl_vid));
++#endif
+ 
+ 		if (ring->hwtstamp_rx_filter == HWTSTAMP_FILTER_ALL) {
+ 			timestamp = mlx4_en_get_cqe_ts(cqe);
+@@ -751,8 +771,23 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+ 				timestamp);
+ 		}
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,1,0)
+ 		/* Push it up the stack */
+ 		netif_receive_skb(skb);
++#else
++		/*
++		 * Push it up the stack
++		 * We have to check vlgrp since it is possible that vlans
++		 * are not defined yet
++		 */
++		if (priv->vlgrp	&& (be32_to_cpu(cqe->vlan_my_qpn)
++			& MLX4_CQE_VLAN_PRESENT_MASK)
++			&& (ring->hwtstamp_rx_filter == HWTSTAMP_FILTER_NONE))
++			vlan_hwaccel_receive_skb(skb, priv->vlgrp,
++				be16_to_cpu(cqe->sl_vid));
++		else
++			netif_receive_skb(skb);
++#endif
+ 
+ next:
+ 		for (nr = 0; nr < priv->num_frags; nr++)
+diff --git a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
+index 3bc443d..6e1946f 100644
+--- a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
++++ b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
+@@ -475,6 +475,9 @@ struct mlx4_en_priv {
+ 	struct mlx4_en_dev *mdev;
+ 	struct mlx4_en_port_profile *prof;
+ 	struct net_device *dev;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,1,0))
++	struct vlan_group *vlgrp;
++#endif
+ 	unsigned long active_vlans[BITS_TO_LONGS(VLAN_N_VID)];
+ 	struct net_device_stats stats;
+ 	struct net_device_stats ret_stats;
+@@ -509,6 +512,9 @@ struct mlx4_en_priv {
+ 	int registered;
+ 	int allocated;
+ 	int stride;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,0,0))
++	int rx_csum;
++#endif
+ 	u64 mac;
+ 	int mac_index;
+ 	unsigned max_mtu;
+-- 
+1.7.9.5
+

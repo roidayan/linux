@@ -1,12 +1,12 @@
-From 9dd60cdcf9f90d7f794d2632d86d1e7342bc1323 Mon Sep 17 00:00:00 2001
+From b2681d7396cd72a9ff55b45721f6cf171d07a3c3 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Mon, 3 Dec 2012 14:25:46 +0200
-Subject: [PATCH 05/25] BACKPORT: core/netlink for kernels <= 3.3
+Subject: [PATCH 05/26] BACKPORT: core/netlink for kernels <= 3.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
  drivers/infiniband/core/netlink.c |    6 ++++++
- 1 files changed, 6 insertions(+), 0 deletions(-)
+ 1 file changed, 6 insertions(+)
 
 diff --git a/drivers/infiniband/core/netlink.c b/drivers/infiniband/core/netlink.c
 index 4871a16..f8d5b0b 100644
@@ -33,5 +33,5 @@ index 4871a16..f8d5b0b 100644
  		}
  	}
 -- 
-1.7.1
+1.7.9.5
 

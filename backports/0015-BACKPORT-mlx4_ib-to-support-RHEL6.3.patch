@@ -1,12 +1,12 @@
-From c91cb89f7eabb7dead10a2a3e76265ecacbcf259 Mon Sep 17 00:00:00 2001
+From 238fcf0adf6aa7e3152d13fa752556ea68b313d1 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 5 Dec 2012 13:30:04 +0200
-Subject: [PATCH 15/25] BACKPORT: mlx4_ib to support RHEL6.3
+Subject: [PATCH 15/26] BACKPORT: mlx4_ib to support RHEL6.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
  drivers/infiniband/hw/mlx4/main.c |    4 ++++
- 1 files changed, 4 insertions(+), 0 deletions(-)
+ 1 file changed, 4 insertions(+)
 
 diff --git a/drivers/infiniband/hw/mlx4/main.c b/drivers/infiniband/hw/mlx4/main.c
 index 52fc02c..56e715d 100644
@@ -26,5 +26,5 @@ index 52fc02c..56e715d 100644
  				pr_warn("Can't allocate EQ %d; reverting to legacy\n", eq);
  				ibdev->eq_table[eq] =
 -- 
-1.7.1
+1.7.9.5
 

@@ -1,12 +1,12 @@
-From 7349fcae709b72684f37c4954f785c02a4ad061c Mon Sep 17 00:00:00 2001
+From 23a90fcf6766f26ffa4efd61567980f15957963b Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 28 Nov 2012 16:33:45 +0200
-Subject: [PATCH 03/25] BACKPORT: Add ib/core support for 3.5 kernel
+Subject: [PATCH 03/26] BACKPORT: Add ib/core support for 3.5 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
  drivers/infiniband/core/netlink.c |    5 +++++
- 1 files changed, 5 insertions(+), 0 deletions(-)
+ 1 file changed, 5 insertions(+)
 
 diff --git a/drivers/infiniband/core/netlink.c b/drivers/infiniband/core/netlink.c
 index 99d1cff..4871a16 100644
@@ -32,5 +32,5 @@ index 99d1cff..4871a16 100644
  		pr_warn("Failed to create netlink socket\n");
  		return -ENOMEM;
 -- 
-1.7.1
+1.7.9.5
 

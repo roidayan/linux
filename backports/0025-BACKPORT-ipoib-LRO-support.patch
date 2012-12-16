@@ -1,17 +1,15 @@
-From f788030771acae713330a586b6fb57132f646dc6 Mon Sep 17 00:00:00 2001
+From 4616dfab1c1644b363e2fd5790c9ce43302f3f55 Mon Sep 17 00:00:00 2001
 From: Yishai Hadas <yishaih@mellanox.com>
 Date: Thu, 13 Dec 2012 15:56:27 +0200
-Subject: [PATCH 25/25] BACKPORT: ipoib - LRO support
+Subject: [PATCH 25/26] BACKPORT: ipoib - LRO support
 
 Signed-off-by: Yishai Hadas <yishaih@mellanox.com>
 ---
- drivers/infiniband/ulp/ipoib/ipoib.h         |   19 +++++-
- drivers/infiniband/ulp/ipoib/ipoib_ethtool.c |   20 +++++
- drivers/infiniband/ulp/ipoib/ipoib_ib.c      |   14 ++++-
+ drivers/infiniband/ulp/ipoib/ipoib.h         |   19 ++++-
+ drivers/infiniband/ulp/ipoib/ipoib_ethtool.c |   20 ++++++
+ drivers/infiniband/ulp/ipoib/ipoib_ib.c      |   14 +++-
  drivers/infiniband/ulp/ipoib/ipoib_main.c    |  100 +++++++++++++++++++++++++-
- ofed_scripts/compat.mk                       |    2 +
- ofed_scripts/makefile                        |    5 ++
- 6 files changed, 156 insertions(+), 4 deletions(-)
+ 4 files changed, 149 insertions(+), 4 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib.h b/drivers/infiniband/ulp/ipoib/ipoib.h
 index e0bbdbc..123919b 100644
@@ -290,5 +288,5 @@ index 07ca93c..72e804e 100644
  
  	result = -ENOMEM;
 -- 
-1.7.1
+1.7.9.5
 

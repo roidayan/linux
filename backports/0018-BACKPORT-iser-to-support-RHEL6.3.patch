@@ -1,13 +1,13 @@
-From 6127ef068e0d10543a7b19d48fb11aa6cad480e4 Mon Sep 17 00:00:00 2001
+From 11bb6e25a059869cad676e8ddb6eee16ee036046 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 5 Dec 2012 13:32:41 +0200
-Subject: [PATCH 18/25] BACKPORT: iser to support RHEL6.3
+Subject: [PATCH 18/26] BACKPORT: iser to support RHEL6.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
  drivers/infiniband/ulp/iser/iser_initiator.c |    4 ++++
  drivers/infiniband/ulp/iser/iser_memory.c    |   16 ++++++++++++++++
- 2 files changed, 20 insertions(+), 0 deletions(-)
+ 2 files changed, 20 insertions(+)
 
 diff --git a/drivers/infiniband/ulp/iser/iser_initiator.c b/drivers/infiniband/ulp/iser/iser_initiator.c
 index a00ccd1..47dd15c 100644
@@ -70,5 +70,5 @@ index 2033a92..527db86 100644
  		}
  	}
 -- 
-1.7.1
+1.7.9.5
 
