@@ -289,40 +289,6 @@ index 07ca93c..72e804e 100644
  	ipoib_create_debug_files(priv->dev);
  
  	result = -ENOMEM;
-diff --git a/ofed_scripts/compat.mk b/ofed_scripts/compat.mk
-index ae9ef5b..fb8bc2b 100644
---- a/ofed_scripts/compat.mk
-+++ b/ofed_scripts/compat.mk
-@@ -73,6 +73,7 @@ endif #CONFIG_COMPAT_KERNEL_2_6_38
- 
- ifdef CONFIG_COMPAT_SLES_11_1
-  CONFIG_COMPAT_DISABLE_DCB=y
-+ CONFIG_COMPAT_USE_LRO=y
- endif
- 
- ifdef CONFIG_COMPAT_SLES_11_2
-@@ -96,4 +97,5 @@ ifeq ($(RHEL_MAJOR),6)
-  CONFIG_COMPAT_ISER_ATTR_IS_VISIBLE=y
-  CONFIG_COMPAT_ISCSI_ISER_GET_EP_PARAM=y
-  CONFIG_COMPAT_IS_BITMAP=y
-+ CONFIG_COMPAT_USE_LRO=y
- endif
-diff --git a/ofed_scripts/makefile b/ofed_scripts/makefile
-index f4ccbef..b760dff 100644
---- a/ofed_scripts/makefile
-+++ b/ofed_scripts/makefile
-@@ -38,6 +38,11 @@ CFLAGS += \
- 	-DCONFIG_COMPAT_NEW_TX_RING_SCHEME
- endif
- 
-+ifneq ($(CONFIG_COMPAT_USE_LRO),)
-+CFLAGS += \
-+        -DCONFIG_COMPAT_USE_LRO
-+endif
-+
- ifneq ($(CONFIG_COMPAT_SKB_FRAG_NEEDED),)
- CFLAGS += \
- 	-DCONFIG_COMPAT_SKB_FRAG_NEEDED
 -- 
 1.7.1
 
