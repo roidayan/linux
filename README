@@ -85,6 +85,23 @@ index 0bf5a9d..f0f75b6 100644
 +       route->path_rec->sl = id_priv->tos >> 5;
 +#endif
 
+Create a new backport patch from the diff above:
+1. Commit the change (add commit BACKPORT: ...)
+2. Get all patches:
+$ mkdir -p /tmp/backports/
+$ rm -f /tmp/backports/*
+$ git format-patch -o /tmp/backports/ mlnx_ofed_next..
+Change branch to the original (E.g. “mlnx_ofed_next”)
+$ rm -f backports/*
+$ cp -a /tmp/backports/* backports
+$ git add backports
+$ git commit -s -m”BACKPORTS: Added LRO support” backports/
+
+Check compilation:
+$ cd /mswg/projects/art
+$ git_url=<git url> git_branch=<git branch> ./build mofed_kernel
+
+Send email to Vladimir.
 
 Adding a feature based on Distro/kernel:
 ----------------------------------------
@@ -123,13 +140,13 @@ Run make to compile
 make install
 openibd restart
 
-Create new backport patch from the diff above
-1.	Commit the change
-2.	Get the patch/all patches:
+Create a new backport patch from the diff above:
+1. Commit the change (add commit BACKPORT: ...)
+2. Get all patches:
 $ mkdir -p /tmp/backports/
 $ rm -f /tmp/backports/*
 $ git format-patch -o /tmp/backports/ mlnx_ofed_next..
-Change branch to the original “mlnx_ofed_next”
+Change branch to the original (E.g. “mlnx_ofed_next”)
 $ rm -f backports/*
 $ cp -a /tmp/backports/* backports
 $ git add backports
@@ -137,6 +154,6 @@ $ git commit -s -m”BACKPORTS: Added LRO support” backports/
 
 Check compilation:
 $ cd /mswg/projects/art
-$ git_url=<git url> git_branch=mlnx_ofed_next ./build mofed_kernel
+$ git_url=<git url> git_branch=<git branch> ./build mofed_kernel
 
 Send email to Vladimir.
