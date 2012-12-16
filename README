@@ -38,6 +38,17 @@ HOWTO add backport patches:
 ---------------------------
 Start with updated branch (equal to “mlnx_ofed_next”)
 
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!! NOTE: BACKPORT PATCHES MAY CHANGE FILES UNDER FOLLOWING DIRECTORIES                                               !!!
+!!!			include/rdma/                                                                                 !!!
+!!!			include/linux/mlx4/                                                                           !!!
+!!!			include/linux/mlx5/                                                                           !!!
+!!!			drivers/                                                                                      !!!
+!!!			net/                                                                                          !!!
+!!!			AND SHOULD NOT TOUCH FILES UNDER ofed_scripts, compat and compat headers under include/linux/ !!!
+!!! CHANGES TO THE FILES UNDER ofed_scripts, compat and include/linux/compat*.h SHOULD BE COMMITTED DIRECTLY          !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 $ /bin/rm -f .backports_applied
 Run configure (check parameters)
 $ ./ofed_scripts/configure --with-core-mod --with-user_mad-mod --with-user_access-mod --with-addr_trans-mod --with-mlx4-mod --with-mlx4_en-mod --with-ipoib-mod --with-srp-mod --with-rds-mod --with-iser-mod
