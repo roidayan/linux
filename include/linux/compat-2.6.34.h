@@ -216,23 +216,8 @@ static inline void device_unlock(struct device *dev)
 /**
  *	sysfs_attr_init - initialize a dynamically allocated sysfs attribute
  *	@attr: struct attribute to initialize
- *
- *	Initialize a dynamically allocated struct attribute so we can
- *	make lockdep happy.  This is a new requirement for attributes
- *	and initially this is only needed when lockdep is enabled.
- *	Lockdep gives a nice error when your attribute is added to
- *	sysfs if you don't have this.
  */
-#ifdef CONFIG_DEBUG_LOCK_ALLOC
-#define sysfs_attr_init(attr)				\
-do {							\
-	static struct lock_class_key __key;		\
-							\
-	(attr)->key = &__key;				\
-} while(0)
-#else
 #define sysfs_attr_init(attr) do {} while(0)
-#endif
 
 /**
  *	sysfs_bin_attr_init - initialize a dynamically allocated bin_attribute
