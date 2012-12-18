@@ -1,13 +1,13 @@
-From 4616dfab1c1644b363e2fd5790c9ce43302f3f55 Mon Sep 17 00:00:00 2001
+From 2e39cb2a9dead7302ced5b021c2ac89e17a66adf Mon Sep 17 00:00:00 2001
 From: Yishai Hadas <yishaih@mellanox.com>
 Date: Thu, 13 Dec 2012 15:56:27 +0200
-Subject: [PATCH 25/26] BACKPORT: ipoib - LRO support
+Subject: [PATCH] BACKPORT: ipoib - LRO support
 
 Signed-off-by: Yishai Hadas <yishaih@mellanox.com>
 ---
- drivers/infiniband/ulp/ipoib/ipoib.h         |   19 ++++-
- drivers/infiniband/ulp/ipoib/ipoib_ethtool.c |   20 ++++++
- drivers/infiniband/ulp/ipoib/ipoib_ib.c      |   14 +++-
+ drivers/infiniband/ulp/ipoib/ipoib.h         |   19 +++++-
+ drivers/infiniband/ulp/ipoib/ipoib_ethtool.c |   20 +++++
+ drivers/infiniband/ulp/ipoib/ipoib_ib.c      |   14 ++++-
  drivers/infiniband/ulp/ipoib/ipoib_main.c    |  100 +++++++++++++++++++++++++-
  4 files changed, 149 insertions(+), 4 deletions(-)
 
@@ -288,5 +288,5 @@ index 07ca93c..72e804e 100644
  
  	result = -ENOMEM;
 -- 
-1.7.9.5
+1.6.0.2
 

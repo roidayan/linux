@@ -1,12 +1,12 @@
-From e3d0aa19c6cecc3b4c7ba4d8c783998149c439c3 Mon Sep 17 00:00:00 2001
+From 115da710b3e39e1717b407a6abdc38e84f70fb34 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 28 Nov 2012 14:27:48 +0200
-Subject: [PATCH 02/26] BACKPORT: mlx4_core for 3.6 kernel
+Subject: [PATCH] BACKPORT: mlx4_core for 3.6 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
  drivers/net/ethernet/mellanox/mlx4/sense.c |    4 ++++
- 1 file changed, 4 insertions(+)
+ 1 files changed, 4 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx4/sense.c b/drivers/net/ethernet/mellanox/mlx4/sense.c
 index 094773d..1d63f93 100644
@@ -23,5 +23,5 @@ index 094773d..1d63f93 100644
 +#endif
  }
 -- 
-1.7.9.5
+1.6.0.2
 

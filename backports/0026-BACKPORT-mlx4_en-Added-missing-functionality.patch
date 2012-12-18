@@ -1,7 +1,7 @@
-From 8b71a8938f86ef98a68fed493f50b7c20ae018e6 Mon Sep 17 00:00:00 2001
+From fa5baf16161671e3c00892da67e0b9b408f5d383 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Sun, 16 Dec 2012 16:02:50 +0200
-Subject: [PATCH 26/26] BACKPORT: mlx4_en: Added missing functionality
+Subject: [PATCH] BACKPORT: mlx4_en: Added missing functionality
 
 Added missing offloads and ethtool configurations for RHEL6.x
 
@@ -315,5 +315,5 @@ index 3bc443d..6e1946f 100644
  	int mac_index;
  	unsigned max_mtu;
 -- 
-1.7.9.5
+1.6.0.2
 

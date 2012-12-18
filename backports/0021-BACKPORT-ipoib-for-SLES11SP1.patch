@@ -1,12 +1,12 @@
-From af325a8fec96c19cbcea1e25826865eb1aa5f885 Mon Sep 17 00:00:00 2001
+From 108b2793a264bd30be8447b79a8747ffb27c8190 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Mon, 10 Dec 2012 13:38:22 +0200
-Subject: [PATCH 21/26] BACKPORT: ipoib for SLES11SP1
+Subject: [PATCH] BACKPORT: ipoib for SLES11SP1
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
  drivers/infiniband/ulp/ipoib/ipoib_main.c |    8 ++++++++
- 1 file changed, 8 insertions(+)
+ 1 files changed, 8 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
 index dbb6e54..07ca93c 100644
@@ -45,5 +45,5 @@ index dbb6e54..07ca93c 100644
  
  	return netdev_priv(dev);
 -- 
-1.7.9.5
+1.6.0.2
 

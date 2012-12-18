@@ -1,13 +1,13 @@
-From 5e71247694870e904f854be40a9d14cefd950453 Mon Sep 17 00:00:00 2001
+From 70a1a599beca7cb804cc686eca91214ab37df21b Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Mon, 3 Dec 2012 17:40:55 +0200
-Subject: [PATCH 07/26] BACKPORT: mlx4_en for 3.2 kernel
+Subject: [PATCH] BACKPORT: mlx4_en for 3.2 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
  drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c  |    4 ++++
  drivers/net/ethernet/mellanox/mlx4/en_ethtool.c |    4 ++++
- 2 files changed, 8 insertions(+)
+ 2 files changed, 8 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c b/drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c
 index a22da57..7380a6a 100644
@@ -70,5 +70,5 @@ index c32c1f3..ffe4e77 100644
  
  
 -- 
-1.7.9.5
+1.6.0.2
 

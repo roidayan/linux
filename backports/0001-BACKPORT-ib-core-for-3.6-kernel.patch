@@ -1,7 +1,7 @@
-From ffc860e70749efe6c79fc4ff14412709fe9df912 Mon Sep 17 00:00:00 2001
+From f8f2cc45b94c6777bcb5cf1326fb945b87bcf7f8 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 28 Nov 2012 14:27:05 +0200
-Subject: [PATCH 01/26] BACKPORT: ib/core for 3.6 kernel
+Subject: [PATCH] BACKPORT: ib/core for 3.6 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -9,7 +9,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  drivers/infiniband/core/ucma.c        |   17 +++++++++++++++++
  drivers/infiniband/core/uverbs_cmd.c  |   28 ++++++++++++++++++++++++++++
  drivers/infiniband/core/uverbs_main.c |   24 ++++++++++++++++++++++++
- 4 files changed, 75 insertions(+)
+ 4 files changed, 75 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/core/netlink.c b/drivers/infiniband/core/netlink.c
 index 32f65fa..99d1cff 100644
@@ -202,5 +202,5 @@ index 374e8a6..6637502 100644
  
  static ssize_t ib_uverbs_write(struct file *filp, const char __user *buf,
 -- 
-1.7.9.5
+1.6.0.2
 

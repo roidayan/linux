@@ -1,12 +1,12 @@
-From c2fb3394a189131042de860e978f1f6cb0e98601 Mon Sep 17 00:00:00 2001
+From 76d74bb6777f5f10b04bf296b020856c86fc0c3b Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Tue, 10 Jul 2012 17:21:25 +0300
-Subject: [PATCH 09/26] BACKPORT: ib/core backport flowi4 and flowi6
+Subject: [PATCH] BACKPORT: ib/core backport flowi4 and flowi6
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
  drivers/infiniband/core/addr.c |   45 ++++++++++++++++++++++++++++++++++++++++
- 1 file changed, 45 insertions(+)
+ 1 files changed, 45 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/core/addr.c b/drivers/infiniband/core/addr.c
 index fabf6a8..9db2e4b 100644
@@ -99,5 +99,5 @@ index fabf6a8..9db2e4b 100644
  	if (dst->dev->flags & IFF_LOOPBACK) {
  		ret = rdma_translate_ip((struct sockaddr *) dst_in, addr);
 -- 
-1.7.9.5
+1.6.0.2
 

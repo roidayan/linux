@@ -1,12 +1,12 @@
-From 2eb0d4c23d83c8979aa2332f8ab18b017c042f67 Mon Sep 17 00:00:00 2001
+From dc7be153c3bf391c78714e46e166b87eb70954d4 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Tue, 10 Jul 2012 15:57:24 +0300
-Subject: [PATCH 08/26] BACKPORT: ib_core backport dst_fetch_ha
+Subject: [PATCH] BACKPORT: ib_core backport dst_fetch_ha
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
  drivers/infiniband/core/addr.c |   58 ++++++++++++++++++++++++++++++++++++++++
- 1 file changed, 58 insertions(+)
+ 1 files changed, 58 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/core/addr.c b/drivers/infiniband/core/addr.c
 index eaec8d7..fabf6a8 100644
@@ -121,5 +121,5 @@ index eaec8d7..fabf6a8 100644
  	dst_release(dst);
  	return ret;
 -- 
-1.7.9.5
+1.6.0.2
 

@@ -1,18 +1,18 @@
-From 50882b3bf9705c6a8cc5be576f2e442e7e221b62 Mon Sep 17 00:00:00 2001
+From b4604e37314ae150a7675c1292f0e6f5e96702c9 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Mon, 10 Dec 2012 13:41:10 +0200
-Subject: [PATCH 23/26] BACKPORT: mlx4_en for SLES11SP1
+Subject: [PATCH] BACKPORT: mlx4_en for SLES11SP1
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- drivers/net/ethernet/mellanox/mlx4/Makefile       |    2 ++
+ drivers/net/ethernet/mellanox/mlx4/Makefile       |    2 +
  drivers/net/ethernet/mellanox/mlx4/en_main.c      |    7 ++++++
  drivers/net/ethernet/mellanox/mlx4/en_netdev.c    |   24 +++++++++++++++++++++
- drivers/net/ethernet/mellanox/mlx4/en_resources.c |    6 ++++++
+ drivers/net/ethernet/mellanox/mlx4/en_resources.c |    6 +++++
  drivers/net/ethernet/mellanox/mlx4/en_rx.c        |   14 ++++++++++++
  drivers/net/ethernet/mellanox/mlx4/en_tx.c        |   23 ++++++++++++++++++++
  drivers/net/ethernet/mellanox/mlx4/mlx4_en.h      |   20 +++++++++++++++++
- 7 files changed, 96 insertions(+)
+ 7 files changed, 96 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx4/Makefile b/drivers/net/ethernet/mellanox/mlx4/Makefile
 index 8e03f81..29eb7ed 100644
@@ -374,5 +374,5 @@ index 1b645bf..3bc443d 100644
  void mlx4_en_sqp_event(struct mlx4_qp *qp, enum mlx4_event event);
  int mlx4_en_map_buffer(struct mlx4_buf *buf);
 -- 
-1.7.9.5
+1.6.0.2
 

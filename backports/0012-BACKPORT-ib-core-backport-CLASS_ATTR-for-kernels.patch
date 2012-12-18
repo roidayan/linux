@@ -1,15 +1,14 @@
-From c1d8b9286f91064397379cd228d03a43612df7a2 Mon Sep 17 00:00:00 2001
+From 9551cb8574505bec7d544998e16e4f8705ca9264 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Tue, 10 Jul 2012 18:06:16 +0300
-Subject: [PATCH 12/26] BACKPORT: ib/core backport CLASS_ATTR for kernels <
- 2.6.34
+Subject: [PATCH] BACKPORT: ib/core backport CLASS_ATTR for kernels < 2.6.34
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
  drivers/infiniband/core/ucm.c         |   20 ++++++++++++++++++++
  drivers/infiniband/core/user_mad.c    |   12 ++++++++++++
  drivers/infiniband/core/uverbs_main.c |   12 ++++++++++++
- 3 files changed, 44 insertions(+)
+ 3 files changed, 44 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/core/ucm.c b/drivers/infiniband/core/ucm.c
 index 49b15ac..b6d7fa9 100644
@@ -135,5 +134,5 @@ index 6637502..286d67a 100644
  		printk(KERN_ERR "user_verbs: couldn't create abi_version attribute\n");
  		goto out_class;
 -- 
-1.7.9.5
+1.6.0.2
 
