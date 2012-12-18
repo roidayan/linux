@@ -74,7 +74,7 @@ apply_patch()
         if [ -e  ${patch} ]; then
             printf "\t${patch}\n"
             if [ "${WITH_GIT}" == "yes" ]; then
-                ex $GIT am --reject < ${patch}
+                ex $GIT am $REJECT < ${patch}
             elif [ "${WITH_QUILT}" == "yes" ]; then
                 ex $QUILT import ${patch}
                 ex $QUILT push patches/${patch##*/}
@@ -99,7 +99,7 @@ apply_kernel_fixes()
         return 0
     fi
     if [ "${WITH_GIT}" == "yes" ]; then
-        ex $GIT am --reject ${CWD}/kernel_patches/fixes/*.patch
+        ex $GIT am $REJECT ${CWD}/kernel_patches/fixes/*.patch
     else
         for patch in ${CWD}/kernel_patches/fixes/*
         do
@@ -119,7 +119,7 @@ apply_backport_patches()
         fi
         if [ -d ${pdir} ]; then
             if [ "${WITH_GIT}" == "yes" ]; then
-                ex $GIT am --reject ${pdir}/*.patch
+                ex $GIT am $REJECT ${pdir}/*.patch
             else
                 for patch in ${pdir}/*
                 do
@@ -296,6 +296,7 @@ WITH_HPAGE_PATCH=${WITH_HPAGE_PATCH:-"no"}
 
 QUILT=${QUILT:-$(/usr/bin/which quilt  2> /dev/null)}
 GIT=${GIT:-$(/usr/bin/which git 2> /dev/null)}
+REJECT=`$GIT am --help 2> /dev/null | grep -qw '\-\-reject' && echo -n '--reject'`
 
 if [[ ! -x "$GIT" || ! -d ".git" ]]; then
     WITH_GIT="no"
