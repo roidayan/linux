@@ -1,7 +1,7 @@
-From 108b2793a264bd30be8447b79a8747ffb27c8190 Mon Sep 17 00:00:00 2001
+From 803a0948dd088bcb9648aa2472bac4852fdf88f5 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Mon, 10 Dec 2012 13:38:22 +0200
-Subject: [PATCH] BACKPORT: ipoib for SLES11SP1
+Subject: [PATCH 21/28] BACKPORT: ipoib for SLES11SP1
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -9,7 +9,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  1 files changed, 8 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-index dbb6e54..07ca93c 100644
+index 6177116..b357e29 100644
 --- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
 @@ -1002,7 +1002,11 @@ static u16 ipoib_select_queue_sw(struct net_device *dev, struct sk_buff *skb)
@@ -24,7 +24,7 @@ index dbb6e54..07ca93c 100644
  }
  
  static void ipoib_timeout(struct net_device *dev)
-@@ -1856,7 +1860,9 @@ int ipoib_reinit(struct net_device *dev, int num_rx, int num_tx)
+@@ -1863,7 +1867,9 @@ int ipoib_reinit(struct net_device *dev, int num_rx, int num_tx)
  		priv->tss_qp_num = num_tx - 1;
  	else
  		priv->tss_qp_num = num_tx;
@@ -34,7 +34,7 @@ index dbb6e54..07ca93c 100644
  	netif_set_real_num_rx_queues(dev, num_rx);
  	/*
  	 * prevent ipoib_ib_dev_init call ipoib_ib_dev_open
-@@ -2016,7 +2022,9 @@ struct ipoib_dev_priv *ipoib_intf_alloc(const char *name,
+@@ -2023,7 +2029,9 @@ struct ipoib_dev_priv *ipoib_intf_alloc(const char *name,
  	if (!dev)
  		return NULL;
  
@@ -45,5 +45,5 @@ index dbb6e54..07ca93c 100644
  
  	return netdev_priv(dev);
 -- 
-1.6.0.2
+1.7.1
 

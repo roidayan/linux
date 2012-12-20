@@ -1,7 +1,7 @@
-From 61064cb5d239034f87d71587e08a923d1b7787bf Mon Sep 17 00:00:00 2001
+From 17279b2762754e03baf905fa563b1f9ecc99edc2 Mon Sep 17 00:00:00 2001
 From: Alex Tabachnik <alext@mellanox.com>
 Date: Tue, 18 Dec 2012 16:38:13 +0200
-Subject: [PATCH] BACKPORT: ib_iser Fix for SLESS11SP2
+Subject: [PATCH 27/28] BACKPORT: ib_iser Fix for SLESS11SP2
 
 Add additional verification if run on SLES11SP2 in function
 iser_send_command and structure iscsi_scsi_req should be used
@@ -26,5 +26,5 @@ index 47dd15c..a79b45f 100644
  #else
  	struct iscsi_cmd *hdr =  (struct iscsi_cmd *)task->hdr;
 -- 
-1.6.0.2
+1.7.1
 

@@ -1,7 +1,7 @@
-From d1c707dbd1f217994d51dd6bc4ccd0ef3b628ddb Mon Sep 17 00:00:00 2001
+From 225f2b9c484f4412829d81cabee0a0b8342f2aa2 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 28 Nov 2012 16:33:45 +0200
-Subject: [PATCH] BACKPORT: Add ib/core support for 3.5 kernel
+Subject: [PATCH 03/28] BACKPORT: Add ib/core support for 3.5 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -32,5 +32,5 @@ index 99d1cff..4871a16 100644
  		pr_warn("Failed to create netlink socket\n");
  		return -ENOMEM;
 -- 
-1.6.0.2
+1.7.1
 

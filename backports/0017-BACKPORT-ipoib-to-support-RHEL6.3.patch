@@ -1,7 +1,7 @@
-From 57e5041447f004bc09c184732b9c0802623a22d0 Mon Sep 17 00:00:00 2001
+From d6860eb190740eb4b0d19d244617cc48d80dba5b Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 5 Dec 2012 13:32:12 +0200
-Subject: [PATCH] BACKPORT: ipoib to support RHEL6.3
+Subject: [PATCH 17/28] BACKPORT: ipoib to support RHEL6.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -60,7 +60,7 @@ index 9d40e1c..beb8956 100644
  
  void ipoib_set_ethtool_ops(struct net_device *dev)
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-index 93a4107..dbb6e54 100644
+index 956db19..6177116 100644
 --- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
 @@ -220,6 +220,7 @@ static void ipoib_uninit(struct net_device *dev)
@@ -111,7 +111,7 @@ index 93a4107..dbb6e54 100644
  		dev_set_mtu(dev, min(priv->mcast_mtu, dev->mtu));
  		rtnl_unlock();
  		ipoib_flush_paths(dev);
-@@ -1876,7 +1894,9 @@ static const struct net_device_ops ipoib_netdev_ops_no_tss = {
+@@ -1883,7 +1901,9 @@ static const struct net_device_ops ipoib_netdev_ops_no_tss = {
  	.ndo_open		 = ipoib_open,
  	.ndo_stop		 = ipoib_stop,
  	.ndo_change_mtu		 = ipoib_change_mtu,
@@ -121,7 +121,7 @@ index 93a4107..dbb6e54 100644
  	.ndo_start_xmit	 	 = ipoib_start_xmit,
  	.ndo_tx_timeout		 = ipoib_timeout,
  	.ndo_get_stats		= ipoib_get_stats,
-@@ -1888,7 +1908,9 @@ static const struct net_device_ops ipoib_netdev_ops_hw_tss = {
+@@ -1895,7 +1915,9 @@ static const struct net_device_ops ipoib_netdev_ops_hw_tss = {
  	.ndo_open	= ipoib_open,
  	.ndo_stop	= ipoib_stop,
  	.ndo_change_mtu		= ipoib_change_mtu,
@@ -131,7 +131,7 @@ index 93a4107..dbb6e54 100644
  	.ndo_start_xmit		= ipoib_start_xmit,
  	.ndo_select_queue		= ipoib_select_queue_hw,
  	.ndo_tx_timeout		= ipoib_timeout,
-@@ -1901,7 +1923,9 @@ static const struct net_device_ops ipoib_netdev_ops_sw_tss = {
+@@ -1908,7 +1930,9 @@ static const struct net_device_ops ipoib_netdev_ops_sw_tss = {
  	.ndo_open	= ipoib_open,
  	.ndo_stop	= ipoib_stop,
  	.ndo_change_mtu		= ipoib_change_mtu,
@@ -141,7 +141,7 @@ index 93a4107..dbb6e54 100644
  	.ndo_start_xmit		= ipoib_start_xmit,
  	.ndo_select_queue		= ipoib_select_queue_sw,
  	.ndo_tx_timeout		= ipoib_timeout,
-@@ -2306,6 +2330,7 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
+@@ -2313,6 +2337,7 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
  		return result;
  
  	if (priv->hca_caps & IB_DEVICE_UD_IP_CSUM) {
@@ -149,7 +149,7 @@ index 93a4107..dbb6e54 100644
  		priv->dev->hw_features = NETIF_F_SG |
  			NETIF_F_IP_CSUM | NETIF_F_RXCSUM;
  
-@@ -2313,6 +2338,13 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
+@@ -2320,6 +2345,13 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
  			priv->dev->hw_features |= NETIF_F_TSO;
  
  		priv->dev->features |= priv->dev->hw_features;
@@ -233,5 +233,5 @@ index 7468593..dcef9b6 100644
  	mutex_unlock(&ppriv->vlan_mutex);
  }
 -- 
-1.6.0.2
+1.7.1
 

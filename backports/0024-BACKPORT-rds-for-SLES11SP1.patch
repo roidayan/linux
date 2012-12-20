@@ -1,7 +1,7 @@
-From a7d7fad41327c847725344a3ef2ecb0884adbdef Mon Sep 17 00:00:00 2001
+From 602812281ffc04278f0200ab11802c5200bf500e Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Mon, 10 Dec 2012 13:41:50 +0200
-Subject: [PATCH] BACKPORT: rds for SLES11SP1
+Subject: [PATCH 24/28] BACKPORT: rds for SLES11SP1
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -113,5 +113,5 @@ index 88eace5..d3e889e 100644
  #include "rds.h"
  
 -- 
-1.6.0.2
+1.7.1
 

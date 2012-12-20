@@ -1,7 +1,7 @@
-From ffd5553d028d2aa19a26539c8ae12a69ae87d803 Mon Sep 17 00:00:00 2001
+From dfd90d0b01d449da48b259e433f805019c8c4061 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 5 Dec 2012 13:33:10 +0200
-Subject: [PATCH] BACKPORT: rds to support RHEL6.3
+Subject: [PATCH 19/28] BACKPORT: rds to support RHEL6.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -264,5 +264,5 @@ index 7787537..eac61ea 100644
  		ret = PTR_ERR(conn);
  		goto out;
 -- 
-1.6.0.2
+1.7.1
 

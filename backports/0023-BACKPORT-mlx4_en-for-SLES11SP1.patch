@@ -1,7 +1,7 @@
-From b4604e37314ae150a7675c1292f0e6f5e96702c9 Mon Sep 17 00:00:00 2001
+From d47cc36a65b3011833a1cf51ddff37393961d2c7 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Mon, 10 Dec 2012 13:41:10 +0200
-Subject: [PATCH] BACKPORT: mlx4_en for SLES11SP1
+Subject: [PATCH 23/28] BACKPORT: mlx4_en for SLES11SP1
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -374,5 +374,5 @@ index 1b645bf..3bc443d 100644
  void mlx4_en_sqp_event(struct mlx4_qp *qp, enum mlx4_event event);
  int mlx4_en_map_buffer(struct mlx4_buf *buf);
 -- 
-1.6.0.2
+1.7.1
 
