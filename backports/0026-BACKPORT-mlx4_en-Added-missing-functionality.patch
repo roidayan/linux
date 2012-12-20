@@ -1,4 +1,4 @@
-From 92c54a853a9357c86b61b2ef9a26c6e3d6aade96 Mon Sep 17 00:00:00 2001
+From 3803dace9e0a3df686a2938731efd8f678ac5689 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Sun, 16 Dec 2012 16:02:50 +0200
 Subject: [PATCH 26/28] BACKPORT: mlx4_en: Added missing functionality
@@ -315,5 +315,5 @@ index 3bc443d..6e1946f 100644
  	int mac_index;
  	unsigned max_mtu;
 -- 
-1.7.1
+1.7.9.5
 

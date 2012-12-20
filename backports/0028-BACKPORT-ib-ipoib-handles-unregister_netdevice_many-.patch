@@ -1,44 +1,41 @@
-From 32757ef7e8a3b7e1928efc9b25d3c4abe04c0b12 Mon Sep 17 00:00:00 2001
+From 7ff402f776ee2a73a050f02cf8826ea999f76606 Mon Sep 17 00:00:00 2001
 From: Erez Shitrit <erezsh@mellanox.com>
 Date: Thu, 20 Dec 2012 11:21:11 +0200
-Subject: [PATCH 28/28] BACKPORT: ib/ipoib handles unregister_netdevice_many/queue
+Subject: [PATCH 28/28] BACKPORT: ib/ipoib handles
+ unregister_netdevice_many/queue
 
 for kernel < 2.6.33 replace callsto unregister_netdevice_many and
 unregister_netdevice_queue.
 
 Signed-off-by: Erez Shitrit <erezsh@mellanox.com>
 ---
- drivers/infiniband/ulp/ipoib/ipoib_main.c |   11 ++++++++---
- 1 files changed, 8 insertions(+), 3 deletions(-)
+ drivers/infiniband/ulp/ipoib/ipoib_main.c |    6 ++++++
+ 1 file changed, 6 insertions(+)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-index bfc1fb8..bcbd5f3 100644
+index 72f045d..4772cbe 100644
 --- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-@@ -1850,15 +1850,20 @@ void ipoib_dev_cleanup(struct net_device *dev)
- 	ipoib_delete_debug_files(dev);
+@@ -1817,13 +1817,19 @@ void ipoib_dev_cleanup(struct net_device *dev)
  
  	/* Delete any child interfaces first */
--	list_for_each_entry_safe(cpriv, tcpriv, &priv->child_intfs, list)
-+	list_for_each_entry_safe(cpriv, tcpriv, &priv->child_intfs, list) {
+ 	list_for_each_entry_safe(cpriv, tcpriv, &priv->child_intfs, list)
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33)
  		unregister_netdevice_queue(cpriv->dev, &head);
--
 +#else
-+        	unregister_netdevice(cpriv->dev);
++		unregister_netdevice(cpriv->dev);
 +#endif
-+	}
+ 
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33)
  	/*
  	 * the next function calls the ipoib_uninit which calls for
  	 * ipoib_dev_cleanup for each devices at the head list.
  	 */
  	unregister_netdevice_many(&head);
--
 +#endif
+ 
  	ipoib_dev_uninit(dev);
  	/* ipoib_dev_uninit took rings lock can't release in case of reinit */
- 	up_write(&priv->rings_rwsem);
 -- 
-1.7.1
+1.7.9.5
 

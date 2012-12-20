@@ -1,4 +1,4 @@
-From 602812281ffc04278f0200ab11802c5200bf500e Mon Sep 17 00:00:00 2001
+From d33bf0ec1bf8b4a851292cce5e772ed8a0618c9a Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Mon, 10 Dec 2012 13:41:50 +0200
 Subject: [PATCH 24/28] BACKPORT: rds for SLES11SP1
@@ -12,7 +12,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  net/rds/iw_rdma.c |    3 +++
  net/rds/iw_send.c |    3 +++
  net/rds/send.c    |    3 +++
- 7 files changed, 21 insertions(+), 0 deletions(-)
+ 7 files changed, 21 insertions(+)
 
 diff --git a/net/rds/bind.c b/net/rds/bind.c
 index 637bde5..9fb9b31 100644
@@ -113,5 +113,5 @@ index 88eace5..d3e889e 100644
  #include "rds.h"
  
 -- 
-1.7.1
+1.7.9.5
 

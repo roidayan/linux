@@ -1,4 +1,4 @@
-From d6860eb190740eb4b0d19d244617cc48d80dba5b Mon Sep 17 00:00:00 2001
+From bd2090b9ae0b29949cefb625ee513d8601d0eb73 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 5 Dec 2012 13:32:12 +0200
 Subject: [PATCH 17/28] BACKPORT: ipoib to support RHEL6.3
@@ -10,7 +10,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  drivers/infiniband/ulp/ipoib/ipoib_main.c      |   32 ++++++++++++++++++++++++
  drivers/infiniband/ulp/ipoib/ipoib_multicast.c |   15 +++++++++++
  drivers/infiniband/ulp/ipoib/ipoib_netlink.c   |    8 ++++++
- 5 files changed, 63 insertions(+), 0 deletions(-)
+ 5 files changed, 63 insertions(+)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_cm.c b/drivers/infiniband/ulp/ipoib/ipoib_cm.c
 index 96d7778..aa3b712 100644
@@ -60,10 +60,10 @@ index 9d40e1c..beb8956 100644
  
  void ipoib_set_ethtool_ops(struct net_device *dev)
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-index 956db19..6177116 100644
+index 2b90913..6670a3a 100644
 --- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-@@ -220,6 +220,7 @@ static void ipoib_uninit(struct net_device *dev)
+@@ -186,6 +186,7 @@ static void ipoib_uninit(struct net_device *dev)
  	ipoib_dev_cleanup(dev);
  }
  
@@ -71,7 +71,7 @@ index 956db19..6177116 100644
  static netdev_features_t ipoib_fix_features(struct net_device *dev, netdev_features_t features)
  {
  	struct ipoib_dev_priv *priv = netdev_priv(dev);
-@@ -229,6 +230,7 @@ static netdev_features_t ipoib_fix_features(struct net_device *dev, netdev_featu
+@@ -195,6 +196,7 @@ static netdev_features_t ipoib_fix_features(struct net_device *dev, netdev_featu
  
  	return features;
  }
@@ -79,7 +79,7 @@ index 956db19..6177116 100644
  
  static int ipoib_change_mtu(struct net_device *dev, int new_mtu)
  {
-@@ -268,7 +270,15 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
+@@ -234,7 +236,15 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
  		set_bit(IPOIB_FLAG_ADMIN_CM, &priv->flags);
  		ipoib_warn(priv, "enabling connected mode "
  			   "will cause multicast packet drops\n");
@@ -95,7 +95,7 @@ index 956db19..6177116 100644
  		rtnl_unlock();
  
  		send_ring = priv->send_ring;
-@@ -284,7 +294,15 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
+@@ -250,7 +260,15 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
  
  	if (!strcmp(buf, "datagram\n")) {
  		clear_bit(IPOIB_FLAG_ADMIN_CM, &priv->flags);
@@ -111,7 +111,7 @@ index 956db19..6177116 100644
  		dev_set_mtu(dev, min(priv->mcast_mtu, dev->mtu));
  		rtnl_unlock();
  		ipoib_flush_paths(dev);
-@@ -1883,7 +1901,9 @@ static const struct net_device_ops ipoib_netdev_ops_no_tss = {
+@@ -1849,7 +1867,9 @@ static const struct net_device_ops ipoib_netdev_ops_no_tss = {
  	.ndo_open		 = ipoib_open,
  	.ndo_stop		 = ipoib_stop,
  	.ndo_change_mtu		 = ipoib_change_mtu,
@@ -121,7 +121,7 @@ index 956db19..6177116 100644
  	.ndo_start_xmit	 	 = ipoib_start_xmit,
  	.ndo_tx_timeout		 = ipoib_timeout,
  	.ndo_get_stats		= ipoib_get_stats,
-@@ -1895,7 +1915,9 @@ static const struct net_device_ops ipoib_netdev_ops_hw_tss = {
+@@ -1861,7 +1881,9 @@ static const struct net_device_ops ipoib_netdev_ops_hw_tss = {
  	.ndo_open	= ipoib_open,
  	.ndo_stop	= ipoib_stop,
  	.ndo_change_mtu		= ipoib_change_mtu,
@@ -131,7 +131,7 @@ index 956db19..6177116 100644
  	.ndo_start_xmit		= ipoib_start_xmit,
  	.ndo_select_queue		= ipoib_select_queue_hw,
  	.ndo_tx_timeout		= ipoib_timeout,
-@@ -1908,7 +1930,9 @@ static const struct net_device_ops ipoib_netdev_ops_sw_tss = {
+@@ -1874,7 +1896,9 @@ static const struct net_device_ops ipoib_netdev_ops_sw_tss = {
  	.ndo_open	= ipoib_open,
  	.ndo_stop	= ipoib_stop,
  	.ndo_change_mtu		= ipoib_change_mtu,
@@ -141,7 +141,7 @@ index 956db19..6177116 100644
  	.ndo_start_xmit		= ipoib_start_xmit,
  	.ndo_select_queue		= ipoib_select_queue_sw,
  	.ndo_tx_timeout		= ipoib_timeout,
-@@ -2313,6 +2337,7 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
+@@ -2279,6 +2303,7 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
  		return result;
  
  	if (priv->hca_caps & IB_DEVICE_UD_IP_CSUM) {
@@ -149,7 +149,7 @@ index 956db19..6177116 100644
  		priv->dev->hw_features = NETIF_F_SG |
  			NETIF_F_IP_CSUM | NETIF_F_RXCSUM;
  
-@@ -2320,6 +2345,13 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
+@@ -2286,6 +2311,13 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
  			priv->dev->hw_features |= NETIF_F_TSO;
  
  		priv->dev->features |= priv->dev->hw_features;
@@ -233,5 +233,5 @@ index 7468593..dcef9b6 100644
  	mutex_unlock(&ppriv->vlan_mutex);
  }
 -- 
-1.7.1
+1.7.9.5
 

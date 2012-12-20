@@ -1,17 +1,17 @@
-From 9e504ff4701b3b0e86b9c76628ec016f65529b9b Mon Sep 17 00:00:00 2001
+From cadacdf9e2326dffe661fdb11d1acc4267dabe0e Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 5 Dec 2012 13:31:23 +0200
 Subject: [PATCH 16/28] BACKPORT: mlx4_en to support RHEL6.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- drivers/net/ethernet/mellanox/mlx4/en_cq.c      |    4 ++
- drivers/net/ethernet/mellanox/mlx4/en_ethtool.c |   20 ++++++++++++
+ drivers/net/ethernet/mellanox/mlx4/en_cq.c      |    4 +++
+ drivers/net/ethernet/mellanox/mlx4/en_ethtool.c |   20 +++++++++++++
  drivers/net/ethernet/mellanox/mlx4/en_netdev.c  |   36 +++++++++++++++++++++++
  drivers/net/ethernet/mellanox/mlx4/en_tx.c      |    9 ++++++
  drivers/net/ethernet/mellanox/mlx4/eq.c         |    8 +++++
  include/linux/mlx4/device.h                     |    6 ++++
- 6 files changed, 83 insertions(+), 0 deletions(-)
+ 6 files changed, 83 insertions(+)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_cq.c b/drivers/net/ethernet/mellanox/mlx4/en_cq.c
 index 4b172a9..16814e5 100644
@@ -336,5 +336,5 @@ index 6abb96e..fa5cd1b 100644
  
  int mlx4_wol_read(struct mlx4_dev *dev, u64 *config, int port);
 -- 
-1.7.1
+1.7.9.5
 
