@@ -1,8 +1,9 @@
 Content:
 1. Overview
 2. Directory structure
-3. HOWTO add backport patches
-4. Adding a feature based on Distro/kernel
+3. HOWTO add a new feature/fix
+4. HOWTO add backport patches
+5. Adding a feature based on Distro/kernel
 
 
 Overview:
@@ -33,6 +34,19 @@ Compilation procedure (same as before):
 # configure <params>
 # make
 # make install
+
+HOWTO add a new feature/fix:
+------------------------
+Start with updated branch (equal to “mlnx_ofed_next”).
+Add the new code.
+Check compilation on the kernel base (3.7).
+# configure <params> --without-backport-patches
+# make
+# make install
+Check your feature.
+Commit the changes.
+Then add backports if required.
+
 
 HOWTO add backport patches:
 ---------------------------
