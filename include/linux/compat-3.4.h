@@ -49,11 +49,6 @@ static inline void eth_hw_addr_random(struct net_device *dev)
 #define NET_ADDR_RANDOM                1       /* address is generated randomly */
 #define NET_ADDR_STOLEN                2       /* address is stolen from other device */
 
-static inline void eth_hw_addr_random(struct net_device *dev)
-{
-	random_ether_addr(dev->dev_addr);
-}
-
 #else /* 2.6.36 and on */
 static inline void eth_hw_addr_random(struct net_device *dev)
 {

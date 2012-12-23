@@ -144,6 +144,7 @@ static inline char *hex_byte_pack(char *buf, u8 byte)
         module_driver(__platform_driver, platform_driver_register, \
                         platform_driver_unregister)
 
+#define dma_zalloc_coherent(a, b, c, d) compat_dma_zalloc_coherent(a, b, c, d)
 static inline void *dma_zalloc_coherent(struct device *dev, size_t size,
 					dma_addr_t *dma_handle, gfp_t flag)
 {

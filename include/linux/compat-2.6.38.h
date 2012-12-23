@@ -72,8 +72,12 @@ static inline unsigned long ewma_read(const struct ewma *avg)
 }
 
 #define pr_warn pr_warning
+#ifndef create_freezable_workqueue
 #define create_freezable_workqueue create_freezeable_workqueue
+#endif
 
+/* mask skb_checksum_start_offset as RHEL6.4 backports this */
+#define skb_checksum_start_offset(a) compat_skb_checksum_start_offset(a)
 static inline int skb_checksum_start_offset(const struct sk_buff *skb)
 {
 	return skb->csum_start - skb_headroom(skb);

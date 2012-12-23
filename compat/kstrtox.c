@@ -12,6 +12,8 @@
  * If -E is returned, result is not touched.
  */
 #include <linux/kernel.h>
+
+#ifndef CONFIG_COMPAT_IS_KSTRTOX
 /* 
  * kstrto* was included in kernel 2.6.38.4 and causes conflicts with the
  * version included in compat-wireless. We use strict_strtol to check if
@@ -234,3 +236,4 @@ int kstrtos8(const char *s, unsigned int base, s8 *res)
 }
 EXPORT_SYMBOL_GPL(kstrtos8);
 #endif /* #ifndef strict_strtol */
+#endif /* #ifndef CONFIG_COMPAT_IS_KSTRTOX */

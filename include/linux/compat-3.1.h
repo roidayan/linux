@@ -45,7 +45,7 @@ static inline struct sk_buff *__netdev_alloc_skb_ip_align(struct net_device *dev
 	return skb;
 }
 
-#ifndef NEED_MIN_DUMP_ALLOC_ARG
+#if ! defined(NEED_MIN_DUMP_ALLOC_ARG) && ! defined(CONFIG_COMPAT_NETLINK_3_7)
 #include <linux/netlink.h>
 /* remove last arg */
 #define netlink_dump_start(a, b, c, d, e, f) netlink_dump_start(a, b, c, d, e)

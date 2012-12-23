@@ -50,6 +50,7 @@ struct bcma_device_id {
 
 int mac_pton(const char *s, u8 *mac);
 
+#ifndef CONFIG_COMPAT_IS_KSTRTOX
 int __must_check kstrtoull_from_user(const char __user *s, size_t count, unsigned int base, unsigned long long *res);
 int __must_check kstrtoll_from_user(const char __user *s, size_t count, unsigned int base, long long *res);
 int __must_check kstrtoul_from_user(const char __user *s, size_t count, unsigned int base, unsigned long *res);
@@ -80,7 +81,9 @@ static inline int __must_check kstrtos32_from_user(const char __user *s, size_t 
 {
 	return kstrtoint_from_user(s, count, base, res);
 }
+#endif
 
+#ifndef kfree_rcu
 /* 
  * This adds a nested function everywhere kfree_rcu() was called. This
  * function frees the memory and is given as a function to call_rcu().
@@ -96,6 +99,7 @@ static inline int __must_check kstrtos32_from_user(const char __user *s, size_t 
 		}							\
 		call_rcu(&(data)->rcuhead, __kfree_rcu_fn);		\
 	} while (0)
+#endif
 
 #ifdef MODULE
 
@@ -125,6 +129,7 @@ static inline int __must_check kstrtos32_from_user(const char __user *s, size_t 
 
 #endif
 
+#ifndef CONFIG_COMPAT_IS_PHYS_ID_STATE
 /*
  * enum ethtool_phys_id_state - indicator state for physical identification
  * @ETHTOOL_ID_INACTIVE: Physical ID indicator should be deactivated
@@ -140,6 +145,7 @@ enum ethtool_phys_id_state {
     ETHTOOL_ID_ON,
     ETHTOOL_ID_OFF
 };
+#endif
 
 #ifndef NETLINK_RDMA
 #define NETLINK_RDMA		20

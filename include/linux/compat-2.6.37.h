@@ -44,6 +44,8 @@ static inline int proto_ports_offset(int proto)
  *     possible. Hence adding this function to avoid changes in driver source
  *     code and making this function to always return success.
  */
+/* mask netif_set_real_num_rx_queues as RHEL6.4 backports this */
+#define netif_set_real_num_rx_queues(a, b) compat_netif_set_real_num_rx_queues(a, b)
 static inline int netif_set_real_num_rx_queues(struct net_device *dev,
         unsigned int rxq)
 {
@@ -69,8 +71,6 @@ static inline void skb_checksum_none_assert(struct sk_buff *skb)
 	BUG_ON(skb->ip_summed != CHECKSUM_NONE);
 #endif
 }
-
-#define pcmcia_enable_device(link)	pcmcia_request_configuration(link, &link->conf)
 
 #include <net/genetlink.h>
 
@@ -160,8 +160,10 @@ extern void compat_led_brightness_set(struct led_classdev *led_cdev,
 extern void *vzalloc(unsigned long size);
 extern void *vzalloc_node(unsigned long size, int node);
 
+#ifndef rtnl_dereference
 #define rtnl_dereference(p)                                     \
         rcu_dereference_protected(p, lockdep_rtnl_is_held())
+#endif
 
 #ifndef rcu_dereference_protected
 #define rcu_dereference_protected(p, c) \

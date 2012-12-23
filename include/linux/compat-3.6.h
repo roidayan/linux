@@ -58,20 +58,6 @@ static inline void eth_broadcast_addr(u8 *addr)
 	memset(addr, 0xff, ETH_ALEN);
 }
 
-/**
- * eth_random_addr - Generate software assigned random Ethernet address
- * @addr: Pointer to a six-byte array containing the Ethernet address
- *
- * Generate a random Ethernet address (MAC) that is not multicast
- * and has the local assigned bit set.
- */
-static inline void eth_random_addr(u8 *addr)
-{
-	get_random_bytes(addr, ETH_ALEN);
-	addr[0] &= 0xfe;        /* clear multicast bit */
-	addr[0] |= 0x02;        /* set local assignment bit (IEEE802) */
-}
-
 #define GENLMSG_DEFAULT_SIZE (NLMSG_DEFAULT_SIZE - GENL_HDRLEN)
 
 /*

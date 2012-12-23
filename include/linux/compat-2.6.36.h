@@ -9,8 +9,12 @@
 #include <linux/pm_qos_params.h>
 #include <linux/smp_lock.h>
 
+#ifndef kparam_block_sysfs_write
 #define kparam_block_sysfs_write(a)
+#endif
+#ifndef kparam_unblock_sysfs_write
 #define kparam_unblock_sysfs_write(a)
+#endif
 
 /* mask va_format as RHEL6 backports this */
 #define va_format compat_va_format
@@ -106,6 +110,8 @@ static inline bool skb_defer_rx_timestamp(struct sk_buff *skb)
 	return false;
 }
 
+/* mask skb_tx_timestamp as RHEL6.4 backports this */
+#define skb_tx_timestamp(a) compat_skb_tx_timestamp(a)
 static inline void skb_tx_timestamp(struct sk_buff *skb)
 {
 }

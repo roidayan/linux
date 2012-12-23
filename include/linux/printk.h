@@ -39,6 +39,7 @@
  * ratelimited messages with local ratelimit_state,
  * no local ratelimit_state used in the !PRINTK case
  */
+#ifndef printk_ratelimited
 #ifdef CONFIG_PRINTK
 #define printk_ratelimited(fmt, ...)                                    \
 ({                                                                      \
@@ -53,6 +54,7 @@
 #define printk_ratelimited(fmt, ...)                                    \
         no_printk(fmt, ##__VA_ARGS__)
 #endif
+#endif /* ifndef printk_ratelimited */
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38)) */
 
