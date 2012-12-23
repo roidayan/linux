@@ -1,12 +1,12 @@
-From 27eb15722fa9b53edb8959b25a89efce85f36694 Mon Sep 17 00:00:00 2001
+From 8a410edde03c9025d7e0d87fdecbb793647041f2 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 28 Nov 2012 16:34:38 +0200
-Subject: [PATCH 04/28] BACKPORT: Added ipoib support for 3.5 kernel
+Subject: [PATCH 04/29] BACKPORT: Added ipoib support for 3.5 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
  drivers/infiniband/ulp/ipoib/ipoib_cm.c |    4 ++++
- 1 file changed, 4 insertions(+)
+ 1 files changed, 4 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_cm.c b/drivers/infiniband/ulp/ipoib/ipoib_cm.c
 index ce61c78..96d7778 100644
@@ -25,5 +25,5 @@ index ce61c78..96d7778 100644
  	consume_skb(skb);
  
 -- 
-1.7.9.5
+1.7.1
 

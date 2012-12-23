@@ -1,7 +1,7 @@
-From 9af1ff2f1a0ec5805a150f0d227699185814d28b Mon Sep 17 00:00:00 2001
+From 217183becd1cd5fa324fd528500f66c6299e1706 Mon Sep 17 00:00:00 2001
 From: Alex Tabachnik <alext@mellanox.com>
 Date: Tue, 18 Dec 2012 16:38:13 +0200
-Subject: [PATCH 27/28] BACKPORT: ib_iser Fix for SLESS11SP2
+Subject: [PATCH 27/29] BACKPORT: ib_iser Fix for SLESS11SP2
 
 Add additional verification if run on SLES11SP2 in function
 iser_send_command and structure iscsi_scsi_req should be used
@@ -10,7 +10,7 @@ even if it was added in kernel 3.1 and sles11sp run with kernel 3.0..
 Signed-off-by: Alex Tabachnik <alext@mellanox.com>
 ---
  drivers/infiniband/ulp/iser/iser_initiator.c |    2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
+ 1 files changed, 1 insertions(+), 1 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/iser/iser_initiator.c b/drivers/infiniband/ulp/iser/iser_initiator.c
 index 47dd15c..a79b45f 100644
@@ -26,5 +26,5 @@ index 47dd15c..a79b45f 100644
  #else
  	struct iscsi_cmd *hdr =  (struct iscsi_cmd *)task->hdr;
 -- 
-1.7.9.5
+1.7.1
 

@@ -1,12 +1,12 @@
-From 3bc4bef3887fe60448dc3b50a36b16c2e9b6130c Mon Sep 17 00:00:00 2001
+From 8d1d3b9907db5238a72ab89c77b81a2c92e3f3eb Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Mon, 10 Dec 2012 13:37:46 +0200
-Subject: [PATCH 20/28] BACKPORT: cma for SLES11SP1
+Subject: [PATCH 20/29] BACKPORT: cma for SLES11SP1
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
  drivers/infiniband/core/cma.c |    4 ++++
- 1 file changed, 4 insertions(+)
+ 1 files changed, 4 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/core/cma.c b/drivers/infiniband/core/cma.c
 index 0bf5a9d..f0f75b6 100644
@@ -28,5 +28,5 @@ index 0bf5a9d..f0f75b6 100644
  	route->path_rec->mtu = iboe_get_mtu(ndev->mtu);
  	route->path_rec->rate_selector = IB_SA_EQ;
 -- 
-1.7.9.5
+1.7.1
 

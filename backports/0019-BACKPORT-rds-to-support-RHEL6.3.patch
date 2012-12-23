@@ -1,7 +1,7 @@
-From 6debecb63c246700ecf66dde90507ce3a158510c Mon Sep 17 00:00:00 2001
+From c7a65ae9c65e5626ad360a45ca61e1e97867a61a Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 5 Dec 2012 13:33:10 +0200
-Subject: [PATCH 19/28] BACKPORT: rds to support RHEL6.3
+Subject: [PATCH 19/29] BACKPORT: rds to support RHEL6.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -12,7 +12,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  net/rds/iw_sysctl.c  |   17 +++++++++++++++++
  net/rds/sysctl.c     |   16 ++++++++++++++++
  net/rds/tcp_listen.c |   11 +++++++++++
- 7 files changed, 89 insertions(+)
+ 7 files changed, 89 insertions(+), 0 deletions(-)
 
 diff --git a/net/rds/ib_recv.c b/net/rds/ib_recv.c
 index 8d19491..eb4f158 100644
@@ -264,5 +264,5 @@ index 7787537..eac61ea 100644
  		ret = PTR_ERR(conn);
  		goto out;
 -- 
-1.7.9.5
+1.7.1
 

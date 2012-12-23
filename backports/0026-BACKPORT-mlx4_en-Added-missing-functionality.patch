@@ -1,7 +1,7 @@
-From 3803dace9e0a3df686a2938731efd8f678ac5689 Mon Sep 17 00:00:00 2001
+From 90c2ddc60d3635bdb73fc94c0d6b01149536817c Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Sun, 16 Dec 2012 16:02:50 +0200
-Subject: [PATCH 26/28] BACKPORT: mlx4_en: Added missing functionality
+Subject: [PATCH 26/29] BACKPORT: mlx4_en: Added missing functionality
 
 Added missing offloads and ethtool configurations for RHEL6.x
 
@@ -198,7 +198,7 @@ index 821e7e3..9ea6d0b 100644
  #else
  	dev->features |= NETIF_F_RXCSUM;
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_rx.c b/drivers/net/ethernet/mellanox/mlx4/en_rx.c
-index c47ceb4..53ede7b 100644
+index 4534ec2..5f147b2 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/en_rx.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_rx.c
 @@ -684,6 +684,7 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
@@ -315,5 +315,5 @@ index 3bc443d..6e1946f 100644
  	int mac_index;
  	unsigned max_mtu;
 -- 
-1.7.9.5
+1.7.1
 

@@ -1,18 +1,18 @@
-From 7666a122224deae32dcbaebb85c1f11ebef39c15 Mon Sep 17 00:00:00 2001
+From 815b057ae8eebd531068eff2a915ff441912964e Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Mon, 10 Dec 2012 13:41:10 +0200
-Subject: [PATCH 23/28] BACKPORT: mlx4_en for SLES11SP1
+Subject: [PATCH 23/29] BACKPORT: mlx4_en for SLES11SP1
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- drivers/net/ethernet/mellanox/mlx4/Makefile       |    2 ++
+ drivers/net/ethernet/mellanox/mlx4/Makefile       |    2 +
  drivers/net/ethernet/mellanox/mlx4/en_main.c      |    7 ++++++
  drivers/net/ethernet/mellanox/mlx4/en_netdev.c    |   24 +++++++++++++++++++++
- drivers/net/ethernet/mellanox/mlx4/en_resources.c |    6 ++++++
+ drivers/net/ethernet/mellanox/mlx4/en_resources.c |    6 +++++
  drivers/net/ethernet/mellanox/mlx4/en_rx.c        |   14 ++++++++++++
  drivers/net/ethernet/mellanox/mlx4/en_tx.c        |   23 ++++++++++++++++++++
  drivers/net/ethernet/mellanox/mlx4/mlx4_en.h      |   20 +++++++++++++++++
- 7 files changed, 96 insertions(+)
+ 7 files changed, 96 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx4/Makefile b/drivers/net/ethernet/mellanox/mlx4/Makefile
 index 8e03f81..29eb7ed 100644
@@ -188,7 +188,7 @@ index 70bea55..f186575 100644
  	context->cqn_send = cpu_to_be32(cqn);
  	context->cqn_recv = cpu_to_be32(cqn);
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_rx.c b/drivers/net/ethernet/mellanox/mlx4/en_rx.c
-index 742e7d9..c47ceb4 100644
+index cced100..4534ec2 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/en_rx.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_rx.c
 @@ -693,8 +693,10 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
@@ -374,5 +374,5 @@ index 1b645bf..3bc443d 100644
  void mlx4_en_sqp_event(struct mlx4_qp *qp, enum mlx4_event event);
  int mlx4_en_map_buffer(struct mlx4_buf *buf);
 -- 
-1.7.9.5
+1.7.1
 
