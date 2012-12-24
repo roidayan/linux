@@ -118,15 +118,15 @@ index 0bf5a9d..f0f75b6 100644
 
 Create a new backport patch from the diff above:
 1. Commit the change (add commit BACKPORT: ...)
-2. Get all patches:
+2. Get updated/new patches:
 $ mkdir -p /tmp/backports/
 $ rm -f /tmp/backports/*
 $ git format-patch --no-numbered -o /tmp/backports/ mlnx_ofed_next..
 Change branch to the original (E.g. “mlnx_ofed_next”)
-$ rm -f backports/*
-$ cp -a /tmp/backports/* backports
+Update/add new relevant patches under "backports" directory
+$ cp -a /tmp/backports/0XXX-<new patch>.patch backports
 $ git add backports
-$ git commit -s -m”BACKPORTS: Added LRO support” backports/
+$ git commit -s -m”BACKPORTS: Added RHEL6.[23] support” backports/
 
 Adding a feature based on Distro/kernel:
 ----------------------------------------
@@ -167,13 +167,13 @@ openibd restart
 
 Create a new backport patch from the diff above:
 1. Commit the change (add commit BACKPORT: ...)
-2. Get all patches:
+2. Get updated/new patches:
 $ mkdir -p /tmp/backports/
 $ rm -f /tmp/backports/*
-$ git format-patch -o /tmp/backports/ mlnx_ofed_next..
+$ git format-patch --no-numbered -o /tmp/backports/ mlnx_ofed_next..
 Change branch to the original (E.g. “mlnx_ofed_next”)
-$ rm -f backports/*
-$ cp -a /tmp/backports/* backports
+Update/add new relevant patches under "backports" directory
+$ cp -a /tmp/backports/0XXX-<new patch>.patch backports
 $ git add backports
 $ git commit -s -m”BACKPORTS: Added LRO support” backports/
 
