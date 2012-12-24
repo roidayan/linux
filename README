@@ -121,7 +121,7 @@ Create a new backport patch from the diff above:
 2. Get all patches:
 $ mkdir -p /tmp/backports/
 $ rm -f /tmp/backports/*
-$ git format-patch -o /tmp/backports/ mlnx_ofed_next..
+$ git format-patch --no-numbered -o /tmp/backports/ mlnx_ofed_next..
 Change branch to the original (E.g. “mlnx_ofed_next”)
 $ rm -f backports/*
 $ cp -a /tmp/backports/* backports
