@@ -4,6 +4,8 @@ Content:
 3. HOWTO add a new feature/fix
 4. HOWTO add backport patches
 5. Adding a feature based on Distro/kernel
+6. Check compilation
+7. Email format
 
 
 Overview:
@@ -31,21 +33,34 @@ Kernel subtree based on kernel.org 3.7:
 	Documentation/
 
 Compilation procedure (same as before):
-# configure <params>
+# cd mofed-linux-2.0
+# git checkout mlnx_ofed_next
+# ln -s ofed_scripts/makefile
+# ln -s ofed_scripts/Makefile
+
+# ./ofed_scripts/configure <params>
+E.g.: ./ofed_scripts/configure --with-core-mod --with-user_mad-mod --with-user_access-mod --with-addr_trans-mod --with-mlx4-mod --with-mlx4_en-mod --with-ipoib-mod --with-srp-mod --with-rds-mod --with-iser-mod
+
+Note: If ".backports_applied" file exist then backport patches will not be applied.
+
 # make
 # make install
 
 HOWTO add a new feature/fix:
-------------------------
+----------------------------
 Start with updated branch (equal to “mlnx_ofed_next”).
 Add the new code.
 Check compilation on the kernel base (3.7).
-# configure <params> --without-backport-patches
+# ./ofed_scripts/configure <params> --without-backport-patches
 # make
 # make install
 Check your feature.
 Commit the changes.
 Then add backports if required.
+See "Check compilation"
+
+Note: Make sure your commits pass linux-2.6/scripts/checkpatch.pl
+      Backport patches may not pass this check
 
 
 HOWTO add backport patches:
@@ -113,12 +128,6 @@ $ cp -a /tmp/backports/* backports
 $ git add backports
 $ git commit -s -m”BACKPORTS: Added LRO support” backports/
 
-Check compilation:
-$ cd /mswg/projects/art
-$ git_url=<git url> git_branch=<git branch> ./build mofed_kernel
-
-Send email to Vladimir.
-
 Adding a feature based on Distro/kernel:
 ----------------------------------------
 E.g. Adding LRO to RHEL6.x Distros:
@@ -169,7 +178,19 @@ $ git add backports
 $ git commit -s -m”BACKPORTS: Added LRO support” backports/
 
 Check compilation:
+------------------
+Use your user and not "root".
 $ cd /mswg/projects/art
 $ git_url=<git url> git_branch=<git branch> ./build mofed_kernel
 
-Send email to Vladimir.
+Send email to vlad@mellanox.com.
+
+Email format:
+-------------
+
+Git URL:
+Git Branch:
+
+Changelog:
+
+Compilation Summary:
