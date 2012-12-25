@@ -1,0 +1,33 @@
+From bd598c0b046370e4976c02445cf500913ca4bb9b Mon Sep 17 00:00:00 2001
+From: Alex Tabachnik <alext@mellanox.com>
+Date: Tue, 25 Dec 2012 13:27:03 +0200
+Subject: [PATCH] BACKPORT: increase ISER_KMALLOC_THRESHOLD to 512K
+
+Use kmalloc to allocate buffers up to size of 512K instead of 128K
+
+Signed-off-by: Roi Dayan <roid@mellanox.com>
+Signed-off-by: Alex Tabachnik <alext@mellanox.com>
+---
+ drivers/infiniband/ulp/iser/iser_memory.c |    6 +++++-
+ 1 files changed, 5 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/infiniband/ulp/iser/iser_memory.c b/drivers/infiniband/ulp/iser/iser_memory.c
+index 527db86..d7a82fe 100644
+--- a/drivers/infiniband/ulp/iser/iser_memory.c
++++ b/drivers/infiniband/ulp/iser/iser_memory.c
+@@ -38,7 +38,11 @@
+ 
+ #include "iscsi_iser.h"
+ 
+-#define ISER_KMALLOC_THRESHOLD 0x20000 /* 128K - kmalloc limit */
++#if  (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,32))
++	#define ISER_KMALLOC_THRESHOLD 0x80000 /* 512K - kmalloc limit */
++#else
++	#define ISER_KMALLOC_THRESHOLD 0x20000 /* 128K - kmalloc limit */
++#endif
+ 
+ /**
+  * iser_start_rdma_unaligned_sg
+-- 
+1.7.1
+
