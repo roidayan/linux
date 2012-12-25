@@ -1,7 +1,7 @@
-From 90c2ddc60d3635bdb73fc94c0d6b01149536817c Mon Sep 17 00:00:00 2001
+From a9d0f5d799e2b240cce8c2629c2891f8296956e5 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Sun, 16 Dec 2012 16:02:50 +0200
-Subject: [PATCH 26/29] BACKPORT: mlx4_en: Added missing functionality
+Subject: [PATCH] BACKPORT: mlx4_en: Added missing functionality
 
 Added missing offloads and ethtool configurations for RHEL6.x
 
@@ -108,7 +108,7 @@ index dcccfbf..d826e91 100644
  	.get_strings = mlx4_en_get_strings,
  	.get_sset_count = mlx4_en_get_sset_count,
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
-index 821e7e3..9ea6d0b 100644
+index b9ab111..4462b90 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
 @@ -363,7 +363,22 @@ static void mlx4_en_filter_rfs_expire(struct mlx4_en_priv *priv)
@@ -161,7 +161,7 @@ index 821e7e3..9ea6d0b 100644
  }
  
  u64 mlx4_en_mac_to_u64(u8 *addr)
-@@ -1652,6 +1675,9 @@ static const struct net_device_ops mlx4_netdev_ops = {
+@@ -1664,6 +1687,9 @@ static const struct net_device_ops mlx4_netdev_ops = {
  	.ndo_change_mtu		= mlx4_en_change_mtu,
  	.ndo_do_ioctl		= mlx4_en_ioctl,
  	.ndo_tx_timeout		= mlx4_en_tx_timeout,
@@ -171,7 +171,7 @@ index 821e7e3..9ea6d0b 100644
  	.ndo_vlan_rx_add_vid	= mlx4_en_vlan_rx_add_vid,
  	.ndo_vlan_rx_kill_vid	= mlx4_en_vlan_rx_kill_vid,
  #ifdef CONFIG_NET_POLL_CONTROLLER
-@@ -1698,6 +1724,9 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -1710,6 +1736,9 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	priv->prof = prof;
  	priv->port = port;
  	priv->port_up = false;
@@ -181,7 +181,7 @@ index 821e7e3..9ea6d0b 100644
  	priv->flags = prof->flags;
  	priv->ctrl_flags = cpu_to_be32(MLX4_WQE_CTRL_CQ_UPDATE |
  			MLX4_WQE_CTRL_SOLICITED);
-@@ -1806,13 +1835,13 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -1818,13 +1847,13 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	    MLX4_STEERING_MODE_DEVICE_MANAGED)
  		dev->hw_features |= NETIF_F_NTUPLE;
  #else
@@ -291,7 +291,7 @@ index 4534ec2..5f147b2 100644
  next:
  		for (nr = 0; nr < priv->num_frags; nr++)
 diff --git a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
-index 3bc443d..6e1946f 100644
+index a0cbf25..7ad5fbf 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
 +++ b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
 @@ -475,6 +475,9 @@ struct mlx4_en_priv {
@@ -315,5 +315,5 @@ index 3bc443d..6e1946f 100644
  	int mac_index;
  	unsigned max_mtu;
 -- 
-1.7.1
+1.7.8.2
 

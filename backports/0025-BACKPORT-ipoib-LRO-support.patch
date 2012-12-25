@@ -1,7 +1,7 @@
-From ee3d14f3b79cdc3715143eb7544aa4b3aee71080 Mon Sep 17 00:00:00 2001
+From 3745e4c01aea1152aad7f41bc31b4688c0b5242c Mon Sep 17 00:00:00 2001
 From: Yishai Hadas <yishaih@mellanox.com>
 Date: Thu, 13 Dec 2012 15:56:27 +0200
-Subject: [PATCH 25/29] BACKPORT: ipoib - LRO support
+Subject: [PATCH] BACKPORT: ipoib - LRO support
 
 Signed-off-by: Yishai Hadas <yishaih@mellanox.com>
 ---
@@ -288,5 +288,5 @@ index 0db9816..72f045d 100644
  
  	result = -ENOMEM;
 -- 
-1.7.1
+1.7.8.2
 

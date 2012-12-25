@@ -1,7 +1,7 @@
-From cd8fb9713a1c8a77706d47e3d7bec7b814bc0cd9 Mon Sep 17 00:00:00 2001
+From 58cc24da92e362f87c7b5a112ce4c4c34976f551 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 5 Dec 2012 13:31:23 +0200
-Subject: [PATCH 16/29] BACKPORT: mlx4_en to support RHEL6.3
+Subject: [PATCH] BACKPORT: mlx4_en to support RHEL6.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -126,7 +126,7 @@ index ffe4e77..dcccfbf 100644
  		err = add_ip_rule(priv, cmd, rule_list_h);
  		break;
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
-index f4bd5cc..c27cf49 100644
+index 8d0fa05..a5d4dd5 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
 @@ -47,6 +47,7 @@
@@ -176,7 +176,7 @@ index f4bd5cc..c27cf49 100644
  		list_add_tail(&tmp->list, &priv->mc_list);
  	}
  }
-@@ -1603,6 +1617,7 @@ static int mlx4_en_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+@@ -1615,6 +1629,7 @@ static int mlx4_en_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
  	}
  }
  
@@ -184,7 +184,7 @@ index f4bd5cc..c27cf49 100644
  static int mlx4_en_set_features(struct net_device *netdev,
  		netdev_features_t features)
  {
-@@ -1617,6 +1632,7 @@ static int mlx4_en_set_features(struct net_device *netdev,
+@@ -1629,6 +1644,7 @@ static int mlx4_en_set_features(struct net_device *netdev,
  	return 0;
  
  }
@@ -192,7 +192,7 @@ index f4bd5cc..c27cf49 100644
  
  static const struct net_device_ops mlx4_netdev_ops = {
  	.ndo_open		= mlx4_en_open,
-@@ -1635,8 +1651,10 @@ static const struct net_device_ops mlx4_netdev_ops = {
+@@ -1647,8 +1663,10 @@ static const struct net_device_ops mlx4_netdev_ops = {
  #ifdef CONFIG_NET_POLL_CONTROLLER
  	.ndo_poll_controller	= mlx4_en_netpoll,
  #endif
@@ -203,7 +203,7 @@ index f4bd5cc..c27cf49 100644
  #ifdef CONFIG_RFS_ACCEL
  	.ndo_rx_flow_steer	= mlx4_en_filter_rfs,
  #endif
-@@ -1751,6 +1769,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -1763,6 +1781,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	/*
  	 * Set driver features
  	 */
@@ -211,7 +211,7 @@ index f4bd5cc..c27cf49 100644
  	dev->hw_features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM | NETIF_F_GRO;
  	if (mdev->LSO_support)
  		dev->hw_features |= NETIF_F_TSO | NETIF_F_TSO6;
-@@ -1766,6 +1785,23 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -1778,6 +1797,23 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	if (mdev->dev->caps.steering_mode ==
  	    MLX4_STEERING_MODE_DEVICE_MANAGED)
  		dev->hw_features |= NETIF_F_NTUPLE;
@@ -309,7 +309,7 @@ index afd29a6..74954d5 100644
  					  mlx4_msi_x_interrupt, 0,
  					  &priv->eq_table.irq_names[vec<<5],
 diff --git a/include/linux/mlx4/device.h b/include/linux/mlx4/device.h
-index 6abb96e..fa5cd1b 100644
+index 2fa2357..0e14aef 100644
 --- a/include/linux/mlx4/device.h
 +++ b/include/linux/mlx4/device.h
 @@ -36,7 +36,9 @@
@@ -322,7 +322,7 @@ index 6abb96e..fa5cd1b 100644
  
  #include <linux/atomic.h>
  
-@@ -994,8 +996,12 @@ int mlx4_query_diag_counters(struct mlx4_dev *mlx4_dev, int array_length,
+@@ -1044,8 +1046,12 @@ int mlx4_query_diag_counters(struct mlx4_dev *mlx4_dev, int array_length,
  			     u32 counter_out[]);
  
  int mlx4_test_interrupts(struct mlx4_dev *dev);
@@ -336,5 +336,5 @@ index 6abb96e..fa5cd1b 100644
  
  int mlx4_wol_read(struct mlx4_dev *dev, u64 *config, int port);
 -- 
-1.7.1
+1.7.8.2
 
