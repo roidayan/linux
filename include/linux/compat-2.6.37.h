@@ -29,6 +29,12 @@ static inline int proto_ports_offset(int proto)
 	}
 }
 
+/* supports eipoib flags, priv_flags is short till that version */
+#define CONFIG_COMPAT_IFF_EIPOIB_PIF 0x8000 /*== IFF_OVS_DATAPATH*/
+#define CONFIG_COMPAT_IFF_EIPOIB_VIF 0x4000 /*IFF_MACVLAN_PORT*/
+
+
+
 #define SDIO_CLASS_BT_AMP	0x09	/* Type-A Bluetooth AMP interface */
 
 #define VLAN_N_VID              4096
