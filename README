@@ -5,7 +5,8 @@ Content:
 4. HOWTO add backport patches
 5. Adding a feature based on Distro/kernel
 6. Check compilation
-7. Email format
+7. Submitting to Gerrit
+8. Email format
 
 
 Overview:
@@ -182,6 +183,11 @@ Check compilation:
 Use your user and not "root".
 $ cd /mswg/projects/art
 $ git_url=<git url> git_branch=<git branch> ./build mofed_kernel
+
+Submitting to Gerrit:
+---------------------
+Please refer to
+http://wiki.lab.mtl.com/tiki/tiki-index.php?page=Code+Review&structure=OFED-LE#Gerrit
 
 Send email to vlad@mellanox.com.
 
