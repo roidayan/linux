@@ -1,0 +1,169 @@
+From 477b5597187981ea05307ef5abc35de8f084165a Mon Sep 17 00:00:00 2001
+From: Erez Shitrit <erezsh@mellanox.com>
+Date: Tue, 25 Dec 2012 18:18:49 +0200
+Subject: [PATCH] BACKPORTS: priv_flags is short in kernels before 2.6.37
+
+priv_flags field of struct netdevice is unsigned **short** wheres in the
+upstream kernel it is unsigned int(32 bits).
+This means it has no room to accomodate new bit flags such as IFF_EIPOIB_PIF
+and IFF_EIPOIB_VIF which are set in the upstream code candidate to the
+following values
+
+hack that around using EXISTING values which are irrelevant for IPoIB
+(macvlan) nor eIPoIB (vswitch) - which obviously fit into 16 bits
+
+Signed-off-by: Erez Shitrit <erezsh@mellanox.com>
+---
+ drivers/infiniband/ulp/ipoib/ipoib_cm.c   |    4 +++
+ drivers/infiniband/ulp/ipoib/ipoib_ib.c   |    4 +++
+ drivers/infiniband/ulp/ipoib/ipoib_main.c |    4 +++
+ drivers/net/eipoib/eth_ipoib_main.c       |   35 +++++++++++++++++++++++++++-
+ 4 files changed, 45 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_cm.c b/drivers/infiniband/ulp/ipoib/ipoib_cm.c
+index aa3b712..97d0ba9 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib_cm.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_cm.c
+@@ -690,7 +690,11 @@ copied:
+ 	/* XXX get correct PACKET_ type here */
+ 	skb->pkt_type = PACKET_HOST;
+ 	/* if handler is registered on top of ipoib, set skb oob data. */
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,37))
++	if (skb->dev->priv_flags & CONFIG_COMPAT_IFF_EIPOIB_VIF)
++#else
+         if (skb->dev->priv_flags & IFF_EIPOIB_VIF)
++#endif
+ 		set_skb_oob_cb_data(skb, wc, NULL);
+ 
+ 	netif_receive_skb(skb);
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ib.c b/drivers/infiniband/ulp/ipoib/ipoib_ib.c
+index 1bb3e23..afb480c 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib_ib.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_ib.c
+@@ -376,7 +376,11 @@ static void ipoib_ib_handle_rx_wc(struct net_device *dev,
+ 		skb->ip_summed = CHECKSUM_UNNECESSARY;
+ 
+ 	/* if handler is registered on top of ipoib, set skb oob data. */
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,37))
++	if (dev->priv_flags & CONFIG_COMPAT_IFF_EIPOIB_VIF) {
++#else
+ 	if (dev->priv_flags & IFF_EIPOIB_VIF) {
++#endif
+ 		set_skb_oob_cb_data(skb, wc, &recv_ring->napi);
+ 		/*the registered handler will take care of the skb.*/
+ 		netif_receive_skb(skb);
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
+index 4772cbe..6276062 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
+@@ -2516,7 +2516,11 @@ static struct net_device *ipoib_add_port(const char *format,
+ 	}
+ 
+ 	/*indicates pif port*/
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,37))
++	priv->dev->priv_flags |= CONFIG_COMPAT_IFF_EIPOIB_PIF;
++#else
+ 	priv->dev->priv_flags |= IFF_EIPOIB_PIF;
++#endif
+ 
+ 	result = register_netdev(priv->dev);
+ 	if (result) {
+diff --git a/drivers/net/eipoib/eth_ipoib_main.c b/drivers/net/eipoib/eth_ipoib_main.c
+index 7dac5f3..a6f4ead 100644
+--- a/drivers/net/eipoib/eth_ipoib_main.c
++++ b/drivers/net/eipoib/eth_ipoib_main.c
+@@ -237,11 +237,19 @@ static inline int netdev_set_parent_master(struct net_device *slave,
+ 	if (err)
+ 		return err;
+ 	if (master) {
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,37))
++			slave->priv_flags |= CONFIG_COMPAT_IFF_EIPOIB_VIF;
++#else
+ 			slave->priv_flags |= IFF_EIPOIB_VIF;
++#endif
+ 			/* deny bonding from enslaving it. */;
+ 			slave->flags |= IFF_SLAVE;
+ 	} else {
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,37))
++		slave->priv_flags &= ~(CONFIG_COMPAT_IFF_EIPOIB_VIF);
++#else
+ 		slave->priv_flags &= ~(IFF_EIPOIB_VIF);
++#endif
+ 		slave->flags &= ~(IFF_SLAVE);
+ 	}
+ 
+@@ -265,7 +273,11 @@ static inline int is_driver_owner(struct net_device *dev, char *name)
+ 
+ static inline int is_parent(struct net_device *dev)
+ {
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,37))
++	return (dev->priv_flags & CONFIG_COMPAT_IFF_EIPOIB_PIF) &&
++#else
+ 	return (dev->priv_flags & IFF_EIPOIB_PIF) &&
++#endif
+ 		is_driver_owner(dev, DRV_NAME);
+ }
+ 
+@@ -281,7 +293,11 @@ static inline int __is_slave(struct net_device *dev)
+ 
+ static inline int is_slave(struct net_device *dev)
+ {
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,37))
++	return (dev->priv_flags & CONFIG_COMPAT_IFF_EIPOIB_VIF) &&
++#else
+ 	return (dev->priv_flags & IFF_EIPOIB_VIF) &&
++#endif
+ 		is_driver_owner(dev, SDRV_NAME) && __is_slave(dev);
+ }
+ 
+@@ -470,13 +486,21 @@ int parent_enslave(struct net_device *parent_dev, struct net_device *slave_dev)
+ 
+ 	/* already enslaved */
+ 	if ((slave_dev->flags & IFF_SLAVE) ||
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,37))
++		(slave_dev->priv_flags & CONFIG_COMPAT_IFF_EIPOIB_VIF)) {
++#else
+ 		(slave_dev->priv_flags & IFF_EIPOIB_VIF)) {
++#endif
+ 		pr_err("%s was already enslaved!!!\n", slave_dev->name);
+ 		return -EBUSY;
+ 	}
+ 
+ 	/* mark it as ipoib clone vif */
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,37))
++		slave_dev->priv_flags |= CONFIG_COMPAT_IFF_EIPOIB_VIF;
++#else
+ 	slave_dev->priv_flags |= IFF_EIPOIB_VIF;
++#endif
+ 
+ 	/* set parent netdev attributes */
+ 	if (parent->slave_cnt == 0)
+@@ -1990,7 +2014,11 @@ static void parent_setup(struct net_device *parent_dev)
+ 	/* Initialize the device options */
+ 	parent_dev->tx_queue_len = 0;
+ 	/* mark the parent intf as pif (master of other vifs.) */
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,37))
++	parent_dev->priv_flags =  CONFIG_COMPAT_IFF_EIPOIB_PIF;
++#else
+ 	parent_dev->priv_flags = IFF_EIPOIB_PIF;
++#endif
+ 
+ #if (LINUX_VERSION_CODE > KERNEL_VERSION(3,0,0))
+ 	parent_dev->hw_features = NETIF_F_SG | NETIF_F_IP_CSUM |
+@@ -2102,8 +2130,11 @@ static void parent_free_all(void)
+ /* netdev events handlers */
+ static inline int is_ipoib_pif_intf(struct net_device *dev)
+ {
+-
+-    if (ARPHRD_INFINIBAND == dev->type && dev->priv_flags & IFF_EIPOIB_PIF)
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,37))
++	if (ARPHRD_INFINIBAND == dev->type && dev->priv_flags & CONFIG_COMPAT_IFF_EIPOIB_PIF)
++#else
++	if (ARPHRD_INFINIBAND == dev->type && dev->priv_flags & IFF_EIPOIB_PIF)
++#endif
+ 		return 1;
+ 	return 0;
+ }
+-- 
+1.7.1
+

@@ -1,0 +1,84 @@
+From 590f82aac3699f4ddb499bdac5a01d571521ceea Mon Sep 17 00:00:00 2001
+From: Erez Shitrit <erezsh@mellanox.com>
+Date: Wed, 26 Dec 2012 11:06:43 +0200
+Subject: [PATCH] BACKPORTS: ib/ipoib: 2.6.36 and bellow doesn't support netdev_rx_handler_register
+
+Signed-off-by: Erez Shitrit <erezsh@mellanox.com>
+---
+ drivers/infiniband/ulp/ipoib/ipoib_cm.c |   16 ++++++++++++----
+ drivers/infiniband/ulp/ipoib/ipoib_ib.c |   14 ++++++++++++--
+ 2 files changed, 24 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_cm.c b/drivers/infiniband/ulp/ipoib/ipoib_cm.c
+index 97d0ba9..0f384f4 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib_cm.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_cm.c
+@@ -585,6 +585,9 @@ void ipoib_cm_handle_rx_wc(struct net_device *dev,
+ 	int frags;
+ 	int has_srq;
+ 	struct sk_buff *small_skb;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
++	extern int (*eth_ipoib_handle_frame_hook)(struct sk_buff **skb);
++#endif
+ 
+ 	ipoib_dbg_data(priv, "cm recv completion: id %d, status: %d\n",
+ 		       wr_id, wc->status);
+@@ -690,14 +693,19 @@ copied:
+ 	/* XXX get correct PACKET_ type here */
+ 	skb->pkt_type = PACKET_HOST;
+ 	/* if handler is registered on top of ipoib, set skb oob data. */
+-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,37))
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
++	if ((skb->dev->priv_flags & CONFIG_COMPAT_IFF_EIPOIB_VIF) && eth_ipoib_handle_frame_hook) {
++#elif (LINUX_VERSION_CODE == KERNEL_VERSION(2,6,37) || LINUX_VERSION_CODE == KERNEL_VERSION(2,6,36))
+ 	if (skb->dev->priv_flags & CONFIG_COMPAT_IFF_EIPOIB_VIF)
+ #else
+-        if (skb->dev->priv_flags & IFF_EIPOIB_VIF)
++	if (skb->dev->priv_flags & IFF_EIPOIB_VIF)
+ #endif
+ 		set_skb_oob_cb_data(skb, wc, NULL);
+-
+-	netif_receive_skb(skb);
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
++	eth_ipoib_handle_frame_hook(&skb);
++	} else
++#endif
++		netif_receive_skb(skb);
+ 
+ repost:
+ 	if (has_srq) {
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ib.c b/drivers/infiniband/ulp/ipoib/ipoib_ib.c
+index afb480c..f8d4868 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib_ib.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_ib.c
+@@ -286,7 +286,10 @@ static inline void ipoib_create_repath_ent(struct net_device *dev,
+ 		kfree(arp_repath);
+ }
+ 
+-
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
++int (*eth_ipoib_handle_frame_hook)(struct sk_buff **skb) = NULL;
++EXPORT_SYMBOL_GPL(eth_ipoib_handle_frame_hook);
++#endif
+ 
+ static void ipoib_ib_handle_rx_wc(struct net_device *dev,
+ 				  struct ipoib_recv_ring *recv_ring,
+@@ -383,7 +386,14 @@ static void ipoib_ib_handle_rx_wc(struct net_device *dev,
+ #endif
+ 		set_skb_oob_cb_data(skb, wc, &recv_ring->napi);
+ 		/*the registered handler will take care of the skb.*/
+-		netif_receive_skb(skb);
++
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
++		if (eth_ipoib_handle_frame_hook)
++			eth_ipoib_handle_frame_hook(&skb);
++		else
++#endif
++	netif_receive_skb(skb);
++
+ 	}
+ #ifdef CONFIG_COMPAT_USE_LRO
+ 	else if (dev->features & NETIF_F_LRO)
+-- 
+1.7.1
+
