@@ -46,6 +46,7 @@ log_level_str = 'info'
 log_level = log_levels.get(log_level_str)
 
 parent_slave_map = {}
+bond_active_slave_map = {}
 
 USAGE = "\
 Usage:									\n\
@@ -215,7 +216,7 @@ def get_parents():
 # to which ibX interface.
 ############################################################
 def get_parent_slave(parent):
-	cmd = "/usr/sbin/ethtool -i %s | /bin/grep driver:" % parent
+	cmd = "/usr/sbin/ethtool -i %s | /bin/grep bus-info:" % parent
 	(rc, out) = run_cmd(cmd)
 	if rc or len(out) == 0:
 		logging.warning("get_parent_slave: Failed to find parent: %s:" % parent)
@@ -391,8 +392,8 @@ def get_slave_vlan_br(slave, vid = None):
 
 # returns array of vlan interfaces for that parent.
 # assumption: vlan format is: <parent>.vlanID
-# for example: for eth0.ipoib returns (if exists):
-#  eth0.ipoib.7, eth0.ipoib.99 etc.
+# for example: for eth0 returns (if exists):
+#  eth0.7, eth0.99 etc.
 def get_all_vlan_interfaces_per_parent(parent):
 	all_vlans = []
 	brs = get_brs()
@@ -510,6 +511,7 @@ def get_sysfs_path(nic, leaf):
 def nic_child_update(mac, parent, remove, master_parent = None):
 	# update remove/add parameters
 	adding_vlan_childs = 0
+	vlan_id = ""
 
 	if None == master_parent:
 		logging.debug("+===>nic_child_update(parent=%s, remove=%s, master_parent=None)" %(parent, remove))
@@ -517,6 +519,7 @@ def nic_child_update(mac, parent, remove, master_parent = None):
 	else:
 		logging.debug("+===>nic_child_update(parent=%s, remove=%s, master_parent=%s)" %(parent, remove, master_parent))
 		adding_vlan_childs = 1
+		vlan_id = get_pif_index(parent, 1)
 
 	if remove:
 		op = '-'
@@ -561,12 +564,13 @@ def nic_child_update(mac, parent, remove, master_parent = None):
 			return 1
 
 	actual_slave = None
-	slave_child = None
+	#zz slave_child = None
 	vlan_slave_index = ""
 	i = 1
 
 	# create/destroy native child
 	if remove:
+		logging.warning("Remove loop")
 		slave_child = sysfs_line.replace("SLAVE=", "")
 		if not slave_child.count('.'):
 			logging.warning("cannot delete %s" % slave_child)
@@ -597,12 +601,20 @@ def nic_child_update(mac, parent, remove, master_parent = None):
 			i = i + 1
 		sysfs_line = "%s %s" % (actual_slave, mac)
 		logging.debug("(nic_child_update): sysfs_line:%s\n" % sysfs_line)
-	if get_dev_mac(actual_slave) == None:
+	if (get_dev_mac(actual_slave) == None):
 		ib_slave_idx = vlan_slave_index.replace(slave, '')
 		ib_slave_idx = get_vlan_inf_from_ib_intf(ib_slave_idx)
+		# new format uses "ip link"
+		# add -> IP link add link <slave> name <slave>.<ib_slave_idx> type ipoib mode datagram
+		# delete:-> IP link delete dev <slave>.<ib_slave_idx>
 		cmd = "/bin/echo %s > %s" % (ib_slave_idx, "/sys/class/net/" + slave + os.sep + fn)
+		#cmd = "ip link delete dev %s" % (slave_child)
 		if not remove:
+			logging.debug("(nic_child_update): cmd:%s\n" % cmd)
 			cmd = "/bin/echo %s.%s > %s" % (vlan_slave_index, str(i), "/sys/class/net/" + slave + os.sep + fn)
+			#cmd = "ip link add link %s name %s type ipoib mode connected" % (slave, actual_slave)
+			logging.debug("(nic_child_update): cmd:%s\n" % cmd)
+
 		logging.debug("(nic_child_update): cmd:%s\n" % cmd)
 		rc = os.system(cmd)
 		if rc:
@@ -623,7 +635,7 @@ def nic_child_update(mac, parent, remove, master_parent = None):
 		if rc:
 			logging.warning("cmd failed! (%s)" % cmd)
 			return 1
-		cmd = "/bin/echo %s%s > %s" % (op, sysfs_line, sysfs_fn)
+		cmd = "/bin/echo %s%s  %s > %s" % (op, sysfs_line, str(vlan_id), sysfs_fn)
 		logging.debug("(nic_child_update): cmd:%s\n" % cmd)
 		rc = os.system(cmd)
 		if rc:
@@ -648,11 +660,135 @@ def nic_child_update(mac, parent, remove, master_parent = None):
 		logging.debug("Child nic %s of parent %s was not %s" % (op_name, mac, parent))
 		return 1
 	return 0
+##################################################
+# Bonding functions
+##################################################
+def restore_prev_bond_slave_ip(prev_active_slave, current_active_slave):
+
+	logging.debug("restore_prev_bond_slave_ip: prev: %s  active:%s" % (prev_active_slave, current_active_slave))
+
+	# get the served IP's from the previous active slave.
+	cmd = "cat /sys/class/net/%s/eth/served" % prev_active_slave
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		logging.debug("restore_prev_bond_slave_ip: No IP's served under %s cmd: %s, out: %s" % (prev_active_slave, cmd, out))
+		return None
+	logging.debug("restore_prev_bond_slave_ip: %s has OUT: %s:" % (prev_active_slave, out))
+	all_served_ip = out.split('\n');
+	# take each line and move it to the active:
+	#1. get one of the new active parent slaves
+	# line format: SLAVE=ib0.1 MAC=00:02:c9:43:3b:f1 IP=11.134.45.2 VLAN=N/A
+	#remove them from the prev_slave:
+	logging.debug("restore_prev_bond_slave_ip: BEFORE DELETE %s " % (all_served_ip))
+	for line in all_served_ip:
+		if (line.strip() != ''):
+			new_line = re.sub('SLAVE=\S+ ', '', line)
+			new_line = re.sub('\S+=', '', new_line)
+			new_line = re.sub('N/A', '', new_line)
+			new_line = '-' + new_line
+			logging.debug("restore_prev_bond_slave_ip: LINE %s" % (new_line))
+			cmd = "echo %s > /sys/class/net/%s/eth/served" % (new_line, prev_active_slave)
+			(rc, out) = run_cmd(cmd)
+			if rc:
+				logging.debug("restore_prev_bond_slave_ip: failed running command: %s " % (cmd))
+				return None
+
+	# activate these ip's in the active slave
+	logging.debug("restore_prev_bond_slave_ip: BEFORE ADD %s " % (all_served_ip))
+	for line in all_served_ip:
+		if (line.strip() != ''):
+			# take of the "SLAVE=ibx.y"
+			new_line = re.sub('SLAVE=\S+ ', '', line)
+			new_line = re.sub('\S+=', '', new_line)
+			#  take the N/A vlaue.
+			new_line = re.sub('N/A', '', new_line)
+			new_line = '+' + new_line
+			logging.debug("restore_prev_bond_slave_ip: LINE %s" % (new_line))
+			cmd = "echo %s > /sys/class/net/%s/eth/served" % (new_line, current_active_slave)
+			(rc, out) = run_cmd(cmd)
+			if rc:
+				logging.warning("restore_prev_bond_slave_ip: failed running command: %s " % (cmd))
+	return current_active_slave
+
+##################################################
+def get_active_slave(bond):
+	logging.debug(" get_active_slave: check %s  active slave" % (bond))
+	cmd = "cat /sys/class/net/%s/bonding/active_slave" % bond
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		logging.debug("get_active_slave: no active slave for %s:" %(bond))
+		return None
+	logging.debug("get_active_slave: %s has OUT: %s:" % (bond, out))
+	return out.strip()
+
+####################################################
+def get_parent_bond_master(parent):
+	logging.debug(" get_parent_bond_master: check if parent %s is slave to bond" % (parent))
+	cmd = "ip link show %s | /bin/grep master" % parent
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		logging.debug("get_parent_bond_master: no master for parent: %s:" %(parent))
+		return None
+	logging.debug("get_parent_bond_master: parent %s has master %s:" % (parent, out))
+	m = re.findall('.* master (\S+) ', out)
+	if len(m) != 1:
+		logging.warning("get_parent_bond_master: parent %s Got line: %s:" % (parent, out))
+		return None
+	logging.debug("get_parent_bond_master: parent %s is slave to bond %s" % (parent, m[0]))
+	#check if it is bonding master:
+	cmd = "cat /sys/class/net/bonding_masters | grep %s" %m[0]
+	(rc, out) = run_cmd(cmd)
+	if rc or len(out) == 0:
+		logging.debug("get_parent_bond_master: master %s is not bonding master" %(m[0]))
+		return None
+	return m[0]
+###############################################
+def handle_failover_event(parent):
+	#get master
+	master = get_parent_bond_master(parent)
+	if (None == master):
+		logging.debug(" handle_failover_event: No master for parent %s" % parent)
+		return;
+	#get the current from the bond and check if that was before
+	current_active_slave = get_active_slave(master);
+	if (None == current_active_slave):
+		return
+	#full name includes the vlan extantion e.g ethx.y
+	current_active_slave_full_name = current_active_slave
+
+	if bond_active_slave_map.has_key(master):
+		prev_active_slave = bond_active_slave_map[master]
+		if (prev_active_slave != current_active_slave):
+			# in case the bondin'sslaves are vlans (e.g ethx.y) we resotre over the origin pv interfaces (e.g ethx)
+			prev_active_slave = get_parent_from_vlan_intf(prev_active_slave)
+			current_active_slave = get_parent_from_vlan_intf(current_active_slave)
+			logging.info("handle_failover_event: Found failover event master: %s, cur: %s prev: %s " %(master, current_active_slave, prev_active_slave))
+			restore_prev_bond_slave_ip(prev_active_slave, current_active_slave)
+		else:
+			logging.info(" handle_failover_event: NO failover event master: %s, cur: %s prev: %s " %(master, current_active_slave, prev_active_slave))
+
+	logging.info(" handle_failover_event: update master: %s, active slave:: %s " %(master, current_active_slave_full_name))
+	bond_active_slave_map[master] = current_active_slave_full_name
 
 ###################################################
 # VLAN funcs.
 ##################################################
 #####################################################
+# assume: interface format is ethX.Y where the "Y" is the vlan id
+def is_vlan_interface(parent):
+	m = re.findall("(\d+)", parent)
+	if len(m) != 2:
+		return None
+	return m[1]
+
+# gets vlan interface (e.g ethX.Y) and return the parent (e.g ethX)
+# or if it is not vlan interface return the input back
+def get_parent_from_vlan_intf(vlan_interface):
+	m = re.findall('(\S+)\.\d+' ,vlan_interface)
+	if len(m) == 1:
+		return m[0]
+	return vlan_interface
+
 # the functions gets ib interface format .8006.1
 # and returns 0x8006.1 or gets .1 and returns .1
 def get_vlan_inf_from_ib_intf(ib_intf):
@@ -665,7 +801,6 @@ def get_vlan_inf_from_ib_intf(ib_intf):
 #########################################
 def get_pif_index(parent, is_vlan_if = 0):
 	if is_vlan_if:
-		#format: eth0.X, seeking for the X
 		m = re.findall("(\d+)", parent)
 		if len(m) != 2:
 			if len(m) != 1:
@@ -675,7 +810,7 @@ def get_pif_index(parent, is_vlan_if = 0):
 			return None
 		logging.debug("===> get_pif_index - m[0]:%s, m[1]:%s" % (m[0], m[1]))
 		return m[1]
-	#format eth0.ipoib
+
 	if parent_slave_map.has_key(parent):
 		slave = parent_slave_map[parent]
 		logging.debug("===> Mapping for parent %s %s" % (parent, slave))
@@ -716,6 +851,7 @@ def add_vlan_for_parent(parent):
 		if os.path.exists(ib_vlan_intf_path):
 			logging.debug("The child interface %x: for ib%s already exists:" % (vlan_index, parent_index))
 		else:
+			logging.debug("add_vlan_for_parent: Going to create %x: for ib%s" % (vlan_index, parent_index))
 			(rc, out) = run_cmd(cmd)
 			is_first_time = 1
 			if rc :
@@ -725,7 +861,7 @@ def add_vlan_for_parent(parent):
 			if rc:
 				logging.debug("%s VLAN: child nic mac %s creation failed" % (parent, parent_mac), logging.WARNING)
 			else:
-					logging.debug("%s VLAN child nic mac %s was created" % (parent, parent_mac))
+				logging.debug("%s VLAN child nic mac %s was created" % (parent, parent_mac))
 
 	# now go over all the bridges and add for that vlan new slave
 	for vlan_pif in all_vlan_interfaces:
@@ -752,6 +888,8 @@ def add_vlan_for_parent(parent):
 				logging.debug("%s VLAN: child nic mac %s creation failed" % (parent, vif_mac), logging.WARNING)
 			else:
 				logging.debug("%s VLAN child nic mac %s was created" % (parent, vif_mac))
+		# if the interface is under bond check failover event.
+		handle_failover_event(vlan_pif)
 	return 1
 
 # main
@@ -968,10 +1106,13 @@ def main():
 						logging_sys("%s child nic mac %s creation failed" % (parent, vif_mac), logging.WARNING)
 					else:
 						logging_sys("%s child nic mac %s was created" % (parent, vif_mac))
+			# detect bonding failover event, TODO: move to event deriven
+			# get master bond if exists:
+			handle_failover_event(parent)
 		#start parent-vlan loop:
-		logging.debug("(main): VLAN loop for parent:%s\n" %(parent))
 		#for each parent check if there are vlans that attached to some bridges:
 		for parent in parents:
+			logging.debug("(main): VLAN loop for parent:%s\n" %(parent))
 			add_vlan_for_parent(parent)
 
 	# done iterations
