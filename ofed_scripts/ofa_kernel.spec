@@ -137,7 +137,7 @@ Core, HW and ULPs kernel modules sources
 %endif
 
 %if "%{_vendor}" == "redhat"
-%define install_mod_dir extra/%{name}
+%define install_mod_dir extra/mlnx-%{name}
 %define __find_requires %{nil}
 %endif
 
