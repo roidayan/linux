@@ -73,17 +73,6 @@ index a5d4dd5..b9ab111 100644
  		if (err) {
  			en_err(priv, "Failed allocating Tx ring\n");
  			mlx4_en_deactivate_cq(priv, cq);
-@@ -1534,8 +1538,10 @@ void mlx4_en_destroy_netdev(struct net_device *dev)
- 
- 	mlx4_en_free_resources(priv);
- 
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
- 	kfree(priv->tx_ring);
- 	kfree(priv->tx_cq);
-+#endif
- 
- 	free_netdev(dev);
- }
 @@ -1680,8 +1686,12 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	int i;
  	int err;
@@ -97,22 +86,6 @@ index a5d4dd5..b9ab111 100644
  	if (dev == NULL)
  		return -ENOMEM;
  
-@@ -1704,6 +1714,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
- 	priv->ctrl_flags = cpu_to_be32(MLX4_WQE_CTRL_CQ_UPDATE |
- 			MLX4_WQE_CTRL_SOLICITED);
- 	priv->tx_ring_num = prof->tx_ring_num;
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
- 	priv->tx_ring = kzalloc(sizeof(struct mlx4_en_tx_ring *) *
- 			priv->tx_ring_num, GFP_KERNEL);
- 	if (!priv->tx_ring) {
-@@ -1716,6 +1727,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
- 		err = -ENOMEM;
- 		goto out;
- 	}
-+#endif
- 	priv->rx_ring_num = prof->rx_ring_num;
- 	priv->cqe_factor = (mdev->dev->caps.cqe_size == 64) ? 1 : 0;
- 	priv->mac_index = -1;
 @@ -1726,10 +1738,12 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	INIT_WORK(&priv->watchdog_task, mlx4_en_restart);
  	INIT_WORK(&priv->linkstate_task, mlx4_en_linkstate);
