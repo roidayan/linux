@@ -111,7 +111,7 @@ index 653d90f..5a87721 100644
  	NULL,
  };
  
-+#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,32))
++#if ((LINUX_VERSION_CODE > KERNEL_VERSION(3,1,0)))
  /* name spcase  support */
  static const void *eipoib_namespace(struct class *cls,
  				    const struct class_attribute *attr)
@@ -127,7 +127,7 @@ index 653d90f..5a87721 100644
  	sysfs_remove_link(&(master->dev.kobj), linkname);
  }
  
-+#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,32))
++#if ((LINUX_VERSION_CODE > KERNEL_VERSION(3,1,0)))
  static struct class_attribute class_attr_eth_ipoib_interfaces = {
  	.attr = {
  		.name = "eth_ipoib_interfaces",
