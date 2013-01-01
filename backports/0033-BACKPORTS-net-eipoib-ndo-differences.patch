@@ -19,11 +19,11 @@ index ebd38d4..7d138d9 100644
  	s32      slave_cnt;
  	rwlock_t lock;
  	struct   port_stats port_stats;
-+#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35))
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,35))
 +	struct   net_device_stats stats;
 +#endif
  	struct   list_head parent_list;
-+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,32))
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,0,0))
 +	struct   vlan_group *vlgrp;
 +#endif
  	u16      flags;
@@ -149,7 +149,7 @@ index 41feea2..7dac5f3 100644
  }
  
  /* -------------------------- Device entry points --------------------------- */
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,35))
  static struct rtnl_link_stats64 *parent_get_stats(struct net_device *parent_dev,
  						  struct rtnl_link_stats64 *stats)
 +#else
@@ -158,7 +158,7 @@ index 41feea2..7dac5f3 100644
  {
  	struct parent *parent = netdev_priv(parent_dev);
  	struct slave *slave;
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,35))
  	struct rtnl_link_stats64 temp;
 -
  	memset(stats, 0, sizeof(*stats));
@@ -171,7 +171,7 @@ index 41feea2..7dac5f3 100644
  	read_lock_bh(&parent->lock);
  
  	parent_for_each_slave(parent, slave) {
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,35))
  		const struct rtnl_link_stats64 *sstats =
  			dev_get_stats(slave->dev, &temp);
  
@@ -208,7 +208,7 @@ index 41feea2..7dac5f3 100644
 +		local_stats.tx_window_errors += sstats->tx_window_errors;
 +#endif
  	}
-+#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35))
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,35))
 +	memcpy(stats, &local_stats, sizeof(struct net_device_stats));
 +#endif
  
