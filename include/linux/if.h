@@ -9,6 +9,13 @@
 #define IFF_EIPOIB_PIF  0x100000       /* IPoIB PIF intf(eg ib0, ib1 etc.)*/
 #define IFF_EIPOIB_VIF  0x200000       /* IPoIB VIF intf(eg ib0.x, ib1.x etc.)*/
 
+/* Added IFF_SLAVE_NEEDARP for SLES11SP1 Errata kernels where this was replaced
+ * by IFF_MASTER_NEEDARP
+ */
+#ifndef IFF_SLAVE_NEEDARP
+#define IFF_SLAVE_NEEDARP 0x40          /* need ARPs for validation     */
+#endif
+
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3,6,0)) */
 
 #endif /* __EXTEND_LINUX_IF_H_TO_3_6__ */
