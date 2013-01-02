@@ -1,0 +1,90 @@
+From 47d2e8c53709c10ba44182923382f56bc01f806d Mon Sep 17 00:00:00 2001
+From: root <root@mtlprf055.lab.mtl.com>
+Date: Wed, 2 Jan 2013 18:27:08 +0200
+Subject: [PATCH] BACKPORTS: ib/ipoib: fix offloads for UD mode
+
+Change-Id: I9171f0de6ee1296e30296d1c9869a4a3c9208041
+Signed-off-by: root <root@mtlprf055.lab.mtl.com>
+---
+ drivers/infiniband/ulp/ipoib/ipoib.h         |    3 +++
+ drivers/infiniband/ulp/ipoib/ipoib_ethtool.c |   12 ++++++++++++
+ drivers/infiniband/ulp/ipoib/ipoib_main.c    |   12 +++++++-----
+ 3 files changed, 22 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib.h b/drivers/infiniband/ulp/ipoib/ipoib.h
+index 2655a36..a734568 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib.h
++++ b/drivers/infiniband/ulp/ipoib/ipoib.h
+@@ -101,6 +101,9 @@ enum {
+ 	IPOIB_FLAG_AUTO_MODER     = 13, /*indicates moderation is running*/
+ 
+ 	IPOIB_MAX_BACKOFF_SECONDS = 16,
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,39))
++	IPOIB_FLAG_CSUM	= 17,
++#endif
+ 
+ 	IPOIB_MCAST_FLAG_FOUND	  = 0,	/* used in set_multicast_list */
+ 	IPOIB_MCAST_FLAG_SENDONLY = 1,
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
+index f9bff20..3a096e3 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
+@@ -303,6 +303,15 @@ int ipoib_set_flags(struct net_device *dev, u32 data)
+ }
+ #endif
+ 
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,39))
++static u32 ipoib_get_rx_csum(struct net_device *dev)
++{
++	struct ipoib_dev_priv *priv = netdev_priv(dev);
++	return test_bit(IPOIB_FLAG_CSUM, &priv->flags) &&
++		!test_bit(IPOIB_FLAG_ADMIN_CM, &priv->flags);
++}
++#endif
++
+ static const struct ethtool_ops ipoib_ethtool_ops = {
+ 	.get_drvinfo		= ipoib_get_drvinfo,
+ 	.get_coalesce		= ipoib_get_coalesce,
+@@ -317,6 +326,9 @@ static const struct ethtool_ops ipoib_ethtool_ops = {
+ #ifdef CONFIG_COMPAT_USE_LRO
+ 	.set_flags		= ipoib_set_flags,
+ #endif
++#if (LINUX_VERSION_CODE <  KERNEL_VERSION(2,6,39))
++	.get_rx_csum		= ipoib_get_rx_csum,
++#endif
+ };
+ 
+ void ipoib_set_ethtool_ops(struct net_device *dev)
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
+index 6276062..57b0798 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
+@@ -278,11 +278,12 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ 		netdev_update_features(dev);
+ #else
+-		dev->features &= ~(NETIF_F_IP_CSUM | NETIF_F_SG | NETIF_F_TSO);
+-		if (ipoib_cm_max_mtu(dev) > priv->mcast_mtu)
+-			ipoib_warn(priv, "mtu > %d will cause multicast packet drops.\n",
+-				   priv->mcast_mtu);
+-		dev_set_mtu(dev, ipoib_cm_max_mtu(dev));
++		if (test_bit(IPOIB_FLAG_CSUM, &priv->flags)) {
++			dev->features |= NETIF_F_IP_CSUM | NETIF_F_SG;
++
++			if (priv->hca_caps & IB_DEVICE_UD_TSO)
++				dev->features |= NETIF_F_TSO;
++		}
+ #endif
+ 		dev_set_mtu(dev, min(priv->mcast_mtu, dev->mtu));
+ 		rtnl_unlock();
+@@ -2405,6 +2406,7 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
+ 
+ 		priv->dev->features |= priv->dev->hw_features;
+ #else
++		set_bit(IPOIB_FLAG_CSUM, &priv->flags);
+ 		priv->dev->features |= NETIF_F_SG |
+ 			NETIF_F_IP_CSUM | NETIF_F_RXCSUM;
+ 
+-- 
+1.7.1
+
