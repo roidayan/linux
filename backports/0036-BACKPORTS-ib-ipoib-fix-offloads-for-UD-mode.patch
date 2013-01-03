@@ -1,15 +1,15 @@
-From 47d2e8c53709c10ba44182923382f56bc01f806d Mon Sep 17 00:00:00 2001
-From: root <root@mtlprf055.lab.mtl.com>
+From 57e19629d9b674571ed553cd08dd54b7992f79eb Mon Sep 17 00:00:00 2001
+From: Yishai Hadas <yishaih@mellanox.com>
 Date: Wed, 2 Jan 2013 18:27:08 +0200
 Subject: [PATCH] BACKPORTS: ib/ipoib: fix offloads for UD mode
 
 Change-Id: I9171f0de6ee1296e30296d1c9869a4a3c9208041
-Signed-off-by: root <root@mtlprf055.lab.mtl.com>
+Signed-off-by: Yishai Hadas <yishaih@mellanox.com>
 ---
  drivers/infiniband/ulp/ipoib/ipoib.h         |    3 +++
- drivers/infiniband/ulp/ipoib/ipoib_ethtool.c |   12 ++++++++++++
+ drivers/infiniband/ulp/ipoib/ipoib_ethtool.c |   13 +++++++++++++
  drivers/infiniband/ulp/ipoib/ipoib_main.c    |   12 +++++++-----
- 3 files changed, 22 insertions(+), 5 deletions(-)
+ 3 files changed, 23 insertions(+), 5 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib.h b/drivers/infiniband/ulp/ipoib/ipoib.h
 index 2655a36..a734568 100644
@@ -26,7 +26,7 @@ index 2655a36..a734568 100644
  	IPOIB_MCAST_FLAG_FOUND	  = 0,	/* used in set_multicast_list */
  	IPOIB_MCAST_FLAG_SENDONLY = 1,
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
-index f9bff20..3a096e3 100644
+index ee04b77..85ca65e 100644
 --- a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
 @@ -303,6 +303,15 @@ int ipoib_set_flags(struct net_device *dev, u32 data)
@@ -45,13 +45,14 @@ index f9bff20..3a096e3 100644
  static const struct ethtool_ops ipoib_ethtool_ops = {
  	.get_drvinfo		= ipoib_get_drvinfo,
  	.get_coalesce		= ipoib_get_coalesce,
-@@ -317,6 +326,9 @@ static const struct ethtool_ops ipoib_ethtool_ops = {
- #ifdef CONFIG_COMPAT_USE_LRO
+@@ -318,6 +327,10 @@ static const struct ethtool_ops ipoib_ethtool_ops = {
  	.set_flags		= ipoib_set_flags,
+ 	.get_flags              = ethtool_op_get_flags,
  #endif
 +#if (LINUX_VERSION_CODE <  KERNEL_VERSION(2,6,39))
-+	.get_rx_csum		= ipoib_get_rx_csum,
++       .get_rx_csum            = ipoib_get_rx_csum,
 +#endif
++
  };
  
  void ipoib_set_ethtool_ops(struct net_device *dev)

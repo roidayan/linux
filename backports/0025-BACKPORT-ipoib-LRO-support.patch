@@ -1,4 +1,4 @@
-From 3745e4c01aea1152aad7f41bc31b4688c0b5242c Mon Sep 17 00:00:00 2001
+From cff29ff1d40bc889f225560d19474b09a2dba1a2 Mon Sep 17 00:00:00 2001
 From: Yishai Hadas <yishaih@mellanox.com>
 Date: Thu, 13 Dec 2012 15:56:27 +0200
 Subject: [PATCH] BACKPORT: ipoib - LRO support
@@ -6,13 +6,13 @@ Subject: [PATCH] BACKPORT: ipoib - LRO support
 Signed-off-by: Yishai Hadas <yishaih@mellanox.com>
 ---
  drivers/infiniband/ulp/ipoib/ipoib.h         |   19 +++++-
- drivers/infiniband/ulp/ipoib/ipoib_ethtool.c |   20 +++++
+ drivers/infiniband/ulp/ipoib/ipoib_ethtool.c |   21 ++++++
  drivers/infiniband/ulp/ipoib/ipoib_ib.c      |   14 ++++-
  drivers/infiniband/ulp/ipoib/ipoib_main.c    |  100 +++++++++++++++++++++++++-
- 4 files changed, 149 insertions(+), 4 deletions(-)
+ 4 files changed, 150 insertions(+), 4 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib.h b/drivers/infiniband/ulp/ipoib/ipoib.h
-index 27450f8..2a6321c 100644
+index 9a3925e..2655a36 100644
 --- a/drivers/infiniband/ulp/ipoib/ipoib.h
 +++ b/drivers/infiniband/ulp/ipoib/ipoib.h
 @@ -43,6 +43,9 @@
@@ -63,7 +63,7 @@ index 27450f8..2a6321c 100644
  
  struct ipoib_arp_repath {
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
-index beb8956..f9bff20 100644
+index beb8956..ee04b77 100644
 --- a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
 @@ -286,6 +286,23 @@ static int ipoib_set_channels(struct net_device *dev,
@@ -90,12 +90,13 @@ index beb8956..f9bff20 100644
  static const struct ethtool_ops ipoib_ethtool_ops = {
  	.get_drvinfo		= ipoib_get_drvinfo,
  	.get_coalesce		= ipoib_get_coalesce,
-@@ -297,6 +314,9 @@ static const struct ethtool_ops ipoib_ethtool_ops = {
+@@ -297,6 +314,10 @@ static const struct ethtool_ops ipoib_ethtool_ops = {
  	.get_channels		= ipoib_get_channels,
  	.set_channels		= ipoib_set_channels,
  #endif
 +#ifdef CONFIG_COMPAT_USE_LRO
 +	.set_flags		= ipoib_set_flags,
++	.get_flags              = ethtool_op_get_flags,
 +#endif
  };
  
@@ -288,5 +289,5 @@ index 0db9816..72f045d 100644
  
  	result = -ENOMEM;
 -- 
-1.7.8.2
+1.7.1
 
