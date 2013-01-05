@@ -1,0 +1,76 @@
+From 4728726873ac4194bf397c3f786459f31c2e1675 Mon Sep 17 00:00:00 2001
+From: Jack Morgenstein <jackm@dev.mellanox.co.il>
+Date: Sat, 5 Jan 2013 10:09:35 +0200
+Subject: [PATCH 37/37] BACKPORTS: ndo_set_vf_xxx functions
+
+Signed-off-by: Jack Morgenstein <jackm@dev.mellanox.co.il>
+---
+ drivers/net/ethernet/mellanox/mlx4/en_netdev.c |   11 ++++++++++-
+ ofed_scripts/compat.mk                         |    1 +
+ 2 files changed, 11 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
+index fa9cd65..cd7d02d 100644
+--- a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
+@@ -1661,6 +1661,7 @@ static int mlx4_en_set_features(struct net_device *netdev,
+ }
+ #endif
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34)) || defined(CONFIG_COMPAT_NDO_VF_MAC_VLAN)
+ static int mlx4_en_set_vf_mac(struct net_device *dev, int queue, u8 *mac)
+ {
+ 	struct mlx4_en_priv *en_priv = netdev_priv(dev);
+@@ -1679,7 +1680,9 @@ static int mlx4_en_set_vf_vlan(struct net_device *dev, int vf, u16 vlan, u8 qos)
+ 
+ 	return mlx4_set_vf_vlan(mdev->dev, en_priv->port, vf, vlan, qos);
+ }
++#endif
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0))
+ static int mlx4_en_set_vf_spoofchk(struct net_device *dev, int vf, bool setting)
+ {
+ 	struct mlx4_en_priv *en_priv = netdev_priv(dev);
+@@ -1687,7 +1690,7 @@ static int mlx4_en_set_vf_spoofchk(struct net_device *dev, int vf, bool setting)
+ 
+ 	return mlx4_set_vf_spoofchk(mdev->dev, en_priv->port, vf, setting);
+ }
+-
++#endif
+ 
+ static const struct net_device_ops mlx4_netdev_ops = {
+ 	.ndo_open		= mlx4_en_open,
+@@ -1731,14 +1734,20 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
+ 	.ndo_tx_timeout		= mlx4_en_tx_timeout,
+ 	.ndo_vlan_rx_add_vid	= mlx4_en_vlan_rx_add_vid,
+ 	.ndo_vlan_rx_kill_vid	= mlx4_en_vlan_rx_kill_vid,
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34)) || defined(CONFIG_COMPAT_NDO_VF_MAC_VLAN)
+ 	.ndo_set_vf_mac		= mlx4_en_set_vf_mac,
+ 	.ndo_set_vf_vlan	= mlx4_en_set_vf_vlan,
++#endif
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0))
+ 	.ndo_set_vf_spoofchk	= mlx4_en_set_vf_spoofchk,
++#endif
+ #ifdef CONFIG_NET_POLL_CONTROLLER
+ 	.ndo_poll_controller	= mlx4_en_netpoll,
+ #endif
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ 	.ndo_set_features	= mlx4_en_set_features,
+ 	.ndo_setup_tc		= mlx4_en_setup_tc,
++#endif
+ #ifdef CONFIG_RFS_ACCEL
+ 	.ndo_rx_flow_steer	= mlx4_en_filter_rfs,
+ #endif
+diff --git a/ofed_scripts/compat.mk b/ofed_scripts/compat.mk
+index d96e46c..7cb112e 100644
+--- a/ofed_scripts/compat.mk
++++ b/ofed_scripts/compat.mk
+@@ -114,4 +114,5 @@ ifeq ($(RHEL_MAJOR),6)
+  CFLAGS += -DCONFIG_COMPAT_IS_BITMAP
+  CFLAGS += -DCONFIG_COMPAT_NETIF_F_RXHASH
+  CFLAGS += -DCONFIG_COMPAT_USE_LRO
++ CFLAGS += -DCONFIG_COMPAT_NDO_VF_MAC_VLAN
+ endif
+-- 
+1.7.1
+
