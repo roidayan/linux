@@ -1,0 +1,236 @@
+#!/bin/bash
+#
+# Copyright (c) 2013 Mellanox Technologies. All rights reserved.
+#
+# This Software is licensed under one of the following licenses:
+#
+# 1) under the terms of the "Common Public License 1.0" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/cpl.php.
+#
+# 2) under the terms of the "The BSD License" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/bsd-license.php.
+#
+# 3) under the terms of the "GNU General Public License (GPL) Version 2" a
+#    copy of which is available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/gpl-license.php.
+#
+# Licensee has the right to choose one of the above licenses.
+#
+# Redistributions of source code must retain the above copyright
+# notice and one of the license notices.
+#
+# Redistributions in binary form must reproduce both the above copyright
+# notice, one of the license notices in the documentation
+# and/or other materials provided with the distribution.
+#
+#
+
+
+usage()
+{
+cat << EOF
+
+Usage: `basename $0` <kernel version> [options]
+
+	Options:
+		get-config:	Get configuration parameters for configure script
+		get-modules:	Get a list of kernel modules that will be compiled
+EOF
+}
+
+
+get-config()
+{
+def_configure_options=" \
+	--with-core-mod \
+	--with-user_mad-mod \
+	--with-user_access-mod \
+	--with-addr_trans-mod \
+	--with-mlx4-mod \
+	--with-mlx4_en-mod \
+	--with-ipoib-mod \
+	--with-e_ipoib-mod \
+	--with-srp-mod \
+	--with-rds-mod \
+	--with-iser-mod \
+	"
+
+configure_options=${configure_options:-"$def_configure_options"}
+
+echo $configure_options
+}
+
+get-modules()
+{
+	modules=
+
+	for opt in `get-config`
+	do
+		case "$opt" in
+			--with-core-mod )
+			modules="$modules \
+				compat/compat \
+				drivers/infiniband/core/ib_core \
+				drivers/infiniband/core/ib_mad \
+				drivers/infiniband/core/ib_sa \
+				drivers/infiniband/core/ib_cm \
+				drivers/infiniband/core/iw_cm"
+			;;
+			--with-user_mad-mod )
+			modules="$modules \
+				drivers/infiniband/core/ib_umad"
+			;;
+			--with-user_access-mod )
+			modules="$modules \
+				drivers/infiniband/core/ib_uverbs \
+				drivers/infiniband/core/ib_ucm"
+			;;
+			--with-addr_trans-mod )
+			modules="$modules \
+				drivers/infiniband/core/ib_addr \
+				drivers/infiniband/core/rdma_cm \
+				drivers/infiniband/core/rdma_ucm"
+			;;
+			--with-mlx4-mod )
+			modules="$modules \
+				drivers/net/ethernet/mellanox/mlx4/mlx4_core \
+				drivers/infiniband/hw/mlx4/mlx4_ib"
+			;;
+			--with-mlx4_en-mod )
+			modules="$modules \
+				drivers/net/ethernet/mellanox/mlx4/mlx4_en"
+			;;
+			--with-mlx4_ib-mod )
+			modules="$modules \
+				drivers/infiniband/hw/mlx4/mlx4_ib"
+			;;
+			--with-ipoib-mod )
+			modules="$modules \
+				drivers/infiniband/ulp/ipoib/ib_ipoib"
+			;;
+			--with-e_ipoib-mod )
+			modules="$modules \
+				drivers/net/eipoib/eth_ipoib"
+			;;
+			--with-srp-mod )
+			modules="$modules \
+				drivers/infiniband/ulp/srp/ib_srp"
+			;;
+			--with-rds-mod )
+			modules="$modules \
+				net/rds/rds \
+				net/rds/rds_rdma \
+				net/rds/rds_tcp"
+			;;
+			--with-iser-mod )
+			modules="$modules \
+				drivers/infiniband/ulp/iser/ib_iser"
+			;;
+		esac
+	done
+
+	echo $modules
+}
+
+get-openib-conf()
+{
+	for opt in `get-config`
+	do
+		case "$opt" in
+			--with-core-mod )
+				echo
+				echo "# Run sysctl performance tuning script"
+				echo "RUN_SYSCTL=yes"
+			;;
+			--with-user_mad-mod )
+			;;
+			--with-user_access-mod )
+				echo
+				echo "# Load UCM module"
+				echo "UCM_LOAD=yes"
+			;;
+			--with-addr_trans-mod )
+				echo
+				echo "# Load RDMA_CM module"
+				echo "RDMA_CM_LOAD=yes"
+				echo
+				echo "# Load RDMA_UCM module"
+				echo "RDMA_UCM_LOAD=yes"
+				echo
+				echo "# Increase ib_mad thread priority"
+				echo "RENICE_IB_MAD=no"
+			;;
+			--with-mlx4-mod )
+				echo
+				echo "# Load MLX4 modules"
+				echo "MLX4_LOAD=yes"
+			;;
+			--with-mlx4_en-mod )
+				echo
+				echo "# Load MLX4_EN module"
+				echo "MLX4_EN_LOAD=yes"
+			;;
+			--with-mlx4_ib-mod )
+			;;
+			--with-mlx5-mod )
+				echo
+				echo "# Load MLX5 modules"
+				echo "MLX5_LOAD=yes"
+			;;
+			--with-ipoib-mod )
+				echo
+				echo "# Load IPoIB"
+				echo "IPOIB_LOAD=yes"
+				echo
+				echo "# Enable IPoIB Connected Mode"
+				echo "SET_IPOIB_CM=yes"
+			;;
+			--with-e_ipoib-mod )
+				echo
+				echo "# Load E_IPoIB"
+				echo "E_IPOIB_LOAD=no"
+			;;
+			--with-srp-mod )
+				echo
+				echo "# Load SRP module"
+				echo "SRP_LOAD=no"
+			;;
+			--with-rds-mod )
+				echo
+				echo "# Load RDS module"
+				echo "RDS_LOAD=no"
+			;;
+			--with-iser-mod )
+				echo
+				echo "# Load ISER module"
+				echo "ISER_LOAD=no"
+
+			;;
+		esac
+	done
+}
+
+kernelver=$1
+shift
+
+case "$1" in
+	get-config)
+	get-config
+	;;
+	get-modules)
+	get-modules
+	;;
+	get-openib-conf)
+	get-openib-conf
+	;;
+	-h|--help)
+	usage
+	exit 0
+	;;
+	*)
+	usage
+	exit 1
+	;;
+esac

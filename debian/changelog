@@ -1,0 +1,5 @@
+mlnx-ofed-kernel (@VERSION@-@RELEASE@) unstable; urgency=low
+
+  * Initial release (Closes: #125306)
+
+ -- Vladimir Sokolovsky <vlad@mellanox.com>  Mon, 31 Dec 2012 15:38:53 +0200
