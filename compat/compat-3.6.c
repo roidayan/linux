@@ -7,6 +7,13 @@
  *
  */
 
+#include <linux/cpu.h>
+#include <linux/kernel.h>
+#include <linux/bitops.h>
+#include <linux/export.h>
+#include <linux/types.h>
+#include <linux/netdevice.h>
+
 /**
  * netif_get_num_default_rss_queues - default number of RSS queues
  *

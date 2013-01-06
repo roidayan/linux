@@ -7,7 +7,13 @@
  *
  * Compatibility file for Linux wireless for kernels 3.4.
  */
+
+#include <linux/kernel.h>
+#include <linux/bitops.h>
+#include <linux/export.h>
+#include <linux/types.h>
 #include <linux/pkt_sched.h>
+
 #define ECN_OR_COST(class)	TC_PRIO_##class
 
 const __u8 ip_tos2prio[16] = {
