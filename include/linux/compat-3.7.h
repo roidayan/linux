@@ -7,7 +7,6 @@
 
 #include <linux/workqueue.h>
 #include <linux/timer.h>
-#include <linux/tty.h>
 #include <linux/pci.h>
 #include <linux/pci_regs.h>
 #include <linux/mm.h>
