@@ -41,7 +41,7 @@ index fa9cd65..cd7d02d 100644
  static const struct net_device_ops mlx4_netdev_ops = {
  	.ndo_open		= mlx4_en_open,
 @@ -1731,14 +1734,20 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
- 	.ndo_tx_timeout		= mlx4_en_tx_timeout,
+ #endif
  	.ndo_vlan_rx_add_vid	= mlx4_en_vlan_rx_add_vid,
  	.ndo_vlan_rx_kill_vid	= mlx4_en_vlan_rx_kill_vid,
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34)) || defined(CONFIG_COMPAT_NDO_VF_MAC_VLAN)

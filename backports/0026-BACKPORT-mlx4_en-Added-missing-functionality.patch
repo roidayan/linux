@@ -171,6 +171,16 @@ index c96d104..fa9cd65 100644
  	.ndo_vlan_rx_add_vid	= mlx4_en_vlan_rx_add_vid,
  	.ndo_vlan_rx_kill_vid	= mlx4_en_vlan_rx_kill_vid,
  #ifdef CONFIG_NET_POLL_CONTROLLER
+@@ -1681,6 +1681,9 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
+ 	.ndo_validate_addr	= eth_validate_addr,
+ 	.ndo_change_mtu		= mlx4_en_change_mtu,
+ 	.ndo_tx_timeout		= mlx4_en_tx_timeout,
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,1,0))
++	.ndo_vlan_rx_register	= mlx4_en_vlan_rx_register,
++#endif
+ 	.ndo_vlan_rx_add_vid	= mlx4_en_vlan_rx_add_vid,
+ 	.ndo_vlan_rx_kill_vid	= mlx4_en_vlan_rx_kill_vid,
+ 	.ndo_set_vf_mac		= mlx4_en_set_vf_mac,
 @@ -1750,6 +1776,9 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	priv->prof = prof;
  	priv->port = port;
