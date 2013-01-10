@@ -61,16 +61,6 @@ index fa9cd65..cd7d02d 100644
  #ifdef CONFIG_RFS_ACCEL
  	.ndo_rx_flow_steer	= mlx4_en_filter_rfs,
  #endif
-diff --git a/ofed_scripts/compat.mk b/ofed_scripts/compat.mk
-index d96e46c..7cb112e 100644
---- a/ofed_scripts/compat.mk
-+++ b/ofed_scripts/compat.mk
-@@ -114,4 +114,5 @@ ifeq ($(RHEL_MAJOR),6)
-  CFLAGS += -DCONFIG_COMPAT_IS_BITMAP
-  CFLAGS += -DCONFIG_COMPAT_NETIF_F_RXHASH
-  CFLAGS += -DCONFIG_COMPAT_USE_LRO
-+ CFLAGS += -DCONFIG_COMPAT_NDO_VF_MAC_VLAN
- endif
 -- 
 1.7.1
 
