@@ -20,7 +20,7 @@ index 2d3199e..898f35f 100644
  #include "mlx4_en.h"
  
 +
-+#ifdef COMPAT_FRAGS_SKB
++#ifdef CONFIG_COMPAT_FRAGS_SKB
 +static int mlx4_en_alloc_frag(struct mlx4_en_priv *priv,
 +			      struct mlx4_en_rx_desc *rx_desc,
 +			      struct skb_frag_struct *skb_frags,
@@ -67,7 +67,7 @@ index 2d3199e..898f35f 100644
  
 +#endif
 +
-+#ifndef COMPAT_FRAGS_SKB
++#ifndef CONFIG_COMPAT_FRAGS_SKB
  static void mlx4_en_free_frag(struct mlx4_en_priv *priv,
  			      struct mlx4_en_rx_alloc *frags,
  			      int i)
@@ -83,7 +83,7 @@ index 2d3199e..898f35f 100644
  				 struct mlx4_en_rx_ring *ring, int index)
  {
  	struct mlx4_en_rx_desc *rx_desc = ring->buf + ring->stride * index;
-+#ifdef COMPAT_FRAGS_SKB
++#ifdef CONFIG_COMPAT_FRAGS_SKB
 +	struct skb_frag_struct *skb_frags = ring->rx_info +
 +					    (index << priv->log_rx_info);
 +#endif
@@ -92,7 +92,7 @@ index 2d3199e..898f35f 100644
  
  	/* Set size and memtype fields */
  	for (i = 0; i < priv->num_frags; i++) {
-+#ifdef COMPAT_FRAGS_SKB
++#ifdef CONFIG_COMPAT_FRAGS_SKB
 +		skb_frag_size_set(&skb_frags[i], priv->frag_info[i].frag_size);
 +#endif
  		rx_desc->data[i].byte_count =
@@ -102,7 +102,7 @@ index 2d3199e..898f35f 100644
  	}
  }
  
-+#ifdef COMPAT_FRAGS_SKB
++#ifdef CONFIG_COMPAT_FRAGS_SKB
 +static int mlx4_en_prepare_rx_desc(struct mlx4_en_priv *priv,
 +				   struct mlx4_en_rx_ring *ring, int index)
 +{
@@ -145,7 +145,7 @@ index 2d3199e..898f35f 100644
  	*ring->wqres.db.db = cpu_to_be32(ring->prod & 0xffff);
  }
  
-+#ifdef COMPAT_FRAGS_SKB
++#ifdef CONFIG_COMPAT_FRAGS_SKB
 +static void mlx4_en_free_rx_desc(struct mlx4_en_priv *priv,
 +				 struct mlx4_en_rx_ring *ring,
 +				 int index)
@@ -183,7 +183,7 @@ index 2d3199e..898f35f 100644
  	ring->buf_size = ring->size * ring->stride + TXBB_SIZE;
  
  	tmp = size * roundup_pow_of_two(MLX4_EN_MAX_RX_FRAGS *
-+#ifdef COMPAT_FRAGS_SKB
++#ifdef CONFIG_COMPAT_FRAGS_SKB
 +					sizeof(struct skb_frag_struct));
 +#else
  					sizeof(struct mlx4_en_rx_alloc));
@@ -195,7 +195,7 @@ index 2d3199e..898f35f 100644
  	mlx4_en_destroy_allocator(priv, ring);
  }
  
-+#ifdef COMPAT_FRAGS_SKB
++#ifdef CONFIG_COMPAT_FRAGS_SKB
 +/* Unmap a completed descriptor and free unused pages */
 +static int mlx4_en_complete_rx_desc(struct mlx4_en_priv *priv,
 +				    struct mlx4_en_rx_desc *rx_desc,
@@ -262,7 +262,7 @@ index 2d3199e..898f35f 100644
  				      struct mlx4_en_rx_desc *rx_desc,
 -				      struct mlx4_en_rx_alloc *frags,
 -				      unsigned int length)
-+#ifdef COMPAT_FRAGS_SKB
++#ifdef CONFIG_COMPAT_FRAGS_SKB
 +				struct skb_frag_struct *skb_frags,
 +				struct mlx4_en_rx_alloc *page_alloc,
 +#else
@@ -277,7 +277,7 @@ index 2d3199e..898f35f 100644
  
  	/* Get pointer to first fragment so we could copy the headers into the
  	 * (linear part of the) skb */
-+#ifdef COMPAT_FRAGS_SKB
++#ifdef CONFIG_COMPAT_FRAGS_SKB
 +	va = page_address(skb_frags[0].page) + skb_frags[0].page_offset;
 +#else
  	va = page_address(frags[0].page) + frags[0].offset;
@@ -289,7 +289,7 @@ index 2d3199e..898f35f 100644
  		dma_sync_single_for_cpu(priv->ddev, dma, length,
  					DMA_FROM_DEVICE);
  		skb_copy_to_linear_data(skb, va, length);
-+#ifdef COMPAT_FRAGS_SKB
++#ifdef CONFIG_COMPAT_FRAGS_SKB
 +		dma_sync_single_for_device(priv->ddev, dma, length,
 +					   DMA_FROM_DEVICE);
 +#endif
@@ -298,7 +298,7 @@ index 2d3199e..898f35f 100644
  	} else {
 +
  		/* Move relevant fragments to skb */
-+#ifdef COMPAT_FRAGS_SKB
++#ifdef CONFIG_COMPAT_FRAGS_SKB
 +		used_frags = mlx4_en_complete_rx_desc(priv, rx_desc, skb_frags,
 +						      skb, page_alloc, length);
 +#else
@@ -313,7 +313,7 @@ index 2d3199e..898f35f 100644
  	dev_kfree_skb_any(skb);
  }
  
-+#ifndef COMPAT_FRAGS_SKB
++#ifndef CONFIG_COMPAT_FRAGS_SKB
  static void mlx4_en_refill_rx_buffers(struct mlx4_en_priv *priv,
  				     struct mlx4_en_rx_ring *ring)
  {
@@ -329,7 +329,7 @@ index 2d3199e..898f35f 100644
  	struct mlx4_en_dev *mdev = priv->mdev;
  	struct mlx4_cqe *cqe;
  	struct mlx4_en_rx_ring *ring = priv->rx_ring[cq->ring];
-+#ifdef COMPAT_FRAGS_SKB
++#ifdef CONFIG_COMPAT_FRAGS_SKB
 +	struct skb_frag_struct *skb_frags;
 +#else
  	struct mlx4_en_rx_alloc *frags;
@@ -342,7 +342,7 @@ index 2d3199e..898f35f 100644
  	int polled = 0;
  	int ip_summed;
  	struct ethhdr *ethh;
-+#ifndef COMPAT_FRAGS_SKB
++#ifndef CONFIG_COMPAT_FRAGS_SKB
  	dma_addr_t dma;
 +#endif
  	u64 s_mac;
@@ -352,7 +352,7 @@ index 2d3199e..898f35f 100644
  	while (XNOR(cqe->owner_sr_opcode & MLX4_CQE_OWNER_MASK,
  		    cq->mcq.cons_index & cq->size)) {
  
-+#ifdef COMPAT_FRAGS_SKB
++#ifdef CONFIG_COMPAT_FRAGS_SKB
 +		skb_frags = ring->rx_info + (index << priv->log_rx_info);
 +#else
  		frags = ring->rx_info + (index << priv->log_rx_info);
@@ -365,13 +365,13 @@ index 2d3199e..898f35f 100644
  
  		/* Get pointer to first fragment since we haven't skb yet and
  		 * cast it to ethhdr struct */
-+#ifndef COMPAT_FRAGS_SKB
++#ifndef CONFIG_COMPAT_FRAGS_SKB
  		dma = be64_to_cpu(rx_desc->data[0].addr);
  		dma_sync_single_for_cpu(priv->ddev, dma, sizeof(*ethh),
  					DMA_FROM_DEVICE);
 +#endif
 +
-+#ifdef COMPAT_FRAGS_SKB
++#ifdef CONFIG_COMPAT_FRAGS_SKB
 +		ethh = (struct ethhdr *)(page_address(skb_frags[0].page) +
 +					 skb_frags[0].page_offset);
 +#else
@@ -389,7 +389,7 @@ index 2d3199e..898f35f 100644
  					if (!gro_skb)
  						goto next;
 -
-+#ifdef COMPAT_FRAGS_SKB
++#ifdef CONFIG_COMPAT_FRAGS_SKB
 +					nr = mlx4_en_complete_rx_desc(
 +						priv, rx_desc,
 +						skb_frags, gro_skb,
@@ -406,7 +406,7 @@ index 2d3199e..898f35f 100644
  			ring->csum_none++;
  		}
  
-+#ifdef COMPAT_FRAGS_SKB
++#ifdef CONFIG_COMPAT_FRAGS_SKB
 +		skb = mlx4_en_rx_skb(priv, rx_desc, skb_frags,
 +				     ring->page_alloc, length);
 +#else
@@ -419,7 +419,7 @@ index 2d3199e..898f35f 100644
  #endif
  
  next:
-+#ifndef COMPAT_FRAGS_SKB
++#ifndef CONFIG_COMPAT_FRAGS_SKB
  		for (nr = 0; nr < priv->num_frags; nr++)
  			mlx4_en_free_frag(priv, frags, nr);
 +#endif
@@ -430,7 +430,7 @@ index 2d3199e..898f35f 100644
  	mlx4_cq_set_ci(&cq->mcq);
  	wmb(); /* ensure HW sees CQ consumer before we post new buffers */
  	ring->cons = cq->mcq.cons_index;
-+#ifdef COMPAT_FRAGS_SKB
++#ifdef CONFIG_COMPAT_FRAGS_SKB
 +	ring->prod += polled; /* Polled descriptors were realocated in place */
 +#else
  	mlx4_en_refill_rx_buffers(priv, ring);
