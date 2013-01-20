@@ -691,6 +691,7 @@ main()
 #Set default values
 KVERSION=${KVERSION:-$(uname -r)}
 MIN_KVERSION="2.6.5"
+SRP_1_5_3_SUPPORTED_KVERSION="3.7.0"
 MODULES_DIR=${MODULES_DIR:-/lib/modules/${KVERSION}/updates}
 KSRC=${KSRC:-/lib/modules/${KVERSION}/build}
 
@@ -811,10 +812,29 @@ if ! check_kerver ${KVERSION} ${MIN_KVERSION}; then
 fi
 
 
-	if [ ! -e .backports_applied ]; then
-		echo ".backports_applied does not exist. running ofed_patch.sh"
-		ex ${CWD}/ofed_scripts/ofed_patch.sh ${ofed_patch_params}
-	fi
+if [ ! -e .backports_applied ]; then
+	echo ".backports_applied does not exist. running ofed_patch.sh"
+	ex ${CWD}/ofed_scripts/ofed_patch.sh ${ofed_patch_params}
+fi
+
+#check if for current kernel version should be used srp code from 1.5.3
+if ! check_kerver ${KVERSION} ${SRP_1_5_3_SUPPORTED_KVERSION}; then
+    echo "Kernel version ${KVERSION} is less then basic kernel ${SRP_1_5_3_SUPPORTED_KVERSION}."
+    echo "Will be used srp code from mofed 1.5.3. Create symbolic link."
+    echo "Original srp code will be moved to srp_2.0"
+    SRP_WORK_DIR="srp_1.5.3"
+    SRP_MV_DIR="srp_2.0"
+    # check if symbolic link exist - remove it and build a new one
+    # check if stmbolic link exist. If exist - remove it
+    SRP_LINK_WORK_DIR="${CWD}/drivers/infiniband/ulp/${SRP_WORK_DIR}"
+    SRP_MV_DIR="${CWD}/drivers/infiniband/ulp/${SRP_MV_DIR}"
+    SRP_WORK_DIR="${CWD}/drivers/infiniband/ulp/srp"
+    [ -L "$SRP_WORK_DIR" ] && { echo "Unlink ${SRP_WORK_DIR}"; unlink "$SRP_WORK_DIR"; }
+    # mv original srp code to srp_2.0 directory
+    [ -d "$SRP_WORK_DIR" ] && { echo "Move ${SRP_WORK_DIR} to ${SRP_MV_DIR}"; mv ${SRP_WORK_DIR} ${SRP_MV_DIR}; }
+    # create apropriate symbolic link
+    ln -s ${SRP_LINK_WORK_DIR} ${SRP_WORK_DIR}
+fi
 
 # Create configure.mk
 /bin/rm -f ${CWD}/${CONFIG}
