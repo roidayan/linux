@@ -500,7 +500,7 @@ fi
        echo "IPOIB_LOAD=yes" >> /etc/infiniband/openib.conf
        echo >> /etc/infiniband/openib.conf                                                
        echo "# Enable IPoIB Connected Mode" >> /etc/infiniband/openib.conf
-       echo "SET_IPOIB_CM=yes" >> /etc/infiniband/openib.conf
+       echo "SET_IPOIB_CM=no" >> /etc/infiniband/openib.conf
 %endif
 
 %if %{build_eipoib}

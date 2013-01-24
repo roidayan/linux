@@ -630,7 +630,7 @@ fi
        echo "IPOIB_LOAD=yes" >> %{IB_CONF_DIR}/openib.conf
        echo >> %{IB_CONF_DIR}/openib.conf                                                
        echo "# Enable IPoIB Connected Mode" >> %{IB_CONF_DIR}/openib.conf
-       echo "SET_IPOIB_CM=yes" >> %{IB_CONF_DIR}/openib.conf
+       echo "SET_IPOIB_CM=no" >> %{IB_CONF_DIR}/openib.conf
 %endif
 
 %if %{build_eipoib}
