@@ -46,6 +46,48 @@
 #define EN_ETHTOOL_SHORT_MASK cpu_to_be16(0xffff)
 #define EN_ETHTOOL_WORD_MASK  cpu_to_be32(0xffffffff)
 
+union mlx4_ethtool_flow_union {
+	struct ethtool_tcpip4_spec		tcp_ip4_spec;
+	struct ethtool_tcpip4_spec		udp_ip4_spec;
+	struct ethtool_tcpip4_spec		sctp_ip4_spec;
+	struct ethtool_ah_espip4_spec		ah_ip4_spec;
+	struct ethtool_ah_espip4_spec		esp_ip4_spec;
+	struct ethtool_usrip4_spec		usr_ip4_spec;
+	struct ethhdr				ether_spec;
+	__u8					hdata[52];
+};
+
+struct mlx4_ethtool_flow_ext {
+	__u8		padding[2];
+	unsigned char	h_dest[ETH_ALEN];
+	__be16		vlan_etype;
+	__be16		vlan_tci;
+	__be32		data[2];
+};
+
+struct mlx4_ethtool_rx_flow_spec {
+	__u32		flow_type;
+	union mlx4_ethtool_flow_union h_u;
+	struct mlx4_ethtool_flow_ext h_ext;
+	union mlx4_ethtool_flow_union m_u;
+	struct mlx4_ethtool_flow_ext m_ext;
+	__u64		ring_cookie;
+	__u32		location;
+};
+
+struct mlx4_ethtool_rxnfc {
+	__u32				cmd;
+	__u32				flow_type;
+	__u64				data;
+	struct mlx4_ethtool_rx_flow_spec	fs;
+	__u32				rule_cnt;
+	__u32				rule_locs[0];
+};
+
+#ifndef FLOW_MAC_EXT
+#define	FLOW_MAC_EXT	0x40000000
+#endif
+
 static int mlx4_en_moderation_update(struct mlx4_en_priv *priv)
 {
 	int i;
@@ -1090,7 +1132,7 @@ static int mlx4_en_set_rxfh(struct net_device *dev, const u32 *ring_index,
 	((field) == 0 || (field) == (__force typeof(field))-1)
 
 static int mlx4_en_validate_flow(struct net_device *dev,
-				 struct ethtool_rxnfc *cmd)
+				 struct mlx4_ethtool_rxnfc *cmd)
 {
 	struct ethtool_usrip4_spec *l3_mask;
 	struct ethtool_tcpip4_spec *l4_mask;
@@ -1162,7 +1204,7 @@ static int mlx4_en_validate_flow(struct net_device *dev,
 	return 0;
 }
 
-static int mlx4_en_ethtool_add_mac_rule(struct ethtool_rxnfc *cmd,
+static int mlx4_en_ethtool_add_mac_rule(struct mlx4_ethtool_rxnfc *cmd,
 					struct list_head *rule_list_h,
 					struct mlx4_spec_list *spec_l2,
 					unsigned char *mac)
@@ -1186,7 +1228,7 @@ static int mlx4_en_ethtool_add_mac_rule(struct ethtool_rxnfc *cmd,
 }
 
 static int mlx4_en_ethtool_add_mac_rule_by_ipv4(struct mlx4_en_priv *priv,
-						struct ethtool_rxnfc *cmd,
+						struct mlx4_ethtool_rxnfc *cmd,
 						struct list_head *rule_list_h,
 						struct mlx4_spec_list *spec_l2,
 						__be32 ipv4_dst)
@@ -1210,7 +1252,7 @@ static int mlx4_en_ethtool_add_mac_rule_by_ipv4(struct mlx4_en_priv *priv,
 }
 
 static int add_ip_rule(struct mlx4_en_priv *priv,
-		       struct ethtool_rxnfc *cmd,
+		       struct mlx4_ethtool_rxnfc *cmd,
 		       struct list_head *list_h)
 {
 	int err;
@@ -1248,7 +1290,7 @@ free_spec:
 }
 
 static int add_tcp_udp_rule(struct mlx4_en_priv *priv,
-			     struct ethtool_rxnfc *cmd,
+			     struct mlx4_ethtool_rxnfc *cmd,
 			     struct list_head *list_h, int proto)
 {
 	int err;
@@ -1316,7 +1358,7 @@ free_spec:
 }
 
 static int mlx4_en_ethtool_to_net_trans_rule(struct net_device *dev,
-					     struct ethtool_rxnfc *cmd,
+					     struct mlx4_ethtool_rxnfc *cmd,
 					     struct list_head *rule_list_h)
 {
 	int err;
@@ -1356,7 +1398,7 @@ static int mlx4_en_ethtool_to_net_trans_rule(struct net_device *dev,
 }
 
 static int mlx4_en_flow_replace(struct net_device *dev,
-				struct ethtool_rxnfc *cmd)
+				struct mlx4_ethtool_rxnfc *cmd)
 {
 	int err;
 	struct mlx4_en_priv *priv = netdev_priv(dev);
@@ -1432,7 +1474,7 @@ out_free_list:
 }
 
 static int mlx4_en_flow_detach(struct net_device *dev,
-			       struct ethtool_rxnfc *cmd)
+			       struct mlx4_ethtool_rxnfc *cmd)
 {
 	int err = 0;
 	struct ethtool_flow_id *rule;
@@ -1461,7 +1503,7 @@ out:
 
 }
 
-static int mlx4_en_get_flow(struct net_device *dev, struct ethtool_rxnfc *cmd,
+static int mlx4_en_get_flow(struct net_device *dev, struct mlx4_ethtool_rxnfc *cmd,
 			    int loc)
 {
 	int err = 0;
@@ -1493,13 +1535,14 @@ static int mlx4_en_get_num_flows(struct mlx4_en_priv *priv)
 
 }
 
-static int mlx4_en_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd,
+static int mlx4_en_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *c,
 			     u32 *rule_locs)
 {
 	struct mlx4_en_priv *priv = netdev_priv(dev);
 	struct mlx4_en_dev *mdev = priv->mdev;
 	int err = 0;
 	int i = 0, priority = 0;
+	struct mlx4_ethtool_rxnfc *cmd = (struct mlx4_ethtool_rxnfc *)c;
 
 	if ((cmd->cmd == ETHTOOL_GRXCLSRLCNT ||
 	     cmd->cmd == ETHTOOL_GRXCLSRULE ||
@@ -1535,11 +1578,12 @@ static int mlx4_en_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd,
 	return err;
 }
 
-static int mlx4_en_set_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd)
+static int mlx4_en_set_rxnfc(struct net_device *dev, struct ethtool_rxnfc *c)
 {
 	int err = 0;
 	struct mlx4_en_priv *priv = netdev_priv(dev);
 	struct mlx4_en_dev *mdev = priv->mdev;
+	struct mlx4_ethtool_rxnfc *cmd = (struct mlx4_ethtool_rxnfc *)c;
 
 	if (mdev->dev->caps.steering_mode !=
 	    MLX4_STEERING_MODE_DEVICE_MANAGED || !priv->port_up)

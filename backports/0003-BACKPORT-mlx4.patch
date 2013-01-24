@@ -307,7 +307,7 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c b/drivers/net/ether
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
-@@ -664,7 +664,9 @@ static int ethtool_get_ptys_settings(struct net_device *dev,
+@@ -706,7 +706,9 @@ static int ethtool_get_ptys_settings(struct net_device *dev,
  	cmd->maxtxpkt = 0;
  	cmd->maxrxpkt = 0;
  	cmd->eth_tp_mdix = ETH_TP_MDI_INVALID;
@@ -317,7 +317,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	return ret;
  }
-@@ -964,18 +966,24 @@ static void mlx4_en_get_ringparam(struct net_device *dev,
+@@ -1006,18 +1008,24 @@ static void mlx4_en_get_ringparam(struct net_device *dev,
  	param->tx_pending = priv->tx_ring[0]->size;
  }
  
@@ -343,7 +343,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx4_en_check_rxfh_func(struct net_device *dev, u8 hfunc)
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
-@@ -996,9 +1004,22 @@ static int mlx4_en_check_rxfh_func(struct net_device *dev, u8 hfunc)
+@@ -1038,9 +1046,22 @@ static int mlx4_en_check_rxfh_func(struct net_device *dev, u8 hfunc)
  			"Enabling both XOR Hash function and RX Hashing can limit RPS functionality\n");
  	return 0;
  }
@@ -366,7 +366,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	struct mlx4_en_rss_map *rss_map = &priv->rss_map;
-@@ -1015,15 +1036,33 @@ static int mlx4_en_get_rxfh(struct net_device *dev, u32 *ring_index, u8 *key,
+@@ -1057,15 +1078,33 @@ static int mlx4_en_get_rxfh(struct net_device *dev, u32 *ring_index, u8 *key,
  		ring_index[n] = rss_map->qps[n % rss_rings].qpn -
  			rss_map->base_qpn;
  	}
@@ -400,7 +400,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	struct mlx4_en_dev *mdev = priv->mdev;
-@@ -1052,11 +1091,13 @@ static int mlx4_en_set_rxfh(struct net_device *dev, const u32 *ring_index,
+@@ -1094,11 +1133,13 @@ static int mlx4_en_set_rxfh(struct net_device *dev, const u32 *ring_index,
  	if (!is_power_of_2(rss_rings))
  		return -EINVAL;
  
@@ -414,7 +414,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	mutex_lock(&mdev->state_lock);
  	if (priv->port_up) {
-@@ -1066,8 +1107,10 @@ static int mlx4_en_set_rxfh(struct net_device *dev, const u32 *ring_index,
+@@ -1108,8 +1149,10 @@ static int mlx4_en_set_rxfh(struct net_device *dev, const u32 *ring_index,
  
  	if (ring_index)
  		priv->prof->rss_rings = rss_rings;
@@ -425,7 +425,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	if (port_up) {
  		err = mlx4_en_start_port(dev);
-@@ -1092,11 +1135,13 @@ static int mlx4_en_validate_flow(struct net_device *dev,
+@@ -1134,11 +1177,13 @@ static int mlx4_en_validate_flow(struct net_device *dev,
  	if (cmd->fs.location >= MAX_NUM_OF_FS_RULES)
  		return -EINVAL;
  
@@ -439,7 +439,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	switch (cmd->fs.flow_type & ~(FLOW_EXT | FLOW_MAC_EXT)) {
  	case TCP_V4_FLOW:
-@@ -1188,9 +1233,11 @@ static int mlx4_en_ethtool_add_mac_rule_by_ipv4(struct mlx4_en_priv *priv,
+@@ -1230,9 +1275,11 @@ static int mlx4_en_ethtool_add_mac_rule_by_ipv4(struct mlx4_en_priv *priv,
  	unsigned char mac[ETH_ALEN];
  
  	if (!ipv4_is_multicast(ipv4_dst)) {
@@ -451,21 +451,21 @@ index xxxxxxx..xxxxxxx xxxxxx
  			memcpy(&mac, priv->dev->dev_addr, ETH_ALEN);
  	} else {
  		ip_eth_mc_map(ipv4_dst, mac);
-@@ -1486,8 +1533,13 @@ static int mlx4_en_get_num_flows(struct mlx4_en_priv *priv)
+@@ -1528,8 +1575,13 @@ static int mlx4_en_get_num_flows(struct mlx4_en_priv *priv)
  
  }
  
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0))
- static int mlx4_en_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd,
+ static int mlx4_en_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *c,
  			     u32 *rule_locs)
 +#else
-+static int mlx4_en_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd,
++static int mlx4_en_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *c,
 +			     void *rule_locs)
 +#endif
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	struct mlx4_en_dev *mdev = priv->mdev;
-@@ -1515,7 +1567,11 @@ static int mlx4_en_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd,
+@@ -1558,7 +1610,11 @@ static int mlx4_en_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *c,
  		while ((!err || err == -ENOENT) && priority < cmd->rule_cnt) {
  			err = mlx4_en_get_flow(dev, cmd, i);
  			if (!err)
@@ -477,7 +477,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  			i++;
  		}
  		err = 0;
-@@ -1553,6 +1609,7 @@ static int mlx4_en_set_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd)
+@@ -1597,6 +1653,7 @@ static int mlx4_en_set_rxnfc(struct net_device *dev, struct ethtool_rxnfc *c)
  	return err;
  }
  
@@ -485,7 +485,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static void mlx4_en_get_channels(struct net_device *dev,
  				 struct ethtool_channels *channel)
  {
-@@ -1602,8 +1659,12 @@ static int mlx4_en_set_channels(struct net_device *dev,
+@@ -1646,8 +1703,12 @@ static int mlx4_en_set_channels(struct net_device *dev,
  	netif_set_real_num_tx_queues(dev, priv->tx_ring_num);
  	netif_set_real_num_rx_queues(dev, priv->rx_ring_num);
  
@@ -499,7 +499,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	en_warn(priv, "Using %d TX rings\n", priv->tx_ring_num);
  	en_warn(priv, "Using %d RX rings\n", priv->rx_ring_num);
-@@ -1620,7 +1681,9 @@ out:
+@@ -1664,7 +1725,9 @@ out:
  	mutex_unlock(&mdev->state_lock);
  	return err;
  }
@@ -509,7 +509,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx4_en_get_ts_info(struct net_device *dev,
  			       struct ethtool_ts_info *info)
  {
-@@ -1652,6 +1715,7 @@ static int mlx4_en_get_ts_info(struct net_device *dev,
+@@ -1696,6 +1759,7 @@ static int mlx4_en_get_ts_info(struct net_device *dev,
  
  	return ret;
  }
@@ -517,7 +517,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static int mlx4_en_set_priv_flags(struct net_device *dev, u32 flags)
  {
-@@ -1695,6 +1759,7 @@ static u32 mlx4_en_get_priv_flags(struct net_device *dev)
+@@ -1739,6 +1803,7 @@ static u32 mlx4_en_get_priv_flags(struct net_device *dev)
  	return priv->pflags;
  }
  
@@ -525,7 +525,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx4_en_get_tunable(struct net_device *dev,
  			       const struct ethtool_tunable *tuna,
  			       void *data)
-@@ -1736,7 +1801,9 @@ static int mlx4_en_set_tunable(struct net_device *dev,
+@@ -1780,7 +1845,9 @@ static int mlx4_en_set_tunable(struct net_device *dev,
  
  	return ret;
  }
@@ -535,7 +535,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx4_en_get_module_info(struct net_device *dev,
  				   struct ethtool_modinfo *modinfo)
  {
-@@ -1779,7 +1846,9 @@ static int mlx4_en_get_module_info(struct net_device *dev,
+@@ -1823,7 +1890,9 @@ static int mlx4_en_get_module_info(struct net_device *dev,
  
  	return 0;
  }
@@ -545,7 +545,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx4_en_get_module_eeprom(struct net_device *dev,
  				     struct ethtool_eeprom *ee,
  				     u8 *data)
-@@ -1817,6 +1886,7 @@ static int mlx4_en_get_module_eeprom(struct net_device *dev,
+@@ -1861,6 +1930,7 @@ static int mlx4_en_get_module_eeprom(struct net_device *dev,
  	}
  	return 0;
  }
@@ -553,7 +553,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  const struct ethtool_ops mlx4_en_ethtool_ops = {
  	.get_drvinfo = mlx4_en_get_drvinfo,
-@@ -1839,21 +1909,48 @@ const struct ethtool_ops mlx4_en_ethtool_ops = {
+@@ -1883,21 +1953,48 @@ const struct ethtool_ops mlx4_en_ethtool_ops = {
  	.set_ringparam = mlx4_en_set_ringparam,
  	.get_rxnfc = mlx4_en_get_rxnfc,
  	.set_rxnfc = mlx4_en_set_rxnfc,
