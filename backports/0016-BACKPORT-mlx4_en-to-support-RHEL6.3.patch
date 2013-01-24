@@ -1,17 +1,18 @@
-From 72909fab3c1b28cd50c1d338f272f291b25d688c Mon Sep 17 00:00:00 2001
-From: Vladimir Sokolovsky <vlad@mellanox.com>
-Date: Wed, 5 Dec 2012 13:31:23 +0200
+From 6a3f4748c5629ee0bd6b4e391ae7bccb614e251a Mon Sep 17 00:00:00 2001
+From: Yan Burman <yanb@mellanox.com>
+Date: Thu, 24 Jan 2013 16:58:06 +0200
 Subject: [PATCH] BACKPORT: mlx4_en to support RHEL6.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+Signed-off-by: Yan Burman <yanb@mellanox.com>
 ---
- drivers/net/ethernet/mellanox/mlx4/en_cq.c      |    4 ++
- drivers/net/ethernet/mellanox/mlx4/en_ethtool.c |   33 ++++++++++++++++++-
- drivers/net/ethernet/mellanox/mlx4/en_netdev.c  |   38 ++++++++++++++++++++++-
- drivers/net/ethernet/mellanox/mlx4/en_tx.c      |    9 +++++
- drivers/net/ethernet/mellanox/mlx4/eq.c         |    8 +++++
- include/linux/mlx4/device.h                     |    6 +++
- 6 files changed, 95 insertions(+), 3 deletions(-)
+ drivers/net/ethernet/mellanox/mlx4/en_cq.c      |  4 +++
+ drivers/net/ethernet/mellanox/mlx4/en_ethtool.c | 20 ++++++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_netdev.c  | 38 +++++++++++++++++++++++++
+ drivers/net/ethernet/mellanox/mlx4/en_tx.c      |  9 ++++++
+ drivers/net/ethernet/mellanox/mlx4/eq.c         |  8 ++++++
+ include/linux/mlx4/device.h                     |  6 ++++
+ 6 files changed, 84 insertions(+), 1 deletion(-)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_cq.c b/drivers/net/ethernet/mellanox/mlx4/en_cq.c
 index 4b172a9..16814e5 100644
@@ -31,121 +32,39 @@ index 4b172a9..16814e5 100644
  					    % mdev->dev->caps.num_comp_vectors;
  					mlx4_warn(mdev, "Failed Assigning an EQ to "
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
-index c23d97b..6ec3c74 100644
+index ef9719b..05a551b 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
-@@ -651,14 +651,20 @@ static int mlx4_en_validate_flow(struct net_device *dev,
+@@ -85,6 +85,14 @@ struct mlx4_ethtool_rxnfc {
+ #define	FLOW_MAC_EXT	0x40000000
+ #endif
+ 
++#ifndef FLOW_EXT
++#define	FLOW_EXT	0x80000000
++#endif
++
++#ifndef ETHER_FLOW
++#define	ETHER_FLOW	0x12	/* spec only (ether_spec) */
++#endif
++
+ static void
+ mlx4_en_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *drvinfo)
  {
- 	struct ethtool_usrip4_spec *l3_mask;
- 	struct ethtool_tcpip4_spec *l4_mask;
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
- 	struct ethhdr *eth_mask;
- 	u64 full_mac = ~0ull;
- 	u64 zero_mac = 0;
-+#endif
- 
- 	if (cmd->fs.location >= MAX_NUM_OF_FS_RULES)
- 		return -EINVAL;
- 
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
- 	switch (cmd->fs.flow_type & ~FLOW_EXT) {
-+#else
-+	switch (cmd->fs.flow_type) {
-+#endif
- 	case TCP_V4_FLOW:
- 	case UDP_V4_FLOW:
- 		if (cmd->fs.m_u.tcp_ip4_spec.tos)
-@@ -680,6 +686,7 @@ static int mlx4_en_validate_flow(struct net_device *dev,
- 		    !all_zeros_or_all_ones(l3_mask->ip4dst))
- 			return -EINVAL;
- 		break;
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
- 	case ETHER_FLOW:
- 		eth_mask = &cmd->fs.m_u.ether_spec;
- 		/* source mac mask must not be set */
-@@ -693,10 +700,12 @@ static int mlx4_en_validate_flow(struct net_device *dev,
- 		if (!all_zeros_or_all_ones(eth_mask->h_proto))
- 			return -EINVAL;
- 		break;
-+#endif
- 	default:
- 		return -EINVAL;
- 	}
- 
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
- 	if ((cmd->fs.flow_type & FLOW_EXT)) {
- 		if (cmd->fs.m_ext.vlan_etype ||
- 		    !(cmd->fs.m_ext.vlan_tci == 0 ||
-@@ -710,6 +719,7 @@ static int mlx4_en_validate_flow(struct net_device *dev,
- 				return -EINVAL;
- 		}
- 	}
-+#endif
- 
- 	return 0;
- }
-@@ -724,6 +734,7 @@ static int mlx4_en_ethtool_add_mac_rule(struct ethtool_rxnfc *cmd,
- 
- 	spec_l2->id = MLX4_NET_TRANS_RULE_ID_ETH;
- 	memcpy(spec_l2->eth.dst_mac_msk, &mac_msk, ETH_ALEN);
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
- 	if ((cmd->fs.flow_type & ~FLOW_EXT) != ETHER_FLOW)
- 		memcpy(spec_l2->eth.dst_mac, &be_mac, ETH_ALEN);
- 
-@@ -731,7 +742,9 @@ static int mlx4_en_ethtool_add_mac_rule(struct ethtool_rxnfc *cmd,
- 		spec_l2->eth.vlan_id = cmd->fs.h_ext.vlan_tci;
- 		spec_l2->eth.vlan_id_msk = cpu_to_be16(0xfff);
- 	}
--
-+#else
-+	memcpy(spec_l2->eth.dst_mac, &be_mac, ETH_ALEN);
-+#endif
- 	list_add_tail(&spec_l2->list, rule_list_h);
- 
- 	return err;
-@@ -850,14 +863,17 @@ static int mlx4_en_ethtool_to_net_trans_rule(struct net_device *dev,
- 					     struct list_head *rule_list_h)
- {
- 	int err;
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
- 	struct ethhdr *eth_spec;
- 	struct mlx4_spec_list *spec_l2;
-+#endif
- 	struct mlx4_en_priv *priv = netdev_priv(dev);
- 
- 	err = mlx4_en_validate_flow(dev, cmd);
- 	if (err)
- 		return err;
- 
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
- 	switch (cmd->fs.flow_type & ~FLOW_EXT) {
- 	case ETHER_FLOW:
- 		spec_l2 = kzalloc(sizeof(*spec_l2), GFP_KERNEL);
-@@ -872,6 +888,9 @@ static int mlx4_en_ethtool_to_net_trans_rule(struct net_device *dev,
- 		if (eth_spec->h_proto)
- 			spec_l2->eth.ether_type_enable = 1;
- 		break;
-+#else
-+	switch (cmd->fs.flow_type) {
-+#endif
- 	case IP_USER_FLOW:
- 		err = add_ip_rule(priv, cmd, rule_list_h);
- 		break;
-@@ -1024,8 +1043,13 @@ static int mlx4_en_get_num_flows(struct mlx4_en_priv *priv)
+@@ -1076,8 +1084,13 @@ static int mlx4_en_get_num_flows(struct mlx4_en_priv *priv)
  
  }
  
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
- static int mlx4_en_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd,
+ static int mlx4_en_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *c,
  			     u32 *rule_locs)
 +#else
-+static int mlx4_en_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd,
++static int mlx4_en_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *c,
 +			     void *rule_locs)
 +#endif
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	struct mlx4_en_dev *mdev = priv->mdev;
-@@ -1052,8 +1076,13 @@ static int mlx4_en_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd,
+@@ -1105,8 +1118,13 @@ static int mlx4_en_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *c,
  	case ETHTOOL_GRXCLSRLALL:
  		while ((!err || err == -ENOENT) && priority < cmd->rule_cnt) {
  			err = mlx4_en_get_flow(dev, cmd, i);
@@ -161,7 +80,7 @@ index c23d97b..6ec3c74 100644
  		}
  		err = 0;
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
-index 9865349..f943d72 100644
+index 382ba9b..e61a49b 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
 @@ -47,6 +47,7 @@
@@ -180,7 +99,7 @@ index 9865349..f943d72 100644
  
  #ifdef CONFIG_RFS_ACCEL
  
-@@ -464,18 +466,30 @@ static void mlx4_en_clear_list(struct net_device *dev)
+@@ -698,18 +700,30 @@ static void mlx4_en_clear_list(struct net_device *dev)
  static void mlx4_en_cache_mclist(struct net_device *dev)
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
@@ -211,7 +130,7 @@ index 9865349..f943d72 100644
  		list_add_tail(&tmp->list, &priv->mc_list);
  	}
  }
-@@ -1609,6 +1623,7 @@ static int mlx4_en_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+@@ -1958,6 +1972,7 @@ static int mlx4_en_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
  	}
  }
  
@@ -219,7 +138,7 @@ index 9865349..f943d72 100644
  static int mlx4_en_set_features(struct net_device *netdev,
  		netdev_features_t features)
  {
-@@ -1623,6 +1638,7 @@ static int mlx4_en_set_features(struct net_device *netdev,
+@@ -1974,6 +1989,7 @@ static int mlx4_en_set_features(struct net_device *netdev,
  	return 0;
  
  }
@@ -227,7 +146,7 @@ index 9865349..f943d72 100644
  
  static int mlx4_en_set_vf_mac(struct net_device *dev, int queue, u8 *mac)
  {
-@@ -1669,8 +1685,10 @@ static const struct net_device_ops mlx4_netdev_ops = {
+@@ -2092,8 +2108,10 @@ static const struct net_device_ops mlx4_netdev_ops = {
  #ifdef CONFIG_NET_POLL_CONTROLLER
  	.ndo_poll_controller	= mlx4_en_netpoll,
  #endif
@@ -238,7 +157,7 @@ index 9865349..f943d72 100644
  #ifdef CONFIG_RFS_ACCEL
  	.ndo_rx_flow_steer	= mlx4_en_filter_rfs,
  #endif
-@@ -1819,6 +1837,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2264,6 +2282,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	/*
  	 * Set driver features
  	 */
@@ -246,37 +165,40 @@ index 9865349..f943d72 100644
  	dev->hw_features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM | NETIF_F_GRO;
  	if (mdev->LSO_support)
  		dev->hw_features |= NETIF_F_TSO | NETIF_F_TSO6;
-@@ -1834,7 +1853,24 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
- 	if (mdev->dev->caps.steering_mode ==
+@@ -2280,9 +2299,28 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	    MLX4_STEERING_MODE_DEVICE_MANAGED)
  		dev->hw_features |= NETIF_F_NTUPLE;
--
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0))
+ 	if (mdev->dev->caps.steering_mode != MLX4_STEERING_MODE_A0)
+ 		dev->priv_flags |= IFF_UNICAST_FLT;
++#endif
+ 
 +#else
-+       dev->features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM;
-+       if (mdev->LSO_support)
-+               dev->features |= NETIF_F_TSO | NETIF_F_TSO6;
++	dev->features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM;
++	if (mdev->LSO_support)
++		dev->features |= NETIF_F_TSO | NETIF_F_TSO6;
 +
-+       dev->vlan_features = dev->features;
++	dev->vlan_features = dev->features;
 +
-+       dev->features |= NETIF_F_RXCSUM | NETIF_F_RXHASH;
-+       dev->features |= NETIF_F_HIGHDMA |
-+                       NETIF_F_HW_VLAN_TX | NETIF_F_HW_VLAN_RX |
-+                       NETIF_F_HW_VLAN_FILTER;
-+       dev->features |= NETIF_F_LOOPBACK;
++	dev->features |= NETIF_F_RXCSUM | NETIF_F_RXHASH;
++	dev->features |= NETIF_F_HIGHDMA |
++		NETIF_F_HW_VLAN_TX | NETIF_F_HW_VLAN_RX |
++		NETIF_F_HW_VLAN_FILTER;
 +
-+       if (mdev->dev->caps.steering_mode ==
-+           MLX4_STEERING_MODE_DEVICE_MANAGED)
-+               dev->features |= NETIF_F_NTUPLE;
++	if (mdev->dev->caps.steering_mode ==
++			MLX4_STEERING_MODE_DEVICE_MANAGED)
++		dev->features |= NETIF_F_NTUPLE;
 +#endif
 +	
  	mdev->pndev[port] = dev;
  
  	netif_carrier_off(dev);
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_tx.c b/drivers/net/ethernet/mellanox/mlx4/en_tx.c
-index 74dd914..067ba04 100644
+index 89017b4..6904c68 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/en_tx.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_tx.c
-@@ -594,7 +594,11 @@ u16 mlx4_en_select_queue(struct net_device *dev, struct sk_buff *skb)
+@@ -610,7 +610,11 @@ u16 mlx4_en_select_queue(struct net_device *dev, struct sk_buff *skb)
  	u16 rings_p_up = priv->mdev->profile.num_tx_rings_p_up;
  	u8 up = 0;
  
@@ -288,7 +210,7 @@ index 74dd914..067ba04 100644
  		return skb_tx_hash(dev, skb);
  
  	if (vlan_tx_tag_present(skb))
-@@ -695,8 +699,13 @@ netdev_tx_t mlx4_en_xmit(struct sk_buff *skb, struct net_device *dev)
+@@ -711,8 +715,13 @@ netdev_tx_t mlx4_en_xmit(struct sk_buff *skb, struct net_device *dev)
  	 * set flag for further reference
  	 */
  	if (ring->hwtstamp_tx_type == HWTSTAMP_TX_ON &&
@@ -346,7 +268,7 @@ index afd29a6..74954d5 100644
  					  mlx4_msi_x_interrupt, 0,
  					  &priv->eq_table.irq_names[vec<<5],
 diff --git a/include/linux/mlx4/device.h b/include/linux/mlx4/device.h
-index cbb0134..6597e06 100644
+index 075f0da..1af8690 100644
 --- a/include/linux/mlx4/device.h
 +++ b/include/linux/mlx4/device.h
 @@ -36,7 +36,9 @@
@@ -359,7 +281,7 @@ index cbb0134..6597e06 100644
  
  #include <linux/atomic.h>
  
-@@ -1062,8 +1064,12 @@ int mlx4_query_diag_counters(struct mlx4_dev *mlx4_dev, int array_length,
+@@ -1078,8 +1080,12 @@ int mlx4_query_diag_counters(struct mlx4_dev *mlx4_dev, int array_length,
  			     u32 counter_out[]);
  
  int mlx4_test_interrupts(struct mlx4_dev *dev);
@@ -373,5 +295,5 @@ index cbb0134..6597e06 100644
  
  int mlx4_wol_read(struct mlx4_dev *dev, u64 *config, int port);
 -- 
-1.7.8.2
+1.7.11.3
 

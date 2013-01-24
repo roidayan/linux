@@ -1,18 +1,19 @@
-From 1ba7b0a2f0ff3e55e78a13be16d8b8fb441317b3 Mon Sep 17 00:00:00 2001
-From: Yishai Hadas <yishaih@mellanox.com>
-Date: Tue, 8 Jan 2013 19:01:49 +0200
+From 56f52fc5b1256eb27c93cfd019b70a7f083dd0e4 Mon Sep 17 00:00:00 2001
+From: Yan Burman <yanb@mellanox.com>
+Date: Thu, 24 Jan 2013 15:15:17 +0200
 Subject: [PATCH] BACKPORT: mlx4_en: fix leak in RH63
 
 revert upstream commit 4cce66cdd14aa5006a011505865d932adb49f600
 Signed-off-by: Yishai Hadas <yishaih@mellanox.com>
+Signed-off-by: Yan Burman <yanb@mellanox.com>
 
 Change-Id: I1c40f34df60a1b01859d5a195dd18290a7e4d6ac
 ---
- drivers/net/ethernet/mellanox/mlx4/en_rx.c |  230 +++++++++++++++++++++++++++-
- 1 files changed, 226 insertions(+), 4 deletions(-)
+ drivers/net/ethernet/mellanox/mlx4/en_rx.c | 233 ++++++++++++++++++++++++++++-
+ 1 file changed, 229 insertions(+), 4 deletions(-)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_rx.c b/drivers/net/ethernet/mellanox/mlx4/en_rx.c
-index 2d3199e..898f35f 100644
+index 89897dc..7800dfe 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/en_rx.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_rx.c
 @@ -43,6 +43,45 @@
@@ -226,7 +227,7 @@ index 2d3199e..898f35f 100644
 +		if (mlx4_en_alloc_frag(priv, rx_desc, skb_frags,
 +			page_alloc, nr))
 +			goto fail;
- 
++
 +		/* Unmap buffer */
 +		dma_unmap_single(priv->ddev, dma,
 +				skb_frag_size(&skb_frags_rx[nr]),
@@ -247,7 +248,7 @@ index 2d3199e..898f35f 100644
 +	}
 +	return 0;
 +}
-+
+ 
 +#else
  static int mlx4_en_complete_rx_desc(struct mlx4_en_priv *priv,
  				    struct mlx4_en_rx_desc *rx_desc,
@@ -345,10 +346,10 @@ index 2d3199e..898f35f 100644
 +#ifndef CONFIG_COMPAT_FRAGS_SKB
  	dma_addr_t dma;
 +#endif
- 	u64 s_mac;
  	int factor = priv->cqe_factor;
  	u64 timestamp;
-@@ -613,7 +803,12 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+ 
+@@ -612,7 +802,12 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  	while (XNOR(cqe->owner_sr_opcode & MLX4_CQE_OWNER_MASK,
  		    cq->mcq.cons_index & cq->size)) {
  
@@ -361,7 +362,7 @@ index 2d3199e..898f35f 100644
  		rx_desc = ring->buf + (index << ring->log_stride);
  
  		/*
-@@ -637,13 +832,22 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+@@ -636,11 +831,19 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  
  		/* Get pointer to first fragment since we haven't skb yet and
  		 * cast it to ethhdr struct */
@@ -378,13 +379,10 @@ index 2d3199e..898f35f 100644
  		ethh = (struct ethhdr *)(page_address(frags[0].page) +
  					 frags[0].offset);
 +#endif
- 		s_mac = mlx4_mac_to_u64(ethh->h_source);
  
-+
- 		/* If source MAC is equal to our own MAC and not performing
- 		 * the selftest or flb disabled - drop the packet */
- 		if (s_mac == priv->mac &&
-@@ -673,10 +877,16 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+ 		/* Check if we need to drop the packet if SRIOV is not enabled
+ 		 * and not performing the selftest or flb disabled
+@@ -687,10 +890,16 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  					struct sk_buff *gro_skb = napi_get_frags(&cq->napi);
  					if (!gro_skb)
  						goto next;
@@ -402,7 +400,7 @@ index 2d3199e..898f35f 100644
  					if (!nr)
  						goto next;
  
-@@ -740,7 +950,12 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+@@ -754,7 +963,12 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  			ring->csum_none++;
  		}
  
@@ -415,7 +413,7 @@ index 2d3199e..898f35f 100644
  		if (!skb) {
  			priv->stats.rx_dropped++;
  			goto next;
-@@ -791,8 +1006,10 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+@@ -805,8 +1019,10 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  #endif
  
  next:
@@ -426,7 +424,7 @@ index 2d3199e..898f35f 100644
  
  		++cq->mcq.cons_index;
  		index = (cq->mcq.cons_index) & ring->size_mask;
-@@ -809,7 +1026,12 @@ out:
+@@ -823,7 +1039,12 @@ out:
  	mlx4_cq_set_ci(&cq->mcq);
  	wmb(); /* ensure HW sees CQ consumer before we post new buffers */
  	ring->cons = cq->mcq.cons_index;
@@ -439,7 +437,7 @@ index 2d3199e..898f35f 100644
  	mlx4_en_update_rx_prod_db(ring);
  	return polled;
  }
-@@ -853,7 +1075,11 @@ void mlx4_en_calc_rx_buf(struct net_device *dev)
+@@ -906,7 +1127,11 @@ void mlx4_en_calc_rx_buf(struct net_device *dev)
  
  	priv->num_frags = i;
  	priv->rx_skb_size = eff_mtu;
@@ -452,5 +450,5 @@ index 2d3199e..898f35f 100644
  	en_dbg(DRV, priv, "Rx buffer scatter-list (effective-mtu:%d "
  		  "num_frags:%d):\n", eff_mtu, priv->num_frags);
 -- 
-1.7.1
+1.7.11.3
 

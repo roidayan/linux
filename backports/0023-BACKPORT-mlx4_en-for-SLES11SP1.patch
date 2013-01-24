@@ -100,8 +100,8 @@ index f943d72..42457f1 100644
  #endif
 +#endif
  
- 	/* Query for default mac and max mtu */
- 	priv->max_mtu = mdev->dev->caps.eth_mtu_cap[priv->port];
+ 	for (i = 0; i < MLX4_EN_MAC_HASH_SIZE; ++i)
+ 		INIT_HLIST_HEAD(&priv->mac_hash[i]);
 @@ -1822,7 +1832,9 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	else
  		dev->netdev_ops = &mlx4_netdev_ops;
@@ -126,16 +126,16 @@ index f943d72..42457f1 100644
  			NETIF_F_HW_VLAN_FILTER;
 @@ -1860,7 +1876,11 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  
-        dev->vlan_features = dev->features;
+ 	dev->vlan_features = dev->features;
  
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35)
-        dev->features |= NETIF_F_RXCSUM | NETIF_F_RXHASH;
+ 	dev->features |= NETIF_F_RXCSUM | NETIF_F_RXHASH;
 +#else
-+       dev->features |= NETIF_F_RXCSUM;
++	dev->features |= NETIF_F_RXCSUM;
 +#endif
-        dev->features |= NETIF_F_HIGHDMA |
-                        NETIF_F_HW_VLAN_TX | NETIF_F_HW_VLAN_RX |
-                        NETIF_F_HW_VLAN_FILTER;
+ 	dev->features |= NETIF_F_HIGHDMA |
+ 		NETIF_F_HW_VLAN_TX | NETIF_F_HW_VLAN_RX |
+ 		NETIF_F_HW_VLAN_FILTER;
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_resources.c b/drivers/net/ethernet/mellanox/mlx4/en_resources.c
 index b3b8ac6..6e9c2a0 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/en_resources.c
@@ -315,8 +315,8 @@ index fd83ce9..fc8d21d 100644
  struct ethtool_flow_id {
  	struct list_head list;
 @@ -549,12 +559,14 @@ struct mlx4_en_priv {
- 	struct hwtstamp_config hwtstamp_config;
- 	u32 counter_index;
+ #define MLX4_EN_MAC_HASH_IDX 5
+ 	struct hlist_head mac_hash[MLX4_EN_MAC_HASH_SIZE];
  
 +#ifndef CONFIG_COMPAT_DISABLE_DCB
  #ifdef CONFIG_MLX4_EN_DCB

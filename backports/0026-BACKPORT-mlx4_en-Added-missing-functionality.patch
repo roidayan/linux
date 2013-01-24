@@ -1,23 +1,24 @@
-From da7416f65518450fcb7b5b88270141448d9f01ed Mon Sep 17 00:00:00 2001
-From: Vladimir Sokolovsky <vlad@mellanox.com>
-Date: Sun, 16 Dec 2012 16:02:50 +0200
+From 09daf198ab134498393aaaf73d637c56db09271b Mon Sep 17 00:00:00 2001
+From: Yan Burman <yanb@mellanox.com>
+Date: Thu, 24 Jan 2013 15:06:44 +0200
 Subject: [PATCH] BACKPORT: mlx4_en: Added missing functionality
 
 Added missing offloads and ethtool configurations for RHEL6.x
 
+Signed-off-by: Yan Burman <yanb@mellanox.com>
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- drivers/net/ethernet/mellanox/mlx4/en_ethtool.c |   76 +++++++++++++++++++++++
- drivers/net/ethernet/mellanox/mlx4/en_netdev.c  |   36 ++++++++++-
- drivers/net/ethernet/mellanox/mlx4/en_rx.c      |   39 +++++++++++-
- drivers/net/ethernet/mellanox/mlx4/mlx4_en.h    |    6 ++
+ drivers/net/ethernet/mellanox/mlx4/en_ethtool.c | 76 +++++++++++++++++++++++++
+ drivers/net/ethernet/mellanox/mlx4/en_netdev.c  | 36 +++++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_rx.c      | 39 ++++++++++++-
+ drivers/net/ethernet/mellanox/mlx4/mlx4_en.h    |  6 ++
  4 files changed, 153 insertions(+), 4 deletions(-)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
-index 6ec3c74..06c24cb 100644
+index 05a551b..8b18273 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
-@@ -64,6 +64,70 @@ mlx4_en_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *drvinfo)
+@@ -114,6 +114,70 @@ mlx4_en_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *drvinfo)
  	drvinfo->eedump_len = 0;
  }
  
@@ -88,7 +89,7 @@ index 6ec3c74..06c24cb 100644
  static const char main_strings[][ETH_GSTRING_LEN] = {
  	"rx_packets", "tx_packets", "rx_bytes", "tx_bytes", "rx_errors",
  	"tx_errors", "rx_dropped", "tx_dropped", "multicast", "collisions",
-@@ -1124,6 +1188,18 @@ const struct ethtool_ops mlx4_en_ethtool_ops = {
+@@ -1167,6 +1231,18 @@ const struct ethtool_ops mlx4_en_ethtool_ops = {
  	.get_drvinfo = mlx4_en_get_drvinfo,
  	.get_settings = mlx4_en_get_settings,
  	.set_settings = mlx4_en_set_settings,
@@ -108,7 +109,7 @@ index 6ec3c74..06c24cb 100644
  	.get_strings = mlx4_en_get_strings,
  	.get_sset_count = mlx4_en_get_sset_count,
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
-index 42457f1..bf0a735 100644
+index d9f9a2c..6fc07fa 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
 @@ -363,7 +363,22 @@ static void mlx4_en_filter_rfs_expire(struct mlx4_en_priv *priv)
@@ -160,8 +161,8 @@ index 42457f1..bf0a735 100644
 +#endif
  }
  
- static int mlx4_en_set_mac(struct net_device *dev, void *addr)
-@@ -1684,6 +1707,9 @@ static const struct net_device_ops mlx4_netdev_ops = {
+ static int mlx4_en_uc_steer_add(struct mlx4_en_priv *priv,
+@@ -2107,6 +2130,9 @@ static const struct net_device_ops mlx4_netdev_ops = {
  	.ndo_change_mtu		= mlx4_en_change_mtu,
  	.ndo_do_ioctl		= mlx4_en_ioctl,
  	.ndo_tx_timeout		= mlx4_en_tx_timeout,
@@ -171,7 +172,7 @@ index 42457f1..bf0a735 100644
  	.ndo_vlan_rx_add_vid	= mlx4_en_vlan_rx_add_vid,
  	.ndo_vlan_rx_kill_vid	= mlx4_en_vlan_rx_kill_vid,
  #ifdef CONFIG_NET_POLL_CONTROLLER
-@@ -1709,6 +1735,9 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
+@@ -2135,6 +2161,9 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
  	.ndo_validate_addr	= eth_validate_addr,
  	.ndo_change_mtu		= mlx4_en_change_mtu,
  	.ndo_tx_timeout		= mlx4_en_tx_timeout,
@@ -181,7 +182,7 @@ index 42457f1..bf0a735 100644
  	.ndo_vlan_rx_add_vid	= mlx4_en_vlan_rx_add_vid,
  	.ndo_vlan_rx_kill_vid	= mlx4_en_vlan_rx_kill_vid,
  	.ndo_set_vf_mac		= mlx4_en_set_vf_mac,
-@@ -1756,6 +1785,9 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2198,6 +2227,9 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	priv->prof = prof;
  	priv->port = port;
  	priv->port_up = false;
@@ -191,27 +192,27 @@ index 42457f1..bf0a735 100644
  	priv->flags = prof->flags;
  	priv->ctrl_flags = cpu_to_be32(MLX4_WQE_CTRL_CQ_UPDATE |
  			MLX4_WQE_CTRL_SOLICITED);
-@@ -1870,13 +1902,13 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
- 	    MLX4_STEERING_MODE_DEVICE_MANAGED)
- 		dev->hw_features |= NETIF_F_NTUPLE;
- #else
--       dev->features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM;
-+       dev->features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM | NETIF_F_GRO;
-        if (mdev->LSO_support)
-                dev->features |= NETIF_F_TSO | NETIF_F_TSO6;
+@@ -2321,13 +2353,13 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+ #endif
  
-        dev->vlan_features = dev->features;
+ #else
+-	dev->features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM;
++	dev->features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM | NETIF_F_GRO;
+ 	if (mdev->LSO_support)
+ 		dev->features |= NETIF_F_TSO | NETIF_F_TSO6;
+ 
+ 	dev->vlan_features = dev->features;
  
 -#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35)
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35) || (CONFIG_COMPAT_NETIF_F_RXHASH)
-        dev->features |= NETIF_F_RXCSUM | NETIF_F_RXHASH;
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35) || defined (CONFIG_COMPAT_NETIF_F_RXHASH)
+ 	dev->features |= NETIF_F_RXCSUM | NETIF_F_RXHASH;
  #else
-        dev->features |= NETIF_F_RXCSUM;
+ 	dev->features |= NETIF_F_RXCSUM;
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_rx.c b/drivers/net/ethernet/mellanox/mlx4/en_rx.c
-index 102dd43..2d3199e 100644
+index ea27613..89897dc 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/en_rx.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_rx.c
-@@ -685,6 +685,7 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+@@ -699,6 +699,7 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  					gro_skb->data_len = length;
  					gro_skb->ip_summed = CHECKSUM_UNNECESSARY;
  
@@ -219,7 +220,7 @@ index 102dd43..2d3199e 100644
  					if ((cqe->vlan_my_qpn &
  					    cpu_to_be32(MLX4_CQE_VLAN_PRESENT_MASK))
  					    && (ring->hwtstamp_rx_filter
-@@ -693,20 +694,37 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+@@ -707,20 +708,37 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  
  						__vlan_hwaccel_put_tag(gro_skb, vid);
  					}
@@ -258,7 +259,7 @@ index 102dd43..2d3199e 100644
  
  					goto next;
  				}
-@@ -737,14 +755,16 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+@@ -751,14 +769,16 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  		skb->protocol = eth_type_trans(skb, dev);
  		skb_record_rx_queue(skb, cq->ring);
  
@@ -276,7 +277,7 @@ index 102dd43..2d3199e 100644
  
  		if (ring->hwtstamp_rx_filter == HWTSTAMP_FILTER_ALL) {
  			timestamp = mlx4_en_get_cqe_ts(cqe);
-@@ -752,8 +772,23 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+@@ -766,8 +786,23 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  				timestamp);
  		}
  
@@ -301,10 +302,10 @@ index 102dd43..2d3199e 100644
  next:
  		for (nr = 0; nr < priv->num_frags; nr++)
 diff --git a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
-index fc8d21d..bfb63b2 100644
+index 760bca9..5d422be 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
 +++ b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
-@@ -480,6 +480,9 @@ struct mlx4_en_priv {
+@@ -468,6 +468,9 @@ struct mlx4_en_priv {
  	struct mlx4_en_dev *mdev;
  	struct mlx4_en_port_profile *prof;
  	struct net_device *dev;
@@ -314,7 +315,7 @@ index fc8d21d..bfb63b2 100644
  	unsigned long active_vlans[BITS_TO_LONGS(VLAN_N_VID)];
  	struct net_device_stats stats;
  	struct net_device_stats ret_stats;
-@@ -516,6 +519,9 @@ struct mlx4_en_priv {
+@@ -504,6 +507,9 @@ struct mlx4_en_priv {
  	int registered;
  	int allocated;
  	int stride;
@@ -322,8 +323,8 @@ index fc8d21d..bfb63b2 100644
 +	int rx_csum;
 +#endif
  	u64 mac;
+ 	u64 old_mac;
  	int mac_index;
- 	unsigned max_mtu;
 -- 
-1.7.8.2
+1.7.11.3
 
