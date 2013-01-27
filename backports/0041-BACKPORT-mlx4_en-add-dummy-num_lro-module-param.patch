@@ -1,0 +1,29 @@
+From: Matan Barak <matanb@mellanox.com>
+Subject: BACKPORT: mlx4_en: add dummy num_lro module param
+
+Need to add dummy module parameter "num_lro" to avoid
+mlx4_en loading issue on RHEL6.x + virt. tools.
+
+issue: 24344
+Signed-off-by: Matan Barak <matanb@mellanox.com>
+---
+ drivers/net/ethernet/mellanox/mlx4/en_main.c |    6 ++++++
+ 1 files changed, 6 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_main.c b/drivers/net/ethernet/mellanox/mlx4/en_main.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx4/en_main.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_main.c
+@@ -66,6 +66,12 @@ static const char mlx4_en_version[] =
+ MLX4_EN_PARM_INT(udp_rss, 1,
+ 		 "Enable RSS for incoming UDP traffic");
+ 
++#ifdef CONFIG_COMPAT_DEFINE_NUM_LRO
++/* Dummy module parameter, prevent loading issues on RHEL6.x + virt tools */
++MLX4_EN_PARM_INT(num_lro, 0,
++		 "Dummy module parameter to prevent loading issues");
++#endif
++
+ /* Priority pausing */
+ MLX4_EN_PARM_INT(pfctx, 0, "Priority based Flow Control policy on TX[7:0]."
+ 			   " Per priority bit mask");
