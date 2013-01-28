@@ -85,7 +85,7 @@ index d00da78..9b4a919 100644
  
  	if ((locked > lock_limit) && !capable(CAP_IPC_LOCK))
 @@ -392,7 +416,11 @@ struct ib_cmem *ib_cmem_alloc_contiguous_pages(struct ib_ucontext *context,
- 	cmem->block_order = ncontiguous_pages_order;
+
  	cmem->length = total_size;
  
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0))
