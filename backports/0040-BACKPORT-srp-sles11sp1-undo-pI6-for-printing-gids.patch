@@ -1,0 +1,68 @@
+From 8bed069f4d930a6972b0305f91b7ff7a89e8216d Mon Sep 17 00:00:00 2001
+From: Alex Tabachnik <alext@mellanox.com>
+Date: Mon, 28 Jan 2013 12:30:35 +0200
+Subject: [PATCH] BACKPORT: srp sles11sp1 undo %pI6 for printing gids
+
+The "%pI6" construct is not valid with kernels earlier than 2.6.29.
+This patch just rolls back the change.
+Without the patch, you don't get a compilation error -- the %p is
+just interpreted as a pointer and the I6 is ignored.
+
+issue: 137841
+
+Change-Id: I250e4e5473093f560bd7f55cd2607acd048d1bb5
+Signed-off-by: Jack Morgenstein <jackm@dev.mellanox.co.il>
+Signed-off-by: Alex Tabachnik <alext@mellanox.com>
+---
+ drivers/infiniband/ulp/srp_1.5.3/ib_srp.c |   25 ++++++++++++++++++++++++-
+ 1 file changed, 24 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/infiniband/ulp/srp_1.5.3/ib_srp.c b/drivers/infiniband/ulp/srp_1.5.3/ib_srp.c
+index f1c55d2..c855a74 100644
+--- a/drivers/infiniband/ulp/srp_1.5.3/ib_srp.c
++++ b/drivers/infiniband/ulp/srp_1.5.3/ib_srp.c
+@@ -1629,8 +1629,20 @@ static ssize_t show_dgid(struct device *dev, struct device_attribute *attr,
+ 	if (target->state == SRP_TARGET_DEAD ||
+ 	    target->state == SRP_TARGET_REMOVED)
+ 		return -ENODEV;
++#if defined(CONFIG_COMPAT_UNDO_I6_PRINT_GIDS)
++        return sprintf(buf, "%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x\n",
++                       be16_to_cpu(((__be16 *) target->path.dgid.raw)[0]),
++                       be16_to_cpu(((__be16 *) target->path.dgid.raw)[1]),
++                       be16_to_cpu(((__be16 *) target->path.dgid.raw)[2]),
++                       be16_to_cpu(((__be16 *) target->path.dgid.raw)[3]),
++                       be16_to_cpu(((__be16 *) target->path.dgid.raw)[4]),
++                       be16_to_cpu(((__be16 *) target->path.dgid.raw)[5]),
++                       be16_to_cpu(((__be16 *) target->path.dgid.raw)[6]),
++                       be16_to_cpu(((__be16 *) target->path.dgid.raw)[7]));
+
++#else
+ 	return sprintf(buf, "%pI6\n", target->path.dgid.raw);
++#endif
+ }
+
+ static ssize_t show_orig_dgid(struct device *dev,
+@@ -1641,8 +1653,19 @@ static ssize_t show_orig_dgid(struct device *dev,
+ 	if (target->state == SRP_TARGET_DEAD ||
+ 	    target->state == SRP_TARGET_REMOVED)
+ 		return -ENODEV;
+-
++#if defined(CONFIG_COMPAT_UNDO_I6_PRINT_GIDS)
++        return sprintf(buf, "%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x\n",
++                       be16_to_cpu(target->orig_dgid[0]),
++                       be16_to_cpu(target->orig_dgid[1]),
++                       be16_to_cpu(target->orig_dgid[2]),
++                       be16_to_cpu(target->orig_dgid[3]),
++                       be16_to_cpu(target->orig_dgid[4]),
++                       be16_to_cpu(target->orig_dgid[5]),
++                       be16_to_cpu(target->orig_dgid[6]),
++                       be16_to_cpu(target->orig_dgid[7]));
++#else
+ 	return sprintf(buf, "%pI6\n", target->orig_dgid);
++#endif
+ }
+
+ static ssize_t show_zero_req_lim(struct device *dev,
+--
+1.7.10.1
+
