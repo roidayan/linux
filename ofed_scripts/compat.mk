@@ -81,6 +81,7 @@ ifdef CONFIG_COMPAT_SLES_11_1
  # CONFIG_COMPAT_DISABLE_DCB should be set to 'y' as it used in drivers/net/ethernet/mellanox/mlx4/Makefile
  CONFIG_COMPAT_DISABLE_DCB=y
  CFLAGS += -DCONFIG_COMPAT_DISABLE_DCB
+ CFLAGS += -DCONFIG_COMPAT_UNDO_I6_PRINT_GIDS
 endif
 
 ifdef CONFIG_COMPAT_SLES_11_2
