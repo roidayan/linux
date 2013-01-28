@@ -1,0 +1,42 @@
+From: Matan Barak <matanb@mellanox.com>
+Subject: BACKPORT: mlx4_en: XEN flavored using same irq per ring both in
+ rx/tx
+
+In SLES 11.1 XEN flavored, per_cpu__cpu_core_map doesn't exist.
+Therefore, instead of using the next core in the same socket as
+the RX core for TX, we use the same irq per ring we assigned in RX.
+
+issue: 123080
+Signed-off-by: Matan Barak <matanb@mellanox.com>
+---
+ drivers/net/ethernet/mellanox/mlx4/en_cq.c |    8 +++++++-
+ 1 files changed, 7 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_cq.c b/drivers/net/ethernet/mellanox/mlx4/en_cq.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx4/en_cq.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_cq.c
+@@ -136,9 +136,10 @@ int mlx4_en_activate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq,
+ 				mdev->dev->caps.num_comp_vectors;
+ 		}
+ 	} else {
++		struct mlx4_en_cq *rx_cq;
++#if !defined(CONFIG_XEN) || !defined(CONFIG_COMPAT_DISABLE_XEN_CPU_CORE_MASK)
+ 		/* For TX we use the next core on same socket
+ 		as the RX core    */
+-		struct mlx4_en_cq *rx_cq;
+ 		int cpu, next_cpu = -1;
+ 		int curr = cq_idx % num_online_cpus();
+ 		struct cpumask *mask = cpu_core_mask(curr);
+@@ -163,6 +164,11 @@ int mlx4_en_activate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq,
+ 		cq_idx = ((num_online_cpus() *
+ 			  (cq_idx / num_online_cpus())) + next_cpu) %
+ 			  priv->rx_ring_num;
++#else
++		/* For TX we use the same irq per
++		ring we assigned for the RX    */
++		cq_idx = cq_idx % priv->rx_ring_num;
++#endif
+ 		rx_cq = priv->rx_cq[cq_idx];
+ 		cq->vector = rx_cq->vector;
+ 	}
