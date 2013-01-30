@@ -45,8 +45,8 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	int i;
-@@ -215,8 +219,13 @@ static int mlx4_en_dcbnl_ieee_getmaxrate(struct net_device *dev,
- 	return 0;
+@@ -215,8 +219,13 @@ static u8 mlx4_en_dcbnl_get_state(struct net_device *dev)
+ 	return !!(priv->flags & MLX4_EN_DCB_ENABLED);
  }
  
 +#ifndef CONFIG_COMPAT_MAXRATE
@@ -59,13 +59,14 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	u16 tmp[IEEE_8021QAZ_MAX_TCS];
-@@ -239,12 +248,11 @@ static int mlx4_en_dcbnl_ieee_setmaxrate(struct net_device *dev,
+@@ -239,13 +248,12 @@ static int mlx4_en_dcbnl_ieee_setmaxrate(struct net_device *dev,
  
  	return 0;
  }
 -#endif
  
  const struct dcbnl_rtnl_ops mlx4_en_dcbnl_ops = {
+ 	.getstate       = mlx4_en_dcbnl_get_state,
  	.ieee_getets	= mlx4_en_dcbnl_ieee_getets,
  	.ieee_setets	= mlx4_en_dcbnl_ieee_setets,
 -#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
@@ -376,8 +377,8 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  /*
 @@ -668,9 +682,28 @@ int mlx4_SET_VLAN_FLTR(struct mlx4_dev *dev, struct mlx4_en_priv *priv);
- int mlx4_en_DUMP_ETH_STATS(struct mlx4_en_dev *mdev, u8 port, u8 reset);
- int mlx4_en_QUERY_PORT(struct mlx4_en_dev *mdev, u8 port);
+ int mlx4_en_register_debugfs(void);
+ void mlx4_en_unregister_debugfs(void);
  
 +#ifndef CONFIG_COMPAT_DISABLE_DCB
  #ifdef CONFIG_MLX4_EN_DCB
