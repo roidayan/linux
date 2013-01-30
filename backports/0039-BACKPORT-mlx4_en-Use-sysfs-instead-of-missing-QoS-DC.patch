@@ -10,16 +10,16 @@ Signed-off-by: Amir Vadai <amirv@mellanox.com>
  drivers/net/ethernet/mellanox/mlx4/Makefile    |    3 +
  drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c |   14 ++-
  drivers/net/ethernet/mellanox/mlx4/en_netdev.c |   20 ++-
- drivers/net/ethernet/mellanox/mlx4/en_sysfs.c  |  219 ++++++++++++++++++++++++
+ drivers/net/ethernet/mellanox/mlx4/en_sysfs.c  |  217 ++++++++++++++++++++++++
  drivers/net/ethernet/mellanox/mlx4/mlx4_en.h   |   33 ++++
- 5 files changed, 285 insertions(+), 4 deletions(-)
+ 5 files changed, 283 insertions(+), 4 deletions(-)
  create mode 100644 drivers/net/ethernet/mellanox/mlx4/en_sysfs.c
 
 diff --git a/drivers/net/ethernet/mellanox/mlx4/Makefile b/drivers/net/ethernet/mellanox/mlx4/Makefile
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/Makefile
 +++ b/drivers/net/ethernet/mellanox/mlx4/Makefile
-@@ -11,3 +11,6 @@ mlx4_en-y := 	en_main.o en_tx.o en_rx.o en_ethtool.o en_port.o en_cq.o \
+@@ -14,3 +14,6 @@ mlx4_en-$(CONFIG_DEBUG_FS) += en_debugfs.o
  ifeq ($(CONFIG_COMPAT_DISABLE_DCB),)
  mlx4_en-$(CONFIG_MLX4_EN_DCB) += en_dcb_nl.o
  endif
@@ -30,7 +30,7 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c b/drivers/net/ethern
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c
-@@ -201,9 +201,13 @@ static u8 mlx4_en_dcbnl_setdcbx(struct net_device *dev, u8 mode)
+@@ -223,9 +223,13 @@ static u8 mlx4_en_dcbnl_setdcbx(struct net_device *dev, u8 mode)
  }
  
  #define MLX4_RATELIMIT_UNITS_IN_KB 100000 /* rate-limit HW unit in Kbps */
@@ -45,7 +45,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	int i;
-@@ -215,8 +219,13 @@ static u8 mlx4_en_dcbnl_get_state(struct net_device *dev)
+@@ -244,8 +248,13 @@ static u8 mlx4_en_dcbnl_get_state(struct net_device *dev)
  	return !!(priv->flags & MLX4_EN_DCB_ENABLED);
  }
  
@@ -59,7 +59,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	u16 tmp[IEEE_8021QAZ_MAX_TCS];
-@@ -239,13 +248,12 @@ static int mlx4_en_dcbnl_ieee_setmaxrate(struct net_device *dev,
+@@ -268,13 +277,12 @@ static int mlx4_en_dcbnl_ieee_setmaxrate(struct net_device *dev,
  
  	return 0;
  }
@@ -87,7 +87,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx4_en_setup_tc(struct net_device *dev, u8 up)
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
-@@ -1539,6 +1539,10 @@ void mlx4_en_destroy_netdev(struct net_device *dev)
+@@ -1546,6 +1546,10 @@ void mlx4_en_destroy_netdev(struct net_device *dev)
  
  	en_dbg(DRV, priv, "Destroying netdev on port:%d\n", priv->port);
  
@@ -98,7 +98,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	/* Unregister device - this will close the port if it was up */
  	if (priv->registered)
  		unregister_netdev(dev);
-@@ -1810,6 +1814,13 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -1829,6 +1833,13 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  		err = -ENOMEM;
  		goto out;
  	}
@@ -112,7 +112,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	priv->tx_cq = kzalloc(sizeof(struct mlx4_en_cq *) * priv->tx_ring_num,
  			GFP_KERNEL);
  	if (!priv->tx_cq) {
-@@ -1973,6 +1984,13 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -1988,6 +1999,13 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  		goto out;
  	}
  	queue_delayed_work(mdev->workqueue, &priv->stats_task, STATS_DELAY);
@@ -128,10 +128,10 @@ index xxxxxxx..xxxxxxx xxxxxx
  out:
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_sysfs.c b/drivers/net/ethernet/mellanox/mlx4/en_sysfs.c
 new file mode 100644
-index 0000000..8bbac21
+index 0000000..8fd4e56
 --- /dev/null
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_sysfs.c
-@@ -0,0 +1,219 @@
+@@ -0,0 +1,217 @@
 +/*
 + * Copyright (c) 2013 Mellanox Technologies. All rights reserved.
 + *
@@ -224,7 +224,6 @@ index 0000000..8bbac21
 +			goto out;
 +		}
 +		maxrate.tc_maxrate[i] = new_value;
-+		printk("%s:%d new_val = %lld\n", __func__, __LINE__, new_value);
 +
 +		buf += len+1;
 +		i++;
@@ -233,7 +232,6 @@ index 0000000..8bbac21
 +	if (i != MLX4_EN_NUM_TC)
 +		goto bad_elem_count;
 +
-+	printk("%s:%d\n", __func__, __LINE__);
 +	ret = mlx4_en_dcbnl_ieee_setmaxrate(priv->dev, &maxrate);
 +	if (!ret)
 +		ret = count;
@@ -376,7 +374,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  #define MLX4_EN_MSG_LEVEL	(NETIF_MSG_LINK | NETIF_MSG_IFDOWN)
  
  /*
-@@ -668,9 +682,28 @@ int mlx4_SET_VLAN_FLTR(struct mlx4_dev *dev, struct mlx4_en_priv *priv);
+@@ -662,9 +676,28 @@ void mlx4_en_delete_debug_files(struct mlx4_en_priv *priv);
  int mlx4_en_register_debugfs(void);
  void mlx4_en_unregister_debugfs(void);
  

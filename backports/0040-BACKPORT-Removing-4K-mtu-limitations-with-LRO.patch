@@ -1,7 +1,5 @@
-From 96ac09b423c873b2d8ca741def036b9dcff664b2 Mon Sep 17 00:00:00 2001
 From: root <root@dev-ovm-023.vmlab.mtl.com>
-Date: Tue, 29 Jan 2013 14:36:48 +0200
-Subject: [PATCH] BACKPORT: Removing 4K mtu limitations with LRO
+Subject: BACKPORT: Removing 4K mtu limitations with LRO
 
 ---
  drivers/infiniband/ulp/ipoib/ipoib_ethtool.c |    9 ---------
@@ -9,7 +7,7 @@ Subject: [PATCH] BACKPORT: Removing 4K mtu limitations with LRO
  2 files changed, 1 insertions(+), 22 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
-index d213698..a08eaf7 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
 @@ -294,16 +294,7 @@ static int ipoib_set_channels(struct net_device *dev,
@@ -30,10 +28,10 @@ index d213698..a08eaf7 100644
  }
  #endif
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-index 56378a2..411cced 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-@@ -1944,9 +1944,6 @@ void set_lro_features_bit(struct ipoib_dev_priv *priv)
+@@ -1960,9 +1960,6 @@ void set_lro_features_bit(struct ipoib_dev_priv *priv)
  {
  	if (lro)
  		priv->dev->features |= NETIF_F_LRO;
@@ -43,7 +41,7 @@ index 56378a2..411cced 100644
  }
  #endif
  
-@@ -2450,16 +2447,7 @@ static struct net_device *ipoib_add_port(const char *format,
+@@ -2466,16 +2463,7 @@ static struct net_device *ipoib_add_port(const char *format,
  
  	if (!ib_query_port(hca, port, &attr)) {
  		priv->max_ib_mtu = ib_mtu_enum_to_int(attr.max_mtu);
@@ -61,6 +59,3 @@ index 56378a2..411cced 100644
  		printk(KERN_WARNING "%s: ib_query_port %d failed\n",
  		       hca->name, port);
  		goto device_init_failed;
--- 
-1.7.1
-
