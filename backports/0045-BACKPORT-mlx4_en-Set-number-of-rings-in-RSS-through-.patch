@@ -1,0 +1,195 @@
+From: Amir Vadai <amirv@mellanox.com>
+Subject: BACKPORT: mlx4_en: Set number of rings in RSS through sysfs
+
+When setting number of tx rings in RSS isn't supported by kernel, do it through
+sysfs.
+
+Change-Id: I211f2027261a2585617fb515081b6591c893cf55
+Signed-off-by: Amir Vadai <amirv@mellanox.com>
+---
+ drivers/net/ethernet/mellanox/mlx4/en_ethtool.c |   15 ++++
+ drivers/net/ethernet/mellanox/mlx4/en_sysfs.c   |   84 +++++++++++++++++++++++
+ drivers/net/ethernet/mellanox/mlx4/mlx4_en.h    |   10 +++
+ 3 files changed, 109 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
+@@ -637,14 +637,22 @@ static void mlx4_en_get_ringparam(struct net_device *dev,
+ 	param->tx_pending = priv->tx_ring[0]->size;
+ }
+ 
++#ifndef CONFIG_COMPAT_INDIR_SETTING
+ static u32 mlx4_en_get_rxfh_indir_size(struct net_device *dev)
++#else
++u32 mlx4_en_get_rxfh_indir_size(struct net_device *dev)
++#endif
+ {
+ 	struct mlx4_en_priv *priv = netdev_priv(dev);
+ 
+ 	return priv->rx_ring_num;
+ }
+ 
++#ifndef CONFIG_COMPAT_INDIR_SETTING
+ static int mlx4_en_get_rxfh_indir(struct net_device *dev, u32 *ring_index)
++#else
++int mlx4_en_get_rxfh_indir(struct net_device *dev, u32 *ring_index)
++#endif
+ {
+ 	struct mlx4_en_priv *priv = netdev_priv(dev);
+ 	struct mlx4_en_rss_map *rss_map = &priv->rss_map;
+@@ -663,8 +671,13 @@ static int mlx4_en_get_rxfh_indir(struct net_device *dev, u32 *ring_index)
+ 	return err;
+ }
+ 
++#ifndef CONFIG_COMPAT_INDIR_SETTING
+ static int mlx4_en_set_rxfh_indir(struct net_device *dev,
+ 		const u32 *ring_index)
++#else
++int mlx4_en_set_rxfh_indir(struct net_device *dev,
++			   const u32 *ring_index)
++#endif
+ {
+ 	struct mlx4_en_priv *priv = netdev_priv(dev);
+ 	struct mlx4_en_dev *mdev = priv->mdev;
+@@ -1219,9 +1232,11 @@ const struct ethtool_ops mlx4_en_ethtool_ops = {
+ 	.set_ringparam = mlx4_en_set_ringparam,
+ 	.get_rxnfc = mlx4_en_get_rxnfc,
+ 	.set_rxnfc = mlx4_en_set_rxnfc,
++#ifndef CONFIG_COMPAT_INDIR_SETTING
+ 	.get_rxfh_indir_size = mlx4_en_get_rxfh_indir_size,
+ 	.get_rxfh_indir = mlx4_en_get_rxfh_indir,
+ 	.set_rxfh_indir = mlx4_en_set_rxfh_indir,
++#endif
+ };
+ 
+ 
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_sysfs.c b/drivers/net/ethernet/mellanox/mlx4/en_sysfs.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx4/en_sysfs.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_sysfs.c
+@@ -191,6 +191,87 @@ static DEVICE_ATTR(skprio2up, S_IRUGO | S_IWUSR,
+ 		   mlx4_en_show_skprio2up, mlx4_en_store_skprio2up);
+ #endif
+ 
++#ifdef CONFIG_COMPAT_INDIR_SETTING
++static ssize_t mlx4_en_show_rxfh_indir(struct device *d,
++				       struct device_attribute *attr,
++				       char *buf)
++{
++	struct net_device *dev = to_net_dev(d);
++	int i, err;
++	int len = 0;
++	int ring_num;
++	u32 *ring_index;
++
++	ring_num = mlx4_en_get_rxfh_indir_size(dev);
++	if (ring_num < 0)
++		return -EINVAL;
++
++	ring_index = kzalloc(sizeof(u32) * ring_num, GFP_KERNEL);
++	if (!ring_index)
++		return -ENOMEM;
++
++	err = mlx4_en_get_rxfh_indir(dev, ring_index);
++	if (err)
++		goto err;
++
++	for (i = 0; i < ring_num; i++)
++		len += sprintf(buf + len, "%d\n", ring_index[i]);
++
++	err = len;
++err:
++	kfree(ring_index);
++
++	return err;
++}
++
++static ssize_t mlx4_en_store_rxfh_indir(struct device *d,
++					struct device_attribute *attr,
++					const char *buf, size_t count)
++{
++	struct net_device *dev = to_net_dev(d);
++	char *endp;
++	unsigned long new;
++	int i, err;
++	int ring_num;
++	u32 *ring_index;
++
++	if (!capable(CAP_NET_ADMIN))
++		return -EPERM;
++
++	new = simple_strtoul(buf, &endp, 0);
++	if (endp == buf)
++		return -EINVAL;
++
++	if (!is_power_of_2(new))
++		return -EINVAL;
++
++	ring_num = mlx4_en_get_rxfh_indir_size(dev);
++	if (ring_num < 0)
++		return -EINVAL;
++
++	ring_index = kzalloc(sizeof(u32) * ring_num, GFP_KERNEL);
++	if (!ring_index)
++		return -ENOMEM;
++
++	for (i = 0; i < ring_num; i++)
++		ring_index[i] = i % new;
++
++	err = mlx4_en_set_rxfh_indir(dev, ring_index);
++	if (err)
++		goto err;
++
++	err = count;
++
++err:
++	kfree(ring_index);
++
++	return err;
++}
++
++static DEVICE_ATTR(rxfh_indir, S_IRUGO | S_IWUSR,
++		   mlx4_en_show_rxfh_indir, mlx4_en_store_rxfh_indir);
++#endif
++
+ static struct attribute *mlx4_en_qos_attrs[] = {
+ #ifdef CONFIG_COMPAT_MAXRATE
+ 	&dev_attr_maxrate.attr,
+@@ -198,6 +279,9 @@ static struct attribute *mlx4_en_qos_attrs[] = {
+ #ifdef CONFIG_COMPAT_MQPRIO
+ 	&dev_attr_skprio2up.attr,
+ #endif
++#ifdef CONFIG_COMPAT_INDIR_SETTING
++	&dev_attr_rxfh_indir.attr,
++#endif
+ 	NULL,
+ };
+ 
+diff --git a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
++++ b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
+@@ -74,6 +74,10 @@
+ #endif
+ #endif
+ 
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,3,0))
++#define CONFIG_COMPAT_INDIR_SETTING
++#endif
++
+ #define MLX4_EN_MSG_LEVEL	(NETIF_MSG_LINK | NETIF_MSG_IFDOWN)
+ 
+ /*
+@@ -762,4 +766,10 @@ do {								\
+ 	pr_warning("%s %s: " format, DRV_NAME,		\
+ 		   dev_name(&mdev->pdev->dev), ##arg)
+ 
++#ifdef CONFIG_COMPAT_INDIR_SETTING
++u32 mlx4_en_get_rxfh_indir_size(struct net_device *dev);
++int mlx4_en_get_rxfh_indir(struct net_device *dev, u32 *ring_index);
++int mlx4_en_set_rxfh_indir(struct net_device *dev, const u32 *ring_index);
++#endif
++
+ #endif
