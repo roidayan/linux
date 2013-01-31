@@ -7,12 +7,12 @@ Also to set skprio2up when HW multiq is not supported by kernel.
 Change-Id: Iec74a1bddd5a46225cc3282f1ff43e8de2307d98
 Signed-off-by: Amir Vadai <amirv@mellanox.com>
 ---
- drivers/net/ethernet/mellanox/mlx4/Makefile    |    3 +
- drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c |   14 ++-
- drivers/net/ethernet/mellanox/mlx4/en_netdev.c |   20 ++-
- drivers/net/ethernet/mellanox/mlx4/en_sysfs.c  |  217 ++++++++++++++++++++++++
- drivers/net/ethernet/mellanox/mlx4/mlx4_en.h   |   33 ++++
- 5 files changed, 283 insertions(+), 4 deletions(-)
+ drivers/net/ethernet/mellanox/mlx4/Makefile    |   3 +
+ drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c |  14 +-
+ drivers/net/ethernet/mellanox/mlx4/en_netdev.c |  22 ++-
+ drivers/net/ethernet/mellanox/mlx4/en_sysfs.c  | 217 +++++++++++++++++++++++++
+ drivers/net/ethernet/mellanox/mlx4/mlx4_en.h   |  36 ++++
+ 5 files changed, 288 insertions(+), 4 deletions(-)
  create mode 100644 drivers/net/ethernet/mellanox/mlx4/en_sysfs.c
 
 diff --git a/drivers/net/ethernet/mellanox/mlx4/Makefile b/drivers/net/ethernet/mellanox/mlx4/Makefile
@@ -87,18 +87,19 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx4_en_setup_tc(struct net_device *dev, u8 up)
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
-@@ -1546,6 +1546,10 @@ void mlx4_en_destroy_netdev(struct net_device *dev)
+@@ -1546,6 +1546,11 @@ void mlx4_en_destroy_netdev(struct net_device *dev)
  
  	en_dbg(DRV, priv, "Destroying netdev on port:%d\n", priv->port);
  
 +#ifdef CONFIG_COMPAT_EN_SYSFS
-+	mlx4_en_sysfs_remove(dev);
++	if (priv->sysfs_group_initialized)
++		mlx4_en_sysfs_remove(dev);
 +#endif
 +
  	/* Unregister device - this will close the port if it was up */
  	if (priv->registered)
  		unregister_netdev(dev);
-@@ -1829,6 +1833,13 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -1829,6 +1834,13 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  		err = -ENOMEM;
  		goto out;
  	}
@@ -112,7 +113,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	priv->tx_cq = kzalloc(sizeof(struct mlx4_en_cq *) * priv->tx_ring_num,
  			GFP_KERNEL);
  	if (!priv->tx_cq) {
-@@ -1988,6 +1999,13 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -1988,6 +2000,14 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  		goto out;
  	}
  	queue_delayed_work(mdev->workqueue, &priv->stats_task, STATS_DELAY);
@@ -121,6 +122,7 @@ index xxxxxxx..xxxxxxx xxxxxx
 +	err = mlx4_en_sysfs_create(dev);
 +	if (err)
 +		goto out;
++	priv->sysfs_group_initialized = 1;
 +#endif
 +
  	return 0;
@@ -374,7 +376,17 @@ index xxxxxxx..xxxxxxx xxxxxx
  #define MLX4_EN_MSG_LEVEL	(NETIF_MSG_LINK | NETIF_MSG_IFDOWN)
  
  /*
-@@ -662,9 +676,28 @@ void mlx4_en_delete_debug_files(struct mlx4_en_priv *priv);
+@@ -570,6 +584,9 @@ struct mlx4_en_priv {
+ 	u64 if_counters_rx_errors;
+ 	u64 if_counters_rx_no_buffer;
+ 
++#ifdef CONFIG_COMPAT_EN_SYSFS
++	int sysfs_group_initialized;
++#endif
+ };
+ 
+ enum mlx4_en_wol {
+@@ -662,9 +679,28 @@ void mlx4_en_delete_debug_files(struct mlx4_en_priv *priv);
  int mlx4_en_register_debugfs(void);
  void mlx4_en_unregister_debugfs(void);
  
