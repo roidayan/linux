@@ -86,15 +86,15 @@ index f943d72..42457f1 100644
  	if (dev == NULL)
  		return -ENOMEM;
  
-@@ -1774,13 +1782,15 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -1774,6 +1782,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	priv->last_ifq_jiffies = 0;
  	priv->if_counters_rx_errors = 0;
  	priv->if_counters_rx_no_buffer = 0;
 +#ifndef CONFIG_COMPAT_DISABLE_DCB
  #ifdef CONFIG_MLX4_EN_DCB
- 	if (!mlx4_is_slave(priv->mdev->dev)) {
- 		priv->dcbx_cap = DCB_CAP_DCBX_HOST;
- 		priv->flags |= MLX4_EN_DCB_ENABLED;
+ 	if (!mlx4_is_slave(priv->mdev->dev) &&
+ 	    (mdev->dev->caps.flags & MLX4_DEV_CAP_FLAG_SET_PORT_ETH_SCHED)) {
+@@ -1782,6 +1790,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  		dev->dcbnl_ops = &mlx4_en_dcbnl_ops;
  	}
  #endif
