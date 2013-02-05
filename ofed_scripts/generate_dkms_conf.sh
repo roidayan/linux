@@ -31,9 +31,8 @@ cd ${0%*/*}
 
 kernelver=${kernelver:-`uname -r`}
 kernel_source_dir=${kernel_source_dir:-"/lib/modules/$kernelver/build"}
-SRC=${SRC:-.}
-PACKAGE_NAME=${PACKAGE_NAME:-"ofa_kernel"}
-PACKAGE_VERSION=${PACKAGE_VERSION:-"1.5.3"}
+PACKAGE_NAME=${PACKAGE_NAME:-"mlnx-ofed-kernel"}
+PACKAGE_VERSION=${PACKAGE_VERSION:-"2.0"}
 
 modules=`./dkms_ofed $kernelver get-modules`
 
@@ -49,7 +48,9 @@ do
 	let i++
 done
 
-echo MAKE=\"./configure --kernel-version=\$kernelver --kernel-sources=\$kernel_source_dir \`${SRC}/ofed_scripts/dkms_ofed \$kernelver get-config\` \&\& make -j\`grep ^processor /proc/cpuinfo \| wc -l\`\"
+# echo MAKE=\"cd \${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build \&\& ./configure --kernel-version=\$kernelver --kernel-sources=\$kernel_source_dir \`./ofed_scripts/dkms_ofed \$kernelver get-config\` \&\& make -j\`grep ^processor /proc/cpuinfo \| wc -l\`\"
+echo PRE_BUILD=\"./configure --kernel-version=\$kernelver --kernel-sources=\$kernel_source_dir \`\${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/source/ofed_scripts/dkms_ofed \$kernelver get-config\`\"
+echo MAKE=\"make -j\`grep ^processor /proc/cpuinfo \| wc -l\`\"
 echo CLEAN=\"make clean\"
 echo PACKAGE_NAME=$PACKAGE_NAME
 echo PACKAGE_VERSION=$PACKAGE_VERSION
