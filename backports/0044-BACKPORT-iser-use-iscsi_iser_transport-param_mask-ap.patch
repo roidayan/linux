@@ -1,0 +1,56 @@
+From 5d7f631597e800e4526cc4453208a4ca01e010af Mon Sep 17 00:00:00 2001
+From: Alex Tabachnik <alext@mellanox.com>
+Date: Wed, 6 Feb 2013 09:26:58 +0200
+Subject: [PATCH] BACKPORT: iser use iscsi_iser_transport param_mask
+ appropriate for sles11sp1 This will allow libiscsi on
+ sles11sp1 to manage correctly sysfs ad will fix ability to
+ manage iscsi sessions using iscsiadm
+
+issue: 167847
+Signed-off-by: Alex Tabachnik <alext@mellanox.com>
+
+Change-Id: I2fc66259e27976b1a8dca6a9d168112229fa8690
+---
+ drivers/infiniband/ulp/iser/iscsi_iser.c |   26 ++++++++++++++++++++++++++
+ 1 file changed, 26 insertions(+)
+
+diff --git a/drivers/infiniband/ulp/iser/iscsi_iser.c b/drivers/infiniband/ulp/iser/iscsi_iser.c
+index 96d5fed..02a5dab 100644
+--- a/drivers/infiniband/ulp/iser/iscsi_iser.c
++++ b/drivers/infiniband/ulp/iser/iscsi_iser.c
+@@ -707,6 +707,32 @@ static struct iscsi_transport iscsi_iser_transport = {
+ 	.owner                  = THIS_MODULE,
+ 	.name                   = "iser",
+ 	.caps                   = CAP_RECOVERY_L0 | CAP_MULTI_R2T,
++#if defined(CONFIG_COMPAT_ISCSI_TRANSPORT_PARAM_MASK)
++        .param_mask             = ISCSI_MAX_RECV_DLENGTH |
++                                  ISCSI_MAX_XMIT_DLENGTH |
++                                  ISCSI_HDRDGST_EN |
++                                  ISCSI_DATADGST_EN |
++                                  ISCSI_INITIAL_R2T_EN |
++                                  ISCSI_MAX_R2T |
++                                  ISCSI_IMM_DATA_EN |
++                                  ISCSI_FIRST_BURST |
++                                  ISCSI_MAX_BURST |
++                                  ISCSI_PDU_INORDER_EN |
++                                  ISCSI_DATASEQ_INORDER_EN |
++                                  ISCSI_EXP_STATSN |
++                                  ISCSI_PERSISTENT_PORT |
++                                  ISCSI_PERSISTENT_ADDRESS |
++                                  ISCSI_TARGET_NAME | ISCSI_TPGT |
++                                  ISCSI_USERNAME | ISCSI_PASSWORD |
++                                  ISCSI_USERNAME_IN | ISCSI_PASSWORD_IN |
++                                  ISCSI_FAST_ABORT | ISCSI_ABORT_TMO |
++                                  ISCSI_LU_RESET_TMO | ISCSI_TGT_RESET_TMO |
++                                  ISCSI_PING_TMO | ISCSI_RECV_TMO |
++                                  ISCSI_IFACE_NAME | ISCSI_INITIATOR_NAME,
++        .host_param_mask        = ISCSI_HOST_HWADDRESS |
++                                  ISCSI_HOST_NETDEV_NAME |
++                                  ISCSI_HOST_INITIATOR_NAME,
++#endif
+ 	/* session management */
+ 	.create_session         = iscsi_iser_session_create,
+ 	.destroy_session        = iscsi_iser_session_destroy,
+--
+1.7.10.1
+
