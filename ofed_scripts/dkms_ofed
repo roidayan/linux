@@ -75,7 +75,8 @@ get-modules()
 				drivers/infiniband/core/ib_core \
 				drivers/infiniband/core/ib_mad \
 				drivers/infiniband/core/ib_sa \
-				drivers/infiniband/core/ib_cm"
+				drivers/infiniband/core/ib_cm \
+				drivers/infiniband/core/iw_cm"
 			;;
 			--with-user_mad-mod )
 			modules="$modules \
