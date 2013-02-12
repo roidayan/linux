@@ -158,6 +158,12 @@ extern const __u8 ip_tos2prio[16];
 
 #define SK_CAN_REUSE 1
 
+static inline bool ether_addr_equal_64bits(const u8 addr1[6+2],
+					   const u8 addr2[6+2])
+{
+	return !compare_ether_addr_64bits(addr1, addr2);
+}
+
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0)) */
 
 #endif /* LINUX_3_5_COMPAT_H */
