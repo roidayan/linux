@@ -1088,6 +1088,9 @@ struct ib_qp *mlx4_ib_create_qp(struct ib_pd *pd,
 	int err;
 	u16 xrcdn = 0;
 	gfp_t gfp;
+	struct ib_device *device;
+
+	device = pd ? pd->device : init_attr->xrcd->device;
 
 	gfp = (init_attr->create_flags & MLX4_IB_QP_CREATE_USE_GFP_NOIO) ?
 		GFP_NOIO : GFP_KERNEL;
@@ -1123,7 +1126,7 @@ struct ib_qp *mlx4_ib_create_qp(struct ib_pd *pd,
 		init_attr->send_cq = to_mxrcd(init_attr->xrcd)->cq;
 		/* fall through */
 	case IB_QPT_XRC_INI:
-		if (!(to_mdev(pd->device)->dev->caps.flags & MLX4_DEV_CAP_FLAG_XRC))
+		if (!(to_mdev(device)->dev->caps.flags & MLX4_DEV_CAP_FLAG_XRC))
 			return ERR_PTR(-ENOSYS);
 		init_attr->recv_cq = init_attr->send_cq;
 		/* fall through */
@@ -1138,7 +1141,7 @@ struct ib_qp *mlx4_ib_create_qp(struct ib_pd *pd,
 		/* fall through */
 	case IB_QPT_UD:
 	{
-		err = create_qp_common(to_mdev(pd->device), pd, init_attr,
+		err = create_qp_common(to_mdev(device), pd, init_attr,
 				       udata, 0, &qp, gfp);
 		if (err)
 			return ERR_PTR(err);
@@ -1155,8 +1158,8 @@ struct ib_qp *mlx4_ib_create_qp(struct ib_pd *pd,
 		if (udata)
 			return ERR_PTR(-EINVAL);
 
-		err = create_qp_common(to_mdev(pd->device), pd, init_attr, udata,
-				       get_sqp_num(to_mdev(pd->device), init_attr),
+		err = create_qp_common(to_mdev(device), pd, init_attr, udata,
+				       get_sqp_num(to_mdev(device), init_attr),
 				       &qp, gfp);
 		if (err)
 			return ERR_PTR(err);
