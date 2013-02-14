@@ -46,7 +46,7 @@ CWD=`pwd`
 cd /etc/infiniband
 WD=`pwd`
 
-PATH=$PATH:/sbin:/usr/bin
+PATH=$PATH:/sbin:/usr/bin:/lib/udev
 if [ -e /etc/profile.d/ofed.sh ]; then
         . /etc/profile.d/ofed.sh
 fi
@@ -1434,18 +1434,27 @@ stop()
                 fi
 
                 if is_module ib_srp; then
-                    for f in `/bin/ls /sys/class/scsi_host`
-                    do
+                    #check if scsi_id utility exist and in path
+                    scsi_id_util=`which scsi_id 2>/dev/null`
+                    if [ ! -z "$scsi_id_util" ]
+                    then
+                        for f in `/bin/ls /sys/class/scsi_host`
+                        do
                             if [ -f /sys/class/scsi_host/$f/local_ib_port ]; then
-                                    for i in `/bin/ls -d /sys/class/scsi_host/$f/device/target*/*/block* | awk -F: '{print $NF}'`
-                                    do
-                                        mdev=`/sbin/scsi_id -g -s /block/$i 2> /dev/null`
-                                        if [ -n "${mdev}" ]; then
-                                            /sbin/multipath -f $mdev > /dev/null 2>&1
-                                        fi
-                                    done
-                            fi
-                    done
+                                for i in `/bin/ls /sys/class/scsi_host/$f/device/target*/*/block* | awk -F: '{print $NF}'`
+                                do
+                                   mdev=`$scsi_id_util --whitelisted /dev/$i 2> /dev/null`
+                                   if [ -n "${mdev}" ]; then
+                                       /sbin/multipath -f $mdev > /dev/null 2>&1
+                                   fi
+                               done
+                           fi
+                        done
+                    else
+                        echo "Not found scsi_id utility. Problem on srp scsi devices disconnection."
+                        # in this case module mlx4_ib will failed on remove (in use)
+                        # and stop will be canceled
+                    fi
                 fi
         fi
 
