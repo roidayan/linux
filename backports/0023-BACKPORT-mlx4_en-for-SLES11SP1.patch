@@ -42,16 +42,18 @@ index 697e6a3a..ee3f4fb 100644
  	if (params->udp_rss && !(mdev->dev->caps.flags
  					& MLX4_DEV_CAP_FLAG_UDP_RSS)) {
  		mlx4_warn(mdev, "UDP RSS is not supported on this device.\n");
-@@ -115,8 +117,13 @@ static int mlx4_en_get_profile(struct mlx4_en_dev *mdev)
- 		params->prof[i].tx_ppp = pfctx;
- 		params->prof[i].tx_ring_size = MLX4_EN_DEF_TX_RING_SIZE;
- 		params->prof[i].rx_ring_size = MLX4_EN_DEF_RX_RING_SIZE;
+@@ -115,9 +117,15 @@ static int mlx4_en_get_profile(struct mlx4_en_dev *mdev)
+ 		 * Double the number of default TX rings (for up = 0)
+ 		 * to enable splitting traffic by size
+ 		 */
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
+ 		params->prof[i].tx_queue_num = params->num_tx_rings_p_up;
  		params->prof[i].tx_ring_num = params->num_tx_rings_p_up *
- 			MLX4_EN_NUM_UP;
+ 			MLX4_EN_NUM_UP + params->prof[i].tx_queue_num;
 +#else
-+		params->prof[i].tx_ring_num = MLX4_EN_NUM_TX_RINGS +
++		params->prof[i].tx_ring_num = MLX4_EN_NUM_TX_RINGS * 2 +
 +			(!!pfcrx) * MLX4_EN_NUM_PPP_RINGS;
++		params->prof[i].tx_queue_num = MLX4_EN_NUM_TX_RINGS;
 +#endif
  		params->prof[i].rss_rings = 0;
  	}
@@ -60,13 +62,16 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c b/drivers/net/ethern
 index f943d72..42457f1 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
-@@ -1130,8 +1130,12 @@ int mlx4_en_start_port(struct net_device *dev)
+@@ -1130,11 +1130,15 @@ int mlx4_en_start_port(struct net_device *dev)
  
  		/* Configure ring */
  		tx_ring = priv->tx_ring[i];
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
- 		err = mlx4_en_activate_tx_ring(priv, tx_ring, cq->mcq.cqn,
- 			i / priv->mdev->profile.num_tx_rings_p_up);
+ 		if (i < priv->tx_ring_num - priv->tx_queue_num)
+ 			err = mlx4_en_activate_tx_ring(priv, tx_ring, cq->mcq.cqn,
+ 					i / priv->mdev->profile.num_tx_rings_p_up);
+ 		else
+ 			err = mlx4_en_activate_tx_ring(priv, tx_ring, cq->mcq.cqn, -1);
 +#else
 +		err = mlx4_en_activate_tx_ring(priv, tx_ring, cq->mcq.cqn);
 +#endif
@@ -107,7 +112,7 @@ index f943d72..42457f1 100644
  		dev->netdev_ops = &mlx4_netdev_ops;
  	dev->watchdog_timeo = MLX4_EN_WATCHDOG_TIMEOUT;
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)) || defined (CONFIG_COMPAT_IS_NUM_TX_QUEUES)
- 	netif_set_real_num_tx_queues(dev, priv->tx_ring_num);
+ 	netif_set_real_num_tx_queues(dev, priv->tx_ring_num - priv->tx_queue_num);
 +#endif
  	netif_set_real_num_rx_queues(dev, priv->rx_ring_num);
  
@@ -284,7 +289,7 @@ index fd83ce9..fc8d21d 100644
 @@ -126,8 +126,16 @@ enum {
  #define MLX4_EN_MIN_TX_SIZE	(4096 / TXBB_SIZE)
  
- #define MLX4_EN_SMALL_PKT_SIZE		64
+ #define MLX4_EN_SMALL_PKT_SIZE		128
 +
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)) || defined (CONFIG_COMPAT_IS_NUM_TX_QUEUES)
  #define MLX4_EN_MAX_TX_RING_P_UP	32
@@ -340,7 +345,7 @@ index fd83ce9..fc8d21d 100644
 +#endif
  void mlx4_en_deactivate_tx_ring(struct mlx4_en_priv *priv,
  				struct mlx4_en_tx_ring *ring);
- 
+ void mlx4_en_create_tx_queues(struct mlx4_en_priv *priv);
 @@ -619,7 +635,11 @@ int mlx4_en_process_rx_cq(struct net_device *dev,
  int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget);
  int mlx4_en_poll_tx_cq(struct napi_struct *napi, int budget);
