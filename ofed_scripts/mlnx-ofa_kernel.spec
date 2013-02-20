@@ -304,7 +304,7 @@ if [ $1 -ge 1 ]; then # 1 : This package is being installed or reinstalled
 for (( i=0 ; i < 6 ; i++ ))
 do
 cat >> /etc/modprobe.d/ib_ipoib.conf << EOF
-alias ib${i} ib_ipoib
+alias netdev-ib${i} ib_ipoib
 EOF
 done
 %endif

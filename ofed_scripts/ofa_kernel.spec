@@ -390,7 +390,7 @@ EOF
 for (( i=0 ; i < $ports_num ; i++ ))
 do
 cat >> /etc/modprobe.d/ib_ipoib.conf << EOF
-alias ib${i} ib_ipoib
+alias netdev-ib${i} ib_ipoib
 EOF
 done
 %endif
