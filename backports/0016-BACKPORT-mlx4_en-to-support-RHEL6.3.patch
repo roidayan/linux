@@ -6,7 +6,7 @@ Subject: [PATCH] BACKPORT: mlx4_en to support RHEL6.3
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 Signed-off-by: Yan Burman <yanb@mellanox.com>
 ---
- drivers/net/ethernet/mellanox/mlx4/en_cq.c      |    4 ++
+ drivers/net/ethernet/mellanox/mlx4/en_cq.c      |    6 +++
  drivers/net/ethernet/mellanox/mlx4/en_ethtool.c |   20 ++++++++++-
  drivers/net/ethernet/mellanox/mlx4/en_netdev.c  |   42 +++++++++++++++++++++++
  drivers/net/ethernet/mellanox/mlx4/en_tx.c      |    9 +++++
@@ -18,6 +18,21 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/en_cq.c b/drivers/net/ethernet/m
 index 4b172a9..16814e5 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/en_cq.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_cq.c
+@@ -99,12 +99,14 @@ int mlx4_en_activate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq,
+ 	int err = 0;
+ 	char name[25];
+ 	int timestamp_en = 0;
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ 	struct cpu_rmap *rmap =
+ #ifdef CONFIG_RFS_ACCEL
+ 		priv->dev->rx_cpu_rmap;
+ #else
+ 		NULL;
+ #endif
++#endif
+ 
+ 	cq->dev = mdev->pndev[priv->port];
+ 	cq->mcq.set_ci_db  = cq->wqres.db.db;
 @@ -119,8 +119,12 @@ int mlx4_en_activate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq,
  				sprintf(name, "%s-%d", priv->dev->name,
  					cq->ring);
