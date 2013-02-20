@@ -21,7 +21,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		}
  	} else {
 +		struct mlx4_en_cq *rx_cq;
-+#if !defined(CONFIG_XEN) || !defined(CONFIG_COMPAT_DISABLE_XEN_CPU_CORE_MASK)
++#if (!defined(CONFIG_XEN) || !defined(CONFIG_COMPAT_DISABLE_XEN_CPU_CORE_MASK)) && !((LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35)) && defined(CONFIG_PPC))
  		/* For TX we use the next core on same socket
  		as the RX core    */
 -		struct mlx4_en_cq *rx_cq;
