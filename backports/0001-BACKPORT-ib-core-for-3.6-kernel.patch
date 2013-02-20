@@ -1,4 +1,4 @@
-From 6042c4f4da3e2265fa738e0d0132a5ec9e9443d9 Mon Sep 17 00:00:00 2001
+From 3912922a10bc31c636cbd88eeb9e89198068f006 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
 Date: Wed, 28 Nov 2012 14:27:05 +0200
 Subject: [PATCH] BACKPORT: ib/core for 3.6 kernel
@@ -160,7 +160,7 @@ index 5581fb5..052c0f3 100644
  	mutex_unlock(&file->device->xrcd_tree_mutex);
  
 diff --git a/drivers/infiniband/core/uverbs_main.c b/drivers/infiniband/core/uverbs_main.c
-index 374e8a6..6637502 100644
+index ce2ecaa..9d8cf90 100644
 --- a/drivers/infiniband/core/uverbs_main.c
 +++ b/drivers/infiniband/core/uverbs_main.c
 @@ -556,6 +556,7 @@ struct file *ib_uverbs_alloc_event_file(struct ib_uverbs_file *uverbs_file,
@@ -200,7 +200,7 @@ index 374e8a6..6637502 100644
 +#endif
  }
  
- static ssize_t ib_uverbs_write(struct file *filp, const char __user *buf,
+ static const char *verbs_cmd_str(__u32 cmd)
 -- 
-1.7.8.2
+1.7.1
 
