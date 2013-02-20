@@ -274,8 +274,6 @@ install -m 0755 $RPM_BUILD_DIR/%{_name}-%{_version}/ofed_scripts/cx_virt_config.
 %if %{build_mlx4_en}
 install -d $RPM_BUILD_ROOT/sbin
 install -m 0755 $RPM_BUILD_DIR/%{_name}-%{_version}/ofed_scripts/connectx_port_config $RPM_BUILD_ROOT/sbin
-install -d $RPM_BUILD_ROOT/etc/modprobe.d
-install -m 0644 $RPM_BUILD_DIR/%{_name}-%{_version}/ofed_scripts/mlx4_en.conf $RPM_BUILD_ROOT/etc/modprobe.d
 touch $RPM_BUILD_ROOT/%{IB_CONF_DIR}/connectx.conf
 %endif
 
@@ -788,7 +786,6 @@ fi
 %endif
 %if %{build_mlx4_en}
 /sbin/connectx_port_config
-/etc/modprobe.d/mlx4_en.conf
 %config(noreplace) %{IB_CONF_DIR}/connectx.conf
 %endif
 %if %{build_mlx4_vnic}

@@ -256,8 +256,6 @@ install -m 0755 $RPM_BUILD_DIR/$NAME-$VERSION/source/ofed_scripts/cx_virt_config
 %if %{build_mlx4_en}
 install -d $RPM_BUILD_ROOT/sbin
 install -m 0755 $RPM_BUILD_DIR/$NAME-$VERSION/source/ofed_scripts/connectx_port_config $RPM_BUILD_ROOT/sbin
-install -d $RPM_BUILD_ROOT/etc/modprobe.d
-install -m 0644 $RPM_BUILD_DIR/$NAME-$VERSION/source/ofed_scripts/mlx4_en.conf $RPM_BUILD_ROOT/etc/modprobe.d
 touch $RPM_BUILD_ROOT//etc/infiniband/connectx.conf
 %endif
 
@@ -600,7 +598,6 @@ fi
 %endif
 %if %{build_mlx4_en}
 /sbin/connectx_port_config
-/etc/modprobe.d/mlx4_en.conf
 %config(noreplace) /etc/infiniband/connectx.conf
 %endif
 %if %{build_mlx4_vnic}
