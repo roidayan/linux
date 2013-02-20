@@ -297,11 +297,6 @@ static inline int usb_disable_autosuspend(struct usb_device *udev)
 #define round_up(x, y) ((((x)-1) | __round_mask(x, y))+1)
 #define round_down(x, y) ((x) & ~__round_mask(x, y))
 
-static inline int rcu_read_lock_held(void)
-{
-	return 1;
-}
-
 #ifdef CONFIG_PROVE_LOCKING
 /*
  * Obviously, this is wrong.  But the base kernel will have rtnl_mutex
