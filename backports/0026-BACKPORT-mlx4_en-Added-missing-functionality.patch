@@ -212,95 +212,15 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/en_rx.c b/drivers/net/ethernet/m
 index a1cc8f8..5626375 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/en_rx.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_rx.c
-@@ -700,6 +700,7 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
- 					gro_skb->data_len = length;
- 					gro_skb->ip_summed = CHECKSUM_UNNECESSARY;
- 
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,1,0)
- 					if ((cqe->vlan_my_qpn &
- 					    cpu_to_be32(MLX4_CQE_VLAN_PRESENT_MASK))
- 					    && (ring->hwtstamp_rx_filter
-@@ -708,20 +709,37 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
- 
- 						__vlan_hwaccel_put_tag(gro_skb, vid);
- 					}
-+#endif
- 
--#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35)
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35) || defined (CONFIG_COMPAT_NETIF_F_RXHASH)
- 					if (dev->features & NETIF_F_RXHASH)
- 						gro_skb->rxhash = be32_to_cpu(cqe->immed_rss_invalid);
- #endif
- 
- 					skb_record_rx_queue(gro_skb, cq->ring);
- 
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,1,0)
- 					if (ring->hwtstamp_rx_filter == HWTSTAMP_FILTER_ALL) {
- 						timestamp = mlx4_en_get_cqe_ts(cqe);
- 						mlx4_en_fill_hwtstamps(mdev, skb_hwtstamps(gro_skb),
- 							timestamp);
- 					}
- 					napi_gro_frags(&cq->napi);
-+#else
-+					if (priv->vlgrp && (cqe->vlan_my_qpn &
-+					     cpu_to_be32(MLX4_CQE_VLAN_PRESENT_MASK))
-+					     && (ring->hwtstamp_rx_filter
-+						== HWTSTAMP_FILTER_NONE))
-+						vlan_gro_frags(&cq->napi, priv->vlgrp, be16_to_cpu(cqe->sl_vid));
-+					else {
-+						if (ring->hwtstamp_rx_filter == HWTSTAMP_FILTER_ALL) {
-+							timestamp = mlx4_en_get_cqe_ts(cqe);
-+							mlx4_en_fill_hwtstamps(mdev, skb_hwtstamps(gro_skb),
-+								timestamp);
-+						}
-+						napi_gro_frags(&cq->napi);
-+					}
-+#endif
- 
- 					goto next;
- 				}
-@@ -752,14 +770,16 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
- 		skb->protocol = eth_type_trans(skb, dev);
- 		skb_record_rx_queue(skb, cq->ring);
+@@ -752,7 +770,7 @@ int mlx4_en_process_rx_cq(struct net_device *dev,
+ 			ip_summed = CHECKSUM_NONE;
+ 		}
  
 -#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35)
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35) || defined (CONFIG_COMPAT_NETIF_F_RXHASH)
  		if (dev->features & NETIF_F_RXHASH)
  			skb->rxhash = be32_to_cpu(cqe->immed_rss_invalid);
  #endif
- 
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,1,0)
- 		if ((be32_to_cpu(cqe->vlan_my_qpn) & MLX4_CQE_VLAN_PRESENT_MASK)
- 		    && (ring->hwtstamp_rx_filter == HWTSTAMP_FILTER_NONE))
- 			__vlan_hwaccel_put_tag(skb, be16_to_cpu(cqe->sl_vid));
-+#endif
- 
- 		if (ring->hwtstamp_rx_filter == HWTSTAMP_FILTER_ALL) {
- 			timestamp = mlx4_en_get_cqe_ts(cqe);
-@@ -767,8 +787,23 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
- 				timestamp);
- 		}
- 
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,1,0)
- 		/* Push it up the stack */
- 		netif_receive_skb(skb);
-+#else
-+		/*
-+		 * Push it up the stack
-+		 * We have to check vlgrp since it is possible that vlans
-+		 * are not defined yet
-+		 */
-+		if (priv->vlgrp	&& (be32_to_cpu(cqe->vlan_my_qpn)
-+			& MLX4_CQE_VLAN_PRESENT_MASK)
-+			&& (ring->hwtstamp_rx_filter == HWTSTAMP_FILTER_NONE))
-+			vlan_hwaccel_receive_skb(skb, priv->vlgrp,
-+				be16_to_cpu(cqe->sl_vid));
-+		else
-+			netif_receive_skb(skb);
-+#endif
- 
- next:
- 		for (nr = 0; nr < priv->num_frags; nr++)
 diff --git a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
 index d1db938..1e9ae45 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
