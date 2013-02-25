@@ -339,6 +339,10 @@ if [ -e ${Devices[$dev]}/mlx4_port2 ]; then
 	cat ${Devices[$dev]}/mlx4_port2
 fi
 echo
+if [ ! -w ${Devices[$dev]}/mlx4_port1 ] || ([ -e ${Devices[$dev]}/mlx4_port2 ] && [ ! -w ${Devices[$dev]}/mlx4_port2 ]); then
+	echo "Not allowed to change port configuration, quiting..."
+	exit 1;
+fi
 
 ############################################################
 # Set port configuration for the selected device           #
