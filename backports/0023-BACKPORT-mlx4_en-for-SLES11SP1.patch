@@ -31,6 +31,22 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/en_main.c b/drivers/net/ethernet
 index 697e6a3a..ee3f4fb 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/en_main.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_main.c
+@@ -72,6 +72,7 @@ MLX4_EN_PARM_INT(pfctx, 0, "Priority based Flow Control policy on TX[7:0]."
+ MLX4_EN_PARM_INT(pfcrx, 0, "Priority based Flow Control policy on RX[7:0]."
+ 			   " Per priority bit mask");
+ 
++#ifndef CONFIG_COMPAT_DISABLE_VA_FORMAT_PRINT
+ int en_print(const char *level, const struct mlx4_en_priv *priv,
+ 	     const char *format, ...)
+ {
+@@ -94,6 +95,7 @@ int en_print(const char *level, const struct mlx4_en_priv *priv,
+ 
+ 	return i;
+ }
++#endif
+ 
+ void mlx4_en_update_loopback_state(struct net_device *dev,
+ 				   netdev_features_t features)
 @@ -101,8 +101,10 @@ static int mlx4_en_get_profile(struct mlx4_en_dev *mdev)
  	int i;
  
@@ -347,6 +363,30 @@ index fd83ce9..fc8d21d 100644
  		struct mlx4_qp_context *context, int disable_vstrip);
  void mlx4_en_sqp_event(struct mlx4_qp *qp, enum mlx4_event event);
  int mlx4_en_map_buffer(struct mlx4_buf *buf);
+@@ -685,10 +685,22 @@ extern const struct ethtool_ops mlx4_en_ethtool_ops;
+ /*
+  * printk / logging functions
+  */
+-
++#ifdef CONFIG_COMPAT_DISABLE_VA_FORMAT_PRINT
++#define en_print(level, priv, format, arg...)                   \
++        {                                                       \
++        if ((priv)->registered)                                 \
++                printk(level "%s: %s: " format, DRV_NAME,       \
++                        (priv->dev)->name, ## arg);             \
++        else                                                    \
++                printk(level "%s: %s: Port %d: " format,        \
++                        DRV_NAME, dev_name(&priv->mdev->pdev->dev), \
++                        (priv)->port, ## arg);                  \
++        }
++#else
+ __printf(3, 4)
+ int en_print(const char *level, const struct mlx4_en_priv *priv,
+ 	     const char *format, ...);
++#endif
+ 
+ #define en_dbg(mlevel, priv, format, arg...)			\
+ do {								\
 -- 
 1.7.8.2
 
