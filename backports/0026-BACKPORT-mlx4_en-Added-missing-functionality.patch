@@ -18,7 +18,7 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c b/drivers/net/ether
 index 0de5b43..368551b 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
-@@ -114,6 +114,70 @@ mlx4_en_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *drvinfo)
+@@ -114,6 +114,72 @@ mlx4_en_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *drvinfo)
  	drvinfo->eedump_len = 0;
  }
  
@@ -74,14 +74,16 @@ index 0de5b43..368551b 100644
 +
 +static u32 mlx4_en_get_rx_csum(struct net_device *dev)
 +{
-+	struct mlx4_en_priv *priv = netdev_priv(dev);
-+	return priv->rx_csum;
++	return dev->features & NETIF_F_RXCSUM;
 +}
 +
 +static int mlx4_en_set_rx_csum(struct net_device *dev, u32 data)
 +{
-+	struct mlx4_en_priv *priv = netdev_priv(dev);
-+	priv->rx_csum = (data != 0);
++	if (!data) {
++		dev->features &= ~NETIF_F_RXCSUM;
++		return 0;
++	}
++	dev->features |= NETIF_F_RXCSUM;
 +	return 0;
 +}
 +#endif
@@ -182,16 +184,6 @@ index 405253a..12cc9bd 100644
  	.ndo_vlan_rx_add_vid	= mlx4_en_vlan_rx_add_vid,
  	.ndo_vlan_rx_kill_vid	= mlx4_en_vlan_rx_kill_vid,
  	.ndo_set_vf_mac		= mlx4_en_set_vf_mac,
-@@ -2235,6 +2264,9 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
- 	priv->prof = prof;
- 	priv->port = port;
- 	priv->port_up = false;
-+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,0,0))
-+	priv->rx_csum = 1;
-+#endif
- 	priv->flags = prof->flags;
- 	priv->ctrl_flags = cpu_to_be32(MLX4_WQE_CTRL_CQ_UPDATE |
- 			MLX4_WQE_CTRL_SOLICITED);
 @@ -2357,13 +2389,13 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  #endif
  
@@ -235,16 +227,6 @@ index d1db938..1e9ae45 100644
  	unsigned long active_vlans[BITS_TO_LONGS(VLAN_N_VID)];
  	struct net_device_stats stats;
  	struct net_device_stats ret_stats;
-@@ -517,6 +520,9 @@ struct mlx4_en_priv {
- 	int registered;
- 	int allocated;
- 	int stride;
-+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,0,0))
-+	int rx_csum;
-+#endif
- 	unsigned char prev_mac[ETH_ALEN + 2];
- 	int mac_index;
- 	unsigned max_mtu;
 -- 
 1.7.1
 
