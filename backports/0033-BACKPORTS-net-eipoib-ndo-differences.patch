@@ -70,9 +70,9 @@ index 02799ed..835abcf 100644
 +				       struct vlan_group *grp)
 +{
 +	struct parent *parent = netdev_priv(dev);
-+	write_lock_bh(&parent->lock);
++	write_lock(&parent->lock);
 +	parent->vlgrp = grp;
-+	write_unlock_bh(&parent->lock);
++	write_unlock(&parent->lock);
 +}
 +
 +static void eth_ipoib_vlan_rx_add_vid(struct net_device *dev,
@@ -90,7 +90,7 @@ index 02799ed..835abcf 100644
 +{
 +	const struct net_device_ops *slave_ops = slave_dev->netdev_ops;
 +	
-+	write_lock_bh(&parent->lock);
++	write_lock(&parent->lock);
 +	
 +	if (!(slave_dev->features & NETIF_F_HW_VLAN_FILTER) ||
 +	    !(slave_ops->ndo_vlan_rx_kill_vid))
@@ -100,7 +100,7 @@ index 02799ed..835abcf 100644
 +	    slave_ops->ndo_vlan_rx_register)
 +		slave_ops->ndo_vlan_rx_register(slave_dev, NULL);
 +	
-+	write_unlock_bh(&parent->lock);
++	write_unlock(&parent->lock);
 +}
 +#endif
 +
@@ -116,7 +116,7 @@ index 02799ed..835abcf 100644
  					     netdev_features_t features)
  {
 @@ -365,6 +405,7 @@ static netdev_features_t parent_fix_features(struct net_device *dev,
- 	read_unlock_bh(&parent->lock);
+ 	read_unlock(&parent->lock);
  	return features;
  }
 +#endif
@@ -200,7 +200,7 @@ index 02799ed..835abcf 100644
 +	struct net_device_stats local_stats;
 +	memset(&local_stats, 0, sizeof(struct net_device_stats));
 +#endif
- 	read_lock_bh(&parent->lock);
+ 	read_lock(&parent->lock);
  
  	parent_for_each_slave(parent, slave) {
 +#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,35))
@@ -244,7 +244,7 @@ index 02799ed..835abcf 100644
 +	memcpy(stats, &local_stats, sizeof(struct net_device_stats));
 +#endif
  
- 	read_unlock_bh(&parent->lock);
+ 	read_unlock(&parent->lock);
  
 @@ -1530,6 +1626,7 @@ static int parent_rx(struct sk_buff *skb, struct slave *slave)
  		skb = nskb;
@@ -274,7 +274,7 @@ index 02799ed..835abcf 100644
 +			rc = netif_receive_skb(skb);
 +	}
 +#endif
- 	read_unlock_bh(&parent->lock);
+ 	read_unlock(&parent->lock);
  
  	return rc;
 @@ -1817,21 +1928,40 @@ static const struct net_device_ops parent_netdev_ops = {
