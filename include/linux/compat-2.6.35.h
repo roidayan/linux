@@ -42,7 +42,9 @@ static inline wait_queue_head_t *sk_sleep(struct sock *sk)
 
 int hex_to_bin(char ch);
 
+#ifndef CONFIG_COMPAT_IS_NOOP_LLSEEK
 extern loff_t noop_llseek(struct file *file, loff_t offset, int origin);
+#endif
 
 #define pm_qos_request(_qos) pm_qos_requirement(_qos)
 

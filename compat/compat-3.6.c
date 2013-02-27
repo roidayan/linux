@@ -14,6 +14,7 @@
 #include <linux/types.h>
 #include <linux/netdevice.h>
 
+#ifndef CONFIG_COMPAT_IS_NETIF_RSS_QUEUES
 /**
  * netif_get_num_default_rss_queues - default number of RSS queues
  *
@@ -25,3 +26,4 @@ int netif_get_num_default_rss_queues(void)
 	return min_t(int, DEFAULT_MAX_NUM_RSS_QUEUES, num_online_cpus());
 }
 EXPORT_SYMBOL(netif_get_num_default_rss_queues);
+#endif

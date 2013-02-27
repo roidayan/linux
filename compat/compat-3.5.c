@@ -16,6 +16,7 @@
 
 #define ECN_OR_COST(class)	TC_PRIO_##class
 
+#ifndef CONFIG_COMPAT_IS_IP_TOS2PRIO
 const __u8 ip_tos2prio[16] = {
 	TC_PRIO_BESTEFFORT,
 	ECN_OR_COST(BESTEFFORT),
@@ -35,3 +36,4 @@ const __u8 ip_tos2prio[16] = {
 	ECN_OR_COST(INTERACTIVE_BULK)
 };
 EXPORT_SYMBOL(ip_tos2prio);
+#endif

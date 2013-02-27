@@ -81,9 +81,11 @@ static inline void eth_broadcast_addr(u8 *addr)
  */
 #define led_set_brightness(_dev, _switch) led_brightness_set(_dev, _switch)
 
+#ifndef CONFIG_COMPAT_IS_NETIF_RSS_QUEUES
 extern int netif_get_num_default_rss_queues(void);
 
 #define DEFAULT_MAX_NUM_RSS_QUEUES      (8)
+#endif
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3,6,0)) */
 

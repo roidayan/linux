@@ -8,7 +8,9 @@
 #include <linux/etherdevice.h>
 #include <linux/skbuff.h>
 
+#ifndef CONFIG_COMPAT_IS_SIMPLE_OPEN
 extern int simple_open(struct inode *inode, struct file *file);
+#endif
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,28))
 #define skb_add_rx_frag(skb, i, page, off, size, truesize) \

@@ -154,7 +154,9 @@ static inline struct ctl_table_header *register_net_sysctl(struct net *net,
 	return NULL;
 }
 
+#ifndef CONFIG_COMPAT_IS_IP_TOS2PRIO
 extern const __u8 ip_tos2prio[16];
+#endif
 
 #define SK_CAN_REUSE 1
 

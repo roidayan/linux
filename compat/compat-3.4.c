@@ -11,6 +11,7 @@
 #include <linux/fs.h>
 #include <linux/module.h>
 
+#ifndef CONFIG_COMPAT_IS_SIMPLE_OPEN
 int simple_open(struct inode *inode, struct file *file)
 {
 	if (inode->i_private)
@@ -18,3 +19,4 @@ int simple_open(struct inode *inode, struct file *file)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(simple_open);
+#endif
