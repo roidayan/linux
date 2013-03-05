@@ -1,0 +1,31 @@
+From d91617df5bf56d5561102c1714a28d9dc1b20ae9 Mon Sep 17 00:00:00 2001
+From: Markuze Alex <markuze@mellanox.com>
+Date: Tue, 5 Mar 2013 15:31:00 +0200
+Subject: [PATCH] BACKPORTS : Adding lro module parameters check
+
+Signed-off-by: Markuze Alex <markuze@mellanox.com>
+---
+ drivers/infiniband/ulp/ipoib/ipoib_main.c |    7 +++++++
+ 1 files changed, 7 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
+index f97b3ea..b718260 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
+@@ -2733,6 +2733,13 @@ static int __init ipoib_init_module(void)
+ 	ipoib_max_conn_qp = min(ipoib_max_conn_qp, IPOIB_CM_MAX_CONN_QP);
+ #endif
+ 
++#ifdef CONFIG_COMPAT_USE_LRO
++	lro = !!lro;
++	if (lro_max_aggr < 0 || lro_max_aggr > INT_MAX)
++		lro_max_aggr = IPOIB_LRO_MAX_AGGR;
++#endif
++
++
+ 	/*
+ 	 * When copying small received packets, we only copy from the
+ 	 * linear data part of the SKB, so we rely on this condition.
+-- 
+1.7.1
+
