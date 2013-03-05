@@ -1,0 +1,228 @@
+From: Amir Vadai <amirv@mellanox.com>
+Subject: BACKPORT: set number of channels when ethtool command not avail
+
+Signed-off-by: Amir Vadai <amirv@mellanox.com>
+---
+ drivers/net/ethernet/mellanox/mlx4/en_ethtool.c |   17 +++++
+ drivers/net/ethernet/mellanox/mlx4/en_netdev.c  |    4 +
+ drivers/net/ethernet/mellanox/mlx4/en_sysfs.c   |   86 +++++++++++++++++++++++
+ drivers/net/ethernet/mellanox/mlx4/mlx4_en.h    |   25 +++++++
+ 4 files changed, 132 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
+@@ -1239,8 +1239,13 @@ static int mlx4_en_set_rxnfc(struct net_device *dev, struct ethtool_rxnfc *c)
+ 	return err;
+ }
+ 
++#ifndef CONFIG_COMPAT_NUM_CHANNELS
+ static void mlx4_en_get_channels(struct net_device *dev,
+ 				 struct ethtool_channels *channel)
++#else
++void mlx4_en_get_channels(struct net_device *dev,
++			  struct ethtool_channels *channel)
++#endif
+ {
+ 	struct mlx4_en_priv *priv = netdev_priv(dev);
+ 
+@@ -1254,8 +1259,13 @@ static void mlx4_en_get_channels(struct net_device *dev,
+ 		MLX4_EN_NUM_UP;
+ }
+ 
++#ifndef CONFIG_COMPAT_NUM_CHANNELS
+ static int mlx4_en_set_channels(struct net_device *dev,
+ 				struct ethtool_channels *channel)
++#else
++int mlx4_en_set_channels(struct net_device *dev,
++			 struct ethtool_channels *channel)
++#endif
+ {
+ 	struct mlx4_en_priv *priv = netdev_priv(dev);
+ 	struct mlx4_en_dev *mdev = priv->mdev;
+@@ -1358,8 +1368,15 @@ const struct ethtool_ops mlx4_en_ethtool_ops = {
+ 	.get_rxfh_indir = mlx4_en_get_rxfh_indir,
+ 	.set_rxfh_indir = mlx4_en_set_rxfh_indir,
+ #endif
++#ifdef CONFIG_COMPAT_ETHTOOL_OPS_EXT
++};
++
++const struct ethtool_ops_ext mlx4_en_ethtool_ops_ext = {
++#endif
++#ifndef CONFIG_COMPAT_NUM_CHANNELS
+ 	.get_channels = mlx4_en_get_channels,
+ 	.set_channels = mlx4_en_set_channels,
++#endif
+ };
+ 
+ 
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
+@@ -2562,6 +2562,10 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+ 
+ 	SET_ETHTOOL_OPS(dev, &mlx4_en_ethtool_ops);
+ 
++#ifdef CONFIG_COMPAT_ETHTOOL_OPS_EXT
++	set_ethtool_ops_ext(dev, &mlx4_en_ethtool_ops_ext);
++#endif
++
+ 	/*
+ 	 * Set driver features
+ 	 */
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_sysfs.c b/drivers/net/ethernet/mellanox/mlx4/en_sysfs.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx4/en_sysfs.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_sysfs.c
+@@ -272,6 +272,88 @@ static DEVICE_ATTR(rxfh_indir, S_IRUGO | S_IWUSR,
+ 		   mlx4_en_show_rxfh_indir, mlx4_en_store_rxfh_indir);
+ #endif
+ 
++#ifdef CONFIG_COMPAT_NUM_CHANNELS
++static ssize_t mlx4_en_show_channels(struct device *d,
++		struct device_attribute *attr,
++		char *buf, int is_tx)
++{
++	struct net_device *dev = to_net_dev(d);
++	struct ethtool_channels channel;
++	int len = 0;
++
++	mlx4_en_get_channels(dev, &channel);
++
++	len += sprintf(buf + len, "%d\n",
++			is_tx ? channel.tx_count : channel.rx_count);
++
++	return len;
++}
++
++static ssize_t mlx4_en_store_channels(struct device *d,
++		struct device_attribute *attr,
++		const char *buf, size_t count, int is_tx)
++{
++	struct net_device *dev = to_net_dev(d);
++	char *endp;
++	struct ethtool_channels channel;
++	int ret = -EINVAL;
++
++	mlx4_en_get_channels(dev, &channel);
++
++	if (is_tx)
++		channel.tx_count = simple_strtoul(buf, &endp, 0);
++	else
++		channel.rx_count = simple_strtoul(buf, &endp, 0);
++	if (endp == buf)
++		goto err;
++
++	rtnl_lock();
++	ret = mlx4_en_set_channels(dev, &channel);
++	rtnl_unlock();
++	if (ret)
++		goto err;
++
++	ret = count;
++err:
++	return ret;
++}
++
++static ssize_t mlx4_en_show_tx_channels(struct device *d,
++		struct device_attribute *attr,
++		char *buf)
++{
++	return mlx4_en_show_channels(d, attr, buf, 1);
++}
++
++static ssize_t mlx4_en_store_tx_channels(struct device *d,
++		struct device_attribute *attr,
++		const char *buf, size_t count)
++{
++	return mlx4_en_store_channels(d, attr, buf, count, 1);
++}
++
++static ssize_t mlx4_en_show_rx_channels(struct device *d,
++		struct device_attribute *attr,
++		char *buf)
++{
++	return mlx4_en_show_channels(d, attr, buf, 0);
++}
++
++static ssize_t mlx4_en_store_rx_channels(struct device *d,
++		struct device_attribute *attr,
++		const char *buf, size_t count)
++{
++	return mlx4_en_store_channels(d, attr, buf, count, 0);
++}
++
++static DEVICE_ATTR(tx_channels, S_IRUGO | S_IWUSR,
++                  mlx4_en_show_tx_channels, mlx4_en_store_tx_channels);
++
++static DEVICE_ATTR(rx_channels, S_IRUGO | S_IWUSR,
++                  mlx4_en_show_rx_channels, mlx4_en_store_rx_channels);
++
++#endif
++
+ static struct attribute *mlx4_en_qos_attrs[] = {
+ #ifdef CONFIG_COMPAT_MAXRATE
+ 	&dev_attr_maxrate.attr,
+@@ -282,6 +364,10 @@ static struct attribute *mlx4_en_qos_attrs[] = {
+ #ifdef CONFIG_COMPAT_INDIR_SETTING
+ 	&dev_attr_rxfh_indir.attr,
+ #endif
++#ifdef CONFIG_COMPAT_NUM_CHANNELS
++	&dev_attr_tx_channels.attr,
++	&dev_attr_rx_channels.attr,
++#endif
+ 	NULL,
+ };
+ 
+diff --git a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
++++ b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
+@@ -78,6 +78,10 @@
+ #define CONFIG_COMPAT_INDIR_SETTING
+ #endif
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(3,0,0) && !defined(CONFIG_COMPAT_HAS_NUM_CHANNELS)
++#define CONFIG_COMPAT_NUM_CHANNELS
++#endif
++
+ #define MLX4_EN_MSG_LEVEL	(NETIF_MSG_LINK | NETIF_MSG_IFDOWN)
+ 
+ /*
+@@ -716,6 +720,24 @@ int mlx4_en_dcbnl_ieee_getmaxrate(struct net_device *dev,
+ 				  struct ieee_maxrate *maxrate);
+ #endif
+ 
++#ifdef CONFIG_COMPAT_NUM_CHANNELS
++struct ethtool_channels {
++	__u32   cmd;
++	__u32   max_rx;
++	__u32   max_tx;
++	__u32   max_other;
++	__u32   max_combined;
++	__u32   rx_count;
++	__u32   tx_count;
++	__u32   other_count;
++	__u32   combined_count;
++};
++
++int mlx4_en_set_channels(struct net_device *dev,
++			 struct ethtool_channels *channel);
++void mlx4_en_get_channels(struct net_device *dev,
++			  struct ethtool_channels *channel);
++#endif
+ 
+ int mlx4_en_setup_tc(struct net_device *dev, u8 up);
+ 
+@@ -744,6 +766,9 @@ int mlx4_en_timestamp_config(struct net_device *dev, int tx_type, int rx_filter)
+  * Globals
+  */
+ extern const struct ethtool_ops mlx4_en_ethtool_ops;
++#ifdef CONFIG_COMPAT_ETHTOOL_OPS_EXT
++extern const struct ethtool_ops_ext mlx4_en_ethtool_ops_ext;
++#endif
+ 
+ /*
+  * Defines for link speed - needed by selftest

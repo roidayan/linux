@@ -62,9 +62,9 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.get_rxfh_indir = mlx4_en_get_rxfh_indir,
  	.set_rxfh_indir = mlx4_en_set_rxfh_indir,
 +#endif
+ 	.get_channels = mlx4_en_get_channels,
+ 	.set_channels = mlx4_en_set_channels,
  };
- 
- 
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_sysfs.c b/drivers/net/ethernet/mellanox/mlx4/en_sysfs.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_sysfs.c

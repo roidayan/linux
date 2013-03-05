@@ -27,6 +27,25 @@ index 8e03f81..29eb7ed 100644
 +ifeq ($(CONFIG_COMPAT_DISABLE_DCB),)
  mlx4_en-$(CONFIG_MLX4_EN_DCB) += en_dcb_nl.o
 +endif
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
+@@ -1209,10 +1209,14 @@ static int mlx4_en_set_channels(struct net_device *dev,
+ 		goto out;
+ 	}
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)) || defined (CONFIG_COMPAT_IS_NUM_TX_QUEUES)
+ 	netif_set_real_num_tx_queues(dev, priv->tx_ring_num - priv->tx_queue_num);
++#endif
+ 	netif_set_real_num_rx_queues(dev, priv->rx_ring_num);
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
+ 	mlx4_en_setup_tc(dev, MLX4_EN_NUM_UP);
++#endif
+ 
+ 	en_warn(priv, "Using %d TX rings\n", priv->tx_ring_num);
+ 	en_warn(priv, "Using %d RX rings\n", priv->rx_ring_num);
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_main.c b/drivers/net/ethernet/mellanox/mlx4/en_main.c
 index 697e6a3a..ee3f4fb 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/en_main.c
@@ -78,36 +97,40 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c b/drivers/net/ethern
 index f943d72..42457f1 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
-@@ -1130,11 +1130,15 @@ int mlx4_en_start_port(struct net_device *dev)
+@@ -1500,8 +1500,11 @@ int mlx4_en_start_port(struct net_device *dev)
  
  		/* Configure ring */
  		tx_ring = priv->tx_ring[i];
+-
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
- 		if (i < priv->tx_ring_num - priv->tx_queue_num)
- 			err = mlx4_en_activate_tx_ring(priv, tx_ring, cq->mcq.cqn,
- 					i / priv->mdev->profile.num_tx_rings_p_up);
- 		else
- 			err = mlx4_en_activate_tx_ring(priv, tx_ring, cq->mcq.cqn, -1);
+ 		err = mlx4_en_activate_tx_ring(priv, tx_ring, cq->mcq.cqn, up);
 +#else
 +		err = mlx4_en_activate_tx_ring(priv, tx_ring, cq->mcq.cqn);
 +#endif
  		if (err) {
  			en_err(priv, "Failed allocating Tx ring\n");
  			mlx4_en_deactivate_cq(priv, cq);
-@@ -1728,8 +1732,12 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2193,12 +2196,19 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	int i;
  	int err;
  
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined(CONFIG_COMPAT_NEW_TX_RING_SCHEME)
  	dev = alloc_etherdev_mqs(sizeof(struct mlx4_en_priv),
- 	    prof->tx_ring_num, prof->rx_ring_num);
+ 				 MAX_TX_RINGS, MAX_RX_RINGS);
 +#else
-+	dev = alloc_etherdev_mq(sizeof(struct mlx4_en_priv), prof->tx_ring_num);
++	dev = alloc_etherdev_mq(sizeof(struct mlx4_en_priv), max(MAX_TX_RINGS,
++								 MAX_RX_RINGS));
 +#endif
  	if (dev == NULL)
  		return -ENOMEM;
  
-@@ -1774,6 +1782,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)) || defined (CONFIG_COMPAT_IS_NUM_TX_QUEUES)
+ 	netif_set_real_num_tx_queues(dev, prof->tx_ring_num);
++#endif
+ 	netif_set_real_num_rx_queues(dev, prof->rx_ring_num);
+ 
+ 	SET_NETDEV_DEV(dev, &mdev->dev->pdev->dev);
+@@ -2259,6 +2269,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	priv->last_ifq_jiffies = 0;
  	priv->if_counters_rx_errors = 0;
  	priv->if_counters_rx_no_buffer = 0;
@@ -264,7 +287,7 @@ index 067ba04..135d637 100644
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
- 	u16 rings_p_up = priv->mdev->profile.num_tx_rings_p_up;
+ 	u16 rings_p_up = priv->num_tx_rings_p_up;
  	u8 up = 0;
  
 @@ -605,6 +615,19 @@ u16 mlx4_en_select_queue(struct net_device *dev, struct sk_buff *skb)
@@ -291,14 +314,15 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h b/drivers/net/ethernet
 index fd83ce9..fc8d21d 100644
 --- a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
 +++ b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
-@@ -126,8 +126,16 @@ enum {
- #define MLX4_EN_MIN_TX_SIZE	(4096 / TXBB_SIZE)
+@@ -114,10 +114,17 @@
  
- #define MLX4_EN_SMALL_PKT_SIZE		128
-+
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)) || defined (CONFIG_COMPAT_IS_NUM_TX_QUEUES)
  #define MLX4_EN_MAX_TX_RING_P_UP	32
  #define MLX4_EN_NUM_UP			8
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)) || defined (CONFIG_COMPAT_IS_NUM_TX_QUEUES)
+ 
+ #define MAX_TX_RINGS			(MLX4_EN_MAX_TX_RING_P_UP * \
+ 					 (MLX4_EN_NUM_UP + 1))
+ 
 +#else
 +#define MLX4_EN_NUM_TX_RINGS           8
 +#define MLX4_EN_NUM_PPP_RINGS          8

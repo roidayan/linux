@@ -84,7 +84,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
 -#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
- static int mlx4_en_setup_tc(struct net_device *dev, u8 up)
+ int mlx4_en_setup_tc(struct net_device *dev, u8 up)
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
 @@ -1546,6 +1546,11 @@ void mlx4_en_destroy_netdev(struct net_device *dev)
@@ -99,7 +99,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	/* Unregister device - this will close the port if it was up */
  	if (priv->registered)
  		unregister_netdev(dev);
-@@ -1829,6 +1834,13 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -1829,8 +1834,15 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  		err = -ENOMEM;
  		goto out;
  	}
@@ -110,9 +110,12 @@ index xxxxxxx..xxxxxxx xxxxxx
 +		goto out;
 +#endif
 +
- 	priv->tx_cq = kzalloc(sizeof(struct mlx4_en_cq *) * priv->tx_ring_num,
- 			GFP_KERNEL);
+ 	priv->tx_cq = kcalloc(sizeof(struct mlx4_en_cq *), MAX_TX_RINGS,
+-			GFP_KERNEL);
++			      GFP_KERNEL);
  	if (!priv->tx_cq) {
+ 		err = -ENOMEM;
+ 		goto out;
 @@ -1988,6 +2000,14 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  		goto out;
  	}
@@ -413,5 +416,5 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#endif
 +
  
- #ifdef CONFIG_RFS_ACCEL
- void mlx4_en_cleanup_filters(struct mlx4_en_priv *priv,
+ int mlx4_en_setup_tc(struct net_device *dev, u8 up);
+ 
