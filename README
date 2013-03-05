@@ -120,12 +120,10 @@ index 0bf5a9d..f0f75b6 100644
 Create a new backport patch from the diff above:
 1. Commit the change (add commit BACKPORT: ...)
 2. Get updated/new patches:
-$ mkdir -p /tmp/backports/
-$ rm -f /tmp/backports/*
-$ git format-patch --no-numbered -o /tmp/backports/ mlnx_ofed_next..
+$ ./ofed_scripts/ofed_format_patch.sh mlnx_ofed_next..
 Change branch to the original (E.g. “mlnx_ofed_next”)
 Update/add new relevant patches under "backports" directory
-$ cp -a /tmp/backports/0XXX-<new patch>.patch backports
+$ cp -a ./backports_new/0XXX-<new patch>.patch backports
 $ git add backports
 $ git commit -s -m”BACKPORTS: Added RHEL6.[23] support” backports/
 

@@ -1,7 +1,7 @@
 #!/bin/sh
 
 cwd=`dirname $0`
-out=bp2
+out=backports_new
 
 if [ -d $out ]; then 
 	if [ "$(ls -A $out)" ]; then
@@ -20,7 +20,7 @@ fi
 
 echo "Preparing patches"
 
-git format-patch -o $out --subject-prefix="" --no-numbered $1
+git format-patch -o $out --subject-prefix="PATCH" --no-numbered $1
 
 echo "Stripping id's from patches"
 for f in $out/*.patch; do
