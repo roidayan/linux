@@ -1,7 +1,5 @@
-From 047ccae4202e0bc35e05304652bbbadcdfebca63 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Date: Wed, 5 Dec 2012 13:33:10 +0200
-Subject: [PATCH] BACKPORT: rds to support RHEL6.3
+Subject: BACKPORT: rds to support RHEL6.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -15,7 +13,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  7 files changed, 89 insertions(+), 0 deletions(-)
 
 diff --git a/net/rds/ib_recv.c b/net/rds/ib_recv.c
-index 8d19491..eb4f158 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/rds/ib_recv.c
 +++ b/net/rds/ib_recv.c
 @@ -763,7 +763,11 @@ static void rds_ib_cong_recv(struct rds_connection *conn,
@@ -43,7 +41,7 @@ index 8d19491..eb4f158 100644
  		copied += to_copy;
  
 diff --git a/net/rds/ib_sysctl.c b/net/rds/ib_sysctl.c
-index 7e643ba..939d2fc 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/rds/ib_sysctl.c
 +++ b/net/rds/ib_sysctl.c
 @@ -38,6 +38,15 @@
@@ -84,7 +82,7 @@ index 7e643ba..939d2fc 100644
  		return -ENOMEM;
  	return 0;
 diff --git a/net/rds/info.c b/net/rds/info.c
-index 9a6b4f6..31ab067 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/rds/info.c
 +++ b/net/rds/info.c
 @@ -104,7 +104,11 @@ EXPORT_SYMBOL_GPL(rds_info_deregister_func);
@@ -124,7 +122,7 @@ index 9a6b4f6..31ab067 100644
  			iter->offset = 0;
  			iter->pages++;
 diff --git a/net/rds/iw_recv.c b/net/rds/iw_recv.c
-index 4503335..e731be7 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/rds/iw_recv.c
 +++ b/net/rds/iw_recv.c
 @@ -598,7 +598,11 @@ static void rds_iw_cong_recv(struct rds_connection *conn,
@@ -152,7 +150,7 @@ index 4503335..e731be7 100644
  		copied += to_copy;
  
 diff --git a/net/rds/iw_sysctl.c b/net/rds/iw_sysctl.c
-index 5d5ebd5..3898500 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/rds/iw_sysctl.c
 +++ b/net/rds/iw_sysctl.c
 @@ -38,6 +38,15 @@
@@ -193,7 +191,7 @@ index 5d5ebd5..3898500 100644
  		return -ENOMEM;
  	return 0;
 diff --git a/net/rds/sysctl.c b/net/rds/sysctl.c
-index 907214b..1c7403d 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/rds/sysctl.c
 +++ b/net/rds/sysctl.c
 @@ -38,6 +38,14 @@
@@ -236,7 +234,7 @@ index 907214b..1c7403d 100644
  		return -ENOMEM;
  	return 0;
 diff --git a/net/rds/tcp_listen.c b/net/rds/tcp_listen.c
-index 7787537..eac61ea 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/rds/tcp_listen.c
 +++ b/net/rds/tcp_listen.c
 @@ -67,12 +67,23 @@ static int rds_tcp_accept_one(struct socket *sock)
@@ -263,6 +261,3 @@ index 7787537..eac61ea 100644
  	if (IS_ERR(conn)) {
  		ret = PTR_ERR(conn);
  		goto out;
--- 
-1.7.8.2
-

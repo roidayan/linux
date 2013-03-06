@@ -12,8 +12,8 @@ Change-Id: I250e4e5473093f560bd7f55cd2607acd048d1bb5
 Signed-off-by: Jack Morgenstein <jackm@dev.mellanox.co.il>
 Signed-off-by: Alex Tabachnik <alext@mellanox.com>
 ---
- drivers/infiniband/ulp/srp_1.5.3/ib_srp.c |   25 ++++++++++++++++++++++++-
- 1 files changed, 24 insertions(+), 1 deletions(-)
+ drivers/infiniband/ulp/srp_1.5.3/ib_srp.c |   27 +++++++++++++++++++++++++--
+ 1 files changed, 25 insertions(+), 2 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/srp_1.5.3/ib_srp.c b/drivers/infiniband/ulp/srp_1.5.3/ib_srp.c
 index xxxxxxx..xxxxxxx xxxxxx

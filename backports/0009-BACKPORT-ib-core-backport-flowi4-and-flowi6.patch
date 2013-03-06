@@ -1,18 +1,18 @@
-From 2ba823ed08912f806c64dba4a99f1c0991f98f6f Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Date: Tue, 10 Jul 2012 17:21:25 +0300
-Subject: [PATCH] BACKPORT: ib/core backport flowi4 and flowi6
+Subject: BACKPORT: ib/core backport flowi4 and flowi6
 
+Change-Id: Ib60003524802c5a17860c6ea25cef7c9230db146
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+Signed-off-by: Roi Dayan <roid@mellanox.com>
 ---
- drivers/infiniband/core/addr.c |   45 ++++++++++++++++++++++++++++++++++++++++
- 1 files changed, 45 insertions(+), 0 deletions(-)
+ drivers/infiniband/core/addr.c |   47 ++++++++++++++++++++++++++++++++++++++++
+ 1 files changed, 47 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/core/addr.c b/drivers/infiniband/core/addr.c
-index fabf6a8..9db2e4b 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/addr.c
 +++ b/drivers/infiniband/core/addr.c
-@@ -223,22 +223,41 @@ static int addr4_resolve(struct sockaddr_in *src_in,
+@@ -223,9 +223,15 @@ static int addr4_resolve(struct sockaddr_in *src_in,
  	__be32 src_ip = src_in->sin_addr.s_addr;
  	__be32 dst_ip = dst_in->sin_addr.s_addr;
  	struct rtable *rt;
@@ -28,19 +28,19 @@ index fabf6a8..9db2e4b 100644
  	memset(&fl4, 0, sizeof(fl4));
  	fl4.daddr = dst_ip;
  	fl4.saddr = src_ip;
- 	fl4.flowi4_oif = addr->bound_dev_if;
- 	rt = ip_route_output_key(&init_net, &fl4);
+@@ -235,10 +241,25 @@ static int addr4_resolve(struct sockaddr_in *src_in,
+ 		ret = PTR_ERR(rt);
+ 		goto out;
+ 	}
 +#else
 +	memset(&fl, 0, sizeof(fl));
 +	fl.nl_u.ip4_u.daddr = dst_ip;
 +	fl.nl_u.ip4_u.saddr = src_ip;
 +	fl.oif = addr->bound_dev_if;
 +	ret = ip_route_output_key(&init_net, &rt, &fl);
++	if (ret)
++		goto out;
 +#endif
- 	if (IS_ERR(rt)) {
- 		ret = PTR_ERR(rt);
- 		goto out;
- 	}
  	src_in->sin_family = AF_INET;
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)
  	src_in->sin_addr.s_addr = fl4.saddr;
@@ -54,7 +54,7 @@ index fabf6a8..9db2e4b 100644
  		ret = rdma_translate_ip((struct sockaddr *) dst_in, addr);
  		if (!ret)
  			memcpy(addr->dst_dev_addr, addr->src_dev_addr, MAX_ADDR_LEN);
-@@ -288,10 +307,16 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
+@@ -288,10 +309,16 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
  			 struct sockaddr_in6 *dst_in,
  			 struct rdma_dev_addr *addr)
  {
@@ -71,7 +71,7 @@ index fabf6a8..9db2e4b 100644
  	memset(&fl6, 0, sizeof fl6);
  	fl6.daddr = dst_in->sin6_addr;
  	fl6.saddr = src_in->sin6_addr;
-@@ -310,6 +335,26 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
+@@ -310,6 +337,26 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
  		src_in->sin6_family = AF_INET6;
  		src_in->sin6_addr = fl6.saddr;
  	}
@@ -98,6 +98,3 @@ index fabf6a8..9db2e4b 100644
  
  	if (dst->dev->flags & IFF_LOOPBACK) {
  		ret = rdma_translate_ip((struct sockaddr *) dst_in, addr);
--- 
-1.7.8.2
-

@@ -1,26 +1,25 @@
-From 01035dbc893b44c411456c4920a795a23d1a57a9 Mon Sep 17 00:00:00 2001
 From: Yishai Hadas <yishaih@mellanox.com>
-Date: Mon, 24 Dec 2012 14:50:04 +0200
-Subject: [PATCH] BACKPORT: mlx4_en for SLES11SP1
+Subject: BACKPORT: mlx4_en for SLES11SP1
 
 Change-Id: I3cacb226334d26d7225ab994783858690660821b
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 Signed-off-by: Yishai Hadas <yishaih@mellanox.com>
 ---
  drivers/net/ethernet/mellanox/mlx4/Makefile       |    2 +
- drivers/net/ethernet/mellanox/mlx4/en_main.c      |    7 ++++++
- drivers/net/ethernet/mellanox/mlx4/en_netdev.c    |   20 ++++++++++++++++++
- drivers/net/ethernet/mellanox/mlx4/en_resources.c |    6 +++++
- drivers/net/ethernet/mellanox/mlx4/en_rx.c        |   14 ++++++++++++
- drivers/net/ethernet/mellanox/mlx4/en_tx.c        |   23 +++++++++++++++++++++
- drivers/net/ethernet/mellanox/mlx4/mlx4_en.h      |   20 ++++++++++++++++++
- 7 files changed, 92 insertions(+), 0 deletions(-)
+ drivers/net/ethernet/mellanox/mlx4/en_ethtool.c   |    4 ++
+ drivers/net/ethernet/mellanox/mlx4/en_main.c      |   10 ++++++
+ drivers/net/ethernet/mellanox/mlx4/en_netdev.c    |   24 ++++++++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_resources.c |    6 ++++
+ drivers/net/ethernet/mellanox/mlx4/en_rx.c        |   12 +++++++
+ drivers/net/ethernet/mellanox/mlx4/en_tx.c        |   23 ++++++++++++++
+ drivers/net/ethernet/mellanox/mlx4/mlx4_en.h      |   33 ++++++++++++++++++++-
+ 8 files changed, 112 insertions(+), 2 deletions(-)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx4/Makefile b/drivers/net/ethernet/mellanox/mlx4/Makefile
-index 8e03f81..29eb7ed 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/Makefile
 +++ b/drivers/net/ethernet/mellanox/mlx4/Makefile
-@@ -8,4 +8,6 @@ obj-$(CONFIG_MLX4_EN)               += mlx4_en.o
+@@ -11,4 +11,6 @@ mlx4_en-y := 	en_main.o en_tx.o en_rx.o en_ethtool.o en_port.o en_cq.o \
  
  mlx4_en-$(CONFIG_DEBUG_FS) += en_debugfs.o
  
@@ -31,7 +30,7 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c b/drivers/net/ether
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
-@@ -1209,10 +1209,14 @@ static int mlx4_en_set_channels(struct net_device *dev,
+@@ -1210,10 +1210,14 @@ static int mlx4_en_set_channels(struct net_device *dev,
  		goto out;
  	}
  
@@ -47,7 +46,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	en_warn(priv, "Using %d TX rings\n", priv->tx_ring_num);
  	en_warn(priv, "Using %d RX rings\n", priv->rx_ring_num);
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_main.c b/drivers/net/ethernet/mellanox/mlx4/en_main.c
-index 697e6a3a..ee3f4fb 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_main.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_main.c
 @@ -72,6 +72,7 @@ MLX4_EN_PARM_INT(pfctx, 0, "Priority based Flow Control policy on TX[7:0]."
@@ -66,7 +65,7 @@ index 697e6a3a..ee3f4fb 100644
  
  void mlx4_en_update_loopback_state(struct net_device *dev,
  				   netdev_features_t features)
-@@ -101,8 +101,10 @@ static int mlx4_en_get_profile(struct mlx4_en_dev *mdev)
+@@ -123,8 +125,10 @@ static int mlx4_en_get_profile(struct mlx4_en_dev *mdev)
  	int i;
  
  	params->udp_rss = udp_rss;
@@ -77,7 +76,7 @@ index 697e6a3a..ee3f4fb 100644
  	if (params->udp_rss && !(mdev->dev->caps.flags
  					& MLX4_DEV_CAP_FLAG_UDP_RSS)) {
  		mlx4_warn(mdev, "UDP RSS is not supported on this device.\n");
-@@ -115,9 +117,15 @@ static int mlx4_en_get_profile(struct mlx4_en_dev *mdev)
+@@ -141,9 +145,15 @@ static int mlx4_en_get_profile(struct mlx4_en_dev *mdev)
  		 * Double the number of default TX rings (for up = 0)
  		 * to enable splitting traffic by size
  		 */
@@ -94,7 +93,7 @@ index 697e6a3a..ee3f4fb 100644
  	}
  
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
-index f943d72..42457f1 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
 @@ -1500,8 +1500,11 @@ int mlx4_en_start_port(struct net_device *dev)
@@ -110,7 +109,7 @@ index f943d72..42457f1 100644
  		if (err) {
  			en_err(priv, "Failed allocating Tx ring\n");
  			mlx4_en_deactivate_cq(priv, cq);
-@@ -2193,12 +2196,19 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2201,12 +2204,19 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	int i;
  	int err;
  
@@ -130,7 +129,7 @@ index f943d72..42457f1 100644
  	netif_set_real_num_rx_queues(dev, prof->rx_ring_num);
  
  	SET_NETDEV_DEV(dev, &mdev->dev->pdev->dev);
-@@ -2259,6 +2269,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2267,6 +2277,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	priv->last_ifq_jiffies = 0;
  	priv->if_counters_rx_errors = 0;
  	priv->if_counters_rx_no_buffer = 0;
@@ -138,7 +137,7 @@ index f943d72..42457f1 100644
  #ifdef CONFIG_MLX4_EN_DCB
  	if (!mlx4_is_slave(priv->mdev->dev) &&
  	    (mdev->dev->caps.flags & MLX4_DEV_CAP_FLAG_SET_PORT_ETH_SCHED)) {
-@@ -1782,6 +1790,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2275,6 +2286,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  		dev->dcbnl_ops = &mlx4_en_dcbnl_ops;
  	}
  #endif
@@ -146,7 +145,7 @@ index f943d72..42457f1 100644
  
  	for (i = 0; i < MLX4_EN_MAC_HASH_SIZE; ++i)
  		INIT_HLIST_HEAD(&priv->mac_hash[i]);
-@@ -1822,7 +1832,9 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2328,7 +2340,9 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	else
  		dev->netdev_ops = &mlx4_netdev_ops;
  	dev->watchdog_timeo = MLX4_EN_WATCHDOG_TIMEOUT;
@@ -156,7 +155,7 @@ index f943d72..42457f1 100644
  	netif_set_real_num_rx_queues(dev, priv->rx_ring_num);
  
  	SET_ETHTOOL_OPS(dev, &mlx4_en_ethtool_ops);
-@@ -1844,7 +1856,11 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2343,7 +2357,11 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  
  	dev->vlan_features = dev->hw_features;
  
@@ -168,7 +167,7 @@ index f943d72..42457f1 100644
  	dev->features = dev->hw_features | NETIF_F_HIGHDMA |
  			NETIF_F_HW_VLAN_TX | NETIF_F_HW_VLAN_RX |
  			NETIF_F_HW_VLAN_FILTER;
-@@ -1860,7 +1876,11 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2365,7 +2383,11 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  
  	dev->vlan_features = dev->features;
  
@@ -181,7 +180,7 @@ index f943d72..42457f1 100644
  		NETIF_F_HW_VLAN_TX | NETIF_F_HW_VLAN_RX |
  		NETIF_F_HW_VLAN_FILTER;
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_resources.c b/drivers/net/ethernet/mellanox/mlx4/en_resources.c
-index b3b8ac6..6e9c2a0 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_resources.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_resources.c
 @@ -39,7 +39,11 @@
@@ -210,10 +209,10 @@ index b3b8ac6..6e9c2a0 100644
  	context->cqn_send = cpu_to_be32(cqn);
  	context->cqn_recv = cpu_to_be32(cqn);
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_rx.c b/drivers/net/ethernet/mellanox/mlx4/en_rx.c
-index a9b6d58..102dd43 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_rx.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_rx.c
-@@ -735,8 +737,10 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+@@ -498,8 +498,10 @@ int mlx4_en_process_rx_cq(struct net_device *dev,
  		skb->ip_summed = ip_summed;
  		skb_record_rx_queue(skb, cq->ring);
  
@@ -224,7 +223,7 @@ index a9b6d58..102dd43 100644
  
  		if ((be32_to_cpu(cqe->vlan_my_qpn) &
  		     MLX4_CQE_VLAN_PRESENT_MASK) &&
-@@ -897,8 +901,13 @@ static int mlx4_en_config_rss_qp(struct mlx4_en_priv *priv, int qpn,
+@@ -608,8 +610,13 @@ static int mlx4_en_config_rss_qp(struct mlx4_en_priv *priv, int qpn,
  	qp->event = mlx4_en_sqp_event;
  
  	memset(context, 0, sizeof *context);
@@ -238,7 +237,7 @@ index a9b6d58..102dd43 100644
  	context->db_rec_addr = cpu_to_be64(ring->wqres.db.dma);
  
  	/* Cancel FCS removal if FW allows */
-@@ -994,8 +1003,13 @@ int mlx4_en_config_rss_steer(struct mlx4_en_priv *priv)
+@@ -706,8 +713,13 @@ int mlx4_en_config_rss_steer(struct mlx4_en_priv *priv)
  		goto rss_err;
  	}
  	rss_map->indir_qp.event = mlx4_en_sqp_event;
@@ -253,10 +252,10 @@ index a9b6d58..102dd43 100644
  	if (!priv->prof->rss_rings || priv->prof->rss_rings > priv->rx_ring_num)
  		rss_rings = priv->rx_ring_num;
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_tx.c b/drivers/net/ethernet/mellanox/mlx4/en_tx.c
-index 067ba04..135d637 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_tx.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_tx.c
-@@ -178,7 +178,11 @@ void mlx4_en_destroy_tx_ring(struct mlx4_en_priv *priv,
+@@ -206,7 +206,11 @@ void mlx4_en_create_tx_queues(struct mlx4_en_priv *priv)
  
  int mlx4_en_activate_tx_ring(struct mlx4_en_priv *priv,
  			     struct mlx4_en_tx_ring *ring,
@@ -268,7 +267,7 @@ index 067ba04..135d637 100644
  {
  	struct mlx4_en_dev *mdev = priv->mdev;
  	int err;
-@@ -195,8 +199,13 @@ int mlx4_en_activate_tx_ring(struct mlx4_en_priv *priv,
+@@ -222,8 +226,13 @@ int mlx4_en_activate_tx_ring(struct mlx4_en_priv *priv,
  	ring->qp_state = MLX4_QP_STATE_RST;
  	ring->doorbell_qpn = ring->qp.qpn << 8;
  
@@ -282,7 +281,7 @@ index 067ba04..135d637 100644
  	if (ring->bf_enabled)
  		ring->context.usr_page = cpu_to_be32(ring->bf.uar->index);
  
-@@ -591,6 +600,7 @@ static void build_inline_wqe(struct mlx4_en_tx_desc *tx_desc, struct sk_buff *sk
+@@ -661,6 +670,7 @@ static void build_inline_wqe(struct mlx4_en_tx_desc *tx_desc, struct sk_buff *sk
  u16 mlx4_en_select_queue(struct net_device *dev, struct sk_buff *skb)
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
@@ -290,7 +289,7 @@ index 067ba04..135d637 100644
  	u16 rings_p_up = priv->num_tx_rings_p_up;
  	u8 up = 0;
  
-@@ -605,6 +615,19 @@ u16 mlx4_en_select_queue(struct net_device *dev, struct sk_buff *skb)
+@@ -675,6 +685,19 @@ u16 mlx4_en_select_queue(struct net_device *dev, struct sk_buff *skb)
  		up = vlan_tx_tag_get(skb) >> VLAN_PRIO_SHIFT;
  
  	return __skb_tx_hash(dev, skb, rings_p_up) + up * rings_p_up;
@@ -311,7 +310,7 @@ index 067ba04..135d637 100644
  
  static void mlx4_bf_copy(void __iomem *dst, unsigned long *src, unsigned bytecnt)
 diff --git a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
-index fd83ce9..fc8d21d 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
 +++ b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
 @@ -114,10 +114,17 @@
@@ -332,7 +331,7 @@ index fd83ce9..fc8d21d 100644
  #define MLX4_EN_DEF_TX_RING_SIZE	1024
  #define MLX4_EN_DEF_RX_RING_SIZE  	1024
  
-@@ -451,6 +459,7 @@ struct mlx4_en_mc_list{
+@@ -415,6 +422,7 @@ struct mlx4_en_mc_list {
  	u64			reg_id;
  };
  
@@ -340,7 +339,7 @@ index fd83ce9..fc8d21d 100644
  #ifdef CONFIG_MLX4_EN_DCB
  /* Minimal TC BW - setting to 0 will block traffic */
  #define MLX4_EN_BW_MIN 1
-@@ -459,6 +468,7 @@ struct mlx4_en_frag_info {
+@@ -423,6 +431,7 @@ struct mlx4_en_mc_list {
  #define MLX4_EN_TC_ETS 7
  
  #endif
@@ -348,7 +347,7 @@ index fd83ce9..fc8d21d 100644
  
  struct ethtool_flow_id {
  	struct list_head list;
-@@ -549,12 +559,14 @@ struct mlx4_en_priv {
+@@ -542,12 +551,14 @@ struct mlx4_en_priv {
  #define MLX4_EN_MAC_HASH_IDX 5
  	struct hlist_head mac_hash[MLX4_EN_MAC_HASH_SIZE];
  
@@ -363,7 +362,7 @@ index fd83ce9..fc8d21d 100644
  #ifdef CONFIG_RFS_ACCEL
  	spinlock_t filters_lock;
  	int last_filter_id;
-@@ -600,7 +612,11 @@ void mlx4_en_destroy_tx_ring(struct mlx4_en_priv *priv,
+@@ -608,7 +619,11 @@ void mlx4_en_destroy_tx_ring(struct mlx4_en_priv *priv,
  			     struct mlx4_en_tx_ring **pring);
  int mlx4_en_activate_tx_ring(struct mlx4_en_priv *priv,
  			     struct mlx4_en_tx_ring *ring,
@@ -375,7 +374,7 @@ index fd83ce9..fc8d21d 100644
  void mlx4_en_deactivate_tx_ring(struct mlx4_en_priv *priv,
  				struct mlx4_en_tx_ring *ring);
  void mlx4_en_create_tx_queues(struct mlx4_en_priv *priv);
-@@ -619,7 +635,11 @@ int mlx4_en_process_rx_cq(struct net_device *dev,
+@@ -628,7 +643,11 @@ int mlx4_en_process_rx_cq(struct net_device *dev,
  int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget);
  int mlx4_en_poll_tx_cq(struct napi_struct *napi, int budget);
  void mlx4_en_fill_qp_context(struct mlx4_en_priv *priv, int size, int stride,
@@ -387,7 +386,7 @@ index fd83ce9..fc8d21d 100644
  		struct mlx4_qp_context *context, int disable_vstrip);
  void mlx4_en_sqp_event(struct mlx4_qp *qp, enum mlx4_event event);
  int mlx4_en_map_buffer(struct mlx4_buf *buf);
-@@ -685,10 +685,22 @@ extern const struct ethtool_ops mlx4_en_ethtool_ops;
+@@ -694,10 +713,22 @@ extern const struct ethtool_ops mlx4_en_ethtool_ops;
  /*
   * printk / logging functions
   */
@@ -411,6 +410,3 @@ index fd83ce9..fc8d21d 100644
  
  #define en_dbg(mlevel, priv, format, arg...)			\
  do {								\
--- 
-1.7.8.2
-

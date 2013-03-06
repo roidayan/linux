@@ -1,7 +1,5 @@
-From 477b5597187981ea05307ef5abc35de8f084165a Mon Sep 17 00:00:00 2001
 From: Erez Shitrit <erezsh@mellanox.com>
-Date: Tue, 25 Dec 2012 18:18:49 +0200
-Subject: [PATCH] BACKPORTS: priv_flags is short in kernels before 2.6.37
+Subject: BACKPORTS: priv_flags is short in kernels before 2.6.37
 
 priv_flags field of struct netdevice is unsigned **short** wheres in the
 upstream kernel it is unsigned int(32 bits).
@@ -21,7 +19,7 @@ Signed-off-by: Erez Shitrit <erezsh@mellanox.com>
  4 files changed, 45 insertions(+), 2 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_cm.c b/drivers/infiniband/ulp/ipoib/ipoib_cm.c
-index aa3b712..97d0ba9 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_cm.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_cm.c
 @@ -690,7 +690,11 @@ copied:
@@ -37,10 +35,10 @@ index aa3b712..97d0ba9 100644
  
  	netif_receive_skb(skb);
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ib.c b/drivers/infiniband/ulp/ipoib/ipoib_ib.c
-index 1bb3e23..afb480c 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_ib.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_ib.c
-@@ -376,7 +376,11 @@ static void ipoib_ib_handle_rx_wc(struct net_device *dev,
+@@ -379,7 +379,11 @@ static void ipoib_ib_handle_rx_wc(struct net_device *dev,
  		skb->ip_summed = CHECKSUM_UNNECESSARY;
  
  	/* if handler is registered on top of ipoib, set skb oob data. */
@@ -53,10 +51,10 @@ index 1bb3e23..afb480c 100644
  		/*the registered handler will take care of the skb.*/
  		netif_receive_skb(skb);
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-index 4772cbe..6276062 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-@@ -2516,7 +2516,11 @@ static struct net_device *ipoib_add_port(const char *format,
+@@ -2570,7 +2570,11 @@ static struct net_device *ipoib_add_port(const char *format,
  	}
  
  	/*indicates pif port*/
@@ -69,7 +67,7 @@ index 4772cbe..6276062 100644
  	result = register_netdev(priv->dev);
  	if (result) {
 diff --git a/drivers/net/eipoib/eth_ipoib_main.c b/drivers/net/eipoib/eth_ipoib_main.c
-index 7dac5f3..a6f4ead 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/eipoib/eth_ipoib_main.c
 +++ b/drivers/net/eipoib/eth_ipoib_main.c
 @@ -237,11 +237,19 @@ static inline int netdev_set_parent_master(struct net_device *slave,
@@ -116,7 +114,7 @@ index 7dac5f3..a6f4ead 100644
  		is_driver_owner(dev, SDRV_NAME) && __is_slave(dev);
  }
  
-@@ -470,13 +486,21 @@ int parent_enslave(struct net_device *parent_dev, struct net_device *slave_dev)
+@@ -504,13 +520,21 @@ int parent_enslave(struct net_device *parent_dev, struct net_device *slave_dev)
  
  	/* already enslaved */
  	if ((slave_dev->flags & IFF_SLAVE) ||
@@ -138,7 +136,7 @@ index 7dac5f3..a6f4ead 100644
  
  	/* set parent netdev attributes */
  	if (parent->slave_cnt == 0)
-@@ -1990,7 +2014,11 @@ static void parent_setup(struct net_device *parent_dev)
+@@ -1960,7 +1984,11 @@ static void parent_setup(struct net_device *parent_dev)
  	/* Initialize the device options */
  	parent_dev->tx_queue_len = 0;
  	/* mark the parent intf as pif (master of other vifs.) */
@@ -150,7 +148,7 @@ index 7dac5f3..a6f4ead 100644
  
  #if (LINUX_VERSION_CODE > KERNEL_VERSION(3,0,0))
  	parent_dev->hw_features = NETIF_F_SG | NETIF_F_IP_CSUM |
-@@ -2102,8 +2130,11 @@ static void parent_free_all(void)
+@@ -2072,8 +2100,11 @@ static void parent_free_all(void)
  /* netdev events handlers */
  static inline int is_ipoib_pif_intf(struct net_device *dev)
  {
@@ -164,6 +162,3 @@ index 7dac5f3..a6f4ead 100644
  		return 1;
  	return 0;
  }
--- 
-1.7.1
-

@@ -1,7 +1,5 @@
-From b3caefe6d2442d2459899462d89a59c19eac8d6b Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Date: Wed, 5 Dec 2012 13:32:12 +0200
-Subject: [PATCH] BACKPORT: ipoib to support RHEL6.3
+Subject: BACKPORT: ipoib to support RHEL6.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -13,10 +11,10 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  5 files changed, 63 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_cm.c b/drivers/infiniband/ulp/ipoib/ipoib_cm.c
-index 96d7778..aa3b712 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_cm.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_cm.c
-@@ -1448,7 +1448,11 @@ static void ipoib_cm_skb_reap(struct work_struct *work)
+@@ -1449,7 +1449,11 @@ static void ipoib_cm_skb_reap(struct work_struct *work)
  			icmp_send(skb, ICMP_DEST_UNREACH, ICMP_FRAG_NEEDED, htonl(mtu));
  #if IS_ENABLED(CONFIG_IPV6)
  		else if (skb->protocol == htons(ETH_P_IPV6))
@@ -29,10 +27,10 @@ index 96d7778..aa3b712 100644
  		dev_kfree_skb_any(skb);
  
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
-index 9d40e1c..beb8956 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
-@@ -223,6 +223,7 @@ static void ipoib_get_ethtool_stats(struct net_device *dev,
+@@ -231,6 +231,7 @@ static void ipoib_get_ethtool_stats(struct net_device *dev,
  	}
  }
  
@@ -40,7 +38,7 @@ index 9d40e1c..beb8956 100644
  static void ipoib_get_channels(struct net_device *dev,
  			struct ethtool_channels *channel)
  {
-@@ -283,6 +284,7 @@ static int ipoib_set_channels(struct net_device *dev,
+@@ -296,6 +297,7 @@ static int ipoib_set_channels(struct net_device *dev,
  
  	return ipoib_reinit(dev, channel->rx_count, channel->tx_count);
  }
@@ -48,7 +46,7 @@ index 9d40e1c..beb8956 100644
  
  static const struct ethtool_ops ipoib_ethtool_ops = {
  	.get_drvinfo		= ipoib_get_drvinfo,
-@@ -291,8 +293,10 @@ static const struct ethtool_ops ipoib_ethtool_ops = {
+@@ -304,8 +306,10 @@ static const struct ethtool_ops ipoib_ethtool_ops = {
  	.get_strings		= ipoib_get_strings,
  	.get_sset_count		= ipoib_get_sset_count,
  	.get_ethtool_stats	= ipoib_get_ethtool_stats,
@@ -60,10 +58,10 @@ index 9d40e1c..beb8956 100644
  
  void ipoib_set_ethtool_ops(struct net_device *dev)
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-index 2b90913..6670a3a 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-@@ -186,6 +186,7 @@ static void ipoib_uninit(struct net_device *dev)
+@@ -189,6 +189,7 @@ static void ipoib_uninit(struct net_device *dev)
  	ipoib_dev_cleanup(dev);
  }
  
@@ -71,7 +69,7 @@ index 2b90913..6670a3a 100644
  static netdev_features_t ipoib_fix_features(struct net_device *dev, netdev_features_t features)
  {
  	struct ipoib_dev_priv *priv = netdev_priv(dev);
-@@ -195,6 +196,7 @@ static netdev_features_t ipoib_fix_features(struct net_device *dev, netdev_featu
+@@ -198,6 +199,7 @@ static netdev_features_t ipoib_fix_features(struct net_device *dev, netdev_featu
  
  	return features;
  }
@@ -79,7 +77,7 @@ index 2b90913..6670a3a 100644
  
  static int ipoib_change_mtu(struct net_device *dev, int new_mtu)
  {
-@@ -234,7 +236,15 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
+@@ -237,7 +239,15 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
  		set_bit(IPOIB_FLAG_ADMIN_CM, &priv->flags);
  		ipoib_warn(priv, "enabling connected mode "
  			   "will cause multicast packet drops\n");
@@ -95,7 +93,7 @@ index 2b90913..6670a3a 100644
  		rtnl_unlock();
  
  		send_ring = priv->send_ring;
-@@ -250,7 +260,15 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
+@@ -256,7 +266,15 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
  
  	if (!strcmp(buf, "datagram\n")) {
  		clear_bit(IPOIB_FLAG_ADMIN_CM, &priv->flags);
@@ -111,7 +109,7 @@ index 2b90913..6670a3a 100644
  		dev_set_mtu(dev, min(priv->mcast_mtu, dev->mtu));
  		rtnl_unlock();
  		ipoib_flush_paths(dev);
-@@ -1849,7 +1867,9 @@ static const struct net_device_ops ipoib_netdev_ops_no_tss = {
+@@ -1898,7 +1916,9 @@ static const struct net_device_ops ipoib_netdev_ops_no_tss = {
  	.ndo_open		 = ipoib_open,
  	.ndo_stop		 = ipoib_stop,
  	.ndo_change_mtu		 = ipoib_change_mtu,
@@ -121,7 +119,7 @@ index 2b90913..6670a3a 100644
  	.ndo_start_xmit	 	 = ipoib_start_xmit,
  	.ndo_tx_timeout		 = ipoib_timeout,
  	.ndo_get_stats		= ipoib_get_stats,
-@@ -1861,7 +1881,9 @@ static const struct net_device_ops ipoib_netdev_ops_hw_tss = {
+@@ -1910,7 +1930,9 @@ static const struct net_device_ops ipoib_netdev_ops_hw_tss = {
  	.ndo_open	= ipoib_open,
  	.ndo_stop	= ipoib_stop,
  	.ndo_change_mtu		= ipoib_change_mtu,
@@ -131,7 +129,7 @@ index 2b90913..6670a3a 100644
  	.ndo_start_xmit		= ipoib_start_xmit,
  	.ndo_select_queue		= ipoib_select_queue_hw,
  	.ndo_tx_timeout		= ipoib_timeout,
-@@ -1874,7 +1896,9 @@ static const struct net_device_ops ipoib_netdev_ops_sw_tss = {
+@@ -1923,7 +1945,9 @@ static const struct net_device_ops ipoib_netdev_ops_sw_tss = {
  	.ndo_open	= ipoib_open,
  	.ndo_stop	= ipoib_stop,
  	.ndo_change_mtu		= ipoib_change_mtu,
@@ -141,7 +139,7 @@ index 2b90913..6670a3a 100644
  	.ndo_start_xmit		= ipoib_start_xmit,
  	.ndo_select_queue		= ipoib_select_queue_sw,
  	.ndo_tx_timeout		= ipoib_timeout,
-@@ -2279,6 +2303,7 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
+@@ -2333,6 +2357,7 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
  		return result;
  
  	if (priv->hca_caps & IB_DEVICE_UD_IP_CSUM) {
@@ -149,7 +147,7 @@ index 2b90913..6670a3a 100644
  		priv->dev->hw_features = NETIF_F_SG |
  			NETIF_F_IP_CSUM | NETIF_F_RXCSUM;
  
-@@ -2286,6 +2311,13 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
+@@ -2340,6 +2365,13 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
  			priv->dev->hw_features |= NETIF_F_TSO;
  
  		priv->dev->features |= priv->dev->hw_features;
@@ -164,10 +162,10 @@ index 2b90913..6670a3a 100644
  
  	return 0;
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_multicast.c b/drivers/infiniband/ulp/ipoib/ipoib_multicast.c
-index 672a7a0..a4f3590 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_multicast.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_multicast.c
-@@ -817,7 +817,11 @@ void ipoib_mcast_restart_task(struct work_struct *work)
+@@ -838,7 +838,11 @@ void ipoib_mcast_restart_task(struct work_struct *work)
  	struct ipoib_dev_priv *priv =
  		container_of(work, struct ipoib_dev_priv, restart_task);
  	struct net_device *dev = priv->dev;
@@ -179,7 +177,7 @@ index 672a7a0..a4f3590 100644
  	struct ipoib_mcast *mcast, *tmcast;
  	LIST_HEAD(remove_list);
  	unsigned long flags;
-@@ -842,6 +846,7 @@ void ipoib_mcast_restart_task(struct work_struct *work)
+@@ -863,6 +867,7 @@ void ipoib_mcast_restart_task(struct work_struct *work)
  		clear_bit(IPOIB_MCAST_FLAG_FOUND, &mcast->flags);
  
  	/* Mark all of the entries that are found or don't exist */
@@ -187,7 +185,7 @@ index 672a7a0..a4f3590 100644
  	netdev_for_each_mc_addr(ha, dev) {
  		union ib_gid mgid;
  
-@@ -849,6 +854,16 @@ void ipoib_mcast_restart_task(struct work_struct *work)
+@@ -870,6 +875,16 @@ void ipoib_mcast_restart_task(struct work_struct *work)
  			continue;
  
  		memcpy(mgid.raw, ha->addr + 4, sizeof mgid);
@@ -205,7 +203,7 @@ index 672a7a0..a4f3590 100644
  		mcast = __ipoib_mcast_find(dev, &mgid);
  		if (!mcast || test_bit(IPOIB_MCAST_FLAG_SENDONLY, &mcast->flags)) {
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_netlink.c b/drivers/infiniband/ulp/ipoib/ipoib_netlink.c
-index 7468593..dcef9b6 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_netlink.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_netlink.c
 @@ -126,7 +126,11 @@ static int ipoib_new_child_link(struct net *src_net, struct net_device *dev,
@@ -232,6 +230,3 @@ index 7468593..dcef9b6 100644
  	list_del(&priv->list);
  	mutex_unlock(&ppriv->vlan_mutex);
  }
--- 
-1.7.8.2
-

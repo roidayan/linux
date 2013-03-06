@@ -1,7 +1,5 @@
-From 590f82aac3699f4ddb499bdac5a01d571521ceea Mon Sep 17 00:00:00 2001
 From: Erez Shitrit <erezsh@mellanox.com>
-Date: Wed, 26 Dec 2012 11:06:43 +0200
-Subject: [PATCH] BACKPORTS: ib/ipoib: 2.6.36 and bellow doesn't support netdev_rx_handler_register
+Subject: BACKPORTS: ib/ipoib: 2.6.36 and bellow doesn't support netdev_rx_handler_register
 
 Signed-off-by: Erez Shitrit <erezsh@mellanox.com>
 ---
@@ -10,7 +8,7 @@ Signed-off-by: Erez Shitrit <erezsh@mellanox.com>
  2 files changed, 24 insertions(+), 6 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_cm.c b/drivers/infiniband/ulp/ipoib/ipoib_cm.c
-index 97d0ba9..0f384f4 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_cm.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_cm.c
 @@ -585,6 +585,9 @@ void ipoib_cm_handle_rx_wc(struct net_device *dev,
@@ -48,10 +46,10 @@ index 97d0ba9..0f384f4 100644
  repost:
  	if (has_srq) {
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ib.c b/drivers/infiniband/ulp/ipoib/ipoib_ib.c
-index afb480c..f8d4868 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_ib.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_ib.c
-@@ -286,7 +286,10 @@ static inline void ipoib_create_repath_ent(struct net_device *dev,
+@@ -289,7 +289,10 @@ static inline void ipoib_create_repath_ent(struct net_device *dev,
  		kfree(arp_repath);
  }
  
@@ -63,7 +61,7 @@ index afb480c..f8d4868 100644
  
  static void ipoib_ib_handle_rx_wc(struct net_device *dev,
  				  struct ipoib_recv_ring *recv_ring,
-@@ -383,7 +386,14 @@ static void ipoib_ib_handle_rx_wc(struct net_device *dev,
+@@ -386,7 +389,14 @@ static void ipoib_ib_handle_rx_wc(struct net_device *dev,
  #endif
  		set_skb_oob_cb_data(skb, wc, &recv_ring->napi);
  		/*the registered handler will take care of the skb.*/
@@ -79,6 +77,3 @@ index afb480c..f8d4868 100644
  	}
  #ifdef CONFIG_COMPAT_USE_LRO
  	else if (dev->features & NETIF_F_LRO)
--- 
-1.7.1
-

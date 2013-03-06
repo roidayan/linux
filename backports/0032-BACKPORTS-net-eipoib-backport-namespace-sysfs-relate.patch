@@ -1,7 +1,5 @@
-From 94232a026315ef4d30d6d4e8c966260899bdc85b Mon Sep 17 00:00:00 2001
 From: Erez Shitrit <erezsh@mellanox.com>
-Date: Tue, 25 Dec 2012 10:23:51 +0200
-Subject: [PATCH] BACKPORTS: net/eipoib: backport namespace/sysfs related code to 2.6.32
+Subject: BACKPORTS: net/eipoib: backport namespace/sysfs related code to 2.6.32
 
 In the upstream kernel eIPoIB uses the default network namespace
 for some of the sysfs entries it creates. In 2.6.32 this framework
@@ -16,10 +14,10 @@ Signed-off-by: Erez Shitrit <erezsh@mellanox.com>
  3 files changed, 53 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/net/eipoib/eth_ipoib.h b/drivers/net/eipoib/eth_ipoib.h
-index 5f0840d..ebd38d4 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/eipoib/eth_ipoib.h
 +++ b/drivers/net/eipoib/eth_ipoib.h
-@@ -201,8 +201,13 @@ extern int eipoib_net_id;
+@@ -207,8 +207,13 @@ extern int eipoib_net_id;
  extern struct list_head parent_dev_list;
  
  /* functions prototypes */
@@ -34,7 +32,7 @@ index 5f0840d..ebd38d4 100644
  int parent_create_sysfs_entry(struct parent *parent);
  int create_slave_symlinks(struct net_device *master,
 diff --git a/drivers/net/eipoib/eth_ipoib_main.c b/drivers/net/eipoib/eth_ipoib_main.c
-index ddb2efc..41feea2 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/eipoib/eth_ipoib_main.c
 +++ b/drivers/net/eipoib/eth_ipoib_main.c
 @@ -63,6 +63,7 @@ static const char * const version =
@@ -53,7 +51,7 @@ index ddb2efc..41feea2 100644
  
  /* set mac fields emac=<qpn><lid> */
  static inline
-@@ -2088,7 +2090,11 @@ static int __init mod_init(void)
+@@ -2058,7 +2060,11 @@ static int __init mod_init(void)
  
  	pr_info(DRV_NAME": %s", version);
  
@@ -65,7 +63,7 @@ index ddb2efc..41feea2 100644
  	if (rc)
  		goto out;
  
-@@ -2106,7 +2112,12 @@ static int __init mod_init(void)
+@@ -2076,7 +2082,12 @@ static int __init mod_init(void)
  	goto out;
  
  unreg_subsys:
@@ -78,7 +76,7 @@ index ddb2efc..41feea2 100644
  out:
  	return rc;
  
-@@ -2116,7 +2127,11 @@ static void __exit mod_exit(void)
+@@ -2086,7 +2097,11 @@ static void __exit mod_exit(void)
  {
  	unregister_netdevice_notifier(&parent_netdev_notifier);
  
@@ -91,7 +89,7 @@ index ddb2efc..41feea2 100644
  #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
  	eth_ipoib_handle_frame_hook = NULL;
 diff --git a/drivers/net/eipoib/eth_ipoib_sysfs.c b/drivers/net/eipoib/eth_ipoib_sysfs.c
-index 653d90f..5a87721 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/eipoib/eth_ipoib_sysfs.c
 +++ b/drivers/net/eipoib/eth_ipoib_sysfs.c
 @@ -89,8 +89,12 @@ static int get_imac(u8 *mac, char *s)
@@ -107,7 +105,7 @@ index 653d90f..5a87721 100644
  {
  	char *p = buf;
  	struct parent *parent;
-@@ -638,6 +642,7 @@ static struct attribute *per_parent_attrs[] = {
+@@ -636,6 +640,7 @@ static struct attribute *per_parent_attrs[] = {
  	NULL,
  };
  
@@ -115,7 +113,7 @@ index 653d90f..5a87721 100644
  /* name spcase  support */
  static const void *eipoib_namespace(struct class *cls,
  				    const struct class_attribute *attr)
-@@ -647,6 +652,7 @@ static const void *eipoib_namespace(struct class *cls,
+@@ -645,6 +650,7 @@ static const void *eipoib_namespace(struct class *cls,
  			     struct eipoib_net, class_attr_eipoib_interfaces);
  	return eipoib_n->net;
  }
@@ -123,7 +121,7 @@ index 653d90f..5a87721 100644
  
  static struct attribute_group parent_group = {
  	/* per parent sysfs files under: /sys/class/net/<IF>/eth/.. */
-@@ -682,6 +688,7 @@ void destroy_slave_symlinks(struct net_device *master,
+@@ -680,6 +686,7 @@ void destroy_slave_symlinks(struct net_device *master,
  	sysfs_remove_link(&(master->dev.kobj), linkname);
  }
  
@@ -131,7 +129,7 @@ index 653d90f..5a87721 100644
  static struct class_attribute class_attr_eth_ipoib_interfaces = {
  	.attr = {
  		.name = "eth_ipoib_interfaces",
-@@ -690,11 +697,20 @@ static struct class_attribute class_attr_eth_ipoib_interfaces = {
+@@ -688,11 +695,20 @@ static struct class_attribute class_attr_eth_ipoib_interfaces = {
  	.show = show_parents,
  	.namespace = eipoib_namespace,
  };
@@ -152,7 +150,7 @@ index 653d90f..5a87721 100644
  	/* defined in CLASS_ATTR(eth_ipoib_interfaces..) */
  	eipoib_n->class_attr_eipoib_interfaces =
  		class_attr_eth_ipoib_interfaces;
-@@ -702,16 +718,33 @@ int mod_create_sysfs(struct eipoib_net *eipoib_n)
+@@ -700,16 +716,33 @@ int mod_create_sysfs(struct eipoib_net *eipoib_n)
  	sysfs_attr_init(&eipoib_n->class_attr_eipoib_interfaces.attr);
  
  	rc = netdev_class_create_file(&eipoib_n->class_attr_eipoib_interfaces);
@@ -186,6 +184,3 @@ index 653d90f..5a87721 100644
  }
  
  int parent_create_sysfs_entry(struct parent *parent)
--- 
-1.7.1
-

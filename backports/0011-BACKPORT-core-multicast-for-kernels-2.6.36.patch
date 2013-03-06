@@ -1,7 +1,5 @@
-From 6880bc0e8a86fbe13aa2c6071e4f12e06f853723 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Date: Mon, 3 Dec 2012 18:55:08 +0200
-Subject: [PATCH] BACKPORT: core/multicast for kernels < 2.6.36
+Subject: BACKPORT: core/multicast for kernels < 2.6.36
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -9,7 +7,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  1 files changed, 5 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/core/multicast.c b/drivers/infiniband/core/multicast.c
-index a78782d..f335ed2 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/multicast.c
 +++ b/drivers/infiniband/core/multicast.c
 @@ -45,12 +45,17 @@
@@ -30,6 +28,3 @@ index a78782d..f335ed2 100644
  MODULE_PARM_DESC(mcast_leave_retries, "Number of retries for multicast leave "
  				      "requests before giving up (default: 3)");
  
--- 
-1.7.8.2
-

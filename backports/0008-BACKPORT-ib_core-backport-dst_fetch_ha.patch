@@ -1,7 +1,5 @@
-From cc798077c73481626333f4f7f7d06b86334c6879 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Date: Tue, 10 Jul 2012 15:57:24 +0300
-Subject: [PATCH] BACKPORT: ib_core backport dst_fetch_ha
+Subject: BACKPORT: ib_core backport dst_fetch_ha
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -9,7 +7,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  1 files changed, 58 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/core/addr.c b/drivers/infiniband/core/addr.c
-index eaec8d7..fabf6a8 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/addr.c
 +++ b/drivers/infiniband/core/addr.c
 @@ -176,28 +176,45 @@ static void queue_req(struct addr_req *req)
@@ -120,6 +118,3 @@ index eaec8d7..fabf6a8 100644
  put:
  	dst_release(dst);
  	return ret;
--- 
-1.7.8.2
-

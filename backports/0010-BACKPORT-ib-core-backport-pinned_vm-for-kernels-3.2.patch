@@ -1,7 +1,5 @@
-From 6893e2565d2726f834e933cb7f2a3caed55ab039 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Date: Tue, 10 Jul 2012 17:41:31 +0300
-Subject: [PATCH] BACKPORT: ib/core backport pinned_vm for kernels < 3.2
+Subject: BACKPORT: ib/core backport pinned_vm for kernels < 3.2
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -9,7 +7,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  1 files changed, 44 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/core/umem.c b/drivers/infiniband/core/umem.c
-index d00da78..9b4a919 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/umem.c
 +++ b/drivers/infiniband/core/umem.c
 @@ -67,7 +67,11 @@ static void umem_vma_open(struct vm_area_struct *area)
@@ -84,8 +82,8 @@ index d00da78..9b4a919 100644
  	lock_limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
  
  	if ((locked > lock_limit) && !capable(CAP_IPC_LOCK))
-@@ -392,7 +416,11 @@ struct ib_cmem *ib_cmem_alloc_contiguous_pages(struct ib_ucontext *context,
-
+@@ -394,7 +418,11 @@ struct ib_cmem *ib_cmem_alloc_contiguous_pages(struct ib_ucontext *context,
+ 
  	cmem->length = total_size;
  
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0))
@@ -96,7 +94,7 @@ index d00da78..9b4a919 100644
  	return cmem;
  
  err_alloc:
-@@ -497,7 +525,11 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
+@@ -499,7 +527,11 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
  
  	down_write(&current->mm->mmap_sem);
  
@@ -108,7 +106,7 @@ index d00da78..9b4a919 100644
  	lock_limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
  
  	if ((locked > lock_limit) && !capable(CAP_IPC_LOCK)) {
-@@ -568,7 +600,11 @@ out:
+@@ -570,7 +602,11 @@ out:
  		__ib_umem_release(context->device, umem, 0);
  		kfree(umem);
  	} else
@@ -120,7 +118,7 @@ index d00da78..9b4a919 100644
  
  	up_write(&current->mm->mmap_sem);
  	if (vma_list)
-@@ -584,7 +620,11 @@ static void ib_umem_account(struct work_struct *work)
+@@ -586,7 +622,11 @@ static void ib_umem_account(struct work_struct *work)
  	struct ib_umem *umem = container_of(work, struct ib_umem, work);
  
  	down_write(&umem->mm->mmap_sem);
@@ -132,7 +130,7 @@ index d00da78..9b4a919 100644
  	up_write(&umem->mm->mmap_sem);
  	mmput(umem->mm);
  	kfree(umem);
-@@ -630,7 +670,11 @@ void ib_umem_release(struct ib_umem *umem)
+@@ -632,7 +672,11 @@ void ib_umem_release(struct ib_umem *umem)
  	} else
  		down_write(&mm->mmap_sem);
  
@@ -144,6 +142,3 @@ index d00da78..9b4a919 100644
  	up_write(&mm->mmap_sem);
  	mmput(mm);
  	kfree(umem);
--- 
-1.7.8.2
-

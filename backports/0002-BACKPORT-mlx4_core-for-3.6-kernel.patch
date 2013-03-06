@@ -1,15 +1,30 @@
-From 447b576d72c43942ef2babfb0170b69116728ea2 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Date: Wed, 28 Nov 2012 14:27:48 +0200
-Subject: [PATCH] BACKPORT: mlx4_core for 3.6 kernel
+Subject: BACKPORT: mlx4_core for 3.6 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
+ drivers/net/ethernet/mellanox/mlx4/main.c  |    4 ++++
  drivers/net/ethernet/mellanox/mlx4/sense.c |    4 ++++
- 1 files changed, 4 insertions(+), 0 deletions(-)
+ 2 files changed, 8 insertions(+), 0 deletions(-)
 
+diff --git a/drivers/net/ethernet/mellanox/mlx4/main.c b/drivers/net/ethernet/mellanox/mlx4/main.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx4/main.c
++++ b/drivers/net/ethernet/mellanox/mlx4/main.c
+@@ -3021,7 +3021,11 @@ static pci_ers_result_t mlx4_pci_slot_reset(struct pci_dev *pdev)
+ 	return ret ? PCI_ERS_RESULT_DISCONNECT : PCI_ERS_RESULT_RECOVERED;
+ }
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+ static const struct pci_error_handlers mlx4_err_handler = {
++#else
++static struct pci_error_handlers mlx4_err_handler = {
++#endif
+ 	.error_detected = mlx4_pci_err_detected,
+ 	.slot_reset     = mlx4_pci_slot_reset,
+ };
 diff --git a/drivers/net/ethernet/mellanox/mlx4/sense.c b/drivers/net/ethernet/mellanox/mlx4/sense.c
-index 094773d..1d63f93 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/sense.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/sense.c
 @@ -139,5 +139,9 @@ void  mlx4_sense_init(struct mlx4_dev *dev)
@@ -22,19 +37,3 @@ index 094773d..1d63f93 100644
 +	INIT_DELAYED_WORK_DEFERRABLE(&sense->sense_poll, mlx4_sense_port);
 +#endif
  }
-diff --git a/drivers/net/ethernet/mellanox/mlx4/main.c b/drivers/net/ethernet/mellanox/mlx4/main.c
-index 44a99e2..914d063 100644
---- a/drivers/net/ethernet/mellanox/mlx4/main.c
-+++ b/drivers/net/ethernet/mellanox/mlx4/main.c
-@@ -3015,7 +3015,11 @@ static pci_ers_result_t mlx4_pci_slot_reset(struct pci_dev *pdev)
- 	return ret ? PCI_ERS_RESULT_DISCONNECT : PCI_ERS_RESULT_RECOVERED;
- }
- 
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
- static const struct pci_error_handlers mlx4_err_handler = {
-+#else
-+static struct pci_error_handlers mlx4_err_handler = {
-+#endif
- 	.error_detected = mlx4_pci_err_detected,
- 	.slot_reset     = mlx4_pci_slot_reset,
- };

@@ -1,7 +1,5 @@
-From 2d093f4d8b5359f85239bb7d2c0c85335b6413da Mon Sep 17 00:00:00 2001
 From: Erez Shitrit <erezsh@mellanox.com>
-Date: Tue, 25 Dec 2012 16:56:32 +0200
-Subject: [PATCH] BACKPORTS: net/eipoib ndo differences.
+Subject: BACKPORTS: net/eipoib ndo differences.
 
 supports vlan functions, stats  structures.
 
@@ -13,7 +11,7 @@ Signed-off-by: Erez Shitrit <erezsh@mellanox.com>
  3 files changed, 160 insertions(+), 6 deletions(-)
 
 diff --git a/drivers/net/eipoib/eth_ipoib.h b/drivers/net/eipoib/eth_ipoib.h
-index 4eb8bda..76c5645 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/eipoib/eth_ipoib.h
 +++ b/drivers/net/eipoib/eth_ipoib.h
 @@ -180,7 +180,13 @@ struct parent {
@@ -31,7 +29,7 @@ index 4eb8bda..76c5645 100644
  	struct   workqueue_struct *wq;
  	s8       kill_timers;
 diff --git a/drivers/net/eipoib/eth_ipoib_ethtool.c b/drivers/net/eipoib/eth_ipoib_ethtool.c
-index 74f9670..1bb9d0a 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/eipoib/eth_ipoib_ethtool.c
 +++ b/drivers/net/eipoib/eth_ipoib_ethtool.c
 @@ -100,12 +100,22 @@ static int parent_get_sset_count(struct net_device *parent_dev, int sset)
@@ -58,7 +56,7 @@ index 74f9670..1bb9d0a 100644
  
  void parent_set_ethtool_ops(struct net_device *dev)
 diff --git a/drivers/net/eipoib/eth_ipoib_main.c b/drivers/net/eipoib/eth_ipoib_main.c
-index 6f48e73..ba38d9d 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/eipoib/eth_ipoib_main.c
 +++ b/drivers/net/eipoib/eth_ipoib_main.c
 @@ -63,6 +63,45 @@ static const char * const version =
@@ -163,7 +161,7 @@ index 6f48e73..ba38d9d 100644
  	netdev_set_parent_master(slave_dev, NULL);
  
  	dev_close(slave_dev);
-@@ -687,6 +739,9 @@ static int parent_release_all(struct net_device *parent_dev)
+@@ -686,6 +738,9 @@ static int parent_release_all(struct net_device *parent_dev)
  
  		destroy_slave_symlinks(parent_dev, slave_dev);
  
@@ -173,7 +171,7 @@ index 6f48e73..ba38d9d 100644
  		netdev_set_parent_master(slave_dev, NULL);
  
  		dev_close(slave_dev);
-@@ -720,18 +775,27 @@ out:
+@@ -713,18 +768,27 @@ out:
  }
  
  /* -------------------------- Device entry points --------------------------- */
@@ -203,7 +201,7 @@ index 6f48e73..ba38d9d 100644
  		const struct rtnl_link_stats64 *sstats =
  			dev_get_stats(slave->dev, &temp);
  
-@@ -760,7 +824,38 @@ static struct rtnl_link_stats64 *parent_get_stats(struct net_device *parent_dev,
+@@ -753,7 +817,38 @@ static struct rtnl_link_stats64 *parent_get_stats(struct net_device *parent_dev,
  		stats->tx_fifo_errors += sstats->tx_fifo_errors;
  		stats->tx_heartbeat_errors += sstats->tx_heartbeat_errors;
  		stats->tx_window_errors += sstats->tx_window_errors;
@@ -242,7 +240,7 @@ index 6f48e73..ba38d9d 100644
  
  	read_unlock(&parent->lock);
  
-@@ -1540,6 +1635,7 @@ static int parent_rx(struct sk_buff *skb, struct slave *slave)
+@@ -1515,6 +1610,7 @@ static int parent_rx(struct sk_buff *skb, struct slave *slave)
  		skb = nskb;
  
  	vlan_tag = slave->vlan & 0xfff;
@@ -250,7 +248,7 @@ index 6f48e73..ba38d9d 100644
  	if (vlan_tag) {
  		skb = __vlan_hwaccel_put_tag(skb, vlan_tag);
  		if (!skb) {
-@@ -1554,7 +1650,21 @@ static int parent_rx(struct sk_buff *skb, struct slave *slave)
+@@ -1529,7 +1625,21 @@ static int parent_rx(struct sk_buff *skb, struct slave *slave)
  		rc = napi_gro_receive(napi, skb);
  	else
  		rc = netif_receive_skb(skb);
@@ -273,7 +271,7 @@ index 6f48e73..ba38d9d 100644
  
  	return rc;
  
-@@ -1825,21 +1935,40 @@ static const struct net_device_ops parent_netdev_ops = {
+@@ -1800,21 +1910,40 @@ static const struct net_device_ops parent_netdev_ops = {
  	.ndo_select_queue	= parent_select_q,
  	/* parnt mtu is min(slaves_mtus) */
  	.ndo_change_mtu		= NULL,
@@ -314,7 +312,7 @@ index 6f48e73..ba38d9d 100644
  	/* initialize rwlocks */
  	rwlock_init(&parent->lock);
  	rwlock_init(&parent->emac_info_lock);
-@@ -1859,12 +1988,17 @@ static void parent_setup(struct net_device *parent_dev)
+@@ -1833,12 +1962,17 @@ static void parent_setup(struct net_device *parent_dev)
  	/* mark the parent intf as pif (master of other vifs.) */
  	parent_dev->priv_flags = IFF_EIPOIB_PIF;
  
@@ -333,7 +331,7 @@ index 6f48e73..ba38d9d 100644
  	parent_dev->features |= PARENT_VLAN_FEATURES;
  }
  
-@@ -1926,6 +2060,9 @@ static struct parent *parent_create(struct net_device *ibd)
+@@ -1900,6 +2034,9 @@ static struct parent *parent_create(struct net_device *ibd)
  	strncpy(parent->ipoib_main_interface, ibd->name, IFNAMSIZ);
  	parent_dev->dev_id = ibd->dev_id;
  
@@ -343,7 +341,7 @@ index 6f48e73..ba38d9d 100644
  	return parent;
  
  out_unreg:
-@@ -1961,7 +2098,8 @@ static void parent_free_all(void)
+@@ -1935,7 +2072,8 @@ static void parent_free_all(void)
  /* netdev events handlers */
  static inline int is_ipoib_pif_intf(struct net_device *dev)
  {
@@ -353,6 +351,3 @@ index 6f48e73..ba38d9d 100644
  		return 1;
  	return 0;
  }
--- 
-1.7.1
-

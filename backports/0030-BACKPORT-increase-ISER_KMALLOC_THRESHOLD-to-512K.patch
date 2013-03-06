@@ -1,7 +1,5 @@
-From bd598c0b046370e4976c02445cf500913ca4bb9b Mon Sep 17 00:00:00 2001
 From: Alex Tabachnik <alext@mellanox.com>
-Date: Tue, 25 Dec 2012 13:27:03 +0200
-Subject: [PATCH] BACKPORT: increase ISER_KMALLOC_THRESHOLD to 512K
+Subject: BACKPORT: increase ISER_KMALLOC_THRESHOLD to 512K
 
 Use kmalloc to allocate buffers up to size of 512K instead of 128K
 
@@ -12,7 +10,7 @@ Signed-off-by: Alex Tabachnik <alext@mellanox.com>
  1 files changed, 5 insertions(+), 1 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/iser/iser_memory.c b/drivers/infiniband/ulp/iser/iser_memory.c
-index 527db86..d7a82fe 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/iser/iser_memory.c
 +++ b/drivers/infiniband/ulp/iser/iser_memory.c
 @@ -38,7 +38,11 @@
@@ -28,6 +26,3 @@ index 527db86..d7a82fe 100644
  
  /**
   * iser_start_rdma_unaligned_sg
--- 
-1.7.1
-

@@ -1,7 +1,5 @@
-From e41049cbc0fb97f3a8f0f52fb055daaa2c563f63 Mon Sep 17 00:00:00 2001
 From: Moshe Lazer <moshel@mellanox.com>
-Date: Thu, 28 Feb 2013 07:40:53 +0200
-Subject: [PATCH] BACKPORT: ib/core backport umode_t and mode_t
+Subject: BACKPORT: ib/core backport umode_t and mode_t
 
 Signed-off-by: Moshe Lazer <moshel@mellanox.com>
 ---
@@ -11,7 +9,7 @@ Signed-off-by: Moshe Lazer <moshel@mellanox.com>
  3 files changed, 12 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/core/cm.c b/drivers/infiniband/core/cm.c
-index 34c05e3..e60a4b4 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/cm.c
 +++ b/drivers/infiniband/core/cm.c
 @@ -3684,7 +3684,11 @@ static struct kobj_type cm_port_obj_type = {
@@ -27,7 +25,7 @@ index 34c05e3..e60a4b4 100644
  	if (mode)
  		*mode = 0666;
 diff --git a/drivers/infiniband/core/user_mad.c b/drivers/infiniband/core/user_mad.c
-index 2a31027..7b787fc 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/user_mad.c
 +++ b/drivers/infiniband/core/user_mad.c
 @@ -1183,7 +1183,11 @@ static void ib_umad_remove_one(struct ib_device *device)
@@ -43,7 +41,7 @@ index 2a31027..7b787fc 100644
  	return kasprintf(GFP_KERNEL, "infiniband/%s", dev_name(dev));
  }
 diff --git a/drivers/infiniband/core/uverbs_main.c b/drivers/infiniband/core/uverbs_main.c
-index 4a173b3..33fa55b 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/uverbs_main.c
 +++ b/drivers/infiniband/core/uverbs_main.c
 @@ -1028,7 +1028,11 @@ static void ib_uverbs_remove_one(struct ib_device *device)
@@ -58,6 +56,3 @@ index 4a173b3..33fa55b 100644
  {
  	if (mode)
  		*mode = 0666;
--- 
-1.7.1
-

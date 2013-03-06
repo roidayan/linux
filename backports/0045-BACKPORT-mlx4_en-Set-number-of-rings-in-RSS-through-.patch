@@ -16,7 +16,7 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c b/drivers/net/ether
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
-@@ -637,14 +637,22 @@ static void mlx4_en_get_ringparam(struct net_device *dev,
+@@ -689,14 +689,22 @@ static void mlx4_en_get_ringparam(struct net_device *dev,
  	param->tx_pending = priv->tx_ring[0]->size;
  }
  
@@ -39,7 +39,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	struct mlx4_en_rss_map *rss_map = &priv->rss_map;
-@@ -663,8 +671,13 @@ static int mlx4_en_get_rxfh_indir(struct net_device *dev, u32 *ring_index)
+@@ -715,8 +723,13 @@ static int mlx4_en_get_rxfh_indir(struct net_device *dev, u32 *ring_index)
  	return err;
  }
  
@@ -53,7 +53,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	struct mlx4_en_dev *mdev = priv->mdev;
-@@ -1219,9 +1232,11 @@ const struct ethtool_ops mlx4_en_ethtool_ops = {
+@@ -1341,9 +1354,11 @@ const struct ethtool_ops mlx4_en_ethtool_ops = {
  	.set_ringparam = mlx4_en_set_ringparam,
  	.get_rxnfc = mlx4_en_get_rxnfc,
  	.set_rxnfc = mlx4_en_set_rxnfc,
@@ -182,7 +182,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  #define MLX4_EN_MSG_LEVEL	(NETIF_MSG_LINK | NETIF_MSG_IFDOWN)
  
  /*
-@@ -762,4 +766,10 @@ do {								\
+@@ -791,4 +795,10 @@ do {								\
  	pr_warning("%s %s: " format, DRV_NAME,		\
  		   dev_name(&mdev->pdev->dev), ##arg)
  

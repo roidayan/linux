@@ -1,7 +1,5 @@
-From b10e523d45b94409054d93de4029cc5f9bb10860 Mon Sep 17 00:00:00 2001
 From: Or Gerlitz <ogerlitz@mellanox.com>
-Date: Sun, 3 Mar 2013 12:00:24 +0200
-Subject: [PATCH] BACKPORTS: ndo_set_vf_xxx functions
+Subject: BACKPORTS: ndo_set_vf_xxx functions
 
 Change-Id: Ica4812941b257a8d725d36c9805068f0795bab0c
 Signed-off-by: Jack Morgenstein <jackm@dev.mellanox.co.il>
@@ -14,7 +12,7 @@ Signed-off-by: Or Gerlitz <ogerlitz@mellanox.com>
  3 files changed, 20 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx4/cmd.c b/drivers/net/ethernet/mellanox/mlx4/cmd.c
-index ad2ff1b..4c9c50b 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/cmd.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/cmd.c
 @@ -2321,6 +2321,7 @@ int mlx4_set_vf_spoofchk(struct mlx4_dev *dev, int port, int vf, bool setting)
@@ -38,10 +36,10 @@ index ad2ff1b..4c9c50b 100644
  EXPORT_SYMBOL_GPL(mlx4_get_vf_config);
 +#endif
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
-index 768e6a9..e612388 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
-@@ -2055,6 +2055,7 @@ static int mlx4_en_set_features(struct net_device *netdev,
+@@ -2053,6 +2053,7 @@ static int mlx4_en_set_features(struct net_device *netdev,
  }
  #endif
  
@@ -49,7 +47,7 @@ index 768e6a9..e612388 100644
  static int mlx4_en_set_vf_mac(struct net_device *dev, int queue, u8 *mac)
  {
  	struct mlx4_en_priv *en_priv = netdev_priv(dev);
-@@ -2073,7 +2074,9 @@ static int mlx4_en_set_vf_vlan(struct net_device *dev, int vf, u16 vlan, u8 qos)
+@@ -2071,7 +2072,9 @@ static int mlx4_en_set_vf_vlan(struct net_device *dev, int vf, u16 vlan, u8 qos)
  
  	return mlx4_set_vf_vlan(mdev->dev, en_priv->port, vf, vlan, qos);
  }
@@ -59,7 +57,7 @@ index 768e6a9..e612388 100644
  static int mlx4_en_set_vf_spoofchk(struct net_device *dev, int vf, bool setting)
  {
  	struct mlx4_en_priv *en_priv = netdev_priv(dev);
-@@ -2081,7 +2084,9 @@ static int mlx4_en_set_vf_spoofchk(struct net_device *dev, int vf, bool setting)
+@@ -2079,7 +2082,9 @@ static int mlx4_en_set_vf_spoofchk(struct net_device *dev, int vf, bool setting)
  
  	return mlx4_set_vf_spoofchk(mdev->dev, en_priv->port, vf, setting);
  }
@@ -69,7 +67,7 @@ index 768e6a9..e612388 100644
  int mlx4_en_get_vf_config(struct net_device *dev, int vf, struct ifla_vf_info *ivf)
  {
  	struct mlx4_en_priv *en_priv = netdev_priv(dev);
-@@ -2089,6 +2094,7 @@ int mlx4_en_get_vf_config(struct net_device *dev, int vf, struct ifla_vf_info *i
+@@ -2087,6 +2092,7 @@ int mlx4_en_get_vf_config(struct net_device *dev, int vf, struct ifla_vf_info *i
  
  	return mlx4_get_vf_config(mdev->dev, en_priv->port, vf, ivf);
  }
@@ -77,7 +75,7 @@ index 768e6a9..e612388 100644
  
  static int mlx4_en_fdb_add(struct ndmsg *ndm, struct nlattr *tb[],
  			   struct net_device *dev,
-@@ -2210,15 +2216,23 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
+@@ -2208,15 +2214,23 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
  #endif
  	.ndo_vlan_rx_add_vid	= mlx4_en_vlan_rx_add_vid,
  	.ndo_vlan_rx_kill_vid	= mlx4_en_vlan_rx_kill_vid,
@@ -102,7 +100,7 @@ index 768e6a9..e612388 100644
  	.ndo_rx_flow_steer	= mlx4_en_filter_rfs,
  #endif
 diff --git a/include/linux/mlx4/cmd.h b/include/linux/mlx4/cmd.h
-index c285f9b..3f5a652 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/include/linux/mlx4/cmd.h
 +++ b/include/linux/mlx4/cmd.h
 @@ -237,7 +237,9 @@ u32 mlx4_comm_get_version(void);
@@ -115,6 +113,3 @@ index c285f9b..3f5a652 100644
  
  #define MLX4_COMM_GET_IF_REV(cmd_chan_ver) (u8)((cmd_chan_ver) >> 8)
  
--- 
-1.7.1
-

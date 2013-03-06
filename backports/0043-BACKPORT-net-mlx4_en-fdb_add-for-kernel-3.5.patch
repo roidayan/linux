@@ -1,18 +1,16 @@
-From afa0cacd548839b6192f5c1b2524bb69d91f27b9 Mon Sep 17 00:00:00 2001
 From: Yan Burman <yanb@mellanox.com>
-Date: Thu, 24 Jan 2013 15:17:47 +0200
-Subject: [PATCH] BACKPORT: net/mlx4_en fdb_add for kernel < 3.5
+Subject: BACKPORT: net/mlx4_en fdb_add for kernel < 3.5
 
 Signed-off-by: Yan Burman <yanb@mellanox.com>
 ---
- drivers/net/ethernet/mellanox/mlx4/en_netdev.c | 183 +++++++++++++++++++++++++
- 1 file changed, 183 insertions(+)
+ drivers/net/ethernet/mellanox/mlx4/en_netdev.c |  183 ++++++++++++++++++++++++
+ 1 files changed, 183 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
-index 8454b88..3db3595 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
-@@ -1878,6 +1878,169 @@ err:
+@@ -1912,6 +1912,169 @@ err:
  	return -ENOMEM;
  }
  
@@ -182,7 +180,7 @@ index 8454b88..3db3595 100644
  
  void mlx4_en_destroy_netdev(struct net_device *dev)
  {
-@@ -1911,6 +2074,10 @@ void mlx4_en_destroy_netdev(struct net_device *dev)
+@@ -1947,6 +2110,10 @@ void mlx4_en_destroy_netdev(struct net_device *dev)
  	kfree(priv->tx_ring);
  	kfree(priv->tx_cq);
  
@@ -193,7 +191,7 @@ index 8454b88..3db3595 100644
  	free_netdev(dev);
  }
  
-@@ -2053,6 +2220,7 @@ static int mlx4_en_set_vf_spoofchk(struct net_device *dev, int vf, bool setting)
+@@ -2099,6 +2266,7 @@ int mlx4_en_get_vf_config(struct net_device *dev, int vf, struct ifla_vf_info *i
  }
  #endif
  
@@ -201,7 +199,7 @@ index 8454b88..3db3595 100644
  static int mlx4_en_fdb_add(struct ndmsg *ndm, struct nlattr *tb[],
  			   struct net_device *dev,
  			   const unsigned char *addr, u16 flags)
-@@ -2124,6 +2292,7 @@ static int mlx4_en_fdb_dump(struct sk_buff *skb,
+@@ -2170,6 +2338,7 @@ static int mlx4_en_fdb_dump(struct sk_buff *skb,
  
  	return idx;
  }
@@ -209,7 +207,7 @@ index 8454b88..3db3595 100644
  
  static const struct net_device_ops mlx4_netdev_ops = {
  	.ndo_open		= mlx4_en_open,
-@@ -2152,9 +2321,11 @@ static const struct net_device_ops mlx4_netdev_ops = {
+@@ -2198,9 +2367,11 @@ static const struct net_device_ops mlx4_netdev_ops = {
  #ifdef CONFIG_RFS_ACCEL
  	.ndo_rx_flow_steer	= mlx4_en_filter_rfs,
  #endif
@@ -221,7 +219,7 @@ index 8454b88..3db3595 100644
  };
  
  static const struct net_device_ops mlx4_netdev_ops_master = {
-@@ -2190,9 +2361,11 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
+@@ -2239,9 +2410,11 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
  #ifdef CONFIG_RFS_ACCEL
  	.ndo_rx_flow_steer	= mlx4_en_filter_rfs,
  #endif
@@ -233,7 +231,7 @@ index 8454b88..3db3595 100644
  };
  
  int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
-@@ -2405,6 +2578,16 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2464,6 +2637,16 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	}
  	priv->registered = 1;
  
@@ -250,6 +248,3 @@ index 8454b88..3db3595 100644
  	en_warn(priv, "Using %d TX rings\n", prof->tx_ring_num);
  	en_warn(priv, "Using %d RX rings\n", prof->rx_ring_num);
  
--- 
-1.7.11.3
-

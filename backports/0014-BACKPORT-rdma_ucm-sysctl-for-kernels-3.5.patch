@@ -1,7 +1,5 @@
-From dc431115738e52472c7a9cef80a609371b49ecfd Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Date: Wed, 5 Dec 2012 13:27:56 +0200
-Subject: [PATCH] BACKPORT: rdma_ucm sysctl for kernels < 3.5
+Subject: BACKPORT: rdma_ucm sysctl for kernels < 3.5
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -9,7 +7,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  1 files changed, 15 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/core/ucma.c b/drivers/infiniband/core/ucma.c
-index 602363b..0547027 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/ucma.c
 +++ b/drivers/infiniband/core/ucma.c
 @@ -66,6 +66,13 @@ static ctl_table ucma_ctl_table[] = {
@@ -50,6 +48,3 @@ index 602363b..0547027 100644
  #endif
  	device_remove_file(ucma_misc.this_device, &dev_attr_abi_version);
  	misc_deregister(&ucma_misc);
--- 
-1.7.8.2
-

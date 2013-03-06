@@ -1,7 +1,5 @@
-From 93637eeaf4cc28454054486793b7a80fdf790f69 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Date: Thu, 12 Jul 2012 22:31:24 +0300
-Subject: [PATCH] BACKPORT: mlx4_ib backport dev_mc_add/delete
+Subject: BACKPORT: mlx4_ib backport dev_mc_add/delete
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -9,10 +7,10 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  1 files changed, 8 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/hw/mlx4/main.c b/drivers/infiniband/hw/mlx4/main.c
-index 39c76d2..52fc02c 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/hw/mlx4/main.c
 +++ b/drivers/infiniband/hw/mlx4/main.c
-@@ -896,7 +896,11 @@ int mlx4_ib_add_mc(struct mlx4_ib_dev *mdev, struct mlx4_ib_qp *mqp,
+@@ -902,7 +902,11 @@ int mlx4_ib_add_mc(struct mlx4_ib_dev *mdev, struct mlx4_ib_qp *mqp,
  	if (ndev) {
  		rdma_get_mcast_mac((struct in6_addr *)gid, mac);
  		rtnl_lock();
@@ -24,7 +22,7 @@ index 39c76d2..52fc02c 100644
  		ret = 1;
  		rtnl_unlock();
  		dev_put(ndev);
-@@ -1219,7 +1223,11 @@ static int mlx4_ib_mcg_detach(struct ib_qp *ibqp, union ib_gid *gid, u16 lid)
+@@ -1231,7 +1235,11 @@ static int mlx4_ib_mcg_detach(struct ib_qp *ibqp, union ib_gid *gid, u16 lid)
  		rdma_get_mcast_mac((struct in6_addr *)gid, mac);
  		if (ndev) {
  			rtnl_lock();
@@ -36,6 +34,3 @@ index 39c76d2..52fc02c 100644
  			rtnl_unlock();
  			dev_put(ndev);
  		}
--- 
-1.7.8.2
-

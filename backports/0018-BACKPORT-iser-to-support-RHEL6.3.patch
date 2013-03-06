@@ -1,7 +1,5 @@
-From b6b33dbb4cec148089ece1336f43c00c10da4ea0 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Date: Wed, 5 Dec 2012 13:32:41 +0200
-Subject: [PATCH] BACKPORT: iser to support RHEL6.3
+Subject: BACKPORT: iser to support RHEL6.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -10,7 +8,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  2 files changed, 20 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/iser/iser_initiator.c b/drivers/infiniband/ulp/iser/iser_initiator.c
-index a00ccd1..47dd15c 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/iser/iser_initiator.c
 +++ b/drivers/infiniband/ulp/iser/iser_initiator.c
 @@ -266,7 +266,11 @@ int iser_send_command(struct iscsi_conn *conn,
@@ -26,10 +24,10 @@ index a00ccd1..47dd15c 100644
  	struct iser_tx_desc *tx_desc = &iser_task->desc;
  
 diff --git a/drivers/infiniband/ulp/iser/iser_memory.c b/drivers/infiniband/ulp/iser/iser_memory.c
-index 2033a92..527db86 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/iser/iser_memory.c
 +++ b/drivers/infiniband/ulp/iser/iser_memory.c
-@@ -73,11 +73,19 @@ static int iser_start_rdma_unaligned_sg(struct iscsi_iser_task *iser_task,
+@@ -80,11 +80,19 @@ static int iser_start_rdma_unaligned_sg(struct iscsi_iser_task *iser_task,
  
  		p = mem;
  		for_each_sg(sgl, sg, data->size, i) {
@@ -49,7 +47,7 @@ index 2033a92..527db86 100644
  			p += sg->length;
  		}
  	}
-@@ -133,11 +141,19 @@ void iser_finalize_rdma_unaligned_sg(struct iscsi_iser_task *iser_task,
+@@ -140,11 +148,19 @@ void iser_finalize_rdma_unaligned_sg(struct iscsi_iser_task *iser_task,
  
  		p = mem;
  		for_each_sg(sgl, sg, sg_size, i) {
@@ -69,6 +67,3 @@ index 2033a92..527db86 100644
  			p += sg->length;
  		}
  	}
--- 
-1.7.8.2
-

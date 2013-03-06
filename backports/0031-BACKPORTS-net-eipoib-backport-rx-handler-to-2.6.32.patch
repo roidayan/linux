@@ -1,7 +1,5 @@
-From 4d605b5fbc12fbde52e4aed6cfa25953d753f7e0 Mon Sep 17 00:00:00 2001
 From: Erez Shitrit <erezsh@mellanox.com>
-Date: Tue, 25 Dec 2012 09:37:01 +0200
-Subject: [PATCH] BACKPORTS: net/eipoib: backport rx handler to 2.6.32
+Subject: BACKPORTS: net/eipoib: backport rx handler to 2.6.32
 
 The eipoib driver uses the netdev_rx_handler_register framework
 to register a handler which hooks all the rx calls made by ipoib
@@ -21,7 +19,7 @@ Signed-off-by: Erez Shitrit <erezsh@mellanox.com>
  1 files changed, 22 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/net/eipoib/eth_ipoib_main.c b/drivers/net/eipoib/eth_ipoib_main.c
-index dc8cf3c..ddb2efc 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/eipoib/eth_ipoib_main.c
 +++ b/drivers/net/eipoib/eth_ipoib_main.c
 @@ -47,6 +47,12 @@
@@ -37,7 +35,7 @@ index dc8cf3c..ddb2efc 100644
  static rx_handler_result_t eipoib_handle_frame(struct sk_buff **pskb);
  static int eipoib_device_event(struct notifier_block *unused,
  			       unsigned long event, void *ptr);
-@@ -502,6 +508,7 @@ int parent_enslave(struct net_device *parent_dev, struct net_device *slave_dev)
+@@ -536,6 +542,7 @@ int parent_enslave(struct net_device *parent_dev, struct net_device *slave_dev)
  	if (res)
  		goto err_close;
  
@@ -45,7 +43,7 @@ index dc8cf3c..ddb2efc 100644
  	/* register handler */
  	res = netdev_rx_handler_register(slave_dev, eipoib_handle_frame,
  					 new_slave);
-@@ -510,6 +517,7 @@ int parent_enslave(struct net_device *parent_dev, struct net_device *slave_dev)
+@@ -544,6 +551,7 @@ int parent_enslave(struct net_device *parent_dev, struct net_device *slave_dev)
  			parent_dev->name, res);
  		goto err_close;
  	}
@@ -53,7 +51,7 @@ index dc8cf3c..ddb2efc 100644
  
  	pr_info("%s: enslaving %s\n", parent_dev->name, slave_dev->name);
  
-@@ -541,7 +549,9 @@ static void slave_free(struct parent *parent, struct slave *slave)
+@@ -575,7 +583,9 @@ static void slave_free(struct parent *parent, struct slave *slave)
  		kfree(neigh);
  	}
  
@@ -63,7 +61,7 @@ index dc8cf3c..ddb2efc 100644
  
  	kfree(slave);
  }
-@@ -1559,7 +1569,11 @@ static rx_handler_result_t eipoib_handle_frame(struct sk_buff **pskb)
+@@ -1532,7 +1542,11 @@ static rx_handler_result_t eipoib_handle_frame(struct sk_buff **pskb)
  	struct sk_buff *skb = *pskb;
  	struct slave *slave;
  
@@ -75,7 +73,7 @@ index dc8cf3c..ddb2efc 100644
  
  	parent_rx(skb, slave);
  
-@@ -2085,6 +2099,10 @@ static int __init mod_init(void)
+@@ -2055,6 +2069,10 @@ static int __init mod_init(void)
  		goto unreg_subsys;
  	}
  
@@ -86,7 +84,7 @@ index dc8cf3c..ddb2efc 100644
  	goto out;
  
  unreg_subsys:
-@@ -2100,6 +2118,10 @@ static void __exit mod_exit(void)
+@@ -2070,6 +2088,10 @@ static void __exit mod_exit(void)
  
  	unregister_pernet_subsys(&eipoib_net_ops);
  
@@ -97,6 +95,3 @@ index dc8cf3c..ddb2efc 100644
  	rtnl_lock();
  	parent_free_all();
  	rtnl_unlock();
--- 
-1.7.1
-

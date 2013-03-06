@@ -1,21 +1,19 @@
-From c012b15c1cafd46918460c119cc422f8ae08dd69 Mon Sep 17 00:00:00 2001
 From: Yan Burman <yanb@mellanox.com>
-Date: Tue, 12 Feb 2013 15:07:26 +0200
-Subject: [PATCH] BACKPORT: mlx4_en: Added missing functionality
+Subject: BACKPORT: mlx4_en: Added missing functionality
 
 Added missing offloads and ethtool configurations for RHEL6.x
 
 Signed-off-by: Yan Burman <yanb@mellanox.com>
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- drivers/net/ethernet/mellanox/mlx4/en_ethtool.c |   76 +++++++++++++++++++++++
- drivers/net/ethernet/mellanox/mlx4/en_netdev.c  |   36 ++++++++++-
- drivers/net/ethernet/mellanox/mlx4/en_rx.c      |   39 +++++++++++-
- drivers/net/ethernet/mellanox/mlx4/mlx4_en.h    |    6 ++
- 4 files changed, 153 insertions(+), 4 deletions(-)
+ drivers/net/ethernet/mellanox/mlx4/en_ethtool.c |   78 +++++++++++++++++++++++
+ drivers/net/ethernet/mellanox/mlx4/en_netdev.c  |   33 +++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_rx.c      |   13 ++++-
+ drivers/net/ethernet/mellanox/mlx4/mlx4_en.h    |    3 +
+ 4 files changed, 124 insertions(+), 3 deletions(-)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
-index 0de5b43..368551b 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
 @@ -114,6 +114,72 @@ mlx4_en_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *drvinfo)
@@ -91,7 +89,7 @@ index 0de5b43..368551b 100644
  static const char main_strings[][ETH_GSTRING_LEN] = {
  	"rx_packets", "tx_packets", "rx_bytes", "tx_bytes", "rx_errors",
  	"tx_errors", "rx_dropped", "tx_dropped", "multicast", "collisions",
-@@ -1166,6 +1230,18 @@ const struct ethtool_ops mlx4_en_ethtool_ops = {
+@@ -1246,6 +1312,18 @@ const struct ethtool_ops mlx4_en_ethtool_ops = {
  	.get_drvinfo = mlx4_en_get_drvinfo,
  	.get_settings = mlx4_en_get_settings,
  	.set_settings = mlx4_en_set_settings,
@@ -111,10 +109,10 @@ index 0de5b43..368551b 100644
  	.get_strings = mlx4_en_get_strings,
  	.get_sset_count = mlx4_en_get_sset_count,
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
-index 405253a..12cc9bd 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
-@@ -360,7 +360,22 @@ static void mlx4_en_filter_rfs_expire(struct mlx4_en_priv *priv)
+@@ -359,7 +359,22 @@ static void mlx4_en_filter_rfs_expire(struct mlx4_en_priv *priv)
  }
  #endif
  
@@ -137,7 +135,7 @@ index 405253a..12cc9bd 100644
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	struct mlx4_en_dev *mdev = priv->mdev;
-@@ -382,10 +397,16 @@ static int mlx4_en_vlan_rx_add_vid(struct net_device *dev, unsigned short vid)
+@@ -381,10 +396,16 @@ static int mlx4_en_vlan_rx_add_vid(struct net_device *dev, unsigned short vid)
  		en_dbg(HW, priv, "failed adding vlan %d\n", vid);
  	mutex_unlock(&mdev->state_lock);
  
@@ -154,7 +152,7 @@ index 405253a..12cc9bd 100644
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	struct mlx4_en_dev *mdev = priv->mdev;
-@@ -406,7 +427,9 @@ static int mlx4_en_vlan_rx_kill_vid(struct net_device *dev, unsigned short vid)
+@@ -405,7 +426,9 @@ static int mlx4_en_vlan_rx_kill_vid(struct net_device *dev, unsigned short vid)
  	}
  	mutex_unlock(&mdev->state_lock);
  
@@ -164,7 +162,7 @@ index 405253a..12cc9bd 100644
  }
  
  static void mlx4_en_u64_to_mac(unsigned char dst_mac[ETH_ALEN + 2], u64 src_mac)
-@@ -2145,6 +2168,9 @@ static const struct net_device_ops mlx4_netdev_ops = {
+@@ -2149,6 +2172,9 @@ static const struct net_device_ops mlx4_netdev_ops = {
  	.ndo_change_mtu		= mlx4_en_change_mtu,
  	.ndo_do_ioctl		= mlx4_en_ioctl,
  	.ndo_tx_timeout		= mlx4_en_tx_timeout,
@@ -174,7 +172,7 @@ index 405253a..12cc9bd 100644
  	.ndo_vlan_rx_add_vid	= mlx4_en_vlan_rx_add_vid,
  	.ndo_vlan_rx_kill_vid	= mlx4_en_vlan_rx_kill_vid,
  #ifdef CONFIG_NET_POLL_CONTROLLER
-@@ -2173,6 +2199,9 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
+@@ -2177,6 +2203,9 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
  	.ndo_validate_addr	= eth_validate_addr,
  	.ndo_change_mtu		= mlx4_en_change_mtu,
  	.ndo_tx_timeout		= mlx4_en_tx_timeout,
@@ -184,7 +182,7 @@ index 405253a..12cc9bd 100644
  	.ndo_vlan_rx_add_vid	= mlx4_en_vlan_rx_add_vid,
  	.ndo_vlan_rx_kill_vid	= mlx4_en_vlan_rx_kill_vid,
  	.ndo_set_vf_mac		= mlx4_en_set_vf_mac,
-@@ -2357,13 +2389,13 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2377,13 +2406,13 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  #endif
  
  #else
@@ -201,10 +199,10 @@ index 405253a..12cc9bd 100644
  #else
  	dev->features |= NETIF_F_RXCSUM;
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_rx.c b/drivers/net/ethernet/mellanox/mlx4/en_rx.c
-index a1cc8f8..5626375 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_rx.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_rx.c
-@@ -752,15 +770,26 @@ int mlx4_en_process_rx_cq(struct net_device *dev,
+@@ -498,15 +498,26 @@ int mlx4_en_process_rx_cq(struct net_device *dev,
  		skb->ip_summed = ip_summed;
  		skb_record_rx_queue(skb, cq->ring);
  
@@ -233,10 +231,10 @@ index a1cc8f8..5626375 100644
  		if (ring->hwtstamp_rx_filter == HWTSTAMP_FILTER_ALL) {
  			timestamp = mlx4_en_get_cqe_ts(cqe);
 diff --git a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
-index d1db938..1e9ae45 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
 +++ b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
-@@ -481,6 +481,9 @@ struct mlx4_en_priv {
+@@ -473,6 +473,9 @@ struct mlx4_en_priv {
  	struct mlx4_en_dev *mdev;
  	struct mlx4_en_port_profile *prof;
  	struct net_device *dev;
@@ -246,6 +244,3 @@ index d1db938..1e9ae45 100644
  	unsigned long active_vlans[BITS_TO_LONGS(VLAN_N_VID)];
  	struct net_device_stats stats;
  	struct net_device_stats ret_stats;
--- 
-1.7.1
-

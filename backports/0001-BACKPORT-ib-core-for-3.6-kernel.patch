@@ -1,7 +1,5 @@
-From 3912922a10bc31c636cbd88eeb9e89198068f006 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Date: Wed, 28 Nov 2012 14:27:05 +0200
-Subject: [PATCH] BACKPORT: ib/core for 3.6 kernel
+Subject: BACKPORT: ib/core for 3.6 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -12,7 +10,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  4 files changed, 75 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/core/netlink.c b/drivers/infiniband/core/netlink.c
-index 32f65fa..99d1cff 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/netlink.c
 +++ b/drivers/infiniband/core/netlink.c
 @@ -157,7 +157,9 @@ static int ibnl_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
@@ -38,7 +36,7 @@ index 32f65fa..99d1cff 100644
  		pr_warn("Failed to create netlink socket\n");
  		return -ENOMEM;
 diff --git a/drivers/infiniband/core/ucma.c b/drivers/infiniband/core/ucma.c
-index 4976b44..602363b 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/ucma.c
 +++ b/drivers/infiniband/core/ucma.c
 @@ -1218,7 +1218,11 @@ static ssize_t ucma_migrate_id(struct ucma_file *new_file,
@@ -88,10 +86,10 @@ index 4976b44..602363b 100644
  }
  
 diff --git a/drivers/infiniband/core/uverbs_cmd.c b/drivers/infiniband/core/uverbs_cmd.c
-index 5581fb5..052c0f3 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/uverbs_cmd.c
 +++ b/drivers/infiniband/core/uverbs_cmd.c
-@@ -712,7 +712,11 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
+@@ -717,7 +717,11 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
  	struct ib_udata			udata;
  	struct ib_uxrcd_object         *obj;
  	struct ib_xrcd                 *xrcd = NULL;
@@ -103,7 +101,7 @@ index 5581fb5..052c0f3 100644
  	struct inode                   *inode = NULL;
  	int				ret = 0;
  	int				new_xrcd = 0;
-@@ -731,6 +735,7 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
+@@ -736,6 +740,7 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
  
  	if (cmd.fd != -1) {
  		/* search for file descriptor */
@@ -111,7 +109,7 @@ index 5581fb5..052c0f3 100644
  		f = fdget(cmd.fd);
  		if (!f.file) {
  			ret = -EBADF;
-@@ -738,6 +743,19 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
+@@ -743,6 +748,19 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
  		}
  
  		inode = f.file->f_path.dentry->d_inode;
@@ -131,7 +129,7 @@ index 5581fb5..052c0f3 100644
  		xrcd = find_xrcd(file->device, inode);
  		if (!xrcd && !(cmd.oflags & O_CREAT)) {
  			/* no file descriptor. Need CREATE flag */
-@@ -802,8 +820,13 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
+@@ -807,8 +825,13 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
  		goto err_copy;
  	}
  
@@ -145,7 +143,7 @@ index 5581fb5..052c0f3 100644
  
  	mutex_lock(&file->mutex);
  	list_add_tail(&obj->uobject.list, &file->ucontext->xrcd_list);
-@@ -832,8 +855,13 @@ err:
+@@ -837,8 +860,13 @@ err:
  	put_uobj_write(&obj->uobject);
  
  err_tree_mutex_unlock:
@@ -160,10 +158,10 @@ index 5581fb5..052c0f3 100644
  	mutex_unlock(&file->device->xrcd_tree_mutex);
  
 diff --git a/drivers/infiniband/core/uverbs_main.c b/drivers/infiniband/core/uverbs_main.c
-index ce2ecaa..9d8cf90 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/uverbs_main.c
 +++ b/drivers/infiniband/core/uverbs_main.c
-@@ -556,6 +556,7 @@ struct file *ib_uverbs_alloc_event_file(struct ib_uverbs_file *uverbs_file,
+@@ -558,6 +558,7 @@ struct file *ib_uverbs_alloc_event_file(struct ib_uverbs_file *uverbs_file,
  struct ib_uverbs_event_file *ib_uverbs_lookup_comp_file(int fd)
  {
  	struct ib_uverbs_event_file *ev_file = NULL;
@@ -171,7 +169,7 @@ index ce2ecaa..9d8cf90 100644
  	struct fd f = fdget(fd);
  
  	if (!f.file)
-@@ -575,6 +576,29 @@ struct ib_uverbs_event_file *ib_uverbs_lookup_comp_file(int fd)
+@@ -577,6 +578,29 @@ struct ib_uverbs_event_file *ib_uverbs_lookup_comp_file(int fd)
  out:
  	fdput(f);
  	return ev_file;
@@ -201,6 +199,3 @@ index ce2ecaa..9d8cf90 100644
  }
  
  static const char *verbs_cmd_str(__u32 cmd)
--- 
-1.7.1
-

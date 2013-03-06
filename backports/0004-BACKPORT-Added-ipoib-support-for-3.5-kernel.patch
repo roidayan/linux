@@ -1,7 +1,5 @@
-From a170b76957e8729946ab0dc4c43806b0e104bfe6 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Date: Wed, 28 Nov 2012 16:34:38 +0200
-Subject: [PATCH] BACKPORT: Added ipoib support for 3.5 kernel
+Subject: BACKPORT: Added ipoib support for 3.5 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -9,10 +7,10 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  1 files changed, 4 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_cm.c b/drivers/infiniband/ulp/ipoib/ipoib_cm.c
-index ce61c78..96d7778 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_cm.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_cm.c
-@@ -1466,7 +1466,11 @@ static void ipoib_cm_update_pmtu_task(struct work_struct *work)
+@@ -1467,7 +1467,11 @@ static void ipoib_cm_update_pmtu_task(struct work_struct *work)
  		container_of(work, struct ipoib_pmtu_update, work);
  	struct sk_buff *skb = pmtu_update->skb;
  
@@ -24,6 +22,3 @@ index ce61c78..96d7778 100644
  
  	consume_skb(skb);
  
--- 
-1.7.8.2
-

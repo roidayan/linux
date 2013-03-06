@@ -41,7 +41,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	struct mlx4_en_dev *mdev = priv->mdev;
-@@ -1358,8 +1368,15 @@ const struct ethtool_ops mlx4_en_ethtool_ops = {
+@@ -1359,8 +1369,15 @@ const struct ethtool_ops mlx4_en_ethtool_ops = {
  	.get_rxfh_indir = mlx4_en_get_rxfh_indir,
  	.set_rxfh_indir = mlx4_en_set_rxfh_indir,
  #endif
@@ -61,7 +61,7 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c b/drivers/net/ethern
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
-@@ -2562,6 +2562,10 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2575,6 +2575,10 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  
  	SET_ETHTOOL_OPS(dev, &mlx4_en_ethtool_ops);
  
@@ -191,7 +191,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  #define MLX4_EN_MSG_LEVEL	(NETIF_MSG_LINK | NETIF_MSG_IFDOWN)
  
  /*
-@@ -716,6 +720,24 @@ int mlx4_en_dcbnl_ieee_getmaxrate(struct net_device *dev,
+@@ -717,6 +721,24 @@ int mlx4_en_dcbnl_ieee_getmaxrate(struct net_device *dev,
  				  struct ieee_maxrate *maxrate);
  #endif
  
@@ -216,7 +216,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  int mlx4_en_setup_tc(struct net_device *dev, u8 up);
  
-@@ -744,6 +766,9 @@ int mlx4_en_timestamp_config(struct net_device *dev, int tx_type, int rx_filter)
+@@ -745,6 +767,9 @@ int mlx4_en_timestamp_config(struct net_device *dev, int tx_type, int rx_filter)
   * Globals
   */
  extern const struct ethtool_ops mlx4_en_ethtool_ops;

@@ -1,7 +1,5 @@
-From d91617df5bf56d5561102c1714a28d9dc1b20ae9 Mon Sep 17 00:00:00 2001
 From: Markuze Alex <markuze@mellanox.com>
-Date: Tue, 5 Mar 2013 15:31:00 +0200
-Subject: [PATCH] BACKPORTS : Adding lro module parameters check
+Subject: BACKPORTS : Adding lro module parameters check
 
 Signed-off-by: Markuze Alex <markuze@mellanox.com>
 ---
@@ -9,10 +7,10 @@ Signed-off-by: Markuze Alex <markuze@mellanox.com>
  1 files changed, 7 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-index f97b3ea..b718260 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-@@ -2733,6 +2733,13 @@ static int __init ipoib_init_module(void)
+@@ -2754,6 +2754,13 @@ static int __init ipoib_init_module(void)
  	ipoib_max_conn_qp = min(ipoib_max_conn_qp, IPOIB_CM_MAX_CONN_QP);
  #endif
  
@@ -26,6 +24,3 @@ index f97b3ea..b718260 100644
  	/*
  	 * When copying small received packets, we only copy from the
  	 * linear data part of the SKB, so we rely on this condition.
--- 
-1.7.1
-

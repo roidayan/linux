@@ -1,7 +1,5 @@
-From 9bbd82494d190578f17567cd4c8b57e394dc82a8 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Date: Mon, 3 Dec 2012 17:39:51 +0200
-Subject: [PATCH] BACKPORT: ipoib for 3.2 kernel
+Subject: BACKPORT: ipoib for 3.2 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -9,10 +7,10 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  1 files changed, 2 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-index b0fe551..2b90913 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-@@ -2327,7 +2327,9 @@ static struct net_device *ipoib_add_port(const char *format,
+@@ -2381,7 +2381,9 @@ static struct net_device *ipoib_add_port(const char *format,
  	priv->dev->mtu  = IPOIB_UD_MTU(priv->max_ib_mtu);
  	priv->mcast_mtu  = priv->admin_mtu = priv->dev->mtu;
  
@@ -22,6 +20,3 @@ index b0fe551..2b90913 100644
  
  	result = ib_query_pkey(hca, port, 0, &priv->pkey);
  	if (result) {
--- 
-1.7.8.2
-

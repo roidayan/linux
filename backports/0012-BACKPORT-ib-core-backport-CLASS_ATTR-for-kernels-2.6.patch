@@ -1,7 +1,5 @@
-From 616651076929387dde3dc3665e00c312c4bc293f Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Date: Tue, 10 Jul 2012 18:06:16 +0300
-Subject: [PATCH] BACKPORT: ib/core backport CLASS_ATTR for kernels < 2.6.34
+Subject: BACKPORT: ib/core backport CLASS_ATTR for kernels < 2.6.34
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -11,7 +9,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  3 files changed, 44 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/core/ucm.c b/drivers/infiniband/core/ucm.c
-index 49b15ac..b6d7fa9 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/ucm.c
 +++ b/drivers/infiniband/core/ucm.c
 @@ -1329,8 +1329,16 @@ static void ib_ucm_remove_one(struct ib_device *device)
@@ -68,7 +66,7 @@ index 49b15ac..b6d7fa9 100644
  	if (overflow_maj)
  		unregister_chrdev_region(overflow_maj, IB_UCM_MAX_DEVICES);
 diff --git a/drivers/infiniband/core/user_mad.c b/drivers/infiniband/core/user_mad.c
-index f0d588f..2a31027 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/user_mad.c
 +++ b/drivers/infiniband/core/user_mad.c
 @@ -969,8 +969,16 @@ static ssize_t show_port(struct device *dev, struct device_attribute *attr,
@@ -101,10 +99,10 @@ index f0d588f..2a31027 100644
  		printk(KERN_ERR "user_mad: couldn't create abi_version attribute\n");
  		goto out_class;
 diff --git a/drivers/infiniband/core/uverbs_main.c b/drivers/infiniband/core/uverbs_main.c
-index 6637502..286d67a 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/uverbs_main.c
 +++ b/drivers/infiniband/core/uverbs_main.c
-@@ -773,8 +773,16 @@ static ssize_t show_dev_abi_version(struct device *device,
+@@ -889,8 +889,16 @@ static ssize_t show_dev_abi_version(struct device *device,
  }
  static DEVICE_ATTR(abi_version, S_IRUGO, show_dev_abi_version, NULL);
  
@@ -121,7 +119,7 @@ index 6637502..286d67a 100644
  
  static dev_t overflow_maj;
  static DECLARE_BITMAP(overflow_map, IB_UVERBS_MAX_DEVICES);
-@@ -931,7 +939,11 @@ static int __init ib_uverbs_init(void)
+@@ -1047,7 +1055,11 @@ static int __init ib_uverbs_init(void)
  
  	uverbs_class->devnode = uverbs_devnode;
  
@@ -133,6 +131,3 @@ index 6637502..286d67a 100644
  	if (ret) {
  		printk(KERN_ERR "user_verbs: couldn't create abi_version attribute\n");
  		goto out_class;
--- 
-1.7.8.2
-

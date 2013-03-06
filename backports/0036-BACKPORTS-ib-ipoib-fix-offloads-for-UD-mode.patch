@@ -1,7 +1,5 @@
-From 57e19629d9b674571ed553cd08dd54b7992f79eb Mon Sep 17 00:00:00 2001
 From: Yishai Hadas <yishaih@mellanox.com>
-Date: Wed, 2 Jan 2013 18:27:08 +0200
-Subject: [PATCH] BACKPORTS: ib/ipoib: fix offloads for UD mode
+Subject: BACKPORTS: ib/ipoib: fix offloads for UD mode
 
 Change-Id: I9171f0de6ee1296e30296d1c9869a4a3c9208041
 Signed-off-by: Yishai Hadas <yishaih@mellanox.com>
@@ -12,10 +10,10 @@ Signed-off-by: Yishai Hadas <yishaih@mellanox.com>
  3 files changed, 23 insertions(+), 5 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib.h b/drivers/infiniband/ulp/ipoib/ipoib.h
-index 2655a36..a734568 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib.h
 +++ b/drivers/infiniband/ulp/ipoib/ipoib.h
-@@ -101,6 +101,9 @@ enum {
+@@ -103,6 +103,9 @@ enum {
  	IPOIB_FLAG_AUTO_MODER     = 13, /*indicates moderation is running*/
  
  	IPOIB_MAX_BACKOFF_SECONDS = 16,
@@ -26,10 +24,10 @@ index 2655a36..a734568 100644
  	IPOIB_MCAST_FLAG_FOUND	  = 0,	/* used in set_multicast_list */
  	IPOIB_MCAST_FLAG_SENDONLY = 1,
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
-index ee04b77..85ca65e 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
-@@ -303,6 +303,15 @@ int ipoib_set_flags(struct net_device *dev, u32 data)
+@@ -316,6 +316,15 @@ int ipoib_set_flags(struct net_device *dev, u32 data)
  }
  #endif
  
@@ -45,7 +43,7 @@ index ee04b77..85ca65e 100644
  static const struct ethtool_ops ipoib_ethtool_ops = {
  	.get_drvinfo		= ipoib_get_drvinfo,
  	.get_coalesce		= ipoib_get_coalesce,
-@@ -318,6 +327,10 @@ static const struct ethtool_ops ipoib_ethtool_ops = {
+@@ -331,6 +340,10 @@ static const struct ethtool_ops ipoib_ethtool_ops = {
  	.set_flags		= ipoib_set_flags,
  	.get_flags              = ethtool_op_get_flags,
  #endif
@@ -57,10 +55,10 @@ index ee04b77..85ca65e 100644
  
  void ipoib_set_ethtool_ops(struct net_device *dev)
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-index 6276062..57b0798 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-@@ -278,11 +278,12 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
+@@ -284,11 +284,12 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
  #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
  		netdev_update_features(dev);
  #else
@@ -78,7 +76,7 @@ index 6276062..57b0798 100644
  #endif
  		dev_set_mtu(dev, min(priv->mcast_mtu, dev->mtu));
  		rtnl_unlock();
-@@ -2405,6 +2406,7 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
+@@ -2459,6 +2460,7 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
  
  		priv->dev->features |= priv->dev->hw_features;
  #else
@@ -86,6 +84,3 @@ index 6276062..57b0798 100644
  		priv->dev->features |= NETIF_F_SG |
  			NETIF_F_IP_CSUM | NETIF_F_RXCSUM;
  
--- 
-1.7.1
-

@@ -1,7 +1,5 @@
-From 2b2ce05b5002891584e43ea92726e3dc4fc8ef49 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Date: Mon, 10 Dec 2012 13:39:07 +0200
-Subject: [PATCH] BACKPORT: iser for SLES11SP1
+Subject: BACKPORT: iser for SLES11SP1
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -9,7 +7,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  1 files changed, 8 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/iser/iscsi_iser.c b/drivers/infiniband/ulp/iser/iscsi_iser.c
-index 9eba1cc..96d5fed 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/iser/iscsi_iser.c
 +++ b/drivers/infiniband/ulp/iser/iscsi_iser.c
 @@ -534,6 +534,7 @@ iscsi_iser_conn_get_stats(struct iscsi_cls_conn *cls_conn, struct iscsi_stats *s
@@ -59,6 +57,3 @@ index 9eba1cc..96d5fed 100644
  	.get_session_param	= iscsi_session_get_param,
  	.start_conn             = iscsi_conn_start,
  	.stop_conn              = iscsi_iser_conn_stop,
--- 
-1.7.8.2
-

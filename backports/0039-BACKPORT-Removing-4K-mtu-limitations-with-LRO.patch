@@ -10,7 +10,7 @@ diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c b/drivers/infiniband/u
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
-@@ -294,16 +294,7 @@ static int ipoib_set_channels(struct net_device *dev,
+@@ -302,16 +302,7 @@ static int ipoib_set_channels(struct net_device *dev,
  #ifdef CONFIG_COMPAT_USE_LRO
  int ipoib_set_flags(struct net_device *dev, u32 data)
  {
@@ -31,7 +31,7 @@ diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-@@ -1960,9 +1960,6 @@ void set_lro_features_bit(struct ipoib_dev_priv *priv)
+@@ -1993,9 +1993,6 @@ void set_lro_features_bit(struct ipoib_dev_priv *priv)
  {
  	if (lro)
  		priv->dev->features |= NETIF_F_LRO;
@@ -41,7 +41,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  #endif
  
-@@ -2466,16 +2463,7 @@ static struct net_device *ipoib_add_port(const char *format,
+@@ -2500,16 +2497,7 @@ static struct net_device *ipoib_add_port(const char *format,
  
  	if (!ib_query_port(hca, port, &attr)) {
  		priv->max_ib_mtu = ib_mtu_enum_to_int(attr.max_mtu);

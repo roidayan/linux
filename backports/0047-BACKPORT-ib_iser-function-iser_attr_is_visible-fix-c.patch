@@ -1,8 +1,5 @@
-From c9354e54a7a469d77d8578657d99c31e90654862 Mon Sep 17 00:00:00 2001
 From: Alex Tabachnik <alext@mellanox.com>
-Date: Mon, 4 Mar 2013 10:50:55 +0200
-Subject: [PATCH] BACKPORT: ib_iser: function iser_attr_is_visible fix
- compilation warning incompatible type return value
+Subject: BACKPORT: ib_iser: function iser_attr_is_visible fix compilation warning incompatible type return value
 
 This patch in general should fix patch backports/0022-BACKPORT-iser-for-SLES11SP1.patch
 return value of function iser_attr_is_visible should be umode_t for kernels bigger then 3.3
@@ -13,10 +10,10 @@ Change-Id: I28bab701399d6a13e8492afb66e8dc1bb15b91c4
 Signed-off-by: Alex Tabachnik <alext@mellanox.com>
 ---
  drivers/infiniband/ulp/iser/iscsi_iser.c |    8 ++++++--
- 1 file changed, 6 insertions(+), 2 deletions(-)
+ 1 files changed, 6 insertions(+), 2 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/iser/iscsi_iser.c b/drivers/infiniband/ulp/iser/iscsi_iser.c
-index 02a5dab..525a805 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/iser/iscsi_iser.c
 +++ b/drivers/infiniband/ulp/iser/iscsi_iser.c
 @@ -630,9 +630,13 @@ iscsi_iser_ep_disconnect(struct iscsi_endpoint *ep)
@@ -35,6 +32,3 @@ index 02a5dab..525a805 100644
  {
  	switch (param_type) {
  	case ISCSI_HOST_PARAM:
---
-1.7.10.1
-

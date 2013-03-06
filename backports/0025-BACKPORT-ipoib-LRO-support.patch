@@ -1,7 +1,5 @@
-From cff29ff1d40bc889f225560d19474b09a2dba1a2 Mon Sep 17 00:00:00 2001
 From: Yishai Hadas <yishaih@mellanox.com>
-Date: Thu, 13 Dec 2012 15:56:27 +0200
-Subject: [PATCH] BACKPORT: ipoib - LRO support
+Subject: BACKPORT: ipoib - LRO support
 
 Signed-off-by: Yishai Hadas <yishaih@mellanox.com>
 ---
@@ -12,10 +10,10 @@ Signed-off-by: Yishai Hadas <yishaih@mellanox.com>
  4 files changed, 150 insertions(+), 4 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib.h b/drivers/infiniband/ulp/ipoib/ipoib.h
-index 9a3925e..2655a36 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib.h
 +++ b/drivers/infiniband/ulp/ipoib/ipoib.h
-@@ -43,6 +43,9 @@
+@@ -44,6 +44,9 @@
  #include <linux/if_infiniband.h>
  #include <linux/mutex.h>
  
@@ -25,7 +23,7 @@ index 9a3925e..2655a36 100644
  #include <net/neighbour.h>
  #include <net/sch_generic.h>
  
-@@ -104,7 +107,10 @@ enum {
+@@ -106,7 +109,10 @@ enum {
  	IPOIB_MCAST_FLAG_BUSY	  = 2,	/* joining or already joined */
  	IPOIB_MCAST_FLAG_ATTACHED = 3,
  	IPOIB_MCAST_JOIN_STARTED  = 4,
@@ -37,7 +35,7 @@ index 9a3925e..2655a36 100644
  	MAX_SEND_CQE		  = 16,
  	IPOIB_CM_COPYBREAK	  = 256,
  	IPOIB_MAX_INLINE_SIZE     = 800,
-@@ -113,6 +119,14 @@ enum {
+@@ -115,6 +121,14 @@ enum {
  	IPOIB_RTNL_CHILD	  = 2,
  };
  
@@ -52,7 +50,7 @@ index 9a3925e..2655a36 100644
  #define	IPOIB_OP_RECV   (1ul << 31)
  #ifdef CONFIG_INFINIBAND_IPOIB_CM
  #define	IPOIB_OP_CM     (1ul << 30)
-@@ -392,6 +406,9 @@ struct ipoib_recv_ring {
+@@ -394,6 +408,9 @@ struct ipoib_recv_ring {
  	struct ipoib_rx_ring_stats stats;
  	unsigned		index;
  	struct ipoib_ethtool_last_st ethtool;
@@ -63,10 +61,10 @@ index 9a3925e..2655a36 100644
  
  struct ipoib_arp_repath {
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
-index beb8956..ee04b77 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
-@@ -286,6 +286,23 @@ static int ipoib_set_channels(struct net_device *dev,
+@@ -299,6 +299,23 @@ static int ipoib_set_channels(struct net_device *dev,
  }
  #endif
  
@@ -90,7 +88,7 @@ index beb8956..ee04b77 100644
  static const struct ethtool_ops ipoib_ethtool_ops = {
  	.get_drvinfo		= ipoib_get_drvinfo,
  	.get_coalesce		= ipoib_get_coalesce,
-@@ -297,6 +314,10 @@ static const struct ethtool_ops ipoib_ethtool_ops = {
+@@ -310,6 +327,10 @@ static const struct ethtool_ops ipoib_ethtool_ops = {
  	.get_channels		= ipoib_get_channels,
  	.set_channels		= ipoib_set_channels,
  #endif
@@ -102,10 +100,10 @@ index beb8956..ee04b77 100644
  
  void ipoib_set_ethtool_ops(struct net_device *dev)
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ib.c b/drivers/infiniband/ulp/ipoib/ipoib_ib.c
-index 75b5961..1bb3e23 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_ib.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_ib.c
-@@ -380,8 +380,16 @@ static void ipoib_ib_handle_rx_wc(struct net_device *dev,
+@@ -383,8 +383,16 @@ static void ipoib_ib_handle_rx_wc(struct net_device *dev,
  		set_skb_oob_cb_data(skb, wc, &recv_ring->napi);
  		/*the registered handler will take care of the skb.*/
  		netif_receive_skb(skb);
@@ -135,7 +133,7 @@ index 75b5961..1bb3e23 100644
  		if (unlikely(ib_req_notify_cq(rx_ring->recv_cq,
  					      IB_CQ_NEXT_COMP |
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-index 0db9816..72f045d 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
 @@ -61,6 +61,17 @@ MODULE_PARM_DESC(send_queue_size, "Number of descriptors in send queue");
@@ -167,7 +165,7 @@ index 0db9816..72f045d 100644
  
  static struct ib_client ipoib_client = {
  	.name   = "ipoib",
-@@ -1702,6 +1717,9 @@ int ipoib_dev_init(struct net_device *dev, struct ib_device *ca, int port)
+@@ -1751,6 +1766,9 @@ int ipoib_dev_init(struct net_device *dev, struct ib_device *ca, int port)
  		}
  		recv_ring->dev = dev;
  		recv_ring->index = i;
@@ -177,7 +175,7 @@ index 0db9816..72f045d 100644
  		recv_ring++;
  		rx_allocated++;
  	}
-@@ -1864,6 +1882,67 @@ int ipoib_reinit(struct net_device *dev, int num_rx, int num_tx)
+@@ -1913,6 +1931,67 @@ int ipoib_reinit(struct net_device *dev, int num_rx, int num_tx)
  	return ret;
  }
  
@@ -245,7 +243,7 @@ index 0db9816..72f045d 100644
  static const struct header_ops ipoib_header_ops = {
  	.create	= ipoib_hard_header,
  };
-@@ -2327,7 +2406,9 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
+@@ -2381,7 +2460,9 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
  			priv->dev->features |= NETIF_F_TSO;
  #endif
  	}
@@ -256,7 +254,7 @@ index 0db9816..72f045d 100644
  	return 0;
  }
  
-@@ -2355,8 +2436,17 @@ static struct net_device *ipoib_add_port(const char *format,
+@@ -2409,8 +2490,17 @@ static struct net_device *ipoib_add_port(const char *format,
  	SET_NETDEV_DEV(priv->dev, hca->dma_device);
  	priv->dev->dev_id = port - 1;
  
@@ -275,7 +273,7 @@ index 0db9816..72f045d 100644
  	else {
  		printk(KERN_WARNING "%s: ib_query_port %d failed\n",
  		       hca->name, port);
-@@ -2429,6 +2519,12 @@ static struct net_device *ipoib_add_port(const char *format,
+@@ -2483,6 +2573,12 @@ static struct net_device *ipoib_add_port(const char *format,
  		goto register_failed;
  	}
  
@@ -288,6 +286,3 @@ index 0db9816..72f045d 100644
  	ipoib_create_debug_files(priv->dev);
  
  	result = -ENOMEM;
--- 
-1.7.1
-

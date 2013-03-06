@@ -1,7 +1,5 @@
-From 486159156e8ba97c3a5f2e2b410b62e187e0eeeb Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Date: Mon, 10 Dec 2012 13:41:50 +0200
-Subject: [PATCH] BACKPORT: rds for SLES11SP1
+Subject: BACKPORT: rds for SLES11SP1
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -15,7 +13,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  7 files changed, 21 insertions(+), 0 deletions(-)
 
 diff --git a/net/rds/bind.c b/net/rds/bind.c
-index 637bde5..9fb9b31 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/rds/bind.c
 +++ b/net/rds/bind.c
 @@ -36,6 +36,9 @@
@@ -29,7 +27,7 @@ index 637bde5..9fb9b31 100644
  
  #define BIND_HASH_SIZE 1024
 diff --git a/net/rds/ib_cm.c b/net/rds/ib_cm.c
-index a1e1162..40a3c51 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/rds/ib_cm.c
 +++ b/net/rds/ib_cm.c
 @@ -35,6 +35,9 @@
@@ -43,7 +41,7 @@ index a1e1162..40a3c51 100644
  #include "rds.h"
  #include "ib.h"
 diff --git a/net/rds/ib_send.c b/net/rds/ib_send.c
-index e590949..6ad631f 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/rds/ib_send.c
 +++ b/net/rds/ib_send.c
 @@ -35,6 +35,9 @@
@@ -57,7 +55,7 @@ index e590949..6ad631f 100644
  #include "rds.h"
  #include "ib.h"
 diff --git a/net/rds/iw_cm.c b/net/rds/iw_cm.c
-index a91e1db..35669e4 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/rds/iw_cm.c
 +++ b/net/rds/iw_cm.c
 @@ -35,6 +35,9 @@
@@ -71,7 +69,7 @@ index a91e1db..35669e4 100644
  #include "rds.h"
  #include "iw.h"
 diff --git a/net/rds/iw_rdma.c b/net/rds/iw_rdma.c
-index a817705..f57f360 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/rds/iw_rdma.c
 +++ b/net/rds/iw_rdma.c
 @@ -33,6 +33,9 @@
@@ -85,7 +83,7 @@ index a817705..f57f360 100644
  #include "rds.h"
  #include "iw.h"
 diff --git a/net/rds/iw_send.c b/net/rds/iw_send.c
-index e40c3c5..dc4f7e2 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/rds/iw_send.c
 +++ b/net/rds/iw_send.c
 @@ -35,6 +35,9 @@
@@ -99,7 +97,7 @@ index e40c3c5..dc4f7e2 100644
  #include "rds.h"
  #include "iw.h"
 diff --git a/net/rds/send.c b/net/rds/send.c
-index 88eace5..d3e889e 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/rds/send.c
 +++ b/net/rds/send.c
 @@ -38,6 +38,9 @@
@@ -112,6 +110,3 @@ index 88eace5..d3e889e 100644
  
  #include "rds.h"
  
--- 
-1.7.8.2
-

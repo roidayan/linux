@@ -1,7 +1,5 @@
-From b0f893042af129961531333584639a1246dd1ff8 Mon Sep 17 00:00:00 2001
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Date: Wed, 5 Dec 2012 13:30:04 +0200
-Subject: [PATCH] BACKPORT: mlx4_ib to support RHEL6.3
+Subject: BACKPORT: mlx4_ib to support RHEL6.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
@@ -9,10 +7,10 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  1 files changed, 4 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/hw/mlx4/main.c b/drivers/infiniband/hw/mlx4/main.c
-index 52fc02c..56e715d 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/hw/mlx4/main.c
 +++ b/drivers/infiniband/hw/mlx4/main.c
-@@ -1632,8 +1632,12 @@ static void mlx4_ib_alloc_eqs(struct mlx4_dev *dev, struct mlx4_ib_dev *ibdev)
+@@ -1598,8 +1598,12 @@ static void mlx4_ib_alloc_eqs(struct mlx4_dev *dev, struct mlx4_ib_dev *ibdev)
  			sprintf(name, "mlx4-ib-%d-%d@%s",
  				i, j, dev->pdev->bus->name);
  			/* Set IRQ for specific name (per ring) */
@@ -25,6 +23,3 @@ index 52fc02c..56e715d 100644
  				/* Use legacy (same as mlx4_en driver) */
  				pr_warn("Can't allocate EQ %d; reverting to legacy\n", eq);
  				ibdev->eq_table[eq] =
--- 
-1.7.8.2
-
