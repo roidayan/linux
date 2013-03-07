@@ -17,7 +17,7 @@ index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/iser/iscsi_iser.c
 +++ b/drivers/infiniband/ulp/iser/iscsi_iser.c
 @@ -630,9 +630,13 @@ iscsi_iser_ep_disconnect(struct iscsi_endpoint *ep)
- 	iser_err("ib conn %p state %d\n",ib_conn, ib_conn->state);
+ 	iser_dbg("ib conn %p state %d\n", ib_conn, ib_conn->state);
  	iser_conn_terminate(ib_conn);
  }
 -
