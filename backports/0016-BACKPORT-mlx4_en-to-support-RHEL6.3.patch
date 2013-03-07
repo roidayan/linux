@@ -1,5 +1,5 @@
 From: Yan Burman <yanb@mellanox.com>
-Subject: BACKPORT: mlx4_en to support RHEL6.3
+Subject: [PATCH] BACKPORT: mlx4_en to support RHEL6.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 Signed-off-by: Yan Burman <yanb@mellanox.com>

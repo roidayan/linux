@@ -1,5 +1,5 @@
 From: Erez Shitrit <erezsh@mellanox.com>
-Subject: BACKPORTS: ib/ipoib: 2.6.36 and bellow doesn't support netdev_rx_handler_register
+Subject: [PATCH] BACKPORTS: ib/ipoib: 2.6.36 and bellow doesn't support netdev_rx_handler_register
 
 Signed-off-by: Erez Shitrit <erezsh@mellanox.com>
 ---

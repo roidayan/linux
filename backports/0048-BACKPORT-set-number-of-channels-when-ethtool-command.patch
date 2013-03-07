@@ -1,5 +1,5 @@
 From: Amir Vadai <amirv@mellanox.com>
-Subject: BACKPORT: set number of channels when ethtool command not avail
+Subject: [PATCH] BACKPORT: set number of channels when ethtool command not avail
 
 Signed-off-by: Amir Vadai <amirv@mellanox.com>
 ---

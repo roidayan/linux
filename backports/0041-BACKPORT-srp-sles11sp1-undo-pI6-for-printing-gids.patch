@@ -1,5 +1,5 @@
 From: Alex Tabachnik <alext@mellanox.com>
-Subject: BACKPORT: srp sles11sp1 undo %pI6 for printing gids
+Subject: [PATCH] BACKPORT: srp sles11sp1 undo %pI6 for printing gids
 
 The "%pI6" construct is not valid with kernels earlier than 2.6.29.
 This patch just rolls back the change.

@@ -1,5 +1,5 @@
 From: Matan Barak <matanb@mellanox.com>
-Subject: BACKPORT: mlx4_en: add dummy num_lro module param
+Subject: [PATCH] BACKPORT: mlx4_en: add dummy num_lro module param
 
 Need to add dummy module parameter "num_lro" to avoid
 mlx4_en loading issue on RHEL6.x + virt. tools.

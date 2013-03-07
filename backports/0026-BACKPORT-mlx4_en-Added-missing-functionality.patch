@@ -1,5 +1,5 @@
 From: Yan Burman <yanb@mellanox.com>
-Subject: BACKPORT: mlx4_en: Added missing functionality
+Subject: [PATCH] BACKPORT: mlx4_en: Added missing functionality
 
 Added missing offloads and ethtool configurations for RHEL6.x
 

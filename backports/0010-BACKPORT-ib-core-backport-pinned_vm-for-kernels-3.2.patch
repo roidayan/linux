@@ -1,5 +1,5 @@
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Subject: BACKPORT: ib/core backport pinned_vm for kernels < 3.2
+Subject: [PATCH] BACKPORT: ib/core backport pinned_vm for kernels < 3.2
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---

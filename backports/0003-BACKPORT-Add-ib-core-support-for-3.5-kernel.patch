@@ -1,5 +1,5 @@
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Subject: BACKPORT: Add ib/core support for 3.5 kernel
+Subject: [PATCH] BACKPORT: Add ib/core support for 3.5 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---

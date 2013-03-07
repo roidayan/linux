@@ -1,5 +1,5 @@
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Subject: BACKPORT: ib_core backport dst_fetch_ha
+Subject: [PATCH] BACKPORT: ib_core backport dst_fetch_ha
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---

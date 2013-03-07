@@ -1,5 +1,5 @@
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Subject: BACKPORT: core/netlink for kernels <= 3.3
+Subject: [PATCH] BACKPORT: core/netlink for kernels <= 3.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---

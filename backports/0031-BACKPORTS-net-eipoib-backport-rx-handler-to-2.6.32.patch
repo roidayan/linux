@@ -1,5 +1,5 @@
 From: Erez Shitrit <erezsh@mellanox.com>
-Subject: BACKPORTS: net/eipoib: backport rx handler to 2.6.32
+Subject: [PATCH] BACKPORTS: net/eipoib: backport rx handler to 2.6.32
 
 The eipoib driver uses the netdev_rx_handler_register framework
 to register a handler which hooks all the rx calls made by ipoib

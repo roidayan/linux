@@ -1,5 +1,5 @@
 From: Yishai Hadas <yishaih@mellanox.com>
-Subject: BACKPORT: ipoib - LRO support
+Subject: [PATCH] BACKPORT: ipoib - LRO support
 
 Signed-off-by: Yishai Hadas <yishaih@mellanox.com>
 ---

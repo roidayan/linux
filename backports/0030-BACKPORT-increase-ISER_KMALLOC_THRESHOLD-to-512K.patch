@@ -1,5 +1,5 @@
 From: Alex Tabachnik <alext@mellanox.com>
-Subject: BACKPORT: increase ISER_KMALLOC_THRESHOLD to 512K
+Subject: [PATCH] BACKPORT: increase ISER_KMALLOC_THRESHOLD to 512K
 
 Use kmalloc to allocate buffers up to size of 512K instead of 128K
 

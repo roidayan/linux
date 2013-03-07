@@ -1,5 +1,5 @@
 From: Erez Shitrit <erezsh@mellanox.com>
-Subject: BACKPORTS: net/eipoib ndo differences.
+Subject: [PATCH] BACKPORTS: net/eipoib ndo differences.
 
 supports vlan functions, stats  structures.
 

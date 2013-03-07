@@ -1,5 +1,5 @@
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Subject: BACKPORT: ib/core backport CLASS_ATTR for kernels < 2.6.34
+Subject: [PATCH] BACKPORT: ib/core backport CLASS_ATTR for kernels < 2.6.34
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---

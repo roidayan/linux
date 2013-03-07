@@ -1,5 +1,5 @@
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Subject: BACKPORT: mlx4_en for 3.2 kernel
+Subject: [PATCH] BACKPORT: mlx4_en for 3.2 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---

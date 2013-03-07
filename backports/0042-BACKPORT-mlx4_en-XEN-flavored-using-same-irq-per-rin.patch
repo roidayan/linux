@@ -1,5 +1,5 @@
 From: Matan Barak <matanb@mellanox.com>
-Subject: BACKPORT: mlx4_en: XEN flavored using same irq per ring both in rx/tx
+Subject: [PATCH] BACKPORT: mlx4_en: XEN flavored using same irq per ring both in rx/tx
 
 In SLES 11.1 XEN flavored, per_cpu__cpu_core_map doesn't exist.
 Therefore, instead of using the next core in the same socket as

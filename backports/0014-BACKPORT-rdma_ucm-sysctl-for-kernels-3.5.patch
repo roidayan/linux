@@ -1,5 +1,5 @@
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Subject: BACKPORT: rdma_ucm sysctl for kernels < 3.5
+Subject: [PATCH] BACKPORT: rdma_ucm sysctl for kernels < 3.5
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---

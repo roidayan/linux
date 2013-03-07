@@ -1,5 +1,5 @@
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Subject: BACKPORT: Added ipoib support for 3.5 kernel
+Subject: [PATCH] BACKPORT: Added ipoib support for 3.5 kernel
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---

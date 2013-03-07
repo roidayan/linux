@@ -1,5 +1,5 @@
 From: Or Gerlitz <ogerlitz@mellanox.com>
-Subject: BACKPORTS: ndo_set_vf_xxx functions
+Subject: [PATCH] BACKPORTS: ndo_set_vf_xxx functions
 
 Change-Id: Ica4812941b257a8d725d36c9805068f0795bab0c
 Signed-off-by: Jack Morgenstein <jackm@dev.mellanox.co.il>

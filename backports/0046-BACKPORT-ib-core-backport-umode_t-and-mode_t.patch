@@ -1,5 +1,5 @@
 From: Moshe Lazer <moshel@mellanox.com>
-Subject: BACKPORT: ib/core backport umode_t and mode_t
+Subject: [PATCH] BACKPORT: ib/core backport umode_t and mode_t
 
 Signed-off-by: Moshe Lazer <moshel@mellanox.com>
 ---

@@ -1,5 +1,5 @@
 From: Alex Tabachnik <alext@mellanox.com>
-Subject: BACKPORT: ib_iser: function iser_attr_is_visible fix compilation warning incompatible type return value
+Subject: [PATCH] BACKPORT: ib_iser: function iser_attr_is_visible fix compilation warning incompatible type return value
 
 This patch in general should fix patch backports/0022-BACKPORT-iser-for-SLES11SP1.patch
 return value of function iser_attr_is_visible should be umode_t for kernels bigger then 3.3

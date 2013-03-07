@@ -1,5 +1,5 @@
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Subject: BACKPORT: ipoib for SLES11SP1
+Subject: [PATCH] BACKPORT: ipoib for SLES11SP1
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---

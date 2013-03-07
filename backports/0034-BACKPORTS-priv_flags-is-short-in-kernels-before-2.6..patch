@@ -1,5 +1,5 @@
 From: Erez Shitrit <erezsh@mellanox.com>
-Subject: BACKPORTS: priv_flags is short in kernels before 2.6.37
+Subject: [PATCH] BACKPORTS: priv_flags is short in kernels before 2.6.37
 
 priv_flags field of struct netdevice is unsigned **short** wheres in the
 upstream kernel it is unsigned int(32 bits).

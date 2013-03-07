@@ -1,5 +1,5 @@
 From: Alex Tabachnik <alext@mellanox.com>
-Subject: BACKPORT: iser use iscsi_iser_transport param_mask appropriate for sles11sp1 This will allow libiscsi on sles11sp1 to manage correctly sysfs ad will fix ability to manage iscsi sessions using iscsiadm
+Subject: [PATCH] BACKPORT: iser use iscsi_iser_transport param_mask appropriate for sles11sp1 This will allow libiscsi on sles11sp1 to manage correctly sysfs ad will fix ability to manage iscsi sessions using iscsiadm
 
 issue: 167847
 Signed-off-by: Alex Tabachnik <alext@mellanox.com>

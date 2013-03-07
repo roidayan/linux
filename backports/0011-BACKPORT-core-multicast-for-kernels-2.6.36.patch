@@ -1,5 +1,5 @@
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Subject: BACKPORT: core/multicast for kernels < 2.6.36
+Subject: [PATCH] BACKPORT: core/multicast for kernels < 2.6.36
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---

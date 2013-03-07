@@ -1,5 +1,5 @@
 From: Amir Vadai <amirv@mellanox.co.il>
-Subject: BACKPORT: mlx4_en: Use sysfs instead of missing QoS DCB netlink
+Subject: [PATCH] BACKPORT: mlx4_en: Use sysfs instead of missing QoS DCB netlink
 
 API to max rate-limit using sysfs file /sys/class/net/<interface>/qos/maxrate
 Also to set skprio2up when HW multiq is not supported by kernel.

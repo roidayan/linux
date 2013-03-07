@@ -1,5 +1,5 @@
 From: Yishai Hadas <yishaih@mellanox.com>
-Subject: BACKPORTS: ib/ipoib: fix offloads for UD mode
+Subject: [PATCH] BACKPORTS: ib/ipoib: fix offloads for UD mode
 
 Change-Id: I9171f0de6ee1296e30296d1c9869a4a3c9208041
 Signed-off-by: Yishai Hadas <yishaih@mellanox.com>

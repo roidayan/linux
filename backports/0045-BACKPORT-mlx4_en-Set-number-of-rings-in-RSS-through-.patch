@@ -1,5 +1,5 @@
 From: Amir Vadai <amirv@mellanox.com>
-Subject: BACKPORT: mlx4_en: Set number of rings in RSS through sysfs
+Subject: [PATCH] BACKPORT: mlx4_en: Set number of rings in RSS through sysfs
 
 When setting number of tx rings in RSS isn't supported by kernel, do it through
 sysfs.

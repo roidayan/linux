@@ -1,5 +1,5 @@
 From: Yishai Hadas <yishaih@mellanox.com>
-Subject: BACKPORT: mlx4_en for SLES11SP1
+Subject: [PATCH] BACKPORT: mlx4_en for SLES11SP1
 
 Change-Id: I3cacb226334d26d7225ab994783858690660821b
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>

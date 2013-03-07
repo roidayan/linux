@@ -1,5 +1,5 @@
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Subject: BACKPORT: ib/core backport flowi4 and flowi6
+Subject: [PATCH] BACKPORT: ib/core backport flowi4 and flowi6
 
 Change-Id: Ib60003524802c5a17860c6ea25cef7c9230db146
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>

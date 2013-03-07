@@ -1,5 +1,5 @@
 From: Alex Tabachnik <alext@mellanox.com>
-Subject: BACKPORT: ib_iser Fix for SLESS11SP2
+Subject: [PATCH] BACKPORT: ib_iser Fix for SLESS11SP2
 
 Add additional verification if run on SLES11SP2 in function
 iser_send_command and structure iscsi_scsi_req should be used

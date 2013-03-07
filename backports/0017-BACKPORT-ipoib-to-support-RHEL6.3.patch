@@ -1,5 +1,5 @@
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Subject: BACKPORT: ipoib to support RHEL6.3
+Subject: [PATCH] BACKPORT: ipoib to support RHEL6.3
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---

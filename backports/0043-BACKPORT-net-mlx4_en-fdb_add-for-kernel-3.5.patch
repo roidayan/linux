@@ -1,5 +1,5 @@
 From: Yan Burman <yanb@mellanox.com>
-Subject: BACKPORT: net/mlx4_en fdb_add for kernel < 3.5
+Subject: [PATCH] BACKPORT: net/mlx4_en fdb_add for kernel < 3.5
 
 Signed-off-by: Yan Burman <yanb@mellanox.com>
 ---

@@ -1,5 +1,5 @@
 From: Erez Shitrit <erezsh@mellanox.com>
-Subject: BACKPORTS: net/eipoib: backport namespace/sysfs related code to 2.6.32
+Subject: [PATCH] BACKPORTS: net/eipoib: backport namespace/sysfs related code to 2.6.32
 
 In the upstream kernel eIPoIB uses the default network namespace
 for some of the sysfs entries it creates. In 2.6.32 this framework

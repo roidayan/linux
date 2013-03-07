@@ -1,5 +1,5 @@
 From: Erez Shitrit <erezsh@mellanox.com>
-Subject: BACKPORT: ib/ipoib handles unregister_netdevice_many/queue
+Subject: [PATCH] BACKPORT: ib/ipoib handles unregister_netdevice_many/queue
 
 for kernel < 2.6.33 replace callsto unregister_netdevice_many and
 unregister_netdevice_queue.

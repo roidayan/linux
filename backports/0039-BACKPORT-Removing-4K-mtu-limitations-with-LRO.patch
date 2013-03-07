@@ -1,5 +1,5 @@
 From: root <root@dev-ovm-023.vmlab.mtl.com>
-Subject: BACKPORT: Removing 4K mtu limitations with LRO
+Subject: [PATCH] BACKPORT: Removing 4K mtu limitations with LRO
 
 ---
  drivers/infiniband/ulp/ipoib/ipoib_ethtool.c |    9 ---------
