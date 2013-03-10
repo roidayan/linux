@@ -1,5 +1,8 @@
+From 2fc880b1fde4b6c8b75efb190988ac8205a6812d Mon Sep 17 00:00:00 2001
 From: Yishai Hadas <yishaih@mellanox.com>
+Date: Sun, 10 Mar 2013 17:52:03 +0200
 Subject: [PATCH] BACKPORTS: ib/ipoib: fix offloads for UD mode
+
 
 Change-Id: I9171f0de6ee1296e30296d1c9869a4a3c9208041
 Signed-off-by: Yishai Hadas <yishaih@mellanox.com>
@@ -10,21 +13,21 @@ Signed-off-by: Yishai Hadas <yishaih@mellanox.com>
  3 files changed, 23 insertions(+), 5 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib.h b/drivers/infiniband/ulp/ipoib/ipoib.h
-index xxxxxxx..xxxxxxx xxxxxx
+index 394d7af..16231cc 100644
 --- a/drivers/infiniband/ulp/ipoib/ipoib.h
 +++ b/drivers/infiniband/ulp/ipoib/ipoib.h
-@@ -103,6 +103,9 @@ enum {
- 	IPOIB_FLAG_AUTO_MODER     = 13, /*indicates moderation is running*/
+@@ -105,6 +105,9 @@ enum {
+ 	IPOIB_FLAG_EVENTS_REGISTERED    = 14,
  
  	IPOIB_MAX_BACKOFF_SECONDS = 16,
 +#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,39))
-+	IPOIB_FLAG_CSUM	= 17,
++       IPOIB_FLAG_CSUM = 17,
 +#endif
  
  	IPOIB_MCAST_FLAG_FOUND	  = 0,	/* used in set_multicast_list */
  	IPOIB_MCAST_FLAG_SENDONLY = 1,
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
-index xxxxxxx..xxxxxxx xxxxxx
+index d15ec3b..7b8a62d 100644
 --- a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
 @@ -316,6 +316,15 @@ int ipoib_set_flags(struct net_device *dev, u32 data)
@@ -55,7 +58,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  void ipoib_set_ethtool_ops(struct net_device *dev)
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-index xxxxxxx..xxxxxxx xxxxxx
+index 679b15f..cac54db 100644
 --- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
 @@ -284,11 +284,12 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
@@ -76,7 +79,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  #endif
  		dev_set_mtu(dev, min(priv->mcast_mtu, dev->mtu));
  		rtnl_unlock();
-@@ -2459,6 +2460,7 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
+@@ -2467,6 +2468,7 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
  
  		priv->dev->features |= priv->dev->hw_features;
  #else
@@ -84,3 +87,6 @@ index xxxxxxx..xxxxxxx xxxxxx
  		priv->dev->features |= NETIF_F_SG |
  			NETIF_F_IP_CSUM | NETIF_F_RXCSUM;
  
+-- 
+1.7.1
+
