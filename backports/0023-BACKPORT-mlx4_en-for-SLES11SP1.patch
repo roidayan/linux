@@ -50,8 +50,8 @@ index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_main.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_main.c
 @@ -72,6 +72,7 @@ MLX4_EN_PARM_INT(pfctx, 0, "Priority based Flow Control policy on TX[7:0]."
- MLX4_EN_PARM_INT(pfcrx, 0, "Priority based Flow Control policy on RX[7:0]."
- 			   " Per priority bit mask");
+ #define MAX_PFC_TX	0xff
+ #define MAX_PFC_RX	0xff
  
 +#ifndef CONFIG_COMPAT_DISABLE_VA_FORMAT_PRINT
  int en_print(const char *level, const struct mlx4_en_priv *priv,
