@@ -1,0 +1,40 @@
+From 40a138209366b434fbffeafadc0e84c89b631f64 Mon Sep 17 00:00:00 2001
+From: root <root@dev-l-vrt-040.vmlab.mtl.com>
+Date: Wed, 13 Mar 2013 15:25:58 +0200
+Subject: [PATCH] BACKPORT: add backport for XEN
+
+Signed-off-by: Eugenia Emantayev <eugenia@mellanox.com>
+---
+ drivers/net/ethernet/mellanox/mlx4/en_main.c |    2 +-
+ drivers/net/ethernet/mellanox/mlx4/mlx4_en.h |    2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_main.c b/drivers/net/ethernet/mellanox/mlx4/en_main.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx4/en_main.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_main.c
+@@ -81,7 +81,7 @@ MLX4_EN_PARM_INT(pfcrx, 0, "Priority based Flow Control policy on RX[7:0]."
+ #define MAX_PFC_TX	0xff
+ #define MAX_PFC_RX	0xff
+ 
+-#ifndef CONFIG_COMPAT_DISABLE_VA_FORMAT_PRINT
++#if !(defined CONFIG_COMPAT_DISABLE_VA_FORMAT_PRINT || defined CONFIG_X86_XEN)
+ int en_print(const char *level, const struct mlx4_en_priv *priv,
+ 	     const char *format, ...)
+ {
+diff --git a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
++++ b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
+@@ -789,7 +789,7 @@ extern const struct ethtool_ops_ext mlx4_en_ethtool_ops_ext;
+ /*
+  * printk / logging functions
+  */
+-#ifdef CONFIG_COMPAT_DISABLE_VA_FORMAT_PRINT
++#if (defined CONFIG_COMPAT_DISABLE_VA_FORMAT_PRINT || defined CONFIG_X86_XEN)
+ #define en_print(level, priv, format, arg...)                   \
+         {                                                       \
+         if ((priv)->registered)                                 \
+-- 
+1.7.1
+
