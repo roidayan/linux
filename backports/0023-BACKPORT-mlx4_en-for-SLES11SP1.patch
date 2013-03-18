@@ -109,7 +109,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		if (err) {
  			en_err(priv, "Failed allocating Tx ring\n");
  			mlx4_en_deactivate_cq(priv, cq);
-@@ -2201,12 +2204,19 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2201,12 +2204,18 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	int i;
  	int err;
  
@@ -117,8 +117,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	dev = alloc_etherdev_mqs(sizeof(struct mlx4_en_priv),
  				 MAX_TX_RINGS, MAX_RX_RINGS);
 +#else
-+	dev = alloc_etherdev_mq(sizeof(struct mlx4_en_priv), max(MAX_TX_RINGS,
-+								 MAX_RX_RINGS));
++	dev = alloc_etherdev_mq(sizeof(struct mlx4_en_priv), prof->tx_ring_num);
 +#endif
  	if (dev == NULL)
  		return -ENOMEM;
