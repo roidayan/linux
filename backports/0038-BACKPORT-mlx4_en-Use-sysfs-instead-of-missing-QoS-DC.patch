@@ -46,7 +46,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	int i;
 @@ -244,8 +248,13 @@ static u8 mlx4_en_dcbnl_get_state(struct net_device *dev)
- 	return !!(priv->flags & MLX4_EN_DCB_ENABLED);
+ 	return !!(priv->flags & MLX4_EN_FLAG_DCB_ENABLED);
  }
  
 +#ifndef CONFIG_COMPAT_MAXRATE

@@ -346,13 +346,12 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  struct ethtool_flow_id {
  	struct list_head list;
-@@ -542,12 +551,14 @@ struct mlx4_en_priv {
+@@ -542,11 +551,13 @@ struct mlx4_en_priv {
  #define MLX4_EN_MAC_HASH_IDX 5
  	struct hlist_head mac_hash[MLX4_EN_MAC_HASH_SIZE];
  
 +#ifndef CONFIG_COMPAT_DISABLE_DCB
  #ifdef CONFIG_MLX4_EN_DCB
- #define MLX4_EN_DCB_ENABLED   0x3
  	struct ieee_ets ets;
  	u16 maxrate[IEEE_8021QAZ_MAX_TCS];
  	u8 dcbx_cap;
