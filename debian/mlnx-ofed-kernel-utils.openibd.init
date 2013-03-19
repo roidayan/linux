@@ -34,6 +34,7 @@
 # Provides:       openibd
 # Required-Start: $local_fs
 # Required-Stop: opensmd
+# X-Start-Before: networking
 # Default-Start:  2 3 5
 # Default-Stop: 0 1 2 6
 # Description:    Activates/Deactivates InfiniBand Driver to \
@@ -55,7 +56,7 @@ CWD=`pwd`
 cd /etc/infiniband
 WD=`pwd`
 
-PATH=$PATH:/sbin:/usr/bin
+PATH=$PATH:/sbin:/usr/bin:/lib/udev
 if [ -e /etc/profile.d/ofed.sh ]; then
         . /etc/profile.d/ofed.sh
 fi
@@ -334,7 +335,7 @@ get_interfaces()
 get_mlx4_en_interfaces()
 {
     mlx4_en_interfaces=""
-    for ethpath in /sys/class/net/eth*
+    for ethpath in /sys/class/net/*
     do
         if (grep 0x15b3 ${ethpath}/device/vendor > /dev/null 2>&1); then
             mlx4_en_interfaces="$mlx4_en_interfaces ${ethpath##*/}"
@@ -908,6 +909,16 @@ start()
                 echo_failure $"Loading Mellanox MLX4_EN HCA driver: "
         fi
         RC=$[ $RC + $my_rc ]
+
+        if [ $my_rc -eq 0 ]; then
+            # Bring up network interfaces
+            sleep 1
+            get_mlx4_en_interfaces
+            for en_i in $mlx4_en_interfaces
+            do
+                /sbin/ifup $en_i 2> /dev/null
+            done
+        fi
     fi
 
     if [ "X${MLX4_FC_LOAD}" == "Xyes" ]; then
@@ -1054,7 +1065,7 @@ start()
         echo Setting up InfiniBand network interfaces:
         for i in $interfaces
         do
-                if [[ ! -e ${WD}/ifcfg-${i} && ! -e ${NETWORK_CONF_DIR}/ifcfg-${i} ]]; then
+                if [[ ! -e ${WD}/ifcfg-${i} && ! -e ${NETWORK_CONF_DIR}/ifcfg-${i} ]] && ! (grep -q ib[0-9] /etc/network/interfaces > /dev/null 2>&1); then
                         echo "No configuration found for ${i}"
                         if [ "X${SET_IPOIB_CM}" == "Xyes" ]; then
                                 set_ipoib_cm ${i}
@@ -1447,18 +1458,27 @@ stop()
                 fi
 
                 if is_module ib_srp; then
-                    for f in `/bin/ls /sys/class/scsi_host`
-                    do
+                    #check if scsi_id utility exist and in path
+                    scsi_id_util=`which scsi_id 2>/dev/null`
+                    if [ ! -z "$scsi_id_util" ]
+                    then
+                        for f in `/bin/ls /sys/class/scsi_host`
+                        do
                             if [ -f /sys/class/scsi_host/$f/local_ib_port ]; then
-                                    for i in `/bin/ls -d /sys/class/scsi_host/$f/device/target*/*/block* | awk -F: '{print $NF}'`
-                                    do
-                                        mdev=`/sbin/scsi_id -g -s /block/$i 2> /dev/null`
-                                        if [ -n "${mdev}" ]; then
-                                            /sbin/multipath -f $mdev > /dev/null 2>&1
-                                        fi
-                                    done
-                            fi
-                    done
+                                for i in `/bin/ls /sys/class/scsi_host/$f/device/target*/*/block* | awk -F: '{print $NF}'`
+                                do
+                                   mdev=`$scsi_id_util --whitelisted /dev/$i 2> /dev/null`
+                                   if [ -n "${mdev}" ]; then
+                                       /sbin/multipath -f $mdev > /dev/null 2>&1
+                                   fi
+                               done
+                           fi
+                        done
+                    else
+                        echo "Not found scsi_id utility. Problem on srp scsi devices disconnection."
+                        # in this case module mlx4_ib will failed on remove (in use)
+                        # and stop will be canceled
+                    fi
                 fi
         fi
 
