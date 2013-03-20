@@ -135,7 +135,7 @@ extern struct workqueue_struct *system_wq;
 extern struct workqueue_struct *system_long_wq;
 extern struct workqueue_struct *system_nrt_wq;
 
-void compat_system_workqueue_create(void);
+int compat_system_workqueue_create(void);
 void compat_system_workqueue_destroy(void);
 
 int compat_schedule_work(struct work_struct *work);

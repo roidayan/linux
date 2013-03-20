@@ -49,8 +49,14 @@ EXPORT_SYMBOL_GPL(compat_dependency_symbol);
 
 static int __init compat_init(void)
 {
+	int err;
+
 	compat_pm_qos_power_init();
-	compat_system_workqueue_create();
+	err = compat_system_workqueue_create();
+	if (err) {
+		pr_warn("compat_system_workqueue_create() failed\n");
+		return err;
+	}
 	init_compat_mmc_pm_flags();
 
 	printk(KERN_INFO

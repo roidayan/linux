@@ -169,17 +169,32 @@ unsigned int work_busy(struct work_struct *work)
 }
 EXPORT_SYMBOL_GPL(work_busy);
 
-void compat_system_workqueue_create()
+int compat_system_workqueue_create()
 {
 	system_wq = alloc_workqueue("events", 0, 0);
+	if (!system_wq)
+		return -ENOMEM;
+
 	system_long_wq = alloc_workqueue("events_long", 0, 0);
+	if (!system_long_wq)
+		goto err1;
+
 	system_nrt_wq = create_singlethread_workqueue("events_nrt");
-	BUG_ON(!system_wq || !system_long_wq || !system_nrt_wq);
+	if (!system_nrt_wq)
+		goto err2;
+
+	return 0;
+
+err1:
+	destroy_workqueue(system_wq);
+err2:
+	destroy_workqueue(system_long_wq);
+	return -ENOMEM;
 }
 
 void compat_system_workqueue_destroy()
 {
+	destroy_workqueue(system_nrt_wq);
 	destroy_workqueue(system_wq);
 	destroy_workqueue(system_long_wq);
-	destroy_workqueue(system_nrt_wq);
 }
