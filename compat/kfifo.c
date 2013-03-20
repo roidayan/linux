@@ -563,7 +563,7 @@ unsigned int __kfifo_dma_in_prepare_r(struct __kfifo *fifo,
 	struct scatterlist *sgl, int nents, unsigned int len, size_t recsize)
 {
 	if (!nents)
-		BUG();
+		return -EINVAL;
 
 	len = __kfifo_max_r(len, recsize);
 
@@ -587,7 +587,7 @@ unsigned int __kfifo_dma_out_prepare_r(struct __kfifo *fifo,
 	struct scatterlist *sgl, int nents, unsigned int len, size_t recsize)
 {
 	if (!nents)
-		BUG();
+		return -EINVAL;
 
 	len = __kfifo_max_r(len, recsize);
 
