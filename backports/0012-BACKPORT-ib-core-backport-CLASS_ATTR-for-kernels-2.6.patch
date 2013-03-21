@@ -69,7 +69,7 @@ diff --git a/drivers/infiniband/core/user_mad.c b/drivers/infiniband/core/user_m
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/user_mad.c
 +++ b/drivers/infiniband/core/user_mad.c
-@@ -969,8 +969,16 @@ static ssize_t show_port(struct device *dev, struct device_attribute *attr,
+@@ -1029,8 +1029,16 @@ static ssize_t show_port(struct device *dev, struct device_attribute *attr,
  }
  static DEVICE_ATTR(port, S_IRUGO, show_port, NULL);
  
@@ -86,7 +86,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static dev_t overflow_maj;
  static DECLARE_BITMAP(overflow_map, IB_UMAD_MAX_PORTS);
-@@ -1200,7 +1208,11 @@ static int __init ib_umad_init(void)
+@@ -1271,7 +1279,11 @@ static int __init ib_umad_init(void)
  
  	umad_class->devnode = umad_devnode;
  

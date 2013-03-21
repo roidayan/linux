@@ -28,8 +28,8 @@ diff --git a/drivers/infiniband/core/user_mad.c b/drivers/infiniband/core/user_m
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/user_mad.c
 +++ b/drivers/infiniband/core/user_mad.c
-@@ -1183,7 +1183,11 @@ static void ib_umad_remove_one(struct ib_device *device)
- 	kref_put(&umad_dev->ref, ib_umad_release_dev);
+@@ -1253,7 +1253,11 @@ static void ib_umad_remove_one(struct ib_device *device)
+ 	put_umad_dev(&umad_dev->ref);
  }
  
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0)
