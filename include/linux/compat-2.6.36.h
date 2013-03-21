@@ -165,8 +165,9 @@ extern unsigned int work_busy(struct work_struct *work);
 
 #else
 
-static inline void compat_system_workqueue_create(void)
+static inline int compat_system_workqueue_create(void)
 {
+	return 0;
 }
 
 static inline void compat_system_workqueue_destroy(void)
