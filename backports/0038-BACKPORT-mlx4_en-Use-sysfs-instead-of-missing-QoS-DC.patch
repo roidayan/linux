@@ -359,8 +359,8 @@ index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
 +++ b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
 @@ -60,6 +60,20 @@
- #define DRV_VERSION	"2.0"
- #define DRV_RELDATE	"Dec 2011"
+ #define DRV_VERSION	"2.1"
+ #define DRV_RELDATE	__DATE__
  
 +#ifndef CONFIG_COMPAT_DISABLE_DCB
 +#ifdef CONFIG_MLX4_EN_DCB
