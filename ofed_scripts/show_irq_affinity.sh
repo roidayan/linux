@@ -1,9 +1,19 @@
 #! /bin/bash
-if [ -z $1 ]; then 
-	IRQS=$(cat /proc/interrupts | grep eth-mlx | awk '{print $1}' | sed 's/://')
-else
-	IRQS=$(cat /proc/interrupts | grep $1 | awk '{print $1}' | sed 's/://')
+if [ -z $1 ]; then
+        echo "usage: $0 <interface> "
+        exit 1
 fi
+
+ls /sys/class/net/$1 > /dev/null
+rc=$?
+
+if [[ "$rc" == "0" && "$( cat /proc/interrupts | grep $1 )" == "" ]];then
+        interface=$( ls -l /sys/class/net/$1/device | tr "/"  " " | awk '{ print $NF}' | cut -b -7 )
+else
+        interface=$1
+fi
+
+IRQS=$(cat /proc/interrupts | grep $interface | awk '{print $1}' | sed 's/://')
 
 for irq in $IRQS
 do

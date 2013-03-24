@@ -7,9 +7,23 @@ node=$1
 interface=$2
 interface2=$3
 
+ls /sys/class/net/$interface > /dev/null
+rc=$?
+
+if [[ "$rc" == "0" && "$( cat /proc/interrupts | grep $interface )" == "" ]];then
+        interface=$( ls -l /sys/class/net/$interface/device | tr "/"  " " | awk '{ print $NF}' | cut -b -7 )
+fi
+
 IRQS=$(cat /proc/interrupts | grep $interface | awk '{print $1}' | sed 's/://')
 
 if [ $interface2 ]; then
+	
+	ls /sys/class/net/$interface2 > /dev/null
+	rc=$?
+	if [[ "$rc" == "0" && "$( cat /proc/interrupts | grep $interface2 )" == "" ]];then
+        	interface2=$( ls -l /sys/class/net/$interface2/device | tr "/"  " " | awk '{ print $NF}' | cut -b -7 )
+	fi
+	
 	IRQS_2=$(cat /proc/interrupts | grep $interface2 | awk '{print $1}' | sed 's/://')
         echo "---------------------------------------"
         echo "Optimizing IRQs for Dual port traffic"
@@ -37,7 +51,14 @@ if [ "$CPULIST" != "" ]; then
 	cpulist=$(echo $CPULIST | sed 's/ /,/g')
 fi
 CORES=$( echo $cpulist | sed 's/,/ /g' | wc -w )
-echo Discovered irqs for $interface: $IRQS
+
+if [ -z "$IRQS" ] ; then
+        echo No IRQs found for $2.
+else
+        echo
+	echo Discovered irqs for $2: $IRQS
+fi
+
 I=1  
 for IRQ in $IRQS 
 do 
@@ -50,10 +71,16 @@ do
 		I=$(( (I%(CORES/2)) + 1 ))
 	fi
 done
+
 if [ $interface2 ]; then
-	echo
-	echo Discovered irqs for $interface2: $IRQS_2
+	if [ -z "$IRQS_2" ] ; then
+	        echo No IRQs found for $3.
+	else
+		echo
+		echo Discovered irqs for $3: $IRQS_2
+	fi
 fi
+
 I=$(( (CORES/2) + 1 ))
 for IRQ in $IRQS_2 
 do 
