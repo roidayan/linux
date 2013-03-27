@@ -798,12 +798,12 @@ CONFIG_INFINIBAND_QLGC_VNIC_STATS=${CONFIG_INFINIBAND_QLGC_VNIC_STATS:-''}
 CONFIG_INFINIBAND_CXGB3_DEBUG=${CONFIG_INFINIBAND_CXGB3_DEBUG:-''}
 CONFIG_INFINIBAND_NES_DEBUG=${CONFIG_INFINIBAND_NES_DEBUG:-''}
 CONFIG_INFINIBAND_AMSO1100=${CONFIG_INFINIBAND_AMSO1100:-''}
-CONFIG_MLX4_EN_DCB=''
-if [ "X${CONFIG_MLX4_EN}" == "Xm" ]; then
-    if (grep -q "^CONFIG_DCB=y" $KSRC/.config > /dev/null 2>&1); then
-        CONFIG_MLX4_EN_DCB=y
-    fi
-fi
+#CONFIG_MLX4_EN_DCB=''
+#if [ "X${CONFIG_MLX4_EN}" == "Xm" ]; then
+#    if (grep -q "^CONFIG_DCB=y" $KSRC/.config > /dev/null 2>&1); then
+#        CONFIG_MLX4_EN_DCB=y
+#    fi
+#fi
 
 # Check for minimal supported kernel version
 if ! check_kerver ${KVERSION} ${MIN_KVERSION}; then
