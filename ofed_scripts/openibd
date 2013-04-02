@@ -1248,6 +1248,10 @@ EOF
         /sbin/sysctl_perf_tuning load
     fi
 
+    if [ -x /usr/sbin/mlnx_affinity ] && [ "X${RUN_AFFINITY_TUNER}" == "Xyes" ];then
+        /usr/sbin/mlnx_affinity start > /dev/null 2>&1
+    fi
+
     return $RC
 }
 
@@ -1517,6 +1521,10 @@ stop()
 
         if  [ -x /sbin/sysctl_perf_tuning ] && [ "X${RUN_SYSCTL}" == "Xyes" ]; then
             /sbin/sysctl_perf_tuning unload
+        fi
+
+        if [ -x /usr/sbin/mlnx_affinity ] && [ "X${RUN_AFFINITY_TUNER}" == "Xyes" ];then
+            /usr/sbin/mlnx_affinity stop > /dev/null 2>&1
         fi
 
         /bin/rm -rf /dev/infiniband
