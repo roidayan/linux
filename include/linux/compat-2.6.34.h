@@ -218,11 +218,13 @@ static inline void device_unlock(struct device *dev)
 
 #define rcu_dereference_check(p, c) rcu_dereference(p)
 
+#ifndef sysfs_attr_init
 /**
  *	sysfs_attr_init - initialize a dynamically allocated sysfs attribute
  *	@attr: struct attribute to initialize
  */
 #define sysfs_attr_init(attr) do {} while(0)
+#endif /* sysfs_attr_init */
 
 /**
  *	sysfs_bin_attr_init - initialize a dynamically allocated bin_attribute
