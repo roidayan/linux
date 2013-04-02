@@ -50,15 +50,15 @@ load()
 	/sbin/sysctl net.ipv4.tcp_low_latency		>> $sysctl_orig
 
 	/sbin/sysctl -q -w net.ipv4.tcp_timestamps=0
-	/sbin/sysctl -q -w net.ipv4.tcp_sack=0
+	/sbin/sysctl -q -w net.ipv4.tcp_sack=1
 	/sbin/sysctl -q -w net.core.netdev_max_backlog=250000
-	/sbin/sysctl -q -w net.core.rmem_max=16777216
-	/sbin/sysctl -q -w net.core.wmem_max=16777216
-	/sbin/sysctl -q -w net.core.rmem_default=16777216
-	/sbin/sysctl -q -w net.core.wmem_default=16777216
-	/sbin/sysctl -q -w net.core.optmem_max=16777216
-	/sbin/sysctl -q -w net.ipv4.tcp_rmem="4096 87380 16777216"
-	/sbin/sysctl -q -w net.ipv4.tcp_wmem="4096 65536 16777216"
+	/sbin/sysctl -q -w net.core.rmem_max=4194304
+	/sbin/sysctl -q -w net.core.wmem_max=4194304
+	/sbin/sysctl -q -w net.core.rmem_default=4194304
+	/sbin/sysctl -q -w net.core.wmem_default=4194304
+	/sbin/sysctl -q -w net.core.optmem_max=4194304
+	/sbin/sysctl -q -w net.ipv4.tcp_rmem="4096 87380 4194304"
+	/sbin/sysctl -q -w net.ipv4.tcp_wmem="4096 65536 4194304"
 	/sbin/sysctl -q -w net.ipv4.tcp_low_latency=1
 }
 
