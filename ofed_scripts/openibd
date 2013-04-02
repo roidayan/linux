@@ -762,6 +762,20 @@ set_ipoib_cm()
 	/sbin/ip link set ${i} mtu ${IPOIB_MTU}
 }
 
+handle_specific_mlx_intf()
+{
+	local i=$1
+	local intf=""
+	shift
+
+	#handle mlx5 interfaces, assumption: mlx5 interface will be with CM mode.
+	intf=`ibdev2netdev | grep mlx5 | grep ${i} | awk '{print $5}'`
+	if [ ! -z $intf ]; then
+		set_ipoib_cm ${i}
+	fi
+	return 0;
+}
+
 set_ipoib_channels()
 {
         local i=$1
@@ -825,6 +839,8 @@ bring_up()
 
         if [ "X${SET_IPOIB_CM}" == "Xyes" ]; then
                 set_ipoib_cm ${i}
+        elif [ "X${SET_IPOIB_CM}" == "Xauto" ]; then
+        	handle_specific_mlx_intf ${i}
         fi
 
         if [ "X${SET_IPOIB_CHANNELS}" == "Xyes" ]; then
@@ -1045,8 +1061,9 @@ start()
                         echo "No configuration found for ${i}"
                         if [ "X${SET_IPOIB_CM}" == "Xyes" ]; then
                                 set_ipoib_cm ${i}
+			elif [ "X${SET_IPOIB_CM}" == "Xauto" ]; then
+				handle_specific_mlx_intf ${i}
                         fi
-
                         if [ "X${SET_IPOIB_CHANNELS}" == "Xyes" ]; then
                                 set_ipoib_channels ${i}
                         fi

@@ -185,7 +185,7 @@ get-openib-conf()
 				echo "IPOIB_LOAD=yes"
 				echo
 				echo "# Enable IPoIB Connected Mode"
-				echo "SET_IPOIB_CM=no"
+				echo "SET_IPOIB_CM=auto"
 			;;
 			--with-e_ipoib-mod )
 				echo
