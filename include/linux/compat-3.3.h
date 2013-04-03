@@ -89,7 +89,7 @@ static inline void netdev_tx_reset_queue(struct netdev_queue *q)
 #define NETIF_F_LOOPBACK       (1 << 31) /* Enable loopback */
 
 #ifndef NETIF_F_RXCSUM
-#define NETIF_F_RXCSUM		0
+#define NETIF_F_RXCSUM		(1 << 29)
 #endif
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3,3,0)) */
