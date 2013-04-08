@@ -221,8 +221,8 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/en_rx.c b/drivers/net/ethernet/m
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_rx.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_rx.c
-@@ -498,15 +498,26 @@ int mlx4_en_process_rx_cq(struct net_device *dev,
- 		skb->ip_summed = ip_summed;
+@@ -498,7 +498,7 @@ int mlx4_en_process_rx_cq(struct net_device *dev,
+ 		prefetch((char *)ethh + 64);
  		skb_record_rx_queue(skb, cq->ring);
  
 -#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35)
@@ -230,25 +230,25 @@ index xxxxxxx..xxxxxxx xxxxxx
  		if (dev->features & NETIF_F_RXHASH)
  			skb->rxhash = be32_to_cpu(cqe->immed_rss_invalid);
  #endif
+@@ -515,9 +515,18 @@ int mlx4_en_process_rx_cq(struct net_device *dev,
+ 		}
  
+ 		if ((ring->hwtstamp_rx_filter == HWTSTAMP_FILTER_NONE) &&
 +#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,1,0))
-+		if (priv->vlgrp &&
-+		    (be32_to_cpu(cqe->vlan_my_qpn) &
-+		     MLX4_CQE_VLAN_PRESENT_MASK) &&
-+		    (ring->hwtstamp_rx_filter == HWTSTAMP_FILTER_NONE)) {
++		    priv->vlgrp && (be32_to_cpu(cqe->vlan_my_qpn) &
++				    MLX4_CQE_VLAN_PRESENT_MASK)) {
 +			vlan_gro_receive(&cq->napi, priv->vlgrp,
-+					 be16_to_cpu(cqe->sl_vid), skb);
++					 be16_to_cpu(cqe->sl_vid),
++					 skb);
 +			goto next;
-+		}
 +#else
- 		if ((be32_to_cpu(cqe->vlan_my_qpn) &
- 		     MLX4_CQE_VLAN_PRESENT_MASK) &&
- 		    (ring->hwtstamp_rx_filter == HWTSTAMP_FILTER_NONE))
+ 		    (be32_to_cpu(cqe->vlan_my_qpn) &
+ 		     MLX4_CQE_VLAN_PRESENT_MASK)) {
  			__vlan_hwaccel_put_tag(skb, be16_to_cpu(cqe->sl_vid));
 +#endif
- 
- 		if (ring->hwtstamp_rx_filter == HWTSTAMP_FILTER_ALL) {
+ 		} else if (ring->hwtstamp_rx_filter == HWTSTAMP_FILTER_ALL) {
  			timestamp = mlx4_en_get_cqe_ts(cqe);
+ 			mlx4_en_fill_hwtstamps(mdev, skb_hwtstamps(skb),
 diff --git a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h

@@ -212,7 +212,7 @@ index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_rx.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_rx.c
 @@ -498,8 +498,10 @@ int mlx4_en_process_rx_cq(struct net_device *dev,
- 		skb->ip_summed = ip_summed;
+ 		prefetch((char *)ethh + 64);
  		skb_record_rx_queue(skb, cq->ring);
  
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35)
@@ -220,8 +220,8 @@ index xxxxxxx..xxxxxxx xxxxxx
  			skb->rxhash = be32_to_cpu(cqe->immed_rss_invalid);
 +#endif
  
- 		if ((be32_to_cpu(cqe->vlan_my_qpn) &
- 		     MLX4_CQE_VLAN_PRESENT_MASK) &&
+ 		if (likely((dev->features & NETIF_F_RXCSUM) &&
+ 			   (cqe->status & cpu_to_be16(MLX4_CQE_STATUS_IPOK)) &&
 @@ -608,8 +610,13 @@ static int mlx4_en_config_rss_qp(struct mlx4_en_priv *priv, int qpn,
  	qp->event = mlx4_en_sqp_event;
  
