@@ -35,8 +35,8 @@
 # Required-Start: $local_fs
 # Required-Stop: opensmd
 # X-Start-Before: networking
-# Default-Start:  2 3 5
-# Default-Stop: 0 1 2 6
+# Default-Start:
+# Default-Stop:
 # Description:    Activates/Deactivates InfiniBand Driver to \
 #                 start at boot time.
 ### END INIT INFO
@@ -772,6 +772,20 @@ set_ipoib_cm()
 	/sbin/ip link set ${i} mtu ${IPOIB_MTU}
 }
 
+handle_specific_mlx_intf()
+{
+	local i=$1
+	local intf=""
+	shift
+
+	#handle mlx5 interfaces, assumption: mlx5 interface will be with CM mode.
+	intf=`ibdev2netdev | grep mlx5 | grep ${i} | awk '{print $5}'`
+	if [ ! -z $intf ]; then
+		set_ipoib_cm ${i}
+	fi
+	return 0;
+}
+
 set_ipoib_channels()
 {
         local i=$1
@@ -835,10 +849,17 @@ bring_up()
 
         if [ "X${SET_IPOIB_CM}" == "Xyes" ]; then
                 set_ipoib_cm ${i}
+        elif [ "X${SET_IPOIB_CM}" == "Xauto" ]; then
+        	handle_specific_mlx_intf ${i}
         fi
 
         if [ "X${SET_IPOIB_CHANNELS}" == "Xyes" ]; then
                 set_ipoib_channels ${i}
+        fi
+
+	bond=`/usr/sbin/get-bond-master ${i}`
+        if [ ! -z "$bond" ]; then
+            /sbin/ifenslave $bond ${i} > /dev/null 2>&1
         fi
 
         return $?
@@ -917,6 +938,10 @@ start()
             for en_i in $mlx4_en_interfaces
             do
                 /sbin/ifup $en_i 2> /dev/null
+		bond=`/usr/sbin/get-bond-master $en_i`
+                if [ ! -z "$bond" ]; then
+                    /sbin/ifenslave $bond $en_i > /dev/null 2>&1
+                fi
             done
         fi
     fi
@@ -1069,6 +1094,8 @@ start()
                         echo "No configuration found for ${i}"
                         if [ "X${SET_IPOIB_CM}" == "Xyes" ]; then
                                 set_ipoib_cm ${i}
+			elif [ "X${SET_IPOIB_CM}" == "Xauto" ]; then
+				handle_specific_mlx_intf ${i}
                         fi
 
                         if [ "X${SET_IPOIB_CHANNELS}" == "Xyes" ]; then
@@ -1253,6 +1280,10 @@ EOF
 
     if  [ -x /sbin/sysctl_perf_tuning ] && [ "X${RUN_SYSCTL}" == "Xyes" ]; then
         /sbin/sysctl_perf_tuning load
+    fi
+
+    if [ -x /usr/sbin/mlnx_affinity ] && [ "X${RUN_AFFINITY_TUNER}" == "Xyes" ];then
+        /usr/sbin/mlnx_affinity start > /dev/null 2>&1
     fi
 
     return $RC
@@ -1524,6 +1555,10 @@ stop()
 
         if  [ -x /sbin/sysctl_perf_tuning ] && [ "X${RUN_SYSCTL}" == "Xyes" ]; then
             /sbin/sysctl_perf_tuning unload
+        fi
+
+        if [ -x /usr/sbin/mlnx_affinity ] && [ "X${RUN_AFFINITY_TUNER}" == "Xyes" ];then
+            /usr/sbin/mlnx_affinity stop > /dev/null 2>&1
         fi
 
         /bin/rm -rf /dev/infiniband

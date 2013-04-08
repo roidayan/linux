@@ -1,0 +1,28 @@
+#!/usr/bin/perl
+
+my $conf = "/etc/network/interfaces";
+
+my $got_if = 0;
+my $int = shift @ARGV;
+
+open(FD, "$conf");
+while (<FD>) {
+	next if (/\s*#/);
+	if (/^\s*(auto)\s(.*)/) {
+		my $iface = $2;
+		$iface =~ s/ //g;
+		if ($got_if) {
+			$got_if = 0;
+			next;
+		}
+		$got_if = 1 if ($iface eq $int);
+		next;
+	}
+
+	if ($got_if and /^\s*(bond-master)\s(.*)/) {
+		my $bond = $2;
+		$bond =~ s/ //g;
+		print "$bond\n";
+		exit 0;
+	}
+}

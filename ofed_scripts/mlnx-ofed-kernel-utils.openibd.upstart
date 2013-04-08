@@ -1,0 +1,16 @@
+# openibd - configure RDMA network devices
+#
+
+description	"configure RDMA network devices"
+
+start on (startup
+          and started udev)
+stop on runlevel [!2345]
+
+pre-start script
+	exec /etc/init.d/openibd start
+	exec ifup -a
+end script
+
+post-stop exec /etc/init.d/openibd stop
+

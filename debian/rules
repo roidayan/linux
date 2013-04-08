@@ -66,6 +66,8 @@ override_dh_auto_install:
 	dh_installdirs -p$(putils)  usr/bin
 	dh_installdirs -p$(putils)  usr/sbin
 	dh_installdirs -p$(putils)  etc/udev/rules.d
+	dh_installdirs -p$(putils)  etc/init.d
+	dh_installdirs -p$(putils)  etc/init
 	cp ofed_scripts/openib.conf debian/$(putils)/etc/infiniband
 	$(CURDIR)/ofed_scripts/dkms_ofed $(KVERS) get-openib-conf >> debian/$(putils)/etc/infiniband/openib.conf
 	# Prepare /etc/infiniband/info
@@ -82,13 +84,14 @@ override_dh_auto_install:
 	install -m 0755 ofed_scripts/cx_virt_config.py		debian/$(putils)/sbin
 	install -m 0755 ofed_scripts/connectx_port_config	debian/$(putils)/sbin
 	install -m 0755 ofed_scripts/ipoibd			debian/$(putils)/sbin
+	install -m 0755 ofed_scripts/get-bond-master		debian/$(putils)/usr/sbin
 	install -m 0755 ofed_scripts/*affinity*			debian/$(putils)/usr/sbin
 	install -m 0755 ofed_scripts/ibdev2netdev		debian/$(putils)/usr/bin
+	install -m 0755 ofed_scripts/mlnx-ofed-kernel-utils.openibd.upstart	debian/$(putils)/etc/init/openibd.conf
+	install -m 0755 ofed_scripts/mlnx-ofed-kernel-utils.openibd.init	debian/$(putils)/etc/init.d/openibd
 	install -m 0644 ofed_scripts/mlnx.conf			debian/$(putils)/etc/modprobe.d
 #	install -m 0644 ofed_scripts/mlx4_en.conf		debian/$(putils)/etc/modprobe.d
 	install -m 0644 ofed_scripts/ib_ipoib.conf		debian/$(putils)/etc/modprobe.d
 	install -m 0644 ofed_scripts/90-ib.rules 		debian/$(putils)/etc/udev/rules.d
 
 override_dh_installinit:
-	dh_installinit --no-start --name=openibd
-
