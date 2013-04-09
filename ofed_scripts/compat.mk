@@ -56,6 +56,11 @@ ifneq ($(FC14_KERNEL),)
  CFLAGS += -DCONFIG_COMPAT_DISABLE_DCB
 endif
 
+FC16_KERNEL := $(shell echo $(KVERSION) | grep fc16)
+ifneq ($(FC16_KERNEL),)
+ CFLAGS += -DCONFIG_COMPAT_IS_LLIST
+endif
+
 endif # kernel Makefile check
 
 ifdef CONFIG_COMPAT_KERNEL_2_6_36
@@ -97,6 +102,7 @@ ifdef CONFIG_COMPAT_SLES_11_2
  # CONFIG_COMPAT_EN_SYSFS should be set to 'y' as it used in drivers/net/ethernet/mellanox/mlx4/Makefile
  CONFIG_COMPAT_EN_SYSFS=y
  CFLAGS += -DCONFIG_COMPAT_EN_SYSFS
+ CFLAGS += -DCONFIG_COMPAT_IS_LLIST
 endif
 
 ifdef CONFIG_COMPAT_RHEL_6_3

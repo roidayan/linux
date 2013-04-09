@@ -50,7 +50,7 @@ int __ethtool_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
 }
 EXPORT_SYMBOL(__ethtool_get_settings);
 
-#ifndef CONFIG_COMPAT_SLES_11_2
+#ifndef CONFIG_COMPAT_IS_LLIST
 #if !defined(RHEL_MINOR) || (RHEL_MINOR < 3)
 /**
  * llist_add_batch - add several linked entries in batch
@@ -111,5 +111,5 @@ struct llist_node *llist_del_first(struct llist_head *head)
 }
 EXPORT_SYMBOL_GPL(llist_del_first);
 
-#endif /* CONFIG_COMPAT_SLES_11_2 */
+#endif /* CONFIG_COMPAT_IS_LLIST */
 #endif
