@@ -911,6 +911,11 @@ start()
                 echo_failure $"Loading Mellanox MLX4_EN HCA driver: "
         fi
         RC=$[ $RC + $my_rc ]
+
+        # W/A for XenServer
+        if [ -e /etc/modprobe.conf ]; then
+            perl -ni -e "s@\s*#\s*(alias.*mlx4_en)@\$1@;print" /etc/modprobe.conf
+        fi
     fi
 
     if [ "X${MLX4_FC_LOAD}" == "Xyes" ]; then
@@ -1513,6 +1518,10 @@ stop()
                     echo "MLX4_EN module is loaded and in use."
                     echo "To unload MLX4_EN run: 'modprobe -r mlx4_en mlx4_core'"
                 else
+                    # W/A for XenServer
+                    if [ -e /etc/modprobe.conf ]; then
+                        perl -ni -e "s@\s*(alias.*mlx4_en)@# \$1@;print" /etc/modprobe.conf
+                    fi
                     unload mlx4_en
                     unload mlx4_core
                 fi
