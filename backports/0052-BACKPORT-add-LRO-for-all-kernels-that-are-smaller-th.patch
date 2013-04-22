@@ -1,0 +1,51 @@
+From d34a482279af93df7b4f0c86b10a587101f47346 Mon Sep 17 00:00:00 2001
+From: Erez Shitrit <erezsh@mellanox.com>
+Date: Mon, 22 Apr 2013 18:24:38 +0300
+Subject: [PATCH] BACKPORT: add LRO for all kernels that are smaller than 3.3
+
+issue: 190246
+
+Signed-off-by: Erez Shitrit <erezsh@mellanox.com>
+---
+ drivers/infiniband/ulp/ipoib/ipoib.h         |    4 ++++
+ drivers/infiniband/ulp/ipoib/ipoib_ethtool.c |    9 ++++++++-
+ 2 files changed, 12 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib.h b/drivers/infiniband/ulp/ipoib/ipoib.h
+index 52e7155..fe9623b 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib.h
++++ b/drivers/infiniband/ulp/ipoib/ipoib.h
+@@ -43,6 +43,10 @@
+ #include <linux/kref.h>
+ #include <linux/if_infiniband.h>
+ #include <linux/mutex.h>
++/* LRO support for every "old" kernel */
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,3,0))
++#define CONFIG_COMPAT_USE_LRO
++#endif
+ 
+ #ifdef CONFIG_COMPAT_USE_LRO
+ #include <linux/inet_lro.h>
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
+index 7d60c00..2b06a17 100644
+--- a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
+@@ -299,7 +299,14 @@ static int ipoib_set_channels(struct net_device *dev,
+ }
+ #endif
+ 
+-#ifdef CONFIG_COMPAT_USE_LRO
++
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36)) && defined (CONFIG_COMPAT_USE_LRO)
++int ipoib_set_flags(struct net_device *dev, u32 data, u32 supported)
++{
++	ethtool_op_set_flags(dev, data, supported);
++	return 0;
++}
++#elif defined (CONFIG_COMPAT_USE_LRO)
+ int ipoib_set_flags(struct net_device *dev, u32 data)
+ {
+ 	ethtool_op_set_flags(dev, data);
+-- 
+1.7.1
+
