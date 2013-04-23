@@ -11,8 +11,11 @@
 #include <linux/compat.h>
 #include <linux/autoconf.h>
 
-#ifndef CONFIG_COMPAT_IS_BITMAP
+#ifndef BITMAP_FIRST_WORD_MASK
 #define BITMAP_FIRST_WORD_MASK(start) (~0UL << ((start) % BITS_PER_LONG))
+#endif /* BITMAP_FIRST_WORD_MASK */
+
+#ifndef CONFIG_COMPAT_IS_BITMAP
 
 void bitmap_set(unsigned long *map, int start, int nr)
 {

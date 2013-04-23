@@ -61,6 +61,11 @@ ifneq ($(FC16_KERNEL),)
  CFLAGS += -DCONFIG_COMPAT_IS_LLIST
 endif
 
+UEK_1_KERNEL := $(shell echo $(KVERSION) | grep uek | grep 2.6.32)
+ifneq ($(UEK_1_KERNEL),)
+ CFLAGS += -DCONFIG_COMPAT_IS_BITMAP
+endif
+
 UEK_2_KERNEL := $(shell echo $(KVERSION) | grep uek | grep 2.6.39)
 ifneq ($(UEK_2_KERNEL),)
  CONFIG_COMPAT_UEK2 := y
