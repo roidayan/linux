@@ -61,6 +61,13 @@ ifneq ($(FC16_KERNEL),)
  CFLAGS += -DCONFIG_COMPAT_IS_LLIST
 endif
 
+UEK_2_KERNEL := $(shell echo $(KVERSION) | grep uek | grep 2.6.39)
+ifneq ($(UEK_2_KERNEL),)
+ CONFIG_COMPAT_UEK2 := y
+ CFLAGS += -DCONFIG_COMPAT_UEK2
+ CFLAGS += -DCONFIG_COMPAT_IS_NETIF_RSS_QUEUES
+endif
+
 endif # kernel Makefile check
 
 ifdef CONFIG_COMPAT_KERNEL_2_6_36

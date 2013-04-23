@@ -31,7 +31,9 @@ extern struct sk_buff *__pskb_copy(struct sk_buff *skb,
 
 #define NL80211_FEATURE_SK_TX_STATUS 0
 
+#ifndef CONFIG_COMPAT_UEK2
 typedef u32 netdev_features_t;
+#endif /* CONFIG_COMPAT_UEK2 */
 
 /* source include/linux/device.h */
 /**

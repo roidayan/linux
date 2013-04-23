@@ -19,6 +19,7 @@ extern int __ethtool_get_settings(struct net_device *dev,
 				  struct ethtool_cmd *cmd);
 
 #ifdef CONFIG_COMPAT_SKB_FRAG_NEEDED
+#ifndef CONFIG_COMPAT_UEK2
 
 /**
  * skb_frag_page - retrieve the page refered to by a paged fragment
@@ -92,6 +93,7 @@ static inline dma_addr_t skb_frag_dma_map(struct device *dev,
 	return dma_map_page(dev, skb_frag_page(frag),
 			    frag->page_offset + offset, size, dir);
 }
+#endif /* CONFIG_COMPAT_UEK2 */
 
 #define ETH_P_TDLS	0x890D          /* TDLS */
 
@@ -115,6 +117,8 @@ static inline void skb_frag_size_sub(skb_frag_t *frag, int delta)
 	frag->size -= delta;
 }
 
+#ifndef CONFIG_COMPAT_UEK2
+
 /**
  * __skb_frag_unref - release a reference on a paged fragment.
  * @frag: the paged fragment
@@ -125,7 +129,7 @@ static inline void __skb_frag_unref(skb_frag_t *frag)
 {
 	put_page(skb_frag_page(frag));
 }
-
+#endif /* CONFIG_COMPAT_UEK2 */
 #endif /* CONFIG_COMPAT_SKB_FRAG_NEEDED */
 
 static inline char *hex_byte_pack(char *buf, u8 byte)
