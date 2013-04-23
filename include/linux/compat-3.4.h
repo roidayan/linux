@@ -52,12 +52,12 @@ static inline void eth_hw_addr_random(struct net_device *dev)
 #define NET_ADDR_STOLEN                2       /* address is stolen from other device */
 
 #else /* 2.6.36 and on */
-#ifndef CONFIG_COMPAT_UEK2
+#ifndef CONFIG_COMPAT_ETH_HW_ADDR_RANDOM
 static inline void eth_hw_addr_random(struct net_device *dev)
 {
 	dev_hw_addr_random(dev, dev->dev_addr);
 }
-#endif /* CONFIG_COMPAT_UEK2 */
+#endif /* CONFIG_COMPAT_ETH_HW_ADDR_RANDOM */
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)) */
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)) */
