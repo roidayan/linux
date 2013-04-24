@@ -1,14 +1,37 @@
 From 40a138209366b434fbffeafadc0e84c89b631f64 Mon Sep 17 00:00:00 2001
-From: root <root@dev-l-vrt-040.vmlab.mtl.com>
+From: Eugenia Emantayev <eugenia@mellanox.com>
 Date: Wed, 13 Mar 2013 15:25:58 +0200
 Subject: [PATCH] BACKPORT: add backport for XEN
 
 Signed-off-by: Eugenia Emantayev <eugenia@mellanox.com>
 ---
+ drivers/net/ethernet/mellanox/mlx4/en_netdev.c |    4 ++--
  drivers/net/ethernet/mellanox/mlx4/en_main.c |    2 +-
  drivers/net/ethernet/mellanox/mlx4/mlx4_en.h |    2 +-
- 2 files changed, 2 insertions(+), 2 deletions(-)
+ 3 files changed, 4 insertions(+), 4 deletions(-)
 
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_netdev.c
+@@ -2435,7 +2435,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+ 	if (dev == NULL)
+ 		return -ENOMEM;
+ 
+-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)) || defined (CONFIG_COMPAT_IS_NUM_TX_QUEUES)
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)) || defined (CONFIG_COMPAT_IS_NUM_TX_QUEUES) || defined (CONFIG_X86_XEN)
+ 	netif_set_real_num_tx_queues(dev, prof->tx_ring_num);
+ #endif
+ 	netif_set_real_num_rx_queues(dev, prof->rx_ring_num);
+@@ -2568,7 +2568,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+ 	else
+ 		dev->netdev_ops = &mlx4_netdev_ops;
+ 	dev->watchdog_timeo = MLX4_EN_WATCHDOG_TIMEOUT;
+-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)) || defined (CONFIG_COMPAT_IS_NUM_TX_QUEUES)
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)) || defined (CONFIG_COMPAT_IS_NUM_TX_QUEUES) || defined (CONFIG_X86_XEN)
+ 	netif_set_real_num_tx_queues(dev, priv->tx_ring_num - priv->tx_queue_num);
+ #endif
+ 	netif_set_real_num_rx_queues(dev, priv->rx_ring_num);
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_main.c b/drivers/net/ethernet/mellanox/mlx4/en_main.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_main.c
