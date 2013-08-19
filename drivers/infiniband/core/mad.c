@@ -619,6 +619,9 @@ int ib_unregister_mad_agent(struct ib_mad_agent *mad_agent)
 	struct ib_mad_agent_private *mad_agent_priv;
 	struct ib_mad_snoop_private *mad_snoop_priv;
 
+	if (IS_ERR(mad_agent))
+		goto out;
+
 	/* If the TID is zero, the agent can only snoop. */
 	if (mad_agent->hi_tid) {
 		mad_agent_priv = container_of(mad_agent,
@@ -631,6 +634,7 @@ int ib_unregister_mad_agent(struct ib_mad_agent *mad_agent)
 					      agent);
 		unregister_mad_snoop(mad_snoop_priv);
 	}
+out:
 	return 0;
 }
 EXPORT_SYMBOL(ib_unregister_mad_agent);
