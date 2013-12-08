@@ -37,7 +37,6 @@
 
 enum {
 	MLX5_QP_FLAG_SIGNATURE		= 1 << 0,
-	MLX5_QP_FLAG_SCATTER_CQE	= 1 << 1,
 };
 
 enum {

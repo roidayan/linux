@@ -984,14 +984,15 @@ static int create_qp_common(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 	if (init_attr->sq_sig_type == IB_SIGNAL_ALL_WR)
 		qp->sq_signal_bits = MLX5_WQE_CTRL_CQ_UPDATE;
 
+	if (init_attr->max_inl_recv)
+		qp->scat_cqe = 1;
+
 	if (pd && pd->uobject) {
 		if (ib_copy_from_udata(&ucmd, udata, sizeof(ucmd))) {
 			mlx5_ib_dbg(dev, "copy failed\n");
 			return -EFAULT;
 		}
-
 		qp->wq_sig = !!(ucmd.flags & MLX5_QP_FLAG_SIGNATURE);
-		qp->scat_cqe = !!(ucmd.flags & MLX5_QP_FLAG_SCATTER_CQE);
 	} else {
 		qp->wq_sig = !!wq_signature;
 	}
@@ -1089,12 +1090,17 @@ static int create_qp_common(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 		else
 			in->ctx.cs_res = MLX5_RES_SCAT_DATA32_CQE;
 
-		if (init_attr->sq_sig_type == IB_SIGNAL_ALL_WR) {
+		if (init_attr->sq_sig_type != IB_SIGNAL_ALL_WR) {
+			in->ctx.cs_req = 0;
+		} else {
 			if (scqe_sz == 128)
 				in->ctx.cs_req = MLX5_REQ_SCAT_DATA64_CQE;
 			else
 				in->ctx.cs_req = MLX5_REQ_SCAT_DATA32_CQE;
 		}
+		init_attr->max_inl_recv = max_t(int, rcqe_sz, scqe_sz);
+	} else {
+		init_attr->max_inl_recv = 0;
 	}
 
 	if (qp->rq.wqe_cnt) {
