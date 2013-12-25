@@ -1546,7 +1546,8 @@ static int ib_rate_to_mlx5(struct mlx5_ib_dev *dev, u8 rate)
 
 static int mlx5_set_path(struct mlx5_ib_dev *dev, const struct ib_ah_attr *ah,
 			 struct mlx5_qp_path *path, u8 port, int attr_mask,
-			 u32 path_flags, const struct ib_qp_attr *attr)
+			 u32 path_flags, const struct ib_qp_attr *attr,
+			 int alt)
 {
 	int err;
 
@@ -1554,7 +1555,7 @@ static int mlx5_set_path(struct mlx5_ib_dev *dev, const struct ib_ah_attr *ah,
 	path->free_ar = (path_flags & MLX5_PATH_FLAG_FREE_AR) ? 0x80 : 0;
 
 	if (attr_mask & IB_QP_PKEY_INDEX)
-		path->pkey_index = attr->pkey_index;
+		path->pkey_index = alt ? attr->alt_pkey_index : attr->pkey_index;
 
 	path->grh_mlid	= ah->src_path_bits & 0x7f;
 	path->rlid	= cpu_to_be16(ah->dlid);
@@ -1583,7 +1584,7 @@ static int mlx5_set_path(struct mlx5_ib_dev *dev, const struct ib_ah_attr *ah,
 	path->port = port;
 
 	if (attr_mask & IB_QP_TIMEOUT)
-		path->ackto_lt = attr->timeout << 3;
+		path->ackto_lt = alt ? attr->alt_timeout << 3 : attr->timeout << 3;
 
 	path->sl = ah->sl & 0xf;
 
@@ -1828,7 +1829,7 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 	if (attr_mask & IB_QP_AV) {
 		err = mlx5_set_path(dev, &attr->ah_attr, &context->pri_path,
 				    attr_mask & IB_QP_PORT ? attr->port_num : qp->port,
-				    attr_mask, 0, attr);
+				    attr_mask, 0, attr, 0);
 		if (err)
 			goto out;
 	}
@@ -1838,7 +1839,9 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 
 	if (attr_mask & IB_QP_ALT_PATH) {
 		err = mlx5_set_path(dev, &attr->alt_ah_attr, &context->alt_path,
-				    attr->alt_port_num, attr_mask, 0, attr);
+				    attr->alt_port_num,
+				    attr_mask  | IB_QP_PKEY_INDEX | IB_QP_TIMEOUT,
+				    0, attr, 1);
 		if (err)
 			goto out;
 	}
