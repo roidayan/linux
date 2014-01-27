@@ -44,11 +44,11 @@ void mlx5_cq_completion(struct mlx5_core_dev *dev, u32 cqn)
 	struct mlx5_core_cq *cq;
 	struct mlx5_cq_table *table = &dev->priv.cq_table;
 
-	spin_lock(&table->lock);
+	rcu_read_lock();
 	cq = radix_tree_lookup(&table->tree, cqn);
 	if (likely(cq))
 		atomic_inc(&cq->refcount);
-	spin_unlock(&table->lock);
+	rcu_read_unlock();
 
 	if (!cq) {
 		mlx5_core_warn(dev, "Completion event for bogus CQ 0x%x\n", cqn);
@@ -68,13 +68,12 @@ void mlx5_cq_event(struct mlx5_core_dev *dev, u32 cqn, int event_type)
 	struct mlx5_cq_table *table = &dev->priv.cq_table;
 	struct mlx5_core_cq *cq;
 
-	spin_lock(&table->lock);
-
+	rcu_read_lock();
 	cq = radix_tree_lookup(&table->tree, cqn);
 	if (cq)
 		atomic_inc(&cq->refcount);
 
-	spin_unlock(&table->lock);
+	rcu_read_unlock();
 
 	if (!cq) {
 		mlx5_core_warn(dev, "Async event for bogus CQ 0x%x\n", cqn);
@@ -166,7 +165,7 @@ int mlx5_core_destroy_cq(struct mlx5_core_dev *dev, struct mlx5_core_cq *cq)
 	if (out.hdr.status)
 		return mlx5_cmd_status_to_err(&out.hdr);
 
-	synchronize_irq(cq->irqn);
+	synchronize_rcu();
 
 	mlx5_debug_cq_remove(dev, cq);
 	if (atomic_dec_and_test(&cq->refcount))
