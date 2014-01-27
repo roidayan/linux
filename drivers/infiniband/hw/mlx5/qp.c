@@ -1348,6 +1348,8 @@ static struct ib_qp *__create_qp(struct ib_pd *pd,
 	struct mlx5_ib_qp *qp;
 	u16 xrcdn = 0;
 	int err;
+	u32 rcqn;
+	u32 scqn;
 
 	if (pd) {
 		dev = to_mdev(pd->device);
@@ -1401,9 +1403,10 @@ static struct ib_qp *__create_qp(struct ib_pd *pd,
 		else
 			qp->ibqp.qp_num = qp->mqp.qpn;
 
+		rcqn = init_attr->recv_cq ? to_mcq(init_attr->recv_cq)->mcq.cqn : -1;
+		scqn = init_attr->send_cq ? to_mcq(init_attr->send_cq)->mcq.cqn : -1;
 		mlx5_ib_dbg(dev, "ib qpnum 0x%x, mlx qpn 0x%x, rcqn 0x%x, scqn 0x%x\n",
-			    qp->ibqp.qp_num, qp->mqp.qpn, to_mcq(init_attr->recv_cq)->mcq.cqn,
-			    to_mcq(init_attr->send_cq)->mcq.cqn);
+			    qp->ibqp.qp_num, qp->mqp.qpn, rcqn, scqn);
 
 		qp->xrcdn = xrcdn;
 
