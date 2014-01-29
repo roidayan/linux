@@ -46,11 +46,8 @@ void mlx5_cq_completion(struct mlx5_core_dev *dev, u32 cqn)
 
 	rcu_read_lock();
 	cq = radix_tree_lookup(&table->tree, cqn);
-	if (likely(cq))
-		atomic_inc(&cq->refcount);
-	rcu_read_unlock();
-
-	if (!cq) {
+	if (unlikely(!cq)) {
+		rcu_read_unlock();
 		mlx5_core_warn(dev, "Completion event for bogus CQ 0x%x\n", cqn);
 		return;
 	}
@@ -58,9 +55,7 @@ void mlx5_cq_completion(struct mlx5_core_dev *dev, u32 cqn)
 	++cq->arm_sn;
 
 	cq->comp(cq);
-
-	if (atomic_dec_and_test(&cq->refcount))
-		complete(&cq->free);
+	rcu_read_unlock();
 }
 
 void mlx5_cq_event(struct mlx5_core_dev *dev, u32 cqn, int event_type)
@@ -70,20 +65,14 @@ void mlx5_cq_event(struct mlx5_core_dev *dev, u32 cqn, int event_type)
 
 	rcu_read_lock();
 	cq = radix_tree_lookup(&table->tree, cqn);
-	if (cq)
-		atomic_inc(&cq->refcount);
-
-	rcu_read_unlock();
-
 	if (!cq) {
+		rcu_read_unlock();
 		mlx5_core_warn(dev, "Async event for bogus CQ 0x%x\n", cqn);
 		return;
 	}
 
 	cq->event(cq, event_type);
-
-	if (atomic_dec_and_test(&cq->refcount))
-		complete(&cq->free);
+	rcu_read_unlock();
 }
 
 
@@ -108,8 +97,6 @@ int mlx5_core_create_cq(struct mlx5_core_dev *dev, struct mlx5_core_cq *cq,
 	cq->cqn = be32_to_cpu(out.cqn) & 0xffffff;
 	cq->cons_index = 0;
 	cq->arm_sn     = 0;
-	atomic_set(&cq->refcount, 1);
-	init_completion(&cq->free);
 
 	spin_lock_irq(&table->lock);
 	err = radix_tree_insert(&table->tree, cq->cqn, cq);
@@ -145,12 +132,13 @@ int mlx5_core_destroy_cq(struct mlx5_core_dev *dev, struct mlx5_core_cq *cq)
 	spin_lock_irq(&table->lock);
 	tmp = radix_tree_delete(&table->tree, cq->cqn);
 	spin_unlock_irq(&table->lock);
+	synchronize_rcu();
 	if (!tmp) {
 		mlx5_core_warn(dev, "cq 0x%x not found in tree\n", cq->cqn);
 		return -EINVAL;
 	}
 	if (tmp != cq) {
-		mlx5_core_warn(dev, "corruption on srqn 0x%x\n", cq->cqn);
+		mlx5_core_warn(dev, "corruption on cqn 0x%x\n", cq->cqn);
 		return -EINVAL;
 	}
 
@@ -165,13 +153,8 @@ int mlx5_core_destroy_cq(struct mlx5_core_dev *dev, struct mlx5_core_cq *cq)
 	if (out.hdr.status)
 		return mlx5_cmd_status_to_err(&out.hdr);
 
-	synchronize_rcu();
 
 	mlx5_debug_cq_remove(dev, cq);
-	if (atomic_dec_and_test(&cq->refcount))
-		complete(&cq->free);
-	wait_for_completion(&cq->free);
-
 	return 0;
 }
 EXPORT_SYMBOL(mlx5_core_destroy_cq);
