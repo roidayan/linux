@@ -98,7 +98,10 @@ enum {
 	MLX4_EN_PRIV_FLAGS_FS_EN_L2 = (1 << 1),
 	MLX4_EN_PRIV_FLAGS_FS_EN_IPV4 = (1 << 2),
 	MLX4_EN_PRIV_FLAGS_FS_EN_TCP = (1 << 3),
-	MLX4_EN_PRIV_FLAGS_FS_EN_UDP = (1 << 4)
+	MLX4_EN_PRIV_FLAGS_FS_EN_UDP = (1 << 4),
+#ifdef CONFIG_MLX4_EN_DCB
+	MLX4_EN_PRIV_FLAGS_DISABLE_32_14_4_E = (1 << 5),
+#endif
 };
 
 #define MLX4_EN_WATCHDOG_TIMEOUT	(15 * HZ)
@@ -768,6 +771,11 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
 
 int mlx4_en_start_port(struct net_device *dev);
 void mlx4_en_stop_port(struct net_device *dev, int detach);
+
+#ifdef CONFIG_MLX4_EN_DCB
+int mlx4_disable_32_14_4_e_write(struct mlx4_dev *dev, u8 config, int port);
+int mlx4_disable_32_14_4_e_read(struct mlx4_dev *dev, u8 *config, int port);
+#endif
 
 void mlx4_en_free_resources(struct mlx4_en_priv *priv);
 int mlx4_en_alloc_resources(struct mlx4_en_priv *priv);

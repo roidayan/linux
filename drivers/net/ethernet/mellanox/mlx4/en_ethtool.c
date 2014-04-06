@@ -105,6 +105,9 @@ static const char mlx4_en_priv_flags[][ETH_GSTRING_LEN] = {
 	"mlx4_flow_steering_ipv4",
 	"mlx4_flow_steering_tcp",
 	"mlx4_flow_steering_udp",
+#ifdef CONFIG_MLX4_EN_DCB
+	"qcn_disable_32_14_4_e",
+#endif
 };
 
 static const char main_strings[][ETH_GSTRING_LEN] = {
@@ -1660,6 +1663,7 @@ static int mlx4_en_get_ts_info(struct net_device *dev,
 static int mlx4_en_set_priv_flags(struct net_device *dev, u32 flags)
 {
 	struct mlx4_en_priv *priv = netdev_priv(dev);
+	struct mlx4_en_dev *mdev = priv->mdev;
 	bool bf_enabled_new = !!(flags & MLX4_EN_PRIV_FLAGS_BLUEFLAME);
 	bool bf_enabled_old = !!(priv->pflags & MLX4_EN_PRIV_FLAGS_BLUEFLAME);
 	int i;
@@ -1670,6 +1674,23 @@ static int mlx4_en_set_priv_flags(struct net_device *dev, u32 flags)
 	     MLX4_EN_PRIV_FLAGS_FS_EN_TCP	|
 	     MLX4_EN_PRIV_FLAGS_FS_EN_UDP))
 		return -EINVAL;
+
+#ifdef CONFIG_MLX4_EN_DCB
+	if ((flags & MLX4_EN_PRIV_FLAGS_DISABLE_32_14_4_E) &&
+	    !(priv->pflags & MLX4_EN_PRIV_FLAGS_DISABLE_32_14_4_E)) {
+		if (mlx4_disable_32_14_4_e_write(mdev->dev, 1, priv->port))
+			en_err(priv, "Failed configure QCN parameter\n");
+		else
+			priv->pflags |= MLX4_EN_PRIV_FLAGS_DISABLE_32_14_4_E;
+
+	} else if (!(flags & MLX4_EN_PRIV_FLAGS_DISABLE_32_14_4_E) &&
+		   (priv->pflags & MLX4_EN_PRIV_FLAGS_DISABLE_32_14_4_E)) {
+		if (mlx4_disable_32_14_4_e_write(mdev->dev, 0, priv->port))
+			en_err(priv, "Failed configure QCN parameter\n");
+		else
+			priv->pflags &= ~MLX4_EN_PRIV_FLAGS_DISABLE_32_14_4_E;
+	}
+#endif
 
 	if (bf_enabled_new == bf_enabled_old)
 		return 0; /* Nothing to do */

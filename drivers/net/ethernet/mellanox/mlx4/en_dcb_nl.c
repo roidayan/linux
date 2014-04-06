@@ -145,6 +145,82 @@ static int mlx4_en_ets_validate(struct mlx4_en_priv *priv, struct ieee_ets *ets)
 	return 0;
 }
 
+int mlx4_disable_32_14_4_e_read(struct mlx4_dev *dev, u8 *config, int port)
+{
+	struct mlx4_congestion_control_mb_prio_802_1_qau_params *hw_qcn;
+	struct mlx4_cmd_mailbox *mailbox_out = NULL;
+	u64 mailbox_in_dma = 0;
+	u32 inmod = 0;
+	int err = 0;
+
+	if (!(dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_QCN))
+		return -EOPNOTSUPP;
+
+	mailbox_out = mlx4_alloc_cmd_mailbox(dev);
+	if (IS_ERR(mailbox_out))
+		return -ENOMEM;
+
+	hw_qcn =
+	(struct mlx4_congestion_control_mb_prio_802_1_qau_params *)
+	mailbox_out->buf;
+
+	inmod = port | 1 << 8 |
+		(MLX4_CTRL_ALGO_802_1_QAU_REACTION_POINT << 16);
+
+	err = mlx4_cmd_box(dev, mailbox_in_dma,
+			   mailbox_out->dma,
+			   inmod, MLX4_CONGESTION_CONTROL_GET_PARAMS,
+			   MLX4_CMD_CONGESTION_CTRL_OPCODE,
+			   MLX4_CMD_TIME_CLASS_C,
+			   MLX4_CMD_NATIVE);
+	if (!err)
+		*config = be32_to_cpu(hw_qcn->extended_enable) >> 22;
+
+	mlx4_free_cmd_mailbox(dev, mailbox_out);
+
+	return err;
+}
+
+int mlx4_disable_32_14_4_e_write(struct mlx4_dev *dev, u8 config, int port)
+{
+	struct mlx4_congestion_control_mb_prio_802_1_qau_params *hw_qcn;
+	struct mlx4_cmd_mailbox *mailbox_in = NULL;
+	u64 mailbox_in_dma = 0;
+	u32 inmod = 0;
+	int err;
+
+	if (!(dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_QCN))
+		return -EOPNOTSUPP;
+
+	mailbox_in = mlx4_alloc_cmd_mailbox(dev);
+	if (IS_ERR(mailbox_in))
+		return -ENOMEM;
+
+	mailbox_in_dma = mailbox_in->dma;
+	hw_qcn =
+	(struct mlx4_congestion_control_mb_prio_802_1_qau_params *)mailbox_in->buf;
+
+	inmod = port | 0xff << 8 |
+		(MLX4_CTRL_ALGO_802_1_QAU_REACTION_POINT << 16);
+
+	/* Before updating QCN parameter,
+	 *need to set it's modify enable bit to 1
+	 */
+
+	hw_qcn->modify_enable_high = cpu_to_be32(1 << 22);
+
+	hw_qcn->extended_enable = cpu_to_be32(config << 22);
+
+	err = mlx4_cmd(dev, mailbox_in_dma, inmod,
+		       MLX4_CONGESTION_CONTROL_SET_PARAMS,
+		       MLX4_CMD_CONGESTION_CTRL_OPCODE,
+		       MLX4_CMD_TIME_CLASS_C,
+		       MLX4_CMD_NATIVE);
+
+	mlx4_free_cmd_mailbox(dev, mailbox_in);
+	return err;
+}
+
 static int mlx4_en_config_port_scheduler(struct mlx4_en_priv *priv,
 		struct ieee_ets *ets, u16 *ratelimit)
 {
