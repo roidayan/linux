@@ -272,12 +272,32 @@ out_alloc:
 
 	return err;
 }
+
+static void page_notify_fail(struct mlx5_core_dev *dev, u16 func_id)
+{
+	struct mlx5_manage_pages_inbox *in;
+	struct mlx5_manage_pages_outbox out;
+
+	in = kzalloc(sizeof(*in), GFP_KERNEL);
+	if (!in) {
+		mlx5_core_warn(dev, "allocation failed\n");
+		return;
+	}
+
+	memset(&out, 0, sizeof(out));
+	in->hdr.opcode = cpu_to_be16(MLX5_CMD_OP_MANAGE_PAGES);
+	in->hdr.opmod = cpu_to_be16(MLX5_PAGES_CANT_GIVE);
+	in->func_id = cpu_to_be16(func_id);
+	if (mlx5_cmd_exec(dev, in, sizeof(*in), &out, sizeof(out)))
+		mlx5_core_warn(dev, "page notify failed\n");
+	kfree(in);
+}
+
 static int give_pages(struct mlx5_core_dev *dev, u16 func_id, int npages,
 		      int notify_fail)
 {
 	struct mlx5_manage_pages_inbox *in;
 	struct mlx5_manage_pages_outbox out;
-	struct mlx5_manage_pages_inbox *nin;
 	int inlen;
 	u64 addr;
 	int err;
@@ -286,6 +306,8 @@ static int give_pages(struct mlx5_core_dev *dev, u16 func_id, int npages,
 	inlen = sizeof(*in) + npages * sizeof(in->pas[0]);
 	in = mlx5_vzalloc(inlen);
 	if (!in) {
+		if (notify_fail)
+			page_notify_fail(dev, func_id);
 		mlx5_core_warn(dev, "vzalloc failed %d\n", inlen);
 		return -ENOMEM;
 	}
@@ -298,7 +320,7 @@ retry:
 			if (err == -ENOMEM)
 				err = alloc_system_page(dev, func_id);
 			if (err)
-				goto out_4k;
+				goto out_alloc;
 
 			goto retry;
 		}
@@ -313,7 +335,7 @@ retry:
 	if (err) {
 		mlx5_core_warn(dev, "func_id 0x%x, npages %d, err %d\n",
 			       func_id, npages, err);
-		goto out_alloc;
+		goto out_4k;
 	}
 	dev->priv.fw_pages += npages;
 
@@ -322,7 +344,7 @@ retry:
 		if (err) {
 			mlx5_core_warn(dev, "func_id 0x%x, npages %d, status %d\n",
 				       func_id, npages, out.hdr.status);
-			goto out_alloc;
+			goto out_4k;
 		}
 	}
 
@@ -331,19 +353,8 @@ retry:
 	goto out_free;
 
 out_alloc:
-	if (notify_fail) {
-		nin = kzalloc(sizeof(*nin), GFP_KERNEL);
-		if (!nin) {
-			mlx5_core_warn(dev, "allocation failed\n");
-			goto out_4k;
-		}
-		memset(&out, 0, sizeof(out));
-		nin->hdr.opcode = cpu_to_be16(MLX5_CMD_OP_MANAGE_PAGES);
-		nin->hdr.opmod = cpu_to_be16(MLX5_PAGES_CANT_GIVE);
-		if (mlx5_cmd_exec(dev, nin, sizeof(*nin), &out, sizeof(out)))
-			mlx5_core_warn(dev, "page notify failed\n");
-		kfree(nin);
-	}
+	if (notify_fail)
+		page_notify_fail(dev, func_id);
 
 out_4k:
 	for (i--; i >= 0; i--)
