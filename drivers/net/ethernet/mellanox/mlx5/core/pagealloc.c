@@ -394,7 +394,6 @@ static int reclaim_pages(struct mlx5_core_dev *dev, u32 func_id, int npages,
 		mlx5_core_err(dev, "failed reclaiming pages\n");
 		goto out_free;
 	}
-	dev->priv.fw_pages -= npages;
 
 	if (out->hdr.status) {
 		err = mlx5_cmd_status_to_err(&out->hdr);
@@ -409,6 +408,7 @@ static int reclaim_pages(struct mlx5_core_dev *dev, u32 func_id, int npages,
 		addr = be64_to_cpu(out->pas[i]);
 		free_4k(dev, addr);
 	}
+	dev->priv.fw_pages -= num_claimed;
 
 out_free:
 	kvfree(out);
