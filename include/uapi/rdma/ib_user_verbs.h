@@ -90,8 +90,9 @@ enum {
 };
 
 enum {
+	IB_USER_VERBS_EX_CMD_QUERY_DEVICE = IB_USER_VERBS_CMD_QUERY_DEVICE,
 	IB_USER_VERBS_EX_CMD_CREATE_FLOW = IB_USER_VERBS_CMD_THRESHOLD,
-	IB_USER_VERBS_EX_CMD_DESTROY_FLOW
+	IB_USER_VERBS_EX_CMD_DESTROY_FLOW,
 };
 
 /*
@@ -199,6 +200,57 @@ struct ib_uverbs_query_device_resp {
 	__u8  local_ca_ack_delay;
 	__u8  phys_port_cnt;
 	__u8  reserved[4];
+};
+
+struct ib_uverbs_ex_query_device {
+	__u64 driver_data[0];
+	__u32 comp_mask;
+	__u8  reserved[4];
+};
+
+struct ib_uverbs_ex_query_device_resp {
+	__u64 fw_ver;
+	__be64 node_guid;
+	__be64 sys_image_guid;
+	__u64 max_mr_size;
+	__u64 page_size_cap;
+	__u32 vendor_id;
+	__u32 vendor_part_id;
+	__u32 hw_ver;
+	__u32 max_qp;
+	__u32 max_qp_wr;
+	__u32 device_cap_flags;
+	__u32 max_sge;
+	__u32 max_sge_rd;
+	__u32 max_cq;
+	__u32 max_cqe;
+	__u32 max_mr;
+	__u32 max_pd;
+	__u32 max_qp_rd_atom;
+	__u32 max_ee_rd_atom;
+	__u32 max_res_rd_atom;
+	__u32 max_qp_init_rd_atom;
+	__u32 max_ee_init_rd_atom;
+	__u32 atomic_cap;
+	__u32 max_ee;
+	__u32 max_rdd;
+	__u32 max_mw;
+	__u32 max_raw_ipv6_qp;
+	__u32 max_raw_ethy_qp;
+	__u32 max_mcast_grp;
+	__u32 max_mcast_qp_attach;
+	__u32 max_total_mcast_qp_attach;
+	__u32 max_ah;
+	__u32 max_fmr;
+	__u32 max_map_per_fmr;
+	__u32 max_srq;
+	__u32 max_srq_wr;
+	__u32 max_srq_sge;
+	__u16 max_pkeys;
+	__u8  local_ca_ack_delay;
+	__u8  phys_port_cnt;
+	__u8  reserved[4];
+	__u32 comp_mask;
 };
 
 struct ib_uverbs_query_port {
