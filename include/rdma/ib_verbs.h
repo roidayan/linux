@@ -1607,6 +1607,9 @@ struct ib_device {
 	int			   (*destroy_flow)(struct ib_flow *flow_id);
 	int			   (*check_mr_status)(struct ib_mr *mr, u32 check_mask,
 						      struct ib_mr_status *mr_status);
+	int		           (*ex_query_device)(struct ib_device *device,
+						      struct ib_device_attr *device_attr,
+						      struct ib_udata *uhw);
 
 	struct ib_dma_mapping_ops   *dma_ops;
 
