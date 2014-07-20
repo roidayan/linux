@@ -116,6 +116,7 @@ err_cmd:
 	memset(&din, 0, sizeof(din));
 	memset(&dout, 0, sizeof(dout));
 	din.hdr.opcode = cpu_to_be16(MLX5_CMD_OP_DESTROY_CQ);
+	din.cqn = cpu_to_be32(cq->cqn);
 	mlx5_cmd_exec(dev, &din, sizeof(din), &dout, sizeof(dout));
 	return err;
 }
