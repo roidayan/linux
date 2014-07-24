@@ -151,8 +151,8 @@ static void free_comp_eqs(struct mlx5_ib_dev *dev)
 	spin_unlock(&table->lock);
 }
 
-static int mlx5_ib_query_device(struct ib_device *ibdev,
-				struct ib_device_attr *props)
+static int query_device(struct ib_device *ibdev,
+			struct ib_device_attr *props)
 {
 	struct mlx5_ib_dev *dev = to_mdev(ibdev);
 	struct ib_smp *in_mad  = NULL;
@@ -249,6 +249,12 @@ out:
 	kfree(out_mad);
 
 	return err;
+}
+
+static int mlx5_ib_query_device(struct ib_device *ibdev,
+				struct ib_device_attr *props)
+{
+	return query_device(ibdev, props);
 }
 
 int mlx5_ib_query_port(struct ib_device *ibdev, u8 port,
@@ -780,6 +786,17 @@ static int mlx5_ib_dealloc_pd(struct ib_pd *pd)
 	kfree(mpd);
 
 	return 0;
+}
+
+static int mlx5_ib_query_device_ex(struct ib_device *device,
+				   struct ib_device_attr *attr,
+				   struct ib_udata *uhw)
+{
+	int err;
+
+	err = query_device(device, attr);
+
+	return err;
 }
 
 static int mlx5_ib_mcg_attach(struct ib_qp *ibqp, union ib_gid *gid, u16 lid)
@@ -1365,6 +1382,10 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 	dev->ib_dev.alloc_fast_reg_page_list = mlx5_ib_alloc_fast_reg_page_list;
 	dev->ib_dev.free_fast_reg_page_list  = mlx5_ib_free_fast_reg_page_list;
 	dev->ib_dev.check_mr_status	= mlx5_ib_check_mr_status;
+	dev->ib_dev.ex_query_device	= mlx5_ib_query_device_ex;
+
+	dev->ib_dev.uverbs_ex_cmd_mask	|=
+		(1ull << IB_USER_VERBS_EX_CMD_QUERY_DEVICE);
 
 	if (mdev->caps.gen.flags & MLX5_DEV_CAP_FLAG_XRC) {
 		dev->ib_dev.alloc_xrcd = mlx5_ib_alloc_xrcd;
