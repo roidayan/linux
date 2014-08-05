@@ -167,28 +167,7 @@ enum {
 #define MLX4_EN_LOOPBACK_RETRIES	5
 #define MLX4_EN_LOOPBACK_TIMEOUT	100
 
-#ifdef MLX4_EN_PERF_STAT
-/* Number of samples to 'average' */
-#define AVG_SIZE			128
-#define AVG_FACTOR			1024
-#define NUM_PERF_STATS			NUM_PERF_COUNTERS
-
-#define INC_PERF_COUNTER(cnt)		(++(cnt))
-#define ADD_PERF_COUNTER(cnt, add)	((cnt) += (add))
-#define AVG_PERF_COUNTER(cnt, sample) \
-	((cnt) = ((cnt) * (AVG_SIZE - 1) + (sample) * AVG_FACTOR) / AVG_SIZE)
-#define GET_PERF_COUNTER(cnt)		(cnt)
-#define GET_AVG_PERF_COUNTER(cnt)	((cnt) / AVG_FACTOR)
-
-#else
-
-#define NUM_PERF_STATS			0
-#define INC_PERF_COUNTER(cnt)		do {} while (0)
-#define ADD_PERF_COUNTER(cnt, add)	do {} while (0)
-#define AVG_PERF_COUNTER(cnt, sample)	do {} while (0)
-#define GET_PERF_COUNTER(cnt)		(0)
-#define GET_AVG_PERF_COUNTER(cnt)	(0)
-#endif /* MLX4_EN_PERF_STAT */
+#define AVG_PERF_COUNTER(cnt, sample) ((cnt) = (((cnt) + (sample)) / 2))
 
 /* Constants for TX flow */
 enum {
@@ -272,6 +251,8 @@ struct mlx4_en_tx_ring {
 	unsigned long		xmit_more;
 	struct mlx4_bf		bf;
 	unsigned long		queue_stopped;
+	unsigned long		pktsz_avg;
+	unsigned long		inflight_avg;
 
 	/* Following part should be mostly read */
 	cpumask_t		affinity_mask;
@@ -327,6 +308,7 @@ struct mlx4_en_rx_ring {
 	unsigned long csum_ok;
 	unsigned long csum_none;
 	unsigned long csum_complete;
+	unsigned long pktsz_avg;
 	int hwtstamp_rx_filter;
 	cpumask_var_t affinity_mask;
 };
@@ -344,6 +326,8 @@ struct mlx4_en_cq {
 	u16 moder_time;
 	u16 moder_cnt;
 	struct mlx4_cqe *buf;
+	unsigned long napi_quota;
+	unsigned long coal_avg;
 #define MLX4_EN_OPCODE_ERROR	0x1e
 
 #ifdef CONFIG_NET_RX_BUSY_POLL
@@ -453,16 +437,6 @@ struct mlx4_en_port_stats {
 	unsigned long rx_chksum_complete;
 	unsigned long tx_chksum_offload;
 #define NUM_PORT_STATS		9
-};
-
-struct mlx4_en_perf_stats {
-	u32 tx_poll;
-	u64 tx_pktsz_avg;
-	u32 inflight_avg;
-	u16 tx_coal_avg;
-	u16 rx_coal_avg;
-	u32 napi_quota;
-#define NUM_PERF_COUNTERS		6
 };
 
 enum mlx4_en_mclist_act {
@@ -589,7 +563,6 @@ struct mlx4_en_priv {
 	struct work_struct vxlan_add_task;
 	struct work_struct vxlan_del_task;
 #endif
-	struct mlx4_en_perf_stats pstats;
 	struct mlx4_en_pkt_stats pkstats;
 	struct mlx4_en_port_stats port_stats;
 	u64 stats_bitmap;

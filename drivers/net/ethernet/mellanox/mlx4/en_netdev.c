@@ -1879,7 +1879,6 @@ static void mlx4_en_clear_stats(struct net_device *dev)
 		en_dbg(HW, priv, "Failed dumping statistics\n");
 
 	memset(&priv->stats, 0, sizeof(priv->stats));
-	memset(&priv->pstats, 0, sizeof(priv->pstats));
 	memset(&priv->pkstats, 0, sizeof(priv->pkstats));
 	memset(&priv->port_stats, 0, sizeof(priv->port_stats));
 
@@ -1887,6 +1886,10 @@ static void mlx4_en_clear_stats(struct net_device *dev)
 		priv->tx_ring[i]->bytes = 0;
 		priv->tx_ring[i]->packets = 0;
 		priv->tx_ring[i]->tx_csum = 0;
+		priv->tx_ring[i]->inflight_avg = 0;
+		priv->tx_ring[i]->pktsz_avg = 0;
+		priv->tx_cq[i]->coal_avg = 0;
+		priv->tx_cq[i]->napi_quota = 0;
 	}
 	for (i = 0; i < priv->rx_ring_num; i++) {
 		priv->rx_ring[i]->bytes = 0;
@@ -1894,6 +1897,9 @@ static void mlx4_en_clear_stats(struct net_device *dev)
 		priv->rx_ring[i]->csum_ok = 0;
 		priv->rx_ring[i]->csum_none = 0;
 		priv->rx_ring[i]->csum_complete = 0;
+		priv->rx_ring[i]->pktsz_avg = 0;
+		priv->rx_cq[i]->coal_avg = 0;
+		priv->rx_cq[i]->napi_quota = 0;
 	}
 }
 
