@@ -462,6 +462,7 @@ static bool mlx4_en_process_tx_cq(struct net_device *dev,
 	ACCESS_ONCE(ring->cons) = ring_cons + txbbs_skipped;
 
 	netdev_tx_completed_queue(ring->tx_queue, packets, bytes);
+	AVG_PERF_COUNTER(cq->coal_avg, done);
 
 	/*
 	 * Wakeup Tx queue if this stopped, and at least 1 packet
@@ -494,8 +495,10 @@ int mlx4_en_poll_tx_cq(struct napi_struct *napi, int budget)
 	int clean_complete;
 
 	clean_complete = mlx4_en_process_tx_cq(dev, cq);
-	if (!clean_complete)
+	if (!clean_complete) {
+		cq->napi_quota++;
 		return budget;
+	}
 
 	napi_complete(napi);
 	mlx4_en_arm_cq(priv, cq);
@@ -741,8 +744,8 @@ netdev_tx_t mlx4_en_xmit(struct sk_buff *skb, struct net_device *dev)
 	netdev_txq_bql_enqueue_prefetchw(ring->tx_queue);
 
 	/* Track current inflight packets for performance analysis */
-	AVG_PERF_COUNTER(priv->pstats.inflight_avg,
-			 (u32)(ring->prod - ring_cons - 1));
+	AVG_PERF_COUNTER(ring->inflight_avg,
+			 (u32) (ring->prod - ring->cons - 1));
 
 	/* Packet is good - grab an index and transmit it */
 	index = ring->prod & ring->size_mask;
@@ -888,7 +891,7 @@ netdev_tx_t mlx4_en_xmit(struct sk_buff *skb, struct net_device *dev)
 	}
 	ring->bytes += tx_info->nr_bytes;
 	netdev_tx_sent_queue(ring->tx_queue, tx_info->nr_bytes);
-	AVG_PERF_COUNTER(priv->pstats.tx_pktsz_avg, skb->len);
+	AVG_PERF_COUNTER(ring->pktsz_avg, skb->len);
 
 	if (tx_info->inl)
 		build_inline_wqe(tx_desc, skb, shinfo, real_size, &vlan_tag,
