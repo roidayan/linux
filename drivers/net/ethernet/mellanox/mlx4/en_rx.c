@@ -740,6 +740,7 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
 		length -= ring->fcs_del;
 		ring->bytes += length;
 		ring->packets++;
+		AVG_PERF_COUNTER(ring->pktsz_avg, length);
 		l2_tunnel = (dev->hw_enc_features & NETIF_F_RXCSUM) &&
 			(cqe->vlan_my_qpn & cpu_to_be32(MLX4_CQE_L2_TUNNEL));
 
@@ -864,7 +865,7 @@ next:
 	}
 
 out:
-	AVG_PERF_COUNTER(priv->pstats.rx_coal_avg, polled);
+	AVG_PERF_COUNTER(cq->coal_avg, polled);
 	mlx4_cq_set_ci(&cq->mcq);
 	wmb(); /* ensure HW sees CQ consumer before we post new buffers */
 	ring->cons = cq->mcq.cons_index;
@@ -905,7 +906,7 @@ int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget)
 		int cpu_curr;
 		const struct cpumask *aff;
 
-		INC_PERF_COUNTER(priv->pstats.napi_quota);
+		cq->napi_quota++;
 
 		cpu_curr = smp_processor_id();
 		aff = irq_desc_get_irq_data(cq->irq_desc)->affinity;
