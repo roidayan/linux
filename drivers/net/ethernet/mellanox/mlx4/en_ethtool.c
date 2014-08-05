@@ -124,7 +124,7 @@ static const char main_strings[][ETH_GSTRING_LEN] = {
 	"tx_prio_6", "tx_prio_7",
 };
 #define NUM_MAIN_STATS	21
-#define NUM_ALL_STATS	(NUM_MAIN_STATS + NUM_PORT_STATS + NUM_PKT_STATS + NUM_PERF_STATS)
+#define NUM_ALL_STATS	(NUM_MAIN_STATS + NUM_PORT_STATS + NUM_PKT_STATS)
 
 static const char mlx4_en_test_names[][ETH_GSTRING_LEN]= {
 	"Interrupt Test",
@@ -232,11 +232,11 @@ static int mlx4_en_get_sset_count(struct net_device *dev, int sset)
 	switch (sset) {
 	case ETH_SS_STATS:
 		return (priv->stats_bitmap ? bit_count : NUM_ALL_STATS) +
-			(priv->tx_ring_num * 2) +
+			(priv->tx_ring_num * 6) +
 #ifdef CONFIG_NET_RX_BUSY_POLL
-			(priv->rx_ring_num * 5);
+			(priv->rx_ring_num * 8);
 #else
-			(priv->rx_ring_num * 2);
+			(priv->rx_ring_num * 5);
 #endif
 	case ETH_SS_TEST:
 		return MLX4_EN_NUM_SELF_TEST - !(priv->mdev->dev->caps.flags
@@ -284,10 +284,17 @@ static void mlx4_en_get_ethtool_stats(struct net_device *dev,
 	for (i = 0; i < priv->tx_ring_num; i++) {
 		data[index++] = priv->tx_ring[i]->packets;
 		data[index++] = priv->tx_ring[i]->bytes;
+		data[index++] = priv->tx_ring[i]->pktsz_avg;
+		data[index++] = priv->tx_ring[i]->inflight_avg;
+		data[index++] = priv->tx_cq[i]->coal_avg;
+		data[index++] = priv->tx_cq[i]->napi_quota;
 	}
 	for (i = 0; i < priv->rx_ring_num; i++) {
 		data[index++] = priv->rx_ring[i]->packets;
 		data[index++] = priv->rx_ring[i]->bytes;
+		data[index++] = priv->rx_ring[i]->pktsz_avg;
+		data[index++] = priv->rx_cq[i]->coal_avg;
+		data[index++] = priv->rx_cq[i]->napi_quota;
 #ifdef CONFIG_NET_RX_BUSY_POLL
 		data[index++] = priv->rx_ring[i]->yields;
 		data[index++] = priv->rx_ring[i]->misses;
@@ -350,12 +357,26 @@ static void mlx4_en_get_strings(struct net_device *dev,
 				"tx%d_packets", i);
 			sprintf(data + (index++) * ETH_GSTRING_LEN,
 				"tx%d_bytes", i);
+			sprintf(data + (index++) * ETH_GSTRING_LEN,
+				"tx%d_pktsz_avg", i);
+			sprintf(data + (index++) * ETH_GSTRING_LEN,
+				"tx%d_inflight_avg", i);
+			sprintf(data + (index++) * ETH_GSTRING_LEN,
+				"tx%d_coal_avg", i);
+			sprintf(data + (index++) * ETH_GSTRING_LEN,
+				"tx%d_napi_quota", i);
 		}
 		for (i = 0; i < priv->rx_ring_num; i++) {
 			sprintf(data + (index++) * ETH_GSTRING_LEN,
 				"rx%d_packets", i);
 			sprintf(data + (index++) * ETH_GSTRING_LEN,
 				"rx%d_bytes", i);
+			sprintf(data + (index++) * ETH_GSTRING_LEN,
+				"rx%d_pktsz_avg", i);
+			sprintf(data + (index++) * ETH_GSTRING_LEN,
+				"rx%d_coal_avg", i);
+			sprintf(data + (index++) * ETH_GSTRING_LEN,
+				"rx%d_napi_quota", i);
 #ifdef CONFIG_NET_RX_BUSY_POLL
 			sprintf(data + (index++) * ETH_GSTRING_LEN,
 				"rx%d_napi_yield", i);
