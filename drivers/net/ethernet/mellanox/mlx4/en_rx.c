@@ -58,7 +58,7 @@ static int mlx4_alloc_pages(struct mlx4_en_priv *priv,
 	dma_addr_t dma;
 
 	for (order = MLX4_EN_ALLOC_PREFER_ORDER; ;) {
-		gfp_t gfp = _gfp;
+		gfp_t gfp = _gfp | __GFP_COLD;
 
 		if (order)
 			gfp |= __GFP_COMP | __GFP_NOWARN;
