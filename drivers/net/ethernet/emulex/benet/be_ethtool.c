@@ -1171,11 +1171,15 @@ static u32 be_get_rxfh_key_size(struct net_device *netdev)
 	return RSS_HASH_KEY_LEN;
 }
 
-static int be_get_rxfh(struct net_device *netdev, u32 *indir, u8 *hkey)
+static int be_get_rxfh(struct net_device *netdev, u32 *indir, u8 *hkey,
+		       u8 *hfunc)
 {
 	struct be_adapter *adapter = netdev_priv(netdev);
 	int i;
 	struct rss_info *rss = &adapter->rss_info;
+
+	if (!indir && !hkey)
+		return -EOPNOTSUPP;
 
 	if (indir) {
 		for (i = 0; i < RSS_INDIR_TABLE_LEN; i++)
@@ -1189,11 +1193,17 @@ static int be_get_rxfh(struct net_device *netdev, u32 *indir, u8 *hkey)
 }
 
 static int be_set_rxfh(struct net_device *netdev, const u32 *indir,
-		       const u8 *hkey)
+		       const u8 *hkey, const u8 hfunc)
 {
 	int rc = 0, i, j;
 	struct be_adapter *adapter = netdev_priv(netdev);
 	u8 rsstable[RSS_INDIR_TABLE_LEN];
+
+	/* We require at least one supported parameter to be changed and no
+	 * change in any of the unsupported parameters
+	 */
+	if ((!indir && !hkey) || hfunc != ETH_RSS_HASH_NO_CHANGE)
+		return -EOPNOTSUPP;
 
 	if (indir) {
 		struct be_rx_obj *rxo;
