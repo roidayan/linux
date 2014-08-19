@@ -184,6 +184,9 @@ static int __ethtool_get_sset_count(struct net_device *dev, int sset)
 	if (sset == ETH_SS_FEATURES)
 		return ARRAY_SIZE(netdev_features_strings);
 
+	if (sset == ETH_SS_RSS_HASH_FUNCS)
+		return ARRAY_SIZE(rss_hash_func_strings);
+
 	if (ops->get_sset_count && ops->get_strings)
 		return ops->get_sset_count(dev, sset);
 	else
@@ -198,6 +201,9 @@ static void __ethtool_get_strings(struct net_device *dev,
 	if (stringset == ETH_SS_FEATURES)
 		memcpy(data, netdev_features_strings,
 			sizeof(netdev_features_strings));
+	else if (stringset == ETH_SS_RSS_HASH_FUNCS)
+		memcpy(data, rss_hash_func_strings,
+		       sizeof(rss_hash_func_strings));
 	else
 		/* ops->get_strings is valid because checked earlier */
 		ops->get_strings(dev, stringset, data);
@@ -681,7 +687,7 @@ static noinline_for_stack int ethtool_get_rxfh(struct net_device *dev,
 	int ret;
 	const struct ethtool_ops *ops = dev->ethtool_ops;
 	u32 user_indir_size, user_key_size;
-	u32 dev_indir_size = 0, dev_key_size = 0;
+	u32 dev_indir_size = 0, dev_key_size = 0, dev_hfunc = 0;
 	struct ethtool_rxfh rxfh;
 	u32 total_size;
 	u32 indir_bytes;
@@ -689,17 +695,18 @@ static noinline_for_stack int ethtool_get_rxfh(struct net_device *dev,
 	u8 *hkey = NULL;
 	u8 *rss_config;
 
-	if (!(dev->ethtool_ops->get_rxfh_indir_size ||
-	      dev->ethtool_ops->get_rxfh_key_size) ||
-	      !dev->ethtool_ops->get_rxfh)
+	if (!(ops->get_rxfh_indir_size || ops->get_rxfh_key_size ||
+	      ops->get_rxfh_func) || !ops->get_rxfh)
 		return -EOPNOTSUPP;
 
+	if (ops->get_rxfh_func)
+		dev_hfunc = ops->get_rxfh_func(dev);
 	if (ops->get_rxfh_indir_size)
 		dev_indir_size = ops->get_rxfh_indir_size(dev);
 	if (ops->get_rxfh_key_size)
 		dev_key_size = ops->get_rxfh_key_size(dev);
 
-	if ((dev_key_size + dev_indir_size) == 0)
+	if ((dev_key_size + dev_indir_size + dev_hfunc) == 0)
 		return -EOPNOTSUPP;
 
 	if (copy_from_user(&rxfh, useraddr, sizeof(rxfh)))
@@ -708,17 +715,19 @@ static noinline_for_stack int ethtool_get_rxfh(struct net_device *dev,
 	user_key_size = rxfh.key_size;
 
 	/* Check that reserved fields are 0 for now */
-	if (rxfh.rss_context || rxfh.rsvd[0] || rxfh.rsvd[1])
+	if (rxfh.rss_context || rxfh.rsvd8[0] || rxfh.rsvd8[1] ||
+	    rxfh.rsvd8[2] || rxfh.rsvd32)
 		return -EINVAL;
 
 	rxfh.indir_size = dev_indir_size;
 	rxfh.key_size = dev_key_size;
+	rxfh.hfunc = dev_hfunc;
 	if (copy_to_user(useraddr, &rxfh, sizeof(rxfh)))
 		return -EFAULT;
 
-	/* If the user buffer size is 0, this is just a query for the
-	 * device table size and key size.  Otherwise, if the User size is
-	 * not equal to device table size or key size it's an error.
+	/* If the user buffer size is 0, this is just a query for the device
+	 * hash function, table size and key size.  Otherwise, if the User size
+	 * is not equal to device table size or key size it's an error.
 	 */
 	if (!user_indir_size && !user_key_size)
 		return 0;
@@ -759,32 +768,43 @@ static noinline_for_stack int ethtool_set_rxfh(struct net_device *dev,
 	const struct ethtool_ops *ops = dev->ethtool_ops;
 	struct ethtool_rxnfc rx_rings;
 	struct ethtool_rxfh rxfh;
-	u32 dev_indir_size = 0, dev_key_size = 0, i;
+	u32 dev_indir_size = 0, dev_key_size = 0, dev_hfunc = 0, i;
 	u32 *indir = NULL, indir_bytes = 0;
 	u8 *hkey = NULL;
 	u8 *rss_config;
 	u32 rss_cfg_offset = offsetof(struct ethtool_rxfh, rss_config[0]);
 
-	if (!(ops->get_rxfh_indir_size || ops->get_rxfh_key_size) ||
-	    !ops->get_rxnfc || !ops->set_rxfh)
+	if (!(ops->get_rxfh_indir_size || ops->get_rxfh_key_size ||
+	      ops->get_rxfh_func) || !ops->get_rxnfc || !ops->set_rxfh)
 		return -EOPNOTSUPP;
 
+	if (ops->get_rxfh_func)
+		dev_hfunc = ops->get_rxfh_func(dev);
 	if (ops->get_rxfh_indir_size)
 		dev_indir_size = ops->get_rxfh_indir_size(dev);
 	if (ops->get_rxfh_key_size)
 		dev_key_size = dev->ethtool_ops->get_rxfh_key_size(dev);
-	if ((dev_key_size + dev_indir_size) == 0)
+	if ((dev_key_size + dev_indir_size + dev_hfunc) == 0)
 		return -EOPNOTSUPP;
 
 	if (copy_from_user(&rxfh, useraddr, sizeof(rxfh)))
 		return -EFAULT;
 
 	/* Check that reserved fields are 0 for now */
-	if (rxfh.rss_context || rxfh.rsvd[0] || rxfh.rsvd[1])
+	if (rxfh.rss_context || rxfh.rsvd8[0] || rxfh.rsvd8[1] ||
+	    rxfh.rsvd8[2] || rxfh.rsvd32)
 		return -EINVAL;
 
+	if (rxfh.hfunc != dev_hfunc) {
+		if (!ops->set_rxfh_func)
+			return -EOPNOTSUPP;
+		ret = ops->set_rxfh_func(dev, rxfh.hfunc);
+		if (ret)
+			return ret;
+	}
+
 	/* If either indir or hash key is valid, proceed further.
-	 * It is not valid to request that both be unchanged.
+	 * Must request at least one change: indir size, hash key or function.
 	 */
 	if ((rxfh.indir_size &&
 	     rxfh.indir_size != ETH_RXFH_INDIR_NO_CHANGE &&
@@ -792,7 +812,7 @@ static noinline_for_stack int ethtool_set_rxfh(struct net_device *dev,
 	    (rxfh.key_size && (rxfh.key_size != dev_key_size)) ||
 	    (rxfh.indir_size == ETH_RXFH_INDIR_NO_CHANGE &&
 	     rxfh.key_size == 0))
-		return -EINVAL;
+		return rxfh.hfunc ? 0 : -EINVAL;
 
 	if (rxfh.indir_size != ETH_RXFH_INDIR_NO_CHANGE)
 		indir_bytes = dev_indir_size * sizeof(indir[0]);
