@@ -1086,18 +1086,28 @@ static u32 efx_ethtool_get_rxfh_indir_size(struct net_device *net_dev)
 		0 : ARRAY_SIZE(efx->rx_indir_table));
 }
 
-static int efx_ethtool_get_rxfh(struct net_device *net_dev, u32 *indir, u8 *key)
+static int efx_ethtool_get_rxfh(struct net_device *net_dev, u32 *indir, u8 *key,
+				u8 *hfunc)
 {
 	struct efx_nic *efx = netdev_priv(net_dev);
+
+	if (!indir)
+		return -EOPNOTSUPP;
 
 	memcpy(indir, efx->rx_indir_table, sizeof(efx->rx_indir_table));
 	return 0;
 }
 
-static int efx_ethtool_set_rxfh(struct net_device *net_dev,
-				const u32 *indir, const u8 *key)
+static int efx_ethtool_set_rxfh(struct net_device *net_dev, const u32 *indir,
+				const u8 *key, const u8 hfunc)
 {
 	struct efx_nic *efx = netdev_priv(net_dev);
+
+	/* We require at least one supported parameter to be changed and no
+	 * change in any of the unsupported parameters
+	 */
+	if (!indir || (key || hfunc != ETH_RSS_HASH_NO_CHANGE))
+		return -EOPNOTSUPP;
 
 	memcpy(efx->rx_indir_table, indir, sizeof(efx->rx_indir_table));
 	efx->type->rx_push_rss_config(efx);
