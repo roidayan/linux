@@ -511,7 +511,8 @@ static u32 xgbe_get_rxfh_indir_size(struct net_device *netdev)
 	return ARRAY_SIZE(pdata->rss_table);
 }
 
-static int xgbe_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key)
+static int xgbe_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key,
+			 u8 *hfunc)
 {
 	struct xgbe_prv_data *pdata = netdev_priv(netdev);
 	unsigned int i;
@@ -529,11 +530,17 @@ static int xgbe_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key)
 }
 
 static int xgbe_set_rxfh(struct net_device *netdev, const u32 *indir,
-			 const u8 *key)
+			 const u8 *key, const u8 hfunc)
 {
 	struct xgbe_prv_data *pdata = netdev_priv(netdev);
 	struct xgbe_hw_if *hw_if = &pdata->hw_if;
 	unsigned int ret;
+
+	/* We require at least one supported parameter to be changed and no
+	 * change in any of the unsupported parameters
+	 */
+	if ((!indir && !key) || hfunc != ETH_RSS_HASH_NO_CHANGE)
+		return -EOPNOTSUPP;
 
 	if (indir) {
 		ret = hw_if->set_rss_lookup_table(pdata, indir);
