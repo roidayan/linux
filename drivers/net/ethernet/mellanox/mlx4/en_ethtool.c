@@ -994,6 +994,44 @@ static u32 mlx4_en_get_rxfh_indir_size(struct net_device *dev)
 	return priv->rx_ring_num;
 }
 
+static u32 mlx4_en_get_rxfh_func(struct net_device *dev)
+{
+	struct mlx4_en_priv *priv = netdev_priv(dev);
+
+	return priv->rss_hash_fn;
+}
+
+static int mlx4_en_set_rxfh_func(struct net_device *dev, u32 hfunc)
+{
+	struct mlx4_en_priv *priv = netdev_priv(dev);
+	struct mlx4_en_dev *mdev = priv->mdev;
+	u32 prev_rss_hash_fn = priv->rss_hash_fn;
+	int err = 0;
+
+	if (!(hfunc & priv->rss_hash_fn_caps))
+		return -EINVAL;
+
+	priv->rss_hash_fn = hfunc;
+	if (hfunc == RSS_HASH_TOP && !(dev->features & NETIF_F_RXHASH))
+		en_warn(priv,
+			"Warning: Toeplitz hash function should be used in conjunction with RX hashing for optimal performance\n");
+	if (hfunc == RSS_HASH_XOR && (dev->features & NETIF_F_RXHASH))
+		en_warn(priv,
+			"Warning: Enabling both XOR Hash function and RX Hashing can limit RPS functionality\n");
+
+	mutex_lock(&mdev->state_lock);
+	if (priv->port_up && priv->rss_hash_fn != prev_rss_hash_fn) {
+		mlx4_en_stop_port(dev, 1);
+		err = mlx4_en_start_port(dev);
+	}
+	mutex_unlock(&mdev->state_lock);
+
+	if (err)
+		en_err(priv, "Failed to restart port %d\n", priv->port);
+
+	return err;
+}
+
 static int mlx4_en_get_rxfh(struct net_device *dev, u32 *ring_index, u8 *key)
 {
 	struct mlx4_en_priv *priv = netdev_priv(dev);
@@ -1820,6 +1858,8 @@ const struct ethtool_ops mlx4_en_ethtool_ops = {
 	.get_rxnfc = mlx4_en_get_rxnfc,
 	.set_rxnfc = mlx4_en_set_rxnfc,
 	.get_rxfh_indir_size = mlx4_en_get_rxfh_indir_size,
+	.get_rxfh_func = mlx4_en_get_rxfh_func,
+	.set_rxfh_func = mlx4_en_set_rxfh_func,
 	.get_rxfh = mlx4_en_get_rxfh,
 	.set_rxfh = mlx4_en_set_rxfh,
 	.get_channels = mlx4_en_get_channels,

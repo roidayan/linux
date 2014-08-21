@@ -359,7 +359,6 @@ struct mlx4_en_port_profile {
 };
 
 struct mlx4_en_profile {
-	int rss_xor;
 	int udp_rss;
 	u8 rss_mask;
 	u32 active_ports;
@@ -588,6 +587,8 @@ struct mlx4_en_priv {
 	__be16 vxlan_port;
 
 	u32 pflags;
+	u8 rss_hash_fn;
+	u8 rss_hash_fn_caps;
 };
 
 enum mlx4_en_wol {
