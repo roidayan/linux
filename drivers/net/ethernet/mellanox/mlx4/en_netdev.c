@@ -2596,6 +2596,20 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
 		dev->features    |= NETIF_F_GSO_UDP_TUNNEL;
 	}
 
+	if (mdev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_RSS_TOP)
+		priv->rss_hash_fn_caps |= RSS_HASH_TOP;
+	if (mdev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_RSS_XOR)
+		priv->rss_hash_fn_caps |= RSS_HASH_XOR;
+	if (!priv->rss_hash_fn_caps) {
+		en_err(priv, "Failed querying HW RSS hash CAPs\n");
+		err = -EINVAL;
+		goto out;
+	} else if (priv->rss_hash_fn_caps & RSS_HASH_TOP) {
+			priv->rss_hash_fn = RSS_HASH_TOP;
+	} else if (priv->rss_hash_fn_caps & RSS_HASH_XOR) {
+			priv->rss_hash_fn = RSS_HASH_XOR;
+	}
+
 	mdev->pndev[port] = dev;
 
 	netif_carrier_off(dev);
