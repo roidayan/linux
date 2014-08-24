@@ -1666,7 +1666,7 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 	}
 
 	if (attr_mask & IB_QP_SQ_PSN)
-		context->next_send_psn = cpu_to_be32(attr->sq_psn);
+		context->next_send_psn = cpu_to_be32(attr->sq_psn & 0xffffff);
 
 	if (attr_mask & IB_QP_MAX_DEST_RD_ATOMIC) {
 		if (attr->max_dest_rd_atomic)
@@ -1681,7 +1681,7 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 		context->rnr_nextrecvpsn |= cpu_to_be32(attr->min_rnr_timer << 24);
 
 	if (attr_mask & IB_QP_RQ_PSN)
-		context->rnr_nextrecvpsn |= cpu_to_be32(attr->rq_psn);
+		context->rnr_nextrecvpsn |= cpu_to_be32(attr->rq_psn & 0xffffff);
 
 	if (attr_mask & IB_QP_QKEY)
 		context->qkey = cpu_to_be32(attr->qkey);
