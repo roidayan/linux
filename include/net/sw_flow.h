@@ -80,6 +80,9 @@ struct sw_flow_key {
 			} nd;
 		} ipv6;
 	};
+	struct {
+		u32	in_port_ifindex; /* Input switch port ifindex (or 0). */
+	} misc;
 } __aligned(BITS_PER_LONG/8); /* Ensure that we can do comparisons as longs. */
 
 struct sw_flow_key_range {

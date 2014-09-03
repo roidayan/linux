@@ -83,6 +83,24 @@ errout:
 	return err;
 }
 
+void ovs_hw_flow_adjust(struct datapath *dp, struct ovs_flow *flow)
+{
+	struct vport *vport;
+
+	flow->flow.key.misc.in_port_ifindex = 0;
+	flow->flow.mask->key.misc.in_port_ifindex = 0;
+	vport = ovs_vport_ovsl(dp, flow->flow.key.phy.in_port);
+	if (vport && vport->ops->type == OVS_VPORT_TYPE_NETDEV) {
+		struct net_device *dev;
+
+		dev = vport->ops->get_netdev(vport);
+		if (dev) {
+			flow->flow.key.misc.in_port_ifindex = dev->ifindex;
+			flow->flow.mask->key.misc.in_port_ifindex = 0xFFFFFFFF;
+		}
+	}
+}
+
 int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 {
 	struct sw_flow_actions *actions;
@@ -92,6 +110,8 @@ int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 
 	ASSERT_OVSL();
 	BUG_ON(flow->flow.actions);
+
+	ovs_hw_flow_adjust(dp, flow);
 
 	err = sw_flow_action_create(dp, &actions, flow->sf_acts);
 	if (err)
@@ -123,6 +143,8 @@ int ovs_hw_flow_remove(struct datapath *dp, struct ovs_flow *flow)
 	int err = 0;
 
 	ASSERT_OVSL();
+
+	ovs_hw_flow_adjust(dp, flow);
 
 	if (!flow->flow.actions) {
 		err = sw_flow_action_create(dp, &actions, flow->sf_acts);
