@@ -1044,6 +1044,118 @@ void switchdev_fib_ipv4_abort(struct fib_info *fi)
 }
 EXPORT_SYMBOL_GPL(switchdev_fib_ipv4_abort);
 
+static void print_flow_key_tun(const char *prefix,
+			       const struct sw_flow_key *key)
+{
+	pr_debug("%s tun  { id %08llx, s %pI4, d %pI4, f %02x, tos %x, ttl %x }\n",
+		 prefix,
+		 be64_to_cpu(key->tun_key.tun_id), &key->tun_key.ipv4_src,
+		 &key->tun_key.ipv4_dst, ntohs(key->tun_key.tun_flags),
+		 key->tun_key.ipv4_tos, key->tun_key.ipv4_ttl);
+}
+
+static void print_flow_key_phy(const char *prefix,
+			       const struct sw_flow_key *key)
+{
+	pr_debug("%s phy  { prio %08x, mark %04x, in_port %02x }\n",
+		 prefix,
+		 key->phy.priority, key->phy.skb_mark, key->phy.in_port);
+}
+
+static void print_flow_key_eth(const char *prefix,
+			       const struct sw_flow_key *key)
+{
+	pr_debug("%s eth  { sm %pM, dm %pM, tci %04x, type %04x }\n",
+		 prefix,
+		 key->eth.src, key->eth.dst, ntohs(key->eth.tci),
+		 ntohs(key->eth.type));
+}
+
+static void print_flow_key_ip(const char *prefix,
+			      const struct sw_flow_key *key)
+{
+	pr_debug("%s ip   { proto %02x, tos %02x, ttl %02x }\n",
+		 prefix,
+		 key->ip.proto, key->ip.tos, key->ip.ttl);
+}
+
+static void print_flow_key_ipv4(const char *prefix,
+				const struct sw_flow_key *key)
+{
+	pr_debug("%s ipv4 { si %pI4, di %pI4, sm %pM, dm %pM }\n",
+		 prefix,
+		 &key->ipv4.addr.src, &key->ipv4.addr.dst,
+		 key->ipv4.arp.sha, key->ipv4.arp.tha);
+}
+
+static void print_flow_key_tcp(const char *prefix,
+			       const struct sw_flow_key *key)
+{
+	pr_debug("%s tcp  { sp %04x, dp %04x, flags %04x }\n",
+		 prefix,
+		 ntohs(key->tp.src), ntohs(key->tp.dst), ntohs(key->tp.flags));
+}
+
+static void print_flow_key_misc(const char *prefix,
+				const struct sw_flow_key *key)
+{
+	pr_debug("%s misc { in_port_ifindex %08x }\n",
+		 prefix,
+		 key->misc.in_port_ifindex);
+}
+
+static void print_flow_actions(struct sw_flow_actions *actions)
+{
+	int i;
+
+	pr_debug("  actions:\n");
+	if (!actions)
+		return;
+	for (i = 0; i < actions->count; i++) {
+		struct sw_flow_action *action = &actions->actions[i];
+
+		switch (action->type) {
+		case SW_FLOW_ACTION_TYPE_OUTPUT:
+			pr_debug("    output    { ifindex %u }\n",
+				 action->out_port_ifindex);
+			break;
+		case SW_FLOW_ACTION_TYPE_VLAN_PUSH:
+			pr_debug("    vlan push { proto %04x, tci %04x }\n",
+				 ntohs(action->vlan.vlan_proto),
+				 ntohs(action->vlan.vlan_tci));
+			break;
+		case SW_FLOW_ACTION_TYPE_VLAN_POP:
+			pr_debug("    vlan pop\n");
+			break;
+		}
+	}
+}
+
+#define PREFIX_NONE "      "
+#define PREFIX_MASK "  mask"
+
+static void print_flow(const struct sw_flow *flow, struct net_device *dev,
+		       const char *comment)
+{
+	pr_debug("%s flow %s (%x-%x):\n", dev->name, comment,
+		 flow->mask->range.start, flow->mask->range.end);
+	print_flow_key_tun(PREFIX_NONE, &flow->key);
+	print_flow_key_tun(PREFIX_MASK, &flow->mask->key);
+	print_flow_key_phy(PREFIX_NONE, &flow->key);
+	print_flow_key_phy(PREFIX_MASK, &flow->mask->key);
+	print_flow_key_eth(PREFIX_NONE, &flow->key);
+	print_flow_key_eth(PREFIX_MASK, &flow->mask->key);
+	print_flow_key_ip(PREFIX_NONE, &flow->key);
+	print_flow_key_ip(PREFIX_MASK, &flow->mask->key);
+	print_flow_key_ipv4(PREFIX_NONE, &flow->key);
+	print_flow_key_ipv4(PREFIX_MASK, &flow->mask->key);
+	print_flow_key_tcp(PREFIX_NONE, &flow->key);
+	print_flow_key_tcp(PREFIX_MASK, &flow->mask->key);
+	print_flow_key_misc(PREFIX_NONE, &flow->key);
+	print_flow_key_misc(PREFIX_MASK, &flow->mask->key);
+	print_flow_actions(flow->actions);
+}
+
 int switchdev_port_flow_add(struct net_device *dev, struct sw_flow *flow)
 {
 	struct switchdev_obj obj = {
@@ -1053,6 +1165,7 @@ int switchdev_port_flow_add(struct net_device *dev, struct sw_flow *flow)
 
 	obj.u.flow = flow;
 
+	print_flow(flow, dev, "add");
 	return switchdev_port_obj_add(dev, &obj);
 }
 EXPORT_SYMBOL_GPL(switchdev_port_flow_add);
@@ -1066,6 +1179,7 @@ int switchdev_port_flow_del(struct net_device *dev, struct sw_flow *flow)
 
 	obj.u.flow = flow;
 
+	print_flow(flow, dev, "del");
 	return switchdev_port_obj_del(dev, &obj);
 }
 EXPORT_SYMBOL_GPL(switchdev_port_flow_del);
