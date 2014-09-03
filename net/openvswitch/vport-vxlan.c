@@ -224,7 +224,7 @@ static int vxlan_tnl_send(struct vport *vport, struct sk_buff *skb)
 	struct vxlan_port *vxlan_port = vxlan_vport(vport);
 	struct sock *sk = vxlan_port->vs->sock->sk;
 	__be16 dst_port = inet_sk(sk)->inet_sport;
-	const struct ovs_key_ipv4_tunnel *tun_key;
+	const struct sw_flow_key_ipv4_tunnel *tun_key;
 	struct vxlan_metadata md = {0};
 	struct rtable *rt;
 	struct flowi4 fl;

@@ -65,7 +65,7 @@ u64 ovs_flow_used_time(unsigned long flow_jiffies)
 
 #define TCP_FLAGS_BE16(tp) (*(__be16 *)&tcp_flag_word(tp) & htons(0x0FFF))
 
-void ovs_flow_stats_update(struct sw_flow *flow, __be16 tcp_flags,
+void ovs_flow_stats_update(struct ovs_flow *flow, __be16 tcp_flags,
 			   const struct sk_buff *skb)
 {
 	struct flow_stats *stats;
@@ -130,7 +130,7 @@ unlock:
 }
 
 /* Must be called with rcu_read_lock or ovs_mutex. */
-void ovs_flow_stats_get(const struct sw_flow *flow,
+void ovs_flow_stats_get(const struct ovs_flow *flow,
 			struct ovs_flow_stats *ovs_stats,
 			unsigned long *used, __be16 *tcp_flags)
 {
@@ -159,7 +159,7 @@ void ovs_flow_stats_get(const struct sw_flow *flow,
 }
 
 /* Called with ovs_mutex. */
-void ovs_flow_stats_clear(struct sw_flow *flow)
+void ovs_flow_stats_clear(struct ovs_flow *flow)
 {
 	int node;
 

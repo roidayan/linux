@@ -580,7 +580,7 @@ int ovs_tunnel_get_egress_info(struct ovs_tunnel_info *egress_tun_info,
 			       __be16 tp_src,
 			       __be16 tp_dst)
 {
-	const struct ovs_key_ipv4_tunnel *tun_key;
+	const struct sw_flow_key_ipv4_tunnel *tun_key;
 	struct rtable *rt;
 	struct flowi4 fl;
 

@@ -239,7 +239,7 @@ int ovs_vport_ops_register(struct vport_ops *ops);
 void ovs_vport_ops_unregister(struct vport_ops *ops);
 
 static inline struct rtable *ovs_tunnel_route_lookup(struct net *net,
-						     const struct ovs_key_ipv4_tunnel *key,
+						     const struct sw_flow_key_ipv4_tunnel *key,
 						     u32 mark,
 						     struct flowi4 *fl,
 						     u8 protocol)

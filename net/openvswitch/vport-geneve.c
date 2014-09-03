@@ -165,7 +165,7 @@ error:
 
 static int geneve_tnl_send(struct vport *vport, struct sk_buff *skb)
 {
-	const struct ovs_key_ipv4_tunnel *tun_key;
+	const struct sw_flow_key_ipv4_tunnel *tun_key;
 	struct ovs_tunnel_info *tun_info;
 	struct net *net = ovs_dp_get_net(vport->dp);
 	struct geneve_port *geneve_port = geneve_vport(vport);

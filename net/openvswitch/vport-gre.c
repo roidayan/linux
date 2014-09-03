@@ -67,7 +67,7 @@ static struct sk_buff *__build_header(struct sk_buff *skb,
 				      int tunnel_hlen)
 {
 	struct tnl_ptk_info tpi;
-	const struct ovs_key_ipv4_tunnel *tun_key;
+	const struct sw_flow_key_ipv4_tunnel *tun_key;
 
 	tun_key = &OVS_CB(skb)->egress_tun_info->tunnel;
 
@@ -134,7 +134,7 @@ static int gre_err(struct sk_buff *skb, u32 info,
 static int gre_tnl_send(struct vport *vport, struct sk_buff *skb)
 {
 	struct net *net = ovs_dp_get_net(vport->dp);
-	const struct ovs_key_ipv4_tunnel *tun_key;
+	const struct sw_flow_key_ipv4_tunnel *tun_key;
 	struct flowi4 fl;
 	struct rtable *rt;
 	int min_headroom;
