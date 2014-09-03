@@ -32,6 +32,17 @@
 #include "vport-internal_dev.h"
 #include "vport-netdev.h"
 
+struct internal_dev_vport {
+	struct rcu_head rcu;
+	struct net_device *dev;
+};
+
+static struct internal_dev_vport *
+internal_dev_vport_priv(const struct vport *vport)
+{
+	return vport_priv(vport);
+}
+
 struct internal_dev {
 	struct vport *vport;
 };
@@ -156,49 +167,50 @@ static void do_setup(struct net_device *netdev)
 static struct vport *internal_dev_create(const struct vport_parms *parms)
 {
 	struct vport *vport;
-	struct netdev_vport *netdev_vport;
+	struct internal_dev_vport *int_vport;
 	struct internal_dev *internal_dev;
+	struct net_device *dev;
 	int err;
 
-	vport = ovs_vport_alloc(sizeof(struct netdev_vport),
+	vport = ovs_vport_alloc(sizeof(struct internal_dev_vport),
 				&ovs_internal_vport_ops, parms);
 	if (IS_ERR(vport)) {
 		err = PTR_ERR(vport);
 		goto error;
 	}
 
-	netdev_vport = netdev_vport_priv(vport);
+	int_vport = internal_dev_vport_priv(vport);
 
-	netdev_vport->dev = alloc_netdev(sizeof(struct internal_dev),
-					 parms->name, NET_NAME_UNKNOWN,
-					 do_setup);
-	if (!netdev_vport->dev) {
+	dev = alloc_netdev(sizeof(struct internal_dev), parms->name,
+			   NET_NAME_UNKNOWN, do_setup);
+	if (!dev) {
 		err = -ENOMEM;
 		goto error_free_vport;
 	}
+	int_vport->dev = dev;
 
-	dev_net_set(netdev_vport->dev, ovs_dp_get_net(vport->dp));
-	internal_dev = internal_dev_priv(netdev_vport->dev);
+	dev_net_set(dev, ovs_dp_get_net(vport->dp));
+	internal_dev = internal_dev_priv(dev);
 	internal_dev->vport = vport;
 
 	/* Restrict bridge port to current netns. */
 	if (vport->port_no == OVSP_LOCAL)
-		netdev_vport->dev->features |= NETIF_F_NETNS_LOCAL;
+		dev->features |= NETIF_F_NETNS_LOCAL;
 
 	rtnl_lock();
-	err = register_netdevice(netdev_vport->dev);
+	err = register_netdevice(dev);
 	if (err)
 		goto error_free_netdev;
 
-	dev_set_promiscuity(netdev_vport->dev, 1);
+	dev_set_promiscuity(dev, 1);
 	rtnl_unlock();
-	netif_start_queue(netdev_vport->dev);
+	netif_start_queue(dev);
 
 	return vport;
 
 error_free_netdev:
 	rtnl_unlock();
-	free_netdev(netdev_vport->dev);
+	free_netdev(dev);
 error_free_vport:
 	ovs_vport_free(vport);
 error:
@@ -207,21 +219,21 @@ error:
 
 static void internal_dev_destroy(struct vport *vport)
 {
-	struct netdev_vport *netdev_vport = netdev_vport_priv(vport);
+	struct internal_dev_vport *int_vport = internal_dev_vport_priv(vport);
 
-	netif_stop_queue(netdev_vport->dev);
+	netif_stop_queue(int_vport->dev);
 	rtnl_lock();
-	dev_set_promiscuity(netdev_vport->dev, -1);
+	dev_set_promiscuity(int_vport->dev, -1);
 
 	/* unregister_netdevice() waits for an RCU grace period. */
-	unregister_netdevice(netdev_vport->dev);
+	unregister_netdevice(int_vport->dev);
 
 	rtnl_unlock();
 }
 
 static int internal_dev_recv(struct vport *vport, struct sk_buff *skb)
 {
-	struct net_device *netdev = netdev_vport_priv(vport)->dev;
+	struct net_device *netdev = internal_dev_vport_priv(vport)->dev;
 	int len;
 
 	if (unlikely(!(netdev->flags & IFF_UP))) {
@@ -245,12 +257,18 @@ static int internal_dev_recv(struct vport *vport, struct sk_buff *skb)
 	return len;
 }
 
+static struct net_device *internal_dev_get_netdev(struct vport *vport)
+{
+	return internal_dev_vport_priv(vport)->dev;
+}
+
 static struct vport_ops ovs_internal_vport_ops = {
 	.type		= OVS_VPORT_TYPE_INTERNAL,
 	.create		= internal_dev_create,
 	.destroy	= internal_dev_destroy,
 	.get_name	= ovs_netdev_get_name,
 	.send		= internal_dev_recv,
+	.get_netdev	= internal_dev_get_netdev,
 };
 
 int ovs_is_internal_dev(const struct net_device *netdev)

@@ -178,6 +178,8 @@ struct vport_ops {
 	int (*get_egress_tun_info)(struct vport *, struct sk_buff *,
 				   struct ovs_tunnel_info *);
 
+	struct net_device *(*get_netdev)(struct vport *);
+
 	struct module *owner;
 	struct list_head list;
 };
