@@ -766,6 +766,13 @@ struct netdev_phys_item_id {
 	unsigned char id_len;
 };
 
+static inline bool netdev_phys_item_ids_match(struct netdev_phys_item_id *id1,
+					      struct netdev_phys_item_id *id2)
+{
+	return id1->id_len == id2->id_len &&
+	       !memcmp(id1->id, id2->id, id1->id_len);
+}
+
 typedef u16 (*select_queue_fallback_t)(struct net_device *dev,
 				       struct sk_buff *skb);
 
