@@ -57,6 +57,7 @@
 #include "flow_netlink.h"
 #include "vport-internal_dev.h"
 #include "vport-netdev.h"
+#include "hw_offload.h"
 
 int ovs_net_id __read_mostly;
 EXPORT_SYMBOL_GPL(ovs_net_id);
@@ -964,6 +965,9 @@ static int ovs_flow_cmd_new(struct sk_buff *skb, struct genl_info *info)
 			acts = NULL;
 			goto err_unlock_ovs;
 		}
+		error = ovs_hw_flow_insert(dp, new_flow);
+		if (error)
+			pr_warn("failed to insert flow into hw\n");
 
 		if (unlikely(reply)) {
 			error = ovs_flow_cmd_fill_info(new_flow,
@@ -1003,9 +1007,17 @@ static int ovs_flow_cmd_new(struct sk_buff *skb, struct genl_info *info)
 				goto err_unlock_ovs;
 			}
 		}
+		error = ovs_hw_flow_remove(dp, flow);
+		if (error)
+			pr_warn("failed to remove flow from hw\n");
+
 		/* Update actions. */
 		old_acts = ovsl_dereference(flow->sf_acts);
 		rcu_assign_pointer(flow->sf_acts, acts);
+
+		error = ovs_hw_flow_insert(dp, flow);
+		if (error)
+			pr_warn("failed to insert flow into hw\n");
 
 		if (unlikely(reply)) {
 			error = ovs_flow_cmd_fill_info(flow,
@@ -1125,8 +1137,16 @@ static int ovs_flow_cmd_set(struct sk_buff *skb, struct genl_info *info)
 
 	/* Update actions, if present. */
 	if (likely(acts)) {
+		error = ovs_hw_flow_remove(dp, flow);
+		if (error)
+			pr_warn("failed to remove flow from hw\n");
+
 		old_acts = ovsl_dereference(flow->sf_acts);
 		rcu_assign_pointer(flow->sf_acts, acts);
+
+		error = ovs_hw_flow_insert(dp, flow);
+		if (error)
+			pr_warn("failed to insert flow into hw\n");
 
 		if (unlikely(reply)) {
 			error = ovs_flow_cmd_fill_info(flow,
@@ -1260,6 +1280,9 @@ static int ovs_flow_cmd_del(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (unlikely(!a[OVS_FLOW_ATTR_KEY] && !ufid_present)) {
+		err = ovs_hw_flow_flush(dp);
+		if (err)
+			pr_warn("failed to flush flows from hw\n");
 		err = ovs_flow_tbl_flush(&dp->table);
 		goto unlock;
 	}
@@ -1274,6 +1297,9 @@ static int ovs_flow_cmd_del(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	ovs_flow_tbl_remove(&dp->table, flow);
+	err = ovs_hw_flow_remove(dp, flow);
+	if (err)
+		pr_warn("failed to remove flow from hw\n");
 	ovs_unlock();
 
 	reply = ovs_flow_cmd_alloc_info((const struct ovs_flow_actions __force *) flow->sf_acts,
@@ -1537,6 +1563,8 @@ static int ovs_dp_cmd_new(struct sk_buff *skb, struct genl_info *info)
 	for (i = 0; i < DP_VPORT_HASH_BUCKETS; i++)
 		INIT_HLIST_HEAD(&dp->ports[i]);
 
+	INIT_LIST_HEAD(&dp->swdev_rep_list);
+
 	/* Set up our datapath device. */
 	parms.name = nla_data(a[OVS_DP_ATTR_NAME]);
 	parms.type = OVS_VPORT_TYPE_INTERNAL;
@@ -1599,6 +1627,7 @@ err:
 static void __dp_destroy(struct datapath *dp)
 {
 	int i;
+	int err;
 
 	for (i = 0; i < DP_VPORT_HASH_BUCKETS; i++) {
 		struct vport *vport;
@@ -1615,6 +1644,10 @@ static void __dp_destroy(struct datapath *dp)
 	 * all ports in datapath are destroyed first before freeing datapath.
 	 */
 	ovs_dp_detach_port(ovs_vport_ovsl(dp, OVSP_LOCAL));
+
+	err = ovs_hw_flow_flush(dp);
+	if (err)
+		pr_warn("failed to flush flows from hw\n");
 
 	/* RCU destroy the flow table */
 	call_rcu(&dp->rcu, destroy_dp_rcu);

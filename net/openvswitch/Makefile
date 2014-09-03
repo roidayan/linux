@@ -13,7 +13,8 @@ openvswitch-y := \
 	flow_table.o \
 	vport.o \
 	vport-internal_dev.o \
-	vport-netdev.o
+	vport-netdev.o \
+	hw_offload.o
 
 obj-$(CONFIG_OPENVSWITCH_GENEVE)+= vport-geneve.o
 obj-$(CONFIG_OPENVSWITCH_VXLAN)	+= vport-vxlan.o

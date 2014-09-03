@@ -88,6 +88,9 @@ struct datapath {
 	possible_net_t net;
 
 	u32 user_features;
+
+	/* List of switchdev representative ports */
+	struct list_head swdev_rep_list;
 };
 
 /**

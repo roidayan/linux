@@ -119,6 +119,8 @@ struct vport {
 
 	struct vport_err_stats err_stats;
 	struct list_head detach_list;
+
+	struct list_head swdev_rep_list;
 };
 
 /**
