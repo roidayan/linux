@@ -356,6 +356,12 @@ static inline void set_pte(pte_t *ptep, pte_t pteval)
 #define pgprot_noncached(prot)		__pgprot((pgprot_val(prot) & ~_PAGE_MA_MASK) | _PAGE_MA_UC)
 #define pgprot_writecombine(prot)	__pgprot((pgprot_val(prot) & ~_PAGE_MA_MASK) | _PAGE_MA_WC)
 
+#define writecombine_available writecombine_available
+static inline bool writecombine_available(void)
+{
+	return true;
+}
+
 struct file;
 extern pgprot_t phys_mem_access_prot(struct file *file, unsigned long pfn,
 				     unsigned long size, pgprot_t vma_prot);
