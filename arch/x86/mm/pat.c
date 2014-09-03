@@ -797,6 +797,15 @@ pgprot_t pgprot_writecombine(pgprot_t prot)
 }
 EXPORT_SYMBOL_GPL(pgprot_writecombine);
 
+bool writecombine_available(void)
+{
+	if (pat_enabled)
+		return true;
+
+	return false;
+}
+EXPORT_SYMBOL_GPL(writecombine_available);
+
 #if defined(CONFIG_DEBUG_FS) && defined(CONFIG_X86_PAT)
 
 static struct memtype *memtype_get_idx(loff_t pos)

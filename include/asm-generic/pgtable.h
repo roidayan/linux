@@ -267,6 +267,14 @@ static inline pgprot_t pgprot_modify(pgprot_t oldprot, pgprot_t newprot)
 }
 #endif
 
+#ifndef writecombine_available
+#define writecombine_available writecombine_available
+static inline bool writecombine_available(void)
+{
+	return false;
+}
+#endif
+
 /*
  * When walking page tables, get the address of the next boundary,
  * or the end address of the range if that comes earlier.  Although no
