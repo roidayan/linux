@@ -512,7 +512,7 @@ struct ib_uverbs_create_qp {
 	__u8  sq_sig_all;
 	__u8  qp_type;
 	__u8  is_srq;
-	__u8  reserved;
+	__u8  create_flags;
 	__u64 driver_data[0];
 };
 
