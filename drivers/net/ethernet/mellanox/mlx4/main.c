@@ -55,8 +55,6 @@ MODULE_DESCRIPTION("Mellanox ConnectX HCA low-level driver");
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_VERSION(DRV_VERSION);
 
-struct workqueue_struct *mlx4_wq;
-
 #ifdef CONFIG_MLX4_DEBUG
 
 int mlx4_debug_level = 0;
@@ -2985,20 +2983,13 @@ static int __init mlx4_init(void)
 
 	mlx4_catas_init();
 
-	mlx4_wq = create_singlethread_workqueue("mlx4");
-	if (!mlx4_wq)
-		return -ENOMEM;
-
 	ret = pci_register_driver(&mlx4_driver);
-	if (ret < 0)
-		destroy_workqueue(mlx4_wq);
 	return ret < 0 ? ret : 0;
 }
 
 static void __exit mlx4_cleanup(void)
 {
 	pci_unregister_driver(&mlx4_driver);
-	destroy_workqueue(mlx4_wq);
 }
 
 module_init(mlx4_init);
