@@ -219,7 +219,7 @@ static void poll_catas(unsigned long dev_ptr)
 
 internal_err:
 	if (internal_err_reset)
-		queue_work(dev->catas_wq, &dev->catas_work);
+		schedule_work(&dev->catas_work);
 }
 
 static void catas_reset(struct work_struct *work)
@@ -269,23 +269,15 @@ void mlx4_stop_catas_poll(struct mlx4_dev *dev)
 	}
 
 	if (dev->interface_state & MLX4_INTERFACE_STATE_DELETION)
-		flush_workqueue(dev->catas_wq);
+		flush_work(&dev->catas_work);
 }
 
-int  mlx4_catas_init(struct mlx4_dev *dev)
+void mlx4_catas_init(struct mlx4_dev *dev)
 {
 	INIT_WORK(&dev->catas_work, catas_reset);
-	dev->catas_wq = create_singlethread_workqueue("mlx4_health");
-	if (!dev->catas_wq)
-		return -ENOMEM;
-
-	return 0;
 }
 
 void mlx4_catas_end(struct mlx4_dev *dev)
 {
-	if (dev->catas_wq) {
-		destroy_workqueue(dev->catas_wq);
-		dev->catas_wq = NULL;
-	}
+	cancel_work_sync(&dev->catas_work);
 }

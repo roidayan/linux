@@ -727,7 +727,6 @@ struct mlx4_dev {
 	struct mutex		device_state_mutex; /* protect HW state */
 	u8			state;
 	struct work_struct	catas_work;
-	struct workqueue_struct	*catas_wq;
 	enum mlx4_port_type curr_port_type[MLX4_MAX_PORTS + 1];
 	enum mlx4_port_type curr_port_poss_type[MLX4_MAX_PORTS + 1];
 	/* ADD PERSISTENT FIELDS BEFORE flags */
