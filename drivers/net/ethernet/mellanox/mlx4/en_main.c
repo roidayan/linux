@@ -281,7 +281,7 @@ static void *mlx4_en_add(struct mlx4_dev *dev)
 	/* Create our own workqueue for reset/multicast tasks
 	 * Note: we cannot use the shared workqueue because of deadlocks caused
 	 *       by the rtnl lock */
-	mdev->workqueue = create_singlethread_workqueue("mlx4_en");
+	mdev->workqueue = alloc_workqueue("mlx4_en", WQ_MEM_RECLAIM, 0);
 	if (!mdev->workqueue)
 		goto err_mr;
 
