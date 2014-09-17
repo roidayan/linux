@@ -108,8 +108,8 @@ static void mlx4_sense_port(struct work_struct *work)
 
 sense_again:
 	mutex_unlock(&priv->port_mutex);
-	queue_delayed_work(mlx4_wq , &sense->sense_poll,
-			   round_jiffies_relative(MLX4_SENSE_RANGE));
+	schedule_delayed_work(&sense->sense_poll,
+			      round_jiffies_relative(MLX4_SENSE_RANGE));
 }
 
 void mlx4_start_sense(struct mlx4_dev *dev)
@@ -120,8 +120,8 @@ void mlx4_start_sense(struct mlx4_dev *dev)
 	if (!(dev->caps.flags & MLX4_DEV_CAP_FLAG_DPDP))
 		return;
 
-	queue_delayed_work(mlx4_wq , &sense->sense_poll,
-			   round_jiffies_relative(MLX4_SENSE_RANGE));
+	schedule_delayed_work(&sense->sense_poll,
+			      round_jiffies_relative(MLX4_SENSE_RANGE));
 }
 
 void mlx4_stop_sense(struct mlx4_dev *dev)

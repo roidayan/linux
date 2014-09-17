@@ -656,7 +656,7 @@ static int mlx4_eq_int(struct mlx4_dev *dev, struct mlx4_eq *eq)
 			/* FW commands can't be executed from interrupt context
 			 * working in deferred task
 			 */
-			queue_work(mlx4_wq, &priv->opreq_task);
+			schedule_work(&priv->opreq_task);
 			break;
 
 		case MLX4_EVENT_TYPE_COMM_CHANNEL:
