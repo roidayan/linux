@@ -202,13 +202,17 @@ static void mlx4_en_remove(struct mlx4_dev *dev, void *endev_ptr)
 	mutex_unlock(&mdev->state_lock);
 
 	mlx4_foreach_port(i, dev, MLX4_PORT_TYPE_ETH)
-		if (mdev->pndev[i])
+		if (mdev->pndev[i]) {
+			struct mlx4_en_priv *priv = netdev_priv(mdev->pndev[i]);
+
+			cancel_delayed_work_sync(&priv->stats_task);
+			cancel_delayed_work_sync(&priv->service_task);
 			mlx4_en_destroy_netdev(mdev->pndev[i]);
+		}
 
 	if (mdev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_TS)
 		mlx4_en_remove_timestamp(mdev);
 
-	flush_workqueue(mdev->workqueue);
 	destroy_workqueue(mdev->workqueue);
 	(void) mlx4_mr_free(dev, &mdev->mr);
 	iounmap(mdev->uar_map);

@@ -1442,7 +1442,7 @@ static void mlx4_en_do_get_stats(struct work_struct *work)
 			mlx4_en_auto_moderation(priv);
 		}
 
-		queue_delayed_work(mdev->workqueue, &priv->stats_task, STATS_DELAY);
+		schedule_delayed_work(&priv->stats_task, STATS_DELAY);
 	}
 	if (mdev->mac_removed[MLX4_MAX_PORTS + 1 - priv->port]) {
 		mlx4_en_do_set_mac(priv, priv->current_mac);
@@ -1466,8 +1466,7 @@ static void mlx4_en_service_task(struct work_struct *work)
 		if (mdev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_TS)
 			mlx4_en_ptp_overflow_check(mdev);
 
-		queue_delayed_work(mdev->workqueue, &priv->service_task,
-				   SERVICE_TASK_DELAY);
+		schedule_delayed_work(&priv->service_task, SERVICE_TASK_DELAY);
 	}
 	mutex_unlock(&mdev->state_lock);
 }
@@ -2660,11 +2659,10 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
 		en_err(priv, "Failed Initializing port\n");
 		goto out;
 	}
-	queue_delayed_work(mdev->workqueue, &priv->stats_task, STATS_DELAY);
+	schedule_delayed_work(&priv->stats_task, STATS_DELAY);
 
 	if (mdev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_TS)
-		queue_delayed_work(mdev->workqueue, &priv->service_task,
-				   SERVICE_TASK_DELAY);
+		schedule_delayed_work(&priv->service_task, SERVICE_TASK_DELAY);
 
 	return 0;
 
