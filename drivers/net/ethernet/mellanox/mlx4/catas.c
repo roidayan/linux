@@ -82,7 +82,7 @@ static void poll_catas(unsigned long dev_ptr)
 				list_add(&priv->catas_err.list, &catas_list);
 				spin_unlock(&catas_lock);
 
-				queue_work(mlx4_wq, &catas_work);
+				schedule_work(&catas_work);
 			}
 		}
 	} else
