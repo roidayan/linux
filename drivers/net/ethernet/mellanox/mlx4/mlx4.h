@@ -875,8 +875,6 @@ static inline struct mlx4_priv *mlx4_priv(struct mlx4_dev *dev)
 
 #define MLX4_SENSE_RANGE	(HZ * 3)
 
-extern struct workqueue_struct *mlx4_wq;
-
 u32 mlx4_bitmap_alloc(struct mlx4_bitmap *bitmap);
 void mlx4_bitmap_free(struct mlx4_bitmap *bitmap, u32 obj, int use_rr);
 u32 mlx4_bitmap_alloc_range(struct mlx4_bitmap *bitmap, int cnt, int align);
