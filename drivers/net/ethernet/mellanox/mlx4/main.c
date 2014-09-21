@@ -862,6 +862,13 @@ static int mlx4_dev_cap(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
 		mlx4_err(dev, "QUERY_DEV_CAP command failed, aborting\n");
 		return err;
 	}
+
+	if ((ingress_parser_mode != MLX4_INGRESS_PARSER_MODE_STANDARD) &&
+	    (dev_cap->flags2 & MLX4_DEV_CAP_FLAG2_MODIFY_PARSER)) {
+		dev_cap->flags2 &= ~MLX4_DEV_CAP_FLAG2_VXLAN_OFFLOADS;
+		dev_cap->flags2 &= ~MLX4_DEV_CAP_FLAG2_ROCEV2;
+	}
+
 	mlx4_dev_cap_dump(dev, dev_cap);
 
 	if (dev_cap->min_page_sz > PAGE_SIZE) {
