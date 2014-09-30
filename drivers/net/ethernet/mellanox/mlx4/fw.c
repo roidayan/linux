@@ -677,7 +677,7 @@ int mlx4_QUERY_DEV_CAP(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
 	dev_cap->min_page_sz = 1 << field;
 
 	MLX4_GET(field, outbox, QUERY_DEV_CAP_BF_OFFSET);
-	if (field & 0x80) {
+	if ((field & 0x80) && writecombine_available()) {
 		MLX4_GET(field, outbox, QUERY_DEV_CAP_LOG_BF_REG_SZ_OFFSET);
 		dev_cap->bf_reg_size = 1 << (field & 0x1f);
 		MLX4_GET(field, outbox, QUERY_DEV_CAP_LOG_MAX_BF_REGS_PER_PAGE_OFFSET);
