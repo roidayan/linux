@@ -36,6 +36,8 @@
 #include <linux/debugfs.h>
 #include <linux/export.h>
 #include <linux/delay.h>
+#include <linux/device.h>
+#include <linux/sysfs.h>
 #include <rdma/ib_umem.h>
 #include <rdma/ib_umem_odp.h>
 #include <rdma/ib_verbs.h>
@@ -54,6 +56,9 @@ static DEFINE_MUTEX(mlx5_ib_update_mtt_emergency_buffer_mutex);
 #endif
 
 static int clean_mr(struct mlx5_ib_mr *mr);
+
+static int mlx5_mr_sysfs_init(struct mlx5_ib_dev *dev);
+static void mlx5_mr_sysfs_cleanup(struct mlx5_ib_dev *dev);
 
 static int destroy_mkey(struct mlx5_ib_dev *dev, struct mlx5_ib_mr *mr)
 {
@@ -211,134 +216,6 @@ static void remove_keys(struct mlx5_ib_dev *dev, int c, int num)
 			kfree(mr);
 	}
 }
-
-static ssize_t size_write(struct file *filp, const char __user *buf,
-			  size_t count, loff_t *pos)
-{
-	struct mlx5_cache_ent *ent = filp->private_data;
-	struct mlx5_ib_dev *dev = ent->dev;
-	char lbuf[20];
-	u32 var;
-	int err;
-	int c;
-
-	if (copy_from_user(lbuf, buf, sizeof(lbuf)))
-		return -EFAULT;
-
-	c = order2idx(dev, ent->order);
-	lbuf[sizeof(lbuf) - 1] = 0;
-
-	if (sscanf(lbuf, "%u", &var) != 1)
-		return -EINVAL;
-
-	if (var < ent->limit)
-		return -EINVAL;
-
-	if (var > ent->size) {
-		do {
-			err = add_keys(dev, c, var - ent->size);
-			if (err && err != -EAGAIN)
-				return err;
-
-			usleep_range(3000, 5000);
-		} while (err);
-	} else if (var < ent->size) {
-		remove_keys(dev, c, ent->size - var);
-	}
-
-	return count;
-}
-
-static ssize_t size_read(struct file *filp, char __user *buf, size_t count,
-			 loff_t *pos)
-{
-	struct mlx5_cache_ent *ent = filp->private_data;
-	char lbuf[20];
-	int err;
-
-	if (*pos)
-		return 0;
-
-	err = snprintf(lbuf, sizeof(lbuf), "%d\n", ent->size);
-	if (err < 0)
-		return err;
-
-	if (copy_to_user(buf, lbuf, err))
-		return -EFAULT;
-
-	*pos += err;
-
-	return err;
-}
-
-static const struct file_operations size_fops = {
-	.owner	= THIS_MODULE,
-	.open	= simple_open,
-	.write	= size_write,
-	.read	= size_read,
-};
-
-static ssize_t limit_write(struct file *filp, const char __user *buf,
-			   size_t count, loff_t *pos)
-{
-	struct mlx5_cache_ent *ent = filp->private_data;
-	struct mlx5_ib_dev *dev = ent->dev;
-	char lbuf[20];
-	u32 var;
-	int err;
-	int c;
-
-	if (copy_from_user(lbuf, buf, sizeof(lbuf)))
-		return -EFAULT;
-
-	c = order2idx(dev, ent->order);
-	lbuf[sizeof(lbuf) - 1] = 0;
-
-	if (sscanf(lbuf, "%u", &var) != 1)
-		return -EINVAL;
-
-	if (var > ent->size)
-		return -EINVAL;
-
-	ent->limit = var;
-
-	if (ent->cur < ent->limit) {
-		err = add_keys(dev, c, 2 * ent->limit - ent->cur);
-		if (err)
-			return err;
-	}
-
-	return count;
-}
-
-static ssize_t limit_read(struct file *filp, char __user *buf, size_t count,
-			  loff_t *pos)
-{
-	struct mlx5_cache_ent *ent = filp->private_data;
-	char lbuf[20];
-	int err;
-
-	if (*pos)
-		return 0;
-
-	err = snprintf(lbuf, sizeof(lbuf), "%d\n", ent->limit);
-	if (err < 0)
-		return err;
-
-	if (copy_to_user(buf, lbuf, err))
-		return -EFAULT;
-
-	*pos += err;
-
-	return err;
-}
-
-static const struct file_operations limit_fops = {
-	.owner	= THIS_MODULE,
-	.open	= simple_open,
-	.write	= limit_write,
-	.read	= limit_read,
-};
 
 static int someone_adding(struct mlx5_mr_cache *cache)
 {
@@ -503,58 +380,6 @@ static void clean_keys(struct mlx5_ib_dev *dev, int c)
 	}
 }
 
-static int mlx5_mr_cache_debugfs_init(struct mlx5_ib_dev *dev)
-{
-	struct mlx5_mr_cache *cache = &dev->cache;
-	struct mlx5_cache_ent *ent;
-	int i;
-
-	if (!mlx5_debugfs_root)
-		return 0;
-
-	cache->root = debugfs_create_dir("mr_cache", dev->mdev->priv.dbg_root);
-	if (!cache->root)
-		return -ENOMEM;
-
-	for (i = 0; i < MAX_MR_CACHE_ENTRIES; i++) {
-		ent = &cache->ent[i];
-		sprintf(ent->name, "%d", ent->order);
-		ent->dir = debugfs_create_dir(ent->name,  cache->root);
-		if (!ent->dir)
-			return -ENOMEM;
-
-		ent->fsize = debugfs_create_file("size", 0600, ent->dir, ent,
-						 &size_fops);
-		if (!ent->fsize)
-			return -ENOMEM;
-
-		ent->flimit = debugfs_create_file("limit", 0600, ent->dir, ent,
-						  &limit_fops);
-		if (!ent->flimit)
-			return -ENOMEM;
-
-		ent->fcur = debugfs_create_u32("cur", 0400, ent->dir,
-					       &ent->cur);
-		if (!ent->fcur)
-			return -ENOMEM;
-
-		ent->fmiss = debugfs_create_u32("miss", 0600, ent->dir,
-						&ent->miss);
-		if (!ent->fmiss)
-			return -ENOMEM;
-	}
-
-	return 0;
-}
-
-static void mlx5_mr_cache_debugfs_cleanup(struct mlx5_ib_dev *dev)
-{
-	if (!mlx5_debugfs_root)
-		return;
-
-	debugfs_remove_recursive(dev->cache.root);
-}
-
 static void delay_time_func(unsigned long ctx)
 {
 	struct mlx5_ib_dev *dev = (struct mlx5_ib_dev *)ctx;
@@ -598,9 +423,9 @@ int mlx5_mr_cache_init(struct mlx5_ib_dev *dev)
 		queue_work(cache->wq, &ent->work);
 	}
 
-	err = mlx5_mr_cache_debugfs_init(dev);
+	err = mlx5_mr_sysfs_init(dev);
 	if (err)
-		mlx5_ib_warn(dev, "cache debugfs failure\n");
+		mlx5_ib_warn(dev, "failed to init mr cache sysfs\n");
 
 	return 0;
 }
@@ -612,7 +437,7 @@ int mlx5_mr_cache_cleanup(struct mlx5_ib_dev *dev)
 	dev->cache.stopped = 1;
 	flush_workqueue(dev->cache.wq);
 
-	mlx5_mr_cache_debugfs_cleanup(dev);
+	mlx5_mr_sysfs_cleanup(dev);
 
 	for (i = 0; i < MAX_MR_CACHE_ENTRIES; i++)
 		clean_keys(dev, i);
@@ -1475,6 +1300,242 @@ int mlx5_ib_check_mr_status(struct ib_mr *ibmr, u32 check_mask,
 
 done:
 	return ret;
+}
+
+struct order_attribute {
+	struct attribute attr;
+	ssize_t (*show)(struct cache_order *, struct order_attribute *, char *buf);
+	ssize_t (*store)(struct cache_order *, struct order_attribute *,
+			 const char *buf, size_t count);
+};
+
+static ssize_t cur_show(struct cache_order *co, struct order_attribute *oa,
+			char *buf)
+{
+	struct mlx5_ib_dev *dev = co->dev;
+	struct mlx5_mr_cache *cache = &dev->cache;
+	struct mlx5_cache_ent *ent = &cache->ent[co->index];
+	int err;
+
+	err = snprintf(buf, 20, "%d\n", ent->cur);
+	return err;
+}
+
+static ssize_t limit_show(struct cache_order *co, struct order_attribute *oa,
+			  char *buf)
+{
+	struct mlx5_ib_dev *dev = co->dev;
+	struct mlx5_mr_cache *cache = &dev->cache;
+	struct mlx5_cache_ent *ent = &cache->ent[co->index];
+	int err;
+
+	err = snprintf(buf, 20, "%d\n", ent->limit);
+	return err;
+}
+
+static ssize_t limit_store(struct cache_order *co, struct order_attribute *oa,
+			   const char *buf, size_t count)
+{
+	struct mlx5_ib_dev *dev = co->dev;
+	struct mlx5_mr_cache *cache = &dev->cache;
+	struct mlx5_cache_ent *ent = &cache->ent[co->index];
+	u32 var;
+	int err;
+
+	if (kstrtouint(buf, 0, &var))
+		return -EINVAL;
+
+	if (var > ent->size)
+		return -EINVAL;
+
+	ent->limit = var;
+
+	if (ent->cur < ent->limit) {
+		err = add_keys(dev, co->index, 2 * ent->limit - ent->cur);
+		if (err)
+			return err;
+	}
+
+	return count;
+}
+
+static ssize_t miss_show(struct cache_order *co, struct order_attribute *oa,
+			 char *buf)
+{
+	struct mlx5_ib_dev *dev = co->dev;
+	struct mlx5_mr_cache *cache = &dev->cache;
+	struct mlx5_cache_ent *ent = &cache->ent[co->index];
+	int err;
+
+	err = snprintf(buf, 20, "%d\n", ent->miss);
+	return err;
+}
+
+static ssize_t miss_store(struct cache_order *co, struct order_attribute *oa,
+			  const char *buf, size_t count)
+{
+	struct mlx5_ib_dev *dev = co->dev;
+	struct mlx5_mr_cache *cache = &dev->cache;
+	struct mlx5_cache_ent *ent = &cache->ent[co->index];
+	u32 var;
+
+	if (kstrtouint(buf, 0, &var))
+		return -EINVAL;
+
+	if (var != 0)
+		return -EINVAL;
+
+	ent->miss = var;
+
+	return count;
+}
+
+static ssize_t size_show(struct cache_order *co, struct order_attribute *oa,
+			 char *buf)
+{
+	struct mlx5_ib_dev *dev = co->dev;
+	struct mlx5_mr_cache *cache = &dev->cache;
+	struct mlx5_cache_ent *ent = &cache->ent[co->index];
+	int err;
+
+	err = snprintf(buf, 20, "%d\n", ent->size);
+	return err;
+}
+
+static ssize_t size_store(struct cache_order *co, struct order_attribute *oa,
+			  const char *buf, size_t count)
+{
+	struct mlx5_ib_dev *dev = co->dev;
+	struct mlx5_mr_cache *cache = &dev->cache;
+	struct mlx5_cache_ent *ent = &cache->ent[co->index];
+	u32 var;
+	int err;
+
+	if (kstrtouint(buf, 0, &var))
+		return -EINVAL;
+
+	if (var < ent->limit)
+		return -EINVAL;
+
+	if (var > ent->size) {
+		do {
+			err = add_keys(dev, co->index, var - ent->size);
+			if (err && err != -EAGAIN)
+				return err;
+
+			usleep_range(3000, 5000);
+		} while (err);
+	} else if (var < ent->size) {
+		remove_keys(dev, co->index, ent->size - var);
+	}
+
+	return count;
+}
+
+static ssize_t order_attr_show(struct kobject *kobj,
+			       struct attribute *attr, char *buf)
+{
+	struct order_attribute *oa =
+		container_of(attr, struct order_attribute, attr);
+	struct cache_order *co = container_of(kobj, struct cache_order, kobj);
+
+	if (!oa->show)
+		return -EIO;
+
+	return oa->show(co, oa, buf);
+}
+
+static ssize_t order_attr_store(struct kobject *kobj,
+				struct attribute *attr, const char *buf, size_t size)
+{
+	struct order_attribute *oa =
+		container_of(attr, struct order_attribute, attr);
+	struct cache_order *co = container_of(kobj, struct cache_order, kobj);
+
+	if (!oa->store)
+		return -EIO;
+
+	return oa->store(co, oa, buf, size);
+}
+
+static const struct sysfs_ops order_sysfs_ops = {
+	.show = order_attr_show,
+	.store = order_attr_store,
+};
+
+#define ORDER_ATTR(_name) struct order_attribute order_attr_##_name = \
+	__ATTR(_name, 0644, _name##_show, _name##_store)
+#define ORDER_ATTR_RO(_name) struct order_attribute order_attr_##_name = \
+	__ATTR(_name, 0444, _name##_show, NULL)
+
+static ORDER_ATTR_RO(cur);
+static ORDER_ATTR(limit);
+static ORDER_ATTR(miss);
+static ORDER_ATTR(size);
+
+static struct attribute *order_default_attrs[] = {
+	&order_attr_cur.attr,
+	&order_attr_limit.attr,
+	&order_attr_miss.attr,
+	&order_attr_size.attr,
+	NULL
+};
+
+static struct kobj_type order_type = {
+	.sysfs_ops     = &order_sysfs_ops,
+	.default_attrs = order_default_attrs
+};
+
+static int mlx5_mr_sysfs_init(struct mlx5_ib_dev *dev)
+{
+	struct mlx5_mr_cache *cache = &dev->cache;
+	struct device *device = &dev->ib_dev.dev;
+	struct cache_order *co;
+	int o;
+	int i;
+	int err;
+
+	dev->mr_cache = kobject_create_and_add("mr_cache", &device->kobj);
+	if (!dev->mr_cache)
+		return -ENOMEM;
+
+	for (o = 2, i = 0; i < MAX_MR_CACHE_ENTRIES; o++, i++) {
+		co = &cache->ent[i].co;
+		co->order = o;
+		co->index = i;
+		co->dev = dev;
+		err = kobject_init_and_add(&co->kobj, &order_type,
+					   dev->mr_cache, "%d", o);
+		if (err)
+			goto err_put;
+
+		kobject_uevent(&co->kobj, KOBJ_ADD);
+	}
+
+	return 0;
+
+err_put:
+	for (; i >= 0; i--) {
+		co = &cache->ent[i].co;
+		kobject_put(&co->kobj);
+	}
+	kobject_put(dev->mr_cache);
+	dev->mr_cache = NULL;
+	return err;
+}
+
+static void mlx5_mr_sysfs_cleanup(struct mlx5_ib_dev *dev)
+{
+	struct mlx5_mr_cache *cache = &dev->cache;
+	struct cache_order *co;
+	int i;
+
+	for (i = MAX_MR_CACHE_ENTRIES - 1; i >= 0; i--) {
+		co = &cache->ent[i].co;
+		kobject_put(&co->kobj);
+	}
+	if (dev->mr_cache)
+		kobject_put(dev->mr_cache);
 }
 
 int mlx5_ib_exp_query_mkey(struct ib_mr *mr, u64 mkey_attr_mask,

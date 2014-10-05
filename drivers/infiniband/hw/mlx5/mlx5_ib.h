@@ -409,6 +409,13 @@ struct mlx5_ib_fmr {
 	struct ib_fast_reg_page_list	page_list;
 };
 
+struct cache_order {
+	struct kobject		kobj;
+	int			order;
+	int			index;
+	struct mlx5_ib_dev     *dev;
+};
+
 struct mlx5_cache_ent {
 	struct list_head	head;
 	/* sync access to the cahce entry
@@ -416,23 +423,17 @@ struct mlx5_cache_ent {
 	spinlock_t		lock;
 
 
-	struct dentry	       *dir;
-	char                    name[4];
 	u32                     order;
 	u32			size;
 	u32                     cur;
 	u32                     miss;
 	u32			limit;
 
-	struct dentry          *fsize;
-	struct dentry          *fcur;
-	struct dentry          *fmiss;
-	struct dentry          *flimit;
-
 	struct mlx5_ib_dev     *dev;
 	struct work_struct	work;
 	struct delayed_work	dwork;
 	int			pending;
+	struct cache_order	co;
 };
 
 struct mlx5_mr_cache {
@@ -476,6 +477,7 @@ struct mlx5_ib_dev {
 	 */
 	struct srcu_struct      mr_srcu;
 #endif
+	struct kobject               *mr_cache;
 };
 
 static inline struct mlx5_ib_cq *to_mibcq(struct mlx5_core_cq *mcq)
