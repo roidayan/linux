@@ -72,7 +72,8 @@ void mlx4_do_sense_ports(struct mlx4_dev *dev,
 	for (i = 1; i <= dev->caps.num_ports; i++) {
 		stype[i - 1] = 0;
 		if (sense->do_sense_port[i] && sense->sense_allowed[i] &&
-		    dev->caps.possible_type[i] == MLX4_PORT_TYPE_AUTO) {
+		    dev->caps.possible_type[i] == MLX4_PORT_TYPE_AUTO &&
+		    i == 1) {
 			err = mlx4_SENSE_PORT(dev, i, &stype[i - 1]);
 			if (err)
 				stype[i - 1] = defaults[i - 1];
