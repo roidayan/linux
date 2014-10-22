@@ -95,7 +95,7 @@ static void health_care(struct work_struct *work)
 	list_for_each_entry_safe(health, n, &tlist, list) {
 		priv = container_of(health, struct mlx5_priv, health);
 		dev = container_of(priv, struct mlx5_core_dev, priv);
-		mlx5_core_warn(dev, "handling bad device here\n");
+		dev_err(&dev->pdev->dev, "handling bad device here\n");
 		/* nothing yet */
 		spin_lock_irq(&health_lock);
 		list_del_init(&health->list);
@@ -150,15 +150,16 @@ static void print_health_info(struct mlx5_core_dev *dev)
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(h->assert_var); i++)
-		pr_info("assert_var[%d] 0x%08x\n", i, read_be32(h->assert_var + i));
+		dev_err(&dev->pdev->dev, "assert_var[%d] 0x%08x\n", i, read_be32(h->assert_var + i));
 
-	pr_info("assert_exit_ptr 0x%08x\n", read_be32(&h->assert_exit_ptr));
-	pr_info("assert_callra 0x%08x\n", read_be32(&h->assert_callra));
-	pr_info("fw_ver 0x%08x\n", read_be32(&h->fw_ver));
-	pr_info("hw_id 0x%08x\n", read_be32(&h->hw_id));
-	pr_info("irisc_index %d\n", readb(&h->irisc_index));
-	pr_info("synd 0x%x: %s\n", readb(&h->synd), hsynd_str(readb(&h->synd)));
-	pr_info("ext_sync 0x%04x\n", read_be16(&h->ext_sync));
+	dev_err(&dev->pdev->dev, "assert_exit_ptr 0x%08x\n", read_be32(&h->assert_exit_ptr));
+	dev_err(&dev->pdev->dev, "assert_callra 0x%08x\n", read_be32(&h->assert_callra));
+	dev_err(&dev->pdev->dev, "fw_ver 0x%08x\n", read_be32(&h->fw_ver));
+	dev_err(&dev->pdev->dev, "hw_id 0x%08x\n", read_be32(&h->hw_id));
+	dev_err(&dev->pdev->dev, "irisc_index %d\n", readb(&h->irisc_index));
+	dev_err(&dev->pdev->dev, "synd 0x%x: %s\n", readb(&h->synd), hsynd_str(readb(&h->synd)));
+	dev_err(&dev->pdev->dev, "ext_synd 0x%04x\n", read_be16(&h->ext_synd));
+
 }
 
 static void poll_health(unsigned long data)
@@ -176,7 +177,7 @@ static void poll_health(unsigned long data)
 
 	health->prev = count;
 	if (health->miss_counter == MAX_MISSES) {
-		mlx5_core_err(dev, "device's health compromised\n");
+		dev_err(&dev->pdev->dev, "device's health compromised\n");
 		print_health_info(dev);
 		spin_lock_irq(&health_lock);
 		list_add_tail(&health->list, &health_list);
