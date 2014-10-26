@@ -38,6 +38,7 @@
 #include <linux/slab.h>
 
 #include <asm/uaccess.h>
+#include <linux/sched.h>
 
 #include "uverbs.h"
 #include "core_priv.h"
@@ -328,6 +329,7 @@ ssize_t ib_uverbs_get_context(struct ib_uverbs_file *file,
 	ucontext->closing = 0;
 	ucontext->peer_mem_private_data = NULL;
 	ucontext->peer_mem_name = NULL;
+	ucontext->tgid = get_task_pid(current->group_leader, PIDTYPE_PID);
 
 	resp.num_comp_vectors = file->device->num_comp_vectors;
 
@@ -1288,6 +1290,12 @@ ssize_t ib_uverbs_create_comp_channel(struct ib_uverbs_file *file,
 		return -EFAULT;
 	}
 
+	/* Taking ref count on uverbs_file to make sure that file won't be freed till
+	  * that event file is closed. It will enable accessing the uverbs_device fields as part of
+	  * closing the events file and making sure that uverbs device is available by that time as well.
+	  * Note: similar is already done for the async event file.
+	*/
+	kref_get(&file->ref);
 	fd_install(resp.fd, filp);
 	return in_len;
 }
