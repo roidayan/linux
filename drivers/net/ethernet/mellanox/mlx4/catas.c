@@ -40,16 +40,64 @@ enum {
 	MLX4_CATAS_POLL_INTERVAL	= 5 * HZ,
 };
 
-static DEFINE_SPINLOCK(catas_lock);
 
-static LIST_HEAD(catas_list);
-static struct work_struct catas_work;
 
 static int internal_err_reset = 1;
 module_param(internal_err_reset, int, 0644);
 MODULE_PARM_DESC(internal_err_reset,
 		 "Reset device on internal errors if non-zero"
 		 " (default 1, in SRIOV mode default is 0)");
+
+static int mlx4_reset_master(struct mlx4_dev *dev)
+{
+	int err = 0;
+
+	if (!pci_channel_offline(dev->pdev)) {
+		err = mlx4_reset(dev);
+		if (err)
+			mlx4_err(dev, "Fail to reset HCA\n");
+	}
+
+	return err;
+}
+
+void mlx4_enter_error_state(struct mlx4_dev *dev)
+{
+	int err;
+
+	if (!internal_err_reset)
+		return;
+
+	mutex_lock(&dev->device_state_mutex);
+	if (dev->state & MLX4_DEVICE_STATE_INTERNAL_ERROR)
+		goto out;
+
+	mlx4_err(dev, "%s: device is going to be reset\n", __func__);
+	err = mlx4_reset_master(dev);
+	BUG_ON(err != 0);
+
+	dev->state |= MLX4_DEVICE_STATE_INTERNAL_ERROR;
+	mlx4_err(dev, "%s: device was reset successfully\n", __func__);
+	mutex_unlock(&dev->device_state_mutex);
+
+	/* At that step HW was already reset, now notify clients */
+	mlx4_dispatch_event(dev, MLX4_DEV_EVENT_CATASTROPHIC_ERROR, 0);
+	return;
+
+out:
+	mutex_unlock(&dev->device_state_mutex);
+}
+
+void mlx4_handle_error_state(struct mlx4_dev *dev)
+{
+	int err = 0;
+
+	mlx4_err(dev, "%s: start\n", __func__);
+	mlx4_enter_error_state(dev);
+	mlx4_info(dev, "%s: calling mlx4_restart_one\n", __func__);
+	err = mlx4_restart_one(dev->pdev);
+	mlx4_info(dev, "%s: mlx4_restart_one was ended, ret=%d\n", __func__, err);
+}
 
 static void dump_err_buf(struct mlx4_dev *dev)
 {
@@ -69,56 +117,29 @@ static void poll_catas(unsigned long dev_ptr)
 	struct mlx4_priv *priv = mlx4_priv(dev);
 
 	if (readl(priv->catas_err.map)) {
-		/* If the device is off-line, we cannot try to recover it */
-		if (pci_channel_offline(dev->pdev))
-			mod_timer(&priv->catas_err.timer,
-				  round_jiffies(jiffies + MLX4_CATAS_POLL_INTERVAL));
-		else {
-			dump_err_buf(dev);
-			mlx4_dispatch_event(dev, MLX4_DEV_EVENT_CATASTROPHIC_ERROR, 0);
+		dump_err_buf(dev);
+		goto internal_err;
+	}
 
-			if (internal_err_reset) {
-				spin_lock(&catas_lock);
-				list_add(&priv->catas_err.list, &catas_list);
-				spin_unlock(&catas_lock);
+	if (dev->state & MLX4_DEVICE_STATE_INTERNAL_ERROR) {
+		mlx4_warn(dev, "Internal error mark was detected on device %p\n", dev);
+		goto internal_err;
+	}
 
-				queue_work(mlx4_wq, &catas_work);
-			}
-		}
-	} else
-		mod_timer(&priv->catas_err.timer,
-			  round_jiffies(jiffies + MLX4_CATAS_POLL_INTERVAL));
+	mod_timer(&priv->catas_err.timer,
+		  round_jiffies(jiffies + MLX4_CATAS_POLL_INTERVAL));
+	return;
+
+internal_err:
+	if (internal_err_reset)
+		queue_work(dev->catas_wq, &dev->catas_work);
 }
 
 static void catas_reset(struct work_struct *work)
 {
-	struct mlx4_priv *priv, *tmppriv;
-	struct mlx4_dev *dev;
+	struct mlx4_dev *dev = container_of(work, struct mlx4_dev, catas_work);
 
-	LIST_HEAD(tlist);
-	int ret;
-
-	spin_lock_irq(&catas_lock);
-	list_splice_init(&catas_list, &tlist);
-	spin_unlock_irq(&catas_lock);
-
-	list_for_each_entry_safe(priv, tmppriv, &tlist, catas_err.list) {
-		struct pci_dev *pdev = priv->dev.pdev;
-
-		/* If the device is off-line, we cannot reset it */
-		if (pci_channel_offline(pdev))
-			continue;
-
-		ret = mlx4_restart_one(priv->dev.pdev);
-		/* 'priv' now is not valid */
-		if (ret)
-			pr_err("mlx4 %s: Reset failed (%d)\n",
-			       pci_name(pdev), ret);
-		else {
-			dev  = pci_get_drvdata(pdev);
-			mlx4_dbg(dev, "Reset succeeded\n");
-		}
-	}
+	mlx4_handle_error_state(dev);
 }
 
 void mlx4_start_catas_poll(struct mlx4_dev *dev)
@@ -157,15 +178,26 @@ void mlx4_stop_catas_poll(struct mlx4_dev *dev)
 
 	del_timer_sync(&priv->catas_err.timer);
 
-	if (priv->catas_err.map)
+	if (priv->catas_err.map) {
 		iounmap(priv->catas_err.map);
-
-	spin_lock_irq(&catas_lock);
-	list_del(&priv->catas_err.list);
-	spin_unlock_irq(&catas_lock);
+		priv->catas_err.map = NULL;
+	}
 }
 
-void  __init mlx4_catas_init(void)
+int  mlx4_catas_init(struct mlx4_dev *dev)
 {
-	INIT_WORK(&catas_work, catas_reset);
+	INIT_WORK(&dev->catas_work, catas_reset);
+	dev->catas_wq = create_singlethread_workqueue("mlx4_health");
+	if (!dev->catas_wq)
+		return -ENOMEM;
+
+	return 0;
+}
+
+void mlx4_catas_end(struct mlx4_dev *dev)
+{
+	if (dev->catas_wq) {
+		destroy_workqueue(dev->catas_wq);
+		dev->catas_wq = NULL;
+	}
 }
