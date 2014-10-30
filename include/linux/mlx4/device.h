@@ -746,6 +746,11 @@ struct mlx4_vf_dev {
 
 struct mlx4_dev {
 	struct pci_dev	       *pdev;
+	int			num_vfs;
+	int			nvfs[MLX4_MAX_PORTS + 1];
+	enum mlx4_port_type curr_port_type[MLX4_MAX_PORTS + 1];
+	enum mlx4_port_type curr_port_poss_type[MLX4_MAX_PORTS + 1];
+	/* ADD PERSISTENT FIELDS BEFORE flags */
 	unsigned long		flags;
 	unsigned long		num_slaves;
 	struct mlx4_caps	caps;
@@ -754,13 +759,11 @@ struct mlx4_dev {
 	struct radix_tree_root	qp_table_tree;
 	u8			rev_id;
 	char			board_id[MLX4_BOARD_ID_LEN];
-	int			num_vfs;
 	int			numa_node;
 	int			oper_log_mgm_entry_size;
 	u64			regid_promisc_array[MLX4_MAX_PORTS + 1];
 	u64			regid_allmulti_array[MLX4_MAX_PORTS + 1];
 	struct mlx4_vf_dev     *dev_vfs;
-	int                     nvfs[MLX4_MAX_PORTS + 1];
 };
 
 struct mlx4_eqe {
