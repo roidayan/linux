@@ -2457,6 +2457,9 @@ static int mlx4_load_one(struct pci_dev *pdev, int pci_dev_data,
 		}
 	}
 
+	/* on load remove any previous indication of internal error, device is up */
+	dev->state = MLX4_DEVICE_STATE_UP;
+
 slave_start:
 	err = mlx4_cmd_init(dev);
 	if (err) {
@@ -2893,10 +2896,18 @@ static int __mlx4_init_one(struct pci_dev *pdev, int pci_dev_data,
 		}
 	}
 
-	err = mlx4_load_one(pdev, pci_dev_data, total_vfs, nvfs, priv);
+	err = mlx4_catas_init(&priv->dev);
 	if (err)
 		goto err_release_regions;
+
+	err = mlx4_load_one(pdev, pci_dev_data, total_vfs, nvfs, priv);
+	if (err)
+		goto err_catas;
+
 	return 0;
+
+err_catas:
+	mlx4_catas_end(&priv->dev);
 
 err_release_regions:
 	pci_release_regions(pdev);
@@ -2923,6 +2934,7 @@ static int mlx4_init_one(struct pci_dev *pdev, const struct pci_device_id *id)
 	dev->pdev = pdev;
 	pci_set_drvdata(pdev, dev);
 	priv->pci_dev_data = id->driver_data;
+	mutex_init(&dev->device_state_mutex);
 
 	ret =  __mlx4_init_one(pdev, id->driver_data, priv);
 	if (ret)
@@ -3038,6 +3050,7 @@ static void mlx4_remove_one(struct pci_dev *pdev)
 	struct mlx4_priv *priv = mlx4_priv(dev);
 
 	mlx4_unload_one(pdev);
+	mlx4_catas_end(dev);
 	pci_release_regions(pdev);
 	pci_disable_device(pdev);
 	kfree(priv);
@@ -3218,7 +3231,6 @@ static int __init mlx4_init(void)
 	if (mlx4_verify_params())
 		return -EINVAL;
 
-	mlx4_catas_init();
 
 	mlx4_wq = create_singlethread_workqueue("mlx4");
 	if (!mlx4_wq)

@@ -972,7 +972,9 @@ void __mlx4_xrcd_free(struct mlx4_dev *dev, u32 xrcdn);
 
 void mlx4_start_catas_poll(struct mlx4_dev *dev);
 void mlx4_stop_catas_poll(struct mlx4_dev *dev);
-void mlx4_catas_init(void);
+int mlx4_catas_init(struct mlx4_dev *dev);
+void mlx4_catas_end(struct mlx4_dev *dev);
+void mlx4_enter_error_state(struct mlx4_dev *dev);
 int mlx4_restart_one(struct pci_dev *pdev);
 int mlx4_register_device(struct mlx4_dev *dev);
 void mlx4_unregister_device(struct mlx4_dev *dev);
@@ -1153,7 +1155,7 @@ void mlx4_qp_event(struct mlx4_dev *dev, u32 qpn, int event_type);
 
 void mlx4_srq_event(struct mlx4_dev *dev, u32 srqn, int event_type);
 
-void mlx4_handle_catas_err(struct mlx4_dev *dev);
+void mlx4_enter_error_state(struct mlx4_dev *dev);
 
 int mlx4_SENSE_PORT(struct mlx4_dev *dev, int port,
 		    enum mlx4_port_type *type);
