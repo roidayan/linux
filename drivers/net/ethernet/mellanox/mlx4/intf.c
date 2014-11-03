@@ -137,7 +137,7 @@ int mlx4_register_device(struct mlx4_dev *dev)
 	struct mlx4_interface *intf;
 
 	mutex_lock(&intf_mutex);
-
+	dev->interface_state |= MLX4_INTERFACE_STATE_UP;
 	list_add_tail(&priv->dev_list, &dev_list);
 	list_for_each_entry(intf, &intf_list, list)
 		mlx4_add_device(intf, priv);
@@ -162,6 +162,7 @@ void mlx4_unregister_device(struct mlx4_dev *dev)
 		mlx4_remove_device(intf, priv);
 
 	list_del(&priv->dev_list);
+	dev->interface_state &= ~MLX4_INTERFACE_STATE_UP;
 
 	mutex_unlock(&intf_mutex);
 }
