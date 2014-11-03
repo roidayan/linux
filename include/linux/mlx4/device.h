@@ -416,6 +416,11 @@ enum {
 	MLX4_DEVICE_STATE_INTERNAL_ERROR	= 1 << 1,
 };
 
+enum {
+	MLX4_INTERFACE_STATE_UP		= 1 << 0,
+	MLX4_INTERFACE_STATE_DELETION	= 1 << 1,
+};
+
 #define MSTR_SM_CHANGE_MASK (MLX4_EQ_PORT_INFO_MSTR_SM_SL_CHANGE_MASK | \
 			     MLX4_EQ_PORT_INFO_MSTR_SM_LID_CHANGE_MASK)
 
@@ -753,6 +758,8 @@ struct mlx4_dev {
 	struct pci_dev	       *pdev;
 	int			num_vfs;
 	int			nvfs[MLX4_MAX_PORTS + 1];
+	struct mutex		interface_state_mutex; /* protect SW state */
+	u8			interface_state;
 	struct mutex		device_state_mutex; /* protect HW state */
 	u8			state;
 	struct work_struct	catas_work;
