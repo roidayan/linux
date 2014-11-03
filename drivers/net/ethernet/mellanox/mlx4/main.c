@@ -3096,6 +3096,8 @@ static int mlx4_init_one(struct pci_dev *pdev, const struct pci_device_id *id)
 	ret =  __mlx4_init_one(pdev, id->driver_data, priv);
 	if (ret)
 		kfree(priv);
+	else
+		pci_save_state(pdev);
 
 	return ret;
 }
@@ -3319,7 +3321,17 @@ MODULE_DEVICE_TABLE(pci, mlx4_pci_table);
 static pci_ers_result_t mlx4_pci_err_detected(struct pci_dev *pdev,
 					      pci_channel_state_t state)
 {
-	mlx4_unload_one(pdev);
+	struct mlx4_dev  *dev  = pci_get_drvdata(pdev);
+
+	mlx4_err(dev, "mlx4_pci_err_detected was called\n");
+	mlx4_enter_error_state(dev);
+
+	mutex_lock(&dev->interface_state_mutex);
+	if (dev->interface_state & MLX4_INTERFACE_STATE_UP)
+		mlx4_unload_one(pdev);
+
+	mutex_unlock(&dev->interface_state_mutex);
+	pci_disable_device(pdev);
 
 	return state == pci_channel_io_perm_failure ?
 		PCI_ERS_RESULT_DISCONNECT : PCI_ERS_RESULT_NEED_RESET;
@@ -3330,10 +3342,52 @@ static pci_ers_result_t mlx4_pci_slot_reset(struct pci_dev *pdev)
 	struct mlx4_dev	 *dev  = pci_get_drvdata(pdev);
 	struct mlx4_priv *priv = mlx4_priv(dev);
 	int               ret;
+	int nvfs[MLX4_MAX_PORTS + 1] = {0, 0, 0};
+	int total_vfs;
 
-	ret = __mlx4_init_one(pdev, priv->pci_dev_data, priv);
+	mlx4_err(dev, "mlx4_pci_slot_reset was called\n");
+	ret = pci_enable_device(pdev);
+	if (ret) {
+		mlx4_err(dev, "Can not re-enable device, ret=%d\n", ret);
+		return PCI_ERS_RESULT_DISCONNECT;
+	}
+
+	pci_set_master(pdev);
+	pci_restore_state(pdev);
+	pci_save_state(pdev);
+
+	/* below stuff is persistent from the initial probe call */
+	total_vfs = dev->num_vfs;
+	memcpy(nvfs, dev->nvfs, sizeof(dev->nvfs));
+
+	mutex_lock(&dev->interface_state_mutex);
+	if (!(dev->interface_state & MLX4_INTERFACE_STATE_UP)) {
+		ret = mlx4_load_one(pdev, 0, total_vfs, nvfs, priv);
+		if (ret) {
+			mlx4_err(dev, "%s: mlx4_load_one failed, ret=%d\n",
+				 __func__,  ret);
+			goto end;
+		}
+
+		ret = restore_current_port_types(dev, dev->curr_port_type, dev->curr_port_poss_type);
+		if (ret)
+			mlx4_err(dev, "could not restore original port types (%d)\n", ret);
+	}
+end:
+	mutex_unlock(&dev->interface_state_mutex);
 
 	return ret ? PCI_ERS_RESULT_DISCONNECT : PCI_ERS_RESULT_RECOVERED;
+}
+
+static void mlx4_shutdown(struct pci_dev *pdev)
+{
+	struct mlx4_dev  *dev  = pci_get_drvdata(pdev);
+
+	mlx4_info(dev, "mlx4_shutdown was called\n");
+	mutex_lock(&dev->interface_state_mutex);
+	if (dev->interface_state & MLX4_INTERFACE_STATE_UP)
+		mlx4_unload_one(pdev);
+	mutex_unlock(&dev->interface_state_mutex);
 }
 
 static const struct pci_error_handlers mlx4_err_handler = {
@@ -3345,7 +3399,7 @@ static struct pci_driver mlx4_driver = {
 	.name		= DRV_NAME,
 	.id_table	= mlx4_pci_table,
 	.probe		= mlx4_init_one,
-	.shutdown	= mlx4_unload_one,
+	.shutdown	= mlx4_shutdown,
 	.remove		= mlx4_remove_one,
 	.err_handler    = &mlx4_err_handler,
 };
