@@ -632,6 +632,8 @@ struct mlx4_cq {
 
 	atomic_t		refcount;
 	struct completion	free;
+	int		reset_notify_added;
+	struct list_head	reset_notify;
 };
 
 struct mlx4_qp {
