@@ -188,6 +188,8 @@ struct ib_cq *mlx4_ib_create_cq(struct ib_device *ibdev, int entries, int vector
 	spin_lock_init(&cq->lock);
 	cq->resize_buf = NULL;
 	cq->resize_umem = NULL;
+	INIT_LIST_HEAD(&cq->list_send_qp);
+	INIT_LIST_HEAD(&cq->list_recv_qp);
 
 	if (context) {
 		struct mlx4_ib_create_cq ucmd;
@@ -591,6 +593,56 @@ static int use_tunnel_data(struct mlx4_ib_qp *qp, struct mlx4_ib_cq *cq, struct 
 	return 0;
 }
 
+static int mlx4_ib_qp_sw_comp(struct mlx4_ib_qp *qp, int num_entries,
+			      struct ib_wc *wc, int *npolled, int is_send)
+{
+	struct mlx4_ib_wq *wq;
+	unsigned cur;
+	int i;
+
+	wq = is_send ? &qp->sq : &qp->rq;
+	cur = wq->head - wq->tail;
+
+	if (cur == 0)
+		return 0;
+
+	for (i = 0;  i < cur && *npolled < num_entries; i++) {
+		wc->wr_id = wq->wrid[wq->tail & (wq->wqe_cnt - 1)];
+		wc->status = IB_WC_WR_FLUSH_ERR;
+		wc->vendor_err = MLX4_CQE_SYNDROME_WR_FLUSH_ERR;
+		wq->tail++;
+		(*npolled)++;
+		wc->qp = &qp->ibqp;
+		wc++;
+	}
+
+	return 0;
+}
+
+static int mlx4_ib_poll_sw_comp(struct mlx4_ib_cq *cq, int num_entries,
+				struct ib_wc *wc, int *npolled)
+{
+	int ret = 0;
+	struct mlx4_ib_qp *qp;
+
+	*npolled = 0;
+	/* Find uncompleted WQEs belonging to that cq and retrun mmics ones */
+	list_for_each_entry(qp, &cq->list_send_qp, cq_send_list) {
+		ret = mlx4_ib_qp_sw_comp(qp, num_entries, wc, npolled, 1);
+		if (ret || *npolled >= num_entries)
+			goto out;
+	}
+
+	list_for_each_entry(qp, &cq->list_recv_qp, cq_recv_list) {
+		ret = mlx4_ib_qp_sw_comp(qp, num_entries, wc + *npolled, npolled, 0);
+		if (ret || *npolled >= num_entries)
+			goto out;
+	}
+
+out:
+	return ret;
+}
+
 static int mlx4_ib_poll_one(struct mlx4_ib_cq *cq,
 			    struct mlx4_ib_qp **cur_qp,
 			    struct ib_wc *wc)
@@ -833,8 +885,13 @@ int mlx4_ib_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *wc)
 	unsigned long flags;
 	int npolled;
 	int err = 0;
+	struct mlx4_ib_dev *mdev = to_mdev(cq->ibcq.device);
 
 	spin_lock_irqsave(&cq->lock, flags);
+	if (mdev->dev->state & MLX4_DEVICE_STATE_INTERNAL_ERROR) {
+		err = mlx4_ib_poll_sw_comp(cq, num_entries, wc, &npolled);
+		goto out;
+	}
 
 	for (npolled = 0; npolled < num_entries; ++npolled) {
 		err = mlx4_ib_poll_one(cq, &cur_qp, wc + npolled);
@@ -844,6 +901,7 @@ int mlx4_ib_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *wc)
 
 	mlx4_cq_set_ci(&cq->mcq);
 
+out:
 	spin_unlock_irqrestore(&cq->lock, flags);
 
 	if (err == 0 || err == -EAGAIN)
