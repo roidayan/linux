@@ -999,6 +999,27 @@ static u32 mlx4_en_get_rxfh_key_size(struct net_device *netdev)
 	return MLX4_EN_RSS_KEY_SIZE;
 }
 
+static int mlx4_en_check_rxfh_func(struct net_device *dev, u8 hfunc)
+{
+	struct mlx4_en_priv *priv = netdev_priv(dev);
+
+	/* check if requested function is supported by the device */
+	if ((hfunc == ETH_RSS_HASH_TOP &&
+	     !(priv->mdev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_RSS_TOP)) ||
+	    (hfunc == ETH_RSS_HASH_XOR &&
+	     !(priv->mdev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_RSS_XOR)))
+		return -EINVAL;
+
+	priv->rss_hash_fn = hfunc;
+	if (hfunc == ETH_RSS_HASH_TOP && !(dev->features & NETIF_F_RXHASH))
+		en_warn(priv,
+			"Toeplitz hash function should be used in conjunction with RX hashing for optimal performance\n");
+	if (hfunc == ETH_RSS_HASH_XOR && (dev->features & NETIF_F_RXHASH))
+		en_warn(priv,
+			"Enabling both XOR Hash function and RX Hashing can limit RPS functionality\n");
+	return 0;
+}
+
 static int mlx4_en_get_rxfh(struct net_device *dev, u32 *ring_index, u8 *key,
 			    u8 *hfunc)
 {
@@ -1008,18 +1029,23 @@ static int mlx4_en_get_rxfh(struct net_device *dev, u32 *ring_index, u8 *key,
 	size_t n = priv->rx_ring_num;
 	int err = 0;
 
-	if (!ring_index)
+	if (!ring_index && !hfunc && !key)
 		return -EOPNOTSUPP;
 
-	rss_rings = priv->prof->rss_rings ?: priv->rx_ring_num;
-	rss_rings = 1 << ilog2(rss_rings);
+	if (ring_index) {
+		rss_rings = priv->prof->rss_rings ?: priv->rx_ring_num;
+		rss_rings = 1 << ilog2(rss_rings);
 
-	while (n--) {
-		ring_index[n] = rss_map->qps[n % rss_rings].qpn -
-			rss_map->base_qpn;
+		while (n--) {
+			ring_index[n] = rss_map->qps[n % rss_rings].qpn -
+				rss_map->base_qpn;
+		}
 	}
 	if (key)
 		memcpy(key, priv->rss_key, MLX4_EN_RSS_KEY_SIZE);
+	if (hfunc)
+		*hfunc = priv->rss_hash_fn;
+
 	return err;
 }
 
@@ -1036,7 +1062,7 @@ static int mlx4_en_set_rxfh(struct net_device *dev, const u32 *ring_index,
 	/* We require at least one supported parameter to be changed and no
 	 * change in any of the unsupported parameters
 	 */
-	if (!ring_index && !key || hfunc != ETH_RSS_HASH_NO_CHANGE)
+	if (!ring_index && !key && hfunc == ETH_RSS_HASH_NO_CHANGE)
 		return -EOPNOTSUPP;
 
 	/* Calculate RSS table size and make sure flows are spread evenly
@@ -1059,6 +1085,12 @@ static int mlx4_en_set_rxfh(struct net_device *dev, const u32 *ring_index,
 	if (!is_power_of_2(rss_rings))
 		return -EINVAL;
 
+	if (hfunc != ETH_RSS_HASH_NO_CHANGE) {
+		err = mlx4_en_check_rxfh_func(dev, hfunc);
+		if (err)
+			return err;
+	}
+
 	mutex_lock(&mdev->state_lock);
 	if (priv->port_up) {
 		port_up = 1;
@@ -1069,6 +1101,7 @@ static int mlx4_en_set_rxfh(struct net_device *dev, const u32 *ring_index,
 		priv->prof->rss_rings = rss_rings;
 	if (key)
 		memcpy(priv->rss_key, key, MLX4_EN_RSS_KEY_SIZE);
+
 	if (port_up) {
 		err = mlx4_en_start_port(dev);
 		if (err)
