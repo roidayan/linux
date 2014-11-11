@@ -42,7 +42,7 @@ enum {
 
 
 
-static int internal_err_reset = 1;
+int internal_err_reset = 1;
 module_param(internal_err_reset, int, 0644);
 MODULE_PARM_DESC(internal_err_reset,
 		 "Reset device on internal errors if non-zero"
@@ -108,6 +108,7 @@ void mlx4_enter_error_state(struct mlx4_dev *dev)
 
 	/* At that step HW was already reset, now notify clients */
 	mlx4_dispatch_event(dev, MLX4_DEV_EVENT_CATASTROPHIC_ERROR, 0);
+	mlx4_cmd_wake_completions(dev);
 	return;
 
 out:

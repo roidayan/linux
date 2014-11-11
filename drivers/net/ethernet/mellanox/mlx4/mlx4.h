@@ -234,6 +234,7 @@ do {									\
 
 extern int mlx4_log_num_mgm_entry_size;
 extern int log_mtts_per_seg;
+extern int internal_err_reset;
 
 #define MLX4_MAX_NUM_SLAVES	(MLX4_MAX_NUM_PF + MLX4_MAX_NUM_VF)
 #define ALL_SLAVES 0xff
@@ -606,7 +607,6 @@ struct mlx4_mgm {
 struct mlx4_cmd {
 	struct pci_pool	       *pool;
 	void __iomem	       *hcr;
-	struct mutex		hcr_mutex;
 	struct mutex		slave_cmd_mutex;
 	struct semaphore	poll_sem;
 	struct semaphore	event_sem;
