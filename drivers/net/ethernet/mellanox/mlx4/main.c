@@ -1508,6 +1508,48 @@ static void mlx4_close_fw(struct mlx4_dev *dev)
 	}
 }
 
+static int mlx4_comm_check_offline(struct mlx4_dev *dev)
+{
+#define COMM_CHAN_OFFLINE_OFFSET 0x09
+
+	u32 comm_flags;
+	u32 offline_bit;
+	unsigned long end;
+	struct mlx4_priv *priv = mlx4_priv(dev);
+
+	end = msecs_to_jiffies(MLX4_COMM_OFFLINE_TIME_OUT) + jiffies;
+	while (time_before(jiffies, end)) {
+		comm_flags = swab32(readl((void *)priv->mfunc.comm +
+					  MLX4_COMM_CHAN_FLAGS));
+		offline_bit = (comm_flags &
+			       (u32)(1 << COMM_CHAN_OFFLINE_OFFSET));
+		if (!offline_bit)
+			return 0;
+		/* There are cases as part of AER/Reset flow that PF needs around,
+		  * 100 milli seconds to load, letting other tasks on that CPU to run by that time.
+		*/
+		msleep(100);
+	}
+	mlx4_err(dev, "Communication channel is offline.\n");
+	return -EIO;
+}
+
+static void mlx4_reset_vf_support(struct mlx4_dev *dev)
+{
+#define COMM_CHAN_RST_OFFSET 0x1e
+
+	struct mlx4_priv *priv = mlx4_priv(dev);
+	u32 comm_rst;
+	u32 comm_caps;
+
+	comm_caps = swab32(readl((void *)priv->mfunc.comm +
+				 MLX4_COMM_CHAN_CAPS));
+	comm_rst = (comm_caps & (u32)(1 << COMM_CHAN_RST_OFFSET));
+
+	if (comm_rst)
+		dev->caps.vf_reset = 1;
+}
+
 static int mlx4_init_slave(struct mlx4_dev *dev)
 {
 	struct mlx4_priv *priv = mlx4_priv(dev);
@@ -1523,6 +1565,12 @@ static int mlx4_init_slave(struct mlx4_dev *dev)
 
 	mutex_lock(&priv->cmd.slave_cmd_mutex);
 	priv->cmd.max_cmds = 1;
+	if (mlx4_comm_check_offline(dev)) {
+		mlx4_err(dev, "PF is not responsive, skipping initialization\n");
+		goto err_offline;
+	}
+
+	mlx4_reset_vf_support(dev);
 	mlx4_warn(dev, "Sending reset\n");
 	ret_from_reset = mlx4_comm_cmd(dev, MLX4_COMM_CMD_RESET, 0,
 				       MLX4_COMM_TIME);
@@ -1566,6 +1614,7 @@ static int mlx4_init_slave(struct mlx4_dev *dev)
 
 err:
 	mlx4_comm_cmd(dev, MLX4_COMM_CMD_RESET, 0, 0);
+err_offline:
 	mutex_unlock(&priv->cmd.slave_cmd_mutex);
 	return -EIO;
 }
@@ -2401,6 +2450,7 @@ static int mlx4_load_one(struct pci_dev *pdev, int pci_dev_data,
 	int i;
 	struct mlx4_dev_cap *dev_cap = NULL;
 	int existing_vfs = 0;
+	int defer_loading_vfs = 1;
 
 	dev = &priv->dev;
 
@@ -2454,6 +2504,10 @@ static int mlx4_load_one(struct pci_dev *pdev, int pci_dev_data,
 			existing_vfs = pci_num_vf(pdev);
 			dev->flags = MLX4_FLAG_MASTER;
 			dev->num_vfs = total_vfs;
+			if (existing_vfs) {
+				dev->flags |=  MLX4_FLAG_SRIOV;
+				defer_loading_vfs = 0;
+			}
 		}
 	}
 
@@ -2552,7 +2606,7 @@ slave_start:
 			if (dev->flags & MLX4_FLAG_SRIOV) {
 				if (!existing_vfs)
 					pci_disable_sriov(pdev);
-				if (mlx4_is_master(dev))
+				if (mlx4_is_master(dev) && defer_loading_vfs)
 					atomic_dec(&pf_loading);
 				dev->flags &= ~MLX4_FLAG_SRIOV;
 			}
@@ -2676,6 +2730,14 @@ slave_start:
 		goto err_steer;
 
 	mlx4_init_quotas(dev);
+	/* Once PF resources are ready arm its comm channel to enable getting commands */
+	if (mlx4_is_master(dev)) {
+		err = mlx4_ARM_COMM_CHANNEL(dev);
+		if (err) {
+			mlx4_err(dev, " Failed to arm comm channel eq: %x\n", err);
+			goto err_steer;
+		}
+	}
 
 	for (port = 1; port <= dev->caps.num_ports; port++) {
 		err = mlx4_init_port_info(dev, port);
@@ -2694,7 +2756,7 @@ slave_start:
 
 	priv->removed = 0;
 
-	if (mlx4_is_master(dev) && dev->num_vfs)
+	if (mlx4_is_master(dev) && dev->num_vfs && defer_loading_vfs)
 		atomic_dec(&pf_loading);
 
 	return 0;
@@ -2755,7 +2817,7 @@ err_sriov:
 	if (dev->flags & MLX4_FLAG_SRIOV && !existing_vfs)
 		pci_disable_sriov(pdev);
 
-	if (mlx4_is_master(dev) && dev->num_vfs)
+	if (mlx4_is_master(dev) && dev->num_vfs && defer_loading_vfs)
 		atomic_dec(&pf_loading);
 
 	kfree(priv->dev.dev_vfs);
