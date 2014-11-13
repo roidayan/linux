@@ -511,6 +511,7 @@ struct mlx4_caps {
 	u64			phys_port_id[MLX4_MAX_PORTS + 1];
 	int			tunnel_offload_mode;
 	u8			rx_checksum_flags_port[MLX4_MAX_PORTS + 1];
+	u8			vf_reset;
 };
 
 struct mlx4_buf_list {
