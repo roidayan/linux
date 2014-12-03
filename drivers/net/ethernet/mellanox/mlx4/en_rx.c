@@ -890,6 +890,8 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
 			gro_skb->len = length;
 			gro_skb->data_len = length;
 			gro_skb->ip_summed = ip_summed;
+			if (l2_tunnel && ip_summed == CHECKSUM_UNNECESSARY)
+				gro_skb->csum_level = 1;
 
 			if (l2_tunnel && ip_summed == CHECKSUM_UNNECESSARY)
 				gro_skb->encapsulation = 1;
