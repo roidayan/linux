@@ -1046,7 +1046,7 @@ int mlx4_QUERY_DEV_CAP_wrapper(struct mlx4_dev *dev, int slave,
 	u64	flags;
 	int	err = 0;
 	u8	field;
-	u32	bmme_flags;
+	u32	bmme_flags, field32;
 	int	real_port;
 	int	slave_port;
 	int	first_port;
@@ -1116,6 +1116,11 @@ int mlx4_QUERY_DEV_CAP_wrapper(struct mlx4_dev *dev, int slave,
 	MLX4_GET(field, outbox->buf, QUERY_DEV_CAP_FLOW_STEERING_IPOIB_OFFSET);
 	field &= ~0x80;
 	MLX4_PUT(outbox->buf, field, QUERY_DEV_CAP_FLOW_STEERING_IPOIB_OFFSET);
+
+	/* turn off host side virt features (VST, FSM, etc) for guests */
+	MLX4_GET(field32, outbox->buf, QUERY_DEV_CAP_EXT_2_FLAGS_OFFSET);
+	field32 &= ~((1 << 26) | (1 << 21) | (1 << 20));
+	MLX4_PUT(outbox->buf, field32, QUERY_DEV_CAP_EXT_2_FLAGS_OFFSET);
 
 	return 0;
 }
