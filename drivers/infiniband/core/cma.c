@@ -245,7 +245,6 @@ struct cma_work {
 struct cma_ndev_work {
 	struct work_struct	work;
 	struct rdma_id_private	*id;
-	struct rdma_cm_event	event;
 };
 
 struct iboe_mcast_work {
@@ -2021,10 +2020,46 @@ out:
 	kfree(work);
 }
 
-static void cma_ndev_work_handler(struct work_struct *_work)
+static int cma_remove_id_dev(struct rdma_id_private *id_priv)
+{
+	struct rdma_cm_event event;
+	enum rdma_cm_state state;
+	int ret = 0;
+
+	/* Record that we want to remove the device */
+	state = cma_exch(id_priv, RDMA_CM_DEVICE_REMOVAL);
+	if (state == RDMA_CM_DESTROYING)
+		return 0;
+
+	cma_cancel_operation(id_priv, state);
+	mutex_lock(&id_priv->handler_mutex);
+
+	/* Check for destruction from another callback. */
+	if (!cma_comp(id_priv, RDMA_CM_DEVICE_REMOVAL))
+		goto out;
+
+	memset(&event, 0, sizeof(event));
+	event.event = RDMA_CM_EVENT_DEVICE_REMOVAL;
+	ret = id_priv->id.event_handler(&id_priv->id, &event);
+out:
+	mutex_unlock(&id_priv->handler_mutex);
+	return ret;
+}
+
+static void cma_ndev_device_remove_work_handler(struct work_struct *_work)
 {
 	struct cma_ndev_work *work = container_of(_work, struct cma_ndev_work, work);
 	struct rdma_id_private *id_priv = work->id;
+
+	cma_remove_id_dev(id_priv);
+	cma_deref_id(id_priv);
+}
+
+static void cma_ndev_addr_change_work_handler(struct work_struct *_work)
+{
+	struct cma_ndev_work *work = container_of(_work, struct cma_ndev_work, work);
+	struct rdma_id_private *id_priv = work->id;
+	struct rdma_cm_event event;
 	int destroy = 0;
 
 	mutex_lock(&id_priv->handler_mutex);
@@ -2032,7 +2067,9 @@ static void cma_ndev_work_handler(struct work_struct *_work)
 	    id_priv->state == RDMA_CM_DEVICE_REMOVAL)
 		goto out;
 
-	if (id_priv->id.event_handler(&id_priv->id, &work->event)) {
+	memset(&event, 0, sizeof(event));
+	event.event = RDMA_CM_EVENT_ADDR_CHANGE;
+	if (id_priv->id.event_handler(&id_priv->id, &event)) {
 		cma_exch(id_priv, RDMA_CM_DESTROYING);
 		destroy = 1;
 	}
@@ -3762,27 +3799,60 @@ void rdma_leave_multicast(struct rdma_cm_id *id, struct sockaddr *addr)
 }
 EXPORT_SYMBOL(rdma_leave_multicast);
 
-static int cma_netdev_change(struct net_device *ndev, struct rdma_id_private *id_priv)
+static int cma_netdev_change(struct net_device *ndev, unsigned long event,
+			     struct rdma_id_private *id_priv)
 {
 	struct rdma_dev_addr *dev_addr;
 	struct cma_ndev_work *work;
+	enum rdma_link_layer dev_ll;
+	struct net_device *bounded_dev;
+	work_func_t work_func;
 
 	dev_addr = &id_priv->id.route.addr.dev_addr;
 
-	if ((dev_addr->bound_dev_if == ndev->ifindex) &&
-	    memcmp(dev_addr->src_dev_addr, ndev->dev_addr, ndev->addr_len)) {
-		printk(KERN_INFO "RDMA CM addr change for ndev %s used by id %p\n",
-		       ndev->name, &id_priv->id);
-		work = kzalloc(sizeof *work, GFP_KERNEL);
-		if (!work)
-			return -ENOMEM;
+	switch (event) {
+	case NETDEV_BONDING_FAILOVER:
+		if (!(ndev->flags & IFF_MASTER) ||
+		    !(ndev->priv_flags & IFF_BONDING))
+			return 0;
+		if (dev_addr->bound_dev_if != ndev->ifindex)
+			return 0;
+		if (!memcmp(dev_addr->src_dev_addr,
+			    ndev->dev_addr, ndev->addr_len))
+			return 0;
+		work_func = cma_ndev_addr_change_work_handler;
+		pr_info("RDMA CM addr change for %s used by id %p\n",
+			ndev->name, &id_priv->id);
+		break;
+	case NETDEV_UNREGISTER:
+		dev_ll = dev_addr->dev_type == ARPHRD_INFINIBAND ?
+			IB_LINK_LAYER_INFINIBAND : IB_LINK_LAYER_ETHERNET;
+		if (dev_ll != IB_LINK_LAYER_ETHERNET)
+			return 0;
 
-		INIT_WORK(&work->work, cma_ndev_work_handler);
-		work->id = id_priv;
-		work->event.event = RDMA_CM_EVENT_ADDR_CHANGE;
-		atomic_inc(&id_priv->refcount);
-		queue_work(cma_wq, &work->work);
+		bounded_dev = __dev_get_by_index(&init_net, dev_addr->bound_dev_if);
+		if (!bounded_dev)
+			return 0;
+
+		if (!((bounded_dev == ndev) ||
+		      netdev_has_upper_dev(ndev, bounded_dev)))
+			return 0;
+
+		work_func = cma_ndev_device_remove_work_handler;
+		break;
+
+	default:
+		return 0;
 	}
+
+	work = kzalloc(sizeof(*work), GFP_ATOMIC);
+	if (!work)
+		return -ENOMEM;
+
+	INIT_WORK(&work->work, work_func);
+	work->id = id_priv;
+	atomic_inc(&id_priv->refcount);
+	queue_work(cma_wq, &work->work);
 
 	return 0;
 }
@@ -3798,16 +3868,14 @@ static int cma_netdev_callback(struct notifier_block *self, unsigned long event,
 	if (dev_net(ndev) != &init_net)
 		return NOTIFY_DONE;
 
-	if (event != NETDEV_BONDING_FAILOVER)
-		return NOTIFY_DONE;
-
-	if (!(ndev->flags & IFF_MASTER) || !(ndev->priv_flags & IFF_BONDING))
+	if (event != NETDEV_BONDING_FAILOVER &&
+	    event != NETDEV_UNREGISTER)
 		return NOTIFY_DONE;
 
 	mutex_lock(&lock);
 	list_for_each_entry(cma_dev, &dev_list, list)
 		list_for_each_entry(id_priv, &cma_dev->id_list, list) {
-			ret = cma_netdev_change(ndev, id_priv);
+			ret = cma_netdev_change(ndev, event, id_priv);
 			if (ret)
 				goto out;
 		}
@@ -3843,32 +3911,6 @@ static void cma_add_one(struct ib_device *device)
 	list_for_each_entry(id_priv, &listen_any_list, list)
 		cma_listen_on_dev(id_priv, cma_dev);
 	mutex_unlock(&lock);
-}
-
-static int cma_remove_id_dev(struct rdma_id_private *id_priv)
-{
-	struct rdma_cm_event event;
-	enum rdma_cm_state state;
-	int ret = 0;
-
-	/* Record that we want to remove the device */
-	state = cma_exch(id_priv, RDMA_CM_DEVICE_REMOVAL);
-	if (state == RDMA_CM_DESTROYING)
-		return 0;
-
-	cma_cancel_operation(id_priv, state);
-	mutex_lock(&id_priv->handler_mutex);
-
-	/* Check for destruction from another callback. */
-	if (!cma_comp(id_priv, RDMA_CM_DEVICE_REMOVAL))
-		goto out;
-
-	memset(&event, 0, sizeof event);
-	event.event = RDMA_CM_EVENT_DEVICE_REMOVAL;
-	ret = id_priv->id.event_handler(&id_priv->id, &event);
-out:
-	mutex_unlock(&id_priv->handler_mutex);
-	return ret;
 }
 
 static void cma_process_remove(struct cma_device *cma_dev)
