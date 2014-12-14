@@ -545,6 +545,7 @@ struct mlx4_caps {
 	u8			alloc_res_qp_mask;
 	u32			dmfs_high_rate_qpn_base;
 	u32			dmfs_high_rate_qpn_range;
+	u8			vf_reset;
 };
 
 struct mlx4_buf_list {
