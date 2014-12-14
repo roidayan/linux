@@ -1350,6 +1350,8 @@ static int mlx4_QP_ATTACH(struct mlx4_dev *dev, struct mlx4_qp *qp,
 		       MLX4_CMD_WRAPPED);
 
 	mlx4_free_cmd_mailbox(dev, mailbox);
+	if (err && !attach && dev->state & MLX4_DEVICE_STATE_INTERNAL_ERROR)
+		err = 0;
 	return err;
 }
 
