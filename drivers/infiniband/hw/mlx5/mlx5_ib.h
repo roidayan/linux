@@ -452,6 +452,8 @@ struct mlx5_mr_cache {
 	int			stopped;
 	struct dentry		*root;
 	unsigned long		last_add;
+	int			rel_timeout;
+	int			rel_imm;
 };
 
 struct mlx5_ib_resources {
@@ -487,7 +489,7 @@ struct mlx5_ib_dev {
 	 */
 	struct srcu_struct      mr_srcu;
 #endif
-	struct kobject               *mr_cache;
+	struct kobject               mr_cache;
 	/* protect resources needed as part of reset flow */
 	spinlock_t		reset_flow_resource_lock;
 	struct list_head	qp_list;
