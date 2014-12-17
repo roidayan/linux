@@ -63,6 +63,10 @@
 		(udata)->outlen = (olen);					\
 	} while (0)
 
+enum uverbs_flags {
+	UVERBS_FLAG_DISASSOCIATE = 1
+};
+
 /*
  * Our lifetime rules for these structs are the following:
  *
@@ -94,6 +98,12 @@ struct ib_uverbs_device {
 	struct cdev			        cdev;
 	struct rb_root				xrcd_tree;
 	struct mutex				xrcd_tree_mutex;
+	struct mutex				disassociate_mutex; /* protect lists of files. */
+	int					disassociated;
+	u32					flags;
+	struct srcu_struct			disassociate_srcu;
+	struct list_head			uverbs_file_list;
+	struct list_head			uverbs_events_file_list;
 };
 
 struct ib_uverbs_event_file {
@@ -105,6 +115,7 @@ struct ib_uverbs_event_file {
 	wait_queue_head_t			poll_wait;
 	struct fasync_struct		       *async_queue;
 	struct list_head			event_list;
+	struct list_head			list;
 };
 
 struct ib_uverbs_file {
@@ -114,6 +125,7 @@ struct ib_uverbs_file {
 	struct ib_ucontext		       *ucontext;
 	struct ib_event_handler			event_handler;
 	struct ib_uverbs_event_file	       *async_file;
+	struct list_head			list;
 };
 
 struct ib_uverbs_event {
