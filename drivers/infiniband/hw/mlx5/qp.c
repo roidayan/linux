@@ -2533,6 +2533,7 @@ static int begin_wqe(struct mlx5_ib_qp *qp, void **seg,
 	int err = 0;
 
 	if (unlikely(mlx5_wq_overflow(&qp->sq, nreq, qp->ibqp.send_cq))) {
+		mlx5_ib_warn(to_mdev(qp->ibqp.device), "work queue overflow\n");
 		err = -ENOMEM;
 		return err;
 	}
@@ -2606,7 +2607,7 @@ int mlx5_ib_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 
 	for (nreq = 0; wr; nreq++, wr = wr->next) {
 		if (unlikely(wr->opcode >= ARRAY_SIZE(mlx5_ib_opcode))) {
-			mlx5_ib_warn(dev, "\n");
+			mlx5_ib_warn(dev, "Ivalid opcode 0x%x\n", wr->opcode);
 			err = -EINVAL;
 			*bad_wr = wr;
 			goto out;
@@ -2615,7 +2616,7 @@ int mlx5_ib_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 		fence = qp->fm_cache;
 		num_sge = wr->num_sge;
 		if (unlikely(num_sge > qp->sq.max_gs)) {
-			mlx5_ib_warn(dev, "\n");
+			mlx5_ib_warn(dev, "Max gs exceeded %d (max = %d)\n", wr->num_sge, qp->sq.max_gs);
 			err = -ENOMEM;
 			*bad_wr = wr;
 			goto out;
@@ -2623,7 +2624,7 @@ int mlx5_ib_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 
 		err = begin_wqe(qp, &seg, &ctrl, wr, &idx, &size, nreq);
 		if (err) {
-			mlx5_ib_warn(dev, "\n");
+			mlx5_ib_warn(dev, "Failed to prepare WQE\n");
 			err = -ENOMEM;
 			*bad_wr = wr;
 			goto out;
@@ -2661,7 +2662,7 @@ int mlx5_ib_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 				ctrl->imm = cpu_to_be32(wr->ex.invalidate_rkey);
 				err = set_frwr_li_wr(&seg, wr, &size, mdev, to_mpd(ibqp->pd), qp);
 				if (err) {
-					mlx5_ib_warn(dev, "\n");
+					mlx5_ib_warn(dev, "Failed to prepare LOCAL_INV WQE\n");
 					*bad_wr = wr;
 					goto out;
 				}
@@ -2674,7 +2675,7 @@ int mlx5_ib_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 				ctrl->imm = cpu_to_be32(wr->wr.fast_reg.rkey);
 				err = set_frwr_li_wr(&seg, wr, &size, mdev, to_mpd(ibqp->pd), qp);
 				if (err) {
-					mlx5_ib_warn(dev, "\n");
+					mlx5_ib_warn(dev, "Failed to prepare FAST_REG_MR WQE\n");
 					*bad_wr = wr;
 					goto out;
 				}
@@ -2688,7 +2689,7 @@ int mlx5_ib_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 				ctrl->imm = cpu_to_be32(mr->ibmr.rkey);
 				err = set_sig_umr_wr(wr, qp, &seg, &size);
 				if (err) {
-					mlx5_ib_warn(dev, "\n");
+					mlx5_ib_warn(dev, "Failed to prepare REG_SIG_MR WQE\n");
 					*bad_wr = wr;
 					goto out;
 				}
@@ -2705,7 +2706,7 @@ int mlx5_ib_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 				err = begin_wqe(qp, &seg, &ctrl, wr,
 						&idx, &size, nreq);
 				if (err) {
-					mlx5_ib_warn(dev, "\n");
+					mlx5_ib_warn(dev, "Failed to prepare REG_SIG_MR WQE\n");
 					err = -ENOMEM;
 					*bad_wr = wr;
 					goto out;
@@ -2715,7 +2716,7 @@ int mlx5_ib_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 						 mr->sig->psv_memory.psv_idx, &seg,
 						 &size);
 				if (err) {
-					mlx5_ib_warn(dev, "\n");
+					mlx5_ib_warn(dev, "Failed to prepare REG_SIG_MR WQE\n");
 					*bad_wr = wr;
 					goto out;
 				}
@@ -2726,7 +2727,7 @@ int mlx5_ib_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 				err = begin_wqe(qp, &seg, &ctrl, wr,
 						&idx, &size, nreq);
 				if (err) {
-					mlx5_ib_warn(dev, "\n");
+					mlx5_ib_warn(dev, "Failed to prepare REG_SIG_MR WQE\n");
 					err = -ENOMEM;
 					*bad_wr = wr;
 					goto out;
@@ -2737,7 +2738,7 @@ int mlx5_ib_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 						 mr->sig->psv_wire.psv_idx, &seg,
 						 &size);
 				if (err) {
-					mlx5_ib_warn(dev, "\n");
+					mlx5_ib_warn(dev, "Failed to prepare REG_SIG_MR WQE\n");
 					*bad_wr = wr;
 					goto out;
 				}
@@ -2807,7 +2808,7 @@ int mlx5_ib_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 
 			err = set_data_inl_seg(qp, wr, seg, &sz);
 			if (unlikely(err)) {
-				mlx5_ib_warn(dev, "\n");
+				mlx5_ib_warn(dev, "Failed to prepare inline data segment\n");
 				*bad_wr = wr;
 				goto out;
 			}
