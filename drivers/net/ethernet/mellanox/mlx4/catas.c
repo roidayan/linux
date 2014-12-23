@@ -48,6 +48,81 @@ MODULE_PARM_DESC(internal_err_reset,
 		 "Reset device on internal errors if non-zero"
 		 " (default 1, in SRIOV mode default is 0)");
 
+static int read_vendor_id(struct mlx4_dev *dev)
+{
+	u16 vendor_id = 0;
+	int ret;
+
+	ret = pci_read_config_word(dev->pdev, 0, &vendor_id);
+	if (ret) {
+		mlx4_err(dev, "Failed to read vendor ID, ret=%d\n", ret);
+		return ret;
+	}
+
+	if (vendor_id == 0xffff) {
+		mlx4_err(dev, "PCI can't be accessed to read vendor id\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int mlx4_reset_master(struct mlx4_dev *dev)
+{
+	int err = 0;
+
+	if (!pci_channel_offline(dev->pdev)) {
+		err = read_vendor_id(dev);
+		/* If PCI can't be accessed to read vendor ID we assume that its
+		 * link was disabled and chip was already reset.
+		 */
+		if (err)
+			return 0;
+
+		err = mlx4_reset(dev);
+		if (err)
+			mlx4_err(dev, "Fail to reset HCA\n");
+	}
+
+	return err;
+}
+
+void mlx4_enter_error_state(struct mlx4_dev *dev)
+{
+	int err;
+
+	if (!internal_err_reset)
+		return;
+
+	mutex_lock(&dev->device_state_mutex);
+	if (dev->state & MLX4_DEVICE_STATE_INTERNAL_ERROR)
+		goto out;
+
+	mlx4_err(dev, "device is going to be reset\n");
+	err = mlx4_reset_master(dev);
+	BUG_ON(err != 0);
+
+	dev->state |= MLX4_DEVICE_STATE_INTERNAL_ERROR;
+	mlx4_err(dev, "device was reset successfully\n");
+	mutex_unlock(&dev->device_state_mutex);
+
+	/* At that step HW was already reset, now notify clients */
+	mlx4_dispatch_event(dev, MLX4_DEV_EVENT_CATASTROPHIC_ERROR, 0);
+	return;
+
+out:
+	mutex_unlock(&dev->device_state_mutex);
+}
+
+static void mlx4_handle_error_state(struct mlx4_dev *dev)
+{
+	int err = 0;
+
+	mlx4_enter_error_state(dev);
+	err = mlx4_restart_one(dev->pdev);
+	mlx4_info(dev, "mlx4_restart_one was ended, ret=%d\n", err);
+}
+
 static void dump_err_buf(struct mlx4_dev *dev)
 {
 	struct mlx4_priv *priv = mlx4_priv(dev);
@@ -66,41 +141,29 @@ static void poll_catas(unsigned long dev_ptr)
 	struct mlx4_priv *priv = mlx4_priv(dev);
 
 	if (readl(priv->catas_err.map)) {
-		/* If the device is off-line, we cannot try to recover it */
-		if (pci_channel_offline(dev->pdev))
-			mod_timer(&priv->catas_err.timer,
-				  round_jiffies(jiffies + MLX4_CATAS_POLL_INTERVAL));
-		else {
-			dump_err_buf(dev);
-			mlx4_dispatch_event(dev, MLX4_DEV_EVENT_CATASTROPHIC_ERROR, 0);
+		dump_err_buf(dev);
+		goto internal_err;
+	}
 
-			if (internal_err_reset)
-				queue_work(dev->catas_wq, &dev->catas_work);
-		}
-	} else
-		mod_timer(&priv->catas_err.timer,
-			  round_jiffies(jiffies + MLX4_CATAS_POLL_INTERVAL));
+	if (dev->state & MLX4_DEVICE_STATE_INTERNAL_ERROR) {
+		mlx4_warn(dev, "Internal error mark was detected on device\n");
+		goto internal_err;
+	}
+
+	mod_timer(&priv->catas_err.timer,
+		  round_jiffies(jiffies + MLX4_CATAS_POLL_INTERVAL));
+	return;
+
+internal_err:
+	if (internal_err_reset)
+		queue_work(dev->catas_wq, &dev->catas_work);
 }
 
 static void catas_reset(struct work_struct *work)
 {
 	struct mlx4_dev *dev = container_of(work, struct mlx4_dev, catas_work);
-	struct pci_dev *pdev = dev->pdev;
-	int ret;
 
-	/* If the device is off-line, we cannot reset it */
-	if (pci_channel_offline(pdev))
-		return;
-
-	ret = mlx4_restart_one(pdev);
-	/* 'priv' now is not valid */
-	if (ret)
-		pr_err("mlx4 %s: Reset failed (%d)\n",
-		       pci_name(pdev), ret);
-	else {
-		dev  = pci_get_drvdata(pdev);
-		mlx4_dbg(dev, "Reset succeeded\n");
-	}
+	mlx4_handle_error_state(dev);
 }
 
 void mlx4_start_catas_poll(struct mlx4_dev *dev)
