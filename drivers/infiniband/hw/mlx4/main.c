@@ -1841,6 +1841,7 @@ static void mlx4_ib_scan_netdevs(struct mlx4_ib_dev *ibdev,
 	mlx4_foreach_ib_transport_port(port, ibdev->dev) {
 		enum ib_port_state	port_state = IB_PORT_NOP;
 		struct net_device *old_master = iboe->masters[port - 1];
+		struct net_device *old_netdev = iboe->netdevs[port - 1];
 		struct net_device *curr_netdev;
 		struct net_device *curr_master;
 
@@ -1900,6 +1901,11 @@ static void mlx4_ib_scan_netdevs(struct mlx4_ib_dev *ibdev,
 
 			if (!curr_master && (old_master != curr_master)) {
 				reset_gid_table(ibdev, port);
+				mlx4_ib_set_default_gid(ibdev,
+							curr_netdev, port);
+				mlx4_ib_get_dev_addr(curr_netdev, ibdev, port);
+			}
+			if (!old_netdev && !curr_master) {
 				mlx4_ib_set_default_gid(ibdev,
 							curr_netdev, port);
 				mlx4_ib_get_dev_addr(curr_netdev, ibdev, port);
