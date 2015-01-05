@@ -1,0 +1,79 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+# Sample debian/rules that uses debhelper.
+# This file was originally written by Joey Hess and Craig Small.
+# As a special exception, when this file is copied by dh-make into a
+# dh-make output file, you may use that output file without restriction.
+# This special exception was added by Craig Small in version 0.37 of dh-make.
+#
+# This version is for a hypothetical package that can build a kernel modules
+# architecture-dependant package via make-kpkg, as well as an
+# architecture-independent module source package, and other packages
+# either dep/indep for things like common files or userspace components
+# needed for the kernel modules.
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+
+pname:=mlnx-en
+psource:=$(pname)
+pdkms:=$(pname)-dkms
+putils:=$(pname)-utils
+
+pversion := $(shell dpkg-parsechangelog | sed -n 's/^Version: *\([^-]\+\)-.\+/\1/p')
+
+export INSTALL_MOD_DIR:=updates
+export INSTALL_MOD_PATH:=$(CURDIR)/debian/$(pname)
+
+DIST_NAME := $(shell lsb_release -si)
+DIST_RELEASE := $(DIST_NAME)/$(shell lsb_release -sc)
+ifndef KVERS
+	KVERS := $(shell uname -r)
+endif
+
+%:
+	dh $@ --with dkms
+
+override_dh_auto_clean:
+
+override_dh_auto_configure:
+	
+
+override_dh_auto_build:
+
+override_dh_auto_test:
+
+override_dh_auto_install:
+	# For dkms
+	dh_installdirs -p$(pdkms)	usr/src/$(pname)-$(pversion)
+
+	cp -a LICENSE		debian/$(pdkms)/usr/src/$(pname)-$(pversion)
+	cp -a makefile		debian/$(pdkms)/usr/src/$(pname)-$(pversion)
+	cp -a Makefile		debian/$(pdkms)/usr/src/$(pname)-$(pversion)
+	cp -a backports		debian/$(pdkms)/usr/src/$(pname)-$(pversion)
+	cp -a compat*		debian/$(pdkms)/usr/src/$(pname)-$(pversion)
+	cp -a dkms.conf		debian/$(pdkms)/usr/src/$(pname)-$(pversion)
+	cp -a drivers		debian/$(pdkms)/usr/src/$(pname)-$(pversion)
+	cp -a include		debian/$(pdkms)/usr/src/$(pname)-$(pversion)
+	cp -a ofed_scripts	debian/$(pdkms)/usr/src/$(pname)-$(pversion)
+	cp -a patches		debian/$(pdkms)/usr/src/$(pname)-$(pversion)
+	cp -a scripts		debian/$(pdkms)/usr/src/$(pname)-$(pversion)
+
+	# For utils
+	dh_installdirs -p$(putils)  etc
+	dh_installdirs -p$(putils)  etc/init
+	dh_installdirs -p$(putils)  etc/init.d
+	dh_installdirs -p$(putils)  sbin
+	dh_installdirs -p$(putils)  usr/sbin
+
+	install -m 0755 ofed_scripts/sysctl_perf_tuning		debian/$(putils)/sbin
+	install -m 0755 ofed_scripts/mlnx_tune			debian/$(putils)/usr/sbin
+	install -m 0755 ofed_scripts/*affinity*			debian/$(putils)/usr/sbin
+	install -m 0755 ofed_scripts/net-interfaces            debian/$(putils)/usr/sbin
+	install -m 0644 debian/mlnx-en.upstart			debian/$(putils)/etc/init/mlnx-en.conf
+	install -m 0755 scripts/mlnx-en.d_deb						debian/$(putils)/etc/init.d/mlnx-en.d
+	install -m 0644 scripts/mlnx-en.conf					debian/$(putils)/etc/mlnx-en.conf
+
+	cd ofed_scripts/utils;	python ./setup.py install --prefix=/usr --root=../../debian/$(putils)
+
+override_dh_installinit:

@@ -1,0 +1,77 @@
+#!/bin/bash
+
+remove_backports=0
+remove_linux=0
+
+usage()
+{
+	echo Usage:
+	echo "    $0 <options>"
+	echo
+	echo "Options:"
+	echo "    --remove-backports               Remove the backports branch, and checkout the LINUX branch."
+	echo "    --remove-linux                   Remove the LINUX branch, and checkout the original branch."
+	echo "                                     Implies --remove-backports."
+}
+
+parse_args()
+{
+	while test $# -gt 0
+	do
+		arg=$1
+		shift
+		case "$arg" in
+			"--remove-backports")
+			remove_backports=1
+			;;
+			"--remove-linux")
+			remove_linux=1
+			remove_backports=1
+			;;
+			*)
+			usage
+			exit 1
+			;;
+		esac
+	done
+}
+
+############
+# main
+
+parse_args $@
+
+if [ $remove_backports -eq 0 ]; then
+	usage
+	exit 1
+fi
+
+echo
+echo "Will remove the backports branch, and checkout the LINUX branch.."
+echo
+current_branch=`git rev-parse --abbrev-ref HEAD`
+orig_branch=`echo $current_branch | sed -e 's/backport-//'`
+branch=${orig_branch}
+make clean
+git am --abort
+git reset --hard
+if [ "$branch" != "$current_branch" ]; then
+    git checkout $branch
+    git branch -D $current_branch
+fi
+/bin/rm -f backports_applied
+
+if [ $remove_linux -eq 1 ]; then
+	# we assume that we are at the LINUX branch now.
+	echo
+	echo "Will remove the LINUX branch, and checkout the original branch.."
+	echo
+	current_branch=`git rev-parse --abbrev-ref HEAD`
+	orig_branch=`echo $current_branch | sed -e 's/LINUX-//'`
+	branch=${orig_branch}
+	if [ "$branch" != "$current_branch" ]; then
+		git checkout $branch
+		git branch -D $current_branch
+	fi
+	/bin/rm -rf code-metrics.txt compat_base_tree compat_base_tree_version compat_version
+fi

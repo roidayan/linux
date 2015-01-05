@@ -1,0 +1,38 @@
+From: Alaa Hleihel <alaa@mellanox.com>
+Subject: [PATCH] BACKPORT: rds
+
+Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
+---
+ net/rds/connection.c |   12 ++++++++++++
+ 1 files changed, 12 insertions(+), 0 deletions(-)
+
+diff --git a/net/rds/connection.c b/net/rds/connection.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/rds/connection.c
++++ b/net/rds/connection.c
+@@ -51,6 +51,7 @@ static struct kmem_cache *rds_conn_slab;
+ 
+ static struct hlist_head *rds_conn_bucket(__be32 laddr, __be32 faddr)
+ {
++#ifdef HAVE_NET_GET_RANDOM_ONCE
+ 	static u32 rds_hash_secret __read_mostly;
+ 
+ 	unsigned long hash;
+@@ -61,6 +62,17 @@ static struct hlist_head *rds_conn_bucket(__be32 laddr, __be32 faddr)
+ 	hash = __inet_ehashfn(be32_to_cpu(laddr), 0,
+ 			      be32_to_cpu(faddr), 0,
+ 			      rds_hash_secret);
++#else
++#ifdef HAVE_INET_EHASHFN
++	unsigned long hash = __inet_ehashfn(be32_to_cpu(laddr), 0,
++			be32_to_cpu(faddr), 0,
++			inet_ehash_secret);
++#else
++	unsigned long hash = inet_ehashfn(NULL,
++			be32_to_cpu(laddr), 0,
++			be32_to_cpu(faddr), 0);
++#endif
++#endif
+ 	return &rds_conn_hash[hash & RDS_CONNECTION_HASH_MASK];
+ }
+ 

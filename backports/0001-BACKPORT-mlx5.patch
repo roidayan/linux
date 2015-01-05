@@ -1,0 +1,145 @@
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Subject: [PATCH] BACKPORT: mlx5
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ drivers/net/ethernet/mellanox/mlx5/core/cmd.c  |   26 ++++++++++++++++++++++++
+ drivers/net/ethernet/mellanox/mlx5/core/main.c |   17 +++++++++++++++
+ include/linux/mlx5/driver.h                    |    5 ++++
+ 3 files changed, 48 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/ethernet/mellanox/mlx5/core/cmd.c b/drivers/net/ethernet/mellanox/mlx5/core/cmd.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx5/core/cmd.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/cmd.c
+@@ -512,7 +512,11 @@ static void cmd_work_handler(struct work_struct *work)
+ 	lay->status_own = CMD_OWNER_HW;
+ 	set_signature(ent, !cmd->checksum_disabled);
+ 	dump_command(dev, ent, 1);
++#ifdef HAVE_KTIME_GET_NS
+ 	ent->ts1 = ktime_get_ns();
++#else
++	ktime_get_ts(&ent->ts1);
++#endif
+ 
+ 	/* ring doorbell after the descriptor is valid */
+ 	wmb();
+@@ -602,6 +606,9 @@ static int mlx5_cmd_invoke(struct mlx5_core_dev *dev, struct mlx5_cmd_msg *in,
+ 	struct mlx5_cmd *cmd = &dev->cmd;
+ 	struct mlx5_cmd_work_ent *ent;
+ 	struct mlx5_cmd_stats *stats;
++#ifndef HAVE_KTIME_GET_NS
++	ktime_t t1, t2, delta;
++#endif
+ 	int err = 0;
+ 	s64 ds;
+ 	u16 op;
+@@ -631,7 +638,14 @@ static int mlx5_cmd_invoke(struct mlx5_core_dev *dev, struct mlx5_cmd_msg *in,
+ 		if (err == -ETIMEDOUT)
+ 			goto out;
+ 
++#ifdef HAVE_KTIME_GET_NS
+ 		ds = ent->ts2 - ent->ts1;
++#else
++		t1 = timespec_to_ktime(ent->ts1);
++		t2 = timespec_to_ktime(ent->ts2);
++		delta = ktime_sub(t2, t1);
++		ds = ktime_to_ns(delta);
++#endif
+ 		op = be16_to_cpu(((struct mlx5_inbox_hdr *)in->first.data)->opcode);
+ 		if (op < ARRAY_SIZE(cmd->stats)) {
+ 			stats = &cmd->stats[op];
+@@ -1095,6 +1109,7 @@ void mlx5_cmd_comp_handler(struct mlx5_core_dev *dev, unsigned long vector)
+ 	void *context;
+ 	int err;
+ 	int i;
++	ktime_t t1, t2, delta;
+ 	s64 ds;
+ 	struct mlx5_cmd_stats *stats;
+ 	unsigned long flags;
+@@ -1108,7 +1123,11 @@ void mlx5_cmd_comp_handler(struct mlx5_core_dev *dev, unsigned long vector)
+ 				sem = &cmd->pages_sem;
+ 			else
+ 				sem = &cmd->sem;
++#ifdef HAVE_KTIME_GET_NS
+ 			ent->ts2 = ktime_get_ns();
++#else
++			ktime_get_ts(&ent->ts2);
++#endif
+ 			memcpy(ent->out->first.data, ent->lay->out, sizeof(ent->lay->out));
+ 			dump_command(dev, ent, 0);
+ 			if (!ent->ret) {
+@@ -1122,7 +1141,14 @@ void mlx5_cmd_comp_handler(struct mlx5_core_dev *dev, unsigned long vector)
+ 			}
+ 			free_ent(cmd, ent->idx);
+ 			if (ent->callback) {
++#ifdef HAVE_KTIME_GET_NS
+ 				ds = ent->ts2 - ent->ts1;
++#else
++				t1 = timespec_to_ktime(ent->ts1);
++				t2 = timespec_to_ktime(ent->ts2);
++				delta = ktime_sub(t2, t1);
++				ds = ktime_to_ns(delta);
++#endif
+ 				if (ent->op < ARRAY_SIZE(cmd->stats)) {
+ 					stats = &cmd->stats[ent->op];
+ 					spin_lock_irqsave(&stats->lock, flags);
+diff --git a/drivers/net/ethernet/mellanox/mlx5/core/main.c b/drivers/net/ethernet/mellanox/mlx5/core/main.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx5/core/main.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/main.c
+@@ -211,6 +211,9 @@ static int mlx5_enable_msix(struct mlx5_core_dev *dev)
+ 	struct mlx5_eq_table *table = &dev->priv.eq_table;
+ 	int num_eqs = 1 << dev->caps.gen.log_max_eq;
+ 	int nvec;
++#ifndef HAVE_PCI_ENABLE_MSIX_RANGE
++	int err;
++#endif
+ 	int i;
+ 
+ 	nvec = dev->caps.gen.num_ports * num_online_cpus() + MLX5_EQ_VEC_COMP_BASE;
+@@ -225,12 +228,26 @@ static int mlx5_enable_msix(struct mlx5_core_dev *dev)
+ 	for (i = 0; i < nvec; i++)
+ 		table->msix_arr[i].entry = i;
+ 
++#ifdef HAVE_PCI_ENABLE_MSIX_RANGE
+ 	nvec = pci_enable_msix_range(dev->pdev, table->msix_arr,
+ 				     MLX5_EQ_VEC_COMP_BASE + 1, nvec);
+ 	if (nvec < 0)
+ 		return nvec;
+ 
+ 	table->num_comp_vectors = nvec - MLX5_EQ_VEC_COMP_BASE;
++#else
++retry:
++	table->num_comp_vectors = nvec - MLX5_EQ_VEC_COMP_BASE;
++	err = pci_enable_msix(dev->pdev, table->msix_arr, nvec);
++	if (err <= 0) {
++		return err;
++	} else if (err > 2) {
++		nvec = err;
++		goto retry;
++	}
++
++	mlx5_core_dbg(dev, "received %d MSI vectors out of %d requested\n", err, nvec);
++#endif
+ 
+ 	return 0;
+ }
+diff --git a/include/linux/mlx5/driver.h b/include/linux/mlx5/driver.h
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/include/linux/mlx5/driver.h
++++ b/include/linux/mlx5/driver.h
+@@ -571,8 +571,13 @@ struct mlx5_cmd_work_ent {
+ 	int			page_queue;
+ 	u8			status;
+ 	u8			token;
++#ifdef HAVE_KTIME_GET_NS
+ 	u64			ts1;
+ 	u64			ts2;
++#else
++	struct timespec ts1;
++	struct timespec ts2;
++#endif
+ 	u16			op;
+ };
+ 

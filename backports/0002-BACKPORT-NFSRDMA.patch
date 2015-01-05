@@ -1,0 +1,22 @@
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Subject: [PATCH] BACKPORT: NFSRDMA
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ net/sunrpc/xprtrdma/svc_rdma_transport.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/net/sunrpc/xprtrdma/svc_rdma_transport.c b/net/sunrpc/xprtrdma/svc_rdma_transport.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/sunrpc/xprtrdma/svc_rdma_transport.c
++++ b/net/sunrpc/xprtrdma/svc_rdma_transport.c
+@@ -92,7 +92,9 @@ struct svc_xprt_class svc_rdma_class = {
+ 	.xcl_owner = THIS_MODULE,
+ 	.xcl_ops = &svc_rdma_ops,
+ 	.xcl_max_payload = RPCSVC_MAXPAYLOAD_RDMA,
++#ifdef HAVE_XCL_IDENT
+ 	.xcl_ident = XPRT_TRANSPORT_RDMA,
++#endif
+ };
+ 
+ struct svc_rdma_op_ctxt *svc_rdma_get_context(struct svcxprt_rdma *xprt)

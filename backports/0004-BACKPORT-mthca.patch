@@ -1,0 +1,24 @@
+From: Alaa Hleihel <alaa@mellanox.com>
+Subject: [PATCH] BACKPORT: mthca
+
+Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
+---
+ drivers/infiniband/hw/mthca/mthca_main.c |    4 ++++
+ 1 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/infiniband/hw/mthca/mthca_main.c b/drivers/infiniband/hw/mthca/mthca_main.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/hw/mthca/mthca_main.c
++++ b/drivers/infiniband/hw/mthca/mthca_main.c
+@@ -858,7 +858,11 @@ static int mthca_enable_msi_x(struct mthca_dev *mdev)
+ 	entries[1].entry = 1;
+ 	entries[2].entry = 2;
+ 
++#ifdef HAVE_PCI_ENABLE_MSI_EXACT
+ 	err = pci_enable_msix_exact(mdev->pdev, entries, ARRAY_SIZE(entries));
++#else
++	err = pci_enable_msix(mdev->pdev, entries, ARRAY_SIZE(entries));
++#endif
+ 	if (err)
+ 		return err;
+ 

@@ -1,0 +1,80 @@
+From: Alaa Hleihel <alaa@mellanox.com>
+Subject: [PATCH] BACKPORT: iser
+
+Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
+---
+ drivers/infiniband/ulp/iser/iscsi_iser.c     |    6 ++++++
+ drivers/infiniband/ulp/iser/iser_initiator.c |    6 ++++++
+ 2 files changed, 12 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/infiniband/ulp/iser/iscsi_iser.c b/drivers/infiniband/ulp/iser/iscsi_iser.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/ulp/iser/iscsi_iser.c
++++ b/drivers/infiniband/ulp/iser/iscsi_iser.c
+@@ -381,6 +381,7 @@ static void iscsi_iser_cleanup_task(struct iscsi_task *task)
+ 	}
+ }
+ 
++#ifdef HAVE_ISCSI_CHECK_PROTECTION
+ /**
+  * iscsi_iser_check_protection() - check protection information status of task.
+  * @task:     iscsi task
+@@ -405,6 +406,7 @@ iscsi_iser_check_protection(struct iscsi_task *task, sector_t *sector)
+ 		return iser_check_task_pi_status(iser_task, ISER_DIR_OUT,
+ 						 sector);
+ }
++#endif
+ 
+ /**
+  * iscsi_iser_conn_create() - create a new iscsi-iser connection
+@@ -947,7 +949,9 @@ static umode_t iser_attr_is_visible(int param_type, int param)
+ 		case ISCSI_PARAM_TGT_RESET_TMO:
+ 		case ISCSI_PARAM_IFACE_NAME:
+ 		case ISCSI_PARAM_INITIATOR_NAME:
++#ifdef HAVE_ISCSI_PARAM_DISCOVERY_SESS
+ 		case ISCSI_PARAM_DISCOVERY_SESS:
++#endif
+ 			return S_IRUGO;
+ 		default:
+ 			return 0;
+@@ -1003,7 +1007,9 @@ static struct iscsi_transport iscsi_iser_transport = {
+ 	.xmit_task		= iscsi_iser_task_xmit,
+ 	.cleanup_task		= iscsi_iser_cleanup_task,
+ 	.alloc_pdu		= iscsi_iser_pdu_alloc,
++#ifdef HAVE_ISCSI_CHECK_PROTECTION
+ 	.check_protection	= iscsi_iser_check_protection,
++#endif
+ 	/* recovery */
+ 	.session_recovery_timedout = iscsi_session_recovery_timedout,
+ 
+diff --git a/drivers/infiniband/ulp/iser/iser_initiator.c b/drivers/infiniband/ulp/iser/iser_initiator.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/ulp/iser/iser_initiator.c
++++ b/drivers/infiniband/ulp/iser/iser_initiator.c
+@@ -342,7 +342,9 @@ static int iser_post_rx_bufs(struct iscsi_conn *conn, struct iscsi_hdr *req)
+ {
+ 	struct iser_conn *iser_conn = conn->dd_data;
+ 	struct ib_conn *ib_conn = &iser_conn->ib_conn;
++#ifdef HAVE_ISCSI_DISCOVERY_SESS
+ 	struct iscsi_session *session = conn->session;
++#endif
+ 
+ 	iser_dbg("req op %x flags %x\n", req->opcode, req->flags);
+ 	/* check if this is the last login - going to full feature phase */
+@@ -355,12 +357,16 @@ static int iser_post_rx_bufs(struct iscsi_conn *conn, struct iscsi_hdr *req)
+ 	 */
+ 	WARN_ON(ib_conn->post_recv_buf_count != 1);
+ 
++#ifdef HAVE_ISCSI_DISCOVERY_SESS
+ 	if (session->discovery_sess) {
+ 		iser_info("Discovery session, re-using login RX buffer\n");
+ 		return 0;
+ 	} else
+ 		iser_info("Normal session, posting batch of RX %d buffers\n",
+ 			  iser_conn->min_posted_rx);
++#else
++	iser_dbg("Initially post: %d\n", ISER_MIN_POSTED_RX);
++#endif
+ 
+ 	/* Initial post receive buffers */
+ 	if (iser_post_recvm(iser_conn, iser_conn->min_posted_rx))

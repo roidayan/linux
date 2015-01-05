@@ -1,0 +1,1065 @@
+From: Alaa Hleihel <alaa@mellanox.com>
+Subject: [PATCH] BACKPORT: eth_ipoib
+
+Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
+---
+ drivers/net/eipoib/eth_ipoib.h           |   11 +
+ drivers/net/eipoib/eth_ipoib_ethtool.c   |    9 +
+ drivers/net/eipoib/eth_ipoib_main.c      |  382 ++++++++++++++++++++++++++++--
+ drivers/net/eipoib/eth_ipoib_multicast.c |    4 +
+ drivers/net/eipoib/eth_ipoib_sysfs.c     |   47 ++++
+ 5 files changed, 437 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/net/eipoib/eth_ipoib.h b/drivers/net/eipoib/eth_ipoib.h
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/eipoib/eth_ipoib.h
++++ b/drivers/net/eipoib/eth_ipoib.h
+@@ -216,7 +216,13 @@ struct parent {
+ 	s32      slave_cnt;
+ 	rwlock_t lock;
+ 	struct   port_stats port_stats;
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,35))
++	struct   net_device_stats stats;
++#endif
+ 	struct   list_head parent_list;
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,0,0))
++	struct   vlan_group *vlgrp;
++#endif
+ 	unsigned long      flags;
+ 	struct   workqueue_struct *wq;
+ 	s8       kill_timers;
+@@ -247,8 +253,13 @@ extern int eipoib_net_id;
+ extern struct list_head parent_dev_list;
+ 
+ /* functions prototypes */
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,32))
+ int mod_create_sysfs(struct eipoib_net *eipoib_n);
+ void mod_destroy_sysfs(struct eipoib_net *eipoib_n);
++#else
++int mod_create_sysfs(void);
++void mod_destroy_sysfs(void);
++#endif
+ void parent_destroy_sysfs_entry(struct parent *parent);
+ int parent_create_sysfs_entry(struct parent *parent);
+ int create_slave_symlinks(struct net_device *master,
+diff --git a/drivers/net/eipoib/eth_ipoib_ethtool.c b/drivers/net/eipoib/eth_ipoib_ethtool.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/eipoib/eth_ipoib_ethtool.c
++++ b/drivers/net/eipoib/eth_ipoib_ethtool.c
+@@ -123,6 +123,12 @@ static int parent_get_sset_count(struct net_device *parent_dev, int sset)
+ 		return -EOPNOTSUPP;
+ 	}
+ }
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,0,0))
++static u32 eipoib_get_rx_csum(struct net_device *dev)
++{
++       return 1;
++}
++#endif
+ 
+ static const struct ethtool_ops parent_ethtool_ops = {
+ 	.get_drvinfo		= parent_ethtool_get_drvinfo,
+@@ -131,6 +137,9 @@ static const struct ethtool_ops parent_ethtool_ops = {
+ 	.get_ethtool_stats	= parent_get_ethtool_stats,
+ 	.get_sset_count		= parent_get_sset_count,
+ 	.get_link		= ethtool_op_get_link,
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,0,0))
++       .get_rx_csum = eipoib_get_rx_csum,
++#endif
+ };
+ 
+ void parent_set_ethtool_ops(struct net_device *dev)
+diff --git a/drivers/net/eipoib/eth_ipoib_main.c b/drivers/net/eipoib/eth_ipoib_main.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/eipoib/eth_ipoib_main.c
++++ b/drivers/net/eipoib/eth_ipoib_main.c
+@@ -59,6 +59,12 @@ const char eth_ipoib_driver_version[] = DRV_VERSION" ("DRV_RELDATE")";
+ #define PARENT_MAC_MASK 0xe7
+ 
+ /* forward declaration */
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36)) || !defined(CONFIG_IS_RX_HANDLER_RESULT)
++typedef int rx_handler_result_t;
++#define RX_HANDLER_CONSUMED 0
++extern int (*eth_ipoib_handle_frame_hook)(struct sk_buff **skb);
++#endif
++
+ static rx_handler_result_t eipoib_handle_frame(struct sk_buff **pskb);
+ static int eipoib_device_event(struct notifier_block *unused,
+ 			       unsigned long event, struct net_device *dev);
+@@ -73,6 +79,46 @@ static const char * const version =
+ 
+ LIST_HEAD(parent_dev_list);
+ 
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,0,0))
++static void eth_ipoib_vlan_rx_register(struct net_device *dev,
++				       struct vlan_group *grp)
++{
++	struct parent *parent = netdev_priv(dev);
++	write_lock_bh(&parent->lock);
++	parent->vlgrp = grp;
++	write_unlock_bh(&parent->lock);
++}
++
++static void eth_ipoib_vlan_rx_add_vid(struct net_device *dev,
++				      unsigned short vid)
++{
++}
++
++static void eth_ipoib_vlan_rx_kill_vid(struct net_device *dev,
++				       unsigned short vid)
++{
++}
++
++static void parent_del_vlans_from_slave(struct parent *parent,
++					struct net_device *slave_dev)
++{
++	const struct net_device_ops *slave_ops = slave_dev->netdev_ops;
++
++	write_lock_bh(&parent->lock);
++
++	if (!(slave_dev->features & NETIF_F_HW_VLAN_FILTER) ||
++	    !(slave_ops->ndo_vlan_rx_kill_vid))
++		goto unreg;
++unreg:
++	if ((slave_dev->features & NETIF_F_HW_VLAN_RX) &&
++	    slave_ops->ndo_vlan_rx_register)
++		slave_ops->ndo_vlan_rx_register(slave_dev, NULL);
++
++	write_unlock_bh(&parent->lock);
++}
++#endif
++
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,32))
+ /* name space sys/fs functions */
+ int eipoib_net_id __read_mostly;
+ 
+@@ -100,6 +146,7 @@ static struct pernet_operations eipoib_net_ops = {
+ 	.id   = &eipoib_net_id,
+ 	.size = sizeof(struct eipoib_net),
+ };
++#endif
+ 
+ /* set mac fields emac=<qpn><lid> */
+ static inline
+@@ -204,11 +251,19 @@ static inline int netdev_unset_parent_master(struct net_device *slave,
+ 
+ 	ASSERT_RTNL();
+ 
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 	err = netdev_set_master(slave, NULL);
++#else
++	netdev_upper_dev_unlink(slave, master);
++#endif
+ 	if (err)
+ 		return err;
+ 
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,37))
++	slave->priv_flags &= ~(CONFIG_COMPAT_IFF_EIPOIB_VIF);
++#else
+ 	slave->priv_flags &= ~(IFF_EIPOIB_VIF);
++#endif
+ 	slave->flags &= ~(IFF_SLAVE);
+ 	return 0;
+ }
+@@ -221,11 +276,18 @@ static inline int netdev_set_parent_master(struct net_device *slave,
+ 
+ 	ASSERT_RTNL();
+ 
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 	err = netdev_set_master(slave, master);
++#else
++	err = netdev_master_upper_dev_link(slave, master);
++#endif
+ 	if (err)
+ 		return err;
+-
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,37))
++	slave->priv_flags |= CONFIG_COMPAT_IFF_EIPOIB_VIF;
++#else
+ 	slave->priv_flags |= IFF_EIPOIB_VIF;
++#endif
+ 	/* deny bonding from enslaving it. */;
+ 	slave->flags |= IFF_SLAVE;
+ 	return 0;
+@@ -258,12 +320,20 @@ static inline int is_parent_mac(struct net_device *dev, u8 *mac)
+ 
+ static inline int __is_slave(struct net_device *dev)
+ {
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 	return dev->master && is_parent(dev->master);
++#else
++	return netdev_master_upper_dev_get(dev) && is_parent(netdev_master_upper_dev_get(dev));
++#endif
+ }
+ 
+ static inline int is_slave(struct net_device *dev)
+ {
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,37))
++	return (dev->priv_flags & CONFIG_COMPAT_IFF_EIPOIB_VIF) &&
++#else
+ 	return (dev->priv_flags & IFF_EIPOIB_VIF) &&
++#endif
+ 		is_driver_owner(dev, SDRV_NAME) && __is_slave(dev);
+ }
+ 
+@@ -379,6 +449,7 @@ static void parent_detach_slave(struct parent *parent, struct slave *slave)
+ 	slave_put(slave, parent);
+ }
+ 
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,38))
+ static netdev_features_t parent_fix_features(struct net_device *dev,
+ 					     netdev_features_t features)
+ {
+@@ -393,8 +464,9 @@ static netdev_features_t parent_fix_features(struct net_device *dev,
+ 
+ 	mask = features;
+ 	features &= ~NETIF_F_ONE_FOR_ALL;
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
+ 	features |= NETIF_F_ALL_FOR_ALL;
+-
++#endif
+ 	parent_for_each_slave_rcu(parent, slave)
+ 		features = netdev_increment_features(features,
+ 						     slave->dev->features,
+@@ -408,6 +480,7 @@ static netdev_features_t parent_fix_features(struct net_device *dev,
+ 	rcu_read_unlock_bh();
+ 	return features;
+ }
++#endif
+ 
+ static int parent_compute_features(struct parent *parent)
+ {
+@@ -428,7 +501,9 @@ static int parent_compute_features(struct parent *parent)
+ 	/* gets the common features from all slaves */
+ 	parent_for_each_slave_rcu(parent, slave) {
+ 		features &= slave->dev->features;
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(3,0,0))
+ 		hw_features &= slave->dev->hw_features;
++#endif
+ 	}
+ 
+ 	features = features | PARENT_VLAN_FEATURES;
+@@ -438,12 +513,19 @@ static int parent_compute_features(struct parent *parent)
+ 
+ 	features &= hw_features;
+ 	features |= take;
+-
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(3,0,0))
+ 	parent_dev->hw_features = hw_features;
++#endif
+ 	parent_dev->features = features;
+ 	parent_dev->vlan_features = parent_dev->features & ~PARENT_VLAN_FEATURES;
+ done:
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0))
+ 	pr_info("%s: %s: Features: 0x%llx\n",
++#elif (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,38))
++	pr_info("%s: %s: Features: 0x%dx\n",
++#else
++	pr_info("%s: %s: Features: 0x%lx\n",
++#endif
+ 		__func__, parent_dev->name, parent_dev->features);
+ 
+ 	rcu_read_unlock_bh();
+@@ -544,13 +626,21 @@ int parent_enslave(struct net_device *parent_dev, struct net_device *slave_dev)
+ 
+ 	/* already enslaved */
+ 	if ((slave_dev->flags & IFF_SLAVE) ||
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,37))
++		(slave_dev->priv_flags & CONFIG_COMPAT_IFF_EIPOIB_VIF)) {
++#else
+ 		(slave_dev->priv_flags & IFF_EIPOIB_VIF)) {
++#endif
+ 		pr_err("%s was already enslaved!!!\n", slave_dev->name);
+ 		return -EBUSY;
+ 	}
+ 
+ 	/* mark it as ipoib clone vif */
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,37))
++		slave_dev->priv_flags |= CONFIG_COMPAT_IFF_EIPOIB_VIF;
++#else
+ 	slave_dev->priv_flags |= IFF_EIPOIB_VIF;
++#endif
+ 
+ 	/* set parent netdev attributes */
+ 	if (parent->slave_cnt == 0)
+@@ -629,6 +719,7 @@ int parent_enslave(struct net_device *parent_dev, struct net_device *slave_dev)
+ 	if (res)
+ 		goto err_close;
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
+ 	/* register handler */
+ 	res = netdev_rx_handler_register(slave_dev, eipoib_handle_frame,
+ 					 new_slave);
+@@ -637,6 +728,9 @@ int parent_enslave(struct net_device *parent_dev, struct net_device *slave_dev)
+ 			parent_dev->name, res);
+ 		goto err_close;
+ 	}
++#else
++	slave_dev->ax25_ptr = new_slave;
++#endif
+ 
+ 	pr_info("%s: enslaving %s\n", parent_dev->name, slave_dev->name);
+ 
+@@ -677,7 +771,11 @@ int parent_release_slave(struct net_device *parent_dev,
+ 
+ 	/* slave is not a slave or master is not master of this slave */
+ 	if (!(slave_dev->flags & IFF_SLAVE) ||
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 	    (slave_dev->master != parent_dev)) {
++#else
++	    (netdev_master_upper_dev_get(slave_dev) != parent_dev)) {
++#endif
+ 		pr_err("%s cannot release %s.\n",
+ 		       parent_dev->name, slave_dev->name);
+ 		return -EINVAL;
+@@ -729,10 +827,16 @@ int parent_release_slave(struct net_device *parent_dev,
+ 	write_unlock_bh(&parent->lock);
+ 
+ 	/* must do this from outside any spinlocks */
+-	netdev_rx_handler_unregister(slave->dev);
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
++	netdev_rx_handler_unregister(slave_dev);
++#endif
+ 
+ 	destroy_slave_symlinks(parent_dev, slave_dev);
+ 
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,0,0))
++	parent_del_vlans_from_slave(parent, slave_dev);
++#endif
++
+ 	netdev_unset_parent_master(slave_dev, parent_dev);
+ 
+ 	dev_close(slave_dev);
+@@ -769,17 +873,28 @@ out:
+ }
+ 
+ /* -------------------------- Device entry points --------------------------- */
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,35))
+ static struct rtnl_link_stats64 *parent_get_stats(struct net_device *parent_dev,
+-						  struct rtnl_link_stats64 *stats)
++                                                  struct rtnl_link_stats64 *stats)
++#else
++static struct net_device_stats *parent_get_stats(struct net_device *parent_dev)
++#endif
+ {
+ 	struct parent *parent = netdev_priv(parent_dev);
+ 	struct slave *slave;
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,35))
+ 	struct rtnl_link_stats64 temp;
+ 
+ 	memset(stats, 0, sizeof(*stats));
++#else
++       struct net_device_stats *stats = &parent->stats;
++       struct net_device_stats local_stats;
++       memset(&local_stats, 0, sizeof(struct net_device_stats));
++#endif
+ 
+ 	rcu_read_lock_bh();
+ 	parent_for_each_slave_rcu(parent, slave) {
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,35))
+ 		const struct rtnl_link_stats64 *sstats =
+ 			dev_get_stats(slave->dev, &temp);
+ 
+@@ -808,7 +923,38 @@ static struct rtnl_link_stats64 *parent_get_stats(struct net_device *parent_dev,
+ 		stats->tx_fifo_errors += sstats->tx_fifo_errors;
+ 		stats->tx_heartbeat_errors += sstats->tx_heartbeat_errors;
+ 		stats->tx_window_errors += sstats->tx_window_errors;
+-	}
++#else
++               const struct net_device_stats *sstats = dev_get_stats(slave->dev);
++               local_stats.rx_packets += sstats->rx_packets;
++               local_stats.rx_bytes += sstats->rx_bytes;
++               local_stats.rx_errors += sstats->rx_errors;
++               local_stats.rx_dropped += sstats->rx_dropped;
++
++               local_stats.tx_packets += sstats->tx_packets;
++               local_stats.tx_bytes += sstats->tx_bytes;
++               local_stats.tx_errors += sstats->tx_errors;
++               local_stats.tx_dropped += sstats->tx_dropped;
++
++               local_stats.multicast += sstats->multicast;
++               local_stats.collisions += sstats->collisions;
++               local_stats.rx_length_errors += sstats->rx_length_errors;
++               local_stats.rx_over_errors += sstats->rx_over_errors;
++               local_stats.rx_crc_errors += sstats->rx_crc_errors;
++               local_stats.rx_frame_errors += sstats->rx_frame_errors;
++               local_stats.rx_fifo_errors += sstats->rx_fifo_errors;
++               local_stats.rx_missed_errors += sstats->rx_missed_errors;
++
++               local_stats.tx_aborted_errors += sstats->tx_aborted_errors;
++               local_stats.tx_carrier_errors += sstats->tx_carrier_errors;
++               local_stats.tx_fifo_errors += sstats->tx_fifo_errors;
++               local_stats.tx_heartbeat_errors += sstats->tx_heartbeat_errors;
++               local_stats.tx_window_errors += sstats->tx_window_errors;
++#endif
++
++	}
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,35))
++       memcpy(stats, &local_stats, sizeof(struct net_device_stats));
++#endif
+ 
+ 	rcu_read_unlock_bh();
+ 
+@@ -828,11 +974,21 @@ static inline int eipoib_mac_hash(const unsigned char *mac)
+ static struct neigh *neigh_find(struct hlist_head *head,
+ 				const u8 *addr)
+ {
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 	struct hlist_node *h;
++#endif
+ 	struct neigh *neigh;
+ 
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 	hlist_for_each_entry(neigh, h, head, hlist) {
++#else
++	hlist_for_each_entry(neigh, head, hlist) {
++#endif
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0))
+ 		if (ether_addr_equal(neigh->emac, addr))
++#else
++		if (!memcmp(neigh->emac, addr,ETH_ALEN))
++#endif
+ 			return neigh;
+ 	}
+ 	return NULL;
+@@ -841,11 +997,22 @@ static struct neigh *neigh_find(struct hlist_head *head,
+ static struct neigh *neigh_find_rcu(struct hlist_head *head,
+ 				const u8 *addr)
+ {
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 	struct hlist_node *h;
++#endif
+ 	struct neigh *neigh;
+ 
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 	hlist_for_each_entry_rcu(neigh, h, head, hlist) {
++#else
++	hlist_for_each_entry_rcu(neigh, head, hlist) {
++#endif
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0))
+ 		if (ether_addr_equal(neigh->emac, addr))
++#else
++                if (!memcmp(neigh->emac, addr,ETH_ALEN))
++#endif
++
+ 			return neigh;
+ 	}
+ 	return NULL;
+@@ -973,8 +1140,13 @@ static void slave_neigh_flush(struct slave *slave)
+ 	spin_lock_bh(&slave->hash_lock);
+ 	for (i = 0; i < NEIGH_HASH_SIZE; i++) {
+ 		struct neigh *neigh;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 		struct hlist_node *h, *n;
+ 		hlist_for_each_entry_safe(neigh, h, n, &slave->hash[i], hlist) {
++#else
++		struct hlist_node *n;
++		hlist_for_each_entry_safe(neigh, n, &slave->hash[i], hlist) {
++#endif
+ 			/* perhasps use neigh_delete instead of eipoib_neigh_put? */
+ 			eipoib_neigh_put(neigh);
+ 		}
+@@ -1004,8 +1176,13 @@ static void slave_neigh_reap(struct parent *parent, struct slave *slave)
+ 
+ 	for (i = 0; i < NEIGH_HASH_SIZE; i++) {
+ 		struct neigh *neigh;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 		struct hlist_node *h, *n;
+ 		hlist_for_each_entry_safe(neigh, h, n, &slave->hash[i], hlist) {
++#else
++		struct hlist_node *n;
++		hlist_for_each_entry_safe(neigh, n, &slave->hash[i], hlist) {
++#endif
+ 			int is_mc_neigh = 0;
+ 			/* check if the time is bigger than allowed */
+ 			/* was the neigh idle for two GC periods */
+@@ -1023,7 +1200,11 @@ static void slave_neigh_reap(struct parent *parent, struct slave *slave)
+ 
+ 				/* decrease ref count for kernel mc entry */
+ 				if (unlikely(is_mc_neigh))
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,34))
+ 					dev_mc_del(slave->dev, neigh->imac);
++#else
++					dev_mc_delete(slave->dev, neigh->imac, INFINIBAND_ALEN, 1);
++#endif
+ 			}
+ 		}
+ 	}
+@@ -1058,7 +1239,11 @@ struct neigh *eipoib_neigh_get(struct slave *slave, const u8 *emac)
+ static int neigh_learn(struct slave *slave, struct sk_buff *skb, u8 *remac)
+ {
+ 	struct net_device *dev = slave->dev;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 	struct net_device *parent_dev = dev->master;
++#else
++	struct net_device *parent_dev = slave->master_dev;
++#endif
+ 	struct parent *parent = netdev_priv(parent_dev);
+ 	int rc;
+ 	struct learn_neigh_info *learn_neigh;
+@@ -1123,11 +1308,18 @@ static inline int eipoib_slave_hash(const unsigned char *mac, u16 vlan)
+ static inline struct slave *slave_find(struct hlist_head *head,
+ 				const u8 *addr, u16 vlan)
+ {
+-	struct hlist_node *h;
+ 	struct slave *slave;
+-
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++	struct hlist_node *h;
+ 	hlist_for_each_entry(slave, h, head, hlist) {
++#else
++		hlist_for_each_entry(slave, head, hlist) {
++#endif
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0))
+ 		if (ether_addr_equal(slave->emac, addr) && slave->vlan == vlan)
++#else
++		if (!memcmp(slave->emac, addr,ETH_ALEN) && slave->vlan == vlan)
++#endif
+ 			return slave;
+ 	}
+ 	return NULL;
+@@ -1136,12 +1328,19 @@ static inline struct slave *slave_find(struct hlist_head *head,
+ static inline struct slave *slave_find_rcu(struct hlist_head *head,
+ 				const u8 *addr, u16 vlan)
+ {
+-	struct hlist_node *h;
+-
+ 	struct slave *slave;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++	struct hlist_node *h;
+ 
+ 	hlist_for_each_entry_rcu(slave, h, head, hlist) {
++#else
++		hlist_for_each_entry_rcu(slave, head, hlist) {
++#endif
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0))
+ 		if (ether_addr_equal(slave->emac, addr) && slave->vlan == vlan)
++#else
++		if (!memcmp(slave->emac, addr,ETH_ALEN) && slave->vlan == vlan)
++#endif
+ 			return slave;
+ 	}
+ 	return NULL;
+@@ -1552,6 +1751,9 @@ static struct sk_buff *get_slave_skb_arp(struct slave *slave,
+ 	struct eth_arp_data *arp_data = (struct eth_arp_data *)
+ 					(skb->data + sizeof(struct ethhdr) +
+ 					 sizeof(struct arphdr));
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,9,0))
++	struct net_device *upper_dev = slave->master_dev;
++#endif
+ 	u8 t_addr[ETH_ALEN] = {0};
+ 	int err = 0;
+ 	/* mark regular packet handling */
+@@ -1564,7 +1766,11 @@ static struct sk_buff *get_slave_skb_arp(struct slave *slave,
+ 	 * arp request for all these IP's.
+ 	 */
+ 	if (skb->protocol == htons(ETH_P_ARP))
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 		err = add_emac_ip_info(slave->dev->master, arp_data->arp_sip,
++#else
++		err = add_emac_ip_info(upper_dev, arp_data->arp_sip,
++#endif
+ 				       arp_data->arp_sha, slave->vlan, GFP_ATOMIC);
+ 	if (err && err != -EINVAL)
+ 		pr_warn("%s: Failed creating: emac_ip_info for ip: %pI4 err: %d",
+@@ -1578,14 +1784,22 @@ static struct sk_buff *get_slave_skb_arp(struct slave *slave,
+ 	 */
+ 	arp_data->arp_dha[0] = arp_data->arp_dha[0] & 0xFD;
+ 	if (htons(ARPOP_REPLY) == (arphdr->ar_op) &&
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 	    !memcmp(arp_data->arp_dha, slave->dev->master->dev_addr, ETH_ALEN)) {
++#else
++	    !memcmp(arp_data->arp_dha, upper_dev->dev_addr, ETH_ALEN)) {
++#endif
+ 		/*
+ 		 * when the source is the parent interface, assumes
+ 		 * that we are in the middle of live migration process,
+ 		 * so, we will send gratuitous arp.
+ 		 */
+ 		pr_info("%s: Arp packet for parent: %s",
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 			__func__, slave->dev->master->name);
++#else
++			__func__, upper_dev->name);
++#endif
+ 		/* create gratuitous ARP on behalf of the guest */
+ 		nskb = arp_create(ARPOP_REQUEST,
+ 				  be16_to_cpu(skb->protocol),
+@@ -1643,7 +1857,11 @@ static void get_slave_skb_arp_by_ip(struct slave *slave,
+ 		       __func__, slave->dev->name);
+ 
+ 	/* add new source IP as served via the driver. */
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 	ret = add_emac_ip_info(slave->dev->master, iph->saddr, ethh->h_source,
++#else
++	ret = add_emac_ip_info(slave->master_dev, iph->saddr, ethh->h_source,
++#endif
+ 			     slave->vlan, GFP_ATOMIC);
+ 	if (ret && ret != -EINVAL)
+ 		pr_warn("%s: Failed creating: emac_ip_info for ip: %pI4 mac: %pM",
+@@ -1694,7 +1912,11 @@ int add_mc_neigh(struct slave *slave, __be32 ip)
+ 	}
+ 
+ 	/* cause ipoib_set_mcast_list -> ipoib: mcast_restart_task */
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,34))
+ 	ret = dev_mc_add(slave->dev, dst_mc_ib_mac_addr);
++#else 
++	ret = dev_mc_add(slave->dev, dst_mc_ib_mac_addr, INFINIBAND_ALEN, 1);
++#endif
+ 	if (ret)
+ 		pr_err("%s: Failed to add mc (dev:%s, mc: %pI6). ret:%d\n",
+ 		       __func__, slave->dev->name, dst_mc_ib_mac_addr + 4, ret);
+@@ -1747,7 +1969,11 @@ out:
+ static struct sk_buff *get_slave_skb(struct slave *slave, struct sk_buff *skb)
+ {
+ 	struct net_device *dev = slave->dev;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 	struct net_device *parent_dev = dev->master;
++#else
++	struct net_device *parent_dev = slave->master_dev;
++#endif
+ 	struct parent *parent = netdev_priv(parent_dev);
+ 	struct sk_buff *nskb = NULL;
+ 	struct ethhdr *ethh = (struct ethhdr *)(skb->data);
+@@ -1860,7 +2086,11 @@ static struct sk_buff *get_parent_skb_arp(struct slave *slave,
+ 					  struct sk_buff *skb,
+ 					  u8 *remac)
+ {
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 	struct net_device *dev = slave->dev->master;
++#else
++	struct net_device *dev = slave->master_dev;
++#endif
+ 	struct sk_buff *nskb;
+ 	struct arphdr *arphdr = (struct arphdr *)(skb->data);
+ 	struct ipoib_arp_data *arp_data = (struct ipoib_arp_data *)
+@@ -1872,10 +2102,17 @@ static struct sk_buff *get_parent_skb_arp(struct slave *slave,
+ 	/* live migration: gets arp with broadcast src and dst */
+ 	if (!memcmp(arp_data->arp_sha, slave->dev->broadcast, INFINIBAND_ALEN) &&
+ 	    !memcmp(arp_data->arp_dha, slave->dev->broadcast, INFINIBAND_ALEN)) {
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 		pr_info("%s: ARP with bcast src and dest send from src_hw: %pM\n",
+ 			__func__, slave->dev->master->dev_addr);
+ 		/* replace the src with the parent src: */
+ 		memcpy(local_eth_addr, slave->dev->master->dev_addr, ETH_ALEN);
++#else
++		pr_info("%s: ARP with bcast src and dest send from src_hw: %pM\n",
++			__func__, dev->dev_addr);
++		/* replace the src with the parent src: */
++		memcpy(local_eth_addr, dev->dev_addr, ETH_ALEN);
++#endif
+ 		/*
+ 		 * set local administrated bit,
+ 		 * that way the bridge will not throws it
+@@ -1913,7 +2150,11 @@ static struct sk_buff *get_parent_skb_ip(struct slave *slave,
+ static struct sk_buff *get_parent_skb(struct slave *slave,
+ 				      struct sk_buff *skb, u8 *remac)
+ {
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 	struct net_device *dev = slave->dev->master;
++#else
++	struct net_device *dev = slave->master_dev;
++#endif
+ 	struct sk_buff *nskb = NULL;
+ 	struct ethhdr *ethh;
+ 
+@@ -1980,21 +2221,45 @@ int add_vlan_and_send(struct parent *parent, int vlan_tag,
+ 	int rc;
+ 
+ 	if (vlan_tag) {
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0))
+ 		__vlan_hwaccel_put_tag(skb, vlan_tag);
++#else
++		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), vlan_tag);
++#endif
+ 		++parent->port_stats.rx_vlan;
+ 	}
+ 
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,32))
+ 	if (napi)
+ 		rc = napi_gro_receive(napi, skb);
+ 	else
+ 		rc = netif_receive_skb(skb);
++#else
++	if (vlan_tag && parent->vlgrp) {
++		if (napi)
++			rc = vlan_gro_receive(napi, parent->vlgrp,
++					      vlan_tag, skb);
++		else
++			rc = vlan_hwaccel_rx(skb, parent->vlgrp,
++					     vlan_tag);
++	} else {
++		if (napi)
++			rc = napi_gro_receive(napi, skb);
++		else /* Called from CM no GRO also on mainline */
++			rc = netif_receive_skb(skb);
++		}
++#endif
+ 
+ 	return rc;
+ }
+ 
+ static int parent_rx(struct sk_buff *skb, struct slave *slave)
+ {
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 	struct net_device *parent_dev = skb->dev->master;
++#else
++	struct net_device *parent_dev = slave->master_dev;
++#endif
+ 	struct parent *parent = netdev_priv(parent_dev);
+ 	struct eipoib_cb_data *data = IPOIB_HANDLER_CB(skb);
+ 	struct napi_struct *napi =  data->rx.napi;
+@@ -2053,8 +2318,11 @@ static rx_handler_result_t eipoib_handle_frame(struct sk_buff **pskb)
+ 	struct slave *slave;
+ 	rcu_read_lock_bh();
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
+ 	slave = eipoib_slave_get_rcu(skb->dev);
+-
++#else
++	slave = (struct slave *)skb->dev->ax25_ptr;
++#endif
+ 	parent_rx(skb, slave);
+ 
+ 	rcu_read_unlock_bh();
+@@ -2081,7 +2349,13 @@ static void prepare_802_1Q_skb(struct sk_buff *skb)
+ 	memmove(skb->data + VLAN_HLEN, ethh, ETH_ALEN * 2);
+ 	skb_pull(skb, VLAN_HLEN);
+ 	ethh = (struct ethhdr *)skb->data;
+-	__vlan_hwaccel_put_tag(skb, vlan);
++
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0))
++		__vlan_hwaccel_put_tag(skb, vlan);
++#else
++		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), vlan);
++#endif
++
+ 	ethh->h_proto = proto;
+ 	skb->protocol = proto;
+ }
+@@ -2295,8 +2569,16 @@ static void parent_set_dev_addr(struct net_device *ibd,
+ 
+ 	memcpy(parent->gid.raw, gid.raw, GID_LEN);
+ }
+-
++#ifdef CONFIG_COMPAT_SELECT_QUEUE_ACCEL
++static u16 parent_select_q(struct net_device *dev, struct sk_buff *skb,
++#ifdef CONFIG_COMPAT_SELECT_QUEUE_FALLBACK
++			   void* accel_priv, select_queue_fallback_t fallback)
++#else
++			   void *accel_priv)
++#endif
++#else /* CONFIG_COMPAT_SELECT_QUEUE_ACCEL */
+ static u16 parent_select_q(struct net_device *dev, struct sk_buff *skb)
++#endif
+ {
+ 	return skb_tx_hash(dev, skb);
+ }
+@@ -2373,21 +2655,40 @@ static const struct net_device_ops parent_netdev_ops = {
+ 	.ndo_select_queue	= parent_select_q,
+ 	/* parnt mtu is min(slaves_mtus) */
+ 	.ndo_change_mtu		= NULL,
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,38))
+ 	.ndo_fix_features	= parent_fix_features,
++#endif
+ 	/*
+ 	 * initial mac address is randomized, can be changed
+ 	 * thru this func later
+ 	 */
+ 	.ndo_set_mac_address = eth_mac_addr,
++
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,35))
+ 	.ndo_get_stats64 = parent_get_stats,
++#else
++	.ndo_get_stats = parent_get_stats,
++#endif
++
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,35)) && defined(CONFIG_IS_NDO_ADD_SLAVE)
+ 	.ndo_add_slave = parent_enslave,
+ 	.ndo_del_slave = parent_release_slave,
++#endif
++
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,0,0))
++	.ndo_vlan_rx_register   = eth_ipoib_vlan_rx_register,
++	.ndo_vlan_rx_add_vid = eth_ipoib_vlan_rx_add_vid,
++	.ndo_vlan_rx_kill_vid = eth_ipoib_vlan_rx_kill_vid,
++#endif
+ };
+ 
+ static void parent_setup(struct net_device *parent_dev)
+ {
+ 	struct parent *parent = netdev_priv(parent_dev);
+ 
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,35))
++	memset(&parent->stats, 0, sizeof(struct net_device_stats));
++#endif
+ 	/* initialize rwlocks */
+ 	rwlock_init(&parent->lock);
+ 	rwlock_init(&parent->emac_info_lock);
+@@ -2405,13 +2706,17 @@ static void parent_setup(struct net_device *parent_dev)
+ 
+ 	/* Initialize the device options */
+ 	parent_dev->tx_queue_len = 0;
+-
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(3,0,0))
+ 	parent_dev->hw_features = NETIF_F_SG | NETIF_F_IP_CSUM |
+ 		NETIF_F_RXCSUM | NETIF_F_GRO | NETIF_F_TSO;
+ 
+ 	parent_dev->features = parent_dev->hw_features;
+ 	parent_dev->vlan_features = parent_dev->hw_features;
+-
++#else
++	parent_dev->features = NETIF_F_SG | NETIF_F_IP_CSUM |
++			       NETIF_F_GRO | NETIF_F_TSO;
++	parent_dev->vlan_features = parent_dev->features;
++#endif
+ 	parent_dev->features |= PARENT_VLAN_FEATURES;
+ }
+ 
+@@ -2462,6 +2767,9 @@ static struct parent *parent_create(struct net_device *ibd)
+ 	strncpy(parent->ipoib_main_interface, ibd->name, IFNAMSIZ);
+ 	parent_dev->dev_id = ibd->dev_id;
+ 
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,0,0))
++	parent->vlgrp = NULL;
++#endif
+ 	return parent;
+ 
+ out_unreg:
+@@ -2504,13 +2812,27 @@ static void parent_free_all(void)
+ /* netdev events handlers */
+ static inline int is_ipoib_pif_intf(struct net_device *dev)
+ {
++
++#ifndef CONFIG_COMPAT_IS_SYSFS_DIRENT_SYSFS_GET_DIRENTY
++	struct kernfs_node *child_sd;
++#else 
+ 	struct sysfs_dirent *child_sd;
++#endif
+ 
+ 	if (ARPHRD_INFINIBAND != dev->type || !dev->dev.kobj.sd)
+ 		return 0;
+ 
+ 	/* if there is the "create_child directory", indicates parent */
++
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,34))
++	child_sd = sysfs_get_dirent(dev->dev.kobj.sd, "create_child");
++#else
++#ifndef CONFIG_COMPAT_IS_SYSFS_DIRENT_SYSFS_GET_DIRENTY
++	child_sd = sysfs_get_dirent(dev->dev.kobj.sd, "create_child");
++#else
+ 	child_sd = sysfs_get_dirent(dev->dev.kobj.sd, NULL, "create_child");
++#endif
++#endif
+ 	if (child_sd)
+ 		return 1;
+ 
+@@ -2548,7 +2870,11 @@ static int parent_master_netdev_event(unsigned long event,
+ static int parent_slave_netdev_event(unsigned long event,
+ 				     struct net_device *slave_dev)
+ {
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 	struct net_device *parent_dev = slave_dev->master;
++#else
++	struct net_device *parent_dev = netdev_master_upper_dev_get(slave_dev);
++#endif
+ 	struct parent *parent = netdev_priv(parent_dev);
+ 
+ 	if (!parent_dev) {
+@@ -2589,8 +2915,11 @@ static int parent_slave_netdev_event(unsigned long event,
+ static int eipoib_netdev_event(struct notifier_block *this,
+ 			       unsigned long event, void *ptr)
+ {
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 11, 0))
+ 	struct net_device *event_dev = (struct net_device *)ptr;
+-
++#else
++	struct net_device *event_dev = netdev_notifier_info_to_dev(ptr);
++#endif
+ 	if (dev_net(event_dev) != &init_net)
+ 		return NOTIFY_DONE;
+ 
+@@ -2653,7 +2982,11 @@ static int __init mod_init(void)
+ 
+ 	pr_info(DRV_NAME": %s", version);
+ 
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,32))
+ 	rc = register_pernet_subsys(&eipoib_net_ops);
++#else
++	rc = mod_create_sysfs();
++#endif
+ 	if (rc)
+ 		goto out;
+ 
+@@ -2664,10 +2997,19 @@ static int __init mod_init(void)
+ 		goto unreg_subsys;
+ 	}
+ 
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
++	eth_ipoib_handle_frame_hook = eipoib_handle_frame;
++#endif
++
+ 	goto out;
+ 
+ unreg_subsys:
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,32))
+ 	unregister_pernet_subsys(&eipoib_net_ops);
++#else
++	mod_destroy_sysfs();
++#endif
++
+ out:
+ 	return rc;
+ 
+@@ -2677,7 +3019,15 @@ static void __exit mod_exit(void)
+ {
+ 	unregister_netdevice_notifier(&parent_netdev_notifier);
+ 
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,32))
+ 	unregister_pernet_subsys(&eipoib_net_ops);
++#else
++	mod_destroy_sysfs();
++#endif
++
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
++	eth_ipoib_handle_frame_hook = NULL;
++#endif
+ 
+ 	rtnl_lock();
+ 	parent_free_all();
+diff --git a/drivers/net/eipoib/eth_ipoib_multicast.c b/drivers/net/eipoib/eth_ipoib_multicast.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/eipoib/eth_ipoib_multicast.c
++++ b/drivers/net/eipoib/eth_ipoib_multicast.c
+@@ -147,7 +147,11 @@ struct sk_buff *gen_igmp_v2_query(struct slave *slave)
+ 	struct ethhdr  *ethhdr;
+ 	struct iphdr   *iph;
+ 	struct igmphdr *igmph;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 	struct net_device *dev = slave->dev->master;
++#else
++	struct net_device *dev = slave->master_dev;
++#endif
+ 	u8 *p_options;
+ 	int size;
+ 
+diff --git a/drivers/net/eipoib/eth_ipoib_sysfs.c b/drivers/net/eipoib/eth_ipoib_sysfs.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/eipoib/eth_ipoib_sysfs.c
++++ b/drivers/net/eipoib/eth_ipoib_sysfs.c
+@@ -74,8 +74,12 @@ static int get_emac(u8 *mac, char *s)
+ }
+ 
+ /* show/store functions per module (CLASS_ATTR) */
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,32))
+ static ssize_t show_parents(struct class *cls, struct class_attribute *attr,
+ 			    char *buf)
++#else
++static ssize_t show_parents(struct class *cls, char *buf)
++#endif
+ {
+ 	char *p = buf;
+ 	struct parent *parent;
+@@ -108,8 +112,12 @@ static ssize_t parent_show_neighs(struct device *d,
+ 	parent_for_each_slave_rcu(parent, slave) {
+ 		for (i = 0; i < NEIGH_HASH_SIZE; i++) {
+ 			struct neigh *neigh;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
+ 			struct hlist_node *n;
+ 			hlist_for_each_entry_rcu(neigh, n, &slave->hash[i], hlist)
++#else
++			hlist_for_each_entry_rcu(neigh, &slave->hash[i], hlist)
++#endif
+ 				p += _sprintf(p, buf, "SLAVE=%-10s EMAC=%pM IMAC=%pM:%pM:%pM:%.2x:%.2x\n",
+ 					      slave->dev->name,
+ 					      neigh->emac,
+@@ -473,6 +481,7 @@ static struct attribute *per_parent_attrs[] = {
+ 	NULL,
+ };
+ 
++#ifdef CONFIG_COMPAT_CLASS_ATTR_NAMESPACE
+ /* name spcase  support */
+ static const void *eipoib_namespace(struct class *cls,
+ 				    const struct class_attribute *attr)
+@@ -482,6 +491,7 @@ static const void *eipoib_namespace(struct class *cls,
+ 			     struct eipoib_net, class_attr_eipoib_interfaces);
+ 	return eipoib_n->net;
+ }
++#endif
+ 
+ static struct attribute_group parent_group = {
+ 	/* per parent sysfs files under: /sys/class/net/<IF>/eth/.. */
+@@ -517,36 +527,73 @@ void destroy_slave_symlinks(struct net_device *master,
+ 	sysfs_remove_link(&(master->dev.kobj), linkname);
+ }
+ 
++#if ((LINUX_VERSION_CODE > KERNEL_VERSION(3,1,0)))
+ static struct class_attribute class_attr_eth_ipoib_interfaces = {
+ 	.attr = {
+ 		.name = "eth_ipoib_interfaces",
+ 		.mode = S_IWUSR | S_IRUGO,
+ 	},
+ 	.show = show_parents,
++#ifdef CONFIG_COMPAT_CLASS_ATTR_NAMESPACE
+ 	.namespace = eipoib_namespace,
++#endif
+ };
++#else
++static CLASS_ATTR(eth_ipoib_interfaces,  S_IRUGO,
++		  show_parents, NULL);
++#endif
+ 
+ /* per module sysfs file under: /sys/class/net/eth_ipoib_interfaces */
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,32))
+ int mod_create_sysfs(struct eipoib_net *eipoib_n)
++#else
++int mod_create_sysfs(void)
++#endif
+ {
+ 	int rc;
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,32))
+ 	/* defined in CLASS_ATTR(eth_ipoib_interfaces..) */
+ 	eipoib_n->class_attr_eipoib_interfaces =
+ 		class_attr_eth_ipoib_interfaces;
+ 
+ 	sysfs_attr_init(&eipoib_n->class_attr_eipoib_interfaces.attr);
+ 
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,13,0))
+ 	rc = netdev_class_create_file(&eipoib_n->class_attr_eipoib_interfaces);
++#else
++	rc = netdev_class_create_file_ns(&eipoib_n->class_attr_eipoib_interfaces, eipoib_n->net);
++#endif
++#else
++	struct class_attribute *cattr = &class_attr_eth_ipoib_interfaces;
++	rc = netdev_class_create_file(cattr);
++#endif
+ 	if (rc)
+ 		pr_err("%s failed to create sysfs (rc %d)\n",
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,32))
+ 		       eipoib_n->class_attr_eipoib_interfaces.attr.name, rc);
++#else
++			 __func__, rc);
++#endif
+ 
+ 	return rc;
+ }
+ 
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,32))
+ void mod_destroy_sysfs(struct eipoib_net *eipoib_n)
++#else
++void mod_destroy_sysfs(void)
++#endif
+ {
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,32))
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,13,0))
+ 	netdev_class_remove_file(&eipoib_n->class_attr_eipoib_interfaces);
++#else
++	netdev_class_remove_file_ns(&eipoib_n->class_attr_eipoib_interfaces, eipoib_n->net);
++#endif
++#else
++	struct class_attribute *cattr = &class_attr_eth_ipoib_interfaces;
++	netdev_class_remove_file(cattr);
++#endif
+ }
+ 
+ int parent_create_sysfs_entry(struct parent *parent)

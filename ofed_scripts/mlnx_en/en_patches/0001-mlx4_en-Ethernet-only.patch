@@ -1,0 +1,44 @@
+From: Alaa Hleihel <alaa@mellanox.com>
+Subject: [PATCH] [PATCH] mlx4_en: Ethernet only
+
+issue: none
+Change-Id: I684dfb6532a79d265ed23cc37b034380f06e4ebb
+Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
+---
+ drivers/net/ethernet/mellanox/mlx4/main.c |   16 ++++------------
+ 1 files changed, 4 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/net/ethernet/mellanox/mlx4/main.c b/drivers/net/ethernet/mellanox/mlx4/main.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx4/main.c
++++ b/drivers/net/ethernet/mellanox/mlx4/main.c
+@@ -249,8 +249,8 @@ static struct param_data port_type_array = {
+ 	.dbdf2val = {
+ 		.name		= "port_type_array param",
+ 		.num_vals	= 2,
+-		.def_val	= {MLX4_PORT_TYPE_NONE, MLX4_PORT_TYPE_NONE},
+-		.range		= {MLX4_PORT_TYPE_IB, MLX4_PORT_TYPE_NA},
++		.def_val	= {MLX4_PORT_TYPE_ETH, MLX4_PORT_TYPE_ETH},
++		.range		= {MLX4_PORT_TYPE_ETH, MLX4_PORT_TYPE_ETH},
+ 		.num_inval_vals = 1,
+ 		.inval_val = {MLX4_PORT_TYPE_AUTO}
+ 	}
+@@ -989,16 +989,8 @@ static int mlx4_dev_cap(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
+ 				}
+ 			}
+ 		}
+-		/*
+-		 * Link sensing is allowed on the port if 3 conditions are true:
+-		 * 1. Both protocols are supported on the port.
+-		 * 2. Different types are supported on the port
+-		 * 3. FW declared that it supports link sensing
+-		 */
+-		mlx4_priv(dev)->sense.sense_allowed[i] =
+-			((dev->caps.supported_type[i] == MLX4_PORT_TYPE_AUTO) &&
+-			 (dev->caps.flags & MLX4_DEV_CAP_FLAG_DPDP) &&
+-			 (dev->caps.flags & MLX4_DEV_CAP_FLAG_SENSE_SUPPORT));
++		/* Link sensing is not allowed for ETH only package */
++		mlx4_priv(dev)->sense.sense_allowed[i] = 0;
+ 
+ 		/*
+ 		 * If "default_sense" bit is set, we move the port to "AUTO" mode
