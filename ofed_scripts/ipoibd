@@ -953,7 +953,7 @@ class VirtualVlanObserver(VirtualNicObserver):
 		current_vlans = self.get_vlan_interfaces_per_parent(self.parent.name)
 		self.logger.debug("%s has vlans: %s" % (self.parent.name, current_vlans))
 		all_vlans = list(set(self.known_vlans + current_vlans))
-
+		self.scaned_port = []
 		# run over all the vlans, add slave per node:
 		for vlan in all_vlans:
 			self.logger.debug("taking care at vlan: %s" % vlan)
