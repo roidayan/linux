@@ -490,3 +490,55 @@ static void roce_gid_table_cleanup_one(struct ib_device *ib_dev,
 	kfree(table);
 }
 
+static void roce_gid_table_client_cleanup_one(struct ib_device *ib_dev)
+{
+	struct ib_roce_gid_table **table = ib_dev->cache.roce_gid_table;
+
+	if (!table)
+		return;
+
+	ib_dev->cache.roce_gid_table = NULL;
+	/* smp_wmb is mandatory in order to make sure all executing works
+	 * realize we're freeing this roce_gid_table. Every function which
+	 * could be executed in a work, fetches ib_dev->cache.roce_gid_table
+	 * once (READ_ONCE + smp_rmb) into a local variable.
+	 * If it fetched a value != NULL, we wait for this work to finish by
+	 * calling flush_workqueue. If it fetches NULL, it'll return immediatly.
+	 */
+	smp_wmb();
+	/* Make sure no gid update task is still referencing this device */
+	flush_workqueue(roce_gid_mgmt_wq);
+
+	roce_gid_table_cleanup_one(ib_dev, table);
+}
+
+static void roce_gid_table_client_setup_one(struct ib_device *ib_dev)
+{
+	if (!roce_gid_table_setup_one(ib_dev))
+		if (roce_rescan_device(ib_dev))
+			roce_gid_table_client_cleanup_one(ib_dev);
+}
+
+static struct ib_client table_client = {
+	.name   = "roce_gid_table",
+	.add    = roce_gid_table_client_setup_one,
+	.remove = roce_gid_table_client_cleanup_one
+};
+
+int __init roce_gid_table_setup(void)
+{
+	roce_gid_mgmt_init();
+
+	return ib_register_client(&table_client);
+}
+
+void __exit roce_gid_table_cleanup(void)
+{
+	ib_unregister_client(&table_client);
+
+	roce_gid_mgmt_cleanup();
+
+	flush_workqueue(system_wq);
+
+	rcu_barrier();
+}
