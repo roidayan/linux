@@ -1621,6 +1621,110 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(no)
 	])
 
+	AC_MSG_CHECKING([if linux/timecounter.h exists])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/timecounter.h>
+	],[
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_TIMECOUNTER_H, 1,
+			  [linux/timecounter.h exists])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if netdevice.h has napi_schedule_irqoff])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/netdevice.h>
+	],[
+		napi_schedule_irqoff(NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_NAPI_SCHEDULE_IRQOFF, 1,
+			  [napi_schedule_irqoff is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if ethtool.h enum ethtool_stringset has ETH_SS_RSS_HASH_FUNCS])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/ethtool.h>
+	],[
+		enum ethtool_stringset x = ETH_SS_RSS_HASH_FUNCS;
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_ETH_SS_RSS_HASH_FUNCS, 1,
+			  [ETH_SS_RSS_HASH_FUNCS is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if netdevice.h has napi_complete_done])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/netdevice.h>
+	],[
+		napi_complete_done(NULL, 0);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_NAPI_COMPLETE_DONE, 1,
+			  [napi_complete_done is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if netdevice.h has netdev_rss_key_fill])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/netdevice.h>
+	],[
+		netdev_rss_key_fill(NULL, 0);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_NETDEV_RSS_KEY_FILL, 1,
+			  [netdev_rss_key_fill is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if netdevice.h has struct netdev_phys_item_id])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/netdevice.h>
+	],[
+		struct netdev_phys_item_id x;
+		x.id_len = 0;
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_NETDEV_PHYS_ITEM_ID, 1,
+			  [netdev_phys_item_id is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if cyclecounter_cyc2ns has 4 parameters])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/timecounter.h>
+	],[
+		cyclecounter_cyc2ns(NULL, NULL, 0, NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_CYCLECOUNTER_CYC2NS_4_PARAMS, 1,
+			  [cyclecounter_cyc2ns has 4 parameters])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
 ])
 #
 # COMPAT_CONFIG_HEADERS
