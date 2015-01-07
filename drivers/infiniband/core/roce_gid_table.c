@@ -487,3 +487,47 @@ int roce_gid_table_is_active(struct ib_device *ib_dev, u8 port)
 	return ib_dev->cache.roce_gid_table &&
 		ib_dev->cache.roce_gid_table[port - start_port(ib_dev)]->active;
 }
+
+static void roce_gid_table_client_setup_one(struct ib_device *ib_dev)
+{
+	if (!roce_gid_table_setup_one(ib_dev)) {
+		roce_gid_table_set_active_state(ib_dev, 1);
+		if (roce_rescan_device(ib_dev)) {
+			roce_gid_table_set_active_state(ib_dev, 0);
+			roce_gid_table_cleanup_one(ib_dev);
+		}
+	}
+}
+
+static void roce_gid_table_client_cleanup_one(struct ib_device *ib_dev)
+{
+	roce_gid_table_set_active_state(ib_dev, 0);
+	/* Make sure no gid update task is still referencing this device */
+	flush_workqueue(roce_gid_mgmt_wq);
+
+	roce_gid_table_cleanup_one(ib_dev);
+}
+
+static struct ib_client table_client = {
+	.name   = "roce_gid_table",
+	.add    = roce_gid_table_client_setup_one,
+	.remove = roce_gid_table_client_cleanup_one
+};
+
+int __init roce_gid_table_setup(void)
+{
+	roce_gid_mgmt_init();
+
+	return ib_register_client(&table_client);
+}
+
+void __exit roce_gid_table_cleanup(void)
+{
+	ib_unregister_client(&table_client);
+
+	roce_gid_mgmt_cleanup();
+
+	flush_workqueue(system_wq);
+
+	rcu_barrier();
+}
