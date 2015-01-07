@@ -39,6 +39,8 @@
 #include <linux/init.h>
 #include <linux/mutex.h>
 #include <rdma/rdma_netlink.h>
+#include <rdma/ib_addr.h>
+#include <rdma/ib_cache.h>
 
 #include "core_priv.h"
 
@@ -607,9 +609,80 @@ EXPORT_SYMBOL(ib_query_port);
 int ib_query_gid(struct ib_device *device,
 		 u8 port_num, int index, union ib_gid *gid)
 {
+	if (rdma_cap_roce_gid_table(device, port_num))
+		return ib_cache_gid_get(device, port_num, index, gid, NULL);
+
 	return device->query_gid(device, port_num, index, gid);
 }
 EXPORT_SYMBOL(ib_query_gid);
+
+/**
+ * ib_dev_roce_ports_of_netdev - enumerate RoCE ports of ibdev in
+ *				 respect of netdev
+ * @ib_dev : IB device we want to query
+ * @filter: Should we call the callback?
+ * @filter_cookie: Cookie passed to filter
+ * @cb: Callback to call for each found RoCE ports
+ * @cookie: Cookie passed back to the callback
+ *
+ * Enumerates all of the physical RoCE ports of ib_dev RoCE ports
+ * which are relaying Ethernet packets to a specific
+ * (possibly virtual) netdevice according to filter.
+ */
+void ib_dev_roce_ports_of_netdev(struct ib_device *ib_dev,
+				 roce_netdev_filter filter,
+				 void *filter_cookie,
+				 roce_netdev_callback cb,
+				 void *cookie)
+{
+	u8 port;
+
+	for (port = rdma_start_port(ib_dev); port <= rdma_end_port(ib_dev);
+	     port++)
+		if (rdma_protocol_roce(ib_dev, port)) {
+			struct net_device *idev = NULL;
+
+			if (ib_dev->get_netdev)
+				idev = ib_dev->get_netdev(ib_dev, port);
+
+			if (idev &&
+			    idev->reg_state >= NETREG_UNREGISTERED) {
+				dev_put(idev);
+				idev = NULL;
+			}
+
+			if (filter(ib_dev, port, idev, filter_cookie))
+				cb(ib_dev, port, idev, cookie);
+
+			if (idev)
+				dev_put(idev);
+		}
+}
+
+/**
+ * ib_enum_roce_ports_of_netdev - enumerate RoCE ports of a netdev
+ * @filter: Should we call the callback?
+ * @filter_cookie: Cookie passed to filter
+ * @cb: Callback to call for each found RoCE ports
+ * @cookie: Cookie passed back to the callback
+ *
+ * Enumerates all of the physical RoCE ports which are relaying
+ * Ethernet packets to a specific (possibly virtual) netdevice
+ * according to filter.
+ */
+void ib_enum_roce_ports_of_netdev(roce_netdev_filter filter,
+				  void *filter_cookie,
+				  roce_netdev_callback cb,
+				  void *cookie)
+{
+	struct ib_device *dev;
+
+	down_read(&lists_rwsem);
+	list_for_each_entry(dev, &device_list, core_list)
+		ib_dev_roce_ports_of_netdev(dev, filter, filter_cookie, cb,
+					    cookie);
+	up_read(&lists_rwsem);
+}
 
 /**
  * ib_query_pkey - Get P_Key table entry
@@ -679,17 +752,25 @@ EXPORT_SYMBOL(ib_modify_port);
  *   a specified GID value occurs.
  * @device: The device to query.
  * @gid: The GID value to search for.
+ * @ndev: In RoCE, the net device of the device. Null means ignore.
  * @port_num: The port number of the device where the GID value was found.
  * @index: The index into the GID table where the GID was found.  This
  *   parameter may be NULL.
  */
 int ib_find_gid(struct ib_device *device, union ib_gid *gid,
-		u8 *port_num, u16 *index)
+		struct net_device *ndev, u8 *port_num, u16 *index)
 {
 	union ib_gid tmp_gid;
 	int ret, port, i;
 
 	for (port = rdma_start_port(device); port <= rdma_end_port(device); ++port) {
+		if (rdma_cap_roce_gid_table(device, port)) {
+			if (!ib_cache_gid_find_by_port(device, gid, port,
+						       NULL, index))
+				*port_num = port;
+				return 0;
+		}
+
 		for (i = 0; i < device->port_immutable[port].gid_tbl_len; ++i) {
 			ret = ib_query_gid(device, port, i, &tmp_gid);
 			if (ret)
