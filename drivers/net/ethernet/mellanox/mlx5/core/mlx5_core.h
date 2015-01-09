@@ -37,6 +37,10 @@
 #include <linux/kernel.h>
 #include <linux/sched.h>
 
+#define DRIVER_NAME "mlx5_core"
+#define DRIVER_VERSION "3.0"
+#define DRIVER_RELDATE  "January 2015"
+
 extern int mlx5_core_debug_mask;
 
 #define mlx5_core_dbg(dev, format, ...)					\
