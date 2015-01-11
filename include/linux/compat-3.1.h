@@ -11,7 +11,7 @@
 #include <linux/idr.h>
 #include <net/dst.h>
 
-#ifndef CONFIG_COMPAT_DST_NEIGHBOUR
+#ifndef HAVE_DST_GET_NEIGHBOUR
 static inline struct neighbour *dst_get_neighbour(struct dst_entry *dst)
 {
 	return dst->neighbour;
@@ -26,7 +26,7 @@ static inline struct neighbour *dst_get_neighbour_raw(struct dst_entry *dst)
 {
 	return rcu_dereference_raw(dst->neighbour);
 }
-#endif /* CONFIG_COMPAT_DST_NEIGHBOUR */
+#endif /* HAVE_DST_GET_NEIGHBOUR */
 
 /* Backports 56f8a75c */
 static inline bool ip_is_fragment(const struct iphdr *iph)
@@ -47,7 +47,7 @@ static inline struct sk_buff *__netdev_alloc_skb_ip_align(struct net_device *dev
 	return skb;
 }
 
-#if ! defined(CONFIG_COMPAT_MIN_DUMP_ALLOC_ARG) && ! defined(CONFIG_COMPAT_NETLINK_3_7)
+#ifdef HAVE_NETLINK_DUMP_START_5P
 #include <linux/netlink.h>
 /* remove last arg */
 #define netlink_dump_start(a, b, c, d, e, f) netlink_dump_start(a, b, c, d, e)

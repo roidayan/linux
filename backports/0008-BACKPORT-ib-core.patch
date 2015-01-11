@@ -8,7 +8,7 @@ Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
  drivers/infiniband/core/cma.c         |   64 ++++++++++++++++++++
  drivers/infiniband/core/fmr_pool.c    |    7 ++
  drivers/infiniband/core/mad.c         |    3 +
- drivers/infiniband/core/netlink.c     |   20 ++++++
+ drivers/infiniband/core/netlink.c     |   23 +++++++
  drivers/infiniband/core/sa_query.c    |   19 ++++++
  drivers/infiniband/core/ucm.c         |   38 ++++++++++++
  drivers/infiniband/core/ucma.c        |   76 ++++++++++++++++++++++++
@@ -18,7 +18,7 @@ Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
  drivers/infiniband/core/uverbs_main.c |   40 +++++++++++++
  include/rdma/ib_pack.h                |    4 +
  include/rdma/ib_verbs.h               |    9 +++
- 15 files changed, 494 insertions(+), 0 deletions(-)
+ 15 files changed, 497 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/core/addr.c b/drivers/infiniband/core/addr.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -464,7 +464,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  #define pr_fmt(fmt) "%s:%s: " fmt, KBUILD_MODNAME, __func__
  
  #include <linux/export.h>
-@@ -152,11 +155,19 @@ static int ibnl_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
+@@ -152,11 +155,22 @@ static int ibnl_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
  				return -EINVAL;
  
  			{
@@ -475,16 +475,19 @@ index xxxxxxx..xxxxxxx xxxxxx
  					.module = client->cb_table[op].module,
 +#endif
  				};
- 				return netlink_dump_start(nls, skb, nlh, &c);
-+#else
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0)) */
++
++#if defined(HAVE_NETLINK_DUMP_START_6P) || defined(HAVE_NETLINK_DUMP_START_5P)
 +				return netlink_dump_start(nls, skb, nlh,
 +							  client->cb_table[op].dump,
 +							  NULL, 0);
-+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0)) */
++#else
+ 				return netlink_dump_start(nls, skb, nlh, &c);
++#endif
  			}
  		}
  	}
-@@ -188,11 +199,20 @@ EXPORT_SYMBOL(ibnl_multicast);
+@@ -188,11 +202,20 @@ EXPORT_SYMBOL(ibnl_multicast);
  
  int __init ibnl_init(void)
  {
@@ -835,7 +838,7 @@ diff --git a/drivers/infiniband/core/umem.c b/drivers/infiniband/core/umem.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/umem.c
 +++ b/drivers/infiniband/core/umem.c
-@@ -154,7 +154,11 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
+@@ -162,7 +162,11 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
  
  	down_write(&current->mm->mmap_sem);
  
@@ -847,7 +850,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	lock_limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
  
  	if ((locked > lock_limit) && !capable(CAP_IPC_LOCK)) {
-@@ -220,7 +224,11 @@ out:
+@@ -228,7 +232,11 @@ out:
  		put_pid(umem->pid);
  		kfree(umem);
  	} else
@@ -859,7 +862,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	up_write(&current->mm->mmap_sem);
  	if (vma_list)
-@@ -236,7 +244,11 @@ static void ib_umem_account(struct work_struct *work)
+@@ -244,7 +252,11 @@ static void ib_umem_account(struct work_struct *work)
  	struct ib_umem *umem = container_of(work, struct ib_umem, work);
  
  	down_write(&umem->mm->mmap_sem);
@@ -871,7 +874,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	up_write(&umem->mm->mmap_sem);
  	mmput(umem->mm);
  	kfree(umem);
-@@ -291,7 +303,11 @@ void ib_umem_release(struct ib_umem *umem)
+@@ -299,7 +311,11 @@ void ib_umem_release(struct ib_umem *umem)
  	} else
  		down_write(&mm->mmap_sem);
  

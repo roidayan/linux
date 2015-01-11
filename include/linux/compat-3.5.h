@@ -204,6 +204,19 @@ static inline bool ether_addr_equal_64bits(const u8 addr1[6+2],
 	return !compare_ether_addr_64bits(addr1, addr2);
 }
 
+/**
+ * ether_addr_equal - Compare two Ethernet addresses
+ * @addr1: Pointer to a six-byte array containing the Ethernet address
+ * @addr2: Pointer other six-byte array containing the Ethernet address
+ *
+ * Compare two ethernet addresses, returns true if equal
+ */
+#define ether_addr_equal LINUX_BACKPORT(ether_addr_equal)
+static inline bool ether_addr_equal(const u8 *addr1, const u8 *addr2)
+{
+	return !compare_ether_addr(addr1, addr2);
+}
+
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0)) */
 
 #endif /* LINUX_3_5_COMPAT_H */

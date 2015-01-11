@@ -5,6 +5,7 @@
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0))
 #include <linux/random.h>
+#include <linux/netdevice.h>
 
 #ifndef NETIF_F_HW_VLAN_CTAG_RX
 #define NETIF_F_HW_VLAN_CTAG_RX NETIF_F_HW_VLAN_RX
@@ -44,6 +45,19 @@
 #endif
 
 #define random32() prandom_u32()
+
+#ifndef NAPI_POLL_WEIGHT
+/* Default NAPI poll() weight
+ * Device drivers are strongly advised to not use bigger value
+ */
+#define NAPI_POLL_WEIGHT 64
+#endif
+
+#define netif_is_bond_master LINUX_BACKPORT(netif_is_bond_master)
+static inline bool netif_is_bond_master(struct net_device *dev)
+{
+	return dev->flags & IFF_MASTER && dev->priv_flags & IFF_BONDING;
+}
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)) */
 

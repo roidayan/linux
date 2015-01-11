@@ -346,6 +346,40 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(no)
 	])
 
+	AC_MSG_CHECKING([if struct iscsi_transport has attr_is_visible])
+	LB_LINUX_TRY_COMPILE([
+		#include <scsi/scsi_transport_iscsi.h>
+	],[
+		static struct iscsi_transport iscsi_iser_transport = {
+			.attr_is_visible = NULL,
+		};
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_ISCSI_ATTR_IS_VISIBLE, 1,
+			  [attr_is_visible is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if struct iscsi_transport has get_ep_param])
+	LB_LINUX_TRY_COMPILE([
+		#include <scsi/scsi_transport_iscsi.h>
+	],[
+		static struct iscsi_transport iscsi_iser_transport = {
+			.get_ep_param = NULL,
+		};
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_ISCSI_GET_EP_PARAM, 1,
+			  [get_ep_param is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
 	AC_MSG_CHECKING([if struct iscsi_transport has check_protection])
 	LB_LINUX_TRY_COMPILE([
 		#include <scsi/scsi_transport_iscsi.h>
@@ -359,6 +393,40 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(yes)
 		AC_DEFINE(HAVE_ISCSI_CHECK_PROTECTION, 1,
 			  [check_protection is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if iscsi_proto.h has struct iscsi_scsi_req])
+	LB_LINUX_TRY_COMPILE([
+		#include <scsi/iscsi_proto.h>
+	],[
+		struct iscsi_scsi_req req = {
+			.opcode = 0,
+		};
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_ISCSI_SCSI_REQ, 1,
+			  [struct iscsi_scsi_req is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if struct request_queue has request_fn_active])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/blkdev.h>
+	],[
+		struct request_queue rq = {
+			.request_fn_active = 0,
+		};
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_REQUEST_QUEUE_REQUEST_FN_ACTIVE, 1,
+			  [struct request_queue has request_fn_active])
 	],[
 		AC_MSG_RESULT(no)
 	])
@@ -550,7 +618,7 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 	LB_LINUX_TRY_COMPILE([
 		#include <linux/if_link.h>
 	],[
-		struct struct ifla_vf_info x;
+		struct ifla_vf_info x;
 		x->linkstate = 0;
 
 		return 0;
@@ -665,6 +733,22 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(yes)
 		AC_DEFINE(HAVE_SK_BUFF_XMIT_MORE, 1,
 			  [xmit_more is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if struct sk_buff has encapsulation])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/skbuff.h>
+	],[
+		struct sk_buff *skb;
+		skb->encapsulation = 0;
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_SK_BUFF_ENCAPSULATION, 1,
+			  [encapsulation is defined])
 	],[
 		AC_MSG_RESULT(no)
 	])
@@ -1163,9 +1247,8 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 	LB_LINUX_TRY_COMPILE([
 		#include <linux/netdevice.h>
 	],[
-		struct net_device_ops_ext netdev_ops_ext;
-		struct net_device_ops_ext netdev_ops__ext = {
-			.size                   = sizeof(struct net_device_ops_ext),
+		struct net_device_ops_ext netdev_ops_ext = {
+			.size = sizeof(struct net_device_ops_ext),
 		};
 
 		return 0;
@@ -1404,6 +1487,24 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(yes)
 		AC_DEFINE(HAVE_GET_TS_INFO_EXT, 1,
 			  [get_ts_info is defined in ethtool_ops_ext])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if struct ethtool_flow_ext has h_dest])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/ethtool.h>
+	],[
+		unsigned char mac[ETH_ALEN];
+		struct ethtool_flow_ext h_ext;
+
+		memcpy(&mac, h_ext.h_dest, ETH_ALEN);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_ETHTOOL_FLOW_EXT_H_DEST, 1,
+			  [ethtool_flow_ext has h_dest])
 	],[
 		AC_MSG_RESULT(no)
 	])
@@ -1757,6 +1858,68 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(no)
 	])
 
+	AC_MSG_CHECKING([if dst.h has dst_get_neighbour])
+	LB_LINUX_TRY_COMPILE([
+		#include <net/dst.h>
+	],[
+		struct neighbour *neigh = dst_get_neighbour(NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_DST_GET_NEIGHBOUR, 1,
+			  [ is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if netlink_dump_start has 6 parameters])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/netlink.h>
+	],[
+		int ret = netlink_dump_start(NULL, NULL, NULL, NULL, NULL, 0);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_NETLINK_DUMP_START_6P, 1,
+			  [ is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if netlink_dump_start has 5 parameters])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/netlink.h>
+	],[
+		int ret = netlink_dump_start(NULL, NULL, NULL, NULL, NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_NETLINK_DUMP_START_5P, 1,
+			  [ is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if struct dcbnl_rtnl_ops has ieee_getmaxrate/ieee_setmaxrate])
+	LB_LINUX_TRY_COMPILE([
+		#include <net/dcbnl.h>
+	],[
+		const struct dcbnl_rtnl_ops en_dcbnl_ops = {
+			.ieee_getmaxrate = NULL,
+			.ieee_setmaxrate = NULL,
+		};
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_IEEE_GET_SET_MAXRATE, 1,
+			  [ieee_getmaxrate/ieee_setmaxrate is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
 ])
 #
 # COMPAT_CONFIG_HEADERS
