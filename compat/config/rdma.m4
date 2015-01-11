@@ -1742,6 +1742,21 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(no)
 	])
 
+	AC_MSG_CHECKING([if vxlan.h has vxlan_gso_check])
+	LB_LINUX_TRY_COMPILE([
+		#include <net/vxlan.h>
+	],[
+		vxlan_gso_check(NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_VXLAN_GSO_CHECK, 1,
+			  [vxlan_gso_check is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
 ])
 #
 # COMPAT_CONFIG_HEADERS

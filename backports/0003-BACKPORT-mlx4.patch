@@ -7,9 +7,9 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  drivers/infiniband/hw/mlx4/main.c               |    8 +
  drivers/net/ethernet/mellanox/mlx4/cmd.c        |    6 +
  drivers/net/ethernet/mellanox/mlx4/en_clock.c   |   10 +
- drivers/net/ethernet/mellanox/mlx4/en_cq.c      |   11 ++
+ drivers/net/ethernet/mellanox/mlx4/en_cq.c      |   11 +
  drivers/net/ethernet/mellanox/mlx4/en_ethtool.c |   71 +++++++-
- drivers/net/ethernet/mellanox/mlx4/en_netdev.c  |  221 +++++++++++++++++++++++
+ drivers/net/ethernet/mellanox/mlx4/en_netdev.c  |  225 +++++++++++++++++++++++
  drivers/net/ethernet/mellanox/mlx4/en_rx.c      |   98 ++++++++++-
  drivers/net/ethernet/mellanox/mlx4/en_tx.c      |   60 ++++++-
  drivers/net/ethernet/mellanox/mlx4/eq.c         |   10 +
@@ -17,7 +17,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  drivers/net/ethernet/mellanox/mlx4/mlx4_en.h    |   26 +++-
  include/linux/mlx4/cq.h                         |    5 +
  include/linux/mlx4/device.h                     |    4 +
- 14 files changed, 577 insertions(+), 4 deletions(-)
+ 14 files changed, 581 insertions(+), 4 deletions(-)
 
 diff --git a/drivers/infiniband/hw/mlx4/cm.c b/drivers/infiniband/hw/mlx4/cm.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -805,7 +805,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	priv->dev->features    &= ~NETIF_F_GSO_UDP_TUNNEL;
  
  	ret = mlx4_SET_PORT_VXLAN(priv->mdev->dev, priv->port,
-@@ -2364,12 +2471,19 @@ static void mlx4_en_del_vxlan_port(struct  net_device *dev,
+@@ -2364,12 +2471,21 @@ static void mlx4_en_del_vxlan_port(struct  net_device *dev,
  	queue_work(priv->mdev->workqueue, &priv->vxlan_del_task);
  }
  
@@ -817,15 +817,17 @@ index xxxxxxx..xxxxxxx xxxxxx
  	return vxlan_features_check(skb, features);
  }
 +#else
++#ifdef HAVE_VXLAN_GSO_CHECK
 +static bool mlx4_en_gso_check(struct sk_buff *skb, struct net_device *dev)
 +{
 +	return vxlan_gso_check(skb);
 +}
 +#endif
++#endif
  #endif
  
  static const struct net_device_ops mlx4_netdev_ops = {
-@@ -2389,21 +2503,42 @@ static const struct net_device_ops mlx4_netdev_ops = {
+@@ -2389,22 +2505,45 @@ static const struct net_device_ops mlx4_netdev_ops = {
  #ifdef CONFIG_NET_POLL_CONTROLLER
  	.ndo_poll_controller	= mlx4_en_netpoll,
  #endif
@@ -854,21 +856,24 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#ifdef HAVE_NETDEV_FEATURES_T
  	.ndo_features_check	= mlx4_en_features_check,
 +#else
++#ifdef HAVE_VXLAN_GSO_CHECK
 +	.ndo_gso_check		= mlx4_en_gso_check,
- #endif
 +#endif
-+};
-+
++#endif
+ #endif
+ };
+ 
 +#ifdef HAVE_NETDEV_EXT_NDO_GET_PHYS_PORT_ID
 +static const struct net_device_ops_ext mlx4_netdev_ops_ext = {
 +	.size                   = sizeof(struct net_device_ops_ext),
 +	.ndo_get_phys_port_id	= mlx4_en_get_phys_port_id,
- };
++};
 +#endif
- 
++
  static const struct net_device_ops mlx4_netdev_ops_master = {
  	.ndo_open		= mlx4_en_open,
-@@ -2420,25 +2555,54 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
+ 	.ndo_stop		= mlx4_en_close,
+@@ -2420,24 +2559,53 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
  	.ndo_vlan_rx_kill_vid	= mlx4_en_vlan_rx_kill_vid,
  	.ndo_set_vf_mac		= mlx4_en_set_vf_mac,
  	.ndo_set_vf_vlan	= mlx4_en_set_vf_vlan,
@@ -903,8 +908,8 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.ndo_features_check	= mlx4_en_features_check,
  #endif
 +#endif
- };
- 
++};
++
 +#ifdef HAVE_NET_DEVICE_OPS_EXT
 +static const struct net_device_ops_ext mlx4_netdev_ops_master_ext = {
 +	.size                   = sizeof(struct net_device_ops_ext),
@@ -917,13 +922,12 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#ifdef HAVE_NETDEV_EXT_NDO_GET_PHYS_PORT_ID
 +	.ndo_get_phys_port_id	= mlx4_en_get_phys_port_id,
 +#endif
-+};
+ };
 +#endif
-+
+ 
  int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  			struct mlx4_en_port_profile *prof)
- {
-@@ -2458,7 +2622,9 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2458,7 +2626,9 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  
  	SET_NETDEV_DEV(dev, &mdev->dev->pdev->dev);
  	dev->dev_id =  port - 1;
@@ -933,7 +937,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	/*
  	 * Initialize driver private data
-@@ -2494,7 +2660,9 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2494,7 +2664,9 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	priv->num_tx_rings_p_up = mdev->profile.num_tx_rings_p_up;
  	priv->tx_ring_num = prof->tx_ring_num;
  	priv->tx_work_limit = MLX4_EN_DEFAULT_TX_WORK;
@@ -943,7 +947,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	priv->tx_ring = kzalloc(sizeof(struct mlx4_en_tx_ring *) * MAX_TX_RINGS,
  				GFP_KERNEL);
-@@ -2576,19 +2744,41 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2576,19 +2748,41 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	/*
  	 * Initialize netdev entry points
  	 */
@@ -985,7 +989,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	dev->hw_features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM;
  	if (mdev->LSO_support)
  		dev->hw_features |= NETIF_F_TSO | NETIF_F_TSO6;
-@@ -2606,10 +2796,40 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2606,10 +2800,40 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	    MLX4_STEERING_MODE_DEVICE_MANAGED &&
  	    mdev->dev->caps.dmfs_high_steer_mode != MLX4_STEERING_DMFS_A0_STATIC)
  		dev->hw_features |= NETIF_F_NTUPLE;
@@ -1026,7 +1030,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	/* Setting a default hash function value */
  	if (mdev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_RSS_TOP) {
  		priv->rss_hash_fn = ETH_RSS_HASH_TOP;
-@@ -2620,6 +2840,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2620,6 +2844,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  			"No RSS hash capabilities exposed, using Toeplitz\n");
  		priv->rss_hash_fn = ETH_RSS_HASH_TOP;
  	}
