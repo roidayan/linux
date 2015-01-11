@@ -40,6 +40,7 @@ Usage:  `basename $0` [options]
     --kernel-version=VERSION  make for this kernel [$(uname -r)]
     --modules-dir=DIR  modules directory [/lib/modules/$(uname -r)]
     --kernel-sources=DIR  make for this kernel [/lib/modules/$(uname -r)/build]
+    --skip-autoconf
 
     Kernel modules configuration:
 
@@ -261,6 +262,7 @@ function check_autofconf {
 
 # set defaults
 
+SKIP_AUTOCONF=${SKIP_AUTOCONF:-0}
 CONFIG_MEMTRACK=${CONFIG_MEMTRACK:-''}
 CONFIG_DEBUG_INFO=${CONFIG_DEBUG_INFO:-'y'}
 CONFIG_INFINIBAND=${CONFIG_INFINIBAND:-''}
@@ -369,6 +371,9 @@ main()
                         ;;
                         -modules-dir=* | --modules-dir=* | --mod-dir=*)
                                 MODULES_DIR=`expr "x$1" : 'x[^=]*=\(.*\)'`
+                        ;;
+                        --skip-autoconf)
+                        SKIP_AUTOCONF=1
                         ;;
                         -kernel-sources | --kernel-sources | --kernel-src | --kern-src | --ker-src)
                                 shift
@@ -1658,12 +1663,14 @@ EOFAUTOCONF
         echo "Created ${AUTOCONF_H}:"
         cat ${AUTOCONF_H}
 
+    if [ $SKIP_AUTOCONF -eq 0 ]; then
         cd compat
         if [[ -e "/etc/SuSE-release" && "$KSRC" =~ "build" ]]; then
             ex ./configure --with-linux-obj=$KSRC --with-linux=${KSRC/build/source}
         else
             ex ./configure --with-linux-obj=$KSRC --with-linux=$KSRC
         fi
+    fi
 }
 
 main $@
