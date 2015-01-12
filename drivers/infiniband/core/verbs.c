@@ -827,8 +827,8 @@ static const struct {
 };
 
 int ib_modify_qp_is_ok(enum ib_qp_state cur_state, enum ib_qp_state next_state,
-		       enum ib_qp_type type, enum ib_qp_attr_mask mask,
-		       enum rdma_link_layer ll)
+		       enum ib_qp_type type, struct ib_qp_attr *attr,
+		       enum ib_qp_attr_mask mask, enum rdma_link_layer ll)
 {
 	enum ib_qp_attr_mask req_param, opt_param;
 
@@ -858,6 +858,12 @@ int ib_modify_qp_is_ok(enum ib_qp_state cur_state, enum ib_qp_state next_state,
 		return 0;
 
 	if (mask & ~(req_param | opt_param | IB_QP_STATE))
+		return 0;
+
+	if ((mask & IB_QP_SQ_PSN) && (attr->sq_psn & 0xff000000))
+		return 0;
+
+	if ((mask & IB_QP_RQ_PSN) && (attr->rq_psn & 0xff000000))
 		return 0;
 
 	return 1;
