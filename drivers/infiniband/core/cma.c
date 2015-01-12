@@ -744,7 +744,7 @@ int rdma_init_qp_attr(struct rdma_cm_id *id, struct ib_qp_attr *qp_attr,
 						 qp_attr_mask);
 
 		if (qp_attr->qp_state == IB_QPS_RTR)
-			qp_attr->rq_psn = id_priv->seq_num;
+			qp_attr->rq_psn = id_priv->seq_num & 0xffffff;
 		break;
 	case RDMA_TRANSPORT_IWARP:
 		if (!id_priv->cm_id.iw) {
@@ -2807,7 +2807,7 @@ static int cma_connect_ib(struct rdma_id_private *id_priv,
 	req.service_id = rdma_get_service_id(&id_priv->id, cma_dst_addr(id_priv));
 	req.qp_num = id_priv->qp_num;
 	req.qp_type = id_priv->id.qp_type;
-	req.starting_psn = id_priv->seq_num;
+	req.starting_psn = id_priv->seq_num & 0xffffff;
 	req.responder_resources = conn_param->responder_resources;
 	req.initiator_depth = conn_param->initiator_depth;
 	req.flow_control = conn_param->flow_control;
@@ -2924,7 +2924,7 @@ static int cma_accept_ib(struct rdma_id_private *id_priv,
 
 	memset(&rep, 0, sizeof rep);
 	rep.qp_num = id_priv->qp_num;
-	rep.starting_psn = id_priv->seq_num;
+	rep.starting_psn = id_priv->seq_num & 0xffffff;
 	rep.private_data = conn_param->private_data;
 	rep.private_data_len = conn_param->private_data_len;
 	rep.responder_resources = conn_param->responder_resources;
