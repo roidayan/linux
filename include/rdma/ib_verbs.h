@@ -1718,10 +1718,11 @@ static inline int ib_copy_to_udata(struct ib_udata *udata, void *src, size_t len
 /**
  * ib_modify_qp_is_ok - Check that the supplied attribute mask
  * contains all required attributes and no attributes not allowed for
- * the given QP state transition.
+ * the given QP state transition, and checks the QP attributes.
  * @cur_state: Current QP state
  * @next_state: Next QP state
  * @type: QP type
+ * @attr: QP attributes
  * @mask: Mask of supplied QP attributes
  * @ll : link layer of port
  *
@@ -1732,8 +1733,8 @@ static inline int ib_copy_to_udata(struct ib_udata *udata, void *src, size_t len
  * and that the attribute mask supplied is allowed for the transition.
  */
 int ib_modify_qp_is_ok(enum ib_qp_state cur_state, enum ib_qp_state next_state,
-		       enum ib_qp_type type, enum ib_qp_attr_mask mask,
-		       enum rdma_link_layer ll);
+		       enum ib_qp_type type, struct ib_qp_attr *attr,
+		       enum ib_qp_attr_mask mask, enum rdma_link_layer ll);
 
 int ib_register_event_handler  (struct ib_event_handler *event_handler);
 int ib_unregister_event_handler(struct ib_event_handler *event_handler);

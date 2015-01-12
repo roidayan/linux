@@ -1896,9 +1896,9 @@ int mlx4_ib_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 	}
 
 	if (!ib_modify_qp_is_ok(cur_state, new_state, ibqp->qp_type,
-				attr_mask, ll)) {
-		pr_debug("qpn 0x%x: invalid attribute mask specified "
-			 "for transition %d to %d. qp_type %d,"
+				attr, attr_mask, ll)) {
+		pr_debug("qpn 0x%x: invalid attribute mask or attributes "
+			 "specified for transition %d to %d. qp_type %d,"
 			 " attr_mask 0x%x\n",
 			 ibqp->qp_num, cur_state, new_state,
 			 ibqp->qp_type, attr_mask);
