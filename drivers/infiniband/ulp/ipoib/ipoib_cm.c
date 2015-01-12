@@ -294,7 +294,7 @@ static int ipoib_cm_modify_rx_qp(struct net_device *dev,
 		ipoib_warn(priv, "failed to init QP attr for RTR: %d\n", ret);
 		return ret;
 	}
-	qp_attr.rq_psn = psn;
+	qp_attr.rq_psn = psn & 0xffffff;
 	ret = ib_modify_qp(qp, &qp_attr, qp_attr_mask);
 	if (ret) {
 		ipoib_warn(priv, "failed to modify QP to RTR: %d\n", ret);
@@ -433,7 +433,7 @@ static int ipoib_cm_send_rep(struct net_device *dev, struct ib_cm_id *cm_id,
 	rep.rnr_retry_count = req->rnr_retry_count;
 	rep.srq = ipoib_cm_has_srq(dev);
 	rep.qp_num = qp->qp_num;
-	rep.starting_psn = psn;
+	rep.starting_psn = psn & 0xffffff;
 	return ib_send_cm_rep(cm_id, &rep);
 }
 
