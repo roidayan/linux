@@ -675,21 +675,6 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(no)
 	])
 
-	AC_MSG_CHECKING([if mm.h has kvfree])
-	LB_LINUX_TRY_COMPILE([
-		#include <linux/mm.h>
-	],[
-		kvfree(NULL);
-
-		return 0;
-	],[
-		AC_MSG_RESULT(yes)
-		AC_DEFINE(HAVE_KVFREE, 1,
-			  [kvfree is defined])
-	],[
-		AC_MSG_RESULT(no)
-	])
-
 	AC_MSG_CHECKING([if netdevice.h has dev_consume_skb_any])
 	LB_LINUX_TRY_COMPILE([
 		#include <linux/netdevice.h>
@@ -1696,7 +1681,8 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 	LB_LINUX_TRY_COMPILE([
 		#include <linux/kthread.h>
 	],[
-		struct kthread_work *x = NULL;
+		struct kthread_work x;
+		x.worker = NULL;
 
 		return 0;
 	],[
@@ -1917,6 +1903,115 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(yes)
 		AC_DEFINE(HAVE_IEEE_GET_SET_MAXRATE, 1,
 			  [ieee_getmaxrate/ieee_setmaxrate is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if libiscsi.h has iscsi_change_queue_depth])
+	LB_LINUX_TRY_COMPILE([
+		#include <scsi/libiscsi.h>
+	],[
+		iscsi_change_queue_depth(NULL, 0, 0);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_ISCSI_CHANGE_QUEUE_DEPTH, 1,
+			  [iscsi_change_queue_depth is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if libiscsi.h has iscsi_eh_target_reset])
+	LB_LINUX_TRY_COMPILE([
+		#include <scsi/libiscsi.h>
+	],[
+		iscsi_eh_target_reset(NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_ISCSI_EH_TARGET_RESET, 1,
+			  [iscsi_eh_target_reset is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if scsi_cmnd.h has scsi_prot_interval])
+	LB_LINUX_TRY_COMPILE([
+		#include <scsi/scsi_cmnd.h>
+	],[
+		scsi_prot_interval(NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_SCSI_PROT_INTERVAL, 1,
+			  [scsi_prot_interval is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if scsi_host.h struct scsi_host_template has track_queue_depth])
+	LB_LINUX_TRY_COMPILE([
+		#include <scsi/scsi_host.h>
+	],[
+		static struct scsi_host_template iscsi_iser_sht = {
+			.track_queue_depth  = 1,
+		}
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_TRACK_QUEUE_DEPTH, 1,
+			  [track_queue_depth is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if ethtool.h has get_module_eeprom])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/ethtool.h>
+	],[
+		get_module_eeprom(NULL, NULL, NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_GET_MODULE_EEPROM, 1,
+			  [HAVE_GET_MODULE_EEPROM is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if netdevice.h struct net_device has wanted_features])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/netdevice.h>
+	],[
+		struct net_device x = {
+			.wanted_features  = 0,
+		}
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_WANTED_FEATURES, 1,
+			  [wanted_features is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if blk-mq.h has blk_mq_unique_tag])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/blk-mq.h>
+	],[
+		blk_mq_unique_tag(NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_BLK_MQ_UNIQUE_TAG, 1,
+			  [blk_mq_unique_tag is defined])
 	],[
 		AC_MSG_RESULT(no)
 	])

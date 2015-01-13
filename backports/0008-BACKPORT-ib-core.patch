@@ -7,6 +7,8 @@ Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
  drivers/infiniband/core/cm.c          |   23 +++++++
  drivers/infiniband/core/cma.c         |   64 ++++++++++++++++++++
  drivers/infiniband/core/fmr_pool.c    |    7 ++
+ drivers/infiniband/core/iwcm.c        |   16 +++++
+ drivers/infiniband/core/iwpm_util.c   |   26 ++++++++-
  drivers/infiniband/core/mad.c         |    3 +
  drivers/infiniband/core/netlink.c     |   23 +++++++
  drivers/infiniband/core/sa_query.c    |   19 ++++++
@@ -17,8 +19,9 @@ Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
  drivers/infiniband/core/uverbs_cmd.c  |   51 ++++++++++++++++
  drivers/infiniband/core/uverbs_main.c |   40 +++++++++++++
  include/rdma/ib_pack.h                |    4 +
+ include/rdma/ib_umem_odp.h            |    4 +
  include/rdma/ib_verbs.h               |    9 +++
- 15 files changed, 497 insertions(+), 0 deletions(-)
+ 18 files changed, 541 insertions(+), 2 deletions(-)
 
 diff --git a/drivers/infiniband/core/addr.c b/drivers/infiniband/core/addr.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -436,6 +439,127 @@ index xxxxxxx..xxxxxxx xxxxxx
  		if (io_virtual_address == fmr->io_virtual_address &&
  		    page_list_len      == fmr->page_list_len      &&
  		    !memcmp(page_list, fmr->page_list,
+diff --git a/drivers/infiniband/core/iwcm.c b/drivers/infiniband/core/iwcm.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/core/iwcm.c
++++ b/drivers/infiniband/core/iwcm.c
+@@ -80,6 +80,14 @@ static struct ctl_table iwcm_ctl_table[] = {
+ 	{ }
+ };
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0)
++static struct ctl_path iwcm_ctl_path[] = {
++    { .procname = "net" },
++    { .procname = "iw_cm" },
++    { }
++};
++#endif
++
+ /*
+  * The following services provide a mechanism for pre-allocating iwcm_work
+  * elements.  The design pre-allocates them  based on the cm_id type:
+@@ -1048,8 +1056,12 @@ static int __init iw_cm_init(void)
+ 	if (!iwcm_wq)
+ 		return -ENOMEM;
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
+ 	iwcm_ctl_table_hdr = register_net_sysctl(&init_net, "net/iw_cm",
+ 						 iwcm_ctl_table);
++#else
++	iwcm_ctl_table_hdr = register_sysctl_paths(iwcm_ctl_path, iwcm_ctl_table);
++#endif
+ 	if (!iwcm_ctl_table_hdr) {
+ 		pr_err("iw_cm: couldn't register sysctl paths\n");
+ 		destroy_workqueue(iwcm_wq);
+@@ -1061,7 +1073,11 @@ static int __init iw_cm_init(void)
+ 
+ static void __exit iw_cm_cleanup(void)
+ {
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
+ 	unregister_net_sysctl_table(iwcm_ctl_table_hdr);
++#else
++	unregister_sysctl_table(iwcm_ctl_table_hdr);
++#endif
+ 	destroy_workqueue(iwcm_wq);
+ }
+ 
+diff --git a/drivers/infiniband/core/iwpm_util.c b/drivers/infiniband/core/iwpm_util.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/core/iwpm_util.c
++++ b/drivers/infiniband/core/iwpm_util.c
+@@ -131,6 +131,9 @@ int iwpm_remove_mapinfo(struct sockaddr_storage *local_sockaddr,
+ 	struct hlist_node *tmp_hlist_node;
+ 	struct hlist_head *hash_bucket_head;
+ 	struct iwpm_mapping_info *map_info = NULL;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++	struct hlist_node *node;
++#endif
+ 	unsigned long flags;
+ 	int ret = -EINVAL;
+ 
+@@ -139,9 +142,13 @@ int iwpm_remove_mapinfo(struct sockaddr_storage *local_sockaddr,
+ 		hash_bucket_head = get_hash_bucket_head(
+ 					local_sockaddr,
+ 					mapped_local_addr);
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++		hlist_for_each_entry_safe(map_info, node, tmp_hlist_node,
++					hash_bucket_head, hlist_node) {
++#else
+ 		hlist_for_each_entry_safe(map_info, tmp_hlist_node,
+ 					hash_bucket_head, hlist_node) {
+-
++#endif
+ 			if (!iwpm_compare_sockaddr(&map_info->mapped_sockaddr,
+ 						mapped_local_addr)) {
+ 
+@@ -161,15 +168,22 @@ static void free_hash_bucket(void)
+ {
+ 	struct hlist_node *tmp_hlist_node;
+ 	struct iwpm_mapping_info *map_info;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++	struct hlist_node *node;
++#endif
+ 	unsigned long flags;
+ 	int i;
+ 
+ 	/* remove all the mapinfo data from the list */
+ 	spin_lock_irqsave(&iwpm_mapinfo_lock, flags);
+ 	for (i = 0; i < IWPM_HASH_BUCKET_SIZE; i++) {
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++		hlist_for_each_entry_safe(map_info, node, tmp_hlist_node,
++			&iwpm_hash_bucket[i], hlist_node) {
++#else
+ 		hlist_for_each_entry_safe(map_info, tmp_hlist_node,
+ 			&iwpm_hash_bucket[i], hlist_node) {
+-
++#endif
+ 				hlist_del_init(&map_info->hlist_node);
+ 				kfree(map_info);
+ 			}
+@@ -498,6 +512,9 @@ int iwpm_send_mapinfo(u8 nl_client, int iwpm_pid)
+ 	struct iwpm_mapping_info *map_info;
+ 	struct sk_buff *skb = NULL;
+ 	struct nlmsghdr *nlh;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++	struct hlist_node *node;
++#endif
+ 	int skb_num = 0, mapping_num = 0;
+ 	int i = 0, nlmsg_bytes = 0;
+ 	unsigned long flags;
+@@ -513,8 +530,13 @@ int iwpm_send_mapinfo(u8 nl_client, int iwpm_pid)
+ 	skb_num++;
+ 	spin_lock_irqsave(&iwpm_mapinfo_lock, flags);
+ 	for (i = 0; i < IWPM_HASH_BUCKET_SIZE; i++) {
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++		hlist_for_each_entry(map_info, node,
++			&iwpm_hash_bucket[i], hlist_node) {
++#else
+ 		hlist_for_each_entry(map_info, &iwpm_hash_bucket[i],
+ 				     hlist_node) {
++#endif
+ 			if (map_info->nl_client != nl_client)
+ 				continue;
+ 			nlh = NULL;
 diff --git a/drivers/infiniband/core/mad.c b/drivers/infiniband/core/mad.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/mad.c
@@ -1165,6 +1289,41 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  enum {
  	IB_LRH_BYTES  = 8,
+diff --git a/include/rdma/ib_umem_odp.h b/include/rdma/ib_umem_odp.h
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/include/rdma/ib_umem_odp.h
++++ b/include/rdma/ib_umem_odp.h
+@@ -35,12 +35,14 @@
+ 
+ #include <rdma/ib_umem.h>
+ #include <rdma/ib_verbs.h>
++#ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
+ #include <linux/interval_tree.h>
+ 
+ struct umem_odp_node {
+ 	u64 __subtree_last;
+ 	struct rb_node rb;
+ };
++#endif
+ 
+ struct ib_umem_odp {
+ 	/*
+@@ -72,6 +74,7 @@ struct ib_umem_odp {
+ 	/* A linked list of umems that don't have private mmu notifier
+ 	 * counters yet. */
+ 	struct list_head no_private_counters;
++#ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
+ 	struct ib_umem		*umem;
+ 
+ 	/* Tree tracking */
+@@ -79,6 +82,7 @@ struct ib_umem_odp {
+ 
+ 	struct completion	notifier_completion;
+ 	int			dying;
++#endif
+ };
+ 
+ #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
 diff --git a/include/rdma/ib_verbs.h b/include/rdma/ib_verbs.h
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/include/rdma/ib_verbs.h
