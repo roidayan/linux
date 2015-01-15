@@ -122,6 +122,7 @@ nagometer() {
 
 }
 
+FEATURE_PATCHES=${FEATURE_PATCHES:-"features"}
 EXTRA_PATCHES="patches"
 REFRESH="n"
 GET_STABLE_PENDING="n"
@@ -440,3 +441,15 @@ if [ $CREATE_NEW_BRANCH -eq 1 ]; then
 
 	git commit -s -m "Created LINUX branch, and committed original Linux sources."
 fi
+
+# apply feature patches
+for i in $(find $FEATURE_PATCHES/ -maxdepth 1 -name \*.patch 2>/dev/null); do
+	echo -e "${GREEN}Applying Feature patch${NORMAL}: ${BLUE}$i${NORMAL}"
+	git am --reject < $i
+	RET=$?
+	if [[ $RET -ne 0 ]]; then
+		echo -e "${RED}Patching $i failed${NORMAL}, update it"
+		exit $RET
+	fi
+done
+
