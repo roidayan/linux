@@ -8,6 +8,8 @@
 # Usage: you should have the latest pull of linux-2.6.git
 #
 
+DIR="$PWD"
+
 GIT_URL="git://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git"
 
 FILES="ofed_scripts/checkout_files"
@@ -29,6 +31,10 @@ CLEAN_ONLY=${CLEAN_ONLY:-0}
 
 usage() {
 	printf "Usage: $0 [ refresh] [ --help | -h | -s | -n | -p | -c ]\n"
+
+	printf "${GREEN}%30s${NORMAL} - Path to Linux Git Tree\n" "--git-tree | --linux-tree"
+	printf "${GREEN}%19s${NORMAL} - Linux branch/commit to copy files from\n" "--linux-branch"
+	printf "${GREEN}%16s${NORMAL} - given linux-tree is none bare git (no need to clone it)\n" "--none-bare"
 
 	printf "${GREEN}%10s${NORMAL} - will update your all your patch offsets using quilt\n" "refresh"
 	printf "${GREEN}%10s${NORMAL} - get and apply pending-stable/ fixes purging old files there\n" "-s"
@@ -122,6 +128,12 @@ nagometer() {
 
 }
 
+TMP=${TMP:-"/tmp"}
+TMPDIR=
+GIT_TREE=${GIT_TREE:-""}
+GIT_TREE_IS_BARE=${GIT_TREE_IS_BARE:-1}
+LINUX_BRANCH=${LINUX_BRANCH:-"for-upstream"}
+
 FEATURE_PATCHES=${FEATURE_PATCHES:-"features"}
 EXTRA_PATCHES="patches"
 REFRESH="n"
@@ -163,6 +175,18 @@ if [ $# -ge 1 ]; then
 			REFRESH="y"
 			shift; continue;
 		fi
+		if [[ "$1" = "--git-tree" ]] || [[ "$1" = "--linux-tree" ]]; then
+			GIT_TREE=$2
+			shift 2; continue;
+		fi
+		if [[ "$1" = "--none-bare" ]]; then
+			GIT_TREE_IS_BARE=0
+			shift ; continue;
+		fi
+		if [[ "$1" = "--linux-branch" ]]; then
+			LINUX_BRANCH=$2
+			shift 2; continue;
+		fi
 
 		echo "Unexpected argument passed: $1"
 		usage $0
@@ -187,6 +211,37 @@ if [ -z $GIT_TREE ]; then
 else
 	echo "You said to use git tree at: $GIT_TREE for linux-next"
 fi
+
+# Clone Linux git unless it's a none bare git
+if [ $GIT_TREE_IS_BARE -eq 1 ]; then
+	TMPDIR=$(/bin/mktemp -d /$TMP/linux_XXXXXX)
+	if [ ! -d $TMPDIR ]; then
+		echo "-E- Failed to create tmp dir!"
+		exit 1
+	fi
+	cd $TMPDIR
+	ex git clone $GIT_TREE linux_base
+	GIT_TREE="$TMPDIR/linux_base"
+fi
+
+cd $GIT_TREE
+ex git checkout $LINUX_BRANCH
+LINUX_COMMIT=$(git log 2>/dev/null | grep commit | head -1 2>/dev/null | awk {'print $NF'} 2>/dev/null)
+if [ -z "$LINUX_COMMIT" ]; then
+	echo "-E- Failed to get last commit ID of branch $LINUX_BRANCH"
+fi
+cd $DIR
+last_commit=$(cat $DIR/LINUX_BASE_BRANCH 2>/dev/null)
+echo
+if [ "X$LINUX_COMMIT" != "X$last_commit" ]; then
+	echo "Linux base was changed, going to update LINUX_BASE_BRANCH..."
+	echo $LINUX_COMMIT > $DIR/LINUX_BASE_BRANCH
+	git add LINUX_BASE_BRANCH
+	git commit -s -m "updated LINUX_BASE_BRANCH to: ${LINUX_COMMIT: 0:10}"
+else
+	echo "Linux base was not changed from last time."
+fi
+echo
 
 # Drivers that have their own directory
 
@@ -379,7 +434,6 @@ for dir in $EXTRA_PATCHES; do
 	nagometer $dir $ORIG_CODE >> $CODE_METRICS
 done
 
-DIR="$PWD"
 cd $GIT_TREE
 GIT_DESCRIBE=$($DIR/scripts/setlocalversion $GIT_TREE)
 GIT_BRANCH=$(git branch --no-color |sed -n 's/^\* //p')
@@ -426,6 +480,10 @@ if [ -d ./.git ]; then
 	echo -e "compat-rdma release: ${YELLOW}$(cat compat_version)${NORMAL}" >> $CODE_METRICS
 
 	cat $CODE_METRICS
+fi
+
+if [ "X$TMPDIR" != "X" ] && [ -d "$TMPDIR" ]; then
+	/bin/rm -rf $TMPDIR
 fi
 
 if [ $CREATE_NEW_BRANCH -eq 1 ]; then
