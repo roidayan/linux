@@ -28,6 +28,7 @@ DEVICE_INI_MISSING=2
 NO_HARDWARE=171
 MST_START_FAIL=173
 config="/etc/mlnx-en.conf"
+skip_dist_check=0
 
 usage()
 {
@@ -46,6 +47,7 @@ cat << EOF
 			 [--enable-sriov]             Burn SR-IOV enabled firmware
 			                              - Note: Enable/Disable of SRIOV in a non-volatile configuration through uEFI
 			                                      and/or tool will override this flag.
+			 [--without-depcheck]         Skip Distro's libraries check
 EOF
 }
 
@@ -99,6 +101,9 @@ while [ ! -z "$1" ]; do
 		;;
 		--enable-sriov)
 			sriov_en=1
+		;;
+		--without-depcheck)
+			skip_dist_check=1
 		;;
 		*)
 			echo "Bad input parameter: $1"
@@ -415,6 +420,80 @@ update_fw()
 }
 ######### End of FW update
 
+check_headers()
+{
+	if [ $skip_dist_check -eq 1 ]; then
+		return
+	fi
+
+	echo "Checking for Linux headers availability..."
+	if [ ! -d "${KSRC}/" ]; then
+		echo
+		echo "ERROR: No kernel sources/headers found for $KVERSION kernel."
+		echo "Cannot continue..."
+		echo "To install the missing sources/headers run the following command:"
+		case "$distro" in
+			sles*|*SUSE*)
+				echo "zypper install kernel-devel kernel-syms"
+			;;
+			ubuntu*|debian*)
+				echo "apt-get install linux-headers-`uname -r`"
+			;;
+			*)
+				echo "yum install kernel-devel"
+			;;
+		esac
+		exit 1
+	fi
+}
+
+check_dist_req()
+{
+	if [ $skip_dist_check -eq 1 ]; then
+		return
+	fi
+
+	local build_requires_common="gcc make patch gcc-c++"
+	local build_requires_redhat="$build_requires_common redhat-rpm-config rpm-build"
+	local build_requires_suse="$build_requires_common kernel-syms"
+	local build_requires_debian="debhelper autotools-dev dkms zlib1g-dev"
+	local missing_rpms=""
+	local package=
+
+	echo "Verifying dependencies..."
+	case "$distro" in
+		xen*|fc*|oel*|rhel*)
+			for package in $build_requires_redhat; do
+				if ! is_installed "$package"; then
+					missing_rpms="$missing_rpms $package"
+				fi
+			done
+		;;
+		sles*)
+			for package in $build_requires_suse; do
+				if ! is_installed "$package"; then
+					missing_rpms="$missing_rpms $package"
+				fi
+			done
+		;;
+		ubuntu*|debian*)
+			for package in $build_requires_debian; do
+				if ! is_installed_deb "$package"; then
+					missing_rpms="$missing_rpms $package"
+				fi
+			done
+		;;
+	esac
+
+	if [ ! -z "$missing_rpms" ]; then
+		echo "mlnx-en requires the following RPM(s) to be installed: $missing_rpms"
+		exit 1
+	fi
+
+	# make sure this func will run once
+	skip_dist_check=1
+}
+
 TOPDIR=/tmp/MLNX_EN.$$
 ARCH=`rpm --eval %{_target_cpu} 2> /dev/null || uname -m`
 
@@ -614,25 +693,6 @@ case $distro_rpm in
 	;;
 esac
 
-if [ ! -d "${KSRC}/" ]; then
-	echo
-	echo "ERROR: No kernel sources/headers found for $KVERSION kernel."
-	echo "Cannot continue..."
-	echo "To install the missing sources/headers run the following command:"
-	case "$distro" in
-		sles*|*SUSE*)
-			echo "zypper install kernel-devel kernel-syms"
-		;;
-		ubuntu*|debian*)
-			echo "apt-get install linux-headers-`uname -r`"
-		;;
-		*)
-			echo "yum install kernel-devel"
-		;;
-	esac
-	exit 1
-fi
-
 cd ${package_dir}
 
 if [ $build_only -eq 0 ] && [ $firmware_update_only -eq 0 ]; then
@@ -662,42 +722,6 @@ if [ $firmware_update_only -eq 1 ]; then
 	exit $fwerr
 fi
 
-build_requires_common="gcc make patch gcc-c++"
-build_requires_redhat="$build_requires_common redhat-rpm-config rpm-build"
-build_requires_suse="$build_requires_common kernel-syms"
-build_requires_debian="debhelper autotools-dev dkms zlib1g-dev"
-missing_rpms=""
-
-echo "Verifying dependencies"
-case "$distro" in
-	rhel*)
-		for package in $build_requires_redhat; do
-			if ! is_installed "$package"; then
-				missing_rpms="$missing_rpms $package"
-			fi
-		done
-	;;
-	sles*)
-		for package in $build_requires_suse; do
-			if ! is_installed "$package"; then
-				missing_rpms="$missing_rpms $package"
-			fi
-		done
-	;;
-	ubuntu*|debian*)
-		for package in $build_requires_debian; do
-			if ! is_installed_deb "$package"; then
-				missing_rpms="$missing_rpms $package"
-			fi
-		done
-	;;
-esac
-
-if [ ! -z "$missing_rpms" ]; then
-	echo "mlnx-en requires the following RPM(s) to be installed: $missing_rpms"
-	exit 1
-fi
-
 
 if [ "$dist_rpm" == "ubuntu" ] || [ "$dist_rpm" == "debian" ]; then
 	DPKG_BUILDPACKAGE="/usr/bin/dpkg-buildpackage"
@@ -710,6 +734,8 @@ if [ "$dist_rpm" == "ubuntu" ] || [ "$dist_rpm" == "debian" ]; then
 				ex "dpkg -i --force-confmiss $DPKG_FLAGS $debs"
 			fi
 		else
+			check_headers
+			check_dist_req
 			echo "Building ${package} binary DEBs"
 			gz=`ls -1 ${package_dir}/SOURCES/${package}*.orig.tar.gz`
 			cd ${TOPDIR}/BUILD
@@ -824,6 +850,8 @@ else # not ubuntu/debian
 		mlnx_ker_rpms=`/bin/ls $RPMS_DIR/*mlnx*${KVERSION//-/_}* 2>/dev/null`
 	fi
 	if [ "X$mlnx_ker_rpms" == "X" ];then
+		check_headers
+		check_dist_req
 		echo "Building mlnx-en binary RPMs"
 		ex $cmd
 		mkdir -p $RPMS_DIR > /dev/null 2>&1
@@ -841,6 +869,7 @@ else # not ubuntu/debian
 	mstflint_rpms=`/bin/ls $RPMS_DIR/mstflint* 2>/dev/null`
 	if (rpm -q zlib-devel > /dev/null); then
 		if [ "X$mstflint_rpms" == "X" ]; then
+			check_dist_req
 			echo "Building mstflint binary RPMs"
 			cmd="config_flags='--disable-inband' rpmbuild --rebuild --define 'ibmadlib %{nil}' --define '_topdir $TOPDIR' ${package_dir}/SRPMS/mstflint*"
 			ex $cmd
