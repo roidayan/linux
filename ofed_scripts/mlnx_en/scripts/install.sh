@@ -475,6 +475,13 @@ check_dist_req()
 					missing_rpms="$missing_rpms $package"
 				fi
 			done
+			case "$distro" in
+				sles12*)
+					if ! is_installed "rpm-build"; then
+						missing_rpms="$missing_rpms rpm-build"
+					fi
+				;;
+			esac
 		;;
 		ubuntu*|debian*)
 			for package in $build_requires_debian; do
