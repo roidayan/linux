@@ -464,6 +464,7 @@ fi
 /etc/modprobe.d/ib_ipoib.conf
 %if %{build_eipoib}
 /sbin/ipoibd
+/sbin/eipoib_daemon
 %endif
 %endif
 %if %{build_sdp}

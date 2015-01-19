@@ -964,7 +964,7 @@ start()
                         eth_ipoib)
                                 load_module $mod
 				#load the deamon ipoibd
-                                /sbin/ipoibd -D eth_ipoib > /dev/null 2>&1 &
+				/sbin/eipoib_daemon start
                         ;;
                         *)
                                 load_module $mod
@@ -1305,9 +1305,8 @@ stop()
 	# Stop ipoibd (for ipoib-pv module)
         ipoibdpid=$(pidof -x ipoibd)
         if [ -n "${ipoibdpid:-}" ]; then
-            kill -9 ${ipoibdpid} > /dev/null 2>&1
+            /sbin/eipoib_daemon stop
         fi
-
 		if [ -d /sys/class/infiniband_qlgc_vnic/ ]; then
                     if [ -x /etc/init.d/qlgc_vnic ]; then
 			/etc/init.d/qlgc_vnic stop 2>&1 1>/dev/null

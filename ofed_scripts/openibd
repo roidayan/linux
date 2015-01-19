@@ -1096,8 +1096,7 @@ start()
                                 fi
                                 load_module $mod
 				#load the deamon ipoibd
-                                /sbin/ipoibd -D eth_ipoib > /dev/null 2>&1 &
-
+				/sbin/eipoib_daemon start
                                 if [ -x $XE ]; then
                                     get_mlx4_en_interfaces
                                     if [ -n "$mlx4_en_interfaces" ]; then
@@ -1443,9 +1442,8 @@ stop()
 	# Stop ipoibd (for ipoib-pv module)
         ipoibdpid=$(pidof -x ipoibd)
         if [ -n "${ipoibdpid:-}" ]; then
-            kill -9 ${ipoibdpid} > /dev/null 2>&1
+            /sbin/eipoib_daemon stop
         fi
-
         # Stop SRP daemon if needed
         srp_daemon_pids=$(pgrep srp_daemon)
         if [ -n "${srp_daemon_pids:-}" ]; then

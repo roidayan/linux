@@ -317,6 +317,7 @@ endif
 ifeq ($(CONFIG_E_IPOIB),m)
 	install -d $(INSTALL_MOD_PATH)/sbin
 	install -m 0755 ofed_scripts/ipoibd $(INSTALL_MOD_PATH)/sbin
+	install -m 0755 ofed_scripts/eipoib_daemon $(INSTALL_MOD_PATH)/sbin
 endif
 
 ifeq ($(CONFIG_INFINIBAND_SDP),m)
