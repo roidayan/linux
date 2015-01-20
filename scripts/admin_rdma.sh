@@ -502,7 +502,7 @@ if [ $CREATE_NEW_BRANCH -eq 1 ]; then
 fi
 
 # apply feature patches
-for i in $(find $FEATURE_PATCHES/ -maxdepth 1 -name \*.patch 2>/dev/null); do
+for i in $(/bin/ls $FEATURE_PATCHES/*/*.patch 2>/dev/null); do
 	echo -e "${GREEN}Applying Feature patch${NORMAL}: ${BLUE}$i${NORMAL}"
 	git am --reject < $i
 	RET=$?
