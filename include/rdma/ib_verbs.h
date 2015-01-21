@@ -83,6 +83,7 @@ struct ib_roce_gid_table_entry {
 	union ib_gid        gid;
 	struct ib_gid_attr  attr;
 	void		   *context;
+	bool		    default_gid;
 };
 
 struct ib_roce_gid_table {
