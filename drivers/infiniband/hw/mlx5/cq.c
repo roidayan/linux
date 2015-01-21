@@ -399,6 +399,83 @@ static void get_sig_err_item(struct mlx5_sig_err_cqe *cqe,
 	item->key = be32_to_cpu(cqe->mkey);
 }
 
+static void sw_send_comp(struct mlx5_ib_qp *qp, int num_entries,
+			 struct ib_wc *wc, int *npolled)
+{
+	struct mlx5_ib_wq *wq;
+	unsigned cur;
+	unsigned idx;
+	int np;
+	int i;
+
+	wq = &qp->sq;
+	cur = wq->head - wq->tail;
+	np = *npolled;
+
+	if (cur == 0)
+		return;
+
+	for (i = 0;  i < cur && np < num_entries; i++) {
+		idx = wq->last_poll & (wq->wqe_cnt - 1);
+		wc->wr_id = wq->wrid[idx];
+		wc->status = IB_WC_WR_FLUSH_ERR;
+		wc->vendor_err = MLX5_CQE_SYNDROME_WR_FLUSH_ERR;
+		wq->tail++;
+		np++;
+		wc->qp = &qp->ibqp;
+		wc++;
+		wq->last_poll = wq->w_list[idx].next;
+	}
+	*npolled = np;
+}
+
+static void sw_recv_comp(struct mlx5_ib_qp *qp, int num_entries,
+			 struct ib_wc *wc, int *npolled)
+{
+	struct mlx5_ib_wq *wq;
+	unsigned cur;
+	int np;
+	int i;
+
+	wq = &qp->rq;
+	cur = wq->head - wq->tail;
+	np = *npolled;
+
+	if (cur == 0)
+		return;
+
+	for (i = 0;  i < cur && np < num_entries; i++) {
+		wc->wr_id = wq->wrid[wq->tail & (wq->wqe_cnt - 1)];
+		wc->status = IB_WC_WR_FLUSH_ERR;
+		wc->vendor_err = MLX5_CQE_SYNDROME_WR_FLUSH_ERR;
+		wq->tail++;
+		np++;
+		wc->qp = &qp->ibqp;
+		wc++;
+	}
+	*npolled = np;
+}
+
+static void mlx5_ib_poll_sw_comp(struct mlx5_ib_cq *cq, int num_entries,
+				 struct ib_wc *wc, int *npolled)
+{
+	struct mlx5_ib_qp *qp;
+
+	*npolled = 0;
+	/* Find uncompleted WQEs belonging to that cq and retrun mmics ones */
+	list_for_each_entry(qp, &cq->list_send_qp, cq_send_list) {
+		sw_send_comp(qp, num_entries, wc, npolled);
+		if (*npolled >= num_entries)
+			return;
+	}
+
+	list_for_each_entry(qp, &cq->list_recv_qp, cq_recv_list) {
+		sw_recv_comp(qp, num_entries, wc + *npolled, npolled);
+		if (*npolled >= num_entries)
+			return;
+	}
+}
+
 static int mlx5_poll_one(struct mlx5_ib_cq *cq,
 			 struct mlx5_ib_qp **cur_qp,
 			 struct ib_wc *wc)
@@ -547,11 +624,17 @@ int mlx5_ib_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *wc)
 {
 	struct mlx5_ib_cq *cq = to_mcq(ibcq);
 	struct mlx5_ib_qp *cur_qp = NULL;
+	struct mlx5_ib_dev *dev = to_mdev(cq->ibcq.device);
+	struct mlx5_core_dev *mdev = dev->mdev;
 	unsigned long flags;
 	int npolled;
 	int err = 0;
 
 	spin_lock_irqsave(&cq->lock, flags);
+	if (mdev->state == MLX5_DEVICE_STATE_INTERNAL_ERROR) {
+		mlx5_ib_poll_sw_comp(cq, num_entries, wc, &npolled);
+		goto out;
+	}
 
 	for (npolled = 0; npolled < num_entries; npolled++) {
 		err = mlx5_poll_one(cq, &cur_qp, wc + npolled);
@@ -561,7 +644,7 @@ int mlx5_ib_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *wc)
 
 	if (npolled)
 		mlx5_cq_set_ci(&cq->mcq);
-
+out:
 	spin_unlock_irqrestore(&cq->lock, flags);
 
 	if (err == 0 || err == -EAGAIN)
@@ -769,6 +852,8 @@ struct ib_cq *mlx5_ib_create_cq(struct ib_device *ibdev,
 	spin_lock_init(&cq->lock);
 	cq->resize_buf = NULL;
 	cq->resize_umem = NULL;
+	INIT_LIST_HEAD(&cq->list_send_qp);
+	INIT_LIST_HEAD(&cq->list_recv_qp);
 
 	if (context) {
 		err = create_cq_user(dev, udata, context, cq, entries,
