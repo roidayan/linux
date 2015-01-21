@@ -52,7 +52,7 @@ echo
 current_branch=`git rev-parse --abbrev-ref HEAD`
 orig_branch=`echo $current_branch | sed -e 's/backport-//'`
 branch=${orig_branch}
-make clean
+make distclean
 git am --abort
 git reset --hard
 if [ "$branch" != "$current_branch" ]; then
