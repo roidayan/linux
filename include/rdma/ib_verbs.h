@@ -897,6 +897,7 @@ enum ib_qp_attr_mask {
 	IB_QP_ALT_SMAC			= (1<<22),
 	IB_QP_VID			= (1<<23),
 	IB_QP_ALT_VID			= (1<<24),
+	IB_QP_ENTROPY			= (1<<25),
 };
 
 enum ib_qp_state {
@@ -941,6 +942,7 @@ struct ib_qp_attr {
 	u8			max_dest_rd_atomic;
 	u8			min_rnr_timer;
 	u8			port_num;
+	u32			flow_entropy;
 	u8			timeout;
 	u8			retry_cnt;
 	u8			rnr_retry;
