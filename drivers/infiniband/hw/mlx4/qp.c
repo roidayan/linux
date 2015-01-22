@@ -1912,7 +1912,11 @@ int mlx4_ib_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 			    (ibqp->qp_type == IB_QPT_UC) ||
 			    (ibqp->qp_type == IB_QPT_RAW_PACKET) ||
 			    (ibqp->qp_type == IB_QPT_XRC_INI)) {
-				attr->port_num = mlx4_ib_bond_next_port(dev);
+				if (attr_mask & IB_QP_ENTROPY)
+					attr->port_num = attr->flow_entropy % 2;
+				else
+					attr->port_num =
+						mlx4_ib_bond_next_port(dev);
 			}
 		} else {
 			/* no sense in changing port_num
