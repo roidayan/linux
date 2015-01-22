@@ -1,0 +1,13 @@
+#!/bin/sh
+
+dist=`lsb_release -s -i | tr '[:upper:]' '[:lower:]'`
+dist_ver=`lsb_release -s -r`
+
+if [ $dist != "ubuntu" ]; then
+	/usr/sbin/update-rc.d openibd defaults > /dev/null 2>&1
+fi
+
+# set specific module parameter for Ubuntu
+echo "options ib_ipoib send_queue_size=128 recv_queue_size=128" >> /etc/modprobe.d/ib_ipoib.conf
+
+exit 0
