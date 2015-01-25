@@ -273,24 +273,6 @@ if [ $CLEAN_ONLY -eq 1 ]; then
 	exit 0
 fi
 
-# Create new branch and commit the files from checkout_files to make
-# it easier to build backports.
-current_branch=`git rev-parse --abbrev-ref HEAD`
-if [[ "$current_branch" =~ LINUX-.* ]]; then
-	CREATE_NEW_BRANCH=0
-	echo "Already on LINUX branch"
-else
-	CREATE_NEW_BRANCH=1
-	echo "Going to Create LINUX branch"
-	new_branch="LINUX-$current_branch"
-	if (git branch -a | grep -wq "$new_branch" 2>/dev/null); then
-		echo "$new_branch already exists!"
-		echo "you can delete it with: git branch -D $new_branch"
-		exit 1
-	fi
-	git checkout -b $new_branch
-fi
-
 while read line
 do
 	ex mkdir -p $SRC/$(dirname $line)
@@ -486,29 +468,4 @@ fi
 if [ "X$TMPDIR" != "X" ] && [ -d "$TMPDIR" ]; then
 	/bin/rm -rf $TMPDIR
 fi
-
-if [ $CREATE_NEW_BRANCH -eq 1 ]; then
-	echo "commiting new files..."
-	cat $FILES | xargs git add -f
-
-	git add code-metrics.txt compat_base_tree compat_base_tree_version compat_version
-
-	cd compat
-	ex ./autogen.sh
-	cd ..
-	git add compat
-
-	git commit -s -m "Created LINUX branch, and committed original Linux sources."
-fi
-
-# apply feature patches
-for i in $(/bin/ls $FEATURE_PATCHES/*/*.patch 2>/dev/null); do
-	echo -e "${GREEN}Applying Feature patch${NORMAL}: ${BLUE}$i${NORMAL}"
-	git am --reject < $i
-	RET=$?
-	if [[ $RET -ne 0 ]]; then
-		echo -e "${RED}Patching $i failed${NORMAL}, update it"
-		exit $RET
-	fi
-done
 
