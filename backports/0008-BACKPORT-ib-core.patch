@@ -802,7 +802,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  struct ucma_file {
  	struct mutex		mut;
-@@ -147,6 +156,9 @@ static void ucma_put_ctx(struct ucma_context *ctx)
+@@ -184,6 +193,9 @@ static void ucma_close_id(struct work_struct *work)
  static struct ucma_context *ucma_alloc_ctx(struct ucma_file *file)
  {
  	struct ucma_context *ctx;
@@ -812,7 +812,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
  	if (!ctx)
-@@ -157,11 +169,26 @@ static struct ucma_context *ucma_alloc_ctx(struct ucma_file *file)
+@@ -195,11 +207,26 @@ static struct ucma_context *ucma_alloc_ctx(struct ucma_file *file)
  	INIT_LIST_HEAD(&ctx->mc_list);
  	ctx->file = file;
  
@@ -839,7 +839,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	list_add_tail(&ctx->list, &file->ctx_list);
  	return ctx;
-@@ -174,16 +201,34 @@ error:
+@@ -212,16 +239,34 @@ error:
  static struct ucma_multicast* ucma_alloc_multicast(struct ucma_context *ctx)
  {
  	struct ucma_multicast *mc;
@@ -874,7 +874,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	mc->ctx = ctx;
  	list_add_tail(&mc->list, &ctx->mc_list);
-@@ -1398,7 +1443,11 @@ static ssize_t ucma_migrate_id(struct ucma_file *new_file,
+@@ -1496,7 +1541,11 @@ static ssize_t ucma_migrate_id(struct ucma_file *new_file,
  	struct rdma_ucm_migrate_id cmd;
  	struct rdma_ucm_migrate_resp resp;
  	struct ucma_context *ctx;
@@ -886,7 +886,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct ucma_file *cur_file;
  	int ret = 0;
  
-@@ -1406,12 +1455,21 @@ static ssize_t ucma_migrate_id(struct ucma_file *new_file,
+@@ -1504,12 +1553,21 @@ static ssize_t ucma_migrate_id(struct ucma_file *new_file,
  		return -EFAULT;
  
  	/* Get current fd to protect against it being closed */
@@ -908,7 +908,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (IS_ERR(ctx)) {
  		ret = PTR_ERR(ctx);
  		goto file_put;
-@@ -1445,7 +1503,11 @@ response:
+@@ -1543,7 +1601,11 @@ response:
  
  	ucma_put_ctx(ctx);
  file_put:
@@ -920,7 +920,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	return ret;
  }
  
-@@ -1606,15 +1668,23 @@ static int __init ucma_init(void)
+@@ -1717,15 +1779,23 @@ static int __init ucma_init(void)
  		goto err1;
  	}
  
@@ -944,7 +944,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  err1:
  	misc_deregister(&ucma_misc);
  	return ret;
-@@ -1622,7 +1692,13 @@ err1:
+@@ -1733,7 +1803,13 @@ err1:
  
  static void __exit ucma_cleanup(void)
  {
@@ -1069,7 +1069,7 @@ diff --git a/drivers/infiniband/core/uverbs_cmd.c b/drivers/infiniband/core/uver
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/uverbs_cmd.c
 +++ b/drivers/infiniband/core/uverbs_cmd.c
-@@ -120,6 +120,7 @@ static int idr_add_uobj(struct idr *idr, struct ib_uobject *uobj)
+@@ -121,6 +121,7 @@ static int idr_add_uobj(struct idr *idr, struct ib_uobject *uobj)
  {
  	int ret;
  
@@ -1077,7 +1077,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	idr_preload(GFP_KERNEL);
  	spin_lock(&ib_uverbs_idr_lock);
  
-@@ -131,6 +132,20 @@ static int idr_add_uobj(struct idr *idr, struct ib_uobject *uobj)
+@@ -132,6 +133,20 @@ static int idr_add_uobj(struct idr *idr, struct ib_uobject *uobj)
  	idr_preload_end();
  
  	return ret < 0 ? ret : 0;
@@ -1098,7 +1098,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  void idr_remove_uobj(struct idr *idr, struct ib_uobject *uobj)
-@@ -350,7 +365,11 @@ ssize_t ib_uverbs_get_context(struct ib_uverbs_file *file,
+@@ -351,7 +366,11 @@ ssize_t ib_uverbs_get_context(struct ib_uverbs_file *file,
  
  	resp.num_comp_vectors = file->device->num_comp_vectors;
  
@@ -1110,7 +1110,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (ret < 0)
  		goto err_free;
  	resp.async_fd = ret;
-@@ -728,7 +747,11 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
+@@ -729,7 +748,11 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
  	struct ib_udata			udata;
  	struct ib_uxrcd_object         *obj;
  	struct ib_xrcd                 *xrcd = NULL;
@@ -1122,7 +1122,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct inode                   *inode = NULL;
  	int				ret = 0;
  	int				new_xrcd = 0;
-@@ -747,6 +770,7 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
+@@ -748,6 +771,7 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
  
  	if (cmd.fd != -1) {
  		/* search for file descriptor */
@@ -1130,7 +1130,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		f = fdget(cmd.fd);
  		if (!f.file) {
  			ret = -EBADF;
-@@ -754,6 +778,19 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
+@@ -755,6 +779,19 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
  		}
  
  		inode = file_inode(f.file);
@@ -1150,7 +1150,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		xrcd = find_xrcd(file->device, inode);
  		if (!xrcd && !(cmd.oflags & O_CREAT)) {
  			/* no file descriptor. Need CREATE flag */
-@@ -818,8 +855,13 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
+@@ -819,8 +856,13 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
  		goto err_copy;
  	}
  
@@ -1164,7 +1164,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	mutex_lock(&file->mutex);
  	list_add_tail(&obj->uobject.list, &file->ucontext->xrcd_list);
-@@ -848,8 +890,13 @@ err:
+@@ -849,8 +891,13 @@ err:
  	put_uobj_write(&obj->uobject);
  
  err_tree_mutex_unlock:
@@ -1178,7 +1178,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	mutex_unlock(&file->device->xrcd_tree_mutex);
  
-@@ -1308,7 +1355,11 @@ ssize_t ib_uverbs_create_comp_channel(struct ib_uverbs_file *file,
+@@ -1309,7 +1356,11 @@ ssize_t ib_uverbs_create_comp_channel(struct ib_uverbs_file *file,
  	if (copy_from_user(&cmd, buf, sizeof cmd))
  		return -EFAULT;
  
@@ -1194,7 +1194,7 @@ diff --git a/drivers/infiniband/core/uverbs_main.c b/drivers/infiniband/core/uve
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/uverbs_main.c
 +++ b/drivers/infiniband/core/uverbs_main.c
-@@ -575,6 +575,7 @@ struct file *ib_uverbs_alloc_event_file(struct ib_uverbs_file *uverbs_file,
+@@ -608,6 +608,7 @@ struct file *ib_uverbs_alloc_event_file(struct ib_uverbs_file *uverbs_file,
  struct ib_uverbs_event_file *ib_uverbs_lookup_comp_file(int fd)
  {
  	struct ib_uverbs_event_file *ev_file = NULL;
@@ -1202,7 +1202,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct fd f = fdget(fd);
  
  	if (!f.file)
-@@ -594,6 +595,29 @@ struct ib_uverbs_event_file *ib_uverbs_lookup_comp_file(int fd)
+@@ -627,6 +628,29 @@ struct ib_uverbs_event_file *ib_uverbs_lookup_comp_file(int fd)
  out:
  	fdput(f);
  	return ev_file;
@@ -1232,7 +1232,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  static ssize_t ib_uverbs_write(struct file *filp, const char __user *buf,
-@@ -837,8 +861,16 @@ static ssize_t show_dev_abi_version(struct device *device,
+@@ -962,8 +986,16 @@ static ssize_t show_dev_abi_version(struct device *device,
  }
  static DEVICE_ATTR(abi_version, S_IRUGO, show_dev_abi_version, NULL);
  
@@ -1249,8 +1249,8 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static dev_t overflow_maj;
  static DECLARE_BITMAP(overflow_map, IB_UVERBS_MAX_DEVICES);
-@@ -968,7 +1000,11 @@ static void ib_uverbs_remove_one(struct ib_device *device)
- 	kfree(uverbs_dev);
+@@ -1180,7 +1212,11 @@ static void ib_uverbs_remove_one(struct ib_device *device)
+ 	}
  }
  
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0)
@@ -1261,7 +1261,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	if (mode)
  		*mode = 0666;
-@@ -995,7 +1031,11 @@ static int __init ib_uverbs_init(void)
+@@ -1207,7 +1243,11 @@ static int __init ib_uverbs_init(void)
  
  	uverbs_class->devnode = uverbs_devnode;
  
