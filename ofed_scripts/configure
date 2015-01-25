@@ -263,6 +263,7 @@ function check_autofconf {
 # set defaults
 
 SKIP_AUTOCONF=${SKIP_AUTOCONF:-0}
+FORCE_AUTOGEN=${FORCE_AUTOGEN:-0}
 CONFIG_MEMTRACK=${CONFIG_MEMTRACK:-''}
 CONFIG_DEBUG_INFO=${CONFIG_DEBUG_INFO:-'y'}
 CONFIG_INFINIBAND=${CONFIG_INFINIBAND:-''}
@@ -374,6 +375,9 @@ main()
                         ;;
                         --skip-autoconf)
                         SKIP_AUTOCONF=1
+                        ;;
+                        --force-autogen)
+                        FORCE_AUTOGEN=1
                         ;;
                         -kernel-sources | --kernel-sources | --kernel-src | --kern-src | --ker-src)
                                 shift
@@ -1665,6 +1669,11 @@ EOFAUTOCONF
 
     if [ $SKIP_AUTOCONF -eq 0 ]; then
         cd compat
+
+        if [[ ! -x configure || $FORCE_AUTOGEN -eq 1 ]]; then
+            ex ./autogen.sh
+        fi
+
         if [[ -e "/etc/SuSE-release" && "$KSRC" =~ "build" ]]; then
             ex ./configure --with-linux-obj=$KSRC --with-linux=${KSRC/build/source}
         else
