@@ -73,6 +73,12 @@ extern struct proc_dir_entry *mlx4_mrs_dir_entry;
 #define MLX4_IB_UC_STEER_QPN_ALIGN 1
 #define MLX4_IB_UC_MAX_NUM_QPS     256
 
+#ifdef CONFIG_MLX4_IB_DEBUG_FS
+#include "ecn.h"
+extern bool en_ecn;
+#endif
+
+
 enum hw_bar_type {
 	HW_BAR_BF,
 	HW_BAR_DB,
@@ -579,6 +585,10 @@ struct mlx4_ib_dev {
 	/* protect resources needed as part of reset flow */
 	spinlock_t		reset_flow_resource_lock;
 	struct list_head		qp_list;
+#ifdef CONFIG_MLX4_IB_DEBUG_FS
+	struct dentry		*dev_root;
+	struct ecn_control	cong;
+#endif
 };
 
 struct ib_event_work {
@@ -871,5 +881,12 @@ int mlx4_ib_rereg_user_mr(struct ib_mr *mr, int flags,
 			  u64 start, u64 length, u64 virt_addr,
 			  int mr_access_flags, struct ib_pd *pd,
 			  struct ib_udata *udata);
+
+#ifdef CONFIG_MLX4_IB_DEBUG_FS
+void mlx4_ib_create_debug_files(struct mlx4_ib_dev *dev);
+void mlx4_ib_delete_debug_files(struct mlx4_ib_dev *dev);
+int mlx4_ib_register_debugfs(void);
+void mlx4_ib_unregister_debugfs(void);
+#endif
 
 #endif /* MLX4_IB_H */

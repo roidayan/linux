@@ -78,6 +78,12 @@ static struct proc_dir_entry *mlx4_ib_driver_dir_entry;
 module_param_named(sm_guid_assign, mlx4_ib_sm_guid_assign, int, 0444);
 MODULE_PARM_DESC(sm_guid_assign, "Enable SM alias_GUID assignment if sm_guid_assign > 0 (Default: 1)");
 
+#ifdef CONFIG_MLX4_IB_DEBUG_FS
+bool en_ecn;
+module_param_named(en_ecn, en_ecn, bool, 0444);
+MODULE_PARM_DESC(en_ecn, "Enable q/ecn [enable = 1, disable = 0 (default)]");
+#endif
+
 enum {
 	MAX_NUM_STR_BITMAP = 1 << 15,
 	DEFAULT_TBL_VAL = -1
@@ -2806,6 +2812,9 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 				do_slave_init(ibdev, j, 1);
 		}
 	}
+#ifdef CONFIG_MLX4_IB_DEBUG_FS
+	mlx4_ib_create_debug_files(ibdev);
+#endif
 	return ibdev;
 
 err_notif:
@@ -2962,6 +2971,9 @@ static void mlx4_ib_remove(struct mlx4_dev *dev, void *ibdev_ptr)
 		kfree(ibdev->ib_uc_qpns_bitmap);
 	}
 
+#ifdef CONFIG_MLX4_IB_DEBUG_FS
+	mlx4_ib_delete_debug_files(ibdev);
+#endif
 	if (ibdev->iboe.nb_inet.notifier_call) {
 		if (unregister_inetaddr_notifier(&ibdev->iboe.nb_inet))
 			pr_warn("failure unregistering notifier\n");
@@ -3241,6 +3253,10 @@ static int __init mlx4_ib_init(void)
 	wq = create_singlethread_workqueue("mlx4_ib");
 	if (!wq)
 		return -ENOMEM;
+#ifdef CONFIG_MLX4_IB_DEBUG_FS
+	mlx4_ib_register_debugfs();
+#endif
+
 
 	err = mlx4_ib_proc_init();
 	if (err)
@@ -3274,6 +3290,9 @@ clean_wq:
 static void __exit mlx4_ib_cleanup(void)
 {
 	mlx4_unregister_interface(&mlx4_ib_interface);
+#ifdef CONFIG_MLX4_IB_DEBUG_FS
+	mlx4_ib_unregister_debugfs();
+#endif
 	mlx4_ib_mcg_destroy();
 	destroy_workqueue(wq);
 
