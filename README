@@ -31,19 +31,16 @@ Autotools:
 	compat/autogen.sh
 	compat/configure.ac
 
-Script for building the tree by copying files from Upstream kernel git:
-	scripts/admin_rdma.sh
-	ofed_scripts/checkout_files -> files to copy from upstream kernel
-	scripts/keep_files -> files that are added to this git and the admin_rdma.sh shouldn't remove
-
-LINUX_BASE_BRANCH -> keeps the commit ID of the last 'supported commit' in Upstream kernel.
-	By 'supported commit' we mean that the feature patches and backports can be applied on it.
-
 Feautes (Each feautre should be a separate directory):
 	features/<index for sorting patch apply order>-<feaure name>
 
 Backport patches:
 	backports/<one patch file for each module!>
+
+Kernel subtree based on upstream kernel:
+	include/
+	drivers/
+	net/
 
 ---------------------
 
@@ -51,13 +48,6 @@ Compilation procedure:
 
 # cd mlnx_rdma
 # git checkout master
-# Get the Linux kernel code:
-#	# GIT_TREE=<path to linux.git> scripts/admin_rdma.sh
-#	Or, to checkout to the last supported commit: 
-#	# LINUX_BRANCH=$(cat LINUX_BASE_BRANCH) GIT_TREE=<path to linux.git> scripts/admin_rdma.sh 
-
-Note: you will be at LINUX-master branch now.
-
 # ln -s ofed_scripts/configure
 # ln -s ofed_scripts/makefile
 # ln -s ofed_scripts/Makefile
@@ -65,26 +55,18 @@ Note: you will be at LINUX-master branch now.
 # ./configure <params>
 E.g.: ./configure --with-core-mod --with-user_mad-mod --with-user_access-mod --with-addr_trans-mod --with-mlx4-mod --with-mlx4_en-mod --with-ipoib-mod --with-srp-mod --with-rds-mod --with-iser-mod
 
-Note: you will be at backport-LINUX-master branch now.
 Note: If "backports_applied" file exist then backport patches will not be applied.
 
 # make distclean
 # make
 # make install
 
-
 HOWTO add a new feature/fix:
 ----------------------------
-Note: This section relates to features that are not going to be pushed Upstream,
-and will be added as patches in the mlnx_rdma git ontop of the Upsteam kernel.
-
 Start with updated branch (equal to “master”).
-Get the Linux kernel code by running the admin_rdma.sh script (see above for details).
-
-Note: you will be at LINUX-master branch now
 
 Add the new code.
-Check compilation on the latest kernel base (Same one that you copied files from using the admin_rdma.sh).
+Check compilation on the latest kernel base.
 # ./configure <params> --without-backport-patches
 
 Note: Provide path to kernel sources if needed: --kernel-version <version> --kernel-sources <path to sources>
@@ -95,9 +77,6 @@ Note: Provide path to kernel sources if needed: --kernel-version <version> --ker
 
 Check your feature.
 Commit the changes.
-Create patch(es) of the new commits.
-Return to the original branch (eg: master).
-Add the patch(es) to the "features" directory under a new directory for this feature, and commit them.
 Add backports if required.
 See "Check compilation".
 
@@ -108,8 +87,6 @@ Note: Make sure your commits pass linux/scripts/checkpatch.pl
 HOWTO add backport patches:
 ---------------------------
 Start with updated branch (eg: equal to “master”).
-Get the Linux kernel code by running the admin_rdma.sh script (see above for details).
-Note: you will be at LINUX-master branch now
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!! NOTE: BACKPORT PATCHES MAY CHANGE FILES UNDER FOLLOWING DIRECTORIES                                               !!!
@@ -130,7 +107,6 @@ $ /bin/rm -f backports_applied
 Run configure (check parameters)
 $ ./configure --with-core-mod --with-user_mad-mod --with-user_access-mod --with-addr_trans-mod --with-mlx4-mod --with-mlx4_en-mod --with-ipoib-mod --with-srp-mod --with-rds-mod --with-iser-mod
 
-The new branch will be created: “backport-LINUX-master”
 All backports are applied.
 
 $ make KBUILD_NOCMDDEP=1 2>&1 | tee log
