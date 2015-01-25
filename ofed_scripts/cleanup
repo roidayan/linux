@@ -53,4 +53,6 @@ if [ "$branch" != "$current_branch" ]; then
     git branch -D $current_branch
 fi
 /bin/rm -f backports_applied
+/bin/rm -f compat/configure
+/bin/rm -f compat/build/conftest.c  compat/build/modules.order  compat/build/Module.symvers compat/config.log
 
