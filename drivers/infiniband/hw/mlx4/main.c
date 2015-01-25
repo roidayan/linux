@@ -52,6 +52,7 @@
 #include <linux/mlx4/cmd.h>
 #include <linux/mlx4/qp.h>
 
+#include <linux/sched.h>
 #include "mlx4_ib.h"
 #include "user.h"
 #include "mlx4_exp.h"
@@ -844,15 +845,47 @@ static void mlx4_ib_set_vma_data(struct vm_area_struct *vma,
 	vma->vm_ops =  &mlx4_ib_vm_ops;
 }
 
+static unsigned long mlx4_ib_get_unmapped_area(struct file *file,
+			unsigned long addr,
+			unsigned long len, unsigned long pgoff,
+			unsigned long flags)
+{
+	struct mm_struct *mm;
+	unsigned long page_size_order;
+	unsigned long  command;
+
+	mm = current->mm;
+	if (addr)
+		return current->mm->get_unmapped_area(file, addr, len,
+						pgoff, flags);
+
+	/* Last 8 bits hold the  command others are data per that command */
+	command = pgoff & MLX4_IB_MMAP_CMD_MASK;
+	if (command != MLX4_IB_MMAP_GET_CONTIGUOUS_PAGES)
+		return current->mm->get_unmapped_area(file, addr, len,
+						pgoff, flags);
+
+	page_size_order = pgoff >> MLX4_IB_MMAP_CMD_BITS;
+
+	return current->mm->get_unmapped_area(file, addr, len,
+						pgoff, flags);
+}
+
 static int mlx4_ib_mmap(struct ib_ucontext *context, struct vm_area_struct *vma)
 {
 	struct mlx4_ib_dev *dev = to_mdev(context->device);
 	struct mlx4_ib_ucontext *mucontext = to_mucontext(context);
+	int err;
 
-	if (vma->vm_end - vma->vm_start != PAGE_SIZE)
-		return -EINVAL;
+	/* Last 8 bits hold the  command others are data per that command */
+	unsigned long  command = vma->vm_pgoff & MLX4_IB_MMAP_CMD_MASK;
 
-	if (vma->vm_pgoff == 0) {
+	if (command < MLX4_IB_MMAP_GET_CONTIGUOUS_PAGES) {
+		/* compatability handling for commands 0 & 1*/
+		if (vma->vm_end - vma->vm_start != PAGE_SIZE)
+			return -EINVAL;
+	}
+	if (command == MLX4_IB_MMAP_UAR_PAGE) {
 		/* We prevent double mmaping on same context */
 		if (mucontext->hw_bar_info[HW_BAR_DB].vma != NULL)
 			return -EINVAL;
@@ -866,7 +899,8 @@ static int mlx4_ib_mmap(struct ib_ucontext *context, struct vm_area_struct *vma)
 
 		mlx4_ib_set_vma_data(vma, &mucontext->hw_bar_info[HW_BAR_DB]);
 
-	} else if (vma->vm_pgoff == 1 && dev->dev->caps.bf_reg_size != 0) {
+	} else if (command == MLX4_IB_MMAP_BLUE_FLAME_PAGE &&
+			dev->dev->caps.bf_reg_size != 0) {
 		/* We prevent double mmaping on same context */
 		if (mucontext->hw_bar_info[HW_BAR_BF].vma != NULL)
 			return -EINVAL;
@@ -881,6 +915,25 @@ static int mlx4_ib_mmap(struct ib_ucontext *context, struct vm_area_struct *vma)
 
 		mlx4_ib_set_vma_data(vma, &mucontext->hw_bar_info[HW_BAR_BF]);
 
+	} else if (command == MLX4_IB_MMAP_GET_CONTIGUOUS_PAGES) {
+		/* Getting contiguous physical pages */
+		unsigned long total_size = vma->vm_end - vma->vm_start;
+		unsigned long page_size_order = (vma->vm_pgoff) >>
+						MLX4_IB_MMAP_CMD_BITS;
+		struct ib_cmem *ib_cmem;
+		ib_cmem = ib_cmem_alloc_contiguous_pages(context, total_size,
+							page_size_order);
+		if (IS_ERR(ib_cmem)) {
+			err = PTR_ERR(ib_cmem);
+			return err;
+		}
+
+		err = ib_cmem_map_contiguous_pages_to_vma(ib_cmem, vma);
+		if (err) {
+			ib_cmem_release_contiguous_pages(ib_cmem);
+			return err;
+		}
+		return 0;
 	} else
 		return -EINVAL;
 
@@ -2593,6 +2646,7 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 	ibdev->ib_dev.alloc_ucontext	= mlx4_ib_alloc_ucontext;
 	ibdev->ib_dev.dealloc_ucontext	= mlx4_ib_dealloc_ucontext;
 	ibdev->ib_dev.mmap		= mlx4_ib_mmap;
+	ibdev->ib_dev.get_unmapped_area = mlx4_ib_get_unmapped_area;
 	ibdev->ib_dev.alloc_pd		= mlx4_ib_alloc_pd;
 	ibdev->ib_dev.dealloc_pd	= mlx4_ib_dealloc_pd;
 	ibdev->ib_dev.create_ah		= mlx4_ib_create_ah;
