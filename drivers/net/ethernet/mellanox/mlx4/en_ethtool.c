@@ -161,6 +161,32 @@ static const char main_strings[][ETH_GSTRING_LEN] = {
 	"tx_prio_7_packets", "tx_prio_7_bytes",
 	"tx_novlan_packets", "tx_novlan_bytes",
 
+	/* flow control statistics */
+	"rx_pause_prio_0", "rx_pause_duration_prio_0",
+	"rx_pause_transition_prio_0", "tx_pause_prio_0",
+	"tx_pause_duration_prio_0", "tx_pause_transition_prio_0",
+	"rx_pause_prio_1", "rx_pause_duration_prio_1",
+	"rx_pause_transition_prio_1", "tx_pause_prio_1",
+	"tx_pause_duration_prio_1", "tx_pause_transition_prio_1",
+	"rx_pause_prio_2", "rx_pause_duration_prio_2",
+	"rx_pause_transition_prio_2", "tx_pause_prio_2",
+	"tx_pause_duration_prio_2", "tx_pause_transition_prio_2",
+	"rx_pause_prio_3", "rx_pause_duration_prio_3",
+	"rx_pause_transition_prio_3", "tx_pause_prio_3",
+	"tx_pause_duration_prio_3", "tx_pause_transition_prio_3",
+	"rx_pause_prio_4", "rx_pause_duration_prio_4",
+	"rx_pause_transition_prio_4", "tx_pause_prio_4",
+	"tx_pause_duration_prio_4", "tx_pause_transition_prio_4",
+	"rx_pause_prio_5", "rx_pause_duration_prio_5",
+	"rx_pause_transition_prio_5", "tx_pause_prio_5",
+	"tx_pause_duration_prio_5", "tx_pause_transition_prio_5",
+	"rx_pause_prio_6", "rx_pause_duration_prio_6",
+	"rx_pause_transition_prio_6", "tx_pause_prio_6",
+	"tx_pause_duration_prio_6", "tx_pause_transition_prio_6",
+	"rx_pause_prio_7", "rx_pause_duration_prio_7",
+	"rx_pause_transition_prio_7", "tx_pause_prio_7",
+	"tx_pause_duration_prio_7", "tx_pause_transition_prio_7",
+
 	/* port statistics */
 	"tx_tso_packets",
 	"xmit_more",
@@ -343,6 +369,10 @@ static void mlx4_en_get_ethtool_stats(struct net_device *dev,
 		if (bitmap_sim_iterator_test(&it))
 			data[index++] = ((unsigned long *)&priv->pkstats)[i];
 
+	for (i = 0; i < NUM_FLOW_STATS; i++, bitmap_sim_iterator_inc(&it))
+		if (bitmap_sim_iterator_test(&it))
+			data[index++] = ((u64 *)&priv->flowstats)[i];
+
 	for (i = 0; i < NUM_PORT_STATS; i++, bitmap_sim_iterator_inc(&it))
 		if (bitmap_sim_iterator_test(&it))
 			data[index++] = ((unsigned long *)&priv->port_stats)[i];
@@ -392,6 +422,12 @@ static void mlx4_en_get_strings(struct net_device *dev,
 	case ETH_SS_STATS:
 		/* Add main counters */
 		for (i = 0; i < NUM_PKT_STATS; i++, strings++,
+		     bitmap_sim_iterator_inc(&it))
+			if (bitmap_sim_iterator_test(&it))
+				strcpy(data + (index++) * ETH_GSTRING_LEN,
+				       main_strings[strings]);
+
+		for (i = 0; i < NUM_FLOW_STATS; i++, strings++,
 		     bitmap_sim_iterator_inc(&it))
 			if (bitmap_sim_iterator_test(&it))
 				strcpy(data + (index++) * ETH_GSTRING_LEN,

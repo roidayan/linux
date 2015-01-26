@@ -1186,9 +1186,16 @@ void mlx4_set_stats_bitmap(struct mlx4_dev *dev, unsigned long *stats_bitmap)
 
 	bitmap_zero(stats_bitmap, NUM_ALL_STATS);
 
-	if (!mlx4_is_slave(dev))
+	if (!mlx4_is_slave(dev)) {
 		bitmap_set(stats_bitmap, last_i, NUM_PKT_STATS);
-	last_i = NUM_PKT_STATS;
+		last_i = NUM_PKT_STATS;
+
+		if (dev->caps.flags2 &
+		    MLX4_DEV_CAP_FLAG2_FLOWSTATS_EN) {
+			bitmap_set(stats_bitmap, last_i, NUM_FLOW_STATS);
+		}
+	}
+	last_i = NUM_PKT_STATS + NUM_FLOW_STATS;
 
 	bitmap_set(stats_bitmap, last_i, NUM_PORT_STATS);
 

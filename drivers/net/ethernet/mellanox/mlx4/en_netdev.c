@@ -1890,6 +1890,7 @@ static void mlx4_en_clear_stats(struct net_device *dev)
 	memset(&priv->pstats, 0, sizeof(priv->pstats));
 	memset(&priv->pkstats, 0, sizeof(priv->pkstats));
 	memset(&priv->port_stats, 0, sizeof(priv->port_stats));
+	memset(&priv->flowstats, 0, sizeof(priv->flowstats));
 
 	for (i = 0; i < priv->tx_ring_num; i++) {
 		priv->tx_ring[i]->bytes = 0;
