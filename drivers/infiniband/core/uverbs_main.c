@@ -62,6 +62,31 @@ enum {
 
 #define IB_UVERBS_BASE_DEV	MKDEV(IB_UVERBS_MAJOR, IB_UVERBS_BASE_MINOR)
 
+static int uverbs_copy_from_udata_ex(void *dest, struct ib_udata *udata, size_t len)
+{
+	return copy_from_user(dest, udata->inbuf, min(udata->inlen, len)) ? -EFAULT : 0;
+}
+
+static int uverbs_copy_to_udata_ex(struct ib_udata *udata, void *src, size_t len)
+{
+	return copy_to_user(udata->outbuf, src, min(udata->outlen, len)) ? -EFAULT : 0;
+}
+
+static struct ib_udata_ops uverbs_copy_ex = {
+	.copy_from = uverbs_copy_from_udata_ex,
+	.copy_to   = uverbs_copy_to_udata_ex
+};
+
+#define INIT_UDATA_EX(udata, ibuf, obuf, ilen, olen)		\
+	do {							\
+		(udata)->ops    = &uverbs_copy_ex;		\
+		(udata)->inbuf  = (void __user *)(ibuf);	\
+		(udata)->outbuf = (void __user *)(obuf);	\
+		(udata)->inlen  = (ilen);			\
+		(udata)->outlen = (olen);			\
+	} while (0)
+
+
 static struct class *uverbs_class;
 
 DEFINE_SPINLOCK(ib_uverbs_idr_lock);
@@ -123,6 +148,28 @@ static int (*uverbs_ex_cmd_table[])(struct ib_uverbs_file *file,
 				    struct ib_udata *uhw) = {
 	[IB_USER_VERBS_EX_CMD_CREATE_FLOW]	= ib_uverbs_ex_create_flow,
 	[IB_USER_VERBS_EX_CMD_DESTROY_FLOW]	= ib_uverbs_ex_destroy_flow,
+};
+typedef int (*uverbs_ex_cmd)(struct ib_uverbs_file *file,
+					struct ib_udata *ucore,
+					struct ib_udata *uhw);
+
+static uverbs_ex_cmd uverbs_exp_cmd_table[] = {
+	[IB_USER_VERBS_EXP_CMD_CREATE_QP]	= ib_uverbs_exp_create_qp,
+	[IB_USER_VERBS_EXP_CMD_MODIFY_CQ]	= ib_uverbs_exp_modify_cq,
+	[IB_USER_VERBS_EXP_CMD_MODIFY_QP]	= ib_uverbs_exp_modify_qp,
+	[IB_USER_VERBS_EXP_CMD_CREATE_CQ]	= ib_uverbs_exp_create_cq,
+	[IB_USER_VERBS_EXP_CMD_QUERY_DEVICE]	= ib_uverbs_exp_query_device,
+	[IB_USER_VERBS_EXP_CMD_CREATE_DCT]	= ib_uverbs_exp_create_dct,
+	[IB_USER_VERBS_EXP_CMD_DESTROY_DCT]	= ib_uverbs_exp_destroy_dct,
+	[IB_USER_VERBS_EXP_CMD_QUERY_DCT]	= ib_uverbs_exp_query_dct,
+	[IB_USER_VERBS_EXP_CMD_ARM_DCT]		= ib_uverbs_exp_arm_dct,
+	[IB_USER_VERBS_EXP_CMD_CREATE_MR]	= ib_uverbs_exp_create_mr,
+	[IB_USER_VERBS_EXP_CMD_QUERY_MKEY]	= ib_uverbs_exp_query_mkey,
+	[IB_USER_VERBS_EXP_CMD_REG_MR_EX]       = ib_uverbs_exp_reg_mr_ex,
+#ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
+	[IB_USER_VERBS_EXP_CMD_PREFETCH_MR]	= ib_uverbs_exp_prefetch_mr,
+#endif
+	[IB_USER_VERBS_EXP_CMD_REREG_MR]	= ib_uverbs_exp_rereg_mr,
 };
 
 static void ib_uverbs_add_one(struct ib_device *device);
@@ -628,20 +675,35 @@ out:
 	return ev_file;
 }
 
+enum {
+	COMMAND_INFO_MASK = 0x1000,
+};
+
 static ssize_t ib_uverbs_write(struct file *filp, const char __user *buf,
 			     size_t count, loff_t *pos)
 {
 	struct ib_uverbs_file *file = filp->private_data;
+	struct ib_device *dev = file->device->ib_dev;
 	struct ib_uverbs_cmd_hdr hdr;
+	__u32 command;
+	int exp_cmd;
+	size_t written_count = count;
 	__u32 flags;
 	int srcu_key;
 	ssize_t ret;
 
-	if (count < sizeof hdr)
+	if (count < sizeof hdr) {
+		pr_debug("ib_uverbs_write: header too short\n");
 		return -EINVAL;
+	}
 
 	if (copy_from_user(&hdr, buf, sizeof hdr))
 		return -EFAULT;
+
+	flags = (hdr.command &
+		 IB_USER_VERBS_CMD_FLAGS_MASK) >> IB_USER_VERBS_CMD_FLAGS_SHIFT;
+	command = hdr.command & IB_USER_VERBS_CMD_COMMAND_MASK;
+	exp_cmd = !flags && (command >= IB_USER_VERBS_EXP_CMD_FIRST);
 
 	srcu_key = srcu_read_lock(&file->device->disassociate_srcu);
 	if (file->device->disassociated) {
@@ -649,38 +711,29 @@ static ssize_t ib_uverbs_write(struct file *filp, const char __user *buf,
 		goto out;
 	}
 
-	flags = (hdr.command &
-		 IB_USER_VERBS_CMD_FLAGS_MASK) >> IB_USER_VERBS_CMD_FLAGS_SHIFT;
-
-	if (!flags) {
-		__u32 command;
-
-		if (hdr.command & ~(__u32)(IB_USER_VERBS_CMD_FLAGS_MASK |
-					   IB_USER_VERBS_CMD_COMMAND_MASK)) {
-			ret = -EINVAL;
-			goto out;
-		}
-
-		command = hdr.command & IB_USER_VERBS_CMD_COMMAND_MASK;
-
+	if (!flags && !exp_cmd) {
 		if (command >= ARRAY_SIZE(uverbs_cmd_table) ||
 		    !uverbs_cmd_table[command]) {
+			pr_debug("ib_uverbs_write: unexpected command\n");
 			ret = -EINVAL;
 			goto out;
 		}
 
 		if (!file->ucontext &&
 		    command != IB_USER_VERBS_CMD_GET_CONTEXT) {
+			pr_debug("ib_uverbs_write: invalid context\n");
 			ret = -EINVAL;
 			goto out;
 		}
 
 		if (!(file->device->ib_dev->uverbs_cmd_mask & (1ull << command))) {
+			pr_debug("ib_uverbs_write: command not support by the device\n");
 			ret = -ENOSYS;
 			goto out;
 		}
 
 		if (hdr.in_words * 4 != count) {
+			pr_debug("ib_uverbs_write: header input length doesn't match written length\n");
 			ret = -EINVAL;
 			goto out;
 		}
@@ -690,36 +743,53 @@ static ssize_t ib_uverbs_write(struct file *filp, const char __user *buf,
 						 hdr.in_words * 4,
 						 hdr.out_words * 4);
 
-	} else if (flags == IB_USER_VERBS_CMD_FLAG_EXTENDED) {
-		__u32 command;
-
+	} else if ((flags == IB_USER_VERBS_CMD_FLAG_EXTENDED) || exp_cmd) {
 		struct ib_uverbs_ex_cmd_hdr ex_hdr;
 		struct ib_udata ucore;
 		struct ib_udata uhw;
-		int err;
-		size_t written_count = count;
+		int arr_size;
+		uverbs_ex_cmd *cmd_tbl;
+		u64 cmd_mask;
+
+		if (exp_cmd) {
+			command = hdr.command - IB_USER_VERBS_EXP_CMD_FIRST;
+			arr_size = ARRAY_SIZE(uverbs_exp_cmd_table);
+			cmd_tbl = uverbs_exp_cmd_table;
+			cmd_mask = dev->uverbs_exp_cmd_mask;
+		} else {
+			arr_size = ARRAY_SIZE(uverbs_ex_cmd_table);
+			cmd_tbl = uverbs_ex_cmd_table;
+			cmd_mask = dev->uverbs_ex_cmd_mask;
+		}
 
 		if (hdr.command & ~(__u32)(IB_USER_VERBS_CMD_FLAGS_MASK |
 					   IB_USER_VERBS_CMD_COMMAND_MASK)) {
+			pr_debug("ib_uverbs_write: extended command invalid opcode\n");
 			ret = -EINVAL;
 			goto out;
 		}
 
-		command = hdr.command & IB_USER_VERBS_CMD_COMMAND_MASK;
-
-		if (command >= ARRAY_SIZE(uverbs_ex_cmd_table) ||
-		    !uverbs_ex_cmd_table[command]) {
-			ret = -ENOSYS;
+		if (command >= arr_size || !cmd_tbl[command]) {
+			pr_debug("ib_uverbs_write: invalid extended command\n");
+			ret = -EINVAL;
 			goto out;
 		}
 
 		if (!file->ucontext) {
+			pr_debug("ib_uverbs_write: invalid context in extended command\n");
 			ret = -EINVAL;
 			goto out;
 		}
 
-		if (!(file->device->ib_dev->uverbs_ex_cmd_mask & (1ull << command))) {
+		if (!(cmd_mask & (1ull << command))) {
+			pr_debug("ib_uverbs_write: extended command not supported by driver\n");
 			ret = -ENOSYS;
+			goto out;
+		}
+
+		if (count < (sizeof(hdr) + sizeof(ex_hdr))) {
+			pr_debug("ib_uverbs_write: ex header input length doesn't match written length\n");
+			ret = -EINVAL;
 			goto out;
 		}
 
@@ -727,7 +797,6 @@ static ssize_t ib_uverbs_write(struct file *filp, const char __user *buf,
 			ret = -EINVAL;
 			goto out;
 		}
-
 		if (copy_from_user(&ex_hdr, buf + sizeof(hdr), sizeof(ex_hdr))) {
 			ret = -EFAULT;
 			goto out;
@@ -737,6 +806,7 @@ static ssize_t ib_uverbs_write(struct file *filp, const char __user *buf,
 		buf += sizeof(hdr) + sizeof(ex_hdr);
 
 		if ((hdr.in_words + ex_hdr.provider_in_words) * 8 != count) {
+			pr_debug("ib_uverbs_write: extended command doesn't match written length\n");
 			ret = -EINVAL;
 			goto out;
 		}
@@ -748,6 +818,7 @@ static ssize_t ib_uverbs_write(struct file *filp, const char __user *buf,
 
 		if (ex_hdr.response) {
 			if (!hdr.out_words && !ex_hdr.provider_out_words) {
+				pr_debug("ib_uverbs_write: got response pointer to a zero length buffer\n");
 				ret = -EINVAL;
 				goto out;
 			}
@@ -760,30 +831,33 @@ static ssize_t ib_uverbs_write(struct file *filp, const char __user *buf,
 			}
 		} else {
 			if (hdr.out_words || ex_hdr.provider_out_words) {
+				pr_debug("ib_uverbs_write: got NULL response pointer but non-zero output length\n");
 				ret = -EINVAL;
 				goto out;
 			}
 		}
 
-		INIT_UDATA_BUF_OR_NULL(&ucore, buf, (unsigned long) ex_hdr.response,
-				       hdr.in_words * 8, hdr.out_words * 8);
+		INIT_UDATA_EX(&ucore,
+			      (hdr.in_words) ? buf : 0,
+			      (unsigned long)ex_hdr.response,
+			      hdr.in_words * 8,
+			      hdr.out_words * 8);
 
-		INIT_UDATA_BUF_OR_NULL(&uhw,
-				       buf + ucore.inlen,
-				       (unsigned long) ex_hdr.response + ucore.outlen,
-				       ex_hdr.provider_in_words * 8,
-				       ex_hdr.provider_out_words * 8);
+		INIT_UDATA_EX(&uhw,
+			      (ex_hdr.provider_in_words) ? buf + ucore.inlen : 0,
+			      (ex_hdr.provider_out_words) ? ex_hdr.response + ucore.outlen : 0,
+			      ex_hdr.provider_in_words * 8,
+			      ex_hdr.provider_out_words * 8);
 
-		err = uverbs_ex_cmd_table[command](file,
-						   &ucore,
-						   &uhw);
-
-		if (err)
-			ret = err;
-		else
+		ret = cmd_tbl[command](file, &ucore, &uhw);
+		if (!ret)
 			ret = written_count;
+
+		goto out;
+
 	} else {
-		ret = -ENOSYS;
+		ret =  -EFAULT;
+		goto out;
 	}
 
 out:

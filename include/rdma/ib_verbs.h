@@ -48,7 +48,7 @@
 #include <linux/rwsem.h>
 #include <linux/scatterlist.h>
 #include <linux/workqueue.h>
-#include <uapi/linux/if_ether.h>
+#include <linux/if_ether.h>
 
 #include <linux/atomic.h>
 #include <linux/mmu_notifier.h>
@@ -123,9 +123,18 @@ enum ib_device_cap_flags {
 	IB_DEVICE_BLOCK_MULTICAST_LOOPBACK = (1<<22),
 	IB_DEVICE_MEM_WINDOW_TYPE_2A	= (1<<23),
 	IB_DEVICE_MEM_WINDOW_TYPE_2B	= (1<<24),
+	IB_DEVICE_QPG					= (1<<25),
+	IB_DEVICE_UD_RSS				= (1<<26),
+	IB_DEVICE_UD_TSS				= (1<<27),
+	IB_DEVICE_CROSS_CHANNEL			= (1<<28),
 	IB_DEVICE_MANAGED_FLOW_STEERING = (1<<29),
 	IB_DEVICE_SIGNATURE_HANDOVER	= (1<<30),
 	IB_DEVICE_ON_DEMAND_PAGING	= (1<<31),
+	IB_DEVICE_MR_ALLOCATE		= (1ULL<<32),
+	IB_DEVICE_SHARED_MR			= (1ULL<<33),
+	IB_DEVICE_ROCE_MODE_1_5		= (1ULL<<34),
+	IB_DEVICE_ROCE_MODE_2		= (1ULL<<35),
+	IB_DEVICE_INDIR_REGISTRATION	= (1ULL<<36)
 };
 
 enum ib_signature_prot_cap {
@@ -142,7 +151,14 @@ enum ib_signature_guard_cap {
 enum ib_atomic_cap {
 	IB_ATOMIC_NONE,
 	IB_ATOMIC_HCA,
-	IB_ATOMIC_GLOB
+	IB_ATOMIC_GLOB,
+	IB_ATOMIC_HCA_REPLY_BE	= 0x40 /* HOST is LE and atomic reply is BE */
+};
+
+enum ib_cq_create_flags {
+	IB_CQ_CREATE_CROSS_CHANNEL	= 1 << 0,
+	IB_CQ_TIMESTAMP			= 1 << 1,
+	IB_CQ_TIMESTAMP_TO_SYS_TIME	= 1 << 2
 };
 
 enum ib_odp_general_cap_bits {
@@ -176,7 +192,7 @@ struct ib_device_attr {
 	u32			hw_ver;
 	int			max_qp;
 	int			max_qp_wr;
-	int			device_cap_flags;
+	u64			device_cap_flags;
 	int			max_sge;
 	int			max_sge_rd;
 	int			max_cq;
@@ -205,11 +221,21 @@ struct ib_device_attr {
 	int			max_srq_wr;
 	int			max_srq_sge;
 	unsigned int		max_fast_reg_page_list_len;
+	unsigned int		max_indir_reg_mr_list_len;
+	int			max_rss_tbl_sz;
 	u16			max_pkeys;
 	u8			local_ca_ack_delay;
+	int                     comp_mask;
+	u64                timestamp_mask;
+	u64                hca_core_clock;
 	int			sig_prot_cap;
 	int			sig_guard_cap;
 	struct ib_odp_caps	odp_caps;
+};
+
+enum ib_device_attr_comp_mask {
+	IB_DEVICE_ATTR_WITH_TIMESTAMP_MASK = 1ULL << 1,
+	IB_DEVICE_ATTR_WITH_HCA_CORE_CLOCK = 1ULL << 2,
 };
 
 enum ib_mtu {
@@ -410,6 +436,13 @@ enum ib_event_type {
 	IB_EVENT_QP_LAST_WQE_REACHED,
 	IB_EVENT_CLIENT_REREGISTER,
 	IB_EVENT_GID_CHANGE,
+
+	/* New experimental events start here leaving enough
+	 * room for 14 events which should be enough.
+	 */
+	IB_EXP_EVENT_DCT_KEY_VIOLATION = 32,
+	IB_EXP_EVENT_DCT_ACCESS_ERR,
+	IB_EXP_EVENT_DCT_REQ_ERR,
 };
 
 struct ib_event {
@@ -418,6 +451,7 @@ struct ib_event {
 		struct ib_cq	*cq;
 		struct ib_qp	*qp;
 		struct ib_srq	*srq;
+		struct ib_dct	*dct;
 		u8		port_num;
 	} element;
 	enum ib_event_type	event;
@@ -484,6 +518,7 @@ enum ib_rate {
 	IB_RATE_300_GBPS = 18
 };
 
+
 /**
  * ib_rate_to_mult - Convert the IB rate enum to a multiple of the
  * base rate of 2.5 Gbit/sec.  For example, IB_RATE_5_GBPS will be
@@ -499,8 +534,15 @@ __attribute_const__ int ib_rate_to_mult(enum ib_rate rate);
  */
 __attribute_const__ int ib_rate_to_mbps(enum ib_rate rate);
 
+struct ib_cq_init_attr {
+	int	cqe;
+	int	comp_vector;
+	u32	flags;
+};
+
 enum ib_mr_create_flags {
 	IB_MR_SIGNATURE_EN = 1,
+	IB_MR_INDIRECT_REG = 2
 };
 
 /**
@@ -509,10 +551,12 @@ enum ib_mr_create_flags {
  * @max_reg_descriptors: max number of registration descriptors that
  *     may be used with registration work requests.
  * @flags: MR creation flags bit mask.
+ * @exp_access_flags: MR Access Falags
  */
 struct ib_mr_init_attr {
 	int	    max_reg_descriptors;
 	u32	    flags;
+	u64	    exp_access_flags; /* region's access rights */
 };
 
 /**
@@ -618,6 +662,16 @@ struct ib_mr_status {
 	u32		    fail_status;
 	struct ib_sig_err   sig_err;
 };
+
+/**
+ * struct ib_mkey_attr - Memory key attributes
+ *
+ * @max_reg_descriptors: how many mrs we can we register with this mkey
+ */
+struct ib_mkey_attr {
+	u32 max_reg_descriptors;
+};
+
 
 /**
  * mult_to_ib_rate - Convert a multiple of 2.5 Gbit/sec to an IB rate
@@ -781,6 +835,7 @@ enum ib_qp_type {
 	IB_QPT_RAW_PACKET = 8,
 	IB_QPT_XRC_INI = 9,
 	IB_QPT_XRC_TGT,
+	IB_EXP_QPT_DC_INI = 32,
 	IB_QPT_MAX,
 	/* Reserve a range for qp types internal to the low level driver.
 	 * These qp types will not be visible at the IB core layer, so the
@@ -801,14 +856,29 @@ enum ib_qp_type {
 enum ib_qp_create_flags {
 	IB_QP_CREATE_IPOIB_UD_LSO		= 1 << 0,
 	IB_QP_CREATE_BLOCK_MULTICAST_LOOPBACK	= 1 << 1,
+	IB_QP_CREATE_CROSS_CHANNEL				= 1 << 2,
+	IB_QP_CREATE_MANAGED_SEND				= 1 << 3,
+	IB_QP_CREATE_MANAGED_RECV				= 1 << 4,
 	IB_QP_CREATE_NETIF_QP			= 1 << 5,
 	IB_QP_CREATE_SIGNATURE_EN		= 1 << 6,
 	IB_QP_CREATE_USE_GFP_NOIO		= 1 << 7,
+	IB_QP_CREATE_ATOMIC_BE_REPLY	= 1 << 8,
 	/* reserve bits 26-31 for low level drivers' internal use */
 	IB_QP_CREATE_RESERVED_START		= 1 << 26,
 	IB_QP_CREATE_RESERVED_END		= 1 << 31,
 };
 
+enum ib_qpg_type {
+	IB_QPG_NONE	= 0,
+	IB_QPG_PARENT	= (1<<0),
+	IB_QPG_CHILD_RX = (1<<1),
+	IB_QPG_CHILD_TX = (1<<2)
+};
+
+struct ib_qpg_init_attrib {
+	u32 tss_child_count;
+	u32 rss_child_count;
+};
 
 /*
  * Note: users may not call ib_close_qp or ib_destroy_qp from the event_handler
@@ -823,10 +893,54 @@ struct ib_qp_init_attr {
 	struct ib_srq	       *srq;
 	struct ib_xrcd	       *xrcd;     /* XRC TGT QPs only */
 	struct ib_qp_cap	cap;
+	union {
+		struct ib_qp *qpg_parent; /* see qpg_type */
+		struct ib_qpg_init_attrib parent_attrib;
+	};
 	enum ib_sig_type	sq_sig_type;
 	enum ib_qp_type		qp_type;
 	enum ib_qp_create_flags	create_flags;
+	enum ib_qpg_type	qpg_type;
 	u8			port_num; /* special QP types only */
+};
+
+enum {
+	IB_DCT_CREATE_FLAGS_MASK		= 0,
+};
+
+struct ib_dct_init_attr {
+	struct ib_pd	       *pd;
+	struct ib_cq	       *cq;
+	struct ib_srq	       *srq;
+	u64			dc_key;
+	u8			port;
+	u32			access_flags;
+	u8			min_rnr_timer;
+	u8			tclass;
+	u32			flow_label;
+	enum ib_mtu		mtu;
+	u8			pkey_index;
+	u8			gid_index;
+	u8			hop_limit;
+	u32			create_flags;
+	u32			inline_size;
+	void		      (*event_handler)(struct ib_event *, void *);
+	void		       *dct_context;
+};
+
+struct ib_dct_attr {
+	u64			dc_key;
+	u8			port;
+	u32			access_flags;
+	u8			min_rnr_timer;
+	u8			tclass;
+	u32			flow_label;
+	enum ib_mtu		mtu;
+	u8			pkey_index;
+	u8			gid_index;
+	u8			hop_limit;
+	u32			key_violations;
+	u8			state;
 };
 
 struct ib_qp_open_attr {
@@ -897,6 +1011,8 @@ enum ib_qp_attr_mask {
 	IB_QP_ALT_SMAC			= (1<<22),
 	IB_QP_VID			= (1<<23),
 	IB_QP_ALT_VID			= (1<<24),
+	IB_QP_GROUP_RSS			= (1<<25),
+	IB_QP_DC_KEY			= (1<<26),
 };
 
 enum ib_qp_state {
@@ -950,6 +1066,7 @@ struct ib_qp_attr {
 	u8			alt_smac[ETH_ALEN];
 	u16			vlan_id;
 	u16			alt_vlan_id;
+	u64			dct_key;
 };
 
 enum ib_wr_opcode {
@@ -969,6 +1086,7 @@ enum ib_wr_opcode {
 	IB_WR_MASKED_ATOMIC_FETCH_AND_ADD,
 	IB_WR_BIND_MW,
 	IB_WR_REG_SIG_MR,
+	IB_WR_REG_INDIR_MR,
 	/* reserve values for low level drivers' internal use.
 	 * These values will not be used at all in the ib core layer.
 	 */
@@ -1006,6 +1124,12 @@ struct ib_fast_reg_page_list {
 	struct ib_device       *device;
 	u64		       *page_list;
 	unsigned int		max_page_list_len;
+};
+
+struct ib_indir_reg_list {
+	struct ib_device       *device;
+	struct ib_sge          *sg_list;
+	unsigned int		max_indir_list_len;
 };
 
 /**
@@ -1064,10 +1188,19 @@ struct ib_send_wr {
 			struct ib_fast_reg_page_list   *page_list;
 			unsigned int			page_shift;
 			unsigned int			page_list_len;
-			u32				length;
+			u64				length;
 			int				access_flags;
 			u32				rkey;
 		} fast_reg;
+		struct {
+			int		npages;
+			int		access_flags;
+			u32		mkey;
+			struct ib_pd   *pd;
+			u64		virt_addr;
+			u64		length;
+			int		page_shift;
+		} umr;
 		struct {
 			struct ib_mw            *mw;
 			/* The new rkey for the memory window. */
@@ -1080,6 +1213,14 @@ struct ib_send_wr {
 			int			access_flags;
 			struct ib_sge	       *prot;
 		} sig_handover;
+		struct {
+			u64				iova_start;
+			struct ib_indir_reg_list       *indir_list;
+			unsigned int			indir_list_len;
+			u64				length;
+			unsigned int			access_flags;
+			u32				mkey;
+		} indir_reg;
 	} wr;
 	u32			xrc_remote_srq_num;	/* XRC TGT QPs only */
 };
@@ -1097,8 +1238,15 @@ enum ib_access_flags {
 	IB_ACCESS_REMOTE_READ	= (1<<2),
 	IB_ACCESS_REMOTE_ATOMIC	= (1<<3),
 	IB_ACCESS_MW_BIND	= (1<<4),
-	IB_ZERO_BASED		= (1<<5),
-	IB_ACCESS_ON_DEMAND     = (1<<6),
+	IB_ACCESS_ALLOCATE_MR	= (1<<5),
+	IB_ACCESS_SHARED_MR_USER_READ   = (1<<6),
+	IB_ACCESS_SHARED_MR_USER_WRITE  = (1<<7),
+	IB_ACCESS_SHARED_MR_GROUP_READ  = (1<<8),
+	IB_ACCESS_SHARED_MR_GROUP_WRITE = (1<<9),
+	IB_ACCESS_SHARED_MR_OTHER_READ  = (1<<10),
+	IB_ACCESS_SHARED_MR_OTHER_WRITE = (1<<11),
+	IB_ZERO_BASED			= (1<<13),
+	IB_ACCESS_ON_DEMAND     = (1<<14),
 };
 
 struct ib_phys_buf {
@@ -1153,7 +1301,10 @@ struct ib_ucontext {
 	struct list_head	ah_list;
 	struct list_head	xrcd_list;
 	struct list_head	rule_list;
+	struct list_head	dct_list;
 	int			closing;
+	void		 *peer_mem_private_data;
+	char		 *peer_mem_name;
 
 	struct pid             *tgid;
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
@@ -1185,11 +1336,20 @@ struct ib_uobject {
 	int			live;
 };
 
+struct ib_udata;
+struct ib_udata_ops {
+	int		      (*copy_from)(void *dest, struct ib_udata *udata,
+					   size_t len);
+	int		      (*copy_to)(struct ib_udata *udata, void *src,
+					 size_t len);
+};
+
 struct ib_udata {
-	const void __user *inbuf;
-	void __user *outbuf;
-	size_t       inlen;
-	size_t       outlen;
+	struct ib_udata_ops    *ops;
+	void __user	       *inbuf;
+	void __user	       *outbuf;
+	size_t			inlen;
+	size_t			outlen;
 };
 
 struct ib_pd {
@@ -1211,6 +1371,23 @@ struct ib_ah {
 	struct ib_device	*device;
 	struct ib_pd		*pd;
 	struct ib_uobject	*uobject;
+};
+
+enum ib_cq_attr_mask {
+	IB_CQ_MODERATION               = (1 << 0),
+	IB_CQ_CAP_FLAGS                = (1 << 1)
+};
+
+enum ib_cq_cap_flags {
+	IB_CQ_IGNORE_OVERRUN           = (1 << 0)
+};
+
+struct ib_cq_attr {
+	struct {
+		u16     cq_count;
+		u16     cq_period;
+	} moderation;
+	u32     cq_cap_flags;
 };
 
 typedef void (*ib_comp_handler)(struct ib_cq *cq, void *cq_context);
@@ -1260,6 +1437,19 @@ struct ib_qp {
 	void		       *qp_context;
 	u32			qp_num;
 	enum ib_qp_type		qp_type;
+	enum ib_qpg_type	qpg_type;
+	u8			port_num;
+};
+
+struct ib_dct {
+	struct ib_device       *device;
+	struct ib_uobject      *uobject;
+	struct ib_pd	       *pd;
+	struct ib_cq	       *cq;
+	struct ib_srq	       *srq;
+	void		      (*event_handler)(struct ib_event *, void *);
+	void		       *dct_context;
+	u32			dct_num;
 };
 
 struct ib_mr {
@@ -1326,6 +1516,10 @@ enum ib_flow_domain {
 	IB_FLOW_DOMAIN_RFS,
 	IB_FLOW_DOMAIN_NIC,
 	IB_FLOW_DOMAIN_NUM /* Must be last */
+};
+
+enum ib_flow_flags {
+	IB_FLOW_ATTR_FLAGS_ALLOW_LOOP_BACK = 1
 };
 
 struct ib_flow_eth_filter {
@@ -1473,6 +1667,8 @@ struct ib_dma_mapping_ops {
 };
 
 struct iw_cm_verbs;
+struct ib_exp_device_attr;
+struct ib_exp_qp_init_attr;
 
 struct ib_device {
 	struct device                *dma_device;
@@ -1561,12 +1757,13 @@ struct ib_device {
 	int                        (*post_recv)(struct ib_qp *qp,
 						struct ib_recv_wr *recv_wr,
 						struct ib_recv_wr **bad_recv_wr);
-	struct ib_cq *             (*create_cq)(struct ib_device *device, int cqe,
-						int comp_vector,
+	struct ib_cq *             (*create_cq)(struct ib_device *device,
+						struct ib_cq_init_attr *attr,
 						struct ib_ucontext *context,
 						struct ib_udata *udata);
-	int                        (*modify_cq)(struct ib_cq *cq, u16 cq_count,
-						u16 cq_period);
+	int                        (*modify_cq)(struct ib_cq *cq,
+						struct ib_cq_attr *cq_attr,
+						int cq_attr_mask);
 	int                        (*destroy_cq)(struct ib_cq *cq);
 	int                        (*resize_cq)(struct ib_cq *cq, int cqe,
 						struct ib_udata *udata);
@@ -1588,7 +1785,8 @@ struct ib_device {
 						  u64 start, u64 length,
 						  u64 virt_addr,
 						  int mr_access_flags,
-						  struct ib_udata *udata);
+						  struct ib_udata *udata,
+						  int mr_id);
 	int			   (*rereg_user_mr)(struct ib_mr *mr,
 						    int flags,
 						    u64 start, u64 length,
@@ -1607,6 +1805,9 @@ struct ib_device {
 	struct ib_fast_reg_page_list * (*alloc_fast_reg_page_list)(struct ib_device *device,
 								   int page_list_len);
 	void			   (*free_fast_reg_page_list)(struct ib_fast_reg_page_list *page_list);
+	struct ib_indir_reg_list * (*alloc_indir_reg_list)(struct ib_device *device,
+							   unsigned int indir_list_len);
+	void			   (*free_indir_reg_list)(struct ib_indir_reg_list *indir_list);
 	int                        (*rereg_phys_mr)(struct ib_mr *mr,
 						    int mr_rereg_mask,
 						    struct ib_pd *pd,
@@ -1676,6 +1877,60 @@ struct ib_device {
 	u32			     local_dma_lkey;
 	u8                           node_type;
 	u8                           phys_port_cnt;
+
+	/*
+	 * Experimental data and functions
+	 */
+	int			(*exp_query_device)(struct ib_device *device,
+						    struct ib_exp_device_attr *device_attr);
+	struct ib_qp *		(*exp_create_qp)(struct ib_pd *pd,
+						 struct ib_exp_qp_init_attr *qp_init_attr,
+						 struct ib_udata *udata);
+	struct ib_dct *		(*exp_create_dct)(struct ib_pd *pd,
+					      struct ib_dct_init_attr *attr,
+					      struct ib_udata *udata);
+	int			(*exp_destroy_dct)(struct ib_dct *dct);
+	int			(*exp_query_dct)(struct ib_dct *dct, struct ib_dct_attr *attr);
+	int			(*exp_arm_dct)(struct ib_dct *dct, struct ib_udata *udata);
+	int			(*exp_query_mkey)(struct ib_mr *mr,
+						  u64 mkey_attr_mask,
+						  struct ib_mkey_attr *mkey_attr);
+	/**
+	 * exp_rereg_user_mr - Modifies the attributes of an existing memory region.
+	 *   Conceptually, this call performs the functions deregister memory region
+	 *   followed by register memory region.  Where possible,
+	 *   resources are reused instead of deallocated and reallocated.
+	 * @mr: The memory region to modify.
+	 * @flags: A bit-mask used to indicate which of the following
+	 *   properties of the memory region are being modified.
+	 * @start: If %IB_MR_REREG_TRANS is set in flags, this
+	 *   field specifies the start of the virtual address to use in the new
+	 *   translation, otherwise, this parameter is ignored.
+	 * @length: If %IB_MR_REREG_TRANS is set in flags, this
+	 *   field specifies the length of the virtual address to use in the new
+	 *   translation, otherwise, this parameter is ignored.
+	 * @virt_address: If %IB_MR_REREG_TRANS is set in flags, this
+	 *   field specifies the start of the virtual address in HCA to use in the new
+	 *   translation, otherwise, this parameter is ignored.
+	 * @mr_access_flags: If %IB_MR_REREG_ACCESS is set in flags, this
+	 *   field specifies the new memory access rights, otherwise, this
+	 *   parameter is ignored.
+	 * @pd: If %IB_MR_REREG_PD is set in flags, this field specifies
+	 *   the new protection domain to associated with the memory region,
+	 *   otherwise, this parameter is ignored.
+	 */
+	int			(*exp_rereg_user_mr)(struct ib_mr *mr,
+						     int flags,
+						     u64 start, u64 length,
+						     u64 virt_addr,
+						     int mr_access_flags,
+						     struct ib_pd *pd);
+
+	int			(*exp_prefetch_mr)(struct ib_mr *mr,
+						   u64 start, u64 length,
+						   u32 flags);
+
+	u64			uverbs_exp_cmd_mask;
 };
 
 struct ib_client {
@@ -2033,13 +2288,16 @@ struct ib_cq *ib_create_cq(struct ib_device *device,
 int ib_resize_cq(struct ib_cq *cq, int cqe);
 
 /**
- * ib_modify_cq - Modifies moderation params of the CQ
+ * ib_modify_cq - Modifies the attributes for the specified CQ and then
+ *   transitions the CQ to the given state.
  * @cq: The CQ to modify.
- * @cq_count: number of CQEs that will trigger an event
- * @cq_period: max period of time in usec before triggering an event
- *
+ * @cq_attr: specifies the CQ attributes to modify.
+ * @cq_attr_mask: A bit-mask used to specify which attributes of the CQ
+ *   are being modified.
  */
-int ib_modify_cq(struct ib_cq *cq, u16 cq_count, u16 cq_period);
+int ib_modify_cq(struct ib_cq *cq,
+		 struct ib_cq_attr *cq_attr,
+		 int cq_attr_mask);
 
 /**
  * ib_destroy_cq - Destroys the specified CQ.
@@ -2641,6 +2899,17 @@ struct ib_flow *ib_create_flow(struct ib_qp *qp,
 			       struct ib_flow_attr *flow_attr, int domain);
 int ib_destroy_flow(struct ib_flow *flow_id);
 
+struct ib_dct *ib_create_dct(struct ib_pd *pd, struct ib_dct_init_attr *attr,
+			     struct ib_udata *udata);
+int ib_destroy_dct(struct ib_dct *dct);
+int ib_query_dct(struct ib_dct *dct, struct ib_dct_attr *attr);
+
+/*
+ * ib_arm_dct - Arm a DCT to generate DC key violations
+ * @dct: pointer to the DCT object
+ */
+int ib_arm_dct(struct ib_dct *dct);
+
 static inline int ib_check_mr_access(int flags)
 {
 	/*
@@ -2653,6 +2922,8 @@ static inline int ib_check_mr_access(int flags)
 
 	return 0;
 }
+
+int ib_roce_mode_is_over_ip(struct ib_device *ibdev, int port_num);
 
 /**
  * ib_check_mr_status: lightweight check of MR status.
@@ -2669,4 +2940,16 @@ static inline int ib_check_mr_access(int flags)
 int ib_check_mr_status(struct ib_mr *mr, u32 check_mask,
 		       struct ib_mr_status *mr_status);
 
+/**
+ * ib_query_mkey - Retrieves information about a specific memory
+ * key.
+ * @mr: The memory region to retrieve information about.
+ * @mkey_attr_mask: Which attributes to get
+ * @mkey_attr: The attributes of the specified memory region.
+ */
+int ib_query_mkey(struct ib_mr *mr, u64 mkey_attr_mask,
+		  struct ib_mkey_attr *mkey_attr);
+
+
+int ib_get_grh_header_version(const void *h);
 #endif /* IB_VERBS_H */

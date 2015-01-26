@@ -669,7 +669,8 @@ int mlx4_QUERY_DEV_CAP(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
 #define QUERY_DEV_CAP_MAX_PD_OFFSET		0x65
 #define QUERY_DEV_CAP_RSVD_XRC_OFFSET		0x66
 #define QUERY_DEV_CAP_MAX_XRC_OFFSET		0x67
-#define QUERY_DEV_CAP_MAX_COUNTERS_OFFSET	0x68
+#define QUERY_DEV_CAP_MAX_BASIC_COUNTERS_OFFSET	0x68
+#define QUERY_DEV_CAP_MAX_EXTENDED_COUNTERS_OFFSET	0x6c
 #define QUERY_DEV_CAP_EXT_2_FLAGS_OFFSET	0x70
 #define QUERY_DEV_CAP_FLOW_STEERING_IPOIB_OFFSET	0x74
 #define QUERY_DEV_CAP_FLOW_STEERING_RANGE_EN_OFFSET	0x76
@@ -885,8 +886,13 @@ int mlx4_QUERY_DEV_CAP(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
 	MLX4_GET(dev_cap->max_icm_sz, outbox,
 		 QUERY_DEV_CAP_MAX_ICM_SZ_OFFSET);
 	if (dev_cap->flags & MLX4_DEV_CAP_FLAG_COUNTERS)
-		MLX4_GET(dev_cap->max_counters, outbox,
-			 QUERY_DEV_CAP_MAX_COUNTERS_OFFSET);
+		MLX4_GET(dev_cap->max_basic_counters, outbox,
+			 QUERY_DEV_CAP_MAX_BASIC_COUNTERS_OFFSET);
+	/* FW reports 256 however real value is 255 */
+	dev_cap->max_basic_counters = min_t(u32, dev_cap->max_basic_counters, 255);
+	if (dev_cap->flags & MLX4_DEV_CAP_FLAG_COUNTERS_EXT)
+		MLX4_GET(dev_cap->max_extended_counters, outbox,
+			 QUERY_DEV_CAP_MAX_EXTENDED_COUNTERS_OFFSET);
 
 	MLX4_GET(field32, outbox,
 		 QUERY_DEV_CAP_MAD_DEMUX_OFFSET);
@@ -969,7 +975,8 @@ void mlx4_dev_cap_dump(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
 	mlx4_dbg(dev, "Max RQ desc size: %d, max RQ S/G: %d\n",
 		 dev_cap->max_rq_desc_sz, dev_cap->max_rq_sg);
 	mlx4_dbg(dev, "Max GSO size: %d\n", dev_cap->max_gso_sz);
-	mlx4_dbg(dev, "Max counters: %d\n", dev_cap->max_counters);
+	mlx4_dbg(dev, "Max basic counters: %d\n", dev_cap->max_basic_counters);
+	mlx4_dbg(dev, "Max extended counters: %d\n", dev_cap->max_extended_counters);
 	mlx4_dbg(dev, "Max RSS Table size: %d\n", dev_cap->max_rss_tbl_sz);
 	mlx4_dbg(dev, "DMFS high rate steer QPn base: %d\n",
 		 dev_cap->dmfs_high_rate_qpn_base);
@@ -2317,6 +2324,41 @@ int mlx4_get_phys_port_id(struct mlx4_dev *dev)
 	mlx4_free_cmd_mailbox(dev, mailbox);
 	return ret;
 }
+
+int mlx4_query_diag_counters(struct mlx4_dev *dev, int array_length,
+			     u8 op_modifier, u32 in_offset[],
+			     u32 counter_out[])
+{
+	struct mlx4_cmd_mailbox *mailbox;
+	u32 *outbox;
+	int ret;
+	int i;
+
+	mailbox = mlx4_alloc_cmd_mailbox(dev);
+	if (IS_ERR(mailbox))
+		return PTR_ERR(mailbox);
+	outbox = mailbox->buf;
+
+	ret = mlx4_cmd_box(dev, 0, mailbox->dma, 0, op_modifier,
+			   MLX4_CMD_DIAG_RPRT, MLX4_CMD_TIME_CLASS_A,
+			   MLX4_CMD_NATIVE);
+	if (ret)
+		goto out;
+
+	for (i = 0; i < array_length; i++) {
+		if (in_offset[i] > MLX4_MAILBOX_SIZE) {
+			ret = -EINVAL;
+			goto out;
+		}
+
+		MLX4_GET(counter_out[i], outbox, in_offset[i]);
+	}
+
+out:
+	mlx4_free_cmd_mailbox(dev, mailbox);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(mlx4_query_diag_counters);
 
 #define MLX4_WOL_SETUP_MODE (5 << 28)
 int mlx4_wol_read(struct mlx4_dev *dev, u64 *config, int port)

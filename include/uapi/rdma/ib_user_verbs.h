@@ -123,6 +123,14 @@ struct ib_uverbs_comp_event_desc {
  * the rest of the command struct based on these value.
  */
 
+#define IBV_RESP_TO_VERBS_RESP_EX_RAW(ex_ptr, ex_type, ibv_type, field) \
+	((ibv_type *)((void *)(ex_ptr) + offsetof(ex_type,              \
+			field) + sizeof((ex_ptr)->field)))
+
+#define IBV_RESP_TO_VERBS_RESP_EX(ex_ptr, ex_type, ibv_type) \
+	IBV_RESP_TO_VERBS_RESP_EX_RAW(ex_ptr, ex_type, ibv_type, comp_mask)
+
+
 #define IB_USER_VERBS_CMD_COMMAND_MASK 0xff
 #define IB_USER_VERBS_CMD_FLAGS_MASK 0xff000000u
 #define IB_USER_VERBS_CMD_FLAGS_SHIFT 24
@@ -154,6 +162,11 @@ struct ib_uverbs_get_context_resp {
 
 struct ib_uverbs_query_device {
 	__u64 response;
+	__u64 driver_data[0];
+};
+
+struct ib_uverbs_query_device_ex {
+	__u64 comp_mask;
 	__u64 driver_data[0];
 };
 
@@ -750,6 +763,24 @@ struct ib_uverbs_flow_spec_eth {
 struct ib_uverbs_flow_ipv4_filter {
 	__be32 src_ip;
 	__be32 dst_ip;
+};
+
+struct ib_kern_ib_filter {
+	__be32	l3_type_qpn;
+	__u8	dst_gid[16];
+};
+
+struct ib_uverbs_flow_spec_ib {
+	union {
+		struct ib_uverbs_flow_spec_hdr hdr;
+		struct {
+			__u32 type;
+			__u16 size;
+			__u16 reserved;
+		};
+	};
+	struct ib_kern_ib_filter val;
+	struct ib_kern_ib_filter mask;
 };
 
 struct ib_uverbs_flow_spec_ipv4 {

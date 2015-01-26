@@ -39,6 +39,10 @@
 #include "mlx4_ib.h"
 #include "user.h"
 
+/* Which firmware version adds support for Resize CQ */
+#define MLX4_FW_VER_RESIZE_CQ  mlx4_fw_ver(2, 5, 0)
+#define MLX4_FW_VER_IGNORE_OVERRUN_CQ mlx4_fw_ver(2, 7, 8200)
+
 static void mlx4_ib_cq_comp(struct mlx4_cq *cq)
 {
 	struct ib_cq *ibcq = &to_mibcq(cq)->ibcq;
@@ -89,12 +93,30 @@ static struct mlx4_cqe *next_cqe_sw(struct mlx4_ib_cq *cq)
 	return get_sw_cqe(cq, cq->mcq.cons_index);
 }
 
-int mlx4_ib_modify_cq(struct ib_cq *cq, u16 cq_count, u16 cq_period)
+int mlx4_ib_modify_cq(struct ib_cq *cq,
+		      struct ib_cq_attr *cq_attr,
+		      int cq_attr_mask)
 {
 	struct mlx4_ib_cq *mcq = to_mcq(cq);
 	struct mlx4_ib_dev *dev = to_mdev(cq->device);
+	int err = 0;
 
-	return mlx4_cq_modify(dev->dev, &mcq->mcq, cq_count, cq_period);
+	if (cq_attr_mask & IB_CQ_CAP_FLAGS) {
+		if (cq_attr->cq_cap_flags & IB_CQ_IGNORE_OVERRUN) {
+			if (dev->dev->caps.cq_flags & MLX4_DEV_CAP_CQ_FLAG_IO)
+				err = mlx4_cq_ignore_overrun(dev->dev, &mcq->mcq);
+			else
+				err = -ENOSYS;
+		}
+	}
+
+	if (!err)
+		if (cq_attr_mask & IB_CQ_MODERATION)
+			err = mlx4_cq_modify(dev->dev, &mcq->mcq,
+					cq_attr->moderation.cq_count,
+					cq_attr->moderation.cq_period);
+
+	return err;
 }
 
 static int mlx4_ib_alloc_cq_buf(struct mlx4_ib_dev *dev, struct mlx4_ib_cq_buf *buf, int nent)
@@ -166,7 +188,11 @@ err_buf:
 	return err;
 }
 
-struct ib_cq *mlx4_ib_create_cq(struct ib_device *ibdev, int entries, int vector,
+/* we don't support system timestamping */
+#define CQ_CREATE_FLAGS_SUPPORTED IB_CQ_TIMESTAMP
+
+struct ib_cq *mlx4_ib_create_cq(struct ib_device *ibdev,
+				struct ib_cq_init_attr *attr,
 				struct ib_ucontext *context,
 				struct ib_udata *udata)
 {
@@ -174,11 +200,16 @@ struct ib_cq *mlx4_ib_create_cq(struct ib_device *ibdev, int entries, int vector
 	struct mlx4_ib_cq *cq;
 	struct mlx4_uar *uar;
 	int err;
+	int entries = attr->cqe;
+	int vector = attr->comp_vector;
 
 	if (entries < 1 || entries > dev->dev->caps.max_cqes)
 		return ERR_PTR(-EINVAL);
 
-	cq = kmalloc(sizeof *cq, GFP_KERNEL);
+	if (attr->flags & ~CQ_CREATE_FLAGS_SUPPORTED)
+		return ERR_PTR(-EINVAL);
+
+	cq = kzalloc(sizeof(*cq), GFP_KERNEL);
 	if (!cq)
 		return ERR_PTR(-ENOMEM);
 
@@ -188,6 +219,7 @@ struct ib_cq *mlx4_ib_create_cq(struct ib_device *ibdev, int entries, int vector
 	spin_lock_init(&cq->lock);
 	cq->resize_buf = NULL;
 	cq->resize_umem = NULL;
+	cq->create_flags = attr->flags;
 	INIT_LIST_HEAD(&cq->send_qp_list);
 	INIT_LIST_HEAD(&cq->recv_qp_list);
 
@@ -227,11 +259,15 @@ struct ib_cq *mlx4_ib_create_cq(struct ib_device *ibdev, int entries, int vector
 		uar = &dev->priv_uar;
 	}
 
-	if (dev->eq_table)
-		vector = dev->eq_table[vector % ibdev->num_comp_vectors];
+	if (dev->eq_table) {
+		vector = dev->eq_table[mlx4_choose_vector(dev->dev, vector,
+							  ibdev->num_comp_vectors)];
+	}
 
+	cq->vector = vector;
 	err = mlx4_cq_alloc(dev->dev, entries, &cq->buf.mtt, uar,
-			    cq->db.dma, &cq->mcq, vector, 0, 0);
+			    cq->db.dma, &cq->mcq, vector, 0,
+			    !!(cq->create_flags & IB_CQ_TIMESTAMP));
 	if (err)
 		goto err_dbmap;
 
@@ -250,6 +286,8 @@ struct ib_cq *mlx4_ib_create_cq(struct ib_device *ibdev, int entries, int vector
 	return &cq->ibcq;
 
 err_dbmap:
+	mlx4_release_vector(dev->dev, cq->vector);
+
 	if (context)
 		mlx4_ib_db_unmap_user(to_mucontext(context), &cq->db);
 
@@ -462,6 +500,17 @@ out:
 	return err;
 }
 
+int mlx4_ib_ignore_overrun_cq(struct ib_cq *ibcq)
+{
+	struct mlx4_ib_dev *dev = to_mdev(ibcq->device);
+	struct mlx4_ib_cq *cq = to_mcq(ibcq);
+
+	if (dev->dev->caps.fw_ver < MLX4_FW_VER_IGNORE_OVERRUN_CQ)
+		return -ENOSYS;
+
+	return mlx4_cq_ignore_overrun(dev->dev, &cq->mcq);
+}
+
 int mlx4_ib_destroy_cq(struct ib_cq *cq)
 {
 	struct mlx4_ib_dev *dev = to_mdev(cq->device);
@@ -477,6 +526,8 @@ int mlx4_ib_destroy_cq(struct ib_cq *cq)
 		mlx4_ib_free_cq_buf(dev, &mcq->buf, cq->cqe);
 		mlx4_db_free(dev->dev, &mcq->db);
 	}
+
+	mlx4_release_vector(dev->dev, mcq->vector);
 
 	kfree(mcq);
 

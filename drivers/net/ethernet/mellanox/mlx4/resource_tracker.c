@@ -2002,7 +2002,7 @@ static int vlan_alloc_res(struct mlx4_dev *dev, int slave, int op, int cmd,
 }
 
 static int counter_alloc_res(struct mlx4_dev *dev, int slave, int op, int cmd,
-			     u64 in_param, u64 *out_param)
+			     u64 in_param, u64 *out_param, int port)
 {
 	u32 index;
 	int err;
@@ -2010,23 +2010,15 @@ static int counter_alloc_res(struct mlx4_dev *dev, int slave, int op, int cmd,
 	if (op != RES_OP_RESERVE)
 		return -EINVAL;
 
-	err = mlx4_grant_resource(dev, slave, RES_COUNTER, 1, 0);
-	if (err)
-		return err;
+	if (port != 0)
+		port = mlx4_slave_convert_port(dev, slave, port);
 
-	err = __mlx4_counter_alloc(dev, &index);
-	if (err) {
-		mlx4_release_resource(dev, slave, RES_COUNTER, 1, 0);
-		return err;
-	}
+	if (port < 0)
+		return -EINVAL;
 
-	err = add_res_range(dev, slave, index, 1, RES_COUNTER, 0);
-	if (err) {
-		__mlx4_counter_free(dev, index);
-		mlx4_release_resource(dev, slave, RES_COUNTER, 1, 0);
-	} else {
+	err = __mlx4_counter_alloc(dev, slave, port, &index);
+	if (!err)
 		set_param_l(out_param, index);
-	}
 
 	return err;
 }
@@ -2102,7 +2094,8 @@ int mlx4_ALLOC_RES_wrapper(struct mlx4_dev *dev, int slave,
 
 	case RES_COUNTER:
 		err = counter_alloc_res(dev, slave, vhcr->op_modifier, alop,
-					vhcr->in_param, &vhcr->out_param);
+					vhcr->in_param, &vhcr->out_param,
+					(vhcr->in_modifier >> 8) & 0xFF);
 		break;
 
 	case RES_XRCD:
@@ -2327,7 +2320,7 @@ static int vlan_free_res(struct mlx4_dev *dev, int slave, int op, int cmd,
 }
 
 static int counter_free_res(struct mlx4_dev *dev, int slave, int op, int cmd,
-			    u64 in_param, u64 *out_param)
+			    u64 in_param, u64 *out_param, int port)
 {
 	int index;
 	int err;
@@ -2340,7 +2333,7 @@ static int counter_free_res(struct mlx4_dev *dev, int slave, int op, int cmd,
 	if (err)
 		return err;
 
-	__mlx4_counter_free(dev, index);
+	__mlx4_counter_free(dev, slave, port, index);
 	mlx4_release_resource(dev, slave, RES_COUNTER, 1, 0);
 
 	return err;
@@ -2414,7 +2407,8 @@ int mlx4_FREE_RES_wrapper(struct mlx4_dev *dev, int slave,
 
 	case RES_COUNTER:
 		err = counter_free_res(dev, slave, vhcr->op_modifier, alop,
-				       vhcr->in_param, &vhcr->out_param);
+				       vhcr->in_param, &vhcr->out_param,
+				       (vhcr->in_modifier >> 8) & 0xFF);
 		break;
 
 	case RES_XRCD:
@@ -4728,33 +4722,7 @@ static void rem_slave_eqs(struct mlx4_dev *dev, int slave)
 
 static void rem_slave_counters(struct mlx4_dev *dev, int slave)
 {
-	struct mlx4_priv *priv = mlx4_priv(dev);
-	struct mlx4_resource_tracker *tracker = &priv->mfunc.master.res_tracker;
-	struct list_head *counter_list =
-		&tracker->slave_list[slave].res_list[RES_COUNTER];
-	struct res_counter *counter;
-	struct res_counter *tmp;
-	int err;
-	int index;
-
-	err = move_all_busy(dev, slave, RES_COUNTER);
-	if (err)
-		mlx4_warn(dev, "rem_slave_counters: Could not move all counters - too busy for slave %d\n",
-			  slave);
-
-	spin_lock_irq(mlx4_tlock(dev));
-	list_for_each_entry_safe(counter, tmp, counter_list, com.list) {
-		if (counter->com.owner == slave) {
-			index = counter->com.res_id;
-			rb_erase(&counter->com.node,
-				 &tracker->res_tree[RES_COUNTER]);
-			list_del(&counter->com.list);
-			kfree(counter);
-			__mlx4_counter_free(dev, index);
-			mlx4_release_resource(dev, slave, RES_COUNTER, 1, 0);
-		}
-	}
-	spin_unlock_irq(mlx4_tlock(dev));
+	__mlx4_slave_counters_free(dev, slave);
 }
 
 static void rem_slave_xrcdns(struct mlx4_dev *dev, int slave)

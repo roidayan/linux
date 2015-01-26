@@ -32,8 +32,17 @@
  */
 
 #include <linux/slab.h>
+#include <linux/proc_fs.h>
+#include <linux/module.h>
+#include <linux/sched.h>
+#include <linux/cred.h>
+#include <linux/printk.h>
 
 #include "mlx4_ib.h"
+#include "mlx4_exp.h"
+
+atomic64_t shared_mr_count = ATOMIC_INIT(0);
+static void free_smr_info(struct mlx4_ib_mr *mr);
 
 static u32 convert_access(int acc)
 {
@@ -45,6 +54,17 @@ static u32 convert_access(int acc)
 	       MLX4_PERM_LOCAL_READ;
 }
 
+static mode_t convert_shared_access(int acc)
+{
+
+	return (acc & IB_ACCESS_SHARED_MR_USER_READ ? S_IRUSR       : 0) |
+	       (acc & IB_ACCESS_SHARED_MR_USER_WRITE  ? S_IWUSR : 0) |
+	       (acc & IB_ACCESS_SHARED_MR_GROUP_READ   ? S_IRGRP  : 0) |
+	       (acc & IB_ACCESS_SHARED_MR_GROUP_WRITE   ? S_IWGRP  : 0) |
+	       (acc & IB_ACCESS_SHARED_MR_OTHER_READ   ? S_IROTH  : 0) |
+	       (acc & IB_ACCESS_SHARED_MR_OTHER_WRITE   ? S_IWOTH  : 0);
+
+}
 static enum mlx4_mw_type to_mlx4_type(enum ib_mw_type type)
 {
 	switch (type) {
@@ -59,7 +79,7 @@ struct ib_mr *mlx4_ib_get_dma_mr(struct ib_pd *pd, int acc)
 	struct mlx4_ib_mr *mr;
 	int err;
 
-	mr = kmalloc(sizeof *mr, GFP_KERNEL);
+	mr = kzalloc(sizeof *mr, GFP_KERNEL);
 	if (!mr)
 		return ERR_PTR(-ENOMEM);
 
@@ -86,78 +106,456 @@ err_free:
 	return ERR_PTR(err);
 }
 
+static int mlx4_ib_umem_write_mtt_block(struct mlx4_ib_dev *dev,
+						struct mlx4_mtt *mtt,
+						u64 mtt_size,
+						u64 mtt_shift,
+						u64 len,
+						u64 cur_start_addr,
+						u64 *pages,
+						int *start_index,
+						int *npages)
+{
+	int k;
+	int err = 0;
+	u64 mtt_entries;
+	u64 cur_end_addr = cur_start_addr + len;
+	u64 cur_end_addr_aligned = 0;
+
+	len += (cur_start_addr & (mtt_size-1ULL));
+	cur_end_addr_aligned = round_up(cur_end_addr, mtt_size);
+	len += (cur_end_addr_aligned - cur_end_addr);
+	if (len & (mtt_size-1ULL)) {
+		WARN(1 ,
+		"write_block: len %llx is not aligned to mtt_size %llx\n",
+			len, mtt_size);
+		return -EINVAL;
+	}
+
+
+	mtt_entries = (len >> mtt_shift);
+
+	/* Align the MTT start address to
+		the mtt_size.
+		Required to handle cases when the MR
+		starts in the middle of an MTT record.
+		Was not required in old code since
+		the physical addresses provided by
+		the dma subsystem were page aligned,
+		which was also the MTT size.
+	*/
+	cur_start_addr = round_down(cur_start_addr, mtt_size);
+	/* A new block is started ...*/
+	for (k = 0; k < mtt_entries; ++k) {
+		pages[*npages] = cur_start_addr + (mtt_size * k);
+		(*npages)++;
+		/*
+		 * Be friendly to mlx4_write_mtt() and
+		 * pass it chunks of appropriate size.
+		 */
+		if (*npages == PAGE_SIZE / sizeof(u64)) {
+			err = mlx4_write_mtt(dev->dev,
+					mtt, *start_index,
+					*npages, pages);
+			if (err)
+				return err;
+
+			(*start_index) += *npages;
+			*npages = 0;
+		}
+	}
+
+	return 0;
+}
+
 int mlx4_ib_umem_write_mtt(struct mlx4_ib_dev *dev, struct mlx4_mtt *mtt,
 			   struct ib_umem *umem)
 {
 	u64 *pages;
-	int i, k, entry;
-	int n;
-	int len;
+	u64 len = 0;
 	int err = 0;
+	u64 mtt_size;
+	u64 cur_start_addr = 0;
+	u64 mtt_shift;
+	int start_index = 0;
+	int npages = 0;
 	struct scatterlist *sg;
+	int i;
 
 	pages = (u64 *) __get_free_page(GFP_KERNEL);
 	if (!pages)
 		return -ENOMEM;
 
-	i = n = 0;
+	mtt_shift = mtt->page_shift;
+	mtt_size = 1ULL << mtt_shift;
 
-	for_each_sg(umem->sg_head.sgl, sg, umem->nmap, entry) {
-		len = sg_dma_len(sg) >> mtt->page_shift;
-		for (k = 0; k < len; ++k) {
-			pages[i++] = sg_dma_address(sg) +
-				umem->page_size * k;
-			/*
-			 * Be friendly to mlx4_write_mtt() and
-			 * pass it chunks of appropriate size.
-			 */
-			if (i == PAGE_SIZE / sizeof (u64)) {
-				err = mlx4_write_mtt(dev->dev, mtt, n,
-						     i, pages);
-				if (err)
-					goto out;
-				n += i;
-				i = 0;
+	for_each_sg(umem->sg_head.sgl, sg, umem->nmap, i) {
+			if (cur_start_addr + len ==
+			    sg_dma_address(sg)) {
+				/* still the same block */
+				len += sg_dma_len(sg);
+				continue;
 			}
-		}
+			/* A new block is started ...*/
+			/* If len is malaligned, write an extra mtt entry to
+			    cover the misaligned area (round up the division)
+			*/
+			err = mlx4_ib_umem_write_mtt_block(dev,
+						mtt, mtt_size, mtt_shift,
+						len, cur_start_addr,
+						pages,
+						&start_index,
+						&npages);
+			if (err)
+				goto out;
+
+			cur_start_addr =
+				sg_dma_address(sg);
+			len = sg_dma_len(sg);
 	}
 
-	if (i)
-		err = mlx4_write_mtt(dev->dev, mtt, n, i, pages);
+	/* Handle the last block */
+	if (len > 0) {
+		/*  If len is malaligned, write an extra mtt entry to cover
+		     the misaligned area (round up the division)
+		*/
+		err = mlx4_ib_umem_write_mtt_block(dev,
+						mtt, mtt_size, mtt_shift,
+						len, cur_start_addr,
+						pages,
+						&start_index,
+						&npages);
+			if (err)
+				goto out;
+	}
+
+
+	if (npages)
+		err = mlx4_write_mtt(dev->dev, mtt, start_index, npages, pages);
 
 out:
 	free_page((unsigned long) pages);
 	return err;
 }
 
+static inline u64 alignment_of(u64 ptr)
+{
+	return ilog2(ptr & (~(ptr-1)));
+}
+
+static int mlx4_ib_umem_calc_block_mtt(u64 next_block_start,
+						u64 current_block_end,
+						u64 block_shift)
+{
+	/* Check whether the alignment of the new block
+	     is aligned as well as the previous block.
+	     Block address must start with zeros till size of entity_size.
+	*/
+	if ((next_block_start & ((1ULL << block_shift) - 1ULL)) != 0)
+		/* It is not as well aligned as the
+		previous block-reduce the mtt size
+		accordingly.
+		Here we take the last right bit
+		which is 1.
+		*/
+		block_shift = alignment_of(next_block_start);
+
+	/*  Check whether the alignment of the
+	     end of previous block - is it aligned
+	     as well as the start of the block
+	*/
+	if (((current_block_end) & ((1ULL << block_shift) - 1ULL)) != 0)
+		/* It is not as well aligned as
+		the start of the block - reduce the
+		mtt size accordingly.
+		*/
+		block_shift = alignment_of(current_block_end);
+
+	return block_shift;
+}
+
+/* Calculate optimal mtt size based on contiguous pages.
+* Function will return also the number of pages that are not aligned to the
+   calculated mtt_size to be added to total number
+    of pages. For that we should check the first chunk length & last chunk
+    length and if not aligned to mtt_size we should increment
+    the non_aligned_pages number.
+    All chunks in the middle already handled as part of mtt shift calculation
+    for both their start & end addresses.
+*/
+int mlx4_ib_umem_calc_optimal_mtt_size(struct ib_umem *umem,
+						u64 start_va,
+						int *num_of_mtts)
+{
+	u64 block_shift = MLX4_MAX_MTT_SHIFT;
+	u64 current_block_len = 0;
+	u64 current_block_start = 0;
+	u64 misalignment_bits;
+	u64 first_block_start = 0;
+	u64 last_block_end = 0;
+	u64 total_len = 0;
+	u64 last_block_aligned_end = 0;
+	u64 min_shift = ilog2(umem->page_size);
+	struct scatterlist *sg;
+	int i;
+	u64 next_block_start;
+	u64 current_block_end;
+
+	for_each_sg(umem->sg_head.sgl, sg, umem->nmap, i) {
+		/* Initialization - save the first chunk start as
+		    the current_block_start - block means contiguous pages.
+		*/
+		if (current_block_len == 0 && current_block_start == 0) {
+			first_block_start = current_block_start =
+				sg_dma_address(sg);
+			/* Find the bits that are different between
+			    the physical address and the virtual
+			    address for the start of the MR.
+			*/
+			/* umem_get aligned the start_va to a page
+			   boundry. Therefore, we need to align the
+			   start va to the same boundry */
+			/* misalignment_bits is needed to handle the
+			   case of a single memory region. In this
+			   case, the rest of the logic will not reduce
+			   the block size.  If we use a block size
+			   which is bigger than the alignment of the
+			   misalignment bits, we might use the virtual
+			   page number instead of the physical page
+			   number, resulting in access to the wrong
+			   data. */
+			misalignment_bits =
+			(start_va & (~(((u64)(umem->page_size))-1ULL)))
+						^ current_block_start;
+			block_shift = min(alignment_of(misalignment_bits)
+				, block_shift);
+		}
+
+		/* Go over the scatter entries and check
+		     if they continue the previous scatter entry.
+		*/
+		next_block_start =
+			sg_dma_address(sg);
+		current_block_end = current_block_start
+			+ current_block_len;
+		/* If we have a split (non-contig.) between two block*/
+		if (current_block_end != next_block_start) {
+			block_shift = mlx4_ib_umem_calc_block_mtt(
+					next_block_start,
+					current_block_end,
+					block_shift);
+
+			/* If we reached the minimum shift for 4k
+			     page we stop the loop.
+			*/
+			if (block_shift <= min_shift)
+				goto end;
+
+			/* If not saved yet we are in first block -
+			     we save the length of first block to
+			     calculate the non_aligned_pages number at
+			*    the end.
+			*/
+			total_len += current_block_len;
+
+			/* Start a new block */
+			current_block_start = next_block_start;
+			current_block_len =
+				sg_dma_len(sg);
+			continue;
+		}
+		/* The scatter entry is another part of
+		     the current block, increase the block size
+		* An entry in the scatter can be larger than
+		4k (page) as of dma mapping
+		which merge some blocks together.
+		*/
+		current_block_len +=
+			sg_dma_len(sg);
+	}
+
+	/* Account for the last block in the total len */
+	total_len += current_block_len;
+	/* Add to the first block the misalignment that it suffers from.*/
+	total_len += (first_block_start & ((1ULL<<block_shift)-1ULL));
+	last_block_end = current_block_start+current_block_len;
+	last_block_aligned_end = round_up(last_block_end, 1<<block_shift);
+	total_len += (last_block_aligned_end - last_block_end);
+
+	WARN((total_len & ((1ULL<<block_shift)-1ULL)),
+		" misaligned total length detected (%llu, %llu)!",
+		total_len, block_shift);
+
+	*num_of_mtts = total_len >> block_shift;
+end:
+	if (block_shift < min_shift) {
+		/* If shift is less than the min we set a WARN and
+		     return the min shift.
+		*/
+		WARN(1,
+		"mlx4_ib_umem_calc_optimal_mtt_size - unexpected shift %lld\n",
+		block_shift);
+
+		block_shift = min_shift;
+	}
+	return block_shift;
+
+}
+
+static int prepare_shared_mr(struct mlx4_ib_mr *mr, int access_flags, int mr_id)
+{
+
+	struct proc_dir_entry *mr_proc_entry;
+	mode_t mode = S_IFREG;
+	char name_buff[128];
+	kuid_t uid;
+	kgid_t gid;
+
+	mode |= convert_shared_access(access_flags);
+	sprintf(name_buff, "%X", mr_id);
+	mr->smr_info = kzalloc(sizeof(struct mlx4_shared_mr_info), GFP_KERNEL);
+	mr->smr_info->mr_id = mr_id;
+	mr->smr_info->umem = mr->umem;
+
+	mr_proc_entry = proc_create_data(name_buff, mode,
+				mlx4_mrs_dir_entry,
+				NULL,
+				mr->smr_info);
+
+	if (!mr_proc_entry) {
+		pr_err("prepare_shared_mr failed via proc\n");
+		kfree(mr->smr_info);
+		return -ENODEV;
+	}
+
+	current_uid_gid(&uid, &gid);
+	proc_set_user(mr_proc_entry, uid, gid);
+	proc_set_size(mr_proc_entry, mr->umem->length);
+
+	/* now creating an extra entry having a uniqe suffix counter */
+	mr->smr_info->counter = atomic64_inc_return(&shared_mr_count);
+	sprintf(name_buff, "%X.%lld", mr_id, mr->smr_info->counter);
+	mr_proc_entry = proc_create_data(name_buff, mode,
+					 mlx4_mrs_dir_entry,
+					 NULL,
+					 mr->smr_info);
+	if (!mr_proc_entry) {
+		pr_err("prepare_shared_mr failed via proc for %s\n", name_buff);
+		free_smr_info(mr);
+		return -ENODEV;
+	}
+
+	mr->smr_info->counter_used = 1;
+	proc_set_user(mr_proc_entry, uid, gid);
+	proc_set_size(mr_proc_entry, mr->umem->length);
+
+	return 0;
+
+}
+static int is_shared_mr(int access_flags)
+{
+	/* We should check whether IB_ACCESS_SHARED_MR_USER_READ or
+	other shared bits were turned on.
+	*/
+	return !!(access_flags & (IB_ACCESS_SHARED_MR_USER_READ |
+				IB_ACCESS_SHARED_MR_USER_WRITE |
+				IB_ACCESS_SHARED_MR_GROUP_READ |
+				IB_ACCESS_SHARED_MR_GROUP_WRITE |
+				IB_ACCESS_SHARED_MR_OTHER_READ |
+				IB_ACCESS_SHARED_MR_OTHER_WRITE));
+
+}
+
+static void free_smr_info(struct mlx4_ib_mr *mr)
+{
+	/* When master/parent shared mr is dereged there is
+	no ability to share this mr any more - its mr_id will be
+	returned to the kernel as part of ib_uverbs_dereg_mr
+	and may be allocated again as part of other reg_mr.
+	*/
+	char name_buff[128];
+
+	sprintf(name_buff, "%X", mr->smr_info->mr_id);
+	/* Remove proc entry is checking internally that no operation
+	was strated on that proc fs file and if in the middle
+	current process will wait till end of operation.
+	That's why no sync mechanism is needed when we release
+	below the shared umem.
+	*/
+	remove_proc_entry(name_buff, mlx4_mrs_dir_entry);
+	if (mr->smr_info->counter_used) {
+		sprintf(name_buff, "%X.%lld", mr->smr_info->mr_id,
+			mr->smr_info->counter);
+		remove_proc_entry(name_buff, mlx4_mrs_dir_entry);
+	}
+
+	kfree(mr->smr_info);
+	mr->smr_info = NULL;
+}
+
+static void mlx4_invalidate_umem(void *invalidation_cookie,
+				struct ib_umem *umem,
+				unsigned long addr, size_t size)
+{
+	struct mlx4_ib_mr *mr = (struct mlx4_ib_mr *)invalidation_cookie;
+
+	/* This function is called under client peer lock so its resources are race protected */
+	if (atomic_inc_return(&mr->invalidated) > 1) {
+		umem->invalidation_ctx->inflight_invalidation = 1;
+		goto end;
+	}
+
+	umem->invalidation_ctx->peer_callback = 1;
+	mlx4_mr_free(to_mdev(mr->ibmr.device)->dev, &mr->mmr);
+	ib_umem_release(umem);
+	complete(&mr->invalidation_comp);
+
+end:
+	return;
+
+}
+
 struct ib_mr *mlx4_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 				  u64 virt_addr, int access_flags,
-				  struct ib_udata *udata)
+				  struct ib_udata *udata,
+				  int mr_id)
 {
 	struct mlx4_ib_dev *dev = to_mdev(pd->device);
 	struct mlx4_ib_mr *mr;
 	int shift;
 	int err;
 	int n;
+	struct ib_peer_memory_client *ib_peer_mem;
+	struct vm_area_struct *vma;
+	int umem_flags = access_flags;
 
-	mr = kmalloc(sizeof *mr, GFP_KERNEL);
+	mr = kzalloc(sizeof *mr, GFP_KERNEL);
 	if (!mr)
 		return ERR_PTR(-ENOMEM);
 
-	/* Force registering the memory as writable. */
-	/* Used for memory re-registeration. HCA protects the access */
+	/* If actual memory is writable, force registering the memory as writable. */
+	/* Used for memory re-registeration */
+	if (!(umem_flags & IB_ACCESS_LOCAL_WRITE)) {
+		down_read(&current->mm->mmap_sem);
+		vma = find_vma(current->mm, start);
+		if (vma && (vma->vm_end >= start + length) &&
+		    (vma->vm_start <= start) && (vma->vm_flags & VM_WRITE))
+			umem_flags |= IB_ACCESS_LOCAL_WRITE;
+		up_read(&current->mm->mmap_sem);
+	}
 	mr->umem = ib_umem_get(pd->uobject->context, start, length,
-			       access_flags | IB_ACCESS_LOCAL_WRITE, 0);
+				  umem_flags, 0);
 	if (IS_ERR(mr->umem)) {
 		err = PTR_ERR(mr->umem);
 		goto err_free;
 	}
 
+	ib_peer_mem = mr->umem->ib_peer_mem;
 	n = ib_umem_page_count(mr->umem);
-	shift = ilog2(mr->umem->page_size);
-
+	shift = mlx4_ib_umem_calc_optimal_mtt_size(mr->umem, start,
+		&n);
 	err = mlx4_mr_alloc(dev->dev, to_mpd(pd)->pdn, virt_addr, length,
-			    convert_access(access_flags), n, shift, &mr->mmr);
+			 convert_access(access_flags), n, shift, &mr->mmr);
 	if (err)
 		goto err_umem;
 
@@ -170,8 +568,41 @@ struct ib_mr *mlx4_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 		goto err_mr;
 
 	mr->ibmr.rkey = mr->ibmr.lkey = mr->mmr.key;
+	atomic_set(&mr->invalidated, 0);
+	/* Check whether MR should be shared */
+	if (is_shared_mr(access_flags)) {
+	/* start address and length must be aligned to page size in order
+	    to map a full page and preventing leakage of data */
+		if (ib_umem_offset(mr->umem) || (length & ~PAGE_MASK)) {
+		        err = -EINVAL;
+		        goto err_mr;
+		}
+
+		err = prepare_shared_mr(mr, access_flags, mr_id);
+		if (err)
+			goto err_mr;
+	}
+
+	if (ib_peer_mem) {
+		if (access_flags & IB_ACCESS_MW_BIND) {
+			/* Prevent binding MW on peer clients.
+			* mlx4_invalidate_umem must be void,
+			* therefore, mlx4_mr_free should not fail
+			* when using peer clients. */
+			err = -ENOSYS;
+			pr_err("MW is not supported with peer memory client");
+			goto err_smr;
+		}
+		init_completion(&mr->invalidation_comp);
+		ib_umem_activate_invalidation_notifier(mr->umem,
+					mlx4_invalidate_umem, mr);
+	}
 
 	return &mr->ibmr;
+
+err_smr:
+	if (mr->smr_info)
+		free_smr_info(mr);
 
 err_mr:
 	(void) mlx4_mr_free(to_mdev(pd->device)->dev, &mr->mmr);
@@ -183,6 +614,101 @@ err_free:
 	kfree(mr);
 
 	return ERR_PTR(err);
+}
+
+int mlx4_ib_exp_rereg_user_mr(struct ib_mr *mr, int flags,
+			      u64 start, u64 length, u64 virt_addr,
+			      int mr_access_flags, struct ib_pd *pd)
+{
+	struct mlx4_ib_dev *dev = to_mdev(mr->device);
+	struct mlx4_ib_mr *mmr = to_mmr(mr);
+	struct mlx4_mpt_entry *mpt_entry;
+	struct mlx4_mpt_entry **pmpt_entry = &mpt_entry;
+	int err;
+
+	/* Since we synchronize this call and mlx4_ib_dereg_mr via uverbs, */
+	/* we assume that the calls can't run concurrently. Otherwise, a   */
+	/* race exists.							   */
+	err =  mlx4_mr_hw_get_mpt(dev->dev, &mmr->mmr, &pmpt_entry);
+
+	if (err)
+		return err;
+
+	if (flags & IB_EXP_MR_REREG_PD) {
+		err = mlx4_mr_hw_change_pd(dev->dev, *pmpt_entry,
+					   to_mpd(pd)->pdn);
+
+		if (err)
+			goto release_mpt_entry;
+	}
+
+	if (flags & IB_EXP_MR_REREG_ACCESS) {
+		err = mlx4_mr_hw_change_access(dev->dev, *pmpt_entry,
+					       convert_access(mr_access_flags));
+
+		if (err)
+			goto release_mpt_entry;
+	}
+
+	if (flags & IB_EXP_MR_REREG_TRANS) {
+		int shift;
+		int err;
+		int n;
+
+		/* Peer memory isn't supported */
+		if (NULL != mmr->umem->ib_peer_mem) {
+			err = -ENOTSUPP;
+			goto release_mpt_entry;
+		}
+
+		/* Per IB SPRC, when using rereg with translation, a shared MR
+		 * becomes a non-shared MR
+		 */
+		if (mmr->smr_info) {
+			free_smr_info(mmr);
+			mmr->smr_info = NULL;
+		}
+
+		mlx4_mr_rereg_mem_cleanup(dev->dev, &mmr->mmr);
+		ib_umem_release(mmr->umem);
+		mmr->umem = ib_umem_get(mr->uobject->context, start, length,
+					   mr_access_flags | IB_ACCESS_LOCAL_WRITE, 0);
+		if (IS_ERR(mmr->umem)) {
+			err = PTR_ERR(mmr->umem);
+			mmr->umem = NULL;
+			goto release_mpt_entry;
+		}
+		n = ib_umem_page_count(mmr->umem);
+		shift = mlx4_ib_umem_calc_optimal_mtt_size(mmr->umem, start,
+							   &n);
+
+		mmr->mmr.iova       = virt_addr;
+		mmr->mmr.size       = length;
+		err = mlx4_mr_rereg_mem_write(dev->dev, &mmr->mmr,
+					      virt_addr, length, n, shift,
+					      *pmpt_entry);
+		if (err) {
+			ib_umem_release(mmr->umem);
+			goto release_mpt_entry;
+		}
+
+		err = mlx4_ib_umem_write_mtt(dev, &mmr->mmr.mtt, mmr->umem);
+		if (err) {
+			mlx4_mr_rereg_mem_cleanup(dev->dev, &mmr->mmr);
+			ib_umem_release(mmr->umem);
+			goto release_mpt_entry;
+		}
+	}
+
+
+	/* If we couldn't transfer the MR to the HCA, just remember to	*/
+	/* return a failure, but dereg_mr should free resources.	*/
+	err = mlx4_mr_hw_write_mpt(dev->dev, &mmr->mmr, pmpt_entry);
+
+release_mpt_entry:
+	mlx4_mr_hw_put_mpt(dev->dev, pmpt_entry);
+
+	return err;
 }
 
 int mlx4_ib_rereg_user_mr(struct ib_mr *mr, int flags,
@@ -274,13 +800,32 @@ release_mpt_entry:
 int mlx4_ib_dereg_mr(struct ib_mr *ibmr)
 {
 	struct mlx4_ib_mr *mr = to_mmr(ibmr);
+	struct ib_umem *umem = mr->umem;
 	int ret;
 
+	if (mr->smr_info)
+		free_smr_info(mr);
+
+	if (atomic_inc_return(&mr->invalidated) > 1) {
+		wait_for_completion(&mr->invalidation_comp);
+		goto end;
+	}
+
 	ret = mlx4_mr_free(to_mdev(ibmr->device)->dev, &mr->mmr);
-	if (ret)
+	if (ret) {
+		/* Error is not expected here, except when memory windows
+		* are bound to MR which is not supported with
+		* peer memory clients */
+		atomic_set(&mr->invalidated, 0);
 		return ret;
-	if (mr->umem)
-		ib_umem_release(mr->umem);
+	}
+
+	if (!umem)
+		goto end;
+
+	ib_umem_release(mr->umem);
+end:
+
 	kfree(mr);
 
 	return 0;
@@ -357,7 +902,7 @@ struct ib_mr *mlx4_ib_alloc_fast_reg_mr(struct ib_pd *pd,
 	struct mlx4_ib_mr *mr;
 	int err;
 
-	mr = kmalloc(sizeof *mr, GFP_KERNEL);
+	mr = kzalloc(sizeof *mr, GFP_KERNEL);
 	if (!mr)
 		return ERR_PTR(-ENOMEM);
 

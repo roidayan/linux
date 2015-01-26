@@ -2518,7 +2518,7 @@ u32 mlx4_comm_get_version(void)
 	 return ((u32) CMD_CHAN_IF_REV << 8) | (u32) CMD_CHAN_VER;
 }
 
-static int mlx4_get_slave_indx(struct mlx4_dev *dev, int vf)
+int mlx4_get_slave_indx(struct mlx4_dev *dev, int vf)
 {
 	if ((vf < 0) || (vf >= dev->persist->num_vfs)) {
 		mlx4_err(dev, "Bad vf number:%d (number of activated vf: %d)\n",

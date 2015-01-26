@@ -68,6 +68,20 @@ static void __ib_umem_release(struct ib_device *dev, struct ib_umem *umem, int d
 
 }
 
+void ib_umem_activate_invalidation_notifier(struct ib_umem *umem,
+					       umem_invalidate_func_t func,
+					       void *cookie)
+{
+	struct invalidation_ctx *invalidation_ctx = umem->invalidation_ctx;
+
+	invalidation_ctx->func = func;
+	invalidation_ctx->cookie = cookie;
+
+	/* from that point any pending invalidations can be called */
+	mutex_unlock(&umem->ib_peer_mem->lock);
+	return;
+}
+EXPORT_SYMBOL(ib_umem_activate_invalidation_notifier);
 /**
  * ib_umem_get - Pin and DMA map userspace memory.
  *

@@ -1535,12 +1535,13 @@ static int __mlx4_ib_modify_qp(struct ib_qp *ibqp,
 	}
 
 	if (cur_state == IB_QPS_INIT && new_state == IB_QPS_RTR) {
-		if (dev->counters[qp->port - 1] != -1) {
+		if (dev->counters[qp->port - 1].counter_index != -1) {
 			context->pri_path.counter_index =
-						dev->counters[qp->port - 1];
+						dev->counters[qp->port - 1].counter_index;
 			optpar |= MLX4_QP_OPTPAR_COUNTER_INDEX;
-		} else
+		} else {
 			context->pri_path.counter_index = 0xff;
+		}
 
 		if (qp->flags & MLX4_IB_QP_NETIF) {
 			mlx4_ib_steer_qp_reg(dev, qp, 1);

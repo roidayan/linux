@@ -208,6 +208,28 @@ int mlx4_cq_resize(struct mlx4_dev *dev, struct mlx4_cq *cq,
 }
 EXPORT_SYMBOL_GPL(mlx4_cq_resize);
 
+int mlx4_cq_ignore_overrun(struct mlx4_dev *dev, struct mlx4_cq *cq)
+{
+	struct mlx4_cmd_mailbox *mailbox;
+	struct mlx4_cq_context *cq_context;
+	int err;
+
+	mailbox = mlx4_alloc_cmd_mailbox(dev);
+	if (IS_ERR(mailbox))
+		return PTR_ERR(mailbox);
+
+	cq_context = mailbox->buf;
+	memset(cq_context, 0, sizeof *cq_context);
+
+	cq_context->flags |= cpu_to_be32(MLX4_CQ_FLAG_OI);
+
+	err = mlx4_MODIFY_CQ(dev, mailbox, cq->cqn, 3);
+
+	mlx4_free_cmd_mailbox(dev, mailbox);
+	return err;
+}
+EXPORT_SYMBOL_GPL(mlx4_cq_ignore_overrun);
+
 int __mlx4_cq_alloc_icm(struct mlx4_dev *dev, int *cqn)
 {
 	struct mlx4_priv *priv = mlx4_priv(dev);
@@ -292,7 +314,7 @@ int mlx4_cq_alloc(struct mlx4_dev *dev, int nent,
 	u64 mtt_addr;
 	int err;
 
-	if (vector > dev->caps.num_comp_vectors + dev->caps.comp_pool)
+	if (vector >= dev->caps.num_comp_vectors)
 		return -EINVAL;
 
 	cq->vector = vector;
@@ -335,13 +357,15 @@ int mlx4_cq_alloc(struct mlx4_dev *dev, int nent,
 	cq->cons_index = 0;
 	cq->arm_sn     = 1;
 	cq->uar        = uar;
+	cq->eqn = priv->eq_table.eq[cq->vector].eqn;
+	cq->irq = priv->eq_table.eq[cq->vector].irq;
+
 	atomic_set(&cq->refcount, 1);
 	init_completion(&cq->free);
 	cq->comp = mlx4_add_cq_to_tasklet;
 	cq->tasklet_ctx.priv =
 		&priv->eq_table.eq[cq->vector].tasklet_ctx;
 	INIT_LIST_HEAD(&cq->tasklet_ctx.list);
-
 
 	cq->irq = priv->eq_table.eq[cq->vector].irq;
 	return 0;

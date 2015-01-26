@@ -46,6 +46,7 @@
 
 #include <linux/mlx4/device.h>
 #include <linux/mlx4/doorbell.h>
+#include <linux/mlx4/driver.h>
 
 #define MLX4_IB_DRV_NAME	"mlx4_ib"
 
@@ -67,6 +68,7 @@ enum {
 
 /*module param to indicate if SM assigns the alias_GUID*/
 extern int mlx4_ib_sm_guid_assign;
+extern struct proc_dir_entry *mlx4_mrs_dir_entry;
 
 #define MLX4_IB_UC_STEER_QPN_ALIGN 1
 #define MLX4_IB_UC_MAX_NUM_QPS     256
@@ -112,6 +114,13 @@ struct mlx4_ib_cq_resize {
 	int			cqe;
 };
 
+struct mlx4_shared_mr_info {
+	int mr_id;
+	struct ib_umem	       *umem;
+	long long counter;
+	int counter_used;
+};
+
 struct mlx4_ib_cq {
 	struct ib_cq		ibcq;
 	struct mlx4_cq		mcq;
@@ -122,15 +131,20 @@ struct mlx4_ib_cq {
 	struct mutex		resize_mutex;
 	struct ib_umem	       *umem;
 	struct ib_umem	       *resize_umem;
+	int			create_flags;
 	/* List of qps that it serves.*/
 	struct list_head		send_qp_list;
 	struct list_head		recv_qp_list;
+	int			vector;
 };
 
 struct mlx4_ib_mr {
 	struct ib_mr		ibmr;
 	struct mlx4_mr		mmr;
 	struct ib_umem	       *umem;
+	struct mlx4_shared_mr_info	*smr_info;
+	atomic_t      invalidated;
+	struct completion invalidation_comp;
 };
 
 struct mlx4_ib_mw {
@@ -315,6 +329,10 @@ struct mlx4_ib_qp {
 	struct mlx4_roce_smac_vlan_info pri;
 	struct mlx4_roce_smac_vlan_info alt;
 	u64			reg_id;
+	/*
+	 * Experimental data
+	 */
+	int			max_inlr_data;
 	struct list_head	qps_list;
 	struct list_head	cq_recv_list;
 	struct list_head	cq_send_list;
@@ -519,6 +537,11 @@ struct mlx4_ib_iov_port {
 	struct mlx4_ib_iov_sysfs_attr mcg_dentry;
 };
 
+struct mlx4_ib_counter {
+	int counter_index;
+	int status;
+};
+
 struct mlx4_ib_dev {
 	struct ib_device	ib_dev;
 	struct mlx4_dev	       *dev;
@@ -537,7 +560,7 @@ struct mlx4_ib_dev {
 	struct mutex		cap_mask_mutex;
 	bool			ib_active;
 	struct mlx4_ib_iboe	iboe;
-	int			counters[MLX4_MAX_PORTS];
+	struct mlx4_ib_counter	counters[MLX4_MAX_PORTS];
 	int		       *eq_table;
 	int			eq_added;
 	struct kobject	       *iov_parent;
@@ -670,7 +693,7 @@ int mlx4_ib_umem_write_mtt(struct mlx4_ib_dev *dev, struct mlx4_mtt *mtt,
 			   struct ib_umem *umem);
 struct ib_mr *mlx4_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 				  u64 virt_addr, int access_flags,
-				  struct ib_udata *udata);
+				  struct ib_udata *udata, int mr_id);
 int mlx4_ib_dereg_mr(struct ib_mr *mr);
 struct ib_mw *mlx4_ib_alloc_mw(struct ib_pd *pd, enum ib_mw_type type);
 int mlx4_ib_bind_mw(struct ib_qp *qp, struct ib_mw *mw,
@@ -682,9 +705,13 @@ struct ib_fast_reg_page_list *mlx4_ib_alloc_fast_reg_page_list(struct ib_device 
 							       int page_list_len);
 void mlx4_ib_free_fast_reg_page_list(struct ib_fast_reg_page_list *page_list);
 
-int mlx4_ib_modify_cq(struct ib_cq *cq, u16 cq_count, u16 cq_period);
+int mlx4_ib_modify_cq(struct ib_cq *cq,
+		      struct ib_cq_attr *cq_attr,
+		      int cq_attr_mask);
 int mlx4_ib_resize_cq(struct ib_cq *ibcq, int entries, struct ib_udata *udata);
-struct ib_cq *mlx4_ib_create_cq(struct ib_device *ibdev, int entries, int vector,
+int mlx4_ib_ignore_overrun_cq(struct ib_cq *ibcq);
+struct ib_cq *mlx4_ib_create_cq(struct ib_device *ibdev,
+				struct ib_cq_init_attr *attr,
 				struct ib_ucontext *context,
 				struct ib_udata *udata);
 int mlx4_ib_destroy_cq(struct ib_cq *cq);
@@ -744,6 +771,12 @@ int __mlx4_ib_query_pkey(struct ib_device *ibdev, u8 port, u16 index,
 int __mlx4_ib_query_gid(struct ib_device *ibdev, u8 port, int index,
 			union ib_gid *gid, int netw_view);
 
+int mlx4_ib_resolve_grh(struct mlx4_ib_dev *dev, const struct ib_ah_attr *ah_attr,
+			u8 *mac, int *is_mcast, u8 port);
+
+int mlx4_ib_query_if_stat(struct mlx4_ib_dev *dev, u32 counter_index,
+		       union mlx4_counter *counter, u8 clear);
+
 static inline bool mlx4_ib_ah_grh_present(struct mlx4_ib_ah *ah)
 {
 	u8 port = be32_to_cpu(ah->av.ib.port_pd) >> 24 & 3;
@@ -752,6 +785,13 @@ static inline bool mlx4_ib_ah_grh_present(struct mlx4_ib_ah *ah)
 		return true;
 
 	return !!(ah->av.ib.g_slid & 0x80);
+}
+static inline int mlx4_ib_qp_has_rq(struct ib_qp_init_attr *attr)
+{
+	if (attr->qp_type == IB_QPT_XRC_INI || attr->qp_type == IB_QPT_XRC_TGT)
+		return 0;
+
+	return !attr->srq;
 }
 
 int mlx4_ib_mcg_port_init(struct mlx4_ib_demux_ctx *ctx);
@@ -825,6 +865,8 @@ int mlx4_ib_steer_qp_alloc(struct mlx4_ib_dev *dev, int count, int *qpn);
 void mlx4_ib_steer_qp_free(struct mlx4_ib_dev *dev, u32 qpn, int count);
 int mlx4_ib_steer_qp_reg(struct mlx4_ib_dev *mdev, struct mlx4_ib_qp *mqp,
 			 int is_attach);
+int mlx4_ib_query_device(struct ib_device *ibdev,
+			 struct ib_device_attr *props);
 int mlx4_ib_rereg_user_mr(struct ib_mr *mr, int flags,
 			  u64 start, u64 length, u64 virt_addr,
 			  int mr_access_flags, struct ib_pd *pd,

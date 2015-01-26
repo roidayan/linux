@@ -1015,8 +1015,13 @@ struct ib_cq *ib_create_cq(struct ib_device *device,
 			   void *cq_context, int cqe, int comp_vector)
 {
 	struct ib_cq *cq;
+	struct ib_cq_init_attr attr = {
+		.cqe		= cqe,
+		.comp_vector	= comp_vector,
+		.flags		= 0,
+	};
 
-	cq = device->create_cq(device, cqe, comp_vector, NULL, NULL);
+	cq = device->create_cq(device, &attr, NULL, NULL);
 
 	if (!IS_ERR(cq)) {
 		cq->device        = device;
@@ -1031,10 +1036,12 @@ struct ib_cq *ib_create_cq(struct ib_device *device,
 }
 EXPORT_SYMBOL(ib_create_cq);
 
-int ib_modify_cq(struct ib_cq *cq, u16 cq_count, u16 cq_period)
+int ib_modify_cq(struct ib_cq *cq,
+		 struct ib_cq_attr *cq_attr,
+		 int cq_attr_mask)
 {
 	return cq->device->modify_cq ?
-		cq->device->modify_cq(cq, cq_count, cq_period) : -ENOSYS;
+		cq->device->modify_cq(cq, cq_attr, cq_attr_mask) : -ENOSYS;
 }
 EXPORT_SYMBOL(ib_modify_cq);
 
@@ -1446,3 +1453,49 @@ int ib_check_mr_status(struct ib_mr *mr, u32 check_mask,
 		mr->device->check_mr_status(mr, check_mask, mr_status) : -ENOSYS;
 }
 EXPORT_SYMBOL(ib_check_mr_status);
+
+int ib_query_mkey(struct ib_mr *mr, u64 mkey_attr_mask,
+		  struct ib_mkey_attr *mkey_attr)
+{
+	return mr->device->exp_query_mkey ?
+		mr->device->exp_query_mkey(mr, mkey_attr_mask, mkey_attr) : -ENOSYS;
+}
+EXPORT_SYMBOL(ib_query_mkey);
+int ib_roce_mode_is_over_ip(struct ib_device *ibdev, int port_num)
+{
+	struct ib_device_attr attr;
+	if ((rdma_port_get_link_layer(ibdev, port_num) == IB_LINK_LAYER_ETHERNET) &&
+	    !ib_query_device(ibdev, &attr) &&
+	    (attr.device_cap_flags & (IB_DEVICE_ROCE_MODE_1_5 | IB_DEVICE_ROCE_MODE_2)))
+		return 1;
+	return 0;
+}
+EXPORT_SYMBOL(ib_roce_mode_is_over_ip);
+
+struct ib_indir_reg_list *
+ib_alloc_indir_reg_list(struct ib_device *device,
+			unsigned int max_indir_list_len)
+{
+	struct ib_indir_reg_list *indir_list;
+
+	if (!device->alloc_indir_reg_list)
+		return ERR_PTR(-ENOSYS);
+
+	indir_list = device->alloc_indir_reg_list(device,
+						  max_indir_list_len);
+	if (!IS_ERR(indir_list)) {
+		indir_list->device = device;
+		indir_list->max_indir_list_len = max_indir_list_len;
+	}
+
+	return indir_list;
+}
+EXPORT_SYMBOL(ib_alloc_indir_reg_list);
+
+void
+ib_free_indir_reg_list(struct ib_indir_reg_list *indir_list)
+{
+	if (indir_list->device->free_indir_reg_list)
+		indir_list->device->free_indir_reg_list(indir_list);
+}
+EXPORT_SYMBOL(ib_free_indir_reg_list);

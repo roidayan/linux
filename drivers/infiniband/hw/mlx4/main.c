@@ -32,6 +32,7 @@
  */
 
 #include <linux/module.h>
+#include <linux/proc_fs.h>
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/errno.h>
@@ -44,6 +45,7 @@
 
 #include <rdma/ib_smi.h>
 #include <rdma/ib_user_verbs.h>
+#include <rdma/ib_user_verbs_exp.h>
 #include <rdma/ib_addr.h>
 
 #include <linux/mlx4/driver.h>
@@ -52,11 +54,14 @@
 
 #include "mlx4_ib.h"
 #include "user.h"
+#include "mlx4_exp.h"
 
 #define DRV_NAME	MLX4_IB_DRV_NAME
 #define DRV_VERSION	"2.2-1"
 #define DRV_RELDATE	"Feb 2014"
 
+#define MLX4_IB_DRIVER_PROC_DIR_NAME "driver/mlx4_ib"
+#define MLX4_IB_MRS_PROC_DIR_NAME "mrs"
 #define MLX4_IB_FLOW_MAX_PRIO 0xFFF
 #define MLX4_IB_FLOW_QPN_MASK 0xFFFFFF
 #define MLX4_IB_CARD_REV_A0   0xA0
@@ -67,8 +72,33 @@ MODULE_LICENSE("Dual BSD/GPL");
 MODULE_VERSION(DRV_VERSION);
 
 int mlx4_ib_sm_guid_assign = 1;
+struct proc_dir_entry *mlx4_mrs_dir_entry;
+static struct proc_dir_entry *mlx4_ib_driver_dir_entry;
+
 module_param_named(sm_guid_assign, mlx4_ib_sm_guid_assign, int, 0444);
 MODULE_PARM_DESC(sm_guid_assign, "Enable SM alias_GUID assignment if sm_guid_assign > 0 (Default: 1)");
+
+enum {
+	MAX_NUM_STR_BITMAP = 1 << 15,
+	DEFAULT_TBL_VAL = -1
+};
+
+static struct mlx4_dbdf2val_lst dev_assign_str = {
+	.name		= "dev_assign_str param",
+	.num_vals	= 1,
+	.def_val	= {DEFAULT_TBL_VAL},
+	.range		= {0, MAX_NUM_STR_BITMAP - 1}
+};
+module_param_string(dev_assign_str, dev_assign_str.str,
+		    sizeof(dev_assign_str.str), 0444);
+MODULE_PARM_DESC(dev_assign_str,
+		 "Map device function numbers to IB device numbers (e.g. '0000:04:00.0-0,002b:1c:0b.a-1,...').\n"
+		 "\t\tHexadecimal digits for the device function (e.g. 002b:1c:0b.a) and decimal for IB device numbers (e.g. 1).\n"
+		 "\t\tMax supported devices - 32");
+
+
+static unsigned long *dev_num_str_bitmap;
+static spinlock_t dev_num_str_lock;
 
 static const char mlx4_ib_version[] =
 	DRV_NAME ": Mellanox ConnectX InfiniBand driver v"
@@ -81,7 +111,19 @@ struct update_gid_work {
 	int			port;
 };
 
+struct dev_rec {
+	int	bus;
+	int	dev;
+	int	func;
+	int	nr;
+};
+
+static int dr_active;
+
 static void do_slave_init(struct mlx4_ib_dev *ibdev, int slave, int do_init);
+
+static void mlx4_ib_scan_netdevs(struct mlx4_ib_dev *ibdev, struct net_device*,
+				 unsigned long);
 
 static struct workqueue_struct *wq;
 
@@ -131,7 +173,7 @@ static int num_ib_ports(struct mlx4_dev *dev)
 	return ib_ports;
 }
 
-static int mlx4_ib_query_device(struct ib_device *ibdev,
+int mlx4_ib_query_device(struct ib_device *ibdev,
 				struct ib_device_attr *props)
 {
 	struct mlx4_ib_dev *dev = to_mdev(ibdev);
@@ -2164,7 +2206,7 @@ static void init_pkeys(struct mlx4_ib_dev *ibdev)
 
 static void mlx4_ib_alloc_eqs(struct mlx4_dev *dev, struct mlx4_ib_dev *ibdev)
 {
-	char name[80];
+	char name[32];
 	int eq_per_port = 0;
 	int added_eqs = 0;
 	int total_eqs = 0;
@@ -2193,11 +2235,11 @@ static void mlx4_ib_alloc_eqs(struct mlx4_dev *dev, struct mlx4_ib_dev *ibdev)
 	eq = 0;
 	mlx4_foreach_port(i, dev, MLX4_PORT_TYPE_IB) {
 		for (j = 0; j < eq_per_port; j++) {
-			snprintf(name, sizeof(name), "mlx4-ib-%d-%d@%s",
-				 i, j, dev->persist->pdev->bus->name);
+			sprintf(name, "mlx4-ib-%d-%d@pci:%s",
+				i, j, pci_name(dev->persist->pdev));
 			/* Set IRQ for specific name (per ring) */
 			if (mlx4_assign_eq(dev, name, NULL,
-					   &ibdev->eq_table[eq])) {
+					   &ibdev->eq_table[eq], NULL)) {
 				/* Use legacy (same as mlx4_en driver) */
 				pr_warn("Can't allocate EQ %d; reverting to legacy\n", eq);
 				ibdev->eq_table[eq] =
@@ -2237,6 +2279,214 @@ static void mlx4_ib_free_eqs(struct mlx4_dev *dev, struct mlx4_ib_dev *ibdev)
 	kfree(ibdev->eq_table);
 }
 
+/*
+ * create show function and a device_attribute struct pointing to
+ * the function for _name
+ */
+#define DEVICE_DIAG_RPRT_ATTR(_name, _offset, _op_mod)		\
+static ssize_t show_rprt_##_name(struct device *dev,		\
+				 struct device_attribute *attr,	\
+				 char *buf){			\
+	return show_diag_rprt(dev, buf, _offset, _op_mod);	\
+}								\
+static DEVICE_ATTR(_name, S_IRUGO, show_rprt_##_name, NULL);
+
+#define MLX4_DIAG_RPRT_CLEAR_DIAGS 3
+
+static size_t show_diag_rprt(struct device *device, char *buf,
+			     u32 offset, u8 op_modifier)
+{
+	size_t ret;
+	u32 counter_offset = offset;
+	u32 diag_counter = 0;
+	struct mlx4_ib_dev *dev = container_of(device, struct mlx4_ib_dev,
+					       ib_dev.dev);
+
+	ret = mlx4_query_diag_counters(dev->dev, 1, op_modifier,
+				       &counter_offset, &diag_counter);
+	if (ret)
+		return ret;
+
+	return sprintf(buf, "%d\n", diag_counter);
+}
+
+static ssize_t clear_diag_counters(struct device *device,
+				   struct device_attribute *attr,
+				   const char *buf, size_t length)
+{
+	size_t ret;
+	struct mlx4_ib_dev *dev = container_of(device, struct mlx4_ib_dev,
+					       ib_dev.dev);
+
+	ret = mlx4_query_diag_counters(dev->dev, 0, MLX4_DIAG_RPRT_CLEAR_DIAGS,
+				       NULL, NULL);
+	if (ret)
+		return ret;
+
+	return length;
+}
+
+DEVICE_DIAG_RPRT_ATTR(rq_num_lle	, 0x00, 2);
+DEVICE_DIAG_RPRT_ATTR(sq_num_lle	, 0x04, 2);
+DEVICE_DIAG_RPRT_ATTR(rq_num_lqpoe	, 0x08, 2);
+DEVICE_DIAG_RPRT_ATTR(sq_num_lqpoe 	, 0x0C, 2);
+DEVICE_DIAG_RPRT_ATTR(rq_num_lpe	, 0x18, 2);
+DEVICE_DIAG_RPRT_ATTR(sq_num_lpe	, 0x1C, 2);
+DEVICE_DIAG_RPRT_ATTR(rq_num_wrfe	, 0x20, 2);
+DEVICE_DIAG_RPRT_ATTR(sq_num_wrfe	, 0x24, 2);
+DEVICE_DIAG_RPRT_ATTR(sq_num_mwbe	, 0x2C, 2);
+DEVICE_DIAG_RPRT_ATTR(sq_num_bre	, 0x34, 2);
+DEVICE_DIAG_RPRT_ATTR(rq_num_lae	, 0x38, 2);
+DEVICE_DIAG_RPRT_ATTR(sq_num_rire	, 0x44, 2);
+DEVICE_DIAG_RPRT_ATTR(rq_num_rire	, 0x48, 2);
+DEVICE_DIAG_RPRT_ATTR(sq_num_rae	, 0x4C, 2);
+DEVICE_DIAG_RPRT_ATTR(rq_num_rae	, 0x50, 2);
+DEVICE_DIAG_RPRT_ATTR(sq_num_roe	, 0x54, 2);
+DEVICE_DIAG_RPRT_ATTR(sq_num_tree	, 0x5C, 2);
+DEVICE_DIAG_RPRT_ATTR(sq_num_rree	, 0x64, 2);
+DEVICE_DIAG_RPRT_ATTR(rq_num_rnr	, 0x68, 2);
+DEVICE_DIAG_RPRT_ATTR(sq_num_rnr	, 0x6C, 2);
+DEVICE_DIAG_RPRT_ATTR(rq_num_oos	, 0x100, 2);
+DEVICE_DIAG_RPRT_ATTR(sq_num_oos	, 0x104, 2);
+DEVICE_DIAG_RPRT_ATTR(rq_num_mce	, 0x108, 2);
+DEVICE_DIAG_RPRT_ATTR(rq_num_udsdprd	, 0x118, 2);
+DEVICE_DIAG_RPRT_ATTR(rq_num_ucsdprd	, 0x120, 2);
+DEVICE_DIAG_RPRT_ATTR(num_cqovf		, 0x1A0, 2);
+DEVICE_DIAG_RPRT_ATTR(num_eqovf		, 0x1A4, 2);
+DEVICE_DIAG_RPRT_ATTR(num_baddb		, 0x1A8, 2);
+
+static DEVICE_ATTR(clear_diag, S_IWUSR, NULL, clear_diag_counters);
+
+static struct attribute *diag_rprt_attrs[] = {
+	&dev_attr_rq_num_lle.attr,
+	&dev_attr_sq_num_lle.attr,
+	&dev_attr_rq_num_lqpoe.attr,
+	&dev_attr_sq_num_lqpoe.attr,
+	&dev_attr_rq_num_lpe.attr,
+	&dev_attr_sq_num_lpe.attr,
+	&dev_attr_rq_num_wrfe.attr,
+	&dev_attr_sq_num_wrfe.attr,
+	&dev_attr_sq_num_mwbe.attr,
+	&dev_attr_sq_num_bre.attr,
+	&dev_attr_rq_num_lae.attr,
+	&dev_attr_sq_num_rire.attr,
+	&dev_attr_rq_num_rire.attr,
+	&dev_attr_sq_num_rae.attr,
+	&dev_attr_rq_num_rae.attr,
+	&dev_attr_sq_num_roe.attr,
+	&dev_attr_sq_num_tree.attr,
+	&dev_attr_sq_num_rree.attr,
+	&dev_attr_rq_num_rnr.attr,
+	&dev_attr_sq_num_rnr.attr,
+	&dev_attr_rq_num_oos.attr,
+	&dev_attr_sq_num_oos.attr,
+	&dev_attr_rq_num_mce.attr,
+	&dev_attr_rq_num_udsdprd.attr,
+	&dev_attr_rq_num_ucsdprd.attr,
+	&dev_attr_num_cqovf.attr,
+	&dev_attr_num_eqovf.attr,
+	&dev_attr_num_baddb.attr,
+	&dev_attr_clear_diag.attr,
+	NULL
+};
+
+static struct attribute_group diag_counters_group = {
+	.name  = "diag_counters",
+	.attrs  = diag_rprt_attrs
+};
+
+static int mlx4_ib_proc_init(void)
+{
+	/* Creating procfs directories /proc/drivers/mlx4_ib/ &&
+	      /proc/drivers/mlx4_ib/mrs for further use by the driver.
+	*/
+	int err;
+
+	mlx4_ib_driver_dir_entry = proc_mkdir(MLX4_IB_DRIVER_PROC_DIR_NAME,
+				NULL);
+
+	if (!mlx4_ib_driver_dir_entry) {
+		pr_err("mlx4_ib_proc_init has failed for %s\n",
+		       MLX4_IB_DRIVER_PROC_DIR_NAME);
+		err = -ENODEV;
+		goto error;
+	}
+
+	mlx4_mrs_dir_entry = proc_mkdir(MLX4_IB_MRS_PROC_DIR_NAME,
+					mlx4_ib_driver_dir_entry);
+	if (!mlx4_mrs_dir_entry) {
+		pr_err("mlx4_ib_proc_init has failed for %s\n",
+		       MLX4_IB_MRS_PROC_DIR_NAME);
+		err = -ENODEV;
+		goto remove_entry;
+	}
+
+	return 0;
+
+remove_entry:
+	remove_proc_entry(MLX4_IB_DRIVER_PROC_DIR_NAME,
+				NULL);
+error:
+	return err;
+}
+
+static void init_dev_assign(void)
+{
+	int i = 1;
+
+	spin_lock_init(&dev_num_str_lock);
+	if (mlx4_fill_dbdf2val_tbl(&dev_assign_str))
+		return;
+	dev_num_str_bitmap =
+		kmalloc(BITS_TO_LONGS(MAX_NUM_STR_BITMAP) * sizeof(long),
+			GFP_KERNEL);
+	if (!dev_num_str_bitmap) {
+		pr_warn("bitmap alloc failed -- cannot apply dev_assign_str parameter\n");
+		return;
+	}
+	bitmap_zero(dev_num_str_bitmap, MAX_NUM_STR_BITMAP);
+	while ((i < MLX4_DEVS_TBL_SIZE) && (dev_assign_str.tbl[i].dbdf !=
+	       MLX4_ENDOF_TBL)) {
+		if (bitmap_allocate_region(dev_num_str_bitmap,
+					   dev_assign_str.tbl[i].val[0], 0))
+			goto err;
+		i++;
+	}
+	dr_active = 1;
+	return;
+
+err:
+	kfree(dev_num_str_bitmap);
+	dev_num_str_bitmap = NULL;
+	pr_warn("mlx4_ib: The value of 'dev_assign_str' parameter "
+			    "is incorrect. The parameter value is discarded!");
+}
+
+static int mlx4_ib_dev_idx(struct mlx4_dev *dev)
+{
+	int i, val;
+
+	if (!dr_active)
+		return -1;
+	if (!dev)
+		return -1;
+	if (mlx4_get_val(dev_assign_str.tbl, dev->persist->pdev, 0, &val))
+		return -1;
+
+	if (val != DEFAULT_TBL_VAL) {
+		dev->flags |= MLX4_FLAG_DEV_NUM_STR;
+		return val;
+	}
+
+	spin_lock(&dev_num_str_lock);
+	i = bitmap_find_free_region(dev_num_str_bitmap, MAX_NUM_STR_BITMAP, 0);
+	spin_unlock(&dev_num_str_lock);
+	if (i >= 0)
+		return i;
+
+	return -1;
+}
+
 static void *mlx4_ib_add(struct mlx4_dev *dev)
 {
 	struct mlx4_ib_dev *ibdev;
@@ -2246,6 +2496,7 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 	struct mlx4_ib_iboe *iboe;
 	int ib_num_ports = 0;
 	int num_req_counters;
+	int dev_idx;
 
 	pr_info_once("%s", mlx4_ib_version);
 
@@ -2281,7 +2532,11 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 	ibdev->dev = dev;
 	ibdev->bond_next_port	= 0;
 
-	strlcpy(ibdev->ib_dev.name, "mlx4_%d", IB_DEVICE_NAME_MAX);
+	dev_idx = mlx4_ib_dev_idx(dev);
+	if (dev_idx >= 0)
+		sprintf(ibdev->ib_dev.name, "mlx4_%d", dev_idx);
+	else
+		strlcpy(ibdev->ib_dev.name, "mlx4_%d", IB_DEVICE_NAME_MAX);
 	ibdev->ib_dev.owner		= THIS_MODULE;
 	ibdev->ib_dev.node_type		= RDMA_NODE_IB_CA;
 	ibdev->ib_dev.local_dma_lkey	= dev->caps.reserved_lkey;
@@ -2392,6 +2647,20 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 			(1ull << IB_USER_VERBS_CMD_CLOSE_XRCD);
 	}
 
+	/*
+	 * Set experimental data
+	 */
+	ibdev->ib_dev.uverbs_exp_cmd_mask	=
+		(1ull << IB_USER_VERBS_EXP_CMD_MODIFY_QP)	|
+		(1ull << IB_USER_VERBS_EXP_CMD_CREATE_QP)	|
+		(1ull << IB_USER_VERBS_EXP_CMD_MODIFY_CQ)	|
+		(1ull << IB_USER_VERBS_EXP_CMD_QUERY_DEVICE)	|
+		(1ull << IB_USER_VERBS_EXP_CMD_CREATE_CQ)	|
+		(1ull << IB_USER_VERBS_EXP_CMD_REREG_MR);
+	ibdev->ib_dev.exp_create_qp	= mlx4_ib_exp_create_qp;
+	ibdev->ib_dev.exp_query_device	= mlx4_ib_exp_query_device;
+	ibdev->ib_dev.exp_rereg_user_mr	= mlx4_ib_exp_rereg_user_mr;
+
 	if (check_flow_steering_support(dev)) {
 		ibdev->steering_support = MLX4_STEERING_MODE_DEVICE_MANAGED;
 		ibdev->ib_dev.create_flow	= mlx4_ib_create_flow;
@@ -2412,19 +2681,29 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 	num_req_counters = mlx4_is_bonded(dev) ? 1 : ibdev->num_ports;
 	for (i = 0; i < num_req_counters; ++i) {
 		mutex_init(&ibdev->qp1_proxy_lock[i]);
-		if (mlx4_ib_port_link_layer(&ibdev->ib_dev, i + 1) ==
-						IB_LINK_LAYER_ETHERNET) {
-			err = mlx4_counter_alloc(ibdev->dev, &ibdev->counters[i]);
-			if (err)
-				ibdev->counters[i] = -1;
-		} else {
-			ibdev->counters[i] = -1;
+		if (mlx4_is_slave(dev)) {
+			/* the slave asks for another counter index if exist (RoCE, VMA, DPDK) */
+			if (mlx4_ib_port_link_layer(&ibdev->ib_dev, i + 1) ==
+			    IB_LINK_LAYER_ETHERNET) {
+				ibdev->counters[i].status = mlx4_counter_alloc(ibdev->dev,
+									       i + 1,
+									       &ibdev->counters[i].counter_index);
+			} else {
+				ibdev->counters[i].counter_index = ibdev->dev->caps.def_counter_index[i];
+				ibdev->counters[i].status = 0;
+			}
+		} else {/* allocating the PF IB default counter indices reserved in mlx4_init_counters_table */
+			ibdev->counters[i].counter_index = ((i + 1) << 1) - 1;
+			ibdev->counters[i].status = 0;
 		}
+
+		dev_info(&dev->persist->pdev->dev,
+			 "%s: allocated counter index %d for port %d\n",
+			 __func__, ibdev->counters[i].counter_index, i+1);
 	}
 	if (mlx4_is_bonded(dev))
 		for (i = 1; i < ibdev->num_ports ; ++i)
 			ibdev->counters[i] = ibdev->counters[0];
-
 
 	mlx4_foreach_port(i, dev, MLX4_PORT_TYPE_IB)
 		ib_num_ports++;
@@ -2434,12 +2713,11 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 	INIT_LIST_HEAD(&ibdev->qp_list);
 	spin_lock_init(&ibdev->reset_flow_resource_lock);
 
-	if (ibdev->steering_support == MLX4_STEERING_MODE_DEVICE_MANAGED &&
-	    ib_num_ports) {
+	if (dev->caps.steering_mode == MLX4_STEERING_MODE_DEVICE_MANAGED &&
+	    !mlx4_is_mfunc(dev)) {
 		ibdev->steer_qpn_count = MLX4_IB_UC_MAX_NUM_QPS;
 		err = mlx4_qp_reserve_range(dev, ibdev->steer_qpn_count,
-					    MLX4_IB_UC_STEER_QPN_ALIGN,
-					    &ibdev->steer_qpn_base, 0);
+					    MLX4_IB_UC_STEER_QPN_ALIGN, &ibdev->steer_qpn_base, 0);
 		if (err)
 			goto err_counter;
 
@@ -2511,6 +2789,8 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 				       mlx4_class_attributes[j]))
 			goto err_notif;
 	}
+	if (sysfs_create_group(&ibdev->ib_dev.dev.kobj, &diag_counters_group))
+		goto err_notif;
 
 	ibdev->ib_active = true;
 
@@ -2564,9 +2844,14 @@ err_steer_qp_release:
 		mlx4_qp_release_range(dev, ibdev->steer_qpn_base,
 				      ibdev->steer_qpn_count);
 err_counter:
-	for (; i; --i)
-		if (ibdev->counters[i - 1] != -1)
-			mlx4_counter_free(ibdev->dev, ibdev->counters[i - 1]);
+	for (; i; --i) {
+		if (mlx4_ib_port_link_layer(&ibdev->ib_dev, i) ==
+						IB_LINK_LAYER_ETHERNET) {
+			mlx4_counter_free(ibdev->dev,
+					  i,
+					  ibdev->counters[i - 1].counter_index);
+		}
+	}
 
 err_map:
 	iounmap(ibdev->uar_map);
@@ -2650,12 +2935,20 @@ static void mlx4_ib_remove(struct mlx4_dev *dev, void *ibdev_ptr)
 {
 	struct mlx4_ib_dev *ibdev = ibdev_ptr;
 	int p;
+	int dev_idx, ret;
 
 	ibdev->ib_active = false;
 	flush_workqueue(wq);
 
 	mlx4_ib_close_sriov(ibdev);
+	sysfs_remove_group(&ibdev->ib_dev.dev.kobj, &diag_counters_group);
 	mlx4_ib_mad_cleanup(ibdev);
+	dev_idx = -1;
+	if (dr_active && !(ibdev->dev->flags & MLX4_FLAG_DEV_NUM_STR)) {
+		ret = sscanf(ibdev->ib_dev.name, "mlx4_%d", &dev_idx);
+		if (ret != 1)
+			dev_idx = -1;
+	}
 	ib_unregister_device(&ibdev->ib_dev);
 	if (ibdev->iboe.nb.notifier_call) {
 		if (unregister_netdevice_notifier(&ibdev->iboe.nb))
@@ -2683,9 +2976,15 @@ static void mlx4_ib_remove(struct mlx4_dev *dev, void *ibdev_ptr)
 #endif
 
 	iounmap(ibdev->uar_map);
-	for (p = 0; p < ibdev->num_ports; ++p)
-		if (ibdev->counters[p] != -1)
-			mlx4_counter_free(ibdev->dev, ibdev->counters[p]);
+	for (p = 0; p < ibdev->num_ports; ++p) {
+		if (mlx4_ib_port_link_layer(&ibdev->ib_dev, p + 1) ==
+						IB_LINK_LAYER_ETHERNET) {
+			mlx4_counter_free(ibdev->dev,
+					  p + 1,
+					  ibdev->counters[p].counter_index);
+		}
+	}
+
 	mlx4_foreach_port(p, dev, MLX4_PORT_TYPE_IB)
 		mlx4_CLOSE_PORT(dev, p);
 
@@ -2943,9 +3242,15 @@ static int __init mlx4_ib_init(void)
 	if (!wq)
 		return -ENOMEM;
 
-	err = mlx4_ib_mcg_init();
+	err = mlx4_ib_proc_init();
 	if (err)
 		goto clean_wq;
+
+	err = mlx4_ib_mcg_init();
+	if (err)
+		goto clean_proc;
+
+	init_dev_assign();
 
 	err = mlx4_register_interface(&mlx4_ib_interface);
 	if (err)
@@ -2955,6 +3260,11 @@ static int __init mlx4_ib_init(void)
 
 clean_mcg:
 	mlx4_ib_mcg_destroy();
+
+clean_proc:
+	remove_proc_entry(MLX4_IB_MRS_PROC_DIR_NAME,
+			  mlx4_ib_driver_dir_entry);
+	remove_proc_entry(MLX4_IB_DRIVER_PROC_DIR_NAME, NULL);
 
 clean_wq:
 	destroy_workqueue(wq);
@@ -2966,6 +3276,12 @@ static void __exit mlx4_ib_cleanup(void)
 	mlx4_unregister_interface(&mlx4_ib_interface);
 	mlx4_ib_mcg_destroy();
 	destroy_workqueue(wq);
+
+	/* Remove proc entries */
+	remove_proc_entry(MLX4_IB_MRS_PROC_DIR_NAME,
+				mlx4_ib_driver_dir_entry);
+	remove_proc_entry(MLX4_IB_DRIVER_PROC_DIR_NAME, NULL);
+	kfree(dev_num_str_bitmap);
 }
 
 module_init(mlx4_ib_init);

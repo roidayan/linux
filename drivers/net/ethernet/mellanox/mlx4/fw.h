@@ -124,7 +124,11 @@ struct mlx4_dev_cap {
 	u64 max_icm_sz;
 	int max_gso_sz;
 	int max_rss_tbl_sz;
-	u32 max_counters;
+	u32 max_basic_counters;
+	u32 sync_qp;
+	u32 max_extended_counters;
+	u32 mad_demux;
+	u8 cq_overrun;
 	u32 dmfs_high_rate_qpn_base;
 	u32 dmfs_high_rate_qpn_range;
 	struct mlx4_port_cap port_cap[MLX4_MAX_PORTS + 1];
