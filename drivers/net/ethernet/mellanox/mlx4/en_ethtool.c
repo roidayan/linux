@@ -38,6 +38,7 @@
 #include <linux/mlx4/device.h>
 #include <linux/in.h>
 #include <net/ip.h>
+#include <linux/bitmap.h>
 
 #include "mlx4_en.h"
 #include "en_port.h"
@@ -123,8 +124,6 @@ static const char main_strings[][ETH_GSTRING_LEN] = {
 	"tx_prio_1", "tx_prio_2", "tx_prio_3", "tx_prio_4", "tx_prio_5",
 	"tx_prio_6", "tx_prio_7",
 };
-#define NUM_MAIN_STATS	21
-#define NUM_ALL_STATS	(NUM_MAIN_STATS + NUM_PORT_STATS + NUM_PKT_STATS + NUM_PERF_STATS)
 
 static const char mlx4_en_test_names[][ETH_GSTRING_LEN]= {
 	"Interrupt Test",
@@ -224,14 +223,50 @@ static int mlx4_en_set_wol(struct net_device *netdev,
 	return err;
 }
 
+struct bitmap_sim_iterator {
+	bool advance_array;
+	unsigned long *stats_bitmap;
+	unsigned int count;
+	unsigned int iterator;
+};
+
+static inline void bitmap_sim_iterator_init(struct bitmap_sim_iterator *h,
+					    unsigned long *stats_bitmap,
+					    int count)
+{
+	h->iterator = 0;
+	h->advance_array = !bitmap_empty(stats_bitmap, count);
+	h->count = h->advance_array ? bitmap_weight(stats_bitmap, count)
+		: count;
+	h->stats_bitmap = stats_bitmap;
+}
+
+static inline int bitmap_sim_iterator_test(struct bitmap_sim_iterator *h)
+{
+	return !h->advance_array ? 1 : test_bit(h->iterator, h->stats_bitmap);
+}
+
+static inline int bitmap_sim_iterator_inc(struct bitmap_sim_iterator *h)
+{
+	return h->iterator++;
+}
+
+static inline unsigned int
+bitmap_sim_iterator_count(struct bitmap_sim_iterator *h)
+{
+	return h->count;
+}
+
 static int mlx4_en_get_sset_count(struct net_device *dev, int sset)
 {
 	struct mlx4_en_priv *priv = netdev_priv(dev);
-	int bit_count = hweight64(priv->stats_bitmap);
+	struct bitmap_sim_iterator it;
+
+	bitmap_sim_iterator_init(&it, priv->stats_bitmap, NUM_ALL_STATS);
 
 	switch (sset) {
 	case ETH_SS_STATS:
-		return (priv->stats_bitmap ? bit_count : NUM_ALL_STATS) +
+		return bitmap_sim_iterator_count(&it) +
 			(priv->tx_ring_num * 2) +
 #ifdef CONFIG_NET_RX_BUSY_POLL
 			(priv->rx_ring_num * 5);
@@ -253,34 +288,21 @@ static void mlx4_en_get_ethtool_stats(struct net_device *dev,
 {
 	struct mlx4_en_priv *priv = netdev_priv(dev);
 	int index = 0;
-	int i, j = 0;
+	int i;
+	struct bitmap_sim_iterator it;
+
+	bitmap_sim_iterator_init(&it, priv->stats_bitmap, NUM_ALL_STATS);
 
 	spin_lock_bh(&priv->stats_lock);
 
-	if (!(priv->stats_bitmap)) {
-		for (i = 0; i < NUM_MAIN_STATS; i++)
-			data[index++] =
-				((unsigned long *) &priv->stats)[i];
-		for (i = 0; i < NUM_PORT_STATS; i++)
-			data[index++] =
-				((unsigned long *) &priv->port_stats)[i];
-		for (i = 0; i < NUM_PKT_STATS; i++)
-			data[index++] =
-				((unsigned long *) &priv->pkstats)[i];
-	} else {
-		for (i = 0; i < NUM_MAIN_STATS; i++) {
-			if ((priv->stats_bitmap >> j) & 1)
-				data[index++] =
-				((unsigned long *) &priv->stats)[i];
-			j++;
-		}
-		for (i = 0; i < NUM_PORT_STATS; i++) {
-			if ((priv->stats_bitmap >> j) & 1)
-				data[index++] =
-				((unsigned long *) &priv->port_stats)[i];
-			j++;
-		}
-	}
+	for (i = 0; i < NUM_PKT_STATS; i++, bitmap_sim_iterator_inc(&it))
+		if (bitmap_sim_iterator_test(&it))
+			data[index++] = ((unsigned long *)&priv->pkstats)[i];
+
+	for (i = 0; i < NUM_PORT_STATS; i++, bitmap_sim_iterator_inc(&it))
+		if (bitmap_sim_iterator_test(&it))
+			data[index++] = ((unsigned long *)&priv->port_stats)[i];
+
 	for (i = 0; i < priv->tx_ring_num; i++) {
 		data[index++] = priv->tx_ring[i]->packets;
 		data[index++] = priv->tx_ring[i]->bytes;
@@ -309,7 +331,10 @@ static void mlx4_en_get_strings(struct net_device *dev,
 {
 	struct mlx4_en_priv *priv = netdev_priv(dev);
 	int index = 0;
-	int i;
+	int i, strings = 0;
+	struct bitmap_sim_iterator it;
+
+	bitmap_sim_iterator_init(&it, priv->stats_bitmap, NUM_ALL_STATS);
 
 	switch (stringset) {
 	case ETH_SS_TEST:
@@ -322,29 +347,18 @@ static void mlx4_en_get_strings(struct net_device *dev,
 
 	case ETH_SS_STATS:
 		/* Add main counters */
-		if (!priv->stats_bitmap) {
-			for (i = 0; i < NUM_MAIN_STATS; i++)
+		for (i = 0; i < NUM_PKT_STATS; i++, strings++,
+		     bitmap_sim_iterator_inc(&it))
+			if (bitmap_sim_iterator_test(&it))
 				strcpy(data + (index++) * ETH_GSTRING_LEN,
-					main_strings[i]);
-			for (i = 0; i < NUM_PORT_STATS; i++)
+				       main_strings[strings]);
+
+		for (i = 0; i < NUM_PORT_STATS; i++, strings++,
+		     bitmap_sim_iterator_inc(&it))
+			if (bitmap_sim_iterator_test(&it))
 				strcpy(data + (index++) * ETH_GSTRING_LEN,
-					main_strings[i +
-					NUM_MAIN_STATS]);
-			for (i = 0; i < NUM_PKT_STATS; i++)
-				strcpy(data + (index++) * ETH_GSTRING_LEN,
-					main_strings[i +
-					NUM_MAIN_STATS +
-					NUM_PORT_STATS]);
-		} else
-			for (i = 0; i < NUM_MAIN_STATS + NUM_PORT_STATS; i++) {
-				if ((priv->stats_bitmap >> i) & 1) {
-					strcpy(data +
-					       (index++) * ETH_GSTRING_LEN,
-					       main_strings[i]);
-				}
-				if (!(priv->stats_bitmap >> i))
-					break;
-			}
+				       main_strings[strings]);
+
 		for (i = 0; i < priv->tx_ring_num; i++) {
 			sprintf(data + (index++) * ETH_GSTRING_LEN,
 				"tx%d_packets", i);
