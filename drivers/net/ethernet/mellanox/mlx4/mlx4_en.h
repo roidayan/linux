@@ -560,6 +560,7 @@ struct mlx4_en_priv {
 #endif
 	struct mlx4_en_perf_stats pstats;
 	struct mlx4_en_pkt_stats pkstats;
+	struct mlx4_en_flow_stats flowstats[MLX4_NUM_PRIORITIES];
 	struct mlx4_en_port_stats port_stats;
 	DECLARE_BITMAP(stats_bitmap, NUM_ALL_STATS);
 	struct list_head mc_list;
