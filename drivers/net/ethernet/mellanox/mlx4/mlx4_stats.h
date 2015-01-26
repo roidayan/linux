@@ -76,6 +76,43 @@ struct mlx4_en_perf_stats {
 #define NUM_PERF_COUNTERS		6
 };
 
-#define NUM_ALL_STATS	(NUM_PKT_STATS + \
+struct mlx4_en_flow_stats {
+	u64 rx_pause;
+	u64 rx_pause_duration;
+	u64 rx_pause_transition;
+	u64 tx_pause;
+	u64 tx_pause_duration;
+	u64 tx_pause_transition;
+#define MLX4_NUM_PRIORITIES	8
+#define NUM_FLOW_PRIORITY_STATS	6
+#define NUM_FLOW_STATS		(NUM_FLOW_PRIORITY_STATS * MLX4_NUM_PRIORITIES)
+};
+
+struct mlx4_en_stat_out_flow_control_mbox {
+	/* Total number of PAUSE frames received from the far-end port */
+	__be64 rx_pause;
+	/* Total number of microseconds that far-end port requested to pause
+	 * transmission of packets
+	 */
+	__be64 rx_pause_duration;
+	/* Number of received transmission from XOFF state to XON state */
+	__be64 rx_pause_transition;
+	/* Total number of PAUSE frames sent from the far-end port */
+	__be64 tx_pause;
+	/* Total time in microseconds that transmission of packets has been
+	 * paused
+	 */
+	__be64 tx_pause_duration;
+	/* Number of transmitter transitions from XOFF state to XON state */
+	__be64 tx_pause_transition;
+	/* Reserverd */
+	__be64 reserved[2];
+};
+
+enum {
+	MLX4_DUMP_ETH_STATS_FLOW_CONTROL = 1 << 12
+};
+
+#define NUM_ALL_STATS	(NUM_PKT_STATS + NUM_FLOW_STATS + \
 			 NUM_PORT_STATS + NUM_PERF_STATS)
 #endif
