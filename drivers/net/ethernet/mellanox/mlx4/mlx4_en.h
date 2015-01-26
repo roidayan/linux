@@ -55,6 +55,7 @@
 #include <linux/mlx4/cmd.h>
 
 #include "en_port.h"
+#include "mlx4_stats.h"
 
 #define DRV_NAME	"mlx4_en"
 #define DRV_VERSION	"2.2-1"
@@ -171,7 +172,6 @@ enum {
 /* Number of samples to 'average' */
 #define AVG_SIZE			128
 #define AVG_FACTOR			1024
-#define NUM_PERF_STATS			NUM_PERF_COUNTERS
 
 #define INC_PERF_COUNTER(cnt)		(++(cnt))
 #define ADD_PERF_COUNTER(cnt, add)	((cnt) += (add))
@@ -182,7 +182,6 @@ enum {
 
 #else
 
-#define NUM_PERF_STATS			0
 #define INC_PERF_COUNTER(cnt)		do {} while (0)
 #define ADD_PERF_COUNTER(cnt, add)	do {} while (0)
 #define AVG_PERF_COUNTER(cnt, sample)	do {} while (0)
@@ -435,37 +434,6 @@ struct mlx4_en_port_state {
 	u32 flags;
 };
 
-struct mlx4_en_pkt_stats {
-	unsigned long broadcast;
-	unsigned long rx_prio[8];
-	unsigned long tx_prio[8];
-#define NUM_PKT_STATS		17
-};
-
-struct mlx4_en_port_stats {
-	unsigned long tso_packets;
-	unsigned long xmit_more;
-	unsigned long queue_stopped;
-	unsigned long wake_queue;
-	unsigned long tx_timeout;
-	unsigned long rx_alloc_failed;
-	unsigned long rx_chksum_good;
-	unsigned long rx_chksum_none;
-	unsigned long rx_chksum_complete;
-	unsigned long tx_chksum_offload;
-#define NUM_PORT_STATS		9
-};
-
-struct mlx4_en_perf_stats {
-	u32 tx_poll;
-	u64 tx_pktsz_avg;
-	u32 inflight_avg;
-	u16 tx_coal_avg;
-	u16 rx_coal_avg;
-	u32 napi_quota;
-#define NUM_PERF_COUNTERS		6
-};
-
 enum mlx4_en_mclist_act {
 	MCLIST_NONE,
 	MCLIST_REM,
@@ -593,7 +561,7 @@ struct mlx4_en_priv {
 	struct mlx4_en_perf_stats pstats;
 	struct mlx4_en_pkt_stats pkstats;
 	struct mlx4_en_port_stats port_stats;
-	u64 stats_bitmap;
+	DECLARE_BITMAP(stats_bitmap, NUM_ALL_STATS);
 	struct list_head mc_list;
 	struct list_head curr_list;
 	u64 broadcast_id;
