@@ -143,7 +143,8 @@ static void dump_dev_cap_flags2(struct mlx4_dev *dev, u64 flags)
 		[18] = "More than 80 VFs support",
 		[19] = "Performance optimized for limited rule configuration flow steering support",
 		[20] = "Recoverable error events support",
-		[21] = "Port Remap support"
+		[21] = "Port Remap support",
+		[22] = "Ethernet Flow control statistics support"
 	};
 	int i;
 
@@ -671,6 +672,7 @@ int mlx4_QUERY_DEV_CAP(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
 #define QUERY_DEV_CAP_MAX_XRC_OFFSET		0x67
 #define QUERY_DEV_CAP_MAX_BASIC_COUNTERS_OFFSET	0x68
 #define QUERY_DEV_CAP_MAX_EXTENDED_COUNTERS_OFFSET	0x6c
+#define QUERY_DEV_CAP_PORT_FLOWSTATS_COUNTERS_OFFSET	0x70
 #define QUERY_DEV_CAP_EXT_2_FLAGS_OFFSET	0x70
 #define QUERY_DEV_CAP_FLOW_STEERING_IPOIB_OFFSET	0x74
 #define QUERY_DEV_CAP_FLOW_STEERING_RANGE_EN_OFFSET	0x76
@@ -768,6 +770,9 @@ int mlx4_QUERY_DEV_CAP(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
 	MLX4_GET(field, outbox, QUERY_DEV_CAP_VL_PORT_OFFSET);
 	dev_cap->num_ports = field & 0xf;
 	MLX4_GET(field, outbox, QUERY_DEV_CAP_MAX_MSG_SZ_OFFSET);
+	MLX4_GET(field, outbox, QUERY_DEV_CAP_PORT_FLOWSTATS_COUNTERS_OFFSET);
+	if (field & 0x10)
+		dev_cap->flags2 |= MLX4_DEV_CAP_FLAG2_FLOWSTATS_EN;
 	dev_cap->max_msg_sz = 1 << (field & 0x1f);
 	MLX4_GET(field, outbox, QUERY_DEV_CAP_FLOW_STEERING_RANGE_EN_OFFSET);
 	if (field & 0x80)
