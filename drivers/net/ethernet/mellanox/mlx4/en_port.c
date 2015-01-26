@@ -128,12 +128,30 @@ out:
 	return err;
 }
 
+/* Each counter set is located in struct mlx4_en_stat_out_mbox
+ * with a const offset between its prio components.
+ * This function runs over a counter set and sum all of it's prio components.
+ */
+static unsigned long en_stats_adder(__be64 *start, __be64 *next, int num)
+{
+	__be64 *curr = start;
+	unsigned long ret = 0;
+	int i;
+	int offset = next - start;
+
+	for (i = 0; i <= num; i++) {
+		ret += be64_to_cpu(*curr);
+		curr += offset;
+	}
+
+	return ret;
+}
+
 int mlx4_en_DUMP_ETH_STATS(struct mlx4_en_dev *mdev, u8 port, u8 reset)
 {
 	struct mlx4_en_stat_out_mbox *mlx4_en_stats;
 	struct mlx4_en_priv *priv = netdev_priv(mdev->pndev[port]);
-	struct net_device_stats *stats = &priv->stats;
-	struct mlx4_cmd_mailbox *mailbox;
+	struct mlx4_cmd_mailbox *mailbox = NULL;
 	u64 in_mod = reset << 8 | port;
 	int err;
 	int i;
@@ -151,92 +169,216 @@ int mlx4_en_DUMP_ETH_STATS(struct mlx4_en_dev *mdev, u8 port, u8 reset)
 
 	spin_lock_bh(&priv->stats_lock);
 
-	stats->rx_packets = 0;
-	stats->rx_bytes = 0;
 	priv->port_stats.rx_chksum_good = 0;
 	priv->port_stats.rx_chksum_none = 0;
 	priv->port_stats.rx_chksum_complete = 0;
 	for (i = 0; i < priv->rx_ring_num; i++) {
-		stats->rx_packets += priv->rx_ring[i]->packets;
-		stats->rx_bytes += priv->rx_ring[i]->bytes;
 		priv->port_stats.rx_chksum_good += priv->rx_ring[i]->csum_ok;
 		priv->port_stats.rx_chksum_none += priv->rx_ring[i]->csum_none;
 		priv->port_stats.rx_chksum_complete += priv->rx_ring[i]->csum_complete;
 	}
-	stats->tx_packets = 0;
-	stats->tx_bytes = 0;
 	priv->port_stats.tx_chksum_offload = 0;
-	priv->port_stats.queue_stopped = 0;
-	priv->port_stats.wake_queue = 0;
-	priv->port_stats.tso_packets = 0;
+	priv->port_stats.tx_queue_stopped = 0;
+	priv->port_stats.tx_wake_queue = 0;
+	priv->port_stats.tx_tso_packets = 0;
 	priv->port_stats.xmit_more = 0;
 
 	for (i = 0; i < priv->tx_ring_num; i++) {
-		const struct mlx4_en_tx_ring *ring = priv->tx_ring[i];
+		priv->port_stats.tx_chksum_offload += priv->tx_ring[i]->tx_csum;
+		priv->port_stats.tx_queue_stopped +=
+				priv->tx_ring[i]->queue_stopped;
+		priv->port_stats.tx_wake_queue	+= priv->tx_ring[i]->wake_queue;
+		priv->port_stats.tx_tso_packets	+=
+				priv->tx_ring[i]->tso_packets;
+		priv->port_stats.xmit_more	+= priv->tx_ring[i]->xmit_more;
+	}
+	/* RX Statistics */
+	priv->pkstats.rx_packets =
+		en_stats_adder(&mlx4_en_stats->RTOT_prio_0,
+			       &mlx4_en_stats->RTOT_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.rx_bytes =
+		en_stats_adder(&mlx4_en_stats->ROCT_prio_0,
+			       &mlx4_en_stats->ROCT_prio_1,
+			       NUM_PRIORITIES);
 
-		stats->tx_packets += ring->packets;
-		stats->tx_bytes += ring->bytes;
-		priv->port_stats.tx_chksum_offload += ring->tx_csum;
-		priv->port_stats.queue_stopped     += ring->queue_stopped;
-		priv->port_stats.wake_queue        += ring->wake_queue;
-		priv->port_stats.tso_packets       += ring->tso_packets;
-		priv->port_stats.xmit_more         += ring->xmit_more;
+	priv->pkstats.rx_multicast_packets =
+		en_stats_adder(&mlx4_en_stats->MCAST_prio_0,
+			       &mlx4_en_stats->MCAST_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.rx_broadcast_packets =
+		en_stats_adder(&mlx4_en_stats->RBCAST_prio_0,
+			       &mlx4_en_stats->RBCAST_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.rx_errors = be64_to_cpu(mlx4_en_stats->PCS) +
+		be32_to_cpu(mlx4_en_stats->RJBBR) +
+		be32_to_cpu(mlx4_en_stats->RCRC) +
+		be32_to_cpu(mlx4_en_stats->RRUNT) +
+		be64_to_cpu(mlx4_en_stats->RInRangeLengthErr) +
+		be64_to_cpu(mlx4_en_stats->ROutRangeLengthErr) +
+		be32_to_cpu(mlx4_en_stats->RSHORT) +
+		en_stats_adder(&mlx4_en_stats->RGIANT_prio_0,
+			       &mlx4_en_stats->RGIANT_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.rx_dropped = be32_to_cpu(mlx4_en_stats->RdropOvflw);
+	priv->pkstats.rx_length_errors =
+		be32_to_cpu(mlx4_en_stats->RdropLength);
+	priv->pkstats.rx_over_errors = be32_to_cpu(mlx4_en_stats->RdropOvflw);
+	priv->pkstats.rx_crc_errors = be32_to_cpu(mlx4_en_stats->RCRC);
+	priv->pkstats.rx_jabbers = be32_to_cpu(mlx4_en_stats->RJBBR);
+	priv->pkstats.rx_in_range_length_error =
+		be64_to_cpu(mlx4_en_stats->RInRangeLengthErr);
+	priv->pkstats.rx_out_range_length_error =
+		be64_to_cpu(mlx4_en_stats->ROutRangeLengthErr);
+	priv->pkstats.rx_lt_64_bytes_packets =
+		en_stats_adder(&mlx4_en_stats->R64_prio_0,
+			       &mlx4_en_stats->R64_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.rx_127_bytes_packets =
+		en_stats_adder(&mlx4_en_stats->R127_prio_0,
+			       &mlx4_en_stats->R127_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.rx_255_bytes_packets =
+		en_stats_adder(&mlx4_en_stats->R255_prio_0,
+			       &mlx4_en_stats->R255_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.rx_511_bytes_packets =
+		en_stats_adder(&mlx4_en_stats->R511_prio_0,
+			       &mlx4_en_stats->R511_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.rx_1023_bytes_packets =
+		en_stats_adder(&mlx4_en_stats->R1023_prio_0,
+			       &mlx4_en_stats->R1023_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.rx_1518_bytes_packets =
+		en_stats_adder(&mlx4_en_stats->R1518_prio_0,
+			       &mlx4_en_stats->R1518_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.rx_1522_bytes_packets =
+		en_stats_adder(&mlx4_en_stats->R1522_prio_0,
+			       &mlx4_en_stats->R1522_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.rx_1548_bytes_packets =
+		en_stats_adder(&mlx4_en_stats->R1548_prio_0,
+			       &mlx4_en_stats->R1548_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.rx_gt_1548_bytes_packets =
+		en_stats_adder(&mlx4_en_stats->R2MTU_prio_0,
+			       &mlx4_en_stats->R2MTU_prio_1,
+			       NUM_PRIORITIES);
+
+	/* Tx Stats */
+	priv->pkstats.tx_packets =
+		en_stats_adder(&mlx4_en_stats->TTOT_prio_0,
+			       &mlx4_en_stats->TTOT_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.tx_bytes =
+		en_stats_adder(&mlx4_en_stats->TOCT_prio_0,
+			       &mlx4_en_stats->TOCT_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.tx_multicast_packets =
+		en_stats_adder(&mlx4_en_stats->TMCAST_prio_0,
+			       &mlx4_en_stats->TMCAST_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.tx_broadcast_packets =
+		en_stats_adder(&mlx4_en_stats->TBCAST_prio_0,
+			       &mlx4_en_stats->TBCAST_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.tx_errors =
+		en_stats_adder(&mlx4_en_stats->TGIANT_prio_0,
+			       &mlx4_en_stats->TGIANT_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.tx_dropped = be32_to_cpu(mlx4_en_stats->TDROP) -
+		priv->pkstats.tx_errors;
+	priv->pkstats.tx_lt_64_bytes_packets =
+		en_stats_adder(&mlx4_en_stats->T64_prio_0,
+			       &mlx4_en_stats->T64_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.tx_127_bytes_packets =
+		en_stats_adder(&mlx4_en_stats->T127_prio_0,
+			       &mlx4_en_stats->T127_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.tx_255_bytes_packets =
+		en_stats_adder(&mlx4_en_stats->T255_prio_0,
+			       &mlx4_en_stats->T255_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.tx_511_bytes_packets =
+		en_stats_adder(&mlx4_en_stats->T511_prio_0,
+			       &mlx4_en_stats->T511_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.tx_1023_bytes_packets =
+		en_stats_adder(&mlx4_en_stats->T1023_prio_0,
+			       &mlx4_en_stats->T1023_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.tx_1518_bytes_packets =
+		en_stats_adder(&mlx4_en_stats->T1518_prio_0,
+			       &mlx4_en_stats->T1518_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.tx_1522_bytes_packets =
+		en_stats_adder(&mlx4_en_stats->T1522_prio_0,
+			       &mlx4_en_stats->T1522_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.tx_1548_bytes_packets =
+		en_stats_adder(&mlx4_en_stats->T1548_prio_0,
+			       &mlx4_en_stats->T1548_prio_1,
+			       NUM_PRIORITIES);
+	priv->pkstats.tx_gt_1548_bytes_packets =
+		en_stats_adder(&mlx4_en_stats->T2MTU_prio_0,
+			       &mlx4_en_stats->T2MTU_prio_1,
+			       NUM_PRIORITIES);
+
+	priv->pkstats.rx_prio[0][0] = be64_to_cpu(mlx4_en_stats->RTOT_prio_0);
+	priv->pkstats.rx_prio[0][1] = be64_to_cpu(mlx4_en_stats->ROCT_prio_0);
+	priv->pkstats.rx_prio[1][0] = be64_to_cpu(mlx4_en_stats->RTOT_prio_1);
+	priv->pkstats.rx_prio[1][1] = be64_to_cpu(mlx4_en_stats->ROCT_prio_1);
+	priv->pkstats.rx_prio[2][0] = be64_to_cpu(mlx4_en_stats->RTOT_prio_2);
+	priv->pkstats.rx_prio[2][1] = be64_to_cpu(mlx4_en_stats->ROCT_prio_2);
+	priv->pkstats.rx_prio[3][0] = be64_to_cpu(mlx4_en_stats->RTOT_prio_3);
+	priv->pkstats.rx_prio[3][1] = be64_to_cpu(mlx4_en_stats->ROCT_prio_3);
+	priv->pkstats.rx_prio[4][0] = be64_to_cpu(mlx4_en_stats->RTOT_prio_4);
+	priv->pkstats.rx_prio[4][1] = be64_to_cpu(mlx4_en_stats->ROCT_prio_4);
+	priv->pkstats.rx_prio[5][0] = be64_to_cpu(mlx4_en_stats->RTOT_prio_5);
+	priv->pkstats.rx_prio[5][1] = be64_to_cpu(mlx4_en_stats->ROCT_prio_5);
+	priv->pkstats.rx_prio[6][0] = be64_to_cpu(mlx4_en_stats->RTOT_prio_6);
+	priv->pkstats.rx_prio[6][1] = be64_to_cpu(mlx4_en_stats->ROCT_prio_6);
+	priv->pkstats.rx_prio[7][0] = be64_to_cpu(mlx4_en_stats->RTOT_prio_7);
+	priv->pkstats.rx_prio[7][1] = be64_to_cpu(mlx4_en_stats->ROCT_prio_7);
+	priv->pkstats.rx_prio[8][0] = be64_to_cpu(mlx4_en_stats->RTOT_novlan);
+	priv->pkstats.rx_prio[8][1] = be64_to_cpu(mlx4_en_stats->ROCT_novlan);
+	priv->pkstats.tx_prio[0][0] = be64_to_cpu(mlx4_en_stats->TTOT_prio_0);
+	priv->pkstats.tx_prio[0][1] = be64_to_cpu(mlx4_en_stats->TOCT_prio_0);
+	priv->pkstats.tx_prio[1][0] = be64_to_cpu(mlx4_en_stats->TTOT_prio_1);
+	priv->pkstats.tx_prio[1][1] = be64_to_cpu(mlx4_en_stats->TOCT_prio_1);
+	priv->pkstats.tx_prio[2][0] = be64_to_cpu(mlx4_en_stats->TTOT_prio_2);
+	priv->pkstats.tx_prio[2][1] = be64_to_cpu(mlx4_en_stats->TOCT_prio_2);
+	priv->pkstats.tx_prio[3][0] = be64_to_cpu(mlx4_en_stats->TTOT_prio_3);
+	priv->pkstats.tx_prio[3][1] = be64_to_cpu(mlx4_en_stats->TOCT_prio_3);
+	priv->pkstats.tx_prio[4][0] = be64_to_cpu(mlx4_en_stats->TTOT_prio_4);
+	priv->pkstats.tx_prio[4][1] = be64_to_cpu(mlx4_en_stats->TOCT_prio_4);
+	priv->pkstats.tx_prio[5][0] = be64_to_cpu(mlx4_en_stats->TTOT_prio_5);
+	priv->pkstats.tx_prio[5][1] = be64_to_cpu(mlx4_en_stats->TOCT_prio_5);
+	priv->pkstats.tx_prio[6][0] = be64_to_cpu(mlx4_en_stats->TTOT_prio_6);
+	priv->pkstats.tx_prio[6][1] = be64_to_cpu(mlx4_en_stats->TOCT_prio_6);
+	priv->pkstats.tx_prio[7][0] = be64_to_cpu(mlx4_en_stats->TTOT_prio_7);
+	priv->pkstats.tx_prio[7][1] = be64_to_cpu(mlx4_en_stats->TOCT_prio_7);
+	priv->pkstats.tx_prio[8][0] = be64_to_cpu(mlx4_en_stats->TTOT_novlan);
+	priv->pkstats.tx_prio[8][1] = be64_to_cpu(mlx4_en_stats->TOCT_novlan);
+
+	if (!mlx4_is_mfunc(mdev->dev)) {
+		/* netdevice stats format */
+		priv->stats.rx_packets = priv->pkstats.rx_packets;
+		priv->stats.tx_packets = priv->pkstats.tx_packets;
+		priv->stats.rx_bytes = priv->pkstats.rx_bytes;
+		priv->stats.tx_bytes = priv->pkstats.tx_bytes;
+		priv->stats.rx_errors = priv->pkstats.rx_errors;
+		priv->stats.rx_dropped = priv->pkstats.rx_dropped;
+		priv->stats.tx_dropped = priv->pkstats.tx_dropped;
+		priv->stats.multicast = priv->pkstats.rx_multicast_packets;
+		priv->stats.rx_length_errors = priv->pkstats.rx_length_errors;
+		priv->stats.rx_over_errors = priv->pkstats.rx_over_errors;
+		priv->stats.rx_crc_errors = priv->pkstats.rx_crc_errors;
 	}
 
-	stats->rx_errors = be64_to_cpu(mlx4_en_stats->PCS) +
-			   be32_to_cpu(mlx4_en_stats->RdropLength) +
-			   be32_to_cpu(mlx4_en_stats->RJBBR) +
-			   be32_to_cpu(mlx4_en_stats->RCRC) +
-			   be32_to_cpu(mlx4_en_stats->RRUNT);
-	stats->tx_errors = be32_to_cpu(mlx4_en_stats->TDROP);
-	stats->multicast = be64_to_cpu(mlx4_en_stats->MCAST_prio_0) +
-			   be64_to_cpu(mlx4_en_stats->MCAST_prio_1) +
-			   be64_to_cpu(mlx4_en_stats->MCAST_prio_2) +
-			   be64_to_cpu(mlx4_en_stats->MCAST_prio_3) +
-			   be64_to_cpu(mlx4_en_stats->MCAST_prio_4) +
-			   be64_to_cpu(mlx4_en_stats->MCAST_prio_5) +
-			   be64_to_cpu(mlx4_en_stats->MCAST_prio_6) +
-			   be64_to_cpu(mlx4_en_stats->MCAST_prio_7) +
-			   be64_to_cpu(mlx4_en_stats->MCAST_novlan);
-	stats->collisions = 0;
-	stats->rx_length_errors = be32_to_cpu(mlx4_en_stats->RdropLength);
-	stats->rx_over_errors = be32_to_cpu(mlx4_en_stats->RdropOvflw);
-	stats->rx_crc_errors = be32_to_cpu(mlx4_en_stats->RCRC);
-	stats->rx_frame_errors = 0;
-	stats->rx_fifo_errors = be32_to_cpu(mlx4_en_stats->RdropOvflw);
-	stats->rx_missed_errors = be32_to_cpu(mlx4_en_stats->RdropOvflw);
-	stats->tx_aborted_errors = 0;
-	stats->tx_carrier_errors = 0;
-	stats->tx_fifo_errors = 0;
-	stats->tx_heartbeat_errors = 0;
-	stats->tx_window_errors = 0;
-
-	priv->pkstats.broadcast =
-				be64_to_cpu(mlx4_en_stats->RBCAST_prio_0) +
-				be64_to_cpu(mlx4_en_stats->RBCAST_prio_1) +
-				be64_to_cpu(mlx4_en_stats->RBCAST_prio_2) +
-				be64_to_cpu(mlx4_en_stats->RBCAST_prio_3) +
-				be64_to_cpu(mlx4_en_stats->RBCAST_prio_4) +
-				be64_to_cpu(mlx4_en_stats->RBCAST_prio_5) +
-				be64_to_cpu(mlx4_en_stats->RBCAST_prio_6) +
-				be64_to_cpu(mlx4_en_stats->RBCAST_prio_7) +
-				be64_to_cpu(mlx4_en_stats->RBCAST_novlan);
-	priv->pkstats.rx_prio[0] = be64_to_cpu(mlx4_en_stats->RTOT_prio_0);
-	priv->pkstats.rx_prio[1] = be64_to_cpu(mlx4_en_stats->RTOT_prio_1);
-	priv->pkstats.rx_prio[2] = be64_to_cpu(mlx4_en_stats->RTOT_prio_2);
-	priv->pkstats.rx_prio[3] = be64_to_cpu(mlx4_en_stats->RTOT_prio_3);
-	priv->pkstats.rx_prio[4] = be64_to_cpu(mlx4_en_stats->RTOT_prio_4);
-	priv->pkstats.rx_prio[5] = be64_to_cpu(mlx4_en_stats->RTOT_prio_5);
-	priv->pkstats.rx_prio[6] = be64_to_cpu(mlx4_en_stats->RTOT_prio_6);
-	priv->pkstats.rx_prio[7] = be64_to_cpu(mlx4_en_stats->RTOT_prio_7);
-	priv->pkstats.tx_prio[0] = be64_to_cpu(mlx4_en_stats->TTOT_prio_0);
-	priv->pkstats.tx_prio[1] = be64_to_cpu(mlx4_en_stats->TTOT_prio_1);
-	priv->pkstats.tx_prio[2] = be64_to_cpu(mlx4_en_stats->TTOT_prio_2);
-	priv->pkstats.tx_prio[3] = be64_to_cpu(mlx4_en_stats->TTOT_prio_3);
-	priv->pkstats.tx_prio[4] = be64_to_cpu(mlx4_en_stats->TTOT_prio_4);
-	priv->pkstats.tx_prio[5] = be64_to_cpu(mlx4_en_stats->TTOT_prio_5);
-	priv->pkstats.tx_prio[6] = be64_to_cpu(mlx4_en_stats->TTOT_prio_6);
-	priv->pkstats.tx_prio[7] = be64_to_cpu(mlx4_en_stats->TTOT_prio_7);
 	spin_unlock_bh(&priv->stats_lock);
 
 out:
