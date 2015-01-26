@@ -150,6 +150,7 @@ static unsigned long en_stats_adder(__be64 *start, __be64 *next, int num)
 int mlx4_en_DUMP_ETH_STATS(struct mlx4_en_dev *mdev, u8 port, u8 reset)
 {
 	struct mlx4_en_stat_out_mbox *mlx4_en_stats;
+	struct mlx4_en_stat_out_flow_control_mbox *flowstats;
 	struct mlx4_en_priv *priv = netdev_priv(mdev->pndev[port]);
 	struct mlx4_cmd_mailbox *mailbox = NULL;
 	u64 in_mod = reset << 8 | port;
@@ -363,6 +364,41 @@ int mlx4_en_DUMP_ETH_STATS(struct mlx4_en_dev *mdev, u8 port, u8 reset)
 	priv->pkstats.tx_prio[7][1] = be64_to_cpu(mlx4_en_stats->TOCT_prio_7);
 	priv->pkstats.tx_prio[8][0] = be64_to_cpu(mlx4_en_stats->TTOT_novlan);
 	priv->pkstats.tx_prio[8][1] = be64_to_cpu(mlx4_en_stats->TOCT_novlan);
+
+	spin_unlock_bh(&priv->stats_lock);
+
+	/* 0xffs indicates invalid value */
+	memset(mailbox->buf, 0xff, sizeof(*flowstats) * MLX4_NUM_PRIORITIES);
+
+	if (mdev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_FLOWSTATS_EN) {
+		memset(mailbox->buf, 0,
+		       sizeof(*flowstats) * MLX4_NUM_PRIORITIES);
+		err = mlx4_cmd_box(mdev->dev, 0, mailbox->dma,
+				   in_mod | MLX4_DUMP_ETH_STATS_FLOW_CONTROL,
+				   0, MLX4_CMD_DUMP_ETH_STATS,
+				   MLX4_CMD_TIME_CLASS_B, MLX4_CMD_WRAPPED);
+		if (err)
+			goto out;
+	}
+
+	flowstats = mailbox->buf;
+
+	spin_lock_bh(&priv->stats_lock);
+
+	for (i = 0; i < MLX4_NUM_PRIORITIES; i++)	{
+		priv->flowstats[i].rx_pause =
+			be64_to_cpu(flowstats[i].rx_pause);
+		priv->flowstats[i].rx_pause_duration =
+			be64_to_cpu(flowstats[i].rx_pause_duration);
+		priv->flowstats[i].rx_pause_transition =
+			be64_to_cpu(flowstats[i].rx_pause_transition);
+		priv->flowstats[i].tx_pause =
+			be64_to_cpu(flowstats[i].tx_pause);
+		priv->flowstats[i].tx_pause_duration =
+			be64_to_cpu(flowstats[i].tx_pause_duration);
+		priv->flowstats[i].tx_pause_transition =
+			be64_to_cpu(flowstats[i].tx_pause_transition);
+	}
 
 	if (!mlx4_is_mfunc(mdev->dev)) {
 		/* netdevice stats format */
