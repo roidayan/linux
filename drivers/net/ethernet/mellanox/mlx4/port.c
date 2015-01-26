@@ -38,16 +38,12 @@
 #include <linux/mlx4/cmd.h>
 
 #include "mlx4.h"
+#include "mlx4_stats.h"
 
 #define MLX4_MAC_VALID		(1ull << 63)
 
 #define MLX4_VLAN_VALID		(1u << 31)
 #define MLX4_VLAN_MASK		0xfff
-
-#define MLX4_STATS_TRAFFIC_COUNTERS_MASK	0xfULL
-#define MLX4_STATS_TRAFFIC_DROPS_MASK		0xc0ULL
-#define MLX4_STATS_ERROR_COUNTERS_MASK		0x1ffc30ULL
-#define MLX4_STATS_PORT_COUNTERS_MASK		0x1fe00000ULL
 
 void mlx4_init_mac_table(struct mlx4_dev *dev, struct mlx4_mac_table *table)
 {
@@ -1184,19 +1180,18 @@ int mlx4_DUMP_ETH_STATS_wrapper(struct mlx4_dev *dev, int slave,
 					  vhcr->in_modifier, outbox);
 }
 
-void mlx4_set_stats_bitmap(struct mlx4_dev *dev, u64 *stats_bitmap)
+void mlx4_set_stats_bitmap(struct mlx4_dev *dev, unsigned long *stats_bitmap)
 {
-	if (!mlx4_is_mfunc(dev)) {
-		*stats_bitmap = 0;
-		return;
-	}
+	int last_i = 0;
 
-	*stats_bitmap = (MLX4_STATS_TRAFFIC_COUNTERS_MASK |
-			 MLX4_STATS_TRAFFIC_DROPS_MASK |
-			 MLX4_STATS_PORT_COUNTERS_MASK);
+	bitmap_zero(stats_bitmap, NUM_ALL_STATS);
 
-	if (mlx4_is_master(dev))
-		*stats_bitmap |= MLX4_STATS_ERROR_COUNTERS_MASK;
+	if (!mlx4_is_slave(dev))
+		bitmap_set(stats_bitmap, last_i, NUM_PKT_STATS);
+	last_i = NUM_PKT_STATS;
+
+	bitmap_set(stats_bitmap, last_i, NUM_PORT_STATS);
+
 }
 EXPORT_SYMBOL(mlx4_set_stats_bitmap);
 
