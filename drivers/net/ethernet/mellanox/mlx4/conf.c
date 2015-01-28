@@ -57,6 +57,33 @@
  *
  **/
 
+/* Defines item_ops and group_ops for 'struct_in'
+ * Creates new group type 'new_memeber'
+ */
+#define MLX4_CONFIG_GROUPS(struct_in, new_member)			\
+	static struct config_group *					\
+	struct_in##_make_group(struct config_group *group,		\
+				const char *name)			\
+	{								\
+	struct new_member *new;						\
+									\
+	if (new_member##_verify_name(to_##struct_in(&group->cg_item), name))\
+		return ERR_PTR(-EINVAL);				\
+									\
+	new = kzalloc(sizeof(*new), GFP_KERNEL);			\
+	if (!new)							\
+		return ERR_PTR(-ENOMEM);				\
+									\
+	config_group_init_type_name(&new->group, name,			\
+				    &new_member##_item_type);		\
+									\
+	return &new->group;						\
+}									\
+									\
+static struct configfs_group_operations struct_in##_group_ops = {	\
+	.make_group     = &struct_in##_make_group,			\
+}									\
+
 #define MLX4_CFG_CONFIGFS_ATTR(struct_name, name)			\
 	static struct struct_name##_attribute struct_name##_##name =	\
 		__CONFIGFS_ATTR(name,  S_IRUGO | S_IWUSR,		\
@@ -75,8 +102,137 @@ static struct configfs_item_operations struct_in##_item_ops = {		\
 									\
 static struct config_item_type struct_in##_item_type = {		\
 	.ct_item_ops	= &struct_in##_item_ops,			\
+	.ct_group_ops   = &struct_in##_group_ops,			\
 	.ct_attrs	= struct_in##_attrs,				\
 	.ct_owner	= THIS_MODULE,					\
+}
+
+static ssize_t port_config_type_store(struct port_config *port_cfg,
+				      const char *page, size_t len)
+{
+	struct config_item *item = port_cfg->group.cg_item.ci_parent->ci_parent;
+	struct pdev_config *pdev_cfg = to_pdev_config(item);
+	struct mlx4_dev_persistent *persist = pci_get_drvdata(pdev_cfg->pdev);
+	struct mlx4_dev *dev = persist->dev;
+	unsigned long port;
+	int err;
+
+	err = kstrtoul(port_cfg->group.cg_item.ci_name, 10, &port);
+	if (err)
+		return -EINVAL;
+
+	if (!strcmp(page, "ib\n")) {
+		if (dev->caps.supported_type[port] & MLX4_PORT_TYPE_IB)
+			port_cfg->type = MLX4_PORT_TYPE_IB;
+		else
+			goto out_err;
+	} else if (!strcmp(page, "eth\n")) {
+		if (dev->caps.supported_type[port] & MLX4_PORT_TYPE_ETH)
+			port_cfg->type = MLX4_PORT_TYPE_ETH;
+		else
+			goto out_err;
+	} else {
+		pr_err("mlx4_core %s: Unsupported port type: %s, use 'ib' or 'eth'\n",
+		       item->ci_name, page);
+		return -EINVAL;
+	}
+	return len;
+
+out_err:
+	pr_err("mlx4_core %s: port type %s isn't supported.\n",
+	       item->ci_name, page);
+	return -EINVAL;
+}
+
+static ssize_t port_config_type_show(struct port_config *port_cfg, char *page)
+{
+	if (port_cfg->type == MLX4_PORT_TYPE_IB)
+		return sprintf(page, "%s\n", "ib");
+	else if (port_cfg->type == MLX4_PORT_TYPE_ETH)
+		return sprintf(page, "%s\n", "eth");
+	else if (port_cfg->type == MLX4_PORT_TYPE_AUTO)
+		return sprintf(page, "%s\n", "auto");
+	else if (port_cfg->type == MLX4_PORT_TYPE_NONE)
+		return sprintf(page, "%s\n", "port type wasn't set");
+	else
+		return sprintf(page, "%s\n", "unsupported port type");
+}
+
+CONFIGFS_ATTR_STRUCT(port_config);
+CONFIGFS_ATTR_OPS(port_config);
+MLX4_CFG_CONFIGFS_ATTR(port_config, type);
+
+static struct configfs_group_operations port_config_group_ops = {
+	NULL,
+};
+
+static struct configfs_attribute *port_config_attrs[] = {
+	&port_config_type.attr,
+	NULL,
+};
+
+static void port_config_release(struct config_item *item)
+{
+	kfree(to_port_config(item));
+}
+
+MLX4_CONFIG_ITEM_TYPE(port_config);
+
+static int port_config_verify_name(struct ports_config *ports_cfg,
+				   const char *name)
+{
+	struct config_item *pdev_item;
+	struct pdev_config *pdev_cfg;
+	struct mlx4_dev_persistent *persist;
+
+	pdev_item = ports_cfg->group.cg_item.ci_parent;
+
+	pdev_cfg = to_pdev_config(pdev_item);
+	persist = pci_get_drvdata(pdev_cfg->pdev);
+
+	if (!strcmp(name, "1")) {
+		return 0;
+	} else if (!strcmp(name, "2")) {
+		if (persist->dev->caps.num_ports == MLX4_MAX_PORTS)
+			return 0;
+		if (persist->dev->caps.num_ports != MLX4_MAX_PORTS)
+			pr_err("mlx4_core %s: Invalid directory name: %s, device has only one port\n",
+			       pdev_cfg->group.cg_item.ci_name, name);
+	} else {
+		pr_err("mlx4_core %s: Invalid directory name: %s, Directory name should be '1' or '2'.\n",
+		       pdev_cfg->group.cg_item.ci_name, name);
+	}
+	return -EINVAL;
+}
+
+MLX4_CONFIG_GROUPS(ports_config, port_config);
+
+static void ports_config_release(struct config_item *item)
+{
+	kfree(to_ports_config(item));
+}
+
+static struct configfs_item_operations ports_config_item_ops = {
+	.release		= ports_config_release,
+};
+
+static struct config_item_type ports_config_item_type = {
+	.ct_item_ops    = &ports_config_item_ops,
+	.ct_group_ops   = &ports_config_group_ops,
+	.ct_owner       = THIS_MODULE,
+};
+
+static int ports_config_verify_name(struct pdev_config *pdev_cfg,
+				    const char *name)
+{
+	char *pdev_name = pdev_cfg->group.cg_item.ci_name;
+
+	if (strcmp(name, MLX4_CONFIGFS_PORTS)) {
+		pr_err("mlx4_core %s: Invalid directory name: %s, directory name should be %s.\n",
+		       pdev_name, name, MLX4_CONFIGFS_PORTS);
+		return -EINVAL;
+	}
+	return 0;
 }
 
 static ssize_t pdev_config_commit_store(struct pdev_config *cfg,
@@ -139,6 +295,7 @@ static struct configfs_attribute *pdev_config_attrs[] = {
 	NULL,
 };
 
+MLX4_CONFIG_GROUPS(pdev_config, ports_config);
 MLX4_CONFIG_ITEM_TYPE(pdev_config);
 
 static struct pci_dev *find_pdev_by_name(const char *name)
@@ -233,6 +390,18 @@ out_err:
 	return ERR_PTR(err);
 }
 
+static struct config_group *mlx4_get_config_group(struct config_group *group,
+						  const char *name)
+{
+	struct config_item *item = NULL;
+
+	mutex_lock(&group->cg_subsys->su_mutex);
+	item = config_group_find_item(group, name);
+	mutex_unlock(&group->cg_subsys->su_mutex);
+
+	return to_config_group(item);
+}
+
 static struct config_group *device_driver_make(struct config_group *group,
 					       const char *name)
 {
@@ -256,6 +425,40 @@ static struct configfs_subsystem mlx4_subsys = {
 		},
 	},
 };
+
+int mlx4_conf_get_config(struct mlx4_dev *dev, struct pci_dev *pdev)
+{
+#define PORT_NAME_SIZE 2
+	struct config_group *pdev_group, *ports_group, *port_group;
+	char port_num[PORT_NAME_SIZE];
+	struct port_config *port_cfg;
+	int i;
+	struct mlx4_conf *mlx4_config = &dev->persist->mlx4_config;
+
+	pdev_group = mlx4_get_config_group(&mlx4_subsys.su_group,
+					   pci_name(pdev));
+	if (!pdev_group)
+		return -ENOENT;
+
+	ports_group = mlx4_get_config_group(pdev_group, MLX4_CONFIGFS_PORTS);
+	if (!ports_group) {
+		config_item_put(&pdev_group->cg_item);
+		return 0;
+	}
+
+	for (i = 1; i < (MLX4_MAX_PORTS + 1); i++) {
+		snprintf(port_num, PORT_NAME_SIZE, "%d", i);
+		port_group = mlx4_get_config_group(ports_group, port_num);
+		if (port_group) {
+			port_cfg = to_port_config(&port_group->cg_item);
+			mlx4_config->port_type[i] = port_cfg->type;
+			config_item_put(&port_group->cg_item);
+		}
+	}
+	config_item_put(&ports_group->cg_item);
+	config_item_put(&pdev_group->cg_item);
+	return 0;
+}
 
 int mlx4_configfs_init(void)
 {
