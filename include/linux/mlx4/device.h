@@ -126,6 +126,12 @@ enum {
 	MLX4_STEERING_DMFS_A0_NOT_SUPPORTED
 };
 
+enum {
+	MLX4_DMFS_MODE_DISABLE,
+	MLX4_DMFS_MODE_ETH_IPOIB,
+	MLX4_DMFS_MODE_STATIC_A0,
+};
+
 static inline const char *mlx4_steering_mode_str(int steering_mode)
 {
 	switch (steering_mode) {
@@ -776,6 +782,11 @@ struct mlx4_vf_dev {
 	u8			n_ports;
 };
 
+struct mlx4_conf {
+	int dmfs_mode;
+	int port_type[MLX4_MAX_PORTS + 1];
+};
+
 struct mlx4_dev_persistent {
 	struct pci_dev	       *pdev;
 	struct mlx4_dev	       *dev;
@@ -789,6 +800,7 @@ struct mlx4_dev_persistent {
 	u8		state;
 	struct mutex	interface_state_mutex; /* protect SW state */
 	u8	interface_state;
+	struct mlx4_conf	mlx4_config;
 };
 
 struct mlx4_dev {
