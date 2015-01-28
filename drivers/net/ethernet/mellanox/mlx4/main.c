@@ -415,7 +415,10 @@ static int mlx4_dev_cap(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
 				/* if IB and ETH are supported, we set the port
 				 * type according to user selection of port type;
 				 * if user selected none, take the FW hint */
-				if (port_type_array[i - 1] == MLX4_PORT_TYPE_NONE)
+				if (dev->persist->mlx4_config.port_type[i])
+					dev->caps.port_type[i] =
+						dev->persist->mlx4_config.port_type[i];
+				else if (port_type_array[i - 1] == MLX4_PORT_TYPE_NONE)
 					dev->caps.port_type[i] = dev->caps.suggested_type[i] ?
 						MLX4_PORT_TYPE_ETH : MLX4_PORT_TYPE_IB;
 				else
@@ -2777,6 +2780,12 @@ static int mlx4_load_one(struct pci_dev *pdev, int pci_dev_data,
 
 	dev->rev_id = pdev->revision;
 	dev->numa_node = dev_to_node(&pdev->dev);
+
+#if IS_ENABLED(CONFIG_MLX4_CONFIGFS_FS)
+	err = mlx4_conf_get_config(dev, pdev);
+	if (!err)
+		mlx4_info(dev, "Using device configuration from configfs.\n");
+#endif
 
 	/* Detect if this device is a virtual function */
 	if (pci_dev_data & MLX4_PCI_DEV_IS_VF) {
