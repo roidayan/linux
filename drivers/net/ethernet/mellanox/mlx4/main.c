@@ -415,7 +415,10 @@ static int mlx4_dev_cap(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
 				/* if IB and ETH are supported, we set the port
 				 * type according to user selection of port type;
 				 * if user selected none, take the FW hint */
-				if (port_type_array[i - 1] == MLX4_PORT_TYPE_NONE)
+				if (dev->persist->mlx4_config.port_type[i])
+					dev->caps.port_type[i] =
+						dev->persist->mlx4_config.port_type[i];
+				else if (port_type_array[i - 1] == MLX4_PORT_TYPE_NONE)
 					dev->caps.port_type[i] = dev->caps.suggested_type[i] ?
 						MLX4_PORT_TYPE_ETH : MLX4_PORT_TYPE_IB;
 				else
@@ -2730,6 +2733,39 @@ static struct configfs_subsystem mlx4_subsys = {
 	},
 };
 
+static int mlx4_conf_get_config(struct mlx4_dev *dev, struct pci_dev *pdev)
+{
+	struct config_group *pdev_group, *ports_group, *port_group;
+	char port_num[sizeof(int)];
+	struct port_config *port_cfg;
+	int i;
+	struct mlx4_conf *mlx4_config = &dev->persist->mlx4_config;
+
+	pdev_group = mlx4_get_config_group(&mlx4_subsys.su_group,
+					   pci_name(pdev));
+	if (!pdev_group)
+		return -ENOENT;
+
+	ports_group = mlx4_get_config_group(pdev_group, "ports");
+	if (!ports_group) {
+		config_item_put(&pdev_group->cg_item);
+		return 0;
+	}
+
+	for (i = 1; i < (MLX4_MAX_PORTS + 1); i++) {
+		sprintf(port_num, "%d", i);
+		port_group = mlx4_get_config_group(ports_group, port_num);
+		if (port_group) {
+			port_cfg = to_port_config(&port_group->cg_item);
+			mlx4_config->port_type[i] = port_cfg->type;
+			config_item_put(&port_group->cg_item);
+		}
+	}
+	config_item_put(&ports_group->cg_item);
+	config_item_put(&pdev_group->cg_item);
+	return 0;
+}
+
 static int mlx4_load_one(struct pci_dev *pdev, int pci_dev_data,
 			 int total_vfs, int *nvfs, struct mlx4_priv *priv,
 			 int reset_flow)
@@ -2758,6 +2794,10 @@ static int mlx4_load_one(struct pci_dev *pdev, int pci_dev_data,
 
 	dev->rev_id = pdev->revision;
 	dev->numa_node = dev_to_node(&pdev->dev);
+
+	err = mlx4_conf_get_config(dev, pdev);
+	if (err)
+		mlx4_err(dev, "Using pre-load default configuration.\n");
 
 	/* Detect if this device is a virtual function */
 	if (pci_dev_data & MLX4_PCI_DEV_IS_VF) {
