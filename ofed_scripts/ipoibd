@@ -1298,6 +1298,7 @@ class KVMOvsNicObserver(VirtualNicObserver, KVMDomain):
 		vlan = self.get_vlan_by_br_and_nic(nic_br, nic)
 		if None == vlan:
 			vlan = forced_vlan
+		self.logger.debug("get_peer_macs: peer %s vlan:%s." % (peer, str(vlan)))
 
 		mac = get_mac_by_name(nic);
 		if None != mac:
@@ -1320,17 +1321,27 @@ class KVMOvsNicObserver(VirtualNicObserver, KVMDomain):
 		peer_to_bridge = self.get_br_by_nic(peer)
 		if None == peer_to_bridge:
 			# no bridge, return the mac of that peer:
-			self.logger.debug("NO bridge for peer %s (attached to nic: %s) peer_idx %s." % (peer, nic, peer_if_idx))
+			self.logger.debug("NO OVS bridge for peer %s (attached to nic: %s) peer_idx %s." % (peer, nic, peer_if_idx))
+			#Check if there is a linux-br that connected to that port
+			# TODO: this is atemporaly fix, need to change the design
+			linuxbr = KVMVirtualNicObserver()
+			br = linuxbr.get_br_by_nic(peer)
+			macs_linuxbr = []
+			if None != br:
+				macs_linuxbr = linuxbr.get_nic_vif_macs(peer, vlan)
+				self.logger.debug("peer %s to linux-br %s macs: %s vlan: %s." % (peer, br, str(macs_linuxbr), str(vlan)))
+				for mac2 in macs_linuxbr:
+					self.map_mac_2_vlan[mac2] = vlan
 			macs = get_mac_by_name(peer, ns)
 			if None != macs:
 				self.logger.debug("returning peer %s mac %s." % (peer, macs))
-				self.map_mac_2_vlan[macs] = forced_vlan
-				return [macs]
+				self.map_mac_2_vlan[macs] = vlan
+				return [macs] + macs_linuxbr
 			return []
 		self.logger.debug("Bridge %s for peer %s (attached to nic: %s) peer_idx %s." % (peer_to_bridge, peer, nic, peer_if_idx))
 
 		#getting all the macs attached to that bridge
-		macs = self.get_nic_vif_macs(peer, forced_vlan)
+		macs = self.get_nic_vif_macs(peer, vlan)
 
 		self.logger.debug("Found macs: %s for peer: %s in Bridge %s " % (macs, peer, peer_to_bridge))
 		return macs
