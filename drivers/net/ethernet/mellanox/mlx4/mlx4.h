@@ -1442,6 +1442,17 @@ u32 mlx4_zone_free_entries_unique(struct mlx4_zone_allocator *zones, u32 obj, u3
 struct mlx4_bitmap *mlx4_zone_get_bitmap(struct mlx4_zone_allocator *zones, u32 uid);
 
 #if IS_ENABLED(CONFIG_MLX4_CONFIGFS_FS)
+#define MLX4_CONFIGFS_PORTS "ports"
+
+struct port_config {
+	struct config_group group;
+	int type;
+};
+
+struct ports_config {
+	struct config_group group;
+};
+
 struct pdev_config {
 	struct config_group group;
 	struct pci_dev *pdev;
@@ -1452,6 +1463,18 @@ static inline struct pdev_config *to_pdev_config(struct config_item *item)
 {
 	return item ? container_of(to_config_group(item),
 				   struct pdev_config, group) : NULL;
+}
+
+static inline struct ports_config *to_ports_config(struct config_item *item)
+{
+	return item ? container_of(to_config_group(item),
+				   struct ports_config, group) : NULL;
+}
+
+static inline struct port_config *to_port_config(struct config_item *item)
+{
+	return item ? container_of(to_config_group(item),
+				   struct port_config, group) : NULL;
 }
 
 int mlx4_configfs_init(void);
