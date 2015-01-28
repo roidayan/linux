@@ -793,6 +793,10 @@ struct mlx4_vf_dev {
 	u8			n_ports;
 };
 
+struct mlx4_conf {
+	int port_type[MLX4_MAX_PORTS + 1];
+};
+
 struct mlx4_dev_persistent {
 	struct pci_dev	       *pdev;
 	struct mlx4_dev	       *dev;
@@ -806,6 +810,7 @@ struct mlx4_dev_persistent {
 	u8		state;
 	struct mutex	interface_state_mutex; /* protect SW state */
 	u8	interface_state;
+	struct mlx4_conf	mlx4_config;
 };
 
 struct mlx4_dev {
