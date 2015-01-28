@@ -235,6 +235,46 @@ static int ports_config_verify_name(struct pdev_config *pdev_cfg,
 	return 0;
 }
 
+static ssize_t pdev_config_dmfs_mode_store(struct pdev_config *pdev_cfg,
+					   const char *page, size_t len)
+{
+	struct mlx4_dev_persistent *persist = pci_get_drvdata(pdev_cfg->pdev);
+	struct mlx4_dev *dev = persist->dev;
+	char *pdev_name = pdev_cfg->group.cg_item.ci_name;
+
+	if (!(dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_FS_EN)) {
+		pr_err("mlx4_core %s: DMFS isn't supported by the device.\n",
+		       pdev_name);
+		return -EINVAL;
+	}
+
+	if (!strcmp(page, "disable\n")) {
+		pdev_cfg->dmfs_mode = MLX4_DMFS_MODE_DISABLE;
+	} else if (!strcmp(page, "dmfs\n")) {
+		pdev_cfg->dmfs_mode = MLX4_DMFS_MODE_ETH_IPOIB;
+	} else if (!strcmp(page, "A0_static\n")) {
+		pdev_cfg->dmfs_mode = MLX4_DMFS_MODE_STATIC_A0;
+	} else {
+		pr_err("mlx4_core %s: Unsupported DMFS mode: %s, use 'disable', 'dmfs' or 'A0_static'\n",
+		       pdev_name, page);
+		return -EINVAL;
+	}
+	return len;
+}
+
+static ssize_t pdev_config_dmfs_mode_show(struct pdev_config *pdev_cfg,
+					  char *page)
+{
+	if (pdev_cfg->dmfs_mode == MLX4_DMFS_MODE_DISABLE)
+		return sprintf(page, "%s\n", "disable");
+	else if (pdev_cfg->dmfs_mode == MLX4_DMFS_MODE_ETH_IPOIB)
+		return sprintf(page, "%s\n", "dmfs");
+	else if (pdev_cfg->dmfs_mode == MLX4_DMFS_MODE_STATIC_A0)
+		return sprintf(page, "%s\n", "A0_static");
+	else
+		return sprintf(page, "%s\n", "unsupported dmfs mode\n");
+}
+
 static ssize_t pdev_config_commit_store(struct pdev_config *cfg,
 					const char *page, size_t len)
 {
@@ -280,6 +320,7 @@ static ssize_t pdev_config_commit_show(struct pdev_config *pdev_cfg, char *page)
 
 CONFIGFS_ATTR_STRUCT(pdev_config);
 CONFIGFS_ATTR_OPS(pdev_config);
+MLX4_CFG_CONFIGFS_ATTR(pdev_config, dmfs_mode);
 MLX4_CFG_CONFIGFS_ATTR(pdev_config, commit);
 
 static void pdev_config_release(struct config_item *item)
@@ -291,6 +332,7 @@ static void pdev_config_release(struct config_item *item)
 }
 
 static struct configfs_attribute *pdev_config_attrs[] = {
+	&pdev_config_dmfs_mode.attr,
 	&pdev_config_commit.attr,
 	NULL,
 };
@@ -432,6 +474,7 @@ int mlx4_conf_get_config(struct mlx4_dev *dev, struct pci_dev *pdev)
 	struct config_group *pdev_group, *ports_group, *port_group;
 	char port_num[PORT_NAME_SIZE];
 	struct port_config *port_cfg;
+	struct pdev_config *pdev_cfg;
 	int i;
 	struct mlx4_conf *mlx4_config = &dev->persist->mlx4_config;
 
@@ -439,6 +482,9 @@ int mlx4_conf_get_config(struct mlx4_dev *dev, struct pci_dev *pdev)
 					   pci_name(pdev));
 	if (!pdev_group)
 		return -ENOENT;
+
+	pdev_cfg = to_pdev_config(&pdev_group->cg_item);
+	mlx4_config->dmfs_mode = pdev_cfg->dmfs_mode;
 
 	ports_group = mlx4_get_config_group(pdev_group, MLX4_CONFIGFS_PORTS);
 	if (!ports_group) {

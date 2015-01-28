@@ -1844,7 +1844,15 @@ static const char *dmfs_high_rate_steering_mode_str(int dmfs_high_steer_mode)
 static void choose_steering_mode(struct mlx4_dev *dev,
 				 struct mlx4_dev_cap *dev_cap)
 {
-	if (mlx4_log_num_mgm_entry_size <= 0) {
+	if (dev->persist->mlx4_config.dmfs_mode == MLX4_DMFS_MODE_STATIC_A0) {
+		if (dev->caps.dmfs_high_steer_mode ==
+		    MLX4_STEERING_DMFS_A0_NOT_SUPPORTED)
+			mlx4_err(dev, "DMFS high rate mode not supported\n");
+		else
+			dev->caps.dmfs_high_steer_mode =
+				MLX4_STEERING_DMFS_A0_STATIC;
+
+	} else if (mlx4_log_num_mgm_entry_size <= 0) {
 		if ((-mlx4_log_num_mgm_entry_size) & MLX4_DMFS_A0_STEERING) {
 			if (dev->caps.dmfs_high_steer_mode ==
 			    MLX4_STEERING_DMFS_A0_NOT_SUPPORTED)
@@ -1855,7 +1863,8 @@ static void choose_steering_mode(struct mlx4_dev *dev,
 		}
 	}
 
-	if (mlx4_log_num_mgm_entry_size <= 0 &&
+	if ((mlx4_log_num_mgm_entry_size <= 0 ||
+	     dev->persist->mlx4_config.dmfs_mode) &&
 	    dev_cap->flags2 & MLX4_DEV_CAP_FLAG2_FS_EN &&
 	    (!mlx4_is_mfunc(dev) ||
 	     (dev_cap->fs_max_num_qp_per_entry >=
@@ -1888,10 +1897,14 @@ static void choose_steering_mode(struct mlx4_dev *dev,
 			MLX4_DEFAULT_MGM_LOG_ENTRY_SIZE;
 		dev->caps.num_qp_per_mgm = mlx4_get_qp_per_mgm(dev);
 	}
-	mlx4_dbg(dev, "Steering mode is: %s, oper_log_mgm_entry_size = %d, modparam log_num_mgm_entry_size = %d\n",
-		 mlx4_steering_mode_str(dev->caps.steering_mode),
-		 dev->oper_log_mgm_entry_size,
-		 mlx4_log_num_mgm_entry_size);
+
+	mlx4_info(dev, "Steering mode is: %s %s, oper_log_mgm_entry_size = %d, modparam log_num_mgm_entry_size = %d\n",
+		  mlx4_steering_mode_str(dev->caps.steering_mode),
+		  (dev->caps.steering_mode == MLX4_STEERING_MODE_DEVICE_MANAGED) ?
+		  dmfs_high_rate_steering_mode_str(dev->caps.dmfs_high_steer_mode) : "",
+		  dev->oper_log_mgm_entry_size,
+		  mlx4_log_num_mgm_entry_size);
+
 }
 
 static void choose_tunnel_offload_mode(struct mlx4_dev *dev,
