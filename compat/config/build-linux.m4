@@ -28,7 +28,7 @@ makerule="$PWD/build"
 AC_MSG_CHECKING([for external module build support])
 # Support XEN
 XEN_INCLUDES=
-LB_LINUX_CONFIG([XEN],[XEN_INCLUDES='-I$LINUX/arch/x86/include/mach-xen'],[])
+LB_LINUX_CONFIG([XEN],[XEN_INCLUDES="-I$LINUX/arch/x86/include/mach-xen"],[])
 LB_LINUX_CONFIG_VALUE([XEN_INTERFACE_VERSION],[XEN_INCLUDES="$XEN_INCLUDES -D__XEN_INTERFACE_VERSION__=$res"],[XEN_INCLUDES="$XEN_INCLUDES -D__XEN_INTERFACE_VERSION__=$res"])
 #
 rm -f build/conftest.i
