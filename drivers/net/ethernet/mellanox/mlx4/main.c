@@ -613,7 +613,7 @@ static void mlx4_check_pcie_caps(struct mlx4_dev *dev)
 }
 
 /*The function checks if there are live vf, return the num of them*/
-static int mlx4_how_many_lives_vf(struct mlx4_dev *dev)
+int mlx4_how_many_lives_vf(struct mlx4_dev *dev)
 {
 	struct mlx4_priv *priv = mlx4_priv(dev);
 	struct mlx4_slave_state *s_state;
@@ -2706,6 +2706,30 @@ static int mlx4_check_dev_cap(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap
 	return 0;
 }
 
+static struct config_group *device_driver_make(struct config_group *group,
+					       const char *name)
+{
+	return mlx4_set_config(group, name);
+}
+
+static struct configfs_group_operations mlx4_group_ops = {
+	.make_group	= device_driver_make,
+};
+
+static struct config_item_type mlx4_type = {
+	.ct_group_ops	= &mlx4_group_ops,
+	.ct_owner	= THIS_MODULE,
+};
+
+static struct configfs_subsystem mlx4_subsys = {
+	.su_group = {
+		.cg_item = {
+			.ci_namebuf = DRV_NAME,
+			.ci_type = &mlx4_type,
+		},
+	},
+};
+
 static int mlx4_load_one(struct pci_dev *pdev, int pci_dev_data,
 			 int total_vfs, int *nvfs, struct mlx4_priv *priv,
 			 int reset_flow)
@@ -3449,7 +3473,7 @@ static int restore_current_port_types(struct mlx4_dev *dev,
 	return err;
 }
 
-int mlx4_restart_one(struct pci_dev *pdev)
+int mlx4_restart_one(struct pci_dev *pdev, int restore)
 {
 	struct mlx4_dev_persistent *persist = pci_get_drvdata(pdev);
 	struct mlx4_dev	 *dev  = persist->dev;
@@ -3469,12 +3493,14 @@ int mlx4_restart_one(struct pci_dev *pdev)
 		return err;
 	}
 
-	err = restore_current_port_types(dev, dev->persist->curr_port_type,
-					 dev->persist->curr_port_poss_type);
-	if (err)
-		mlx4_err(dev, "could not restore original port types (%d)\n",
-			 err);
-
+	if (restore) {
+		err = restore_current_port_types(dev,
+						 dev->persist->curr_port_type,
+						 dev->persist->curr_port_poss_type);
+		if (err)
+			mlx4_err(dev, "could not restore original port types (%d)\n",
+				 err);
+	}
 	return err;
 }
 
@@ -3659,6 +3685,7 @@ static int __init mlx4_verify_params(void)
 static int __init mlx4_init(void)
 {
 	int ret;
+	struct configfs_subsystem *subsys = &mlx4_subsys;
 
 	if (mlx4_verify_params())
 		return -EINVAL;
@@ -3668,15 +3695,34 @@ static int __init mlx4_init(void)
 	if (!mlx4_wq)
 		return -ENOMEM;
 
+	config_group_init(&subsys->su_group);
+	mutex_init(&subsys->su_mutex);
+	ret = configfs_register_subsystem(subsys);
+	if (ret) {
+		pr_err("Error %d while registering subsystem %s\n",
+		       ret,
+		       subsys->su_group.cg_item.ci_namebuf);
+		goto out_unregister;
+	}
+
 	ret = pci_register_driver(&mlx4_driver);
 	if (ret < 0)
-		destroy_workqueue(mlx4_wq);
-	return ret < 0 ? ret : 0;
+		goto out_unregister;
+
+	return 0;
+
+out_unregister:
+	configfs_unregister_subsystem(subsys);
+	destroy_workqueue(mlx4_wq);
+	return ret;
 }
 
 static void __exit mlx4_cleanup(void)
 {
+	struct configfs_subsystem *subsys = &mlx4_subsys;
+
 	pci_unregister_driver(&mlx4_driver);
+	configfs_unregister_subsystem(subsys);
 	destroy_workqueue(mlx4_wq);
 }
 
