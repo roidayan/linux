@@ -55,6 +55,7 @@
 #include <rdma/ib_cm.h>
 #include <rdma/ib_sa.h>
 #include <rdma/iw_cm.h>
+#include "core_priv.h"
 
 MODULE_AUTHOR("Sean Hefty");
 MODULE_DESCRIPTION("Generic RDMA CM Agent");
@@ -119,6 +120,7 @@ struct cma_device {
 	struct completion	comp;
 	atomic_t		refcount;
 	struct list_head	id_list;
+	enum ib_gid_type	default_gid_type;
 };
 
 struct rdma_bind_list {
@@ -130,6 +132,42 @@ struct rdma_bind_list {
 enum {
 	CMA_OPTION_AFONLY,
 };
+
+void cma_ref_dev(struct cma_device *cma_dev)
+{
+	atomic_inc(&cma_dev->refcount);
+}
+
+struct cma_device *cma_enum_devices_by_ibdev(cma_device_filter	filter,
+					     void		*cookie)
+{
+	struct cma_device *cma_dev;
+	struct cma_device *found_cma_dev = NULL;
+
+	mutex_lock(&lock);
+
+	list_for_each_entry(cma_dev, &dev_list, list)
+		if (filter(cma_dev->device, cookie)) {
+			found_cma_dev = cma_dev;
+			break;
+		}
+
+	if (found_cma_dev)
+		cma_ref_dev(found_cma_dev);
+	mutex_unlock(&lock);
+	return found_cma_dev;
+}
+
+enum ib_gid_type cma_get_default_gid_type(struct cma_device *cma_dev)
+{
+	return cma_dev->default_gid_type;
+}
+
+void cma_set_default_gid_type(struct cma_device *cma_dev,
+			      enum ib_gid_type default_gid_type)
+{
+	cma_dev->default_gid_type = default_gid_type;
+}
 
 /*
  * Device removal can occur at anytime, so we need extra handling to
@@ -276,15 +314,16 @@ static inline void cma_set_ip_ver(struct cma_hdr *hdr, u8 ip_ver)
 static void cma_attach_to_dev(struct rdma_id_private *id_priv,
 			      struct cma_device *cma_dev)
 {
-	atomic_inc(&cma_dev->refcount);
+	cma_ref_dev(cma_dev);
 	id_priv->cma_dev = cma_dev;
+	id_priv->gid_type = cma_dev->default_gid_type;
 	id_priv->id.device = cma_dev->device;
 	id_priv->id.route.addr.dev_addr.transport =
 		rdma_node_get_transport(cma_dev->device->node_type);
 	list_add_tail(&id_priv->list, &cma_dev->id_list);
 }
 
-static inline void cma_deref_dev(struct cma_device *cma_dev)
+void cma_deref_dev(struct cma_device *cma_dev)
 {
 	if (atomic_dec_and_test(&cma_dev->refcount))
 		complete(&cma_dev->comp);
@@ -379,6 +418,7 @@ static int cma_translate_addr(struct sockaddr *addr, struct rdma_dev_addr *dev_a
 }
 
 static inline int cma_validate_port(struct ib_device *device, u8 port,
+				    enum ib_gid_type gid_type,
 				      union ib_gid *gid, int dev_type,
 				      int bounded_if_index)
 {
@@ -396,7 +436,7 @@ static inline int cma_validate_port(struct ib_device *device, u8 port,
 
 		ret = ib_find_cached_gid_by_port(device,
 						 gid,
-						 IB_GID_TYPE_IB,
+						 gid_type,
 						 port,
 						 ndev,
 						 NULL);
@@ -436,7 +476,11 @@ static int cma_acquire_dev(struct rdma_id_private *id_priv,
 		gidp = rdma_protocol_roce(cma_dev->device, port) ?
 		       &iboe_gid : &gid;
 
-		ret = cma_validate_port(cma_dev->device, port, gidp,
+		ret = cma_validate_port(cma_dev->device, port,
+					rdma_protocol_ib(cma_dev->device, port) ?
+					IB_GID_TYPE_IB :
+					cma_dev->default_gid_type,
+					gidp,
 					dev_addr->dev_type,
 					id_priv->id.route.addr.dev_addr.bound_dev_if);
 		if (!ret) {
@@ -455,7 +499,11 @@ static int cma_acquire_dev(struct rdma_id_private *id_priv,
 			gidp = rdma_protocol_roce(cma_dev->device, port) ?
 			       &iboe_gid : &gid;
 
-			ret = cma_validate_port(cma_dev->device, port, gidp,
+			ret = cma_validate_port(cma_dev->device, port,
+						rdma_protocol_ib(cma_dev->device, port) ?
+						IB_GID_TYPE_IB :
+						cma_dev->default_gid_type,
+						gidp,
 						dev_addr->dev_type,
 						id_priv->id.route.addr.dev_addr.bound_dev_if);
 			if (!ret) {
@@ -3498,6 +3546,7 @@ static void cma_add_one(struct ib_device *device)
 		return;
 
 	cma_dev->device = device;
+	cma_dev->default_gid_type = IB_GID_TYPE_IB;
 
 	init_completion(&cma_dev->comp);
 	atomic_set(&cma_dev->refcount, 1);
@@ -3678,6 +3727,9 @@ static int __init cma_init(void)
 
 	if (ibnl_add_client(RDMA_NL_RDMA_CM, RDMA_NL_RDMA_CM_NUM_OPS, cma_cb_table))
 		printk(KERN_WARNING "RDMA CMA: failed to add netlink callback\n");
+#if IS_ENABLED(CONFIG_INFINIBAND_ADDR_TRANS_CONFIGFS)
+	cma_configfs_init();
+#endif
 
 	return 0;
 
@@ -3691,6 +3743,9 @@ err:
 
 static void __exit cma_cleanup(void)
 {
+#if IS_ENABLED(CONFIG_INFINIBAND_ADDR_TRANS_CONFIGFS)
+	cma_configfs_exit();
+#endif
 	ibnl_remove_client(RDMA_NL_RDMA_CM);
 	ib_unregister_client(&cma_client);
 	unregister_netdevice_notifier(&cma_nb);
