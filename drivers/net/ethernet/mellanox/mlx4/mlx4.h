@@ -1455,6 +1455,7 @@ struct ports_config {
 struct pdev_config {
 	struct config_group group;
 	struct pci_dev *pdev;
+	int dmfs_mode;
 	int commit;
 };
 
