@@ -127,6 +127,7 @@ kernel: $(COMPAT_CONFIG) $(COMPAT_AUTOCONF)
 		$(CFLAGS) \
 		-include $(autoconf_h) \
 		$(KCONFIG_H) \
+		-include $(CWD)/compat/config.h \
 		-include $(CWD)/include/linux/compat-2.6.h \
 		$(BACKPORT_INCLUDES) \
 		$(KERNEL_MEMTRACK_CFLAGS) \

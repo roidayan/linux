@@ -144,6 +144,20 @@ cat >> ${AUTOCONF_H}<< EOFAUTO
 $(echo -e "${DEFINE_MLX4_EN_DCB}")
 EOFAUTO
 
+echo "Running configure..."
+cd compat
+if [[ ! -x configure ]]; then
+    ex ./autogen.sh
+fi
+
+if [[ -e "/etc/SuSE-release" && "$KSRC" =~ "build" ]]; then
+    ex ./configure --with-linux-obj=$KSRC --with-linux=${KSRC/build/source}
+elif [[ -e "/etc/SuSE-release" && "$KSRC" =~ "linux-obj" ]]; then
+    sources_dir=$(/bin/readlink -f $KSRC 2>/dev/null | sed -e 's/-obj.*//g')
+    ex ./configure --with-linux-obj=$KSRC --with-linux=${sources_dir}
+else
+    ex ./configure --with-linux-obj=$KSRC --with-linux=$KSRC
+fi
 
 }
 
