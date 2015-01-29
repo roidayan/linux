@@ -54,9 +54,7 @@ def_configure_options=" \
 	--with-mlx5-mod \
 	--with-ipoib-mod \
 	--with-e_ipoib-mod \
-	--with-srp-mod \
 	--with-rds-mod \
-	--with-iser-mod \
 	"
 # check if dkms.conf exists and parse it, otherwise use the env variable or the default
 if [ -f $WDIR/../dkms.conf ];then
@@ -117,20 +115,8 @@ module_to_flag()
 		eth_ipoib)
 		flag=--with-e_ipoib-mod
 		;;
-		ib_srp)
-		flag=--with-srp-mod
-		;;
-		scsi_transport_srp)
-		flag=--with-srp-mod
-		;;
 		rds|rds_rdma|rds_tcp)
 		flag=--with-rds-mod
-		;;
-		ib_iser)
-		flag=--with-iser-mod
-		;;
-		ib_isert)
-		flag=--with-isert-mod
 		;;
 		memtrack)
 		flag=--with-memtrack
@@ -199,24 +185,11 @@ get-modules()
 			modules="$modules \
 				drivers/net/eipoib/eth_ipoib"
 			;;
-			--with-srp-mod )
-			modules="$modules \
-				drivers/infiniband/ulp/srp/ib_srp \
-				drivers/scsi/scsi_transport_srp "
-			;;
 			--with-rds-mod )
 			modules="$modules \
 				net/rds/rds \
 				net/rds/rds_rdma \
 				net/rds/rds_tcp"
-			;;
-			--with-iser-mod )
-			modules="$modules \
-				drivers/infiniband/ulp/iser/ib_iser"
-			;;
-			--with-isert-mod )
-			modules="$modules \
-				drivers/infiniband/ulp/isert/ib_isert"
 			;;
 			--with-memtrack )
 			modules="$modules \
