@@ -65,6 +65,9 @@ static void mlx4_add_device(struct mlx4_interface *intf, struct mlx4_priv *priv)
 		spin_unlock_irq(&priv->ctx_lock);
 	} else
 		kfree(dev_ctx);
+
+	if (intf->activate)
+		intf->activate(&priv->dev, dev_ctx->context);
 }
 
 static void mlx4_remove_device(struct mlx4_interface *intf, struct mlx4_priv *priv)
