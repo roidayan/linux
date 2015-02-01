@@ -18,15 +18,9 @@ build_only=0
 err=0
 KER_UNAME_R=`uname -r`
 KER_PATH=/lib/modules/${KER_UNAME_R}/build
-hca_self_test="/usr/bin/hca_self_test.ofed"
 update_firmware=1
 firmware_update_only=0
-force_firmware_update=0
-sriov_en=0
-fwerr=0
-DEVICE_INI_MISSING=2
-NO_HARDWARE=171
-MST_START_FAIL=173
+fw_update_flags=
 config="/etc/mlnx-en.conf"
 skip_dist_check=0
 
@@ -97,10 +91,10 @@ while [ ! -z "$1" ]; do
 			firmware_update_only=1
 		;;
 		--force-fw-update)
-			force_firmware_update=1
+			fw_update_flags="$fw_update_flags --force-fw-update"
 		;;
 		--enable-sriov)
-			sriov_en=1
+			fw_update_flags="$fw_update_flags --enable-sriov"
 		;;
 		--without-depcheck)
 			skip_dist_check=1
@@ -306,119 +300,6 @@ check_loaded_modules() {
 		fi
 	fi
 }
-
-update_fw_version_in_hca_self_test()
-{
-	dev=$1
-	shift
-	fwver=$1
-	shift
-	content=$(cat $hca_self_test 2>/dev/null)
-	OIFS="${IFS}"
-	NIFS=$'\n'
-	IFS="${NIFS}"
-	echo "" > $hca_self_test
-	for line in $content
-	do
-		IFS="${OIFS}"
-		if [[ $line =~ ^$dev ]];then
-			echo "$dev=v$fwver" >> $hca_self_test
-		else
-			echo "$line" >> $hca_self_test
-		fi
-		IFS="${NIFS}"
-	done
-	IFS="${OIFS}"
-}
-
-update_fw()
-{
-	fArch=$ARCH
-	if [[ $fArch =~ i.86 ]]; then
-		fArch="i686"
-	fi
-	# set path to the mlxfwmanager
-	mlxfwmanager_sriov_dis="$package_dir/firmware/mlxfwmanager_sriov_dis_$fArch" # FW bin files without SRIOV.
-	mlxfwmanager_sriov_en="$package_dir/firmware/mlxfwmanager_sriov_en_$fArch"   # FW bin files with SRIOV enabled.
-
-	if [ ! -f "$mlxfwmanager_sriov_dis" ] || [ ! -f "$mlxfwmanager_sriov_en" ]; then
-		if [[ $arch =~ ppc ]]; then
-			echo "Skipping firmware update on PPC."
-			return
-		fi
-		echo "Error: mlxfwmanager doesn't exist! Skipping firmware update."
-		fwerr=$DEVICE_INI_MISSING
-		return
-	fi
-
-	if [ -f "$hca_self_test" ]; then
-		content=$($mlxfwmanager_sriov_dis -l 2>/dev/null)
-		OIFS="${IFS}"
-		NIFS=$'\n'
-		IFS="${NIFS}"
-		for line in $content
-		do
-			IFS="${OIFS}"
-			if ! [[ $line =~ FW ]]; then
-				continue
-			fi
-			fwver=$(echo $line | sed -r -e 's/.*\sFW ([0-9.]+)\s.*/\1/')
-			if [[ $line =~ ConnectX-3 ]] && ! [[ $line =~ Pro ]]; then
-				update_fw_version_in_hca_self_test "CX3_FW_NEEDED" "$fwver"
-			elif [[ $line =~ "ConnectX-3 Pro" ]]; then
-				update_fw_version_in_hca_self_test "CX3_PRO_FW_NEEDED" "$fwver"
-			elif  [[ $line =~ Connect-IB ]]; then
-				update_fw_version_in_hca_self_test "CONNECTIB_FW_NEEDED" "$fwver"
-			fi
-			IFS="${NIFS}"
-		done
-		IFS="${OIFS}"
-	fi
-
-	if [ $update_firmware -eq 0 ]; then
-		return
-	fi
-
-	# clear semaphores on devices
-	if is_installed "mstflint" || is_installed_deb "mstflint" ; then
-		for ibdev in $(/sbin/lspci -n 2>/dev/null| grep 15b3 | cut -d" " -f"1")
-		do
-			mstflint --clear_semaphore -d $ibdev > /dev/null 2>&1
-		done
-	fi
-
-	fwlog="${LOGFILE}_fw_update.log"
-	flags="-L $fwlog -y";
-	if [ $force_firmware_update -eq 1 ]; then
-		flags="$flags --force"
-	fi
-
-	# run the relevant package
-	echo "Attempting to perform Firmware update..."
-	if [ $sriov_en -eq 1 ]; then
-		$mlxfwmanager_sriov_en $flags
-	else
-		$mlxfwmanager_sriov_dis $flags
-	fi
-	res=$?
-	if (grep -q "Query failed" $fwlog 2>/dev/null); then
-		res=1
-	fi
-	if [ $res -ne 0 ]; then
-		fwerr=1
-		echo "Failed to update Firmware."
-	fi
-	if (grep -qE "FW.*N/A" $fwlog 2>/dev/null); then
-		fwerr=$DEVICE_INI_MISSING
-	fi
-	if (grep -qE "No devices found" $fwlog 2>/dev/null); then
-		fwerr=$NO_HARDWARE
-	fi
-	if (grep -qE "Updating FW.*Done" $fwlog 2>/dev/null); then
-	    echo "Please reboot your system for the changes to take effect."
-	fi
-}
-######### End of FW update
 
 check_headers()
 {
@@ -725,8 +606,8 @@ ex /bin/mkdir ${TOPDIR}/RPMS
 ex /bin/mkdir ${TOPDIR}/SOURCES
 
 if [ $firmware_update_only -eq 1 ]; then
-	update_fw
-	exit $fwerr
+	$package_dir/mlnx_fw_updater.pl --log ${LOGFILE}_fw_update.log $fw_update_flags
+	exit $?
 fi
 
 
@@ -915,8 +796,9 @@ if [ $with_mlnx_tune -eq 1 ]; then
 	sed -i 's/RUN_MLNX_TUNE=no/RUN_MLNX_TUNE=yes/' $config
 fi
 
-
-update_fw
+if [ $update_firmware -eq 1 ]; then
+	$package_dir/mlnx_fw_updater.pl --log ${LOGFILE}_fw_update.log $fw_update_flags
+fi
 
 # Check that a previous version is loaded
 if [ $build_only -eq 0 ]; then
