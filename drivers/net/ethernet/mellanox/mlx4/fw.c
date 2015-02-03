@@ -669,7 +669,8 @@ int mlx4_QUERY_DEV_CAP(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
 #define QUERY_DEV_CAP_MAX_PD_OFFSET		0x65
 #define QUERY_DEV_CAP_RSVD_XRC_OFFSET		0x66
 #define QUERY_DEV_CAP_MAX_XRC_OFFSET		0x67
-#define QUERY_DEV_CAP_MAX_COUNTERS_OFFSET	0x68
+#define QUERY_DEV_CAP_MAX_BASIC_COUNTERS_OFFSET	0x68
+#define QUERY_DEV_CAP_MAX_EXTENDED_COUNTERS_OFFSET	0x6c
 #define QUERY_DEV_CAP_EXT_2_FLAGS_OFFSET	0x70
 #define QUERY_DEV_CAP_FLOW_STEERING_IPOIB_OFFSET	0x74
 #define QUERY_DEV_CAP_FLOW_STEERING_RANGE_EN_OFFSET	0x76
@@ -884,9 +885,21 @@ int mlx4_QUERY_DEV_CAP(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
 		dev_cap->flags2 |= MLX4_DEV_CAP_FLAG2_VXLAN_OFFLOADS;
 	MLX4_GET(dev_cap->max_icm_sz, outbox,
 		 QUERY_DEV_CAP_MAX_ICM_SZ_OFFSET);
-	if (dev_cap->flags & MLX4_DEV_CAP_FLAG_COUNTERS)
-		MLX4_GET(dev_cap->max_counters, outbox,
-			 QUERY_DEV_CAP_MAX_COUNTERS_OFFSET);
+
+	/* In basic and extended modes, FW reports sink counter as part of
+	 * counters pool. However, user cannot use it so remove this counter
+	 * from total.
+	 */
+	if (dev_cap->flags & MLX4_DEV_CAP_FLAG_COUNTERS) {
+		MLX4_GET(dev_cap->max_basic_counters, outbox,
+			 QUERY_DEV_CAP_MAX_BASIC_COUNTERS_OFFSET);
+		dev_cap->max_basic_counters -= 1;
+	}
+	if (dev_cap->flags & MLX4_DEV_CAP_FLAG_COUNTERS_EXT) {
+		MLX4_GET(dev_cap->max_extended_counters, outbox,
+			 QUERY_DEV_CAP_MAX_EXTENDED_COUNTERS_OFFSET);
+		dev_cap->max_extended_counters -= 1;
+	}
 
 	MLX4_GET(field32, outbox,
 		 QUERY_DEV_CAP_MAD_DEMUX_OFFSET);
@@ -969,7 +982,9 @@ void mlx4_dev_cap_dump(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
 	mlx4_dbg(dev, "Max RQ desc size: %d, max RQ S/G: %d\n",
 		 dev_cap->max_rq_desc_sz, dev_cap->max_rq_sg);
 	mlx4_dbg(dev, "Max GSO size: %d\n", dev_cap->max_gso_sz);
-	mlx4_dbg(dev, "Max counters: %d\n", dev_cap->max_counters);
+	mlx4_dbg(dev, "Max basic counters: %d\n", dev_cap->max_basic_counters);
+	mlx4_dbg(dev, "Max extended counters: %d\n",
+		 dev_cap->max_extended_counters);
 	mlx4_dbg(dev, "Max RSS Table size: %d\n", dev_cap->max_rss_tbl_sz);
 	mlx4_dbg(dev, "DMFS high rate steer QPn base: %d\n",
 		 dev_cap->dmfs_high_rate_qpn_base);
