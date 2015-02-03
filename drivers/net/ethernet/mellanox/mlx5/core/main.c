@@ -38,6 +38,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/slab.h>
 #include <linux/io-mapping.h>
+#include <linux/interrupt.h>
 #include <linux/mlx5/driver.h>
 #include <linux/mlx5/cq.h>
 #include <linux/mlx5/qp.h>
@@ -505,6 +506,45 @@ static int mlx5_core_disable_hca(struct mlx5_core_dev *dev)
 	return 0;
 }
 
+static void mlx5_irq_set_affinity_hint(struct mlx5_core_dev *mdev, int i)
+{
+	struct msix_entry *msix = mdev->priv.eq_table.msix_arr;
+	int irq = msix[i + MLX5_EQ_VEC_COMP_BASE].vector;
+	int numa_node = mdev->pdev->dev.numa_node;
+	cpumask_var_t mask;
+
+	if (!zalloc_cpumask_var(&mask, GFP_KERNEL)) {
+		mlx5_core_warn(mdev, "zalloc_cpumask_var failed");
+		return;
+	}
+
+	cpumask_set_cpu_local_first(i, numa_node, mask);
+	if (irq_set_affinity_hint(irq, mask))
+		mlx5_core_warn(mdev, "%s failed, irq=0x%.4x\n", __func__, irq);
+
+	free_cpumask_var(mask);
+}
+
+static void mlx5_irq_set_affinity_hints(struct mlx5_core_dev *mdev)
+{
+	int i;
+
+	for (i = 0; i < mdev->priv.eq_table.num_comp_vectors; i++)
+		mlx5_irq_set_affinity_hint(mdev, i);
+}
+
+static void mlx5_irq_clear_affinity_hints(struct mlx5_core_dev *mdev)
+{
+	struct msix_entry *msix = mdev->priv.eq_table.msix_arr;
+	int i;
+
+	for (i = 0; i < mdev->priv.eq_table.num_comp_vectors; i++) {
+		int irq = msix[i + MLX5_EQ_VEC_COMP_BASE].vector;
+
+		irq_set_affinity_hint(irq, NULL);
+	}
+}
+
 int mlx5_vector2eqn(struct mlx5_core_dev *dev, int vector, int *eqn, int *irqn)
 {
 	struct mlx5_eq_table *table = &dev->priv.eq_table;
@@ -748,6 +788,7 @@ static int mlx5_dev_init(struct mlx5_core_dev *dev, struct pci_dev *pdev)
 		goto err_stop_eqs;
 	}
 
+	mlx5_irq_set_affinity_hints(dev);
 	MLX5_INIT_DOORBELL_LOCK(&priv->cq_uar_lock);
 
 	mlx5_init_cq_table(dev);
@@ -811,6 +852,7 @@ static void mlx5_dev_cleanup(struct mlx5_core_dev *dev)
 	mlx5_cleanup_srq_table(dev);
 	mlx5_cleanup_qp_table(dev);
 	mlx5_cleanup_cq_table(dev);
+	mlx5_irq_clear_affinity_hints(dev);
 	free_comp_eqs(dev);
 	mlx5_stop_eqs(dev);
 	mlx5_free_uuars(dev, &priv->uuari);
