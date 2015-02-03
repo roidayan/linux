@@ -166,6 +166,11 @@ struct mlx4_port_config {
 	struct pci_dev *pdev;
 };
 
+enum {
+	MLX4_IF_STATE_BASIC,
+	MLX4_IF_STATE_EXTENDED
+};
+
 static atomic_t pf_loading = ATOMIC_INIT(0);
 
 int mlx4_check_port_params(struct mlx4_dev *dev,
@@ -460,7 +465,13 @@ static int mlx4_dev_cap(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
 		}
 	}
 
-	dev->caps.max_counters = 1 << ilog2(dev_cap->max_counters);
+	dev->caps.max_basic_counters = dev_cap->max_basic_counters;
+	dev->caps.max_extended_counters = dev_cap->max_extended_counters;
+	/* support extended counters if available */
+	if (dev->caps.flags & MLX4_DEV_CAP_FLAG_COUNTERS_EXT)
+		dev->caps.max_counters = dev->caps.max_extended_counters;
+	else
+		dev->caps.max_counters = dev->caps.max_basic_counters;
 
 	dev->caps.reserved_qps_cnt[MLX4_QP_REGION_FW] = dev_cap->reserved_qps;
 	dev->caps.reserved_qps_cnt[MLX4_QP_REGION_ETH_ADDR] =
@@ -2160,17 +2171,48 @@ err_free_icm:
 static int mlx4_init_counters_table(struct mlx4_dev *dev)
 {
 	struct mlx4_priv *priv = mlx4_priv(dev);
-	int nent;
+	int res;
+	int nent_pow2;
 
-	if (!(dev->caps.flags & MLX4_DEV_CAP_FLAG_COUNTERS))
+	if (!(dev->caps.flags & MLX4_DEV_CAP_FLAG_COUNTERS) &&
+	    !(dev->caps.flags & MLX4_DEV_CAP_FLAG_COUNTERS_EXT))
 		return -ENOENT;
 
-	nent = dev->caps.max_counters;
-	return mlx4_bitmap_init(&priv->counters_bitmap, nent, nent - 1, 0, 0);
+	if (!dev->caps.max_counters)
+		return -ENOSPC;
+
+	nent_pow2 = roundup_pow_of_two(dev->caps.max_counters);
+	res = mlx4_bitmap_init(&priv->counters_bitmap, nent_pow2,
+			       nent_pow2 - 1, 0,
+			       nent_pow2 - dev->caps.max_counters);
+	if (res)
+		return res;
+
+	if (!(dev->caps.flags & MLX4_DEV_CAP_FLAG_COUNTERS_EXT))
+		return 0;
+
+	res = mlx4_cmd(dev, MLX4_IF_STATE_EXTENDED, 0, 0,
+		       MLX4_CMD_SET_IF_STAT, MLX4_CMD_TIME_CLASS_A,
+		       MLX4_CMD_NATIVE);
+
+	if (res) {
+		mlx4_err(dev, "Failed to set extended counters (err=%d)\n",
+			 res);
+		mlx4_bitmap_cleanup(&priv->counters_bitmap);
+	}
+	return res;
+
 }
 
 static void mlx4_cleanup_counters_table(struct mlx4_dev *dev)
 {
+	if (!(dev->caps.flags & MLX4_DEV_CAP_FLAG_COUNTERS) &&
+	    !(dev->caps.flags & MLX4_DEV_CAP_FLAG_COUNTERS_EXT))
+		return;
+
+	if (!dev->caps.max_counters)
+		return;
+
 	mlx4_bitmap_cleanup(&mlx4_priv(dev)->counters_bitmap);
 }
 
@@ -2178,7 +2220,8 @@ int __mlx4_counter_alloc(struct mlx4_dev *dev, u32 *idx)
 {
 	struct mlx4_priv *priv = mlx4_priv(dev);
 
-	if (!(dev->caps.flags & MLX4_DEV_CAP_FLAG_COUNTERS))
+	if (!(dev->caps.flags & MLX4_DEV_CAP_FLAG_COUNTERS) &&
+	    !(dev->caps.flags & MLX4_DEV_CAP_FLAG_COUNTERS_EXT))
 		return -ENOENT;
 
 	*idx = mlx4_bitmap_alloc(&priv->counters_bitmap);
@@ -2208,6 +2251,10 @@ EXPORT_SYMBOL_GPL(mlx4_counter_alloc);
 
 void __mlx4_counter_free(struct mlx4_dev *dev, u32 idx)
 {
+	if (!(dev->caps.flags & MLX4_DEV_CAP_FLAG_COUNTERS) &&
+	    !(dev->caps.flags & MLX4_DEV_CAP_FLAG_COUNTERS_EXT))
+		return;
+
 	mlx4_bitmap_free(&mlx4_priv(dev)->counters_bitmap, idx, MLX4_USE_RR);
 	return;
 }
@@ -2331,13 +2378,15 @@ static int mlx4_setup_hca(struct mlx4_dev *dev)
 		goto err_srq_table_free;
 	}
 
-	err = mlx4_init_counters_table(dev);
-	if (err && err != -ENOENT) {
-		mlx4_err(dev, "Failed to initialize counters table, aborting\n");
-		goto err_qp_table_free;
-	}
-
 	if (!mlx4_is_slave(dev)) {
+		err = mlx4_init_counters_table(dev);
+		if (err && err != -ENOENT) {
+			mlx4_err(dev,
+				 "Failed to initialize counters table (err=%d), aborting.\n",
+				 err);
+			goto err_qp_table_free;
+		}
+
 		for (port = 1; port <= dev->caps.num_ports; port++) {
 			ib_port_default_caps = 0;
 			err = mlx4_get_port_ib_caps(dev, port,
@@ -2376,7 +2425,8 @@ static int mlx4_setup_hca(struct mlx4_dev *dev)
 	return 0;
 
 err_counters_table_free:
-	mlx4_cleanup_counters_table(dev);
+	if (!mlx4_is_slave(dev))
+		mlx4_cleanup_counters_table(dev);
 
 err_qp_table_free:
 	mlx4_cleanup_qp_table(dev);
@@ -3045,7 +3095,8 @@ err_port:
 	for (--port; port >= 1; --port)
 		mlx4_cleanup_port_info(&priv->port[port]);
 
-	mlx4_cleanup_counters_table(dev);
+	if (!mlx4_is_slave(dev))
+		mlx4_cleanup_counters_table(dev);
 	mlx4_cleanup_qp_table(dev);
 	mlx4_cleanup_srq_table(dev);
 	mlx4_cleanup_cq_table(dev);
@@ -3343,7 +3394,8 @@ static void mlx4_unload_one(struct pci_dev *pdev)
 		mlx4_free_resource_tracker(dev,
 					   RES_TR_FREE_SLAVES_ONLY);
 
-	mlx4_cleanup_counters_table(dev);
+	if (!mlx4_is_slave(dev))
+		mlx4_cleanup_counters_table(dev);
 	mlx4_cleanup_qp_table(dev);
 	mlx4_cleanup_srq_table(dev);
 	mlx4_cleanup_cq_table(dev);
