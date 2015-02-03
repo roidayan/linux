@@ -174,6 +174,7 @@ enum {
 	MLX4_DEV_CAP_FLAG_VEP_UC_STEER	= 1LL << 41,
 	MLX4_DEV_CAP_FLAG_VEP_MC_STEER	= 1LL << 42,
 	MLX4_DEV_CAP_FLAG_COUNTERS	= 1LL << 48,
+	MLX4_DEV_CAP_FLAG_COUNTERS_EXT = 1LL << 49,
 	MLX4_DEV_CAP_FLAG_SET_ETH_SCHED = 1LL << 53,
 	MLX4_DEV_CAP_FLAG_SENSE_SUPPORT	= 1LL << 55,
 	MLX4_DEV_CAP_FLAG_PORT_MNG_CHG_EV = 1LL << 59,
@@ -564,6 +565,8 @@ struct mlx4_caps {
 	u32			dmfs_high_rate_qpn_base;
 	u32			dmfs_high_rate_qpn_range;
 	u32			vf_caps;
+	u32			max_basic_counters;
+	u32			max_extended_counters;
 };
 
 struct mlx4_buf_list {
