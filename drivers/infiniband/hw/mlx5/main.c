@@ -1598,6 +1598,8 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 		(1ull << IB_USER_VERBS_CMD_DESTROY_SRQ)		|
 		(1ull << IB_USER_VERBS_CMD_CREATE_XSRQ)		|
 		(1ull << IB_USER_VERBS_CMD_OPEN_QP);
+	dev->ib_dev.uverbs_ex_cmd_mask =
+		(1ull << IB_USER_VERBS_EX_CMD_QUERY_DEVICE);
 	dev->ib_dev.uverbs_exp_cmd_mask	=
 		(1ull << IB_USER_VERBS_EXP_CMD_REG_MR_EX)       |
 		(1ull << IB_USER_VERBS_EXP_CMD_MODIFY_QP)	|
