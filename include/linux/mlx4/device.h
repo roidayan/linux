@@ -258,6 +258,7 @@ enum {
 	MLX4_DEV_CAP_FLAG2_DRIVER_VERSION_TO_FW	= 1LL <<  29,
 	MLX4_DEV_CAP_FLAG2_FS_EN_NCSI		= 1LL <<  30,
 	MLX4_DEV_CAP_FLAG2_DMFS_TAG_MODE        = 1LL <<  31,
+	MLX4_DEV_CAP_FLAG2_ROCE_V1_V2		= 1LL <<  32,
 };
 
 enum {
@@ -313,12 +314,17 @@ enum {
 	MLX4_BMME_FLAG_TYPE_2_WIN	= 1 <<  9,
 	MLX4_BMME_FLAG_RESERVED_LKEY	= 1 << 10,
 	MLX4_BMME_FLAG_FAST_REG_WR	= 1 << 11,
+	MLX4_BMME_FLAG_ROCE_V1_V2	= 1 << 19,
 	MLX4_BMME_FLAG_PORT_REMAP	= 1 << 24,
 	MLX4_BMME_FLAG_VSD_INIT2RTR	= 1 << 28,
 };
 
 enum {
 	MLX4_FLAG_PORT_REMAP		= MLX4_BMME_FLAG_PORT_REMAP
+};
+
+enum {
+	MLX4_FLAG_ROCE_V1_V2		= MLX4_BMME_FLAG_ROCE_V1_V2
 };
 
 enum mlx4_event {
@@ -1058,6 +1064,7 @@ struct mlx4_mad_ifc {
 	for ((port) = 1; (port) <= (dev)->caps.num_ports; (port)++)	  \
 		if (((dev)->caps.port_mask[port] == MLX4_PORT_TYPE_IB) || \
 			((dev)->caps.flags & MLX4_DEV_CAP_FLAG_IBOE) || \
+			((dev)->caps.flags & MLX4_DEV_CAP_FLAG2_ROCE_V1_V2) || \
 			((dev)->caps.flags & MLX4_DEV_CAP_FLAG_R_ROCE) || \
 			((dev)->caps.flags2 & MLX4_DEV_CAP_FLAG2_ROCEV2))
 
