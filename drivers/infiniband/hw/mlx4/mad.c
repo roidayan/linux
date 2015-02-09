@@ -64,6 +64,24 @@ enum {
 #define GUID_TBL_BLK_NUM_ENTRIES 8
 #define GUID_TBL_BLK_SIZE (GUID_TBL_ENTRY_SIZE * GUID_TBL_BLK_NUM_ENTRIES)
 
+#define MAX_BE32 0xffffffffULL
+#define MAX_BE16 0xffffUL
+
+/* Counters should be saturate once they reach their maximum value */
+#define ASSIGN_32BIT_COUNTER(counter, value) do {\
+	if ((value) > MAX_BE32)			 \
+		counter = cpu_to_be32(MAX_BE32); \
+	else					 \
+		counter = cpu_to_be32(value);	 \
+} while (0)
+
+#define ASSIGN_16BIT_COUNTER(counter, value) do {\
+	if ((value) > MAX_BE16)			 \
+		counter = cpu_to_be16(MAX_BE16); \
+	else					 \
+		counter = cpu_to_be16(value);	 \
+} while (0)
+
 struct mlx4_mad_rcv_buf {
 	struct ib_grh grh;
 	u8 payload[256];
@@ -803,13 +821,69 @@ static int ib_process_mad(struct ib_device *ibdev, int mad_flags, u8 port_num,
 	return IB_MAD_RESULT_SUCCESS | IB_MAD_RESULT_REPLY;
 }
 
-static void edit_counter(struct mlx4_counter *cnt,
-					struct ib_pma_portcounters *pma_cnt)
+static void edit_counter(struct mlx4_if_stat_basic *cnt,
+			 struct ib_pma_portcounters *pma_cnt)
 {
-	pma_cnt->port_xmit_data = cpu_to_be32((be64_to_cpu(cnt->tx_bytes)>>2));
-	pma_cnt->port_rcv_data  = cpu_to_be32((be64_to_cpu(cnt->rx_bytes)>>2));
-	pma_cnt->port_xmit_packets = cpu_to_be32(be64_to_cpu(cnt->tx_frames));
-	pma_cnt->port_rcv_packets  = cpu_to_be32(be64_to_cpu(cnt->rx_frames));
+	ASSIGN_32BIT_COUNTER(pma_cnt->port_xmit_data,
+			     (be64_to_cpu(cnt->counters[0].
+					  if_tx_octets) >> 2));
+	ASSIGN_32BIT_COUNTER(pma_cnt->port_rcv_data,
+			     (be64_to_cpu(cnt->counters[0].
+					  if_rx_octets) >> 2));
+	ASSIGN_32BIT_COUNTER(pma_cnt->port_xmit_packets,
+			     be64_to_cpu(cnt->counters[0].
+					 if_tx_frames));
+	ASSIGN_32BIT_COUNTER(pma_cnt->port_rcv_packets,
+			     be64_to_cpu(cnt->counters[0].
+					 if_rx_frames));
+}
+
+static void edit_counter_ext(struct mlx4_if_stat_extended *cnt,
+			     struct ib_pma_portcounters *pma_cnt)
+{
+	ASSIGN_32BIT_COUNTER(pma_cnt->port_xmit_data,
+			     (be64_to_cpu(cnt->counters[0].
+					  if_tx_unicast_octets) +
+			      be64_to_cpu(cnt->counters[0].
+					  if_tx_multicast_octets) +
+			      be64_to_cpu(cnt->counters[0].
+					  if_tx_broadcast_octets) +
+			      be64_to_cpu(cnt->counters[0].
+					  if_tx_dropped_octets)) >> 2);
+	ASSIGN_32BIT_COUNTER(pma_cnt->port_rcv_data,
+			     (be64_to_cpu(cnt->counters[0].
+					  if_rx_unicast_octets) +
+			      be64_to_cpu(cnt->counters[0].
+					  if_rx_multicast_octets) +
+			      be64_to_cpu(cnt->counters[0].
+					  if_rx_broadcast_octets) +
+			      be64_to_cpu(cnt->counters[0].
+					  if_rx_no_buffer_octets) +
+			      be64_to_cpu(cnt->counters[0].
+					  if_rx_error_octets)) >> 2);
+	ASSIGN_32BIT_COUNTER(pma_cnt->port_xmit_packets,
+			     be64_to_cpu(cnt->counters[0].
+					 if_tx_unicast_frames) +
+			     be64_to_cpu(cnt->counters[0].
+					 if_tx_multicast_frames) +
+			     be64_to_cpu(cnt->counters[0].
+					 if_tx_broadcast_frames) +
+			     be64_to_cpu(cnt->counters[0].
+					 if_tx_dropped_frames));
+	ASSIGN_32BIT_COUNTER(pma_cnt->port_rcv_packets,
+			     be64_to_cpu(cnt->counters[0].
+					 if_rx_unicast_frames) +
+			     be64_to_cpu(cnt->counters[0].
+					 if_rx_multicast_frames) +
+			     be64_to_cpu(cnt->counters[0].
+					 if_rx_broadcast_frames) +
+			     be64_to_cpu(cnt->counters[0].
+					 if_rx_no_buffer_frames) +
+			     be64_to_cpu(cnt->counters[0].
+					 if_rx_error_frames));
+	ASSIGN_16BIT_COUNTER(pma_cnt->port_rcv_errors,
+			     be64_to_cpu(cnt->counters[0].
+					 if_rx_error_frames));
 }
 
 static int iboe_process_mad(struct ib_device *ibdev, int mad_flags, u8 port_num,
@@ -836,12 +910,16 @@ static int iboe_process_mad(struct ib_device *ibdev, int mad_flags, u8 port_num,
 		err = IB_MAD_RESULT_FAILURE;
 	else {
 		memset(out_mad->data, 0, sizeof out_mad->data);
-		mode = ((struct mlx4_counter *)mailbox->buf)->counter_mode;
+		mode = ((struct mlx4_if_stat_control *)mailbox->buf)->cnt_mode;
+		err = IB_MAD_RESULT_SUCCESS | IB_MAD_RESULT_REPLY;
 		switch (mode & 0xf) {
 		case 0:
 			edit_counter(mailbox->buf,
 						(void *)(out_mad->data + 40));
-			err = IB_MAD_RESULT_SUCCESS | IB_MAD_RESULT_REPLY;
+			break;
+		case 1:
+			edit_counter_ext(mailbox->buf,
+					 (void *)(out_mad->data + 40));
 			break;
 		default:
 			err = IB_MAD_RESULT_FAILURE;
