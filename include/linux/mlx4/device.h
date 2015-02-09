@@ -752,15 +752,51 @@ union mlx4_ext_av {
 	struct mlx4_eth_av	eth;
 };
 
-struct mlx4_counter {
-	u8	reserved1[3];
-	u8	counter_mode;
-	__be32	num_ifc;
-	u32	reserved2[2];
-	__be64	rx_frames;
-	__be64	rx_bytes;
-	__be64	tx_frames;
-	__be64	tx_bytes;
+struct mlx4_if_stat_control {
+	u8 reserved1[3];
+	/* Extended counters enabled */
+	u8 cnt_mode;
+	/* Number of interfaces */
+	__be32 num_of_if;
+	__be32 reserved[2];
+};
+
+struct mlx4_if_stat_basic {
+	struct mlx4_if_stat_control control;
+	struct {
+		__be64 if_rx_frames;
+		__be64 if_rx_octets;
+		__be64 if_tx_frames;
+		__be64 if_tx_octets;
+	} counters[];
+};
+
+struct mlx4_if_stat_extended {
+	struct mlx4_if_stat_control control;
+	struct {
+		__be64 if_rx_unicast_frames;
+		__be64 if_rx_unicast_octets;
+		__be64 if_rx_multicast_frames;
+		__be64 if_rx_multicast_octets;
+		__be64 if_rx_broadcast_frames;
+		__be64 if_rx_broadcast_octets;
+		__be64 if_rx_no_buffer_frames;
+		__be64 if_rx_no_buffer_octets;
+		__be64 if_rx_error_frames;
+		__be64 if_rx_error_octets;
+		__be32 reserved[39];
+		__be64 if_tx_unicast_frames;
+		__be64 if_tx_unicast_octets;
+		__be64 if_tx_multicast_frames;
+		__be64 if_tx_multicast_octets;
+		__be64 if_tx_broadcast_frames;
+		__be64 if_tx_broadcast_octets;
+		__be64 if_tx_dropped_frames;
+		__be64 if_tx_dropped_octets;
+		__be64 if_tx_requested_frames_sent;
+		__be64 if_tx_generated_frames_sent;
+		__be64 if_tx_tso_octets;
+	} __packed counters[];
 };
 
 struct mlx4_quotas {
