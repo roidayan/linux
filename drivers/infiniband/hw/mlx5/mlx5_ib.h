@@ -353,6 +353,11 @@ struct mlx5_ib_mr {
 	struct mlx5_core_sig_ctx    *sig;
 	u32			max_reg_descriptors;
 	int			live;
+	u64			size;
+	u64			page_count;
+	dma_addr_t		dma;
+	struct mlx5_ib_mr     **children;
+	int			nchild;
 };
 
 struct mlx5_ib_fast_reg_page_list {

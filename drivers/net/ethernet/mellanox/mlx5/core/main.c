@@ -149,10 +149,6 @@ static struct mlx5_profile profile[] = {
 			.size	= 16,
 			.limit	= 8
 		},
-		.mr_cache[15]	= {
-			.size	= 8,
-			.limit	= 4
-		},
 	},
 };
 
