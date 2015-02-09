@@ -14,12 +14,12 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  drivers/net/ethernet/mellanox/mlx4/en_rx.c      |   98 ++++++++++-
  drivers/net/ethernet/mellanox/mlx4/en_tx.c      |   56 ++++++
  drivers/net/ethernet/mellanox/mlx4/eq.c         |   10 +
- drivers/net/ethernet/mellanox/mlx4/main.c       |   24 +++
+ drivers/net/ethernet/mellanox/mlx4/main.c       |   23 +++
  drivers/net/ethernet/mellanox/mlx4/mlx4_en.h    |   26 +++-
  include/linux/ethtool.h                         |   12 ++
  include/linux/mlx4/cq.h                         |    5 +
  include/linux/mlx4/device.h                     |    4 +
- 16 files changed, 614 insertions(+), 3 deletions(-)
+ 16 files changed, 613 insertions(+), 3 deletions(-)
 
 diff --git a/drivers/infiniband/hw/mlx4/cm.c b/drivers/infiniband/hw/mlx4/cm.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -78,7 +78,7 @@ diff --git a/drivers/infiniband/hw/mlx4/main.c b/drivers/infiniband/hw/mlx4/main
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/hw/mlx4/main.c
 +++ b/drivers/infiniband/hw/mlx4/main.c
-@@ -1773,7 +1773,11 @@ static void mlx4_ib_get_dev_addr(struct net_device *dev,
+@@ -1937,7 +1937,11 @@ static void mlx4_ib_get_dev_addr(struct net_device *dev,
  	in6_dev = in6_dev_get(dev);
  	if (in6_dev) {
  		read_lock_bh(&in6_dev->lock);
@@ -90,7 +90,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  			pgid = (union ib_gid *)&ifp->addr;
  			if (!memcmp(pgid, &default_gid, sizeof(*pgid)))
  				continue;
-@@ -1855,8 +1859,12 @@ static void mlx4_ib_scan_netdevs(struct mlx4_ib_dev *ibdev,
+@@ -2019,8 +2023,12 @@ static void mlx4_ib_scan_netdevs(struct mlx4_ib_dev *ibdev,
  
  		if (iboe->netdevs[port - 1] &&
  		    netif_is_bond_slave(iboe->netdevs[port - 1])) {
@@ -107,7 +107,7 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/cmd.c b/drivers/net/ethernet/mel
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/cmd.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/cmd.c
-@@ -2794,10 +2794,16 @@ int mlx4_get_vf_config(struct mlx4_dev *dev, int port, int vf, struct ifla_vf_in
+@@ -2789,10 +2789,16 @@ int mlx4_get_vf_config(struct mlx4_dev *dev, int port, int vf, struct ifla_vf_in
  
  	ivf->vlan		= s_info->default_vlan;
  	ivf->qos		= s_info->default_qos;
@@ -1633,7 +1633,7 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/eq.c b/drivers/net/ethernet/mell
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/eq.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/eq.c
-@@ -467,7 +467,9 @@ static int mlx4_eq_int(struct mlx4_dev *dev, struct mlx4_eq *eq)
+@@ -473,7 +473,9 @@ static int mlx4_eq_int(struct mlx4_dev *dev, struct mlx4_eq *eq)
  	int i;
  	enum slave_port_gen_event gen_event;
  	unsigned long flags;
@@ -1643,36 +1643,28 @@ index xxxxxxx..xxxxxxx xxxxxx
  	int eqe_size = dev->caps.eqe_size;
  
  	while ((eqe = next_eqe_sw(eq, dev->caps.eqe_factor, eqe_size))) {
-@@ -575,6 +577,7 @@ static int mlx4_eq_int(struct mlx4_dev *dev, struct mlx4_eq *eq)
- 							continue;
- 						mlx4_dbg(dev, "%s: Sending MLX4_PORT_CHANGE_SUBTYPE_DOWN to slave: %d, port:%d\n",
+@@ -586,9 +588,13 @@ static int mlx4_eq_int(struct mlx4_dev *dev, struct mlx4_eq *eq)
+ 						mlx4_dbg(dev, "%s: Sending MLX4_PORT_CHANGE_SUBTYPE_DOWN"
+ 							 " to slave: %d, port:%d\n",
  							 __func__, i, port);
 +#ifdef HAVE_LINKSTATE
  						s_info = &priv->mfunc.master.vf_oper[slave].vport[port].state;
- 						if (IFLA_VF_LINK_STATE_AUTO == s_info->link_state) {
- 							eqe->event.port_change.port =
-@@ -583,6 +586,9 @@ static int mlx4_eq_int(struct mlx4_dev *dev, struct mlx4_eq *eq)
- 								| (mlx4_phys_to_slave_port(dev, i, port) << 28));
+ 						if (IFLA_VF_LINK_STATE_AUTO == s_info->link_state)
  							mlx4_slave_event(dev, i, eqe);
- 						}
 +#else
 +						mlx4_slave_event(dev, i, eqe);
 +#endif
  					} else {  /* IB port */
  						set_and_calc_slave_port_state(dev, i, port,
  									      MLX4_PORT_STATE_DEV_EVENT_PORT_DOWN,
-@@ -610,6 +616,7 @@ static int mlx4_eq_int(struct mlx4_dev *dev, struct mlx4_eq *eq)
+@@ -614,9 +620,13 @@ static int mlx4_eq_int(struct mlx4_dev *dev, struct mlx4_eq *eq)
  							continue;
  						if (i == mlx4_master_func_num(dev))
  							continue;
 +#ifdef HAVE_LINKSTATE
  						s_info = &priv->mfunc.master.vf_oper[slave].vport[port].state;
- 						if (IFLA_VF_LINK_STATE_AUTO == s_info->link_state) {
- 							eqe->event.port_change.port =
-@@ -618,6 +625,9 @@ static int mlx4_eq_int(struct mlx4_dev *dev, struct mlx4_eq *eq)
- 								| (mlx4_phys_to_slave_port(dev, i, port) << 28));
+ 						if (IFLA_VF_LINK_STATE_AUTO == s_info->link_state)
  							mlx4_slave_event(dev, i, eqe);
- 						}
 +#else
 +						mlx4_slave_event(dev, i, eqe);
 +#endif
@@ -1683,7 +1675,7 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/main.c b/drivers/net/ethernet/me
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/main.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/main.c
-@@ -2336,6 +2336,9 @@ static void mlx4_enable_msi_x(struct mlx4_dev *dev)
+@@ -3287,6 +3287,9 @@ static void mlx4_enable_msi_x(struct mlx4_dev *dev)
  	struct mlx4_priv *priv = mlx4_priv(dev);
  	struct msix_entry *entries;
  	int i;
@@ -1693,16 +1685,15 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	if (msi_x) {
  		int nreq = dev->caps.num_ports * num_online_cpus() + MSIX_LEGACY_SZ;
-@@ -2350,6 +2353,8 @@ static void mlx4_enable_msi_x(struct mlx4_dev *dev)
+@@ -3301,6 +3304,7 @@ static void mlx4_enable_msi_x(struct mlx4_dev *dev)
  		for (i = 0; i < nreq; ++i)
  			entries[i].entry = i;
  
-+
 +#ifdef HAVE_PCI_ENABLE_MSIX_RANGE
  		nreq = pci_enable_msix_range(dev->persist->pdev, entries, 2,
  					     nreq);
  
-@@ -2358,6 +2363,25 @@ static void mlx4_enable_msi_x(struct mlx4_dev *dev)
+@@ -3309,6 +3313,25 @@ static void mlx4_enable_msi_x(struct mlx4_dev *dev)
  			goto no_msi;
  		} else if (nreq < MSIX_LEGACY_SZ +
  			   dev->caps.num_ports * MIN_MSIX_P_PORT) {
