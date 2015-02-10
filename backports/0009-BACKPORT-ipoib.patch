@@ -3,12 +3,12 @@ Subject: [PATCH] BACKPORT: ipoib
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- drivers/infiniband/ulp/ipoib/ipoib.h           |    3 ++
- drivers/infiniband/ulp/ipoib/ipoib_cm.c        |    8 +++++
- drivers/infiniband/ulp/ipoib/ipoib_main.c      |   41 ++++++++++++++++++++++++
- drivers/infiniband/ulp/ipoib/ipoib_multicast.c |   15 +++++++++
- drivers/infiniband/ulp/ipoib/ipoib_netlink.c   |    8 +++++
- 5 files changed, 75 insertions(+), 0 deletions(-)
+ drivers/infiniband/ulp/ipoib/ipoib.h           |  3 ++
+ drivers/infiniband/ulp/ipoib/ipoib_cm.c        |  8 +++++
+ drivers/infiniband/ulp/ipoib/ipoib_main.c      | 41 ++++++++++++++++++++++++++
+ drivers/infiniband/ulp/ipoib/ipoib_multicast.c | 15 ++++++++++
+ drivers/infiniband/ulp/ipoib/ipoib_netlink.c   |  8 +++++
+ 5 files changed, 75 insertions(+)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib.h b/drivers/infiniband/ulp/ipoib/ipoib.h
 index xxxxxxx..xxxxxxx xxxxxx
@@ -87,7 +87,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		rtnl_unlock();
  		priv->tx_wr.send_flags &= ~IB_SEND_IP_CSUM;
  
-@@ -245,7 +254,16 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
+@@ -242,7 +251,16 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
  
  	if (!strcmp(buf, "datagram\n")) {
  		clear_bit(IPOIB_FLAG_ADMIN_CM, &priv->flags);
@@ -104,7 +104,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		dev_set_mtu(dev, min(priv->mcast_mtu, dev->mtu));
  		rtnl_unlock();
  		ipoib_flush_paths(dev);
-@@ -1321,6 +1339,7 @@ void ipoib_dev_cleanup(struct net_device *dev)
+@@ -1309,6 +1327,7 @@ void ipoib_dev_cleanup(struct net_device *dev)
  	ipoib_delete_debug_files(dev);
  
  	/* Delete any child interfaces first */
@@ -112,7 +112,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	list_for_each_entry_safe(cpriv, tcpriv, &priv->child_intfs, list) {
  		/* Stop GC on child */
  		set_bit(IPOIB_STOP_NEIGH_GC, &cpriv->flags);
-@@ -1328,6 +1347,11 @@ void ipoib_dev_cleanup(struct net_device *dev)
+@@ -1316,6 +1335,11 @@ void ipoib_dev_cleanup(struct net_device *dev)
  		unregister_netdevice_queue(cpriv->dev, &head);
  	}
  	unregister_netdevice_many(&head);
@@ -122,9 +122,9 @@ index xxxxxxx..xxxxxxx xxxxxx
 +		unregister_netdevice(cpriv->dev);
 +#endif
  
- 	/*
- 	 * Must be before ipoib_ib_dev_cleanup or we delete an in use
-@@ -1353,7 +1377,9 @@ static const struct net_device_ops ipoib_netdev_ops = {
+ 	ipoib_ib_dev_cleanup(dev);
+ 
+@@ -1337,7 +1361,9 @@ static const struct net_device_ops ipoib_netdev_ops = {
  	.ndo_open		 = ipoib_open,
  	.ndo_stop		 = ipoib_stop,
  	.ndo_change_mtu		 = ipoib_change_mtu,
@@ -134,7 +134,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.ndo_start_xmit	 	 = ipoib_start_xmit,
  	.ndo_tx_timeout		 = ipoib_timeout,
  	.ndo_set_rx_mode	 = ipoib_set_mcast_list,
-@@ -1380,7 +1406,11 @@ void ipoib_setup(struct net_device *dev)
+@@ -1364,7 +1390,11 @@ void ipoib_setup(struct net_device *dev)
  	dev->tx_queue_len	 = ipoib_sendq_size * 2;
  	dev->features		 = (NETIF_F_VLAN_CHALLENGED	|
  				    NETIF_F_HIGHDMA);
@@ -146,7 +146,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	memcpy(dev->broadcast, ipv4_bcast_addr, INFINIBAND_ALEN);
  
-@@ -1537,6 +1567,7 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
+@@ -1521,6 +1551,7 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
  	kfree(device_attr);
  
  	if (priv->hca_caps & IB_DEVICE_UD_IP_CSUM) {
@@ -154,7 +154,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		priv->dev->hw_features = NETIF_F_SG |
  			NETIF_F_IP_CSUM | NETIF_F_RXCSUM;
  
-@@ -1544,6 +1575,14 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
+@@ -1528,6 +1559,14 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
  			priv->dev->hw_features |= NETIF_F_TSO;
  
  		priv->dev->features |= priv->dev->hw_features;
@@ -169,7 +169,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	}
  
  	return 0;
-@@ -1575,7 +1614,9 @@ static struct net_device *ipoib_add_port(const char *format,
+@@ -1559,7 +1598,9 @@ static struct net_device *ipoib_add_port(const char *format,
  	priv->dev->mtu  = IPOIB_UD_MTU(priv->max_ib_mtu);
  	priv->mcast_mtu  = priv->admin_mtu = priv->dev->mtu;
  
@@ -183,7 +183,7 @@ diff --git a/drivers/infiniband/ulp/ipoib/ipoib_multicast.c b/drivers/infiniband
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_multicast.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_multicast.c
-@@ -826,7 +826,11 @@ void ipoib_mcast_restart_task(struct work_struct *work)
+@@ -786,7 +786,11 @@ void ipoib_mcast_restart_task(struct work_struct *work)
  	struct ipoib_dev_priv *priv =
  		container_of(work, struct ipoib_dev_priv, restart_task);
  	struct net_device *dev = priv->dev;
@@ -195,7 +195,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct ipoib_mcast *mcast, *tmcast;
  	LIST_HEAD(remove_list);
  	unsigned long flags;
-@@ -849,6 +853,7 @@ void ipoib_mcast_restart_task(struct work_struct *work)
+@@ -811,6 +815,7 @@ void ipoib_mcast_restart_task(struct work_struct *work)
  		clear_bit(IPOIB_MCAST_FLAG_FOUND, &mcast->flags);
  
  	/* Mark all of the entries that are found or don't exist */
@@ -203,7 +203,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	netdev_for_each_mc_addr(ha, dev) {
  		union ib_gid mgid;
  
-@@ -856,6 +861,16 @@ void ipoib_mcast_restart_task(struct work_struct *work)
+@@ -818,6 +823,16 @@ void ipoib_mcast_restart_task(struct work_struct *work)
  			continue;
  
  		memcpy(mgid.raw, ha->addr + 4, sizeof mgid);

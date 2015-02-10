@@ -3,8 +3,8 @@ Subject: [PATCH] BACKPORT: rds
 
 Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
 ---
- net/rds/connection.c |   12 ++++++++++++
- 1 files changed, 12 insertions(+), 0 deletions(-)
+ net/rds/connection.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
 
 diff --git a/net/rds/connection.c b/net/rds/connection.c
 index xxxxxxx..xxxxxxx xxxxxx

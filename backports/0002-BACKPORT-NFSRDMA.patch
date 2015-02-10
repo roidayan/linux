@@ -3,8 +3,8 @@ Subject: [PATCH] BACKPORT: NFSRDMA
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- net/sunrpc/xprtrdma/svc_rdma_transport.c |    2 ++
- 1 files changed, 2 insertions(+), 0 deletions(-)
+ net/sunrpc/xprtrdma/svc_rdma_transport.c | 2 ++
+ 1 file changed, 2 insertions(+)
 
 diff --git a/net/sunrpc/xprtrdma/svc_rdma_transport.c b/net/sunrpc/xprtrdma/svc_rdma_transport.c
 index xxxxxxx..xxxxxxx xxxxxx

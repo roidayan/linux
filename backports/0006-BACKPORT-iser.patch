@@ -3,10 +3,10 @@ Subject: [PATCH] BACKPORT: iser
 
 Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
 ---
- drivers/infiniband/ulp/iser/iscsi_iser.c     |   46 ++++++++++++++-
- drivers/infiniband/ulp/iser/iser_initiator.c |   10 +++
- drivers/infiniband/ulp/iser/iser_memory.c    |   83 ++++++++++++++++++++++++++
- 3 files changed, 138 insertions(+), 1 deletions(-)
+ drivers/infiniband/ulp/iser/iscsi_iser.c     | 46 ++++++++++++++-
+ drivers/infiniband/ulp/iser/iser_initiator.c | 10 ++++
+ drivers/infiniband/ulp/iser/iser_memory.c    | 83 ++++++++++++++++++++++++++++
+ 3 files changed, 138 insertions(+), 1 deletion(-)
 
 diff --git a/drivers/infiniband/ulp/iser/iscsi_iser.c b/drivers/infiniband/ulp/iser/iscsi_iser.c
 index xxxxxxx..xxxxxxx xxxxxx

@@ -3,24 +3,24 @@ Subject: [PATCH] BACKPORT: ib-core
 
 Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
 ---
- drivers/infiniband/core/addr.c        |  105 +++++++++++++++++++++++++++++++++
- drivers/infiniband/core/cm.c          |   23 +++++++
- drivers/infiniband/core/cma.c         |   64 ++++++++++++++++++++
- drivers/infiniband/core/fmr_pool.c    |    7 ++
- drivers/infiniband/core/iwcm.c        |   16 +++++
- drivers/infiniband/core/iwpm_util.c   |   26 ++++++++-
- drivers/infiniband/core/mad.c         |    3 +
- drivers/infiniband/core/netlink.c     |   23 +++++++
- drivers/infiniband/core/sa_query.c    |   19 ++++++
- drivers/infiniband/core/ucm.c         |   38 ++++++++++++
- drivers/infiniband/core/ucma.c        |   76 ++++++++++++++++++++++++
- drivers/infiniband/core/umem.c        |   16 +++++
- drivers/infiniband/core/user_mad.c    |   19 ++++++
- drivers/infiniband/core/uverbs_cmd.c  |   51 ++++++++++++++++
- drivers/infiniband/core/uverbs_main.c |   40 +++++++++++++
- include/rdma/ib_pack.h                |    4 +
- include/rdma/ib_umem_odp.h            |    4 +
- include/rdma/ib_verbs.h               |    5 ++
+ drivers/infiniband/core/addr.c        | 105 ++++++++++++++++++++++++++++++++++
+ drivers/infiniband/core/cm.c          |  23 ++++++++
+ drivers/infiniband/core/cma.c         |  64 +++++++++++++++++++++
+ drivers/infiniband/core/fmr_pool.c    |   7 +++
+ drivers/infiniband/core/iwcm.c        |  16 ++++++
+ drivers/infiniband/core/iwpm_util.c   |  26 ++++++++-
+ drivers/infiniband/core/mad.c         |   3 +
+ drivers/infiniband/core/netlink.c     |  23 ++++++++
+ drivers/infiniband/core/sa_query.c    |  19 ++++++
+ drivers/infiniband/core/ucm.c         |  38 ++++++++++++
+ drivers/infiniband/core/ucma.c        |  76 ++++++++++++++++++++++++
+ drivers/infiniband/core/umem.c        |  16 ++++++
+ drivers/infiniband/core/user_mad.c    |  19 ++++++
+ drivers/infiniband/core/uverbs_cmd.c  |  51 +++++++++++++++++
+ drivers/infiniband/core/uverbs_main.c |  40 +++++++++++++
+ include/rdma/ib_pack.h                |   4 ++
+ include/rdma/ib_umem_odp.h            |   4 ++
+ include/rdma/ib_verbs.h               |   5 ++
  18 files changed, 537 insertions(+), 2 deletions(-)
 
 diff --git a/drivers/infiniband/core/addr.c b/drivers/infiniband/core/addr.c
@@ -874,7 +874,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	mc->ctx = ctx;
  	list_add_tail(&mc->list, &ctx->mc_list);
-@@ -1496,7 +1541,11 @@ static ssize_t ucma_migrate_id(struct ucma_file *new_file,
+@@ -1493,7 +1538,11 @@ static ssize_t ucma_migrate_id(struct ucma_file *new_file,
  	struct rdma_ucm_migrate_id cmd;
  	struct rdma_ucm_migrate_resp resp;
  	struct ucma_context *ctx;
@@ -886,7 +886,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct ucma_file *cur_file;
  	int ret = 0;
  
-@@ -1504,12 +1553,21 @@ static ssize_t ucma_migrate_id(struct ucma_file *new_file,
+@@ -1501,12 +1550,21 @@ static ssize_t ucma_migrate_id(struct ucma_file *new_file,
  		return -EFAULT;
  
  	/* Get current fd to protect against it being closed */
@@ -908,7 +908,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (IS_ERR(ctx)) {
  		ret = PTR_ERR(ctx);
  		goto file_put;
-@@ -1543,7 +1601,11 @@ response:
+@@ -1540,7 +1598,11 @@ response:
  
  	ucma_put_ctx(ctx);
  file_put:
@@ -920,7 +920,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	return ret;
  }
  
-@@ -1717,15 +1779,23 @@ static int __init ucma_init(void)
+@@ -1714,15 +1776,23 @@ static int __init ucma_init(void)
  		goto err1;
  	}
  
@@ -944,7 +944,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  err1:
  	misc_deregister(&ucma_misc);
  	return ret;
-@@ -1733,7 +1803,13 @@ err1:
+@@ -1730,7 +1800,13 @@ err1:
  
  static void __exit ucma_cleanup(void)
  {
@@ -962,7 +962,7 @@ diff --git a/drivers/infiniband/core/umem.c b/drivers/infiniband/core/umem.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/umem.c
 +++ b/drivers/infiniband/core/umem.c
-@@ -176,7 +176,11 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
+@@ -168,7 +168,11 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
  
  	down_write(&current->mm->mmap_sem);
  
@@ -974,7 +974,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	lock_limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
  
  	if ((locked > lock_limit) && !capable(CAP_IPC_LOCK)) {
-@@ -242,7 +246,11 @@ out:
+@@ -234,7 +238,11 @@ out:
  		put_pid(umem->pid);
  		kfree(umem);
  	} else
@@ -986,7 +986,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	up_write(&current->mm->mmap_sem);
  	if (vma_list)
-@@ -258,7 +266,11 @@ static void ib_umem_account(struct work_struct *work)
+@@ -250,7 +258,11 @@ static void ib_umem_account(struct work_struct *work)
  	struct ib_umem *umem = container_of(work, struct ib_umem, work);
  
  	down_write(&umem->mm->mmap_sem);
@@ -998,7 +998,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	up_write(&umem->mm->mmap_sem);
  	mmput(umem->mm);
  	kfree(umem);
-@@ -313,7 +325,11 @@ void ib_umem_release(struct ib_umem *umem)
+@@ -305,7 +317,11 @@ void ib_umem_release(struct ib_umem *umem)
  	} else
  		down_write(&mm->mmap_sem);
  
@@ -1110,7 +1110,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (ret < 0)
  		goto err_free;
  	resp.async_fd = ret;
-@@ -791,7 +810,11 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
+@@ -832,7 +851,11 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
  	struct ib_udata			udata;
  	struct ib_uxrcd_object         *obj;
  	struct ib_xrcd                 *xrcd = NULL;
@@ -1122,7 +1122,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct inode                   *inode = NULL;
  	int				ret = 0;
  	int				new_xrcd = 0;
-@@ -810,6 +833,7 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
+@@ -851,6 +874,7 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
  
  	if (cmd.fd != -1) {
  		/* search for file descriptor */
@@ -1130,7 +1130,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		f = fdget(cmd.fd);
  		if (!f.file) {
  			ret = -EBADF;
-@@ -817,6 +841,19 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
+@@ -858,6 +882,19 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
  		}
  
  		inode = file_inode(f.file);
@@ -1150,7 +1150,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		xrcd = find_xrcd(file->device, inode);
  		if (!xrcd && !(cmd.oflags & O_CREAT)) {
  			/* no file descriptor. Need CREATE flag */
-@@ -881,8 +918,13 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
+@@ -922,8 +959,13 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
  		goto err_copy;
  	}
  
@@ -1164,7 +1164,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	mutex_lock(&file->mutex);
  	list_add_tail(&obj->uobject.list, &file->ucontext->xrcd_list);
-@@ -911,8 +953,13 @@ err:
+@@ -952,8 +994,13 @@ err:
  	put_uobj_write(&obj->uobject);
  
  err_tree_mutex_unlock:
@@ -1178,7 +1178,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	mutex_unlock(&file->device->xrcd_tree_mutex);
  
-@@ -1663,7 +1710,11 @@ ssize_t ib_uverbs_create_comp_channel(struct ib_uverbs_file *file,
+@@ -1704,7 +1751,11 @@ ssize_t ib_uverbs_create_comp_channel(struct ib_uverbs_file *file,
  	if (copy_from_user(&cmd, buf, sizeof cmd))
  		return -EFAULT;
  

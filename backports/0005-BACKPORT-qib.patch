@@ -3,8 +3,8 @@ Subject: [PATCH] BACKPORT: qib
 
 Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
 ---
- drivers/infiniband/hw/qib/qib_pcie.c |   43 ++++++++++++++++++++++++++++++++++
- 1 files changed, 43 insertions(+), 0 deletions(-)
+ drivers/infiniband/hw/qib/qib_pcie.c | 43 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 43 insertions(+)
 
 diff --git a/drivers/infiniband/hw/qib/qib_pcie.c b/drivers/infiniband/hw/qib/qib_pcie.c
 index xxxxxxx..xxxxxxx xxxxxx

@@ -3,12 +3,12 @@ Subject: [PATCH] BACKPORT: mlx4_vnic
 
 Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
 ---
- drivers/net/ethernet/mellanox/mlx4_vnic/vnic.h     |    8 ++
- .../mellanox/mlx4_vnic/vnic_data_ethtool.c         |  106 ++++++++++++++++++++
- .../net/ethernet/mellanox/mlx4_vnic/vnic_data_ib.c |   23 ++++-
- .../ethernet/mellanox/mlx4_vnic/vnic_data_netdev.c |   64 ++++++++++++-
- .../net/ethernet/mellanox/mlx4_vnic/vnic_data_rx.c |   30 ++++++-
- drivers/net/ethernet/mellanox/mlx4_vnic/vnic_qp.c  |    2 +
+ drivers/net/ethernet/mellanox/mlx4_vnic/vnic.h     |   8 ++
+ .../mellanox/mlx4_vnic/vnic_data_ethtool.c         | 106 +++++++++++++++++++++
+ .../net/ethernet/mellanox/mlx4_vnic/vnic_data_ib.c |  23 ++++-
+ .../ethernet/mellanox/mlx4_vnic/vnic_data_netdev.c |  64 ++++++++++++-
+ .../net/ethernet/mellanox/mlx4_vnic/vnic_data_rx.c |  30 +++++-
+ drivers/net/ethernet/mellanox/mlx4_vnic/vnic_qp.c  |   2 +
  6 files changed, 228 insertions(+), 5 deletions(-)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx4_vnic/vnic.h b/drivers/net/ethernet/mellanox/mlx4_vnic/vnic.h

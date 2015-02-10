@@ -3,11 +3,11 @@ Subject: [PATCH] BACKPORT: eth_ipoib
 
 Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
 ---
- drivers/net/eipoib/eth_ipoib.h           |   11 +
- drivers/net/eipoib/eth_ipoib_ethtool.c   |    9 +
- drivers/net/eipoib/eth_ipoib_main.c      |  382 ++++++++++++++++++++++++++++--
- drivers/net/eipoib/eth_ipoib_multicast.c |    4 +
- drivers/net/eipoib/eth_ipoib_sysfs.c     |   47 ++++
+ drivers/net/eipoib/eth_ipoib.h           |  11 +
+ drivers/net/eipoib/eth_ipoib_ethtool.c   |   9 +
+ drivers/net/eipoib/eth_ipoib_main.c      | 382 +++++++++++++++++++++++++++++--
+ drivers/net/eipoib/eth_ipoib_multicast.c |   4 +
+ drivers/net/eipoib/eth_ipoib_sysfs.c     |  47 ++++
  5 files changed, 437 insertions(+), 16 deletions(-)
 
 diff --git a/drivers/net/eipoib/eth_ipoib.h b/drivers/net/eipoib/eth_ipoib.h

@@ -3,10 +3,10 @@ Subject: [PATCH] BACKPORT: mlx5
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- drivers/net/ethernet/mellanox/mlx5/core/cmd.c  |   26 ++++++++++++++++++++++++
- drivers/net/ethernet/mellanox/mlx5/core/main.c |   17 +++++++++++++++
- include/linux/mlx5/driver.h                    |    5 ++++
- 3 files changed, 48 insertions(+), 0 deletions(-)
+ drivers/net/ethernet/mellanox/mlx5/core/cmd.c  | 26 ++++++++++++++++++++++++++
+ drivers/net/ethernet/mellanox/mlx5/core/main.c | 17 +++++++++++++++++
+ include/linux/mlx5/driver.h                    |  5 +++++
+ 3 files changed, 48 insertions(+)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx5/core/cmd.c b/drivers/net/ethernet/mellanox/mlx5/core/cmd.c
 index xxxxxxx..xxxxxxx xxxxxx
