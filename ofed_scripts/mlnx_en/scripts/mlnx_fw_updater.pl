@@ -28,6 +28,7 @@
 
 use strict;
 use File::Basename;
+use File::Path;
 use Term::ANSIColor qw(:constants);
 $ENV{"LANG"} = "en_US.UTF-8";
 
@@ -129,7 +130,9 @@ sub check_and_update_FW
 		printNlogRED "Cannot clear semaphores on devices. Firmware update might fail!", RESET "\n";
 	}
 
-	my $cmd = "-L $log -y";
+	my $fw_tmp = "$TMPDIR/mlnx.fw.$$";
+	mkpath([$fw_tmp]);
+	my $cmd = "-L $log -y --sfx-extract-dir $fw_tmp";
 	if ($force_firmware_update) {
 		$cmd .= " --force";
 	}
@@ -190,6 +193,7 @@ sub check_and_update_FW
 		}
 	}
 	system("/bin/mv $TMPDIR/tmplog $log >/dev/null 2>&1");
+	rmtree($fw_tmp);
 
 	if (not $founddevs) {
 		print "No devices found!\n";
@@ -247,6 +251,7 @@ sub usage
 	print "\n                                      - Note: Enable/Disable of SRIOV in a non-volatile configuration through uEFI";
 	print "\n                                              and/or tool will override this flag.";
 	print "\n        --fw-dir                      Path to firmware directory with mlnxfwmanager files (Default: $firmware_directory)";
+	print "\n        --tmpdir                      Change tmp directory. (Default: $TMPDIR)";
 	print "\n        --log                         Path to log file (Default: $TMPDIR/mlnx_fw_update.log)";
 	print "\n        -v                            Verbose";
 	print "\n        -q                            Set quiet - no messages will be printed";
@@ -261,7 +266,7 @@ while ( $#ARGV >= 0 ) {
 		$force_firmware_update = 1;
 	} elsif ( $cmd_flag eq "--fw-dir" ) {
 		$firmware_directory = shift(@ARGV);
-	} elsif ( $cmd_flag eq "--tmp-dir" ) {
+	} elsif ( $cmd_flag eq "--tmpdir" ) {
 		$TMPDIR = shift(@ARGV);
 	} elsif ( $cmd_flag eq "--log" ) {
 		$log = shift(@ARGV);

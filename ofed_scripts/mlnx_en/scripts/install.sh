@@ -23,6 +23,7 @@ firmware_update_only=0
 fw_update_flags=
 config="/etc/mlnx-en.conf"
 skip_dist_check=0
+TMPDIR="/tmp"
 
 usage()
 {
@@ -33,6 +34,7 @@ cat << EOF
 			 [--disable-kmp]: Disable kernel module package (KMP) support
 			 [-k|--kernel <kernel version>]: Build package for this kernel version. Default: $KER_UNAME_R
 			 [-s|--kernel-sources  <path to the kernel sources>]: Use these kernel sources for the build. Default: $KER_PATH
+			 [--tmpdir] <path>            Change tmp directory. Default: $TMPDIR
 			 [--with-sysctl]              Enable Running the sysctl_perf_tuning script
 			 [--with-mlnx_tune]           Enable Running the mlnx_tune utility
 			 [--without-fw-update]        Skip firmware update
@@ -99,6 +101,10 @@ while [ ! -z "$1" ]; do
 		--without-depcheck)
 			skip_dist_check=1
 		;;
+		--tmpdir)
+			shift
+			TMPDIR=$1
+		;;
 		*)
 			echo "Bad input parameter: $1"
 			usage
@@ -115,7 +121,7 @@ package_dir=`pwd`
 KVERSION=${KVERSION:-$KER_UNAME_R}
 KSRC=${KSRC:-"/lib/modules/${KVERSION}/build"}
 
-LOGFILE=/tmp/install-mlx4_en.log.$$
+LOGFILE=$TMPDIR/install-mlx4_en.log.$$
 
 ### Local functions
 
@@ -382,7 +388,7 @@ check_dist_req()
 	skip_dist_check=1
 }
 
-TOPDIR=/tmp/MLNX_EN.$$
+TOPDIR=$TMPDIR/MLNX_EN.$$
 ARCH=`rpm --eval %{_target_cpu} 2> /dev/null || uname -m`
 
 distro_rpm=`rpm -qf /etc/issue 2> /dev/null | head -1`
@@ -606,7 +612,7 @@ ex /bin/mkdir ${TOPDIR}/RPMS
 ex /bin/mkdir ${TOPDIR}/SOURCES
 
 if [ $firmware_update_only -eq 1 ]; then
-	$package_dir/mlnx_fw_updater.pl --log ${LOGFILE}_fw_update.log $fw_update_flags
+	$package_dir/mlnx_fw_updater.pl --log ${LOGFILE}_fw_update.log $fw_update_flags --tmpdir $TMPDIR
 	exit $?
 fi
 
