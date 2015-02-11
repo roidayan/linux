@@ -314,7 +314,7 @@ int mlx4_cq_alloc(struct mlx4_dev *dev, int nent,
 	u64 mtt_addr;
 	int err;
 
-	if (vector >= dev->caps.num_comp_vectors)
+	if (vector > dev->caps.num_comp_vectors + dev->caps.comp_pool)
 		return -EINVAL;
 
 	cq->vector = vector;
