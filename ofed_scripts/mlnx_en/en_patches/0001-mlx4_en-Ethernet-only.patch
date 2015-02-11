@@ -1,29 +1,30 @@
-From c540a8aff616d8a4fc13b0921d18a5a2b0cee77a Mon Sep 17 00:00:00 2001
 From: Alaa Hleihel <alaa@mellanox.com>
-Date: Tue, 27 Jan 2015 17:33:50 +0200
-Subject: [PATCH] mlx4_en Ethernet only
+Subject: [PATCH] [PATCH] mlx4_en: Ethernet only
 
-Change-Id: I4b80d757addd13d763722b968a3bd55730d8a8ad
+issue: none
+Change-Id: I684dfb6532a79d265ed23cc37b034380f06e4ebb
 Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
 ---
- drivers/net/ethernet/mellanox/mlx4/main.c |   14 +++-----------
- 1 files changed, 3 insertions(+), 11 deletions(-)
+ drivers/net/ethernet/mellanox/mlx4/main.c |   16 ++++------------
+ 1 files changed, 4 insertions(+), 12 deletions(-)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx4/main.c b/drivers/net/ethernet/mellanox/mlx4/main.c
-index a315e72..4caff81 100644
+index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/main.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/main.c
-@@ -154,7 +154,7 @@ int log_mtts_per_seg = ilog2(MLX4_MTT_ENTRY_PER_SEG);
- module_param_named(log_mtts_per_seg, log_mtts_per_seg, int, 0444);
- MODULE_PARM_DESC(log_mtts_per_seg, "Log2 number of MTT entries per segment (1-7)");
- 
--static int port_type_array[2] = {MLX4_PORT_TYPE_NONE, MLX4_PORT_TYPE_NONE};
-+static int port_type_array[2] = {MLX4_PORT_TYPE_ETH, MLX4_PORT_TYPE_ETH};
- static int arr_argc = 2;
- module_param_array(port_type_array, int, &arr_argc, 0444);
- MODULE_PARM_DESC(port_type_array, "Array of port types: HW_DEFAULT (0) is default "
-@@ -422,16 +422,8 @@ static int mlx4_dev_cap(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
- 					dev->caps.port_type[i] = port_type_array[i - 1];
+@@ -249,8 +249,8 @@ static struct param_data port_type_array = {
+ 	.dbdf2val = {
+ 		.name		= "port_type_array param",
+ 		.num_vals	= 2,
+-		.def_val	= {MLX4_PORT_TYPE_NONE, MLX4_PORT_TYPE_NONE},
+-		.range		= {MLX4_PORT_TYPE_IB, MLX4_PORT_TYPE_NA},
++		.def_val	= {MLX4_PORT_TYPE_ETH, MLX4_PORT_TYPE_ETH},
++		.range		= {MLX4_PORT_TYPE_ETH, MLX4_PORT_TYPE_ETH},
+ 		.num_inval_vals = 1,
+ 		.inval_val = {MLX4_PORT_TYPE_AUTO}
+ 	}
+@@ -989,16 +989,8 @@ static int mlx4_dev_cap(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
+ 				}
  			}
  		}
 -		/*
@@ -41,6 +42,3 @@ index a315e72..4caff81 100644
  
  		/*
  		 * If "default_sense" bit is set, we move the port to "AUTO" mode
--- 
-1.7.1
-
