@@ -2152,6 +2152,7 @@ ssize_t ib_uverbs_create_qp(struct ib_uverbs_file *file,
 	attr->sq_sig_type   = cmd->sq_sig_all ? IB_SIGNAL_ALL_WR : IB_SIGNAL_REQ_WR;
 	attr->qp_type       = cmd->qp_type;
 	attr->create_flags  = 0;
+	attr->qpg_type	   = IB_QPG_NONE;
 
 	attr->cap.max_send_wr     = cmd->max_send_wr;
 	attr->cap.max_recv_wr     = cmd->max_recv_wr;

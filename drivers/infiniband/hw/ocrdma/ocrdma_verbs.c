@@ -1178,6 +1178,11 @@ static int ocrdma_check_qp_params(struct ib_pd *ibpd, struct ocrdma_dev *dev,
 		       __func__, dev->id, attrs->qp_type);
 		return -EINVAL;
 	}
+	if (attrs->qpg_type != IB_QPG_NONE) {
+		ocrdma_err("%s(%d) unsupported qpg type=0x%x requested\n",
+			   __func__, dev->id, attrs->qpg_type);
+			   return -ENOSYS;
+	}
 	/* Skip the check for QP1 to support CM size of 128 */
 	if ((attrs->qp_type != IB_QPT_GSI) &&
 	    (attrs->cap.max_send_wr > dev->attr.max_wqe)) {

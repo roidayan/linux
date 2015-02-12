@@ -583,11 +583,97 @@ struct ib_qp *ib_open_qp(struct ib_xrcd *xrcd,
 }
 EXPORT_SYMBOL(ib_open_qp);
 
+static int ib_qpg_verify(struct ib_qp_init_attr *qp_init_attr)
+{
+	/* RSS/TSS QP group basic validation */
+	struct ib_qp *parent;
+	struct ib_qpg_init_attrib *attr;
+	struct ib_qpg_attr *pattr;
+
+	switch (qp_init_attr->qpg_type) {
+	case IB_QPG_PARENT:
+		attr = &qp_init_attr->parent_attrib;
+		if (attr->tss_child_count == 1)
+			return -EINVAL; /* doesn't make sense */
+		if (attr->rss_child_count == 1)
+			return -EINVAL; /* doesn't make sense */
+		if ((attr->tss_child_count == 0) &&
+		    (attr->rss_child_count == 0))
+			/* should be called with IP_QPG_NONE */
+			return -EINVAL;
+		break;
+	case IB_QPG_CHILD_RX:
+		parent = qp_init_attr->qpg_parent;
+		if (!parent || parent->qpg_type != IB_QPG_PARENT)
+			return -EINVAL;
+		pattr = &parent->qpg_attr.parent_attr;
+		if (!pattr->rss_child_count)
+			return -EINVAL;
+		if (atomic_read(&pattr->rsscnt) >= pattr->rss_child_count)
+			return -EINVAL;
+		break;
+	case IB_QPG_CHILD_TX:
+		parent = qp_init_attr->qpg_parent;
+		if (!parent || parent->qpg_type != IB_QPG_PARENT)
+			return -EINVAL;
+		pattr = &parent->qpg_attr.parent_attr;
+		if (!pattr->tss_child_count)
+			return -EINVAL;
+		if (atomic_read(&pattr->tsscnt) >= pattr->tss_child_count)
+			return -EINVAL;
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+static void ib_init_qpg(struct ib_qp_init_attr *qp_init_attr, struct ib_qp *qp)
+{
+	struct ib_qp *parent;
+	struct ib_qpg_init_attrib *attr;
+	struct ib_qpg_attr *pattr;
+
+	qp->qpg_type = qp_init_attr->qpg_type;
+
+	/* qp was created without an error parmaters are O.K. */
+	switch (qp_init_attr->qpg_type) {
+	case IB_QPG_PARENT:
+		attr = &qp_init_attr->parent_attrib;
+		pattr = &qp->qpg_attr.parent_attr;
+		pattr->rss_child_count = attr->rss_child_count;
+		pattr->tss_child_count = attr->tss_child_count;
+		atomic_set(&pattr->rsscnt, 0);
+		atomic_set(&pattr->tsscnt, 0);
+		break;
+	case IB_QPG_CHILD_RX:
+		parent = qp_init_attr->qpg_parent;
+		qp->qpg_attr.parent = parent;
+		/* update parent's counter */
+		pattr = &parent->qpg_attr.parent_attr;
+		atomic_inc(&pattr->rsscnt);
+		break;
+	case IB_QPG_CHILD_TX:
+		parent = qp_init_attr->qpg_parent;
+		qp->qpg_attr.parent = parent;
+		/* update parent's counter */
+		pattr = &parent->qpg_attr.parent_attr;
+		atomic_inc(&pattr->tsscnt);
+		break;
+	default:
+		break;
+	}
+}
+
 struct ib_qp *ib_create_qp(struct ib_pd *pd,
 			   struct ib_qp_init_attr *qp_init_attr)
 {
 	struct ib_qp *qp, *real_qp;
 	struct ib_device *device;
+
+	if (ib_qpg_verify(qp_init_attr))
+		return ERR_PTR(-EINVAL);
 
 	device = pd ? pd->device : qp_init_attr->xrcd->device;
 	qp = device->create_qp(pd, qp_init_attr, NULL);
@@ -637,6 +723,8 @@ struct ib_qp *ib_create_qp(struct ib_pd *pd,
 			atomic_inc(&pd->usecnt);
 			atomic_inc(&qp_init_attr->send_cq->usecnt);
 		}
+
+		ib_init_qpg(qp_init_attr, qp);
 	}
 
 	return qp;
@@ -673,6 +761,9 @@ static const struct {
 						IB_QP_QKEY),
 				[IB_QPT_GSI] = (IB_QP_PKEY_INDEX		|
 						IB_QP_QKEY),
+			},
+			.opt_param = {
+				[IB_QPT_UD]  = IB_QP_GROUP_RSS
 			}
 		},
 	},
@@ -1039,7 +1130,16 @@ int ib_modify_qp(struct ib_qp *qp,
 {
 	int ret;
 
+	if (qp->qpg_type == IB_QPG_PARENT) {
+		struct ib_qpg_attr *pattr = &qp->qpg_attr.parent_attr;
+		if (atomic_read(&pattr->rsscnt) < pattr->rss_child_count)
+			return -EINVAL;
+		if (atomic_read(&pattr->tsscnt) < pattr->tss_child_count)
+			return -EINVAL;
+	}
+
 	ret = ib_resolve_eth_dmac(qp, qp_attr, &qp_attr_mask);
+
 	if (ret)
 		return ret;
 
@@ -1116,6 +1216,15 @@ int ib_destroy_qp(struct ib_qp *qp)
 	if (atomic_read(&qp->usecnt))
 		return -EBUSY;
 
+	if (qp->qpg_type == IB_QPG_PARENT) {
+		/* All childeren should have been deleted by now */
+		struct ib_qpg_attr *pattr = &qp->qpg_attr.parent_attr;
+		if (atomic_read(&pattr->rsscnt))
+			return -EINVAL;
+		if (atomic_read(&pattr->tsscnt))
+			return -EINVAL;
+	}
+
 	if (qp->real_qp != qp)
 		return __ib_destroy_shared_qp(qp);
 
@@ -1134,6 +1243,17 @@ int ib_destroy_qp(struct ib_qp *qp)
 			atomic_dec(&rcq->usecnt);
 		if (srq)
 			atomic_dec(&srq->usecnt);
+
+		if (qp->qpg_type == IB_QPG_CHILD_RX ||
+		    qp->qpg_type == IB_QPG_CHILD_TX) {
+			/* decrement parent's counters */
+			struct ib_qp *pqp = qp->qpg_attr.parent;
+			struct ib_qpg_attr *pattr = &pqp->qpg_attr.parent_attr;
+			if (qp->qpg_type == IB_QPG_CHILD_RX)
+				atomic_dec(&pattr->rsscnt);
+			else
+				atomic_dec(&pattr->tsscnt);
+		}
 	}
 
 	return ret;

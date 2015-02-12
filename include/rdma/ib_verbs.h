@@ -881,6 +881,7 @@ struct ib_qp_cap {
 	u32	max_send_sge;
 	u32	max_recv_sge;
 	u32	max_inline_data;
+	u32	qpg_tss_mask_sz;
 };
 
 enum ib_sig_type {
@@ -1486,6 +1487,14 @@ struct ib_srq {
 	} ext;
 };
 
+struct ib_qpg_attr {
+	atomic_t rsscnt; /* count open rss children */
+	atomic_t tsscnt; /* count open rss children */
+	u32	 rss_child_count;
+	u32	 tss_child_count;
+};
+
+
 struct ib_qp {
 	struct ib_device       *device;
 	struct ib_pd	       *pd;
@@ -1504,6 +1513,10 @@ struct ib_qp {
 	u32			qp_num;
 	enum ib_qp_type		qp_type;
 	enum ib_qpg_type	qpg_type;
+	union {
+		struct ib_qp   *parent; /* rss/tss parent */
+		struct ib_qpg_attr parent_attr;
+	} qpg_attr;
 	u8			port_num;
 };
 

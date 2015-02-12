@@ -240,6 +240,11 @@ int mlx4_ib_query_device(struct ib_device *ibdev,
 	if (dev->steering_support ==  MLX4_STEERING_MODE_DEVICE_MANAGED)
 		props->device_cap_flags |= IB_DEVICE_MANAGED_FLOW_STEERING;
 	}
+	props->device_cap_flags |= IB_DEVICE_QPG;
+	if (dev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_RSS) {
+		props->device_cap_flags |= IB_DEVICE_UD_RSS;
+		props->max_rss_tbl_sz = dev->dev->caps.max_rss_tbl_sz;
+	}
 
 	props->vendor_id	   = be32_to_cpup((__be32 *) (out_mad->data + 36)) &
 		0xffffff;
