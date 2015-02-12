@@ -215,32 +215,9 @@ static ssize_t rate_show(struct ib_port *p, struct port_attribute *unused,
 	if (ret)
 		return ret;
 
-	switch (attr.active_speed) {
-	case IB_SPEED_DDR:
-		speed = " DDR";
-		rate = 50;
-		break;
-	case IB_SPEED_QDR:
-		speed = " QDR";
-		rate = 100;
-		break;
-	case IB_SPEED_FDR10:
-		speed = " FDR10";
-		rate = 100;
-		break;
-	case IB_SPEED_FDR:
-		speed = " FDR";
-		rate = 140;
-		break;
-	case IB_SPEED_EDR:
-		speed = " EDR";
-		rate = 250;
-		break;
-	case IB_SPEED_SDR:
-	default:		/* default to SDR for invalid rates */
-		rate = 25;
-		break;
-	}
+	ib_active_speed_enum_to_rate(attr.active_speed,
+				     &rate,
+				     &speed);
 
 	rate *= ib_width_enum_to_int(attr.active_width);
 	if (rate < 0)
