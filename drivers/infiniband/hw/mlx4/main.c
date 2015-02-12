@@ -75,12 +75,12 @@ MODULE_DESCRIPTION("Mellanox ConnectX HCA InfiniBand driver");
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_VERSION(DRV_VERSION);
 
-int mlx4_ib_sm_guid_assign = 1;
+int mlx4_ib_sm_guid_assign = 0;
 struct proc_dir_entry *mlx4_mrs_dir_entry;
 static struct proc_dir_entry *mlx4_ib_driver_dir_entry;
 
 module_param_named(sm_guid_assign, mlx4_ib_sm_guid_assign, int, 0444);
-MODULE_PARM_DESC(sm_guid_assign, "Enable SM alias_GUID assignment if sm_guid_assign > 0 (Default: 1)");
+MODULE_PARM_DESC(sm_guid_assign, "Enable SM alias_GUID assignment if sm_guid_assign > 0 (Default: 0)");
 
 #ifdef CONFIG_MLX4_IB_DEBUG_FS
 bool en_ecn;
