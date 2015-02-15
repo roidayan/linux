@@ -169,7 +169,7 @@ static int __mlx4_qp_modify(struct mlx4_dev *dev, struct mlx4_mtt *mtt,
 
 	if ((cur_state == MLX4_QP_STATE_RTR) &&
 	    (new_state == MLX4_QP_STATE_RTS) &&
-	    dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_ROCE_V1_V2 &&
+	    dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_ROCE_V2 &&
 	    !mlx4_is_mfunc(dev)) {
 		context->roce_entropy = cpu_to_be16(mlx4_qp_roce_entropy(dev, qp->qpn));
 	}

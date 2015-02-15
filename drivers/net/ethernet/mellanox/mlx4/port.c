@@ -955,8 +955,8 @@ int mlx4_SET_PORT(struct mlx4_dev *dev, u8 port, int pkey_tbl_sz)
 	return err;
 }
 
-#define SET_PORT_ROCE_2_FLAGS          0x10
-#define MLX4_SET_PORT_ROCE_V1_V2       0x2
+#define SET_PORT_ROCE_V1_5_V2_FLAGS      0x30
+#define MLX4_SET_PORT_ROCE_V1_5_V2       0x3
 int mlx4_SET_PORT_general(struct mlx4_dev *dev, u8 port, int mtu,
 			  u8 pptx, u8 pfctx, u8 pprx, u8 pfcrx)
 {
@@ -975,11 +975,14 @@ int mlx4_SET_PORT_general(struct mlx4_dev *dev, u8 port, int mtu,
 	context->pfctx = pfctx;
 	context->pprx = (pprx * (!pfcrx)) << 7;
 	context->pfcrx = pfcrx;
-	if (dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_ROCE_V1_V2) {
-		context->flags |= SET_PORT_ROCE_2_FLAGS;
-		context->roce_mode |=
-			(MLX4_SET_PORT_ROCE_V1_V2 & 7)
-			<< 4;
+	if (dev->caps.port_type[port] == MLX4_PORT_TYPE_ETH) {
+		if (dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_ROCE_V2) {
+			context->flags |= SET_PORT_ROCE_V1_5_V2_FLAGS;
+			context->roce_mode |=
+				(MLX4_SET_PORT_ROCE_V1_5_V2 & 7)
+				<< 4;
+			context->rr_proto = 0xfe;
+		}
 	}
 	in_mod = MLX4_SET_PORT_GENERAL << 8 | port;
 	err = mlx4_cmd(dev, mailbox->dma, in_mod, 1, MLX4_CMD_SET_PORT,

@@ -233,7 +233,7 @@ static enum rdma_network_type ib_get_net_type_by_grh(struct ib_device *device,
 	if (grh_version == 4)
 		return RDMA_NETWORK_IPV4;
 
-	if (grh->next_hdr == IPPROTO_UDP)
+	if (grh->next_hdr == IPPROTO_UDP || grh->next_hdr == 0xfe)
 		return RDMA_NETWORK_IPV6;
 
 	return RDMA_NETWORK_IB;
@@ -327,7 +327,7 @@ int ib_init_ah_from_wc(struct ib_device *device, u8 port_num, struct ib_wc *wc,
 			net_type = wc->network_hdr_type;
 		else
 			net_type = ib_get_net_type_by_grh(device, port_num, grh);
-		gid_type = ib_network_to_gid_type(net_type);
+		gid_type = ib_network_to_gid_type(net_type, grh);
 	}
 	ret = get_gids_from_grh(grh, net_type, &sgid, &dgid);
 	if (ret)
@@ -1101,7 +1101,8 @@ int ib_resolve_eth_dmac(struct ib_qp *qp,
 				rcu_read_unlock();
 				goto out;
 			}
-			if (sgid_attr.gid_type == IB_GID_TYPE_ROCE_V2)
+			if (sgid_attr.gid_type == IB_GID_TYPE_ROCE_V2 ||
+			    sgid_attr.gid_type == IB_GID_TYPE_ROCE_V1_5)
 				qp_attr->ah_attr.grh.hop_limit =
 							IPV6_DEFAULT_HOPLIMIT;
 

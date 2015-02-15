@@ -73,6 +73,7 @@ enum ib_gid_type {
 	/* If link layer is Ethernet, this is RoCE V1 */
 	IB_GID_TYPE_IB        = 0,
 	IB_GID_TYPE_ROCE_V2   = 1,
+	IB_GID_TYPE_ROCE_V1_5 = 2,
 	IB_GID_TYPE_SIZE
 };
 
@@ -125,11 +126,16 @@ enum rdma_network_type {
 	RDMA_NETWORK_IPV6
 };
 
-static inline enum ib_gid_type ib_network_to_gid_type(enum rdma_network_type network_type)
+static inline enum ib_gid_type ib_network_to_gid_type(enum rdma_network_type network_type, void *grh)
 {
 	if (network_type == RDMA_NETWORK_IPV4 ||
-	    network_type == RDMA_NETWORK_IPV6)
-		return IB_GID_TYPE_ROCE_V2;
+	    network_type == RDMA_NETWORK_IPV6) {
+		const struct iphdr *ip4h = (struct iphdr *)(grh + 20);
+		const struct ipv6hdr *ip6h = (struct ipv6hdr *)grh;
+		__u8 next = (network_type == RDMA_NETWORK_IPV4) ? ip4h->protocol  : ip6h->nexthdr;
+
+		return (next == IPPROTO_UDP) ? IB_GID_TYPE_ROCE_V2 : IB_GID_TYPE_ROCE_V1_5;
+	}
 
 	return IB_GID_TYPE_IB;
 }
@@ -356,6 +362,7 @@ enum ib_port_cap_flags {
 	IB_PORT_IP_BASED_GIDS			= 1 << 26,
 	IB_PORT_ROCE				= 1 << 27,
 	IB_PORT_ROCE_V2				= 1 << 28,
+	IB_PORT_ROCE_V1_5			= 1 << 29,
 };
 
 enum ib_port_width {

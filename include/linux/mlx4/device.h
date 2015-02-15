@@ -204,7 +204,7 @@ enum {
 	MLX4_DEV_CAP_FLAG_PORT_MNG_CHG_EV = 1LL << 59,
 	MLX4_DEV_CAP_FLAG_64B_EQE	= 1LL << 61,
 	MLX4_DEV_CAP_FLAG_64B_CQE	= 1LL << 62,
-	MLX4_DEV_CAP_FLAG_R_ROCE	= 1LL << 63
+	MLX4_DEV_CAP_FLAG_ROCE_V1_5	= 1LL << 63
 };
 
 enum {
@@ -240,7 +240,7 @@ enum {
 	MLX4_DEV_CAP_FLAG2_DRIVER_VERSION_TO_FW	= 1LL <<  29,
 	MLX4_DEV_CAP_FLAG2_FS_EN_NCSI		= 1LL <<  30,
 	MLX4_DEV_CAP_FLAG2_DMFS_TAG_MODE        = 1LL <<  31,
-	MLX4_DEV_CAP_FLAG2_ROCE_V1_V2		= 1LL <<  32,
+	MLX4_DEV_CAP_FLAG2_ROCE_V2		= 1LL <<  32,
 	MLX4_DEV_CAP_FLAG2_QCN			= 1LL <<  33,
 };
 
@@ -1047,8 +1047,8 @@ struct mlx4_mad_ifc {
 	for ((port) = 1; (port) <= (dev)->caps.num_ports; (port)++)	  \
 		if (((dev)->caps.port_mask[port] == MLX4_PORT_TYPE_IB) || \
 			((dev)->caps.flags & MLX4_DEV_CAP_FLAG_IBOE) || \
-			((dev)->caps.flags & MLX4_DEV_CAP_FLAG2_ROCE_V1_V2) || \
-			((dev)->caps.flags & MLX4_DEV_CAP_FLAG_R_ROCE) || \
+			((dev)->caps.flags & MLX4_DEV_CAP_FLAG2_ROCE_V2) || \
+			((dev)->caps.flags & MLX4_DEV_CAP_FLAG_ROCE_V1_5) || \
 			((dev)->caps.flags2 & MLX4_DEV_CAP_FLAG2_ROCEV2))
 
 #define MLX4_INVALID_SLAVE_ID	0xFF

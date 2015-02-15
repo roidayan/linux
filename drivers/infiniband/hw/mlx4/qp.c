@@ -1565,7 +1565,7 @@ struct ib_qp *mlx4_ib_create_qp(struct ib_pd *pd,
 			IB_LINK_LAYER_ETHERNET;
 
 		if (is_eth &&
-		    dev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_ROCE_V1_V2) {
+		    dev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_ROCE_V2) {
 			init_attr->create_flags |= MLX4_IB_QP_CREATE_ROCE_V2_GSI;
 			sqp->roce_v2_gsi = ib_create_qp(pd, init_attr);
 
@@ -1880,6 +1880,7 @@ static int handle_eth_ud_smac_index(struct mlx4_ib_dev *dev,
 enum {
 	MLX4_QPC_ROCE_MODE_1 = 0,
 	MLX4_QPC_ROCE_MODE_2 = 2,
+	MLX4_QPC_ROCE_MODE_1_5 = 1,
 	MLX4_QPC_ROCE_MODE_MAX = 0xff
 };
 
@@ -1890,6 +1891,8 @@ static u8 gid_type_to_qpc(enum ib_gid_type gid_type)
 		return MLX4_QPC_ROCE_MODE_1;
 	case IB_GID_TYPE_ROCE_V2:
 		return MLX4_QPC_ROCE_MODE_2;
+	case IB_GID_TYPE_ROCE_V1_5:
+		return MLX4_QPC_ROCE_MODE_1_5;
 	default:
 		return MLX4_QPC_ROCE_MODE_MAX;
 	}
@@ -2762,13 +2765,11 @@ static int build_mlx_header(struct mlx4_ib_sqp *sqp, struct ib_send_wr *wr,
 						ah->av.ib.gid_index, &sgid, &gid_attr);
 			if (!err) {
 				is_udp = (gid_attr.gid_type == IB_GID_TYPE_ROCE_V2) ? true : false;
-				if (is_udp) {
-					if (ipv6_addr_v4mapped((struct in6_addr *)&sgid))
-						ip_version = 4;
-					else
-						ip_version = 6;
-					is_grh = false;
-				}
+				if (ipv6_addr_v4mapped((struct in6_addr *)&sgid))
+					ip_version = 4;
+				else
+					ip_version = 6;
+				is_grh = false;
 			} else {
 				return err;
 			}
@@ -2798,8 +2799,7 @@ static int build_mlx_header(struct mlx4_ib_sqp *sqp, struct ib_send_wr *wr,
 		sqp->ud_header.grh.flow_label    =
 			ah->av.ib.sl_tclass_flowlabel & cpu_to_be32(0xfffff);
 
-		sqp->ud_header.grh.hop_limit     = (is_udp) ?
-			IPV6_DEFAULT_HOPLIMIT : ah->av.ib.hop_limit;
+		sqp->ud_header.grh.hop_limit = ip_version ? IPV6_DEFAULT_HOPLIMIT : 1;
 		if (is_eth)
 			memcpy(sqp->ud_header.grh.source_gid.raw, sgid.raw, 16);
 		else {
@@ -2828,8 +2828,7 @@ static int build_mlx_header(struct mlx4_ib_sqp *sqp, struct ib_send_wr *wr,
 			(be32_to_cpu(ah->av.ib.sl_tclass_flowlabel) >> 20) & 0xff;
 		sqp->ud_header.ip4.id = 0;
 		sqp->ud_header.ip4.frag_off = htons(IP_DF);
-		sqp->ud_header.ip4.ttl = (is_udp) ?
-			IPV6_DEFAULT_HOPLIMIT : ah->av.eth.hop_limit;
+		sqp->ud_header.ip4.ttl = IPV6_DEFAULT_HOPLIMIT;
 
 		memcpy(&sqp->ud_header.ip4.saddr,
 		       sgid.raw + 12, 4);
@@ -2874,7 +2873,7 @@ static int build_mlx_header(struct mlx4_ib_sqp *sqp, struct ib_send_wr *wr,
 		u16 ether_type;
 		u16 pcp = (be32_to_cpu(ah->av.ib.sl_tclass_flowlabel) >> 29) << 13;
 
-		ether_type = (!is_udp) ? MLX4_IB_IBOE_ETHERTYPE :
+		ether_type = (!ip_version) ? MLX4_IB_IBOE_ETHERTYPE :
 			(ip_version == 4 ? ETH_P_IP : ETH_P_IPV6);
 
 		mlx->sched_prio = cpu_to_be16(pcp);

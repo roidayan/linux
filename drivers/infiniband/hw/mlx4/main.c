@@ -420,8 +420,10 @@ static int eth_link_query_port(struct ib_device *ibdev, u8 port,
 
 	if (mdev->dev->caps.flags & MLX4_DEV_CAP_FLAG_IBOE)
 		props->port_cap_flags	|= IB_PORT_ROCE;
-	if (mdev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_ROCE_V1_V2)
-		props->port_cap_flags	|= IB_PORT_ROCE_V2 | IB_PORT_ROCE;
+	if (mdev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_ROCE_V2)
+		props->port_cap_flags	|= IB_PORT_ROCE_V2;
+	if (mdev->dev->caps.flags & MLX4_DEV_CAP_FLAG_ROCE_V1_5)
+		props->port_cap_flags	|= IB_PORT_ROCE_V1_5;
 
 	props->gid_tbl_len	= mdev->dev->caps.gid_table_len[port];
 	props->max_msg_sz	= mdev->dev->caps.max_msg_sz;
@@ -1864,9 +1866,6 @@ static int mlx4_ib_update_gids(struct gid_entry *gids,
 			       struct mlx4_ib_dev *ibdev,
 			       u8 port_num)
 {
-	if (ibdev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_ROCE_V1_V2)
-		return mlx4_ib_update_gids_v1_v2(gids, ibdev, port_num);
-
 	return mlx4_ib_update_gids_v1(gids, ibdev, port_num);
 }
 
@@ -2638,7 +2637,7 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 		goto err_mad;
 
 	if (dev->caps.flags & MLX4_DEV_CAP_FLAG_IBOE ||
-	    dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_ROCE_V1_V2) {
+	    dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_ROCE_V2) {
 		if (!iboe->nb.notifier_call) {
 			iboe->nb.notifier_call = mlx4_ib_netdev_event;
 			err = register_netdevice_notifier(&iboe->nb);
@@ -2648,7 +2647,7 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 			}
 		}
 		if (!mlx4_is_slave(dev) &&
-		    dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_ROCE_V1_V2) {
+		    dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_ROCE_V2) {
 			err = mlx4_config_roce_v2_port(dev, ROCE_V2_UDP_DPORT);
 			if (err) {
 				goto err_notif;
