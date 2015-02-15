@@ -450,6 +450,67 @@ int roce_gid_table_find_gid_by_port(struct ib_device *ib_dev, union ib_gid *gid,
 	return -ENOENT;
 }
 
+int roce_gid_table_find_gid_by_filter(struct ib_device *ib_dev,
+				      union ib_gid *gid,
+				      u8 port,
+				      bool (*filter)(const union ib_gid *,
+						     const struct ib_gid_attr *,
+						     void *),
+				      void *context,
+				      u16 *index)
+{
+	struct ib_roce_gid_table **ports_table =
+		READ_ONCE(ib_dev->cache.roce_gid_table);
+	struct ib_roce_gid_table *table;
+	unsigned int i;
+	bool found = false;
+
+	/* make sure we read the ports_table */
+	smp_rmb();
+
+	if (!ports_table)
+		return -EOPNOTSUPP;
+
+	if (port < start_port(ib_dev) ||
+	    port > start_port(ib_dev) + ib_dev->phys_port_cnt ||
+	    rdma_port_get_link_layer(ib_dev, port) !=
+		IB_LINK_LAYER_ETHERNET)
+		return -EPROTONOSUPPORT;
+
+	table = ports_table[port - start_port(ib_dev)];
+
+	if (!table)
+		return -ENOENT;
+
+	for (i = 0; i < table->sz; i++) {
+		struct ib_gid_attr attr;
+		unsigned int orig_seq = read_seqcount_begin(&table->data_vec[i].seq);
+
+		if (memcmp(gid, &table->data_vec[i].gid, sizeof(*gid)))
+			continue;
+
+		memcpy(&attr, &table->data_vec[i].attr, sizeof(attr));
+
+		rcu_read_lock();
+
+		if (!read_seqcount_retry(&table->data_vec[i].seq, orig_seq))
+			if (!filter || filter(gid, &attr, context))
+				found = true;
+
+		rcu_read_unlock();
+
+		if (found)
+			break;
+	}
+
+	if (!found)
+		return -ENOENT;
+
+	if (index)
+		*index = i;
+	return 0;
+}
+
 static struct ib_roce_gid_table *alloc_roce_gid_table(int sz)
 {
 	unsigned int i;

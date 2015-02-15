@@ -84,6 +84,15 @@ int roce_gid_table_find_gid_by_port(struct ib_device *ib_dev, union ib_gid *gid,
 				    enum ib_gid_type gid_type, u8 port,
 				    struct net *net, int if_index, u16 *index);
 
+int roce_gid_table_find_gid_by_filter(struct ib_device *ib_dev,
+				      union ib_gid *gid,
+				      u8 port,
+				      bool (*filter)(const union ib_gid *gid,
+						     const struct ib_gid_attr *,
+						     void *),
+				      void *context,
+				      u16 *index);
+
 enum roce_gid_table_default_mode {
 	ROCE_GID_TABLE_DEFAULT_MODE_SET,
 	ROCE_GID_TABLE_DEFAULT_MODE_DELETE
