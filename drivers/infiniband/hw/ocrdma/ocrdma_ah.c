@@ -102,7 +102,7 @@ static inline int set_av_attr(struct ocrdma_dev *dev, struct ocrdma_ah *ah,
 					   attr->grh.traffic_class);
 		ipv4.id = cpu_to_be16(pdid);
 		ipv4.frag_off = htons(IP_DF);
-		ipv4.tot_len = htons(20);
+		ipv4.tot_len = htons(0);
 		ipv4.ttl = attr->grh.hop_limit;
 		ipv4.protocol = 0x11;
 		rdma_gid2ip(&sgid_addr._sockaddr, sgid);
