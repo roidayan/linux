@@ -577,10 +577,14 @@ static inline u8 ocrdma_is_enabled_and_synced(u32 state)
 		(state & OCRDMA_STATE_FLAG_SYNC);
 }
 
+#define OCRDMA_ROUDP_FLAGS_SHIFT	0x03
 static inline bool ocrdma_is_rocev2_supported(struct ocrdma_dev *dev)
 {
-	return (dev->attr.roce_flags & OCRDMA_L3_TYPE_IPV4 ||
-		dev->attr.roce_flags & OCRDMA_L3_TYPE_IPV6) ? true : false;
+	return (dev->attr.roce_flags & (OCRDMA_L3_TYPE_IPV4 <<
+					OCRDMA_ROUDP_FLAGS_SHIFT) ||
+		dev->attr.roce_flags & (OCRDMA_L3_TYPE_IPV6 <<
+					OCRDMA_ROUDP_FLAGS_SHIFT)) ?
+								true : false;
 }
 
 #endif
