@@ -2044,8 +2044,7 @@ ssize_t ib_uverbs_create_qp(struct ib_uverbs_file *file,
 			    const char __user *buf, int in_len,
 			    int out_len)
 {
-	struct ib_uverbs_create_qp      cmd;
-	struct ib_uverbs_create_qp_resp resp;
+	void __user		        *response;
 	struct ib_udata                 udata;
 	struct ib_uqp_object           *obj;
 	struct ib_device	       *device;
@@ -2055,51 +2054,77 @@ ssize_t ib_uverbs_create_qp(struct ib_uverbs_file *file,
 	struct ib_cq                   *scq = NULL, *rcq = NULL;
 	struct ib_srq                  *srq = NULL;
 	struct ib_qp                   *qp;
-	struct ib_qp_init_attr          attr;
+	struct ib_qp_init_attr          *attr;
 	int ret;
+	struct ib_uverbs_create_qp      *cmd;
+	size_t                           cmd_size;
+	struct ib_uverbs_create_qp_resp *resp;
+	size_t                           resp_size;
 
-	if (out_len < sizeof resp)
-		return -ENOSPC;
+	attr = kzalloc(sizeof(*attr), GFP_KERNEL);
+	cmd = kzalloc(sizeof(*cmd), GFP_KERNEL);
+	resp = kzalloc(sizeof(*resp), GFP_KERNEL);
+	if (!cmd || !attr || !resp) {
+		ret = -ENOMEM;
+		goto err_free;
+	}
 
-	if (copy_from_user(&cmd, buf, sizeof cmd))
-		return -EFAULT;
+	cmd_size = sizeof(*cmd);
+	resp_size = sizeof(*resp);
 
-	if (cmd.qp_type == IB_QPT_RAW_PACKET && !capable(CAP_NET_RAW))
-		return -EPERM;
+	if (out_len < resp_size) {
+		ret = -ENOSPC;
+		goto err_free;
+	}
 
-	INIT_UDATA(&udata, buf + sizeof cmd,
-		   (unsigned long) cmd.response + sizeof resp,
-		   in_len - sizeof cmd, out_len - sizeof resp);
+	if (copy_from_user(cmd, buf, cmd_size)) {
+		ret = -EFAULT;
+		goto err_free;
+	}
+
+	response = (void __user *)cmd->response;
+
+	if (!disable_raw_qp_enforcement &&
+	    cmd->qp_type == IB_QPT_RAW_PACKET && !capable(CAP_NET_RAW)) {
+		ret = -EPERM;
+		goto err_free;
+	}
+
+	INIT_UDATA(&udata, buf + cmd_size, response + resp_size,
+		   in_len - cmd_size, out_len - resp_size);
 
 	obj = kzalloc(sizeof *obj, GFP_KERNEL);
-	if (!obj)
-		return -ENOMEM;
+	if (!obj) {
+		ret = -ENOMEM;
+		goto err_free;
+	}
 
-	init_uobj(&obj->uevent.uobject, cmd.user_handle, file->ucontext, &qp_lock_class);
+	init_uobj(&obj->uevent.uobject, cmd->user_handle, file->ucontext, &qp_lock_class);
 	down_write(&obj->uevent.uobject.mutex);
 
-	if (cmd.qp_type == IB_QPT_XRC_TGT) {
-		xrcd = idr_read_xrcd(cmd.pd_handle, file->ucontext, &xrcd_uobj);
+	if (cmd->qp_type == IB_QPT_XRC_TGT) {
+		xrcd = idr_read_xrcd(cmd->pd_handle, file->ucontext, &xrcd_uobj);
 		if (!xrcd) {
 			ret = -EINVAL;
 			goto err_put;
 		}
 		device = xrcd->device;
 	} else {
-		if (cmd.qp_type == IB_QPT_XRC_INI ||
-		    cmd.qp_type == IB_EXP_QPT_DC_INI) {
-			cmd.max_recv_wr = cmd.max_recv_sge = 0;
+		if (cmd->qp_type == IB_QPT_XRC_INI ||
+		    cmd->qp_type == IB_EXP_QPT_DC_INI) {
+			cmd->max_recv_wr = 0;
+			cmd->max_recv_sge = 0;
 		} else {
-			if (cmd.is_srq) {
-				srq = idr_read_srq(cmd.srq_handle, file->ucontext);
+			if (cmd->is_srq) {
+				srq = idr_read_srq(cmd->srq_handle, file->ucontext);
 				if (!srq || srq->srq_type != IB_SRQT_BASIC) {
 					ret = -EINVAL;
 					goto err_put;
 				}
 			}
 
-			if (cmd.recv_cq_handle != cmd.send_cq_handle) {
-				rcq = idr_read_cq(cmd.recv_cq_handle, file->ucontext, 0);
+			if (cmd->recv_cq_handle != cmd->send_cq_handle) {
+				rcq = idr_read_cq(cmd->recv_cq_handle, file->ucontext, 0);
 				if (!rcq) {
 					ret = -EINVAL;
 					goto err_put;
@@ -2107,9 +2132,9 @@ ssize_t ib_uverbs_create_qp(struct ib_uverbs_file *file,
 			}
 		}
 
-		scq = idr_read_cq(cmd.send_cq_handle, file->ucontext, !!rcq);
+		scq = idr_read_cq(cmd->send_cq_handle, file->ucontext, !!rcq);
 		rcq = rcq ?: scq;
-		pd  = idr_read_pd(cmd.pd_handle, file->ucontext);
+		pd  = idr_read_pd(cmd->pd_handle, file->ucontext);
 		if (!pd || !scq) {
 			ret = -EINVAL;
 			goto err_put;
@@ -2118,53 +2143,53 @@ ssize_t ib_uverbs_create_qp(struct ib_uverbs_file *file,
 		device = pd->device;
 	}
 
-	attr.event_handler = ib_uverbs_qp_event_handler;
-	attr.qp_context    = file;
-	attr.send_cq       = scq;
-	attr.recv_cq       = rcq;
-	attr.srq           = srq;
-	attr.xrcd	   = xrcd;
-	attr.sq_sig_type   = cmd.sq_sig_all ? IB_SIGNAL_ALL_WR : IB_SIGNAL_REQ_WR;
-	attr.qp_type       = cmd.qp_type;
-	attr.create_flags  = 0;
+	attr->event_handler = ib_uverbs_qp_event_handler;
+	attr->qp_context    = file;
+	attr->send_cq       = scq;
+	attr->recv_cq       = rcq;
+	attr->srq           = srq;
+	attr->xrcd	   = xrcd;
+	attr->sq_sig_type   = cmd->sq_sig_all ? IB_SIGNAL_ALL_WR : IB_SIGNAL_REQ_WR;
+	attr->qp_type       = cmd->qp_type;
+	attr->create_flags  = 0;
 
-	attr.cap.max_send_wr     = cmd.max_send_wr;
-	attr.cap.max_recv_wr     = cmd.max_recv_wr;
-	attr.cap.max_send_sge    = cmd.max_send_sge;
-	attr.cap.max_recv_sge    = cmd.max_recv_sge;
-	attr.cap.max_inline_data = cmd.max_inline_data;
+	attr->cap.max_send_wr     = cmd->max_send_wr;
+	attr->cap.max_recv_wr     = cmd->max_recv_wr;
+	attr->cap.max_send_sge    = cmd->max_send_sge;
+	attr->cap.max_recv_sge    = cmd->max_recv_sge;
+	attr->cap.max_inline_data = cmd->max_inline_data;
 
 	obj->uevent.events_reported     = 0;
 	INIT_LIST_HEAD(&obj->uevent.event_list);
 	INIT_LIST_HEAD(&obj->mcast_list);
 
-	if (cmd.qp_type == IB_QPT_XRC_TGT)
-		qp = ib_create_qp(pd, &attr);
+	if (cmd->qp_type == IB_QPT_XRC_TGT)
+		qp = ib_create_qp(pd, attr);
 	else
-		qp = device->create_qp(pd, &attr, &udata);
+		qp = device->create_qp(pd, attr, &udata);
 
 	if (IS_ERR(qp)) {
 		ret = PTR_ERR(qp);
 		goto err_put;
 	}
 
-	if (cmd.qp_type != IB_QPT_XRC_TGT) {
+	if (cmd->qp_type != IB_QPT_XRC_TGT) {
 		qp->real_qp	  = qp;
 		qp->device	  = device;
 		qp->pd		  = pd;
-		qp->send_cq	  = attr.send_cq;
-		qp->recv_cq	  = attr.recv_cq;
-		qp->srq		  = attr.srq;
-		qp->event_handler = attr.event_handler;
-		qp->qp_context	  = attr.qp_context;
-		qp->qp_type	  = attr.qp_type;
+		qp->send_cq	  = attr->send_cq;
+		qp->recv_cq	  = attr->recv_cq;
+		qp->srq		  = attr->srq;
+		qp->event_handler = attr->event_handler;
+		qp->qp_context	  = attr->qp_context;
+		qp->qp_type	  = attr->qp_type;
 		atomic_set(&qp->usecnt, 0);
 		atomic_inc(&pd->usecnt);
-		atomic_inc(&attr.send_cq->usecnt);
-		if (attr.recv_cq)
-			atomic_inc(&attr.recv_cq->usecnt);
-		if (attr.srq)
-			atomic_inc(&attr.srq->usecnt);
+		atomic_inc(&attr->send_cq->usecnt);
+		if (attr->recv_cq)
+			atomic_inc(&attr->recv_cq->usecnt);
+		if (attr->srq)
+			atomic_inc(&attr->srq->usecnt);
 	}
 	qp->uobject = &obj->uevent.uobject;
 
@@ -2173,17 +2198,15 @@ ssize_t ib_uverbs_create_qp(struct ib_uverbs_file *file,
 	if (ret)
 		goto err_destroy;
 
-	memset(&resp, 0, sizeof resp);
-	resp.qpn             = qp->qp_num;
-	resp.qp_handle       = obj->uevent.uobject.id;
-	resp.max_recv_sge    = attr.cap.max_recv_sge;
-	resp.max_send_sge    = attr.cap.max_send_sge;
-	resp.max_recv_wr     = attr.cap.max_recv_wr;
-	resp.max_send_wr     = attr.cap.max_send_wr;
-	resp.max_inline_data = attr.cap.max_inline_data;
+	resp->qpn             = qp->qp_num;
+	resp->qp_handle       = obj->uevent.uobject.id;
+	resp->max_recv_sge    = attr->cap.max_recv_sge;
+	resp->max_send_sge    = attr->cap.max_send_sge;
+	resp->max_recv_wr     = attr->cap.max_recv_wr;
+	resp->max_send_wr     = attr->cap.max_send_wr;
+	resp->max_inline_data = attr->cap.max_inline_data;
 
-	if (copy_to_user((void __user *) (unsigned long) cmd.response,
-			 &resp, sizeof resp)) {
+	if (copy_to_user(response, resp, resp_size)) {
 		ret = -EFAULT;
 		goto err_copy;
 	}
@@ -2211,6 +2234,9 @@ ssize_t ib_uverbs_create_qp(struct ib_uverbs_file *file,
 	obj->uevent.uobject.live = 1;
 
 	up_write(&obj->uevent.uobject.mutex);
+	kfree(attr);
+	kfree(cmd);
+	kfree(resp);
 
 	return in_len;
 
@@ -2233,6 +2259,11 @@ err_put:
 		put_srq_read(srq);
 
 	put_uobj_write(&obj->uevent.uobject);
+
+err_free:
+	kfree(attr);
+	kfree(cmd);
+	kfree(resp);
 	return ret;
 }
 
