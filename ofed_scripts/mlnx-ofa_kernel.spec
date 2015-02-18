@@ -205,7 +205,7 @@ for flavor in %flavors_to_build; do
 	cp -a source obj/$flavor
 	cd $PWD/obj/$flavor
 	./configure --prefix=%{_prefix} --kernel-version $KVERSION --kernel-sources $KSRC --modules-dir $LIB_MOD_DIR $CONF_OPTIONS
-	make kernel
+	make %{?_smp_mflags} kernel
 	make build_py_scripts
 	cd -
 done
