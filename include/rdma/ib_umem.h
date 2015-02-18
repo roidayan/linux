@@ -138,6 +138,9 @@ struct ib_cmem_block {
 
 struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
 			    size_t size, int access, int dmasync);
+struct ib_umem *ib_umem_get_ex(struct ib_ucontext *context, unsigned long addr,
+			    size_t size, int access, int dmasync,
+			    int invalidation_supported);
 void  ib_umem_activate_invalidation_notifier(struct ib_umem *umem,
 					       umem_invalidate_func_t func,
 					       void *cookie);
@@ -154,6 +157,8 @@ struct ib_cmem *ib_cmem_alloc_contiguous_pages(struct ib_ucontext *context,
 				unsigned long total_size,
 				unsigned long page_size_order);
 void ib_cmem_release_contiguous_pages(struct ib_cmem *cmem);
+int ib_umem_map_to_vma(struct ib_umem *umem,
+				struct vm_area_struct *vma);
 
 #else /* CONFIG_INFINIBAND_USER_MEM */
 
@@ -162,6 +167,12 @@ void ib_cmem_release_contiguous_pages(struct ib_cmem *cmem);
 static inline struct ib_umem *ib_umem_get(struct ib_ucontext *context,
 					  unsigned long addr, size_t size,
 					  int access, int dmasync) {
+	return ERR_PTR(-EINVAL);
+}
+static inline struct ib_umem *ib_umem_get_ex(struct ib_ucontext *context,
+					  unsigned long addr, size_t size,
+					  int access, int dmasync,
+					  int invalidation_supported) {
 	return ERR_PTR(-EINVAL);
 }
 static inline void ib_umem_release(struct ib_umem *umem) { }

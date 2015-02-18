@@ -54,6 +54,47 @@ static u32 convert_access(int acc)
 	       MLX4_PERM_LOCAL_READ;
 }
 
+static ssize_t shared_mr_proc_read(struct file *file,
+			  char __user *buffer,
+			  size_t len,
+			  loff_t *offset)
+{
+
+	return -ENOSYS;
+
+}
+
+static ssize_t shared_mr_proc_write(struct file *file,
+			   const char __user *buffer,
+			   size_t len,
+			   loff_t *offset)
+{
+
+	return -ENOSYS;
+}
+
+static int shared_mr_mmap(struct file *filep, struct vm_area_struct *vma)
+{
+
+	struct mlx4_shared_mr_info *smr_info =
+		(struct mlx4_shared_mr_info *)PDE_DATA(filep->f_path.dentry->d_inode);
+
+	/* Prevent any mapping not on start of area */
+	if (vma->vm_pgoff != 0)
+		return -EINVAL;
+
+	return ib_umem_map_to_vma(smr_info->umem,
+					vma);
+
+}
+
+static const struct file_operations shared_mr_proc_ops = {
+	.owner	= THIS_MODULE,
+	.read	= shared_mr_proc_read,
+	.write	= shared_mr_proc_write,
+	.mmap	= shared_mr_mmap
+};
+
 static mode_t convert_shared_access(int acc)
 {
 
@@ -419,7 +460,7 @@ static int prepare_shared_mr(struct mlx4_ib_mr *mr, int access_flags, int mr_id)
 
 	mr_proc_entry = proc_create_data(name_buff, mode,
 				mlx4_mrs_dir_entry,
-				NULL,
+				&shared_mr_proc_ops,
 				mr->smr_info);
 
 	if (!mr_proc_entry) {
@@ -437,7 +478,7 @@ static int prepare_shared_mr(struct mlx4_ib_mr *mr, int access_flags, int mr_id)
 	sprintf(name_buff, "%X.%lld", mr_id, mr->smr_info->counter);
 	mr_proc_entry = proc_create_data(name_buff, mode,
 					 mlx4_mrs_dir_entry,
-					 NULL,
+					 &shared_mr_proc_ops,
 					 mr->smr_info);
 	if (!mr_proc_entry) {
 		pr_err("prepare_shared_mr failed via proc for %s\n", name_buff);
@@ -543,8 +584,8 @@ struct ib_mr *mlx4_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 			umem_flags |= IB_ACCESS_LOCAL_WRITE;
 		up_read(&current->mm->mmap_sem);
 	}
-	mr->umem = ib_umem_get(pd->uobject->context, start, length,
-				  umem_flags, 0);
+	mr->umem = ib_umem_get_ex(pd->uobject->context, start, length,
+				  umem_flags, 0, 1);
 	if (IS_ERR(mr->umem)) {
 		err = PTR_ERR(mr->umem);
 		goto err_free;
@@ -671,8 +712,10 @@ int mlx4_ib_exp_rereg_user_mr(struct ib_mr *mr, int flags,
 
 		mlx4_mr_rereg_mem_cleanup(dev->dev, &mmr->mmr);
 		ib_umem_release(mmr->umem);
-		mmr->umem = ib_umem_get(mr->uobject->context, start, length,
-					   mr_access_flags | IB_ACCESS_LOCAL_WRITE, 0);
+		mmr->umem = ib_umem_get_ex(mr->uobject->context, start, length,
+					   mr_access_flags |
+					   IB_ACCESS_LOCAL_WRITE,
+					   0, 1);
 		if (IS_ERR(mmr->umem)) {
 			err = PTR_ERR(mmr->umem);
 			mmr->umem = NULL;

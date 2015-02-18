@@ -1139,9 +1139,6 @@ ssize_t ib_uverbs_reg_mr(struct ib_uverbs_file *file,
 	atomic_set(&mr->usecnt, 0);
 
 	uobj->object = mr;
-	ret = idr_add_uobj(&ib_uverbs_mr_idr, uobj);
-	if (ret)
-		goto err_unreg;
 
 	memset(&resp, 0, sizeof resp);
 	resp.lkey      = mr->lkey;
@@ -1169,7 +1166,6 @@ ssize_t ib_uverbs_reg_mr(struct ib_uverbs_file *file,
 err_copy:
 	idr_remove_uobj(&ib_uverbs_mr_idr, uobj);
 
-err_unreg:
 	ib_dereg_mr(mr);
 
 err_put:

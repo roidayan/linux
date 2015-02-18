@@ -40,6 +40,9 @@
 #include <rdma/ib_umem_odp.h>
 #include <rdma/ib_verbs.h>
 #include "mlx5_ib.h"
+static void mlx5_invalidate_umem(void *invalidation_cookie,
+				struct ib_umem *umem,
+				unsigned long addr, size_t size);
 
 enum {
 	MAX_PENDING_REG_MR = 8,
@@ -1040,16 +1043,18 @@ struct ib_mr *mlx5_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 	int ncont;
 	int order;
 	int err;
+	struct ib_peer_memory_client *ib_peer_mem;
 
 	mlx5_ib_dbg(dev, "start 0x%llx, virt_addr 0x%llx, length 0x%llx, access_flags 0x%x\n",
 		    start, virt_addr, length, access_flags);
-	umem = ib_umem_get(pd->uobject->context, start, length, access_flags,
-			   0);
+	umem = ib_umem_get_ex(pd->uobject->context, start, length, access_flags,
+			      0, 1);
 	if (IS_ERR(umem)) {
 		mlx5_ib_dbg(dev, "umem get failed (%ld)\n", PTR_ERR(umem));
 		return (void *)umem;
 	}
 
+	ib_peer_mem = umem->ib_peer_mem;
 	mlx5_ib_cont_pages(umem, start, &npages, &page_shift, &ncont, &order);
 	if (!npages) {
 		mlx5_ib_warn(dev, "avoid zero region\n");
@@ -1089,6 +1094,12 @@ struct ib_mr *mlx5_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 	atomic_add(npages, &dev->mdev->priv.reg_pages);
 	mr->ibmr.lkey = mr->mmr.key;
 	mr->ibmr.rkey = mr->mmr.key;
+	atomic_set(&mr->invalidated, 0);
+
+	if (ib_peer_mem) {
+		ib_umem_activate_invalidation_notifier(umem,
+					mlx5_invalidate_umem, mr);
+	}
 
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
 	if (umem->odp_data) {
@@ -1195,7 +1206,7 @@ static int clean_mr(struct mlx5_ib_mr *mr)
 	return 0;
 }
 
-int mlx5_ib_dereg_mr(struct ib_mr *ibmr)
+static int mlx5_ib_invalidate_mr(struct ib_mr *ibmr)
 {
 	struct mlx5_ib_dev *dev = to_mdev(ibmr->device);
 	struct mlx5_ib_mr *mr = to_mmr(ibmr);
@@ -1232,6 +1243,53 @@ int mlx5_ib_dereg_mr(struct ib_mr *ibmr)
 	}
 
 	return 0;
+}
+
+int mlx5_ib_dereg_mr(struct ib_mr *ibmr)
+{
+
+	struct mlx5_ib_dev *dev = to_mdev(ibmr->device);
+	struct mlx5_ib_mr *mr = to_mmr(ibmr);
+	int ret = 0;
+	int umred = mr->umred;
+
+	if (atomic_inc_return(&mr->invalidated) > 1) {
+		/* In case there is inflight invalidation call pending for its termination */
+		wait_for_completion(&mr->invalidation_comp);
+	} else {
+		ret = mlx5_ib_invalidate_mr(ibmr);
+		if (ret)
+			return ret;
+	}
+
+	if (umred) {
+		atomic_set(&mr->invalidated, 0);
+		free_cached_mr(dev, mr);
+	} else
+		kfree(mr);
+
+	return 0;
+}
+
+static void mlx5_invalidate_umem(void *invalidation_cookie,
+				struct ib_umem *umem,
+				unsigned long addr, size_t size)
+{
+	struct mlx5_ib_mr *mr = (struct mlx5_ib_mr *)invalidation_cookie;
+
+	/* This function is called under client peer lock so its resources are race protected */
+	if (atomic_inc_return(&mr->invalidated) > 1) {
+		umem->invalidation_ctx->inflight_invalidation = 1;
+		goto out;
+	}
+
+	umem->invalidation_ctx->peer_callback = 1;
+	mlx5_ib_invalidate_mr(&mr->ibmr);
+	complete(&mr->invalidation_comp);
+out:
+	return;
+
+
 }
 
 struct ib_mr *mlx5_ib_create_mr(struct ib_pd *pd,

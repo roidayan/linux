@@ -45,12 +45,132 @@
 
 
 
+static void umem_vma_open(struct vm_area_struct *area)
+{
+	/* Implementation is to prevent high level from merging some
+	VMAs in case of unmap/mmap on part of memory area.
+	Rlimit is handled as well.
+	*/
+	unsigned long total_size;
+	unsigned long ntotal_pages;
+
+	total_size = area->vm_end - area->vm_start;
+	ntotal_pages = PAGE_ALIGN(total_size) >> PAGE_SHIFT;
+	/* no locking is needed:
+	umem_vma_open is called from vm_open which is always called
+	with mm->mmap_sem held for writing.
+	*/
+	if (current->mm)
+		current->mm->pinned_vm += ntotal_pages;
+	return;
+}
+
+static void umem_vma_close(struct vm_area_struct *area)
+{
+	/* Implementation is to prevent high level from merging some
+	VMAs in case of unmap/mmap on part of memory area.
+	Rlimit is handled as well.
+	*/
+	unsigned long total_size;
+	unsigned long ntotal_pages;
+
+	total_size = area->vm_end - area->vm_start;
+	ntotal_pages = PAGE_ALIGN(total_size) >> PAGE_SHIFT;
+	/* no locking is needed:
+	umem_vma_close is called from close which is always called
+	with mm->mmap_sem held for writing.
+	*/
+	if (current->mm)
+		current->mm->pinned_vm -= ntotal_pages;
+	return;
+
+}
+
+static const struct vm_operations_struct umem_vm_ops = {
+	.open = umem_vma_open,
+	.close = umem_vma_close
+};
+
+int ib_umem_map_to_vma(struct ib_umem *umem,
+				struct vm_area_struct *vma)
+{
+
+	int ret;
+	unsigned long ntotal_pages;
+	unsigned long total_size;
+	struct page *page;
+	unsigned long vma_entry_number = 0;
+	int i;
+	unsigned long locked;
+	unsigned long lock_limit;
+	struct scatterlist *sg;
+
+	/* Total size expects to be already page aligned - verifying anyway */
+	total_size = vma->vm_end - vma->vm_start;
+	/* umem length expexts to be equal to the given vma*/
+	if (umem->length != total_size)
+		return -EINVAL;
+
+	ntotal_pages = PAGE_ALIGN(total_size) >> PAGE_SHIFT;
+	/* ib_umem_map_to_vma is called as part of mmap
+	with mm->mmap_sem held for writing.
+	No need to lock.
+	*/
+	locked = ntotal_pages + current->mm->pinned_vm;
+	lock_limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
+
+	if ((locked > lock_limit) && !capable(CAP_IPC_LOCK))
+		return -ENOMEM;
+
+	for_each_sg(umem->sg_head.sgl, sg, umem->npages, i) {
+		/* We reached end of vma - going out from loop */
+		if (vma_entry_number >= ntotal_pages)
+			goto end;
+		page = sg_page(sg);
+		if (PageLRU(page) || PageAnon(page)) {
+			/* Above cases are not supported
+			    as of page fault issues for that VMA.
+			*/
+			ret = -ENOSYS;
+			goto err_vm_insert;
+		}
+		ret = vm_insert_page(vma, vma->vm_start +
+			(vma_entry_number << PAGE_SHIFT), page);
+		if (ret < 0)
+			goto err_vm_insert;
+
+		vma_entry_number++;
+	}
+
+end:
+	/* We expect to have enough pages   */
+	if (vma_entry_number >= ntotal_pages) {
+		current->mm->pinned_vm = locked;
+		vma->vm_ops =  &umem_vm_ops;
+		return 0;
+	}
+	/* Not expected but if we reached here
+	    not enough pages were available to be mapped into vma.
+	*/
+	ret = -EINVAL;
+	WARN(1, KERN_WARNING
+		"ib_umem_map_to_vma: number of pages mismatched(%lu,%lu)\n",
+				vma_entry_number, ntotal_pages);
+
+err_vm_insert:
+
+	zap_vma_ptes(vma, vma->vm_start, total_size);
+	return ret;
+
+}
+EXPORT_SYMBOL(ib_umem_map_to_vma);
 
 static void ib_cmem_release(struct kref *ref)
 {
 
 	struct ib_cmem *cmem;
 	struct ib_cmem_block *cmem_block, *tmp;
+	unsigned long ntotal_pages;
 
 	cmem = container_of(ref, struct ib_cmem, refcount);
 
@@ -59,7 +179,15 @@ static void ib_cmem_release(struct kref *ref)
 		list_del(&cmem_block->list);
 		kfree(cmem_block);
 	}
-
+	/* no locking is needed:
+	ib_cmem_release is called from vm_close which is always called
+	with mm->mmap_sem held for writing.
+	The only exception is when the process shutting down but in that case
+	counter not relevant any more.*/
+	if (current->mm) {
+		ntotal_pages = PAGE_ALIGN(cmem->length) >> PAGE_SHIFT;
+		current->mm->pinned_vm -= ntotal_pages;
+	}
 	kfree(cmem);
 
 }
@@ -75,50 +203,17 @@ void ib_cmem_release_contiguous_pages(struct ib_cmem *cmem)
 }
 EXPORT_SYMBOL(ib_cmem_release_contiguous_pages);
 
-static void __ib_umem_release(struct ib_device *dev, struct ib_umem *umem, int dirty)
-{
-	struct scatterlist *sg;
-	struct page *page;
-	int i;
-
-	if (umem->nmap > 0)
-		ib_dma_unmap_sg(dev, umem->sg_head.sgl,
-				umem->nmap,
-				DMA_BIDIRECTIONAL);
-
-	for_each_sg(umem->sg_head.sgl, sg, umem->npages, i) {
-
-		page = sg_page(sg);
-		if (umem->writable && dirty)
-			set_page_dirty_lock(page);
-		put_page(page);
-	}
-
-	sg_free_table(&umem->sg_head);
-	return;
-
-}
-
-void ib_umem_activate_invalidation_notifier(struct ib_umem *umem,
-					       umem_invalidate_func_t func,
-					       void *cookie)
-{
-	struct invalidation_ctx *invalidation_ctx = umem->invalidation_ctx;
-
-	invalidation_ctx->func = func;
-	invalidation_ctx->cookie = cookie;
-
-	/* from that point any pending invalidations can be called */
-	mutex_unlock(&umem->ib_peer_mem->lock);
-	return;
-}
-EXPORT_SYMBOL(ib_umem_activate_invalidation_notifier);
-
 static void cmem_vma_open(struct vm_area_struct *area)
 {
 	struct ib_cmem *ib_cmem;
 	ib_cmem = (struct ib_cmem *)(area->vm_private_data);
 
+	/* vm_open and vm_close are always called with mm->mmap_sem held for
+	writing. The only exception is when the process is shutting down, at
+	which point vm_close is called with no locks held, but since it is
+	after the VMAs have been detached, it is impossible that vm_open will
+	be called. Therefore, there is no need to synchronize the kref_get and
+	kref_put calls.*/
 	kref_get(&ib_cmem->refcount);
 }
 
@@ -290,6 +385,8 @@ struct ib_cmem *ib_cmem_alloc_contiguous_pages(struct ib_ucontext *context,
 	}
 
 	cmem->length = total_size;
+
+	current->mm->pinned_vm = locked;
 	return cmem;
 
 err_alloc:
@@ -299,6 +396,180 @@ err_alloc:
 }
 EXPORT_SYMBOL(ib_cmem_alloc_contiguous_pages);
 
+static struct ib_umem *peer_umem_get(struct ib_peer_memory_client *ib_peer_mem,
+				       struct ib_umem *umem, unsigned long addr,
+				       int dmasync, int invalidation_supported)
+{
+	int ret;
+	const struct peer_memory_client *peer_mem = ib_peer_mem->peer_mem;
+	struct invalidation_ctx *invalidation_ctx = NULL;
+
+	umem->ib_peer_mem = ib_peer_mem;
+	if (invalidation_supported) {
+		invalidation_ctx = kzalloc(sizeof(*invalidation_ctx), GFP_KERNEL);
+		if (!invalidation_ctx) {
+			ret = -ENOMEM;
+			goto end;
+		}
+		umem->invalidation_ctx = invalidation_ctx;
+		invalidation_ctx->umem = umem;
+		mutex_lock(&ib_peer_mem->lock);
+		ret = ib_peer_insert_context(ib_peer_mem, invalidation_ctx,
+			&invalidation_ctx->context_ticket);
+		/* unlock before calling get pages to prevent a dead-lock from the callback */
+		mutex_unlock(&ib_peer_mem->lock);
+		if (ret)
+			goto end;
+	}
+
+	ret = peer_mem->get_pages(addr, umem->length, umem->writable, 1,
+				&umem->sg_head, 
+				umem->peer_mem_client_context,
+				invalidation_ctx ?
+				(void *)invalidation_ctx->context_ticket : NULL);
+
+	if (invalidation_ctx) {
+		/* taking the lock back, checking that wasn't invalidated at that time */
+		mutex_lock(&ib_peer_mem->lock);
+		if (invalidation_ctx->peer_invalidated) {
+			printk(KERN_ERR "peer_umem_get: pages were invalidated by peer\n");
+			ret = -EINVAL;
+		}
+	}
+
+	if (ret)
+		goto out;
+
+	umem->page_size = peer_mem->get_page_size
+					(umem->peer_mem_client_context);
+	if (umem->page_size <= 0)
+		goto put_pages;
+
+	umem->address = addr;
+	ret = peer_mem->dma_map(&umem->sg_head,
+					umem->peer_mem_client_context,
+					umem->context->device->dma_device,
+					dmasync,
+					&umem->nmap);
+	if (ret)
+		goto put_pages;
+
+	ib_peer_mem->stats.num_reg_pages +=
+			umem->nmap * (umem->page_size >> PAGE_SHIFT);
+	ib_peer_mem->stats.num_alloc_mrs += 1;
+	return umem;
+
+put_pages:
+
+	peer_mem->put_pages(umem->peer_mem_client_context,
+					&umem->sg_head);
+out:
+	if (invalidation_ctx) {
+		ib_peer_remove_context(ib_peer_mem, invalidation_ctx->context_ticket);
+		mutex_unlock(&umem->ib_peer_mem->lock);
+	}
+
+end:
+	if (invalidation_ctx)
+		kfree(invalidation_ctx);
+
+	ib_put_peer_client(ib_peer_mem, umem->peer_mem_client_context,
+				umem->peer_mem_srcu_key);
+	kfree(umem);
+	return ERR_PTR(ret);
+}
+static void peer_umem_release(struct ib_umem *umem)
+{
+	struct ib_peer_memory_client *ib_peer_mem = umem->ib_peer_mem;
+	const struct peer_memory_client *peer_mem = ib_peer_mem->peer_mem;
+	struct invalidation_ctx *invalidation_ctx = umem->invalidation_ctx;
+
+	if (invalidation_ctx) {
+
+		int peer_callback;
+		int inflight_invalidation;
+		/* If we are not under peer callback we must take the lock before removing
+		  * core ticket from the tree and releasing its umem.
+		  * It will let any inflight callbacks to be ended safely.
+		  * If we are under peer callback or under error flow of reg_mr so that context
+		  * wasn't activated yet lock was already taken.
+		*/
+		if (invalidation_ctx->func && !invalidation_ctx->peer_callback)
+			mutex_lock(&ib_peer_mem->lock);
+		ib_peer_remove_context(ib_peer_mem, invalidation_ctx->context_ticket);
+		/* make sure to check inflight flag after took the lock and remove from tree.
+		  * in addition, from that point using local variables for peer_callback and
+		  * inflight_invalidation as after the complete invalidation_ctx can't be accessed
+		  * any more as it may be freed by the callback.
+		*/
+		peer_callback = invalidation_ctx->peer_callback;
+		inflight_invalidation = invalidation_ctx->inflight_invalidation;
+		if (inflight_invalidation)
+			complete(&invalidation_ctx->comp);
+		/* On peer callback lock is handled externally */
+		if (!peer_callback)
+			/* unlocking before put_pages */
+			mutex_unlock(&ib_peer_mem->lock);
+		/* in case under callback context or callback is pending let it free the invalidation context */
+		if (!peer_callback && !inflight_invalidation)
+			kfree(invalidation_ctx);
+	}
+
+	peer_mem->dma_unmap(&umem->sg_head,
+					umem->peer_mem_client_context,
+					umem->context->device->dma_device);
+	peer_mem->put_pages(&umem->sg_head,
+					  umem->peer_mem_client_context);
+
+	ib_peer_mem->stats.num_dereg_pages +=
+			umem->nmap * (umem->page_size >> PAGE_SHIFT);
+	ib_peer_mem->stats.num_dealloc_mrs += 1;
+	ib_put_peer_client(ib_peer_mem, umem->peer_mem_client_context,
+				umem->peer_mem_srcu_key);
+	kfree(umem);
+
+	return;
+
+}
+
+static void __ib_umem_release(struct ib_device *dev, struct ib_umem *umem, int dirty)
+{
+	struct scatterlist *sg;
+	struct page *page;
+	int i;
+
+	if (umem->nmap > 0)
+		ib_dma_unmap_sg(dev, umem->sg_head.sgl,
+				    umem->nmap,
+				    DMA_BIDIRECTIONAL);
+
+	for_each_sg(umem->sg_head.sgl, sg, umem->npages, i) {
+
+		page = sg_page(sg);
+		if (umem->writable && dirty)
+			set_page_dirty_lock(page);
+		put_page(page);
+	}
+
+	sg_free_table(&umem->sg_head);
+	return;
+
+}
+
+void ib_umem_activate_invalidation_notifier(struct ib_umem *umem,
+					       umem_invalidate_func_t func,
+					       void *cookie)
+{
+	struct invalidation_ctx *invalidation_ctx = umem->invalidation_ctx;
+
+	invalidation_ctx->func = func;
+	invalidation_ctx->cookie = cookie;
+
+	/* from that point any pending invalidations can be called */
+	mutex_unlock(&umem->ib_peer_mem->lock);
+	return;
+}
+EXPORT_SYMBOL(ib_umem_activate_invalidation_notifier);
 
 /**
  * ib_umem_get - Pin and DMA map userspace memory.
@@ -312,8 +583,9 @@ EXPORT_SYMBOL(ib_cmem_alloc_contiguous_pages);
  * @access: IB_ACCESS_xxx flags for memory being pinned
  * @dmasync: flush in-flight DMA when the memory region is written
  */
-struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
-			    size_t size, int access, int dmasync)
+struct ib_umem *ib_umem_get_ex(struct ib_ucontext *context, unsigned long addr,
+			    size_t size, int access, int dmasync,
+			    int invalidation_supported)
 {
 	struct ib_umem *umem;
 	struct page **page_list;
@@ -362,6 +634,20 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
 		(IB_ACCESS_LOCAL_WRITE   | IB_ACCESS_REMOTE_WRITE |
 		 IB_ACCESS_REMOTE_ATOMIC | IB_ACCESS_MW_BIND));
 
+	umem->odp_data = NULL;
+
+	if (invalidation_supported || context->peer_mem_private_data) {
+
+		struct ib_peer_memory_client *peer_mem_client;
+
+		peer_mem_client =  ib_get_peer_client(context, addr, size,
+					&umem->peer_mem_client_context,
+					&umem->peer_mem_srcu_key);
+		if (peer_mem_client)
+			return peer_umem_get(peer_mem_client, umem, addr,
+					dmasync, invalidation_supported);
+	}
+
 	if (access & IB_ACCESS_ON_DEMAND) {
 		ret = ib_umem_odp_get(context, umem);
 		if (ret) {
@@ -370,8 +656,6 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
 		}
 		return umem;
 	}
-
-	umem->odp_data = NULL;
 
 	/* We assume the memory is from hugetlb until proved otherwise */
 	umem->hugetlb   = 1;
@@ -469,6 +753,13 @@ out:
 
 	return ret < 0 ? ERR_PTR(ret) : umem;
 }
+EXPORT_SYMBOL(ib_umem_get_ex);
+struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
+			    size_t size, int access, int dmasync)
+{
+	return ib_umem_get_ex(context, addr,
+			    size, access, dmasync, 0);
+}
 EXPORT_SYMBOL(ib_umem_get);
 
 static void ib_umem_account(struct work_struct *work)
@@ -492,6 +783,11 @@ void ib_umem_release(struct ib_umem *umem)
 	struct mm_struct *mm;
 	struct task_struct *task;
 	unsigned long diff;
+
+	if (umem->ib_peer_mem) {
+		peer_umem_release(umem);
+		return;
+	}
 
 	if (umem->odp_data) {
 		ib_umem_odp_release(umem);

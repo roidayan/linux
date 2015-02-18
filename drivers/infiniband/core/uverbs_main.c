@@ -250,6 +250,7 @@ static int ib_uverbs_cleanup_ucontext(struct ib_uverbs_file *file,
 				      struct ib_ucontext *context)
 {
 	struct ib_uobject *uobj, *tmp;
+	int err;
 
 	if (!context)
 		return 0;
@@ -324,7 +325,11 @@ static int ib_uverbs_cleanup_ucontext(struct ib_uverbs_file *file,
 		struct ib_mr *mr = uobj->object;
 
 		idr_remove_uobj(&ib_uverbs_mr_idr, uobj);
-		ib_dereg_mr(mr);
+		err = ib_dereg_mr(mr);
+		if (err) {
+			pr_info("user_verbs: couldn't deregister an MR during cleanup.\n");
+			pr_info("user_verbs: the system may have become unstable.\n");
+		}
 		kfree(uobj);
 	}
 
