@@ -187,6 +187,7 @@ struct rdma_id_private {
 	u8			afonly;
 	enum ib_gid_type	gid_type;
 	bool			igmp_joined;
+	int			qp_timeout;
 };
 
 struct cma_multicast {
@@ -756,6 +757,12 @@ static int cma_modify_qp_rts(struct rdma_id_private *id_priv,
 
 	if (conn_param)
 		qp_attr.max_rd_atomic = conn_param->initiator_depth;
+
+	if (id_priv->qp_timeout && id_priv->id.qp->qp_type == IB_QPT_RC) {
+		qp_attr.timeout = id_priv->qp_timeout;
+		qp_attr_mask |= IB_QP_TIMEOUT;
+	}
+
 	ret = ib_modify_qp(id_priv->id.qp, &qp_attr, qp_attr_mask);
 out:
 	mutex_unlock(&id_priv->qp_mutex);
@@ -1773,6 +1780,15 @@ void rdma_set_service_type(struct rdma_cm_id *id, int tos)
 }
 EXPORT_SYMBOL(rdma_set_service_type);
 
+void rdma_set_timeout(struct rdma_cm_id *id, int timeout)
+{
+	struct rdma_id_private *id_priv;
+
+	id_priv = container_of(id, struct rdma_id_private, id);
+	id_priv->qp_timeout = (u8) timeout;
+}
+EXPORT_SYMBOL(rdma_set_timeout);
+
 static void cma_query_handler(int status, struct ib_sa_path_rec *path_rec,
 			      void *context)
 {
@@ -2125,6 +2141,13 @@ static void cma_set_loopback(struct sockaddr *addr)
 		break;
 	}
 }
+
+int rdma_enable_apm(struct rdma_cm_id *id, enum alt_path_type alt_type)
+{
+	/* APM is not supported yet */
+	return -EINVAL;
+}
+EXPORT_SYMBOL(rdma_enable_apm);
 
 static int cma_bind_loopback(struct rdma_id_private *id_priv)
 {
