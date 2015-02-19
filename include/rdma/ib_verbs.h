@@ -3058,6 +3058,4 @@ int ib_check_mr_status(struct ib_mr *mr, u32 check_mask,
 int ib_query_mkey(struct ib_mr *mr, u64 mkey_attr_mask,
 		  struct ib_mkey_attr *mkey_attr);
 
-
-int ib_get_grh_header_version(const void *h);
 #endif /* IB_VERBS_H */

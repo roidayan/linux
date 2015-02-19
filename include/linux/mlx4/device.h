@@ -153,25 +153,6 @@ enum {
 	MLX4_ROCE_MODE_2
 };
 
-enum {
-	MLX4_QPC_ROCE_MODE_1,
-	MLX4_QPC_ROCE_MODE_1_5,
-	MLX4_QPC_ROCE_MODE_2
-};
-
-static inline u8 roce_mode_to_qpc(u8 roce_mode)
-{
-	switch (roce_mode) {
-	case MLX4_ROCE_MODE_1:
-		return MLX4_QPC_ROCE_MODE_1;
-	case MLX4_ROCE_MODE_1_5:
-		return MLX4_QPC_ROCE_MODE_1_5;
-	case MLX4_ROCE_MODE_2:
-		return MLX4_QPC_ROCE_MODE_2;
-	default:
-		return MLX4_QPC_ROCE_MODE_1;
-	}
-}
 const char *mlx4_roce_mode_str(int roce_mode);
 
 static inline int mlx4_roce_is_supported(int roce_mode)
