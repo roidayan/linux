@@ -4,7 +4,6 @@ Subject: [PATCH] BACKPORT: mlx4
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
  drivers/infiniband/hw/mlx4/cm.c                 |   27 +++
- drivers/infiniband/hw/mlx4/main.c               |    8 +
  drivers/net/ethernet/mellanox/mlx4/cmd.c        |    6 +
  drivers/net/ethernet/mellanox/mlx4/en_clock.c   |   10 +
  drivers/net/ethernet/mellanox/mlx4/en_cq.c      |   11 +
@@ -19,7 +18,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  include/linux/ethtool.h                         |   12 ++
  include/linux/mlx4/cq.h                         |    5 +
  include/linux/mlx4/device.h                     |    4 +
- 16 files changed, 613 insertions(+), 3 deletions(-)
+ 15 files changed, 605 insertions(+), 3 deletions(-)
 
 diff --git a/drivers/infiniband/hw/mlx4/cm.c b/drivers/infiniband/hw/mlx4/cm.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -74,35 +73,6 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	/*error flow*/
  	kfree(ent);
-diff --git a/drivers/infiniband/hw/mlx4/main.c b/drivers/infiniband/hw/mlx4/main.c
-index xxxxxxx..xxxxxxx xxxxxx
---- a/drivers/infiniband/hw/mlx4/main.c
-+++ b/drivers/infiniband/hw/mlx4/main.c
-@@ -2071,7 +2071,11 @@ static void mlx4_ib_get_dev_addr(struct net_device *dev,
- 	in6_dev = in6_dev_get(dev);
- 	if (in6_dev) {
- 		read_lock_bh(&in6_dev->lock);
-+#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35))
-+		for (ifp = in6_dev->addr_list; ifp; ifp = ifp->if_next) {
-+#else
- 		list_for_each_entry(ifp, &in6_dev->addr_list, if_list) {
-+#endif
- 			pgid = (union ib_gid *)&ifp->addr;
- 			if (!memcmp(pgid, &default_gid, sizeof(*pgid)))
- 				continue;
-@@ -2153,8 +2157,12 @@ static void mlx4_ib_scan_netdevs(struct mlx4_ib_dev *ibdev,
- 
- 		if (iboe->netdevs[port - 1] &&
- 		    netif_is_bond_slave(iboe->netdevs[port - 1])) {
-+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
-+			iboe->masters[port - 1] = iboe->netdevs[port - 1]->master;
-+#else
- 			iboe->masters[port - 1] = netdev_master_upper_dev_get(
- 				iboe->netdevs[port - 1]);
-+#endif
- 		} else {
- 			iboe->masters[port - 1] = NULL;
- 		}
 diff --git a/drivers/net/ethernet/mellanox/mlx4/cmd.c b/drivers/net/ethernet/mellanox/mlx4/cmd.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/cmd.c
@@ -1675,7 +1645,7 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/main.c b/drivers/net/ethernet/me
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/main.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/main.c
-@@ -3382,6 +3382,9 @@ static void mlx4_enable_msi_x(struct mlx4_dev *dev)
+@@ -3400,6 +3400,9 @@ static void mlx4_enable_msi_x(struct mlx4_dev *dev)
  	struct mlx4_priv *priv = mlx4_priv(dev);
  	struct msix_entry *entries;
  	int i;
@@ -1685,7 +1655,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	if (msi_x) {
  		int nreq = dev->caps.num_ports * num_online_cpus() + MSIX_LEGACY_SZ;
-@@ -3396,6 +3399,7 @@ static void mlx4_enable_msi_x(struct mlx4_dev *dev)
+@@ -3414,6 +3417,7 @@ static void mlx4_enable_msi_x(struct mlx4_dev *dev)
  		for (i = 0; i < nreq; ++i)
  			entries[i].entry = i;
  
@@ -1693,7 +1663,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		nreq = pci_enable_msix_range(dev->persist->pdev, entries, 2,
  					     nreq);
  
-@@ -3404,6 +3408,25 @@ static void mlx4_enable_msi_x(struct mlx4_dev *dev)
+@@ -3422,6 +3426,25 @@ static void mlx4_enable_msi_x(struct mlx4_dev *dev)
  			goto no_msi;
  		} else if (nreq < MSIX_LEGACY_SZ +
  			   dev->caps.num_ports * MIN_MSIX_P_PORT) {

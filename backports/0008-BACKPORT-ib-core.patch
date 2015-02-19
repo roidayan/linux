@@ -3,24 +3,24 @@ Subject: [PATCH] BACKPORT: ib-core
 
 Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
 ---
- drivers/infiniband/core/addr.c        | 105 ++++++++++++++++++++++++++++++++++
- drivers/infiniband/core/cm.c          |  23 ++++++++
- drivers/infiniband/core/cma.c         |  64 +++++++++++++++++++++
- drivers/infiniband/core/fmr_pool.c    |   7 +++
- drivers/infiniband/core/iwcm.c        |  16 ++++++
- drivers/infiniband/core/iwpm_util.c   |  26 ++++++++-
- drivers/infiniband/core/mad.c         |   3 +
- drivers/infiniband/core/netlink.c     |  23 ++++++++
- drivers/infiniband/core/sa_query.c    |  19 ++++++
- drivers/infiniband/core/ucm.c         |  38 ++++++++++++
- drivers/infiniband/core/ucma.c        |  76 ++++++++++++++++++++++++
- drivers/infiniband/core/umem.c        |  16 ++++++
- drivers/infiniband/core/user_mad.c    |  19 ++++++
- drivers/infiniband/core/uverbs_cmd.c  |  51 +++++++++++++++++
- drivers/infiniband/core/uverbs_main.c |  40 +++++++++++++
- include/rdma/ib_pack.h                |   4 ++
- include/rdma/ib_umem_odp.h            |   4 ++
- include/rdma/ib_verbs.h               |   5 ++
+ drivers/infiniband/core/addr.c        |  105 +++++++++++++++++++++++++++++++++
+ drivers/infiniband/core/cm.c          |   23 +++++++
+ drivers/infiniband/core/cma.c         |   64 ++++++++++++++++++++
+ drivers/infiniband/core/fmr_pool.c    |    7 ++
+ drivers/infiniband/core/iwcm.c        |   16 +++++
+ drivers/infiniband/core/iwpm_util.c   |   26 ++++++++-
+ drivers/infiniband/core/mad.c         |    3 +
+ drivers/infiniband/core/netlink.c     |   23 +++++++
+ drivers/infiniband/core/sa_query.c    |   19 ++++++
+ drivers/infiniband/core/ucm.c         |   38 ++++++++++++
+ drivers/infiniband/core/ucma.c        |   76 ++++++++++++++++++++++++
+ drivers/infiniband/core/umem.c        |   16 +++++
+ drivers/infiniband/core/user_mad.c    |   19 ++++++
+ drivers/infiniband/core/uverbs_cmd.c  |   51 ++++++++++++++++
+ drivers/infiniband/core/uverbs_main.c |   40 +++++++++++++
+ include/rdma/ib_pack.h                |    4 +
+ include/rdma/ib_umem_odp.h            |    4 +
+ include/rdma/ib_verbs.h               |    5 ++
  18 files changed, 537 insertions(+), 2 deletions(-)
 
 diff --git a/drivers/infiniband/core/addr.c b/drivers/infiniband/core/addr.c
@@ -115,7 +115,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		ret = rdma_translate_ip((struct sockaddr *)dst_in, addr, NULL);
  		if (!ret)
  			memcpy(addr->dst_dev_addr, addr->src_dev_addr, MAX_ADDR_LEN);
-@@ -252,12 +290,37 @@ static int addr4_resolve(struct sockaddr_in *src_in,
+@@ -252,6 +290,7 @@ static int addr4_resolve(struct sockaddr_in *src_in,
  	}
  
  	/* If the device does ARP internally, return 'done' */
@@ -123,7 +123,9 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (rt->dst.dev->flags & IFF_NOARP) {
  		ret = rdma_copy_addr(addr, rt->dst.dev, NULL);
  		goto put;
- 	}
+@@ -260,7 +299,31 @@ static int addr4_resolve(struct sockaddr_in *src_in,
+ 	if (rt->rt_uses_gateway)
+ 		addr->network = RDMA_NETWORK_IPV4;
  
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,1,0)
  	ret = dst_fetch_ha(&rt->dst, addr, &fl4.daddr);
@@ -153,7 +155,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  put:
  	ip_rt_put(rt);
  out:
-@@ -269,10 +332,16 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
+@@ -272,11 +335,17 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
  			 struct sockaddr_in6 *dst_in,
  			 struct rdma_dev_addr *addr)
  {
@@ -164,13 +166,14 @@ index xxxxxxx..xxxxxxx xxxxxx
 +	struct neighbour *neigh;
 +#endif
  	struct dst_entry *dst;
+ 	struct rt6_info *rt;
  	int ret;
  
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)
  	memset(&fl6, 0, sizeof fl6);
  	fl6.daddr = dst_in->sin6_addr;
  	fl6.saddr = src_in->sin6_addr;
-@@ -291,6 +360,26 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
+@@ -296,6 +365,26 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
  		src_in->sin6_family = AF_INET6;
  		src_in->sin6_addr = fl6.saddr;
  	}
@@ -197,9 +200,9 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	if (dst->dev->flags & IFF_LOOPBACK) {
  		ret = rdma_translate_ip((struct sockaddr *)dst_in, addr, NULL);
-@@ -305,7 +394,23 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
- 		goto put;
- 	}
+@@ -313,7 +402,23 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
+ 	if (rt->rt6i_flags & RTF_GATEWAY)
+ 		addr->network = RDMA_NETWORK_IPV6;
  
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,1,0)
@@ -225,7 +228,7 @@ diff --git a/drivers/infiniband/core/cm.c b/drivers/infiniband/core/cm.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/cm.c
 +++ b/drivers/infiniband/core/cm.c
-@@ -387,6 +387,7 @@ static int cm_init_av_by_path(struct ib_sa_path_rec *path, struct cm_av *av)
+@@ -384,6 +384,7 @@ static int cm_init_av_by_path(struct ib_sa_path_rec *path, struct cm_av *av)
  
  static int cm_alloc_id(struct cm_id_private *cm_id_priv)
  {
@@ -233,7 +236,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	unsigned long flags;
  	int id;
  
-@@ -400,6 +401,24 @@ static int cm_alloc_id(struct cm_id_private *cm_id_priv)
+@@ -397,6 +398,24 @@ static int cm_alloc_id(struct cm_id_private *cm_id_priv)
  
  	cm_id_priv->id.local_id = (__force __be32)id ^ cm.random_id_operand;
  	return id < 0 ? id : 0;
@@ -258,7 +261,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  static void cm_free_id(__be32 local_id)
-@@ -3692,7 +3711,11 @@ static struct kobj_type cm_port_obj_type = {
+@@ -3673,7 +3692,11 @@ static struct kobj_type cm_port_obj_type = {
  	.release = cm_release_port_obj
  };
  
@@ -274,7 +277,7 @@ diff --git a/drivers/infiniband/core/cma.c b/drivers/infiniband/core/cma.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/cma.c
 +++ b/drivers/infiniband/core/cma.c
-@@ -1864,8 +1864,10 @@ static int cma_resolve_iw_route(struct rdma_id_private *id_priv, int timeout_ms)
+@@ -1965,8 +1965,10 @@ static int cma_resolve_iw_route(struct rdma_id_private *id_priv, int timeout_ms)
  	return 0;
  }
  
@@ -285,7 +288,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	int prio;
  	struct net_device *dev;
  
-@@ -1881,8 +1883,10 @@ static int iboe_tos_to_sl(struct net_device *ndev, int tos)
+@@ -1982,8 +1984,10 @@ static int iboe_tos_to_sl(struct net_device *ndev, int tos)
  		return (vlan_dev_get_egress_qos_mask(ndev, prio) &
  			VLAN_PRIO_MASK) >> VLAN_PRIO_SHIFT;
  #endif
@@ -296,7 +299,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
  {
-@@ -1928,7 +1932,16 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
+@@ -2039,7 +2043,16 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
  	route->path_rec->reversible = 1;
  	route->path_rec->pkey = cpu_to_be16(0xffff);
  	route->path_rec->mtu_selector = IB_SA_EQ;
@@ -313,7 +316,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	route->path_rec->mtu = iboe_get_mtu(ndev->mtu);
  	route->path_rec->rate_selector = IB_SA_EQ;
  	route->path_rec->rate = iboe_get_rate(ndev);
-@@ -2304,6 +2317,7 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
+@@ -2415,6 +2428,7 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
  			  unsigned short snum)
  {
  	struct rdma_bind_list *bind_list;
@@ -321,7 +324,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	int ret;
  
  	bind_list = kzalloc(sizeof *bind_list, GFP_KERNEL);
-@@ -2321,6 +2335,35 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
+@@ -2432,6 +2446,35 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
  err:
  	kfree(bind_list);
  	return ret == -ENOSPC ? -EADDRNOTAVAIL : ret;
@@ -357,7 +360,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  static int cma_alloc_any_port(struct idr *ps, struct rdma_id_private *id_priv)
-@@ -2329,7 +2372,11 @@ static int cma_alloc_any_port(struct idr *ps, struct rdma_id_private *id_priv)
+@@ -2440,7 +2483,11 @@ static int cma_alloc_any_port(struct idr *ps, struct rdma_id_private *id_priv)
  	int low, high, remaining;
  	unsigned int rover;
  
@@ -369,7 +372,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	remaining = (high - low) + 1;
  	rover = prandom_u32() % remaining + low;
  retry:
-@@ -2365,9 +2412,16 @@ static int cma_check_port(struct rdma_bind_list *bind_list,
+@@ -2476,9 +2523,16 @@ static int cma_check_port(struct rdma_bind_list *bind_list,
  {
  	struct rdma_id_private *cur_id;
  	struct sockaddr *addr, *cur_addr;
@@ -386,7 +389,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		if (id_priv == cur_id)
  			continue;
  
-@@ -3236,7 +3290,11 @@ static int cma_join_ib_multicast(struct rdma_id_private *id_priv,
+@@ -3347,7 +3401,11 @@ static int cma_join_ib_multicast(struct rdma_id_private *id_priv,
  						id_priv->id.port_num, &rec,
  						comp_mask, GFP_KERNEL,
  						cma_ib_mc_handler, mc);
@@ -398,7 +401,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  static void iboe_mcast_work_handler(struct work_struct *work)
-@@ -3451,9 +3509,15 @@ static int cma_netdev_change(struct net_device *ndev, struct rdma_id_private *id
+@@ -3595,9 +3653,15 @@ static int cma_netdev_change(struct net_device *ndev, struct rdma_id_private *id
  }
  
  static int cma_netdev_callback(struct notifier_block *self, unsigned long event,
@@ -648,7 +651,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  #include <rdma/ib_pack.h>
  #include <rdma/ib_cache.h>
  #include "sa.h"
-@@ -618,10 +622,13 @@ static void init_mad(struct ib_sa_mad *mad, struct ib_mad_agent *agent)
+@@ -615,10 +619,13 @@ static void init_mad(struct ib_sa_mad *mad, struct ib_mad_agent *agent)
  
  static int send_mad(struct ib_sa_query *query, int timeout_ms, gfp_t gfp_mask)
  {
@@ -662,7 +665,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (preload)
  		idr_preload(gfp_mask);
  	spin_lock_irqsave(&idr_lock, flags);
-@@ -633,6 +640,18 @@ static int send_mad(struct ib_sa_query *query, int timeout_ms, gfp_t gfp_mask)
+@@ -630,6 +637,18 @@ static int send_mad(struct ib_sa_query *query, int timeout_ms, gfp_t gfp_mask)
  		idr_preload_end();
  	if (id < 0)
  		return id;
@@ -874,7 +877,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	mc->ctx = ctx;
  	list_add_tail(&mc->list, &ctx->mc_list);
-@@ -1493,7 +1538,11 @@ static ssize_t ucma_migrate_id(struct ucma_file *new_file,
+@@ -1495,7 +1540,11 @@ static ssize_t ucma_migrate_id(struct ucma_file *new_file,
  	struct rdma_ucm_migrate_id cmd;
  	struct rdma_ucm_migrate_resp resp;
  	struct ucma_context *ctx;
@@ -886,7 +889,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct ucma_file *cur_file;
  	int ret = 0;
  
-@@ -1501,12 +1550,21 @@ static ssize_t ucma_migrate_id(struct ucma_file *new_file,
+@@ -1503,12 +1552,21 @@ static ssize_t ucma_migrate_id(struct ucma_file *new_file,
  		return -EFAULT;
  
  	/* Get current fd to protect against it being closed */
@@ -908,7 +911,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (IS_ERR(ctx)) {
  		ret = PTR_ERR(ctx);
  		goto file_put;
-@@ -1540,7 +1598,11 @@ response:
+@@ -1542,7 +1600,11 @@ response:
  
  	ucma_put_ctx(ctx);
  file_put:
@@ -920,7 +923,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	return ret;
  }
  
-@@ -1714,15 +1776,23 @@ static int __init ucma_init(void)
+@@ -1716,15 +1778,23 @@ static int __init ucma_init(void)
  		goto err1;
  	}
  
@@ -944,7 +947,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  err1:
  	misc_deregister(&ucma_misc);
  	return ret;
-@@ -1730,7 +1800,13 @@ err1:
+@@ -1732,7 +1802,13 @@ err1:
  
  static void __exit ucma_cleanup(void)
  {
@@ -962,7 +965,7 @@ diff --git a/drivers/infiniband/core/umem.c b/drivers/infiniband/core/umem.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/umem.c
 +++ b/drivers/infiniband/core/umem.c
-@@ -168,7 +168,11 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
+@@ -678,7 +678,11 @@ struct ib_umem *ib_umem_get_ex(struct ib_ucontext *context, unsigned long addr,
  
  	down_write(&current->mm->mmap_sem);
  
@@ -974,7 +977,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	lock_limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
  
  	if ((locked > lock_limit) && !capable(CAP_IPC_LOCK)) {
-@@ -234,7 +238,11 @@ out:
+@@ -744,7 +748,11 @@ out:
  		put_pid(umem->pid);
  		kfree(umem);
  	} else
@@ -986,7 +989,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	up_write(&current->mm->mmap_sem);
  	if (vma_list)
-@@ -250,7 +258,11 @@ static void ib_umem_account(struct work_struct *work)
+@@ -767,7 +775,11 @@ static void ib_umem_account(struct work_struct *work)
  	struct ib_umem *umem = container_of(work, struct ib_umem, work);
  
  	down_write(&umem->mm->mmap_sem);
@@ -998,7 +1001,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	up_write(&umem->mm->mmap_sem);
  	mmput(umem->mm);
  	kfree(umem);
-@@ -305,7 +317,11 @@ void ib_umem_release(struct ib_umem *umem)
+@@ -827,7 +839,11 @@ void ib_umem_release(struct ib_umem *umem)
  	} else
  		down_write(&mm->mmap_sem);
  
@@ -1178,7 +1181,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	mutex_unlock(&file->device->xrcd_tree_mutex);
  
-@@ -1704,7 +1751,11 @@ ssize_t ib_uverbs_create_comp_channel(struct ib_uverbs_file *file,
+@@ -1700,7 +1747,11 @@ ssize_t ib_uverbs_create_comp_channel(struct ib_uverbs_file *file,
  	if (copy_from_user(&cmd, buf, sizeof cmd))
  		return -EFAULT;
  
@@ -1194,7 +1197,7 @@ diff --git a/drivers/infiniband/core/uverbs_main.c b/drivers/infiniband/core/uve
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/uverbs_main.c
 +++ b/drivers/infiniband/core/uverbs_main.c
-@@ -654,6 +654,7 @@ struct file *ib_uverbs_alloc_event_file(struct ib_uverbs_file *uverbs_file,
+@@ -659,6 +659,7 @@ struct file *ib_uverbs_alloc_event_file(struct ib_uverbs_file *uverbs_file,
  struct ib_uverbs_event_file *ib_uverbs_lookup_comp_file(int fd)
  {
  	struct ib_uverbs_event_file *ev_file = NULL;
@@ -1202,7 +1205,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct fd f = fdget(fd);
  
  	if (!f.file)
-@@ -673,6 +674,29 @@ struct ib_uverbs_event_file *ib_uverbs_lookup_comp_file(int fd)
+@@ -678,6 +679,29 @@ struct ib_uverbs_event_file *ib_uverbs_lookup_comp_file(int fd)
  out:
  	fdput(f);
  	return ev_file;
@@ -1232,7 +1235,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  enum {
-@@ -1035,8 +1059,16 @@ static ssize_t show_dev_abi_version(struct device *device,
+@@ -1060,8 +1084,16 @@ static ssize_t show_dev_abi_version(struct device *device,
  }
  static DEVICE_ATTR(abi_version, S_IRUGO, show_dev_abi_version, NULL);
  
@@ -1249,7 +1252,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static dev_t overflow_maj;
  static DECLARE_BITMAP(overflow_map, IB_UVERBS_MAX_DEVICES);
-@@ -1253,7 +1285,11 @@ static void ib_uverbs_remove_one(struct ib_device *device)
+@@ -1278,7 +1310,11 @@ static void ib_uverbs_remove_one(struct ib_device *device)
  	}
  }
  
@@ -1261,7 +1264,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	if (mode)
  		*mode = 0666;
-@@ -1280,7 +1316,11 @@ static int __init ib_uverbs_init(void)
+@@ -1305,7 +1341,11 @@ static int __init ib_uverbs_init(void)
  
  	uverbs_class->devnode = uverbs_devnode;
  
