@@ -2483,8 +2483,6 @@ static ssize_t __uverbs_modify_qp(struct ib_uverbs_file *file, int in_len,
 	struct ib_qp		       *qp;
 	struct ib_qp_attr	       *attr;
 	int				ret;
-	union ib_gid			sgid;
-	union ib_gid		       *dgid;
 	u8				port_num;
 	u32				exp_mask = 0;
 
@@ -2544,44 +2542,15 @@ static ssize_t __uverbs_modify_qp(struct ib_uverbs_file *file, int in_len,
 	attr->alt_ah_attr.ah_flags          = cmd->alt_dest.is_global ? IB_AH_GRH : 0;
 	attr->alt_ah_attr.port_num          = cmd->alt_dest.port_num;
 	port_num = (cmd->attr_mask & IB_QP_PORT) ? cmd->port_num : qp->port_num;
-	if ((cmd->attr_mask & IB_QP_AV) && port_num &&
-	    (rdma_port_get_link_layer(qp->device, port_num) ==
-	     IB_LINK_LAYER_ETHERNET)) {
-		ret = ib_query_gid(qp->device, port_num,
-				   attr->ah_attr.grh.sgid_index, &sgid);
-		if (ret)
-			goto out;
-		dgid = &attr->ah_attr.grh.dgid;
-		if (attr->ah_attr.grh.sgid_index == 0) {
-			rdma_get_ll_mac((struct in6_addr *)dgid->raw,
-					attr->ah_attr.dmac);
-			rdma_get_ll_mac((struct in6_addr *)sgid.raw,
-					attr->smac);
-			attr->vlan_id = 0xFFFF;
-		} else {
-			ret = rdma_addr_find_dmac_by_grh(&sgid, dgid,
-							 attr->ah_attr.dmac,
-							 &attr->vlan_id);
-			if (ret)
-				goto out;
-			ret = rdma_addr_find_smac_by_sgid(&sgid, attr->smac,
-							  NULL);
-			if (ret)
-				goto out;
-		}
-		if (qp->qp_type != IB_QPT_RAW_PACKET)
-			cmd->attr_mask |= IB_QP_SMAC;
-		if (attr->vlan_id < 0xFFFF)
-			cmd->attr_mask |= IB_QP_VID;
-		if (ib_roce_mode_is_over_ip(qp->device, port_num) &&
-		    (attr->ah_attr.grh.hop_limit < 2))
-			attr->ah_attr.grh.hop_limit = 0xff;
-	}
+
 	if (cmd_type == IB_USER_VERBS_CMD_EXP) {
 		exp_mask = cmd->exp_attr_mask & IBV_EXP_QP_ATTR_MASK;
 	}
 
 	if (qp->real_qp == qp) {
+		ret = ib_resolve_eth_dmac(qp, attr, &cmd->attr_mask);
+		if (ret)
+			goto out;
 		ret = qp->device->modify_qp(qp, attr,
 			modify_qp_mask(qp->qp_type, cmd->attr_mask | exp_mask), udata);
 		if (!ret && (cmd->attr_mask & IB_QP_PORT))
