@@ -271,6 +271,7 @@ endif
 	install -d $(INSTALL_MOD_PATH)/etc/infiniband
 ifeq ("$(wildcard $(INSTALL_MOD_PATH)/etc/infiniband/openib.conf)","")
 	install -m 0644 ofed_scripts/openib.conf $(INSTALL_MOD_PATH)/etc/infiniband
+	cat ofed_scripts/openib.conf.tmp >> $(INSTALL_MOD_PATH)/etc/infiniband/openib.conf
 endif
 # Disable mlx4_en load on SLES10
 ifeq ($(shell echo $(KVERSION) | grep -q '2.6.16' && echo y || echo ''),y)

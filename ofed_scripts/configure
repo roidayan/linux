@@ -260,6 +260,19 @@ function check_autofconf {
 	eval "export $VAR=$VALUE"
 }
 
+function add_conf {
+    COMMENT=$1
+    PARAM=${2%=*}
+    VALUE=${2#*=}
+    OICONF=${PWD}/ofed_scripts/openib.conf.tmp
+
+    if ! (grep -wq "^$PARAM" $OICONF); then
+        echo >> "${OICONF}"
+        echo "${COMMENT}" >> "${OICONF}"
+        echo "${PARAM}=${VALUE}" >> "${OICONF}"
+    fi
+}
+
 # set defaults
 
 SKIP_AUTOCONF=${SKIP_AUTOCONF:-0}
@@ -451,6 +464,8 @@ main()
                             CONFIG_INFINIBAND_IPOIB_CM="y"
                             CONFIG_INFINIBAND_IPOIB_DEBUG="y"
                             CONFIG_BACKPORT_LRO="m"
+                            add_conf "# Load IPoIB" "IPOIB_LOAD=no"
+                            add_conf "# Enable IPoIB Connected Mode" "SET_IPOIB_CM=auto"
                         ;;
                         --without-ipoib-mod)
                             CONFIG_INFINIBAND_IPOIB=
@@ -483,6 +498,7 @@ main()
                         ;;
                         --with-e_ipoib-mod)
                             CONFIG_E_IPOIB="m"
+                            add_conf "# Load E_IPoIB" "E_IPOIB_LOAD=no"
                         ;;
                         --without-e_ipoib-mod)
                             CONFIG_E_IPOIB=
@@ -490,6 +506,7 @@ main()
                        --with-sdp-mod)
                             CONFIG_INFINIBAND_SDP="m"
                             CONFIG_INFINIBAND_SDP_DEBUG="y"
+                            add_conf "# Load SDP module" "SDP_LOAD=no"
                         ;;
                         --without-sdp-mod)
                             CONFIG_INFINIBAND_SDP=
@@ -517,6 +534,7 @@ main()
                         --with-srp-mod)
                             CONFIG_INFINIBAND_SRP="m"
                             CONFIG_SCSI_SRP_ATTRS="m"
+                            add_conf "# Load SRP module" "SRP_LOAD=no"
                         ;;
                         --without-srp-mod)
                             CONFIG_INFINIBAND_SRP=
@@ -524,6 +542,7 @@ main()
                         ;;
                         --with-user_mad-mod)
                             CONFIG_INFINIBAND_USER_MAD="m"
+                            add_conf "# Load UMAD module" "UMAD_LOAD=yes"
                         ;;
                         --without-user_mad-mod)
                             CONFIG_INFINIBAND_USER_MAD=
@@ -531,6 +550,8 @@ main()
                         --with-user_access-mod)
                             CONFIG_INFINIBAND_USER_ACCESS="m"
                             CONFIG_INFINIBAND_USER_MEM=y
+                            add_conf "# Load UVERBS module" "UVERBS_LOAD=yes"
+                            add_conf "# Load UCM module" "UCM_LOAD=yes"
                         ;;
                         --without-user_access-mod)
                             CONFIG_INFINIBAND_USER_ACCESS=
@@ -544,6 +565,8 @@ main()
                         ;;
                         --with-addr_trans-mod)
                             CONFIG_INFINIBAND_ADDR_TRANS=y
+                            add_conf "# Load RDMA_CM module" "RDMA_CM_LOAD=yes"
+                            add_conf "# Load RDMA_UCM module" "RDMA_UCM_LOAD=yes"
                         ;;
                         --without-addr_trans-mod)
                             CONFIG_INFINIBAND_ADDR_TRANS=
@@ -551,6 +574,7 @@ main()
                         --with-mthca-mod)
                             CONFIG_INFINIBAND_MTHCA="m"
                             CONFIG_INFINIBAND_MTHCA_DEBUG="y"
+                            add_conf "# Load MTHCA" "MTHCA_LOAD=no"
                         ;;
                         --without-mthca-mod)
                             CONFIG_INFINIBAND_MTHCA=
@@ -566,12 +590,14 @@ main()
                             CONFIG_MLX4_INFINIBAND="m"
                             CONFIG_BACKPORT_LRO="m"
                             CONFIG_MLX4_DEBUG="y"
+                            add_conf "# Load MLX4 modules" "MLX4_LOAD=yes"
                         ;;
                         --with-mlx5-mod)
                             CONFIG_MLX5_CORE="m"
                             CONFIG_MLX5_INFINIBAND="m"
                             CONFIG_BACKPORT_LRO="m"
                             CONFIG_MLX5_DEBUG="y"
+                            add_conf "# Load MLX5 modules" "MLX5_LOAD=yes"
                         ;;
                         --with-mlx4_core-mod)
                             CONFIG_MLX4_CORE="m"
@@ -579,7 +605,7 @@ main()
                         --without-mlx4_core-mod)
                             CONFIG_MLX4_CORE=
                         ;;
-                       --with-mlx5_core-mod)
+                        --with-mlx5_core-mod)
                             CONFIG_MLX5_CORE="m"
                         ;;
                         --without-mlx5_core-mod)
@@ -598,16 +624,18 @@ main()
                         --with-mlx4_en-mod)
                             CONFIG_MLX4_CORE="m"
                             CONFIG_MLX4_EN="m"
-			    CONFIG_MLX4_EN_PERF_STAT=
+                            add_conf "# Load MLX4_EN module" "MLX4_EN_LOAD=yes"
+                            CONFIG_MLX4_EN_PERF_STAT=
                         ;;
                         --with-mlx4_vnic-mod)
                             CONFIG_MLX4_CORE="m"
                             CONFIG_MLX4_VNIC="m"
                             CONFIG_BACKPORT_LRO="m"
+                            add_conf "# Load MLX4_VNIC module" "MLX4_VNIC_LOAD=yes"
                         ;;
                         --without-mlx4_en-mod)
                             CONFIG_MLX4_EN=
-			    CONFIG_MLX4_EN_PERF_STAT=
+                            CONFIG_MLX4_EN_PERF_STAT=
                         ;;
                         --without-mlx4_vnic-mod)
                             CONFIG_MLX4_VNIC=
@@ -665,6 +693,7 @@ main()
                         ;;
                         --with-ipath_inf-mod)
                             CONFIG_INFINIBAND_IPATH="m"
+                            add_conf "# Load IPATH" "IPATH_LOAD=no"
                         ;;
                         --without-ipath_inf-mod)
                             CONFIG_INFINIBAND_IPATH=
@@ -683,6 +712,8 @@ main()
                         ;;
                         --with-qib-mod)
                             CONFIG_INFINIBAND_QIB="m"
+                            add_conf "# Load QIB" "QIB_LOAD=no"
+                            add_conf "# QIB QME BP VER" "QIB_QME_BPVER=1"
                         ;;
                         --without-qib-mod)
                             CONFIG_INFINIBAND_QIB=
@@ -717,6 +748,7 @@ main()
                             CONFIG_RDS="m"
                             CONFIG_RDS_RDMA="m"
                             CONFIG_RDS_TCP="m"
+                            add_conf "# Load RDS module" "RDS_LOAD=no"
                         ;;
                         --without-rds-mod)
                             CONFIG_RDS=
@@ -737,6 +769,7 @@ main()
                         ;;
                         --with-qlgc_vnic-mod)
                             CONFIG_INFINIBAND_QLGC_VNIC="m"
+                            add_conf "# Load QLogic VNIC module" "QLGC_VNIC_LOAD=yes"
                         ;;
                         --without-qlgc_vnic-mod)
                             CONFIG_INFINIBAND_QLGC_VNIC=
@@ -750,6 +783,7 @@ main()
                         --with-cxgb3-mod)
                             CONFIG_INFINIBAND_CXGB3="m"
                             CONFIG_CHELSIO_T3="m"
+                            add_conf "# Load CXGB3 modules" "CXGB3_LOAD=no"
                         ;;
                         --without-cxgb3-mod)
                             CONFIG_INFINIBAND_CXGB3=
@@ -764,6 +798,7 @@ main()
                         --with-cxgb4-mod)
                             CONFIG_INFINIBAND_CXGB4="m"
                             CONFIG_CHELSIO_T4="m"
+                            add_conf "# Load CXGB4 modules" "CXGB4_LOAD=no"
                         ;;
                         --without-cxgb4-mod)
                             CONFIG_INFINIBAND_CXGB4=
@@ -783,6 +818,7 @@ main()
                         ;;
                         --with-nes-mod)
                             CONFIG_INFINIBAND_NES="m"
+                            add_conf "# Load NES modules" "NES_LOAD=no"
                         ;;
                         --without-nes-mod)
                             CONFIG_INFINIBAND_NES=
@@ -795,6 +831,7 @@ main()
                         ;;
                         --with-ocrdma-mod)
                             CONFIG_INFINIBAND_OCRDMA="m"
+                            add_conf "# Load OCRDMA modules" "OCRDMA_LOAD=yes"
                         ;;
                         --without-ocrdma-mod)
                             CONFIG_INFINIBAND_OCRDMA=
