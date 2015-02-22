@@ -1,0 +1,3 @@
+obj-$(CONFIG_INFINIBAND_SDP) += ib_sdp.o
+
+ib_sdp-y := sdp_main.o sdp_cma.o sdp_bcopy.o sdp_proc.o sdp_tx.o sdp_rx.o sdp_zcopy.o
