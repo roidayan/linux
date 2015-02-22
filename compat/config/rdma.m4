@@ -2015,6 +2015,37 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 	],[
 		AC_MSG_RESULT(no)
 	])
+
+	AC_MSG_CHECKING([if addrconf.h has addrconf_ifid_eui48])
+	LB_LINUX_TRY_COMPILE([
+		#include <net/addrconf.h>
+	],[
+		int x = addrconf_ifid_eui48(NULL, NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_ADDRCONF_IFID_EUI48, 1,
+			  [addrconf_ifid_eui48 is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if netdevice.h has struct netdev_bonding_info])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/netdevice.h>
+	],[
+		struct netdev_bonding_info x;
+		x.master.num_slaves = 0;
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_NETDEV_BONDING_INFO, 1,
+			  [netdev_bonding_info is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
 ])
 #
 # COMPAT_CONFIG_HEADERS

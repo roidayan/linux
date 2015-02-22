@@ -8,4 +8,8 @@
     ( (netdev)->ethtool_ops = (ops) )
 #endif
 
+#ifndef NETDEV_BONDING_INFO
+#define NETDEV_BONDING_INFO     0x0019
+#endif
+
 #endif	/* _COMPAT_LINUX_NETDEVICE_H */
