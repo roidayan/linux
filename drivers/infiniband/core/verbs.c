@@ -983,8 +983,11 @@ int ib_resolve_eth_dmac(struct ib_qp *qp,
 			struct ib_qp_attr *qp_attr, int *qp_attr_mask)
 {
 	int           ret = 0;
+	u8            start_port = qp->device->node_type == RDMA_NODE_IB_SWITCH ? 0 : 1;
 
 	if ((*qp_attr_mask & IB_QP_AV)  &&
+	    (qp_attr->ah_attr.port_num >= start_port) &&
+	    (qp_attr->ah_attr.port_num < start_port + qp->device->phys_port_cnt) &&
 	    (rdma_port_get_link_layer(qp->device, qp_attr->ah_attr.port_num) ==
 	     IB_LINK_LAYER_ETHERNET)) {
 		if (rdma_link_local_addr((struct in6_addr *)qp_attr->ah_attr.grh.dgid.raw)) {
