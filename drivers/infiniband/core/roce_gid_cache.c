@@ -222,7 +222,7 @@ int roce_add_gid(struct ib_device *ib_dev, u8 port,
 
 	cache = ib_dev->cache.roce_gid_cache[port - start_port(ib_dev)];
 
-	if (!cache->active)
+	if (!cache || !cache->active)
 		return -ENOSYS;
 
 	if (ib_dev->get_netdev) {
@@ -273,7 +273,7 @@ int roce_del_gid(struct ib_device *ib_dev, u8 port,
 
 	cache  = ib_dev->cache.roce_gid_cache[port - start_port(ib_dev)];
 
-	if (!cache->active)
+	if (!cache || !cache->active)
 		return -ENOSYS;
 
 	if (attr->ndev) {
@@ -309,7 +309,7 @@ int roce_del_all_netdev_gids(struct ib_device *ib_dev, u8 port,
 
 	cache  = ib_dev->cache.roce_gid_cache[port - start_port(ib_dev)];
 
-	if (!cache->active)
+	if (!cache || !cache->active)
 		return -ENOSYS;
 
 	mutex_lock(&cache->lock);
@@ -335,7 +335,7 @@ int roce_gid_cache_get_gid(struct ib_device *ib_dev, u8 port, int index,
 
 	cache = ib_dev->cache.roce_gid_cache[port - start_port(ib_dev)];
 
-	if (!cache->active)
+	if (!cache || !cache->active)
 		return -ENOSYS;
 
 	if (index < 0 || index >= cache->sz)
@@ -379,7 +379,7 @@ static int _roce_gid_cache_find_gid(struct ib_device *ib_dev, union ib_gid *gid,
 		    IB_LINK_LAYER_ETHERNET)
 			continue;
 		cache = ib_dev->cache.roce_gid_cache[p];
-		if (!cache->active)
+		if (!cache || !cache->active)
 			continue;
 		local_index = find_gid(cache, gid, val, mask);
 		if (local_index >= 0) {
@@ -434,7 +434,7 @@ int roce_gid_cache_find_gid_by_port(struct ib_device *ib_dev, union ib_gid *gid,
 		return -ENOENT;
 
 	cache = ib_dev->cache.roce_gid_cache[port - start_port(ib_dev)];
-	if (!cache->active)
+	if (!cache || !cache->active)
 		return -ENOENT;
 
 	mask |= get_netdev_from_ifindex(net, if_index, &val);
@@ -473,7 +473,7 @@ int roce_gid_cache_find_gid_by_filter(struct ib_device *ib_dev,
 
 	cache = ib_dev->cache.roce_gid_cache[port - start_port(ib_dev)];
 
-	if (!cache->active)
+	if (!cache || !cache->active)
 		return -ENOENT;
 
 	for (i = 0; i < cache->sz; i++) {
