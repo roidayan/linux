@@ -1973,7 +1973,9 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 	LB_LINUX_TRY_COMPILE([
 		#include <linux/ethtool.h>
 	],[
-		get_module_eeprom(NULL, NULL, NULL);
+		struct ethtool_ops x = {
+			.get_module_eeprom = NULL,
+		};
 
 		return 0;
 	],[
