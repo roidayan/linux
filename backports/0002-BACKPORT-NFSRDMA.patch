@@ -3,14 +3,34 @@ Subject: [PATCH] BACKPORT: NFSRDMA
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- net/sunrpc/xprtrdma/svc_rdma_transport.c | 2 ++
- 1 file changed, 2 insertions(+)
+ net/sunrpc/xprtrdma/svc_rdma_transport.c |    8 ++++++++
+ 1 files changed, 8 insertions(+), 0 deletions(-)
 
 diff --git a/net/sunrpc/xprtrdma/svc_rdma_transport.c b/net/sunrpc/xprtrdma/svc_rdma_transport.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/sunrpc/xprtrdma/svc_rdma_transport.c
 +++ b/net/sunrpc/xprtrdma/svc_rdma_transport.c
-@@ -92,7 +92,9 @@ struct svc_xprt_class svc_rdma_class = {
+@@ -66,7 +66,9 @@ static void dto_tasklet_func(unsigned long data);
+ static void svc_rdma_detach(struct svc_xprt *xprt);
+ static void svc_rdma_free(struct svc_xprt *xprt);
+ static int svc_rdma_has_wspace(struct svc_xprt *xprt);
++#ifdef HAVE_XPO_SECURE_PORT
+ static int svc_rdma_secure_port(struct svc_rqst *);
++#endif
+ static void rq_cq_reap(struct svcxprt_rdma *xprt);
+ static void sq_cq_reap(struct svcxprt_rdma *xprt);
+ 
+@@ -84,7 +86,9 @@ static struct svc_xprt_ops svc_rdma_ops = {
+ 	.xpo_prep_reply_hdr = svc_rdma_prep_reply_hdr,
+ 	.xpo_has_wspace = svc_rdma_has_wspace,
+ 	.xpo_accept = svc_rdma_accept,
++#ifdef HAVE_XPO_SECURE_PORT
+ 	.xpo_secure_port = svc_rdma_secure_port,
++#endif
+ };
+ 
+ struct svc_xprt_class svc_rdma_class = {
+@@ -92,7 +96,9 @@ struct svc_xprt_class svc_rdma_class = {
  	.xcl_owner = THIS_MODULE,
  	.xcl_ops = &svc_rdma_ops,
  	.xcl_max_payload = RPCSVC_MAXPAYLOAD_RDMA,
@@ -20,3 +40,16 @@ index xxxxxxx..xxxxxxx xxxxxx
  };
  
  struct svc_rdma_op_ctxt *svc_rdma_get_context(struct svcxprt_rdma *xprt)
+@@ -1205,10 +1211,12 @@ static int svc_rdma_has_wspace(struct svc_xprt *xprt)
+ 	return 1;
+ }
+ 
++#ifdef HAVE_XPO_SECURE_PORT
+ static int svc_rdma_secure_port(struct svc_rqst *rqstp)
+ {
+ 	return 1;
+ }
++#endif
+ 
+ /*
+  * Attempt to register the kvec representing the RPC memory with the

@@ -867,15 +867,15 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(no)
 	])
 
-	AC_MSG_CHECKING([if drivers/net/bonding/bonding.h exists])
+	AC_MSG_CHECKING([if include/net/bonding.h exists])
 	LB_LINUX_TRY_COMPILE([
-		#include "../drivers/net/bonding/bonding.h"
+		#include <net/bonding.h>"
 	],[
 		return 0;
 	],[
 		AC_MSG_RESULT(yes)
 		AC_DEFINE(HAVE_BONDING_H, 1,
-			  [drivers/net/bonding/bonding.h exists])
+			  [include/net/bonding.h exists])
 	],[
 		AC_MSG_RESULT(no)
 	])
@@ -2043,6 +2043,23 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(yes)
 		AC_DEFINE(HAVE_NETDEV_BONDING_INFO, 1,
 			  [netdev_bonding_info is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if svc_xprt.h struct svc_xprt_ops has *xpo_secure_port])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/sunrpc/svc_xprt.h>
+	],[
+		struct svc_xprt_ops x = {
+			.xpo_secure_port = NULL,
+		};
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_XPO_SECURE_PORT, 1,
+			  [xpo_secure_port is defined])
 	],[
 		AC_MSG_RESULT(no)
 	])
