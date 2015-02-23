@@ -7,7 +7,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  drivers/net/ethernet/mellanox/mlx4/cmd.c        |    6 +
  drivers/net/ethernet/mellanox/mlx4/en_clock.c   |   10 +
  drivers/net/ethernet/mellanox/mlx4/en_cq.c      |   11 +
- drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c  |    4 +
+ drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c  |   10 +
  drivers/net/ethernet/mellanox/mlx4/en_ethtool.c |   89 +++++++++-
  drivers/net/ethernet/mellanox/mlx4/en_main.c    |    2 +
  drivers/net/ethernet/mellanox/mlx4/en_netdev.c  |  230 +++++++++++++++++++++++
@@ -19,7 +19,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  include/linux/ethtool.h                         |   12 ++
  include/linux/mlx4/cq.h                         |    5 +
  include/linux/mlx4/device.h                     |    4 +
- 16 files changed, 610 insertions(+), 3 deletions(-)
+ 16 files changed, 616 insertions(+), 3 deletions(-)
 
 diff --git a/drivers/infiniband/hw/mlx4/cm.c b/drivers/infiniband/hw/mlx4/cm.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -78,7 +78,7 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/cmd.c b/drivers/net/ethernet/mel
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/cmd.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/cmd.c
-@@ -2800,10 +2800,16 @@ int mlx4_get_vf_config(struct mlx4_dev *dev, int port, int vf, struct ifla_vf_in
+@@ -2809,10 +2809,16 @@ int mlx4_get_vf_config(struct mlx4_dev *dev, int port, int vf, struct ifla_vf_in
  
  	ivf->vlan		= s_info->default_vlan;
  	ivf->qos		= s_info->default_qos;
@@ -197,7 +197,7 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c b/drivers/net/ethern
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c
-@@ -203,6 +203,7 @@ static u8 mlx4_en_dcbnl_setdcbx(struct net_device *dev, u8 mode)
+@@ -256,6 +256,7 @@ static u8 mlx4_en_dcbnl_setdcbx(struct net_device *dev, u8 mode)
  	return 0;
  }
  
@@ -205,7 +205,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  #define MLX4_RATELIMIT_UNITS_IN_KB 100000 /* rate-limit HW unit in Kbps */
  static int mlx4_en_dcbnl_ieee_getmaxrate(struct net_device *dev,
  				   struct ieee_maxrate *maxrate)
-@@ -216,6 +217,7 @@ static int mlx4_en_dcbnl_ieee_getmaxrate(struct net_device *dev,
+@@ -269,6 +270,7 @@ static int mlx4_en_dcbnl_ieee_getmaxrate(struct net_device *dev,
  
  	return 0;
  }
@@ -213,7 +213,20 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static int mlx4_en_dcbnl_ieee_setmaxrate(struct net_device *dev,
  		struct ieee_maxrate *maxrate)
-@@ -245,8 +247,10 @@ static int mlx4_en_dcbnl_ieee_setmaxrate(struct net_device *dev,
+@@ -298,6 +300,7 @@ static int mlx4_en_dcbnl_ieee_setmaxrate(struct net_device *dev,
+ #define RPG_ENABLE_BIT	31
+ #define CN_TAG_BIT	30
+ 
++#ifdef HAVE_IEEE_GETQCN
+ static int mlx4_en_dcbnl_ieee_getqcn(struct net_device *dev,
+ 				     struct ieee_qcn *qcn)
+ {
+@@ -466,20 +469,25 @@ static int mlx4_en_dcbnl_ieee_getqcnstats(struct net_device *dev,
+ 	mlx4_free_cmd_mailbox(priv->mdev->dev, mailbox_out);
+ 	return 0;
+ }
++#endif
+ 
  const struct dcbnl_rtnl_ops mlx4_en_dcbnl_ops = {
  	.ieee_getets	= mlx4_en_dcbnl_ieee_getets,
  	.ieee_setets	= mlx4_en_dcbnl_ieee_setets,
@@ -224,6 +237,26 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.ieee_getpfc	= mlx4_en_dcbnl_ieee_getpfc,
  	.ieee_setpfc	= mlx4_en_dcbnl_ieee_setpfc,
  
+ 	.getdcbx	= mlx4_en_dcbnl_getdcbx,
+ 	.setdcbx	= mlx4_en_dcbnl_setdcbx,
++#ifdef HAVE_IEEE_GETQCN
+ 	.ieee_getqcn	= mlx4_en_dcbnl_ieee_getqcn,
+ 	.ieee_setqcn	= mlx4_en_dcbnl_ieee_setqcn,
+ 	.ieee_getqcnstats = mlx4_en_dcbnl_ieee_getqcnstats,
++#endif
+ };
+ 
+ const struct dcbnl_rtnl_ops mlx4_en_dcbnl_pfc_ops = {
+@@ -488,7 +496,9 @@ const struct dcbnl_rtnl_ops mlx4_en_dcbnl_pfc_ops = {
+ 
+ 	.getdcbx	= mlx4_en_dcbnl_getdcbx,
+ 	.setdcbx	= mlx4_en_dcbnl_setdcbx,
++#ifdef HAVE_IEEE_GETQCN
+ 	.ieee_getqcn	= mlx4_en_dcbnl_ieee_getqcn,
+ 	.ieee_setqcn	= mlx4_en_dcbnl_ieee_setqcn,
+ 	.ieee_getqcnstats = mlx4_en_dcbnl_ieee_getqcnstats,
++#endif
+ };
 diff --git a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
@@ -1766,7 +1799,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	int udp_rss;
  	u8 rss_mask;
  	u32 active_ports;
-@@ -620,7 +630,9 @@ struct mlx4_en_priv {
+@@ -621,7 +631,9 @@ struct mlx4_en_priv {
  
  	u32 pflags;
  	u8 rss_key[MLX4_EN_RSS_KEY_SIZE];
@@ -1776,7 +1809,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  };
  
  enum mlx4_en_wol {
-@@ -774,8 +786,16 @@ int mlx4_en_set_cq_moder(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq);
+@@ -775,8 +787,16 @@ int mlx4_en_set_cq_moder(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq);
  int mlx4_en_arm_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq);
  
  void mlx4_en_tx_irq(struct mlx4_cq *mcq);
@@ -1793,7 +1826,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  netdev_tx_t mlx4_en_xmit(struct sk_buff *skb, struct net_device *dev);
  
  int mlx4_en_create_tx_ring(struct mlx4_en_priv *priv,
-@@ -833,8 +853,10 @@ extern const struct dcbnl_rtnl_ops mlx4_en_dcbnl_pfc_ops;
+@@ -834,8 +854,10 @@ extern const struct dcbnl_rtnl_ops mlx4_en_dcbnl_pfc_ops;
  int mlx4_en_setup_tc(struct net_device *dev, u8 up);
  
  #ifdef CONFIG_RFS_ACCEL
@@ -1804,7 +1837,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  #define MLX4_EN_NUM_SELF_TEST	5
  void mlx4_en_ex_selftest(struct net_device *dev, u32 *flags, u64 *buf);
-@@ -863,7 +885,9 @@ void mlx4_en_remove_timestamp(struct mlx4_en_dev *mdev);
+@@ -864,7 +886,9 @@ void mlx4_en_remove_timestamp(struct mlx4_en_dev *mdev);
  /* Globals
   */
  extern const struct ethtool_ops mlx4_en_ethtool_ops;

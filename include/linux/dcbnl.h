@@ -3,7 +3,7 @@
 
 #include_next <linux/dcbnl.h>
 
-#ifndef CONFIG_COMPAT_IS_QCN
+#ifndef HAVE_IEEE_GETQCN
 
 enum dcbnl_cndd_states {
 	DCB_CNDD_RESET = 0,

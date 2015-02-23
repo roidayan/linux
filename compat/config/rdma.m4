@@ -2063,6 +2063,23 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 	],[
 		AC_MSG_RESULT(no)
 	])
+
+	AC_MSG_CHECKING([if include/net/dcbnl.h struct dcbnl_rtnl_ops has *ieee_getqcn])
+	LB_LINUX_TRY_COMPILE([
+		#include <net/dcbnl.h>
+	],[
+		struct dcbnl_rtnl_ops x = {
+			.ieee_getqcn = NULL,
+		};
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_IEEE_GETQCN, 1,
+			  [ieee_getqcn is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
 ])
 #
 # COMPAT_CONFIG_HEADERS
