@@ -1709,16 +1709,16 @@ static int __mlx4_ib_modify_qp(struct ib_qp *ibqp,
 
 	if (attr_mask & IB_QP_AV) {
 		u8 port_num = attr_mask & IB_QP_PORT ? attr->port_num : qp->port;
-		int index = attr->ah_attr.grh.sgid_index;
 		union ib_gid gid;
-		struct ib_gid_attr gid_attr;
+		struct ib_gid_attr gid_attr = {.gid_type = IB_GID_TYPE_IB};
 		u16 vlan = 0xffff;
 		u8 smac[ETH_ALEN];
 		int status = 0;
 		int is_eth = rdma_port_get_link_layer(&dev->ib_dev, qp->port) ==
 				IB_LINK_LAYER_ETHERNET;
 
-		if (is_eth) {
+		if (is_eth && attr->ah_attr.ah_flags & IB_AH_GRH) {
+			int index = attr->ah_attr.grh.sgid_index;
 			if (mlx4_is_bonded(dev->dev))
 				port_num  = 1;
 			rcu_read_lock();
