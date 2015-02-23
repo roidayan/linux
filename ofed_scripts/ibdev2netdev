@@ -50,9 +50,20 @@ if [ "x$oldstyle" == "xn" ]; then
 				ethrsc=$(cat $filepath_resource)
 				if [ "x$ethrsc" == "x$ibrsc" ]; then
 					filepath_devid=/sys/class/net/$eth/dev_id
+					filepath_devport=/sys/class/net/$eth/dev_port
 					if [ -f $filepath_devid ]; then
+						port1=0
+						if [ -f $filepath_devport ]; then
+							port1=$(cat $filepath_devport)
+							port1=$(printf "%d" $port1)
+						fi
+
 						port=$(cat $filepath_devid)
 						port=$(printf "%d" $port)
+						if [ $port1 -gt $port ]; then
+							port=$port1
+						fi
+
 						port=$(( port + 1 ))
 
 						filepath_carrier=/sys/class/net/$eth/carrier
