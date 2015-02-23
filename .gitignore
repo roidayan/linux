@@ -90,3 +90,4 @@ configure
 makefile
 Makefile
 backports_applied
+openib.conf.tmp
