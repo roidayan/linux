@@ -219,6 +219,13 @@ if (grep -q lro_receive_frags ${KLIB_BUILD}/include/linux/inet_lro.h > /dev/null
     fi
 fi
 
+if (grep -q lro_receive_skb ${KLIB_BUILD}/include/linux/inet_lro.h > /dev/null 2>&1 || grep -q lro_receive_skb /lib/modules/${KVERSION}/source/include/linux/inet_lro.h > /dev/null 2>&1); then
+    check_autofconf CONFIG_INET_LRO
+    if [[ X${CONFIG_INET_LRO} == "X1" ]]; then
+        set_config CONFIG_COMPAT_LRO_ENABLED_IPOIB y
+    fi
+fi
+
 if (grep -q dev_hw_addr_random ${KLIB_BUILD}/include/linux/etherdevice.h > /dev/null 2>&1 || grep -q dev_hw_addr_random /lib/modules/${KVERSION}/source/include/linux/etherdevice.h > /dev/null 2>&1); then
 	set_config CONFIG_COMPAT_DEV_HW_ADDR_RANDOM y
 fi

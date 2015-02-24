@@ -1,34 +1,132 @@
-From: Vladimir Sokolovsky <vlad@mellanox.com>
-Subject: [PATCH] BACKPORT: ipoib
+From: Noa Osherovich <noaos@mellanox.com>
+Subject: [PATCH] BACKPORT: ib_ipoib
 
-Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+Change-Id: I4064a8d0a0806a7674d276b75448f172fba098b8
+Signed-off-by: Erez Shitrit <erezsh@mellanox.com>
 ---
- drivers/infiniband/ulp/ipoib/ipoib.h           |  3 ++
- drivers/infiniband/ulp/ipoib/ipoib_cm.c        |  8 +++++
- drivers/infiniband/ulp/ipoib/ipoib_main.c      | 41 ++++++++++++++++++++++++++
- drivers/infiniband/ulp/ipoib/ipoib_multicast.c | 15 ++++++++++
- drivers/infiniband/ulp/ipoib/ipoib_netlink.c   |  8 +++++
- 5 files changed, 75 insertions(+)
+ drivers/infiniband/ulp/ipoib/ipoib.h           |   26 +++
+ drivers/infiniband/ulp/ipoib/ipoib_cm.c        |   26 +++-
+ drivers/infiniband/ulp/ipoib/ipoib_ethtool.c   |   67 ++++++++
+ drivers/infiniband/ulp/ipoib/ipoib_genetlink.c |   68 ++++++++-
+ drivers/infiniband/ulp/ipoib/ipoib_ib.c        |   41 +++++-
+ drivers/infiniband/ulp/ipoib/ipoib_main.c      |  196 ++++++++++++++++++++++--
+ drivers/infiniband/ulp/ipoib/ipoib_multicast.c |   15 ++
+ drivers/infiniband/ulp/ipoib/ipoib_netlink.c   |   18 ++-
+ 8 files changed, 432 insertions(+), 25 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib.h b/drivers/infiniband/ulp/ipoib/ipoib.h
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib.h
 +++ b/drivers/infiniband/ulp/ipoib/ipoib.h
-@@ -95,6 +95,9 @@ enum {
- 	IPOIB_NEIGH_TBL_FLUSH	  = 12,
+@@ -44,6 +44,8 @@
+ #include <linux/if_infiniband.h>
+ #include <linux/mutex.h>
+ 
++#include <linux/inet_lro.h>
++
+ #include <net/neighbour.h>
+ #include <net/sch_generic.h>
+ 
+@@ -110,6 +112,9 @@ enum {
  
  	IPOIB_MAX_BACKOFF_SECONDS = 16,
-+#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,39))
-+       IPOIB_FLAG_CSUM = 17,
-+#endif
  
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,39))
++	IPOIB_FLAG_CSUM = 17,
++#endif
  	IPOIB_MCAST_FLAG_FOUND	  = 0,	/* used in set_multicast_list */
  	IPOIB_MCAST_FLAG_SENDONLY = 1,
+ 	IPOIB_MCAST_FLAG_BUSY	  = 2,	/* joining or already joined */
+@@ -119,6 +124,11 @@ enum {
+ 
+ 	IPOIB_USR_MC_MEMBER		= 7,	/* used for user-related mcg */
+ 
++#ifdef CONFIG_COMPAT_LRO_ENABLED_IPOIB
++	IPOIB_MAX_LRO_DESCRIPTORS = 8,
++	IPOIB_LRO_MAX_AGGR      = 64,
++#endif
++
+ 	MAX_SEND_CQE		  = 64,
+ 	IPOIB_CM_COPYBREAK	  = 256,
+ 	IPOIB_MAX_INLINE_SIZE     = 800,
+@@ -137,6 +147,13 @@ enum ipoib_alloc_type {
+ 	IPOIB_ALLOC_REPLACEMENT = 1,
+ };
+ 
++#ifdef CONFIG_COMPAT_LRO_ENABLED_IPOIB
++struct ipoib_lro {
++	struct net_lro_mgr lro_mgr;
++	struct net_lro_desc lro_desc[IPOIB_MAX_LRO_DESCRIPTORS];
++};
++#endif
++
+ #define	IPOIB_OP_RECV   (1ul << 31)
+ #ifdef CONFIG_INFINIBAND_IPOIB_CM
+ #define	IPOIB_OP_CM     (1ul << 30)
+@@ -425,6 +442,9 @@ struct ipoib_recv_ring {
+ 	struct ipoib_rx_ring_stats stats;
+ 	unsigned		index;
+ 	struct ipoib_ethtool_last_st ethtool;
++#ifdef CONFIG_COMPAT_LRO_ENABLED_IPOIB
++	struct ipoib_lro lro;
++#endif
+ };
+ 
+ struct ipoib_arp_repath {
+@@ -710,9 +730,15 @@ void ipoib_arm_cq(struct net_device *dev);
+ void ipoib_set_ethtool_ops(struct net_device *dev);
+ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca);
+ 
++#ifdef CONFIG_IPOIB_NO_OPTIONS
++#define IPOIB_FLAGS_RC		0x0
++#define IPOIB_FLAGS_UC		0x0
++#define IPOIB_FLAGS_TSS		0x0
++#else
+ #define IPOIB_FLAGS_RC		0x80
+ #define IPOIB_FLAGS_UC		0x40
+ #define IPOIB_FLAGS_TSS		0x20
++#endif
+ 
+ /* We don't support UC connections at the moment */
+ #define IPOIB_CM_SUPPORTED(ha)   (ha[0] & (IPOIB_FLAGS_RC))
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_cm.c b/drivers/infiniband/ulp/ipoib/ipoib_cm.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_cm.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_cm.c
-@@ -1394,7 +1394,11 @@ static void ipoib_cm_skb_reap(struct work_struct *work)
+@@ -587,6 +587,9 @@ void ipoib_cm_handle_rx_wc(struct net_device *dev,
+ 	int frags;
+ 	int has_srq;
+ 	struct sk_buff *small_skb;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
++	extern int (*eth_ipoib_handle_frame_hook)(struct sk_buff **skb);
++#endif
+ 
+ 	ipoib_dbg_data(priv, "cm recv completion: id %d, status: %d\n",
+ 		       wr_id, wc->status);
+@@ -693,10 +696,19 @@ copied:
+ 	/* XXX get correct PACKET_ type here */
+ 	skb->pkt_type = PACKET_HOST;
+ 	/* if handler is registered on top of ipoib, set skb oob data. */
+-        if (skb->dev->priv_flags & IFF_EIPOIB_VIF)
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
++	if ((skb->dev->priv_flags & CONFIG_COMPAT_IFF_EIPOIB_VIF) && eth_ipoib_handle_frame_hook) {
++#elif (LINUX_VERSION_CODE == KERNEL_VERSION(2,6,37) || LINUX_VERSION_CODE == KERNEL_VERSION(2,6,36))
++	if (skb->dev->priv_flags & CONFIG_COMPAT_IFF_EIPOIB_VIF)
++#else
++	if (skb->dev->priv_flags & IFF_EIPOIB_VIF)
++#endif
+ 		set_skb_oob_cb_data(skb, wc, NULL);
+-
+-	netif_receive_skb(skb);
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
++	eth_ipoib_handle_frame_hook(&skb);
++	} else
++#endif
++		netif_receive_skb(skb);
+ 
+ repost:
+ 	if (has_srq) {
+@@ -1502,7 +1514,11 @@ static void ipoib_cm_skb_reap(struct work_struct *work)
  			icmp_send(skb, ICMP_DEST_UNREACH, ICMP_FRAG_NEEDED, htonl(mtu));
  #if IS_ENABLED(CONFIG_IPV6)
  		else if (skb->protocol == htons(ETH_P_IPV6))
@@ -40,23 +138,392 @@ index xxxxxxx..xxxxxxx xxxxxx
  #endif
  		dev_kfree_skb_any(skb);
  
-@@ -1413,7 +1417,11 @@ void ipoib_cm_skb_too_long(struct net_device *dev, struct sk_buff *skb,
- 	int e = skb_queue_empty(&priv->cm.skb_queue);
+@@ -1520,7 +1536,11 @@ static void ipoib_cm_update_pmtu_task(struct work_struct *work)
+ 		container_of(work, struct ipoib_pmtu_update, work);
+ 	struct sk_buff *skb = pmtu_update->skb;
  
- 	if (skb_dst(skb))
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
- 		skb_dst(skb)->ops->update_pmtu(skb_dst(skb), NULL, skb, mtu);
+ 	skb_dst(skb)->ops->update_pmtu(skb_dst(skb), NULL, skb, pmtu_update->mtu);
 +#else
-+		skb_dst(skb)->ops->update_pmtu(skb_dst(skb), mtu);
++	skb_dst(skb)->ops->update_pmtu(skb_dst(skb), pmtu_update->mtu);
 +#endif
  
- 	skb_queue_tail(&priv->cm.skb_queue, skb);
- 	if (e)
+ 	consume_skb(skb);
+ 
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_ethtool.c
+@@ -324,6 +324,18 @@ static int ipoib_get_sset_count(struct net_device *dev, int sset)
+ 	}
+ }
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(3,6,0)
++/* Add missing defines for supported and advertised speed features */
++#define SUPPORTED_40000baseKR4_Full     (1 << 23)
++#define SUPPORTED_40000baseCR4_Full     (1 << 24)
++#define SUPPORTED_40000baseSR4_Full     (1 << 25)
++#define SUPPORTED_40000baseLR4_Full     (1 << 26)
++#define ADVERTISED_40000baseKR4_Full    (1 << 23)
++#define ADVERTISED_40000baseCR4_Full    (1 << 24)
++#define ADVERTISED_40000baseSR4_Full    (1 << 25)
++#define ADVERTISED_40000baseLR4_Full    (1 << 26)
++#endif
++
+ static int ipoib_get_settings(struct net_device *dev, struct ethtool_cmd *ecmd)
+ {
+ 	struct ipoib_dev_priv *priv = netdev_priv(dev);
+@@ -409,6 +421,7 @@ static void ipoib_get_ethtool_stats(struct net_device *dev,
+ 	}
+ }
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
+ static void ipoib_get_channels(struct net_device *dev,
+ 			struct ethtool_channels *channel)
+ {
+@@ -474,6 +487,48 @@ static int ipoib_set_channels(struct net_device *dev,
+ 
+ 	return ipoib_reinit(dev, channel->rx_count, channel->tx_count);
+ }
++#endif
++
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36)) && (LINUX_VERSION_CODE <  KERNEL_VERSION(3,3,0)) && defined (CONFIG_COMPAT_LRO_ENABLED_IPOIB)
++int ipoib_set_flags(struct net_device *dev, u32 data)
++{
++	struct ipoib_dev_priv *priv = netdev_priv(dev);
++	int hw_support_lro = 0;
++
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
++		hw_support_lro = priv->dev->hw_features & NETIF_F_RXCSUM;
++#else
++		hw_support_lro = priv->dev->features & NETIF_F_RXCSUM;
++#endif
++
++	if ((data & ETH_FLAG_LRO) && hw_support_lro)
++		dev->features |= NETIF_F_LRO;
++	else
++		dev->features &= ~NETIF_F_LRO;
++
++	return 0;
++}
++#elif defined (CONFIG_COMPAT_LRO_ENABLED_IPOIB) && (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
++int ipoib_set_flags(struct net_device *dev, u32 data)
++{
++	struct ipoib_dev_priv *priv = netdev_priv(dev);
++	if (data & ETH_FLAG_LRO) {
++		if (!(priv->dev->features & NETIF_F_RXCSUM))
++			return -EINVAL;
++	}
++	ethtool_op_set_flags(dev, data);
++	return 0;
++}
++#endif
++
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,39))
++static u32 ipoib_get_rx_csum(struct net_device *dev)
++{
++       	struct ipoib_dev_priv *priv = netdev_priv(dev);
++       	return test_bit(IPOIB_FLAG_CSUM, &priv->flags) &&
++		!test_bit(IPOIB_FLAG_ADMIN_CM, &priv->flags);
++}
++#endif
+ 
+ static const struct ethtool_ops ipoib_ethtool_ops = {
+ 	.get_drvinfo		= ipoib_get_drvinfo,
+@@ -486,8 +541,20 @@ static const struct ethtool_ops ipoib_ethtool_ops = {
+ 	.get_strings		= ipoib_get_strings,
+ 	.get_sset_count		= ipoib_get_sset_count,
+ 	.get_ethtool_stats	= ipoib_get_ethtool_stats,
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
+ 	.get_channels		= ipoib_get_channels,
+ 	.set_channels		= ipoib_set_channels,
++#endif
++#if (LINUX_VERSION_CODE <  KERNEL_VERSION(3,3,0))
++#if defined (CONFIG_COMPAT_LRO_ENABLED_IPOIB)
++	.set_flags		= ipoib_set_flags,
++#endif
++	.get_flags              = ethtool_op_get_flags,
++#endif
++#if (LINUX_VERSION_CODE <  KERNEL_VERSION(2,6,39))
++       .get_rx_csum            = ipoib_get_rx_csum,
++#endif
++
+ };
+ 
+ void ipoib_set_ethtool_ops(struct net_device *dev)
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_genetlink.c b/drivers/infiniband/ulp/ipoib/ipoib_genetlink.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/ulp/ipoib/ipoib_genetlink.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_genetlink.c
+@@ -415,6 +415,7 @@ static struct nla_policy ipoib_genl_policy[__IPOIB_NETLINK_ATT_MAX] = {
+ };
+ 
+ /* ipoib mcast group for path rec */
++#if defined(CONFIG_GENETLINK_IS_LIST_HEAD)
+ struct genl_multicast_group ipoib_path_notify_grp = {
+ 	.name = "PATH_NOTIFY",
+ };
+@@ -423,8 +424,20 @@ struct genl_multicast_group ipoib_path_notify_grp = {
+ struct genl_multicast_group ipoib_mc_notify_grp = {
+ 	.name = "MC_NOTIFY",
+ };
++#else
++enum ipoib_multicast_groups {
++		IPOIB_MCGRP_PATH_NOTIFY,
++		IPOIB_MCGRP_MC_NOTIFY,
++};
++
++static const struct genl_multicast_group ipoib_mcgrps[] = {
++		[IPOIB_MCGRP_PATH_NOTIFY] = { .name = "PATH_NOTIFY", },
++		[IPOIB_MCGRP_MC_NOTIFY] = { .name = "MC_NOTIFY", },
++};
++#endif
+ 
+ /* operation definition */
++#if defined(CONFIG_GENETLINK_IS_LIST_HEAD)
+ static struct genl_ops ipoib_genl_path_ops[] = {
+ 	{
+ 	.cmd		= ENABLE_PATH,
+@@ -474,7 +487,31 @@ static struct genl_ops ipoib_genl_validate_rules_ops[] = {
+ 	.dumpit		= NULL,
+ 	}
+ };
+-
++#else
++static struct genl_ops ipoib_genl_ops[] = {
++	{
++	.cmd		= ENABLE_PATH,
++	.flags		= GENL_ADMIN_PERM,
++	.policy		= ipoib_genl_policy,
++	.doit		= ipoib_gnl_cb,
++	.dumpit		= NULL,
++	},
++	{
++	.cmd		= ENABLE_MC,
++	.flags		= GENL_ADMIN_PERM,
++	.policy		= ipoib_genl_policy,
++	.doit		= ipoib_gnl_cb,
++	.dumpit		= NULL,
++	},
++	{
++	.cmd		= GET_MCG,
++	.flags		= GENL_ADMIN_PERM,
++	.policy		= ipoib_genl_policy,
++	.doit		= ipoib_gnl_cb,
++	.dumpit		= NULL,
++	}
++};
++#endif
+ static inline char *get_command(int command)
+ {
+ 	switch(command) {
+@@ -541,8 +578,13 @@ void generate_reply(struct work_struct *work)
+ 		memcpy(p, &record->path_rec,
+ 		       sizeof(struct ipoib_path_notice));
+ 		genlmsg_end(skb, msg_head);
++#if defined(CONFIG_GENETLINK_IS_LIST_HEAD)
+ 		i = genlmsg_multicast(skb, 0, ipoib_path_notify_grp.id,
+ 				      GFP_KERNEL);
++#else
++		i = genlmsg_multicast(&ipoib_genl_family, skb, 0,
++				      IPOIB_MCGRP_PATH_NOTIFY, GFP_KERNEL);
++#endif
+ 		break;
+ 	}
+ 	case PATH_DEL:
+@@ -554,8 +596,13 @@ void generate_reply(struct work_struct *work)
+ 		memcpy(p, &record->path_del,
+ 		       sizeof(struct ipoib_path_del_notice));
+ 		genlmsg_end(skb, msg_head);
++#if defined(CONFIG_GENETLINK_IS_LIST_HEAD)
+ 		i = genlmsg_multicast(skb, 0, ipoib_path_notify_grp.id,
+ 				      GFP_KERNEL);
++#else
++		i = genlmsg_multicast(&ipoib_genl_family, skb, 0,
++				      IPOIB_MCGRP_PATH_NOTIFY, GFP_KERNEL);
++#endif
+ 		break;
+ 	}
+ 	case MCG_DETAILS:
+@@ -568,8 +615,13 @@ void generate_reply(struct work_struct *work)
+ 		memcpy(m, &record->mc_join,
+ 		       sizeof(struct ipoib_mc_join_notice));
+ 		genlmsg_end(skb, msg_head);
++#if defined(CONFIG_GENETLINK_IS_LIST_HEAD)
+ 		i = genlmsg_multicast(skb, 0, ipoib_mc_notify_grp.id,
+ 				      GFP_KERNEL);
++#else
++		i = genlmsg_multicast(&ipoib_genl_family, skb, 0,
++				      IPOIB_MCGRP_MC_NOTIFY, GFP_KERNEL);
++#endif
+ 		break;
+ 	}
+ 	case MC_LEAVE:
+@@ -581,8 +633,13 @@ void generate_reply(struct work_struct *work)
+ 		memcpy(m, &record->mc_leave,
+ 		       sizeof(struct ipoib_mc_leave_notice));
+ 		genlmsg_end(skb, msg_head);
++#if defined(CONFIG_GENETLINK_IS_LIST_HEAD)
+ 		i = genlmsg_multicast(skb, 0, ipoib_mc_notify_grp.id,
+ 				      GFP_KERNEL);
++#else
++		i = genlmsg_multicast(&ipoib_genl_family, skb, 0,
++				      IPOIB_MCGRP_MC_NOTIFY, GFP_KERNEL);
++#endif
+ 		break;
+ 	}
+ 	}
+@@ -621,6 +678,7 @@ void ipoib_unregister_genl(void)
+ int ipoib_register_genl(void)
+ {
+ 	int rc;
++#if defined(CONFIG_GENETLINK_IS_LIST_HEAD)
+ 	rc = genl_register_family(&ipoib_genl_family);
+ 	if (rc != 0)
+ 		goto out;
+@@ -653,6 +711,14 @@ unregister:
+  *	all assigned operations to be unregistered automatically.
+  *	all assigned multicast groups to be unregistered automatically. */
+ 	ipoib_unregister_genl();
++	return rc;
++#else
++	genl_registered = 0;
++        rc = genl_register_family_with_ops_groups(&ipoib_genl_family, ipoib_genl_ops, ipoib_mcgrps);
++        if (rc < 0)
++                goto out;
++	genl_registered = 1;
++#endif
+ out:
+ 	return rc;
+ }
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_ib.c b/drivers/infiniband/ulp/ipoib/ipoib_ib.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/ulp/ipoib/ipoib_ib.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_ib.c
+@@ -266,18 +266,19 @@ static void ipoib_reuse_skb(struct net_device *dev,
+ 			    struct ipoib_skb *rx_skb)
+ {
+ 	struct ipoib_dev_priv *priv = netdev_priv(dev);
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(3,4,0))
+ 	__u8 cur_head_frag = rx_skb->skb->head_frag;
+-
++#endif
+ 	ib_dma_sync_single_for_cpu(priv->ca,
+ 				   rx_skb->mapping[0],
+ 				   IPOIB_UD_BUF_SIZE(priv->max_ib_mtu),
+ 				   DMA_FROM_DEVICE);
+ 
+ 	memset(rx_skb->skb, 0, offsetof(struct sk_buff, tail));
+-
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(3,4,0))
+ 	/* keep origin values of necessary fields */
+ 	rx_skb->skb->head_frag = cur_head_frag;
+-
++#endif
+ 	rx_skb->skb->data = rx_skb->skb->head + NET_SKB_PAD;
+ 	skb_reset_tail_pointer(rx_skb->skb);
+ 	skb_reserve(rx_skb->skb, 4);
+@@ -308,13 +309,22 @@ static int ipoib_prepare_next_skb(struct net_device *dev,
+ 					      rx_skb->mapping[0],
+ 					      buf_size,
+ 					      DMA_FROM_DEVICE);
++#ifdef CONFIG_COMPAT_SKB_HAS_FRAG_LIST
+ 	if (skb_has_frag_list(rx_skb->skb))
++#else
++	if (skb_has_frags(rx_skb->skb))
++#endif
+ 		ipoib_skb_drop_fraglist(rx_skb->skb);
+ 
+ 	rx_ring->skb_index = next_skb_id;
+ 	return 0;
+ }
+ 
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
++int (*eth_ipoib_handle_frame_hook)(struct sk_buff **skb) = NULL;
++EXPORT_SYMBOL_GPL(eth_ipoib_handle_frame_hook);
++#endif
++
+ static void ipoib_ib_handle_rx_wc(struct net_device *dev,
+ 				  struct ipoib_recv_ring *recv_ring,
+ 				  struct ib_wc *wc)
+@@ -400,12 +410,31 @@ static void ipoib_ib_handle_rx_wc(struct net_device *dev,
+ 		skb->ip_summed = CHECKSUM_UNNECESSARY;
+ 
+ 	/* if handler is registered on top of ipoib, set skb oob data. */
++#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,37))
++	if (dev->priv_flags & CONFIG_COMPAT_IFF_EIPOIB_VIF) {
++#else
+ 	if (dev->priv_flags & IFF_EIPOIB_VIF) {
++#endif
+ 		set_skb_oob_cb_data(skb, wc, &recv_ring->napi);
+ 		/*the registered handler will take care of the skb.*/
++
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
++		if (eth_ipoib_handle_frame_hook)
++			eth_ipoib_handle_frame_hook(&skb);
++		else
++#endif
++	netif_receive_skb(skb);
++
++	}
++#ifdef CONFIG_COMPAT_LRO_ENABLED_IPOIB
++	else if (dev->features & NETIF_F_LRO)
++		lro_receive_skb(&recv_ring->lro.lro_mgr, skb, NULL);
++	else
+ 		netif_receive_skb(skb);
+-	} else
++#else
++	else
+ 		napi_gro_receive(&recv_ring->napi, skb);
++#endif
+ 
+ repost:
+ 	if (unlikely(ipoib_ib_post_receive(dev, recv_ring, wr_id,
+@@ -621,6 +650,10 @@ poll_more:
+ 	}
+ 
+ 	if (n < budget) {
++#ifdef CONFIG_COMPAT_LRO_ENABLED_IPOIB
++		if (dev->features & NETIF_F_LRO)
++			lro_flush_all(&rx_ring->lro.lro_mgr);
++#endif
+ 		napi_complete(napi);
+ 		if (unlikely(ib_req_notify_cq(rx_ring->recv_cq,
+ 					      IB_CQ_NEXT_COMP |
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-@@ -185,6 +185,7 @@ static void ipoib_uninit(struct net_device *dev)
+@@ -65,6 +65,17 @@ MODULE_PARM_DESC(send_queue_size, "Number of descriptors in send queue (default
+ module_param_named(recv_queue_size, ipoib_recvq_size, int, 0444);
+ MODULE_PARM_DESC(recv_queue_size, "Number of descriptors in receive queue (default = 512) (2-8192)");
+ 
++#ifdef CONFIG_COMPAT_LRO_ENABLED_IPOIB
++static int lro = 1;
++module_param_named(lro, lro, int, 0444);
++MODULE_PARM_DESC(lro,  "Enable LRO (Large Receive Offload) (default = 1) (0-1)");
++
++static int lro_max_aggr = IPOIB_LRO_MAX_AGGR;
++module_param_named(lro_max_aggr, lro_max_aggr, int, 0444);
++MODULE_PARM_DESC(lro_max_aggr, "LRO: Max packets to be aggregated must be power of 2"
++                               "(default = 64) (2-64)");
++#endif
++
+ #ifdef CONFIG_INFINIBAND_IPOIB_DEBUG
+ int ipoib_debug_level;
+ 
+@@ -90,6 +101,10 @@ struct ib_sa_client ipoib_sa_client;
+ static void ipoib_add_one(struct ib_device *device);
+ static void ipoib_remove_one(struct ib_device *device);
+ static void ipoib_neigh_reclaim(struct rcu_head *rp);
++#ifdef CONFIG_COMPAT_LRO_ENABLED_IPOIB
++static void ipoib_lro_setup(struct ipoib_recv_ring *recv_ring,
++				struct ipoib_dev_priv *priv);
++#endif
+ 
+ static struct ib_client ipoib_client = {
+ 	.name   = "ipoib",
+@@ -196,6 +211,7 @@ void ipoib_uninit(struct net_device *dev)
  	ipoib_dev_cleanup(dev);
  }
  
@@ -64,7 +531,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static netdev_features_t ipoib_fix_features(struct net_device *dev, netdev_features_t features)
  {
  	struct ipoib_dev_priv *priv = netdev_priv(dev);
-@@ -194,6 +195,7 @@ static netdev_features_t ipoib_fix_features(struct net_device *dev, netdev_featu
+@@ -206,6 +222,7 @@ static netdev_features_t ipoib_fix_features(struct net_device *dev, netdev_featu
  
  	return features;
  }
@@ -72,22 +539,24 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static int ipoib_change_mtu(struct net_device *dev, int new_mtu)
  {
-@@ -231,7 +233,14 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
+@@ -263,8 +280,15 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
  		set_bit(IPOIB_FLAG_ADMIN_CM, &priv->flags);
  		ipoib_warn(priv, "enabling connected mode "
  			   "will cause multicast packet drops\n");
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
  		netdev_update_features(dev);
+-		dev_set_mtu(dev, ipoib_cm_max_mtu(dev));
 +#else
 +                dev->features &= ~(NETIF_F_IP_CSUM | NETIF_F_SG | NETIF_F_TSO);
 +                if (ipoib_cm_max_mtu(dev) > priv->mcast_mtu)
 +                        ipoib_warn(priv, "mtu > %d will cause multicast packet drops.\n",
 +                                   priv->mcast_mtu);
 +#endif
++ 		dev_set_mtu(dev, ipoib_cm_max_mtu(dev));
  		rtnl_unlock();
- 		priv->tx_wr.send_flags &= ~IB_SEND_IP_CSUM;
  
-@@ -242,7 +251,16 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
+ 		send_ring = priv->send_ring;
+@@ -283,7 +307,16 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
  
  	if (!strcmp(buf, "datagram\n")) {
  		clear_bit(IPOIB_FLAG_ADMIN_CM, &priv->flags);
@@ -104,27 +573,184 @@ index xxxxxxx..xxxxxxx xxxxxx
  		dev_set_mtu(dev, min(priv->mcast_mtu, dev->mtu));
  		rtnl_unlock();
  		ipoib_flush_paths(dev);
-@@ -1309,6 +1327,7 @@ void ipoib_dev_cleanup(struct net_device *dev)
+@@ -1104,9 +1137,16 @@ unref:
+ 	return NETDEV_TX_OK;
+ }
+ 
++#ifdef CONFIG_COMPAT_SELECT_QUEUE_ACCEL
+ static u16 ipoib_select_queue_hw(struct net_device *dev, struct sk_buff *skb,
+-				 void *accel_priv, select_queue_fallback_t
+-				 fallback)
++#ifdef CONFIG_COMPAT_SELECT_QUEUE_FALLBACK
++ 			 	 void *accel_priv, select_queue_fallback_t fallback)
++#else
++				 void *accel_priv)
++#endif
++#else /* CONFIG_COMPAT_SELECT_QUEUE_ACCEL */
++static u16 ipoib_select_queue_hw(struct net_device *dev, struct sk_buff *skb)
++#endif
+ {
+ 	struct ipoib_dev_priv *priv = netdev_priv(dev);
+ 	struct ipoib_cb *cb = (struct ipoib_cb *) skb->cb;
+@@ -1132,9 +1172,16 @@ static u16 ipoib_select_queue_hw(struct net_device *dev, struct sk_buff *skb,
+ 	return skb_tx_hash(dev, skb);
+ }
+ 
++#ifdef CONFIG_COMPAT_SELECT_QUEUE_ACCEL
+ static u16 ipoib_select_queue_sw(struct net_device *dev, struct sk_buff *skb,
+-				 void* accel_priv, select_queue_fallback_t
+-				 fallback)
++#ifdef CONFIG_COMPAT_SELECT_QUEUE_FALLBACK
++				 void* accel_priv, select_queue_fallback_t fallback)
++#else
++				 void* accel_priv)
++#endif
++#else /* CONFIG_COMPAT_SELECT_QUEUE_ACCEL */
++static u16 ipoib_select_queue_sw(struct net_device *dev, struct sk_buff *skb)
++#endif
+ {
+ 	struct ipoib_dev_priv *priv = netdev_priv(dev);
+ 	struct ipoib_cb *cb = (struct ipoib_cb *) skb->cb;
+@@ -1168,7 +1215,11 @@ static u16 ipoib_select_queue_sw(struct net_device *dev, struct sk_buff *skb,
+ 	header->tss_qpn_mask_sz |= priv->tss_qpn_mask_sz;
+ 
+ 	/* don't use special ring in TX */
++#ifdef CONFIG_COMPAT_IS___SKB_TX_HASH
+ 	return __skb_tx_hash(dev, skb, priv->tss_qp_num);
++#else
++	return skb_tx_hash(dev, skb);
++#endif
+ }
+ 
+ static void ipoib_timeout(struct net_device *dev)
+@@ -1914,6 +1965,9 @@ int ipoib_dev_init(struct net_device *dev, struct ib_device *ca, int port)
+ 		}
+ 		recv_ring->dev = dev;
+ 		recv_ring->index = i;
++#ifdef CONFIG_COMPAT_LRO_ENABLED_IPOIB
++		ipoib_lro_setup(recv_ring, priv);
++#endif
+ 		recv_ring++;
+ 		rx_allocated++;
+ 	}
+@@ -2021,16 +2075,22 @@ void ipoib_dev_cleanup(struct net_device *dev)
  	ipoib_delete_debug_files(dev);
  
  	/* Delete any child interfaces first */
+-	list_for_each_entry_safe_reverse(cpriv, tcpriv,
+-					 &priv->child_intfs, list)
+-		unregister_netdevice_queue(cpriv->dev, &head);
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33)
- 	list_for_each_entry_safe(cpriv, tcpriv, &priv->child_intfs, list) {
- 		/* Stop GC on child */
- 		set_bit(IPOIB_STOP_NEIGH_GC, &cpriv->flags);
-@@ -1316,6 +1335,11 @@ void ipoib_dev_cleanup(struct net_device *dev)
- 		unregister_netdevice_queue(cpriv->dev, &head);
- 	}
- 	unregister_netdevice_many(&head);
++        list_for_each_entry_safe_reverse(cpriv, tcpriv,
++                                         &priv->child_intfs, list)
++                unregister_netdevice_queue(cpriv->dev, &head);
+ 
+ 	/*
+-	 * the next function calls the ipoib_uninit which calls for
+-	 * ipoib_dev_cleanup for each devices at the head list.
+-	 */
+-
+-	unregister_netdevice_many(&head);
++ 	 * the next function calls the ipoib_uninit which calls for
++ 	 * ipoib_dev_cleanup for each devices at the head list.
++ 	 */
++
++        unregister_netdevice_many(&head);
 +#else
 +        list_for_each_entry_safe(cpriv, tcpriv,
 +				 &priv->child_intfs, list)
 +		unregister_netdevice(cpriv->dev);
 +#endif
  
- 	ipoib_ib_dev_cleanup(dev);
+ 	ipoib_dev_uninit(dev);
+ 	/* ipoib_dev_uninit took rings lock can't release in case of reinit */
+@@ -2074,7 +2134,9 @@ int ipoib_reinit(struct net_device *dev, int num_rx, int num_tx)
+ 		priv->tss_qp_num = num_tx - 1;
+ 	else
+ 		priv->tss_qp_num = num_tx;
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)) || defined (CONFIG_COMPAT_IS_NUM_TX_QUEUES)
+ 	netif_set_real_num_tx_queues(dev, num_tx);
++#endif
+ 	netif_set_real_num_rx_queues(dev, num_rx);
+ 	/*
+ 	 * prevent ipoib_ib_dev_init call ipoib_ib_dev_open
+@@ -2109,6 +2171,75 @@ int ipoib_reinit(struct net_device *dev, int num_rx, int num_tx)
+ 	return ret;
+ }
  
-@@ -1337,7 +1361,9 @@ static const struct net_device_ops ipoib_netdev_ops = {
++#ifdef CONFIG_COMPAT_LRO_ENABLED_IPOIB
++static int get_skb_hdr(struct sk_buff *skb, void **iphdr,
++			void **tcph, u64 *hdr_flags, void *priv)
++{
++	unsigned int ip_len;
++	struct iphdr *iph;
++
++	if (unlikely(skb->protocol != htons(ETH_P_IP)))
++		return -1;
++
++	/*
++	* In the future we may add an else clause that verifies the
++	* checksum and allows devices which do not calculate checksum
++	* to use LRO.
++	*/
++	if (unlikely(skb->ip_summed != CHECKSUM_UNNECESSARY))
++		return -1;
++
++	/* Check for non-TCP packet */
++	skb_reset_network_header(skb);
++	iph = ip_hdr(skb);
++	if (iph->protocol != IPPROTO_TCP)
++		return -1;
++
++	ip_len = ip_hdrlen(skb);
++	skb_set_transport_header(skb, ip_len);
++	*tcph = tcp_hdr(skb);
++
++	/* check if IP header and TCP header are complete */
++	if (ntohs(iph->tot_len) < ip_len + tcp_hdrlen(skb))
++		return -1;
++
++	*hdr_flags = LRO_IPV4 | LRO_TCP;
++	*iphdr = iph;
++
++	return 0;
++}
++
++
++static void ipoib_lro_setup(struct ipoib_recv_ring *recv_ring,
++				struct ipoib_dev_priv *priv)
++{
++	recv_ring->lro.lro_mgr.max_aggr  = lro_max_aggr;
++	recv_ring->lro.lro_mgr.max_desc  = IPOIB_MAX_LRO_DESCRIPTORS;
++	recv_ring->lro.lro_mgr.lro_arr   = recv_ring->lro.lro_desc;
++	recv_ring->lro.lro_mgr.get_skb_header = get_skb_hdr;
++	recv_ring->lro.lro_mgr.features  = LRO_F_NAPI;
++	recv_ring->lro.lro_mgr.dev               = priv->dev;
++	recv_ring->lro.lro_mgr.ip_summed_aggr = CHECKSUM_UNNECESSARY;
++}
++
++void set_lro_features_bit(struct ipoib_dev_priv *priv)
++{
++	u64 hw_support_lro = 0;
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
++		hw_support_lro = priv->dev->hw_features & NETIF_F_RXCSUM;
++#else
++		hw_support_lro = (priv->dev->features & NETIF_F_RXCSUM);
++#endif
++	if (lro && hw_support_lro) {
++		priv->dev->features |= NETIF_F_LRO;
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0))
++		priv->dev->hw_features |= NETIF_F_LRO;
++		priv->dev->wanted_features |= NETIF_F_LRO;
++#endif
++	}
++}
++#endif
++
+ static const struct header_ops ipoib_header_ops = {
+ 	.create	= ipoib_hard_header,
+ };
+@@ -2118,7 +2249,9 @@ static const struct net_device_ops ipoib_netdev_ops_no_tss = {
  	.ndo_open		 = ipoib_open,
  	.ndo_stop		 = ipoib_stop,
  	.ndo_change_mtu		 = ipoib_change_mtu,
@@ -133,28 +759,46 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#endif
  	.ndo_start_xmit	 	 = ipoib_start_xmit,
  	.ndo_tx_timeout		 = ipoib_timeout,
- 	.ndo_set_rx_mode	 = ipoib_set_mcast_list,
-@@ -1364,7 +1390,11 @@ void ipoib_setup(struct net_device *dev)
- 	dev->tx_queue_len	 = ipoib_sendq_size * 2;
- 	dev->features		 = (NETIF_F_VLAN_CHALLENGED	|
- 				    NETIF_F_HIGHDMA);
-+#ifdef HAVE_NETIF_KEEP_DST
- 	netif_keep_dst(dev);
-+#else
-+	dev->priv_flags         &= ~IFF_XMIT_DST_RELEASE;
+ 	.ndo_get_stats		= ipoib_get_stats,
+@@ -2130,7 +2263,9 @@ static const struct net_device_ops ipoib_netdev_ops_hw_tss = {
+ 	.ndo_open	= ipoib_open,
+ 	.ndo_stop	= ipoib_stop,
+ 	.ndo_change_mtu		= ipoib_change_mtu,
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ 	.ndo_fix_features		= ipoib_fix_features,
 +#endif
+ 	.ndo_start_xmit		= ipoib_start_xmit,
+ 	.ndo_select_queue		= ipoib_select_queue_hw,
+ 	.ndo_tx_timeout		= ipoib_timeout,
+@@ -2143,7 +2278,9 @@ static const struct net_device_ops ipoib_netdev_ops_sw_tss = {
+ 	.ndo_open	= ipoib_open,
+ 	.ndo_stop	= ipoib_stop,
+ 	.ndo_change_mtu		= ipoib_change_mtu,
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+ 	.ndo_fix_features		= ipoib_fix_features,
++#endif
+ 	.ndo_start_xmit		= ipoib_start_xmit,
+ 	.ndo_select_queue		= ipoib_select_queue_sw,
+ 	.ndo_tx_timeout		= ipoib_timeout,
+@@ -2235,7 +2372,9 @@ struct ipoib_dev_priv *ipoib_intf_alloc(const char *name,
+ 	if (!dev)
+ 		return NULL;
  
- 	memcpy(dev->broadcast, ipv4_bcast_addr, INFINIBAND_ALEN);
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)) || defined (CONFIG_COMPAT_IS_NUM_TX_QUEUES)
+ 	netif_set_real_num_tx_queues(dev, template_priv->num_tx_queues);
++#endif
+ 	netif_set_real_num_rx_queues(dev, template_priv->num_rx_queues);
  
-@@ -1521,6 +1551,7 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
- 	kfree(device_attr);
+ 	return netdev_priv(dev);
+@@ -2591,6 +2730,7 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
+ 		return result;
  
  	if (priv->hca_caps & IB_DEVICE_UD_IP_CSUM) {
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
  		priv->dev->hw_features = NETIF_F_SG |
  			NETIF_F_IP_CSUM | NETIF_F_RXCSUM;
  
-@@ -1528,6 +1559,14 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
+@@ -2598,6 +2738,14 @@ int ipoib_set_dev_features(struct ipoib_dev_priv *priv, struct ib_device *hca)
  			priv->dev->hw_features |= NETIF_F_TSO;
  
  		priv->dev->features |= priv->dev->hw_features;
@@ -169,7 +813,19 @@ index xxxxxxx..xxxxxxx xxxxxx
  	}
  
  	return 0;
-@@ -1559,7 +1598,9 @@ static struct net_device *ipoib_add_port(const char *format,
+@@ -2627,9 +2775,9 @@ static struct net_device *ipoib_add_port(const char *format,
+ 	SET_NETDEV_DEV(priv->dev, hca->dma_device);
+ 	priv->dev->dev_id = port - 1;
+ 
+-	if (!ib_query_port(hca, port, &attr))
++	if (!ib_query_port(hca, port, &attr)) {
+ 		priv->max_ib_mtu = ib_mtu_enum_to_int(attr.max_mtu);
+-	else {
++	} else {
+ 		printk(KERN_WARNING "%s: ib_query_port %d failed\n",
+ 		       hca->name, port);
+ 		goto device_init_failed;
+@@ -2643,7 +2791,9 @@ static struct net_device *ipoib_add_port(const char *format,
  	priv->dev->mtu  = IPOIB_UD_MTU(priv->max_ib_mtu);
  	priv->mcast_mtu  = priv->admin_mtu = priv->dev->mtu;
  
@@ -179,11 +835,41 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	result = ib_query_pkey(hca, port, 0, &priv->pkey);
  	if (result) {
+@@ -2697,6 +2847,12 @@ static struct net_device *ipoib_add_port(const char *format,
+ 		goto register_failed;
+ 	}
+ 
++#ifdef CONFIG_COMPAT_LRO_ENABLED_IPOIB
++	/*force lro on the dev->features, because the function
++	register_netdev disable it according to our private lro*/
++	set_lro_features_bit(priv);
++#endif
++
+ 	ipoib_create_debug_files(priv->dev);
+ 
+ 	result = -ENOMEM;
+@@ -2881,6 +3037,16 @@ static int __init ipoib_init_module(void)
+ 	ipoib_max_conn_qp = min(ipoib_max_conn_qp, IPOIB_CM_MAX_CONN_QP);
+ #endif
+ 
++#ifdef CONFIG_COMPAT_LRO_ENABLED_IPOIB
++	if (lro < 0 || lro > 1)
++		lro = 1;
++
++	if (lro_max_aggr < 0 || lro_max_aggr > IPOIB_LRO_MAX_AGGR ||
++	    (lro_max_aggr & (lro_max_aggr - 1)) != 0)
++		lro_max_aggr = IPOIB_LRO_MAX_AGGR;
++#endif
++
++
+ 	/*
+ 	 * When copying small received packets, we only copy from the
+ 	 * linear data part of the SKB, so we rely on this condition.
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_multicast.c b/drivers/infiniband/ulp/ipoib/ipoib_multicast.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_multicast.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_multicast.c
-@@ -786,7 +786,11 @@ void ipoib_mcast_restart_task(struct work_struct *work)
+@@ -906,7 +906,11 @@ void ipoib_mcast_restart_task(struct work_struct *work)
  	struct ipoib_dev_priv *priv =
  		container_of(work, struct ipoib_dev_priv, restart_task);
  	struct net_device *dev = priv->dev;
@@ -195,7 +881,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct ipoib_mcast *mcast, *tmcast;
  	LIST_HEAD(remove_list);
  	unsigned long flags;
-@@ -811,6 +815,7 @@ void ipoib_mcast_restart_task(struct work_struct *work)
+@@ -929,6 +933,7 @@ void ipoib_mcast_restart_task(struct work_struct *work)
  		clear_bit(IPOIB_MCAST_FLAG_FOUND, &mcast->flags);
  
  	/* Mark all of the entries that are found or don't exist */
@@ -203,7 +889,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	netdev_for_each_mc_addr(ha, dev) {
  		union ib_gid mgid;
  
-@@ -818,6 +823,16 @@ void ipoib_mcast_restart_task(struct work_struct *work)
+@@ -936,6 +941,16 @@ void ipoib_mcast_restart_task(struct work_struct *work)
  			continue;
  
  		memcpy(mgid.raw, ha->addr + 4, sizeof mgid);
@@ -218,13 +904,39 @@ index xxxxxxx..xxxxxxx xxxxxx
 +		memcpy(mgid.raw, mclist->dmi_addr + 4, sizeof mgid);
 +#endif
  
- 		mcast = __ipoib_mcast_find(dev, &mgid);
+ 		mcast = __ipoib_mcast_find(dev, &mgid, &priv->multicast_tree);
  		if (!mcast || test_bit(IPOIB_MCAST_FLAG_SENDONLY, &mcast->flags)) {
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_netlink.c b/drivers/infiniband/ulp/ipoib/ipoib_netlink.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_netlink.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_netlink.c
-@@ -136,7 +136,11 @@ static int ipoib_new_child_link(struct net *src_net, struct net_device *dev,
+@@ -91,8 +91,11 @@ static int ipoib_changelink(struct net_device *dev,
+ out_err:
+ 	return ret;
+ }
+-
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33)
+ static int ipoib_new_child_link(struct net *src_net, struct net_device *dev,
++#else
++static int ipoib_new_child_link(struct net_device *dev,
++#endif
+ 			       struct nlattr *tb[], struct nlattr *data[])
+ {
+ 	struct net_device *pdev;
+@@ -102,8 +105,11 @@ static int ipoib_new_child_link(struct net *src_net, struct net_device *dev,
+ 
+ 	if (!tb[IFLA_LINK])
+ 		return -EINVAL;
+-
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33)
+ 	pdev = __dev_get_by_index(src_net, nla_get_u32(tb[IFLA_LINK]));
++#else
++	pdev = __dev_get_by_index(dev_net(dev), nla_get_u32(tb[IFLA_LINK]));
++#endif
+ 	if (!pdev || pdev->type != ARPHRD_INFINIBAND)
+ 		return -ENODEV;
+ 
+@@ -127,7 +133,11 @@ static int ipoib_new_child_link(struct net *src_net, struct net_device *dev,
  	return err;
  }
  
@@ -236,7 +948,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	struct ipoib_dev_priv *priv, *ppriv;
  
-@@ -144,7 +148,11 @@ static void ipoib_unregister_child_dev(struct net_device *dev, struct list_head
+@@ -135,7 +145,11 @@ static void ipoib_unregister_child_dev(struct net_device *dev, struct list_head
  	ppriv = netdev_priv(priv->parent);
  
  	down_write(&ppriv->vlan_rwsem);
