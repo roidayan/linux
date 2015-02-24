@@ -259,10 +259,93 @@ static const struct file_operations ipoib_path_fops = {
 	.release = seq_release
 };
 
+static void *ipoib_neigh_seq_start(struct seq_file *file, loff_t *pos)
+{
+	struct ipoib_neigh_iter *iter;
+
+	if (*pos == 0) {
+		iter = ipoib_neigh_iter_init(file->private);
+	} else {
+		*pos = 0;
+		return NULL;
+	}
+	return iter;
+}
+
+static void *ipoib_neigh_seq_next(struct seq_file *file, void *iter_ptr,
+				   loff_t *pos)
+{
+	struct ipoib_neigh_iter *iter = iter_ptr;
+
+	if (ipoib_neigh_iter_next(iter)) {
+		kfree(iter);
+		return NULL;
+	}
+	return iter;
+}
+
+static void ipoib_neigh_seq_stop(struct seq_file *file, void *iter_ptr)
+{
+	/* nothing for now */
+}
+
+static int ipoib_neigh_seq_show(struct seq_file *file, void *iter_ptr)
+{
+	struct ipoib_neigh_iter *iter = (struct ipoib_neigh_iter *)iter_ptr;
+	struct ipoib_neigh *neigh;
+
+	if (!iter)
+		return 1;
+
+	neigh = kmalloc(sizeof(struct ipoib_neigh), GFP_KERNEL);
+	if (!neigh)
+		return -ENOMEM;
+
+	ipoib_neigh_iter_read(iter, neigh);
+
+	seq_printf(file, "neigh: %pI6\n", neigh->daddr);
+	seq_printf(file, "  index: %d\n", neigh->index);
+	seq_printf(file, "  alive: %lu\n", (neigh->alive)/HZ);
+	seq_printf(file, "  refcnt: %d\n", atomic_read(&neigh->refcnt));
+	seq_printf(file, "  dev->name: %s\n\n", neigh->dev->name);
+	kfree(neigh);
+	return 0;
+}
+
+static const struct seq_operations ipoib_neigh_seq_ops = {
+	.start = ipoib_neigh_seq_start,
+	.next  = ipoib_neigh_seq_next,
+	.stop  = ipoib_neigh_seq_stop,
+	.show  = ipoib_neigh_seq_show,
+};
+
+static int ipoib_neigh_open(struct inode *inode, struct file *file)
+{
+	struct seq_file *seq;
+	int ret;
+
+	ret = seq_open(file, &ipoib_neigh_seq_ops);
+	if (ret)
+		return ret;
+
+	seq = file->private_data;
+	seq->private = inode->i_private;
+
+	return 0;
+}
+
+static const struct file_operations ipoib_neigh_fops = {
+	.owner   = THIS_MODULE,
+	.open    = ipoib_neigh_open,
+	.read    = seq_read,
+	.llseek  = seq_lseek,
+	.release = seq_release
+};
+
 void ipoib_create_debug_files(struct net_device *dev)
 {
 	struct ipoib_dev_priv *priv = netdev_priv(dev);
-	char name[IFNAMSIZ + sizeof "_path"];
+	char name[IFNAMSIZ + sizeof "_neigh"];
 
 	snprintf(name, sizeof name, "%s_mcg", dev->name);
 	priv->mcg_dentry = debugfs_create_file(name, S_IFREG | S_IRUGO,
@@ -275,14 +358,24 @@ void ipoib_create_debug_files(struct net_device *dev)
 						ipoib_root, dev, &ipoib_path_fops);
 	if (!priv->path_dentry)
 		ipoib_warn(priv, "failed to create path debug file\n");
+
+	snprintf(name, sizeof(name), "%s_neigh", dev->name);
+	priv->neigh_dentry = debugfs_create_file(name, S_IFREG | S_IRUGO,
+						 ipoib_root, dev,
+						 &ipoib_neigh_fops);
+	if (!priv->neigh_dentry)
+		ipoib_warn(priv, "failed to create neigh debug file\n");
+
 }
 
 void ipoib_delete_debug_files(struct net_device *dev)
 {
 	struct ipoib_dev_priv *priv = netdev_priv(dev);
 
+	/* debugfs_remove(NULL) is safe */
 	debugfs_remove(priv->mcg_dentry);
 	debugfs_remove(priv->path_dentry);
+	debugfs_remove(priv->neigh_dentry);
 }
 
 int ipoib_register_debugfs(void)
