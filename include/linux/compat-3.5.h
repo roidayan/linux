@@ -133,7 +133,7 @@ struct tc_fq_codel_xstats {
 };
 #endif
 
-#ifndef CONFIG_COMPAT_IS_MAXRATE
+#ifndef HAVE_IEEE_GET_SET_MAXRATE
 #ifndef IEEE_8021QAZ_MAX_TCS
 #define IEEE_8021QAZ_MAX_TCS 8
 #endif
