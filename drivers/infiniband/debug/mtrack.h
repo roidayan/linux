@@ -281,6 +281,18 @@
 	vfree(__memtrack_addr);							\
 })
 
+#ifndef kvfree
+#define kvfree(addr) ({ \
+	void *__memtrack_addr = (void *)addr;					\
+	if (is_vmalloc_addr(__memtrack_addr)) { 				\
+		memtrack_free(MEMTRACK_VMALLOC, 0UL, (unsigned long)(__memtrack_addr), 0UL, 0, __FILE__, __LINE__); \
+	}									\
+	else {									\
+		memtrack_free(MEMTRACK_KMALLOC, 0UL, (unsigned long)(__memtrack_addr), 0UL, 0, __FILE__, __LINE__); \
+	}									\
+	kvfree(__memtrack_addr);						\
+})
+#endif
 
 #define kmem_cache_alloc(cache, flags) ({					\
 	void *__memtrack_addr = NULL;						\

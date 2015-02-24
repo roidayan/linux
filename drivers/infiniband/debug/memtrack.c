@@ -42,6 +42,9 @@
 #ifdef vfree
 	#undef vfree
 #endif
+#ifdef kvfree
+	#undef kvfree
+#endif
 #ifdef kmem_cache_alloc
 	#undef kmem_cache_alloc
 #endif
