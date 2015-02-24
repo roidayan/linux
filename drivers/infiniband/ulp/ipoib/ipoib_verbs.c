@@ -310,6 +310,7 @@ static int ipoib_transport_cq_init(struct net_device *dev,
 	req_vec = (priv->port - 1) * roundup_pow_of_two(num_online_cpus());
 	req_vec += priv->child_index;
 	send_ring = priv->send_ring;
+
 	for (i = 0; i < priv->num_tx_queues; i++) {
 		struct ib_cq_attr  attr;
 		int ret;
@@ -381,6 +382,7 @@ static int ipoib_create_parent_qp(struct net_device *dev,
 	if (priv->tss_qp_num == 0 && priv->rss_qp_num == 0)
 		/* Legacy mode */
 		init_attr.qpg_type = IB_QPG_NONE;
+
 	else {
 		init_attr.qpg_type = IB_QPG_PARENT;
 		init_attr.parent_attrib.tss_child_count = priv->tss_qp_num;
@@ -414,8 +416,18 @@ static int ipoib_create_parent_qp(struct net_device *dev,
 	if (IS_ERR(qp)) {
 		return PTR_ERR(qp); /* qp is an error value and will be checked */
 	}
-
 	priv->qp = qp;
+
+	/* check inline availablilty */
+	if (!init_attr.cap.max_inline_data) {
+		/* mark it as not-available */
+		ipoib_inline_thold = 0;
+		pr_info("card: %s doesn't support inline for QP: 0x%x\n",
+			ca->name, priv->qp->qp_num);
+	} else {
+		ipoib_inline_thold = min(ipoib_inline_thold, init_attr.cap.max_inline_data);
+		pr_info("card: %s, QP: 0x%x, inline size: %d\n", ca->name, priv->qp->qp_num, ipoib_inline_thold);
+	}
 
 	/* TSS is not supported in HW or NO TSS (tss_qp_num = 0) */
 	if (priv->num_tx_queues > priv->tss_qp_num)
@@ -624,7 +636,6 @@ int ipoib_transport_dev_init(struct net_device *dev, struct ib_device *ca)
 		pr_warn("%s: failed to create QP(s)\n", ca->name);
 		goto out_free_parent_qp;
 	}
-
 
 	send_ring = priv->send_ring;
 	for (j = 0; j < priv->num_tx_queues; j++) {
