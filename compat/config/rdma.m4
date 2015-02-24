@@ -1084,15 +1084,11 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 	AC_MSG_CHECKING([if struct net_device_ops has *ndo_setup_tc])
 	LB_LINUX_TRY_COMPILE([
 		#include <linux/netdevice.h>
-
-		int setup_tc(struct net_device *dev, , u8 tc)
-		{
-			return 0;
-		}
 	],[
-		struct net_device_ops netdev_ops;
+		struct net_device_ops x = {
+			.ndo_setup_tc = NULL,
+		};
 
-		netdev_ops.ndo_setup_tc = setup_tc;
 		return 0;
 	],[
 		AC_MSG_RESULT(yes)
