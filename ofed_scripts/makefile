@@ -25,6 +25,10 @@ CFLAGS += \
 	-DCOMPAT_PROJECT="\"Compat-mlnx-ofed\"" \
 	-DCOMPAT_VERSION="\"$(shell cat compat_version)\"" \
 
+ifeq ($(CONFIG_COMPAT_TEST), y)
+CFLAGS += -DCONFIG_COMPAT_TEST
+endif
+
 CC  = $(CROSS_COMPILE)gcc
 CPP = $(CC) -E
 

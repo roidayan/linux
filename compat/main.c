@@ -1,5 +1,9 @@
 #include <linux/module.h>
 
+#ifdef CONFIG_COMPAT_TEST
+#include "config_test.h"
+#endif
+
 MODULE_AUTHOR("Luis R. Rodriguez");
 MODULE_DESCRIPTION("Kernel backport module");
 MODULE_LICENSE("GPL");
