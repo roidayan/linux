@@ -2808,6 +2808,12 @@ static void mlx4_ib_remove(struct mlx4_dev *dev, void *ibdev_ptr)
 			dev_idx = -1;
 	}
 	ib_unregister_device(&ibdev->ib_dev);
+	if (dev_idx >= 0) {
+		spin_lock(&dev_num_str_lock);
+		bitmap_release_region(dev_num_str_bitmap, dev_idx, 0);
+		spin_unlock(&dev_num_str_lock);
+	}
+
 	if (ibdev->iboe.nb.notifier_call) {
 		if (unregister_netdevice_notifier(&ibdev->iboe.nb))
 			pr_warn("failure unregistering notifier\n");
