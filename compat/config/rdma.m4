@@ -869,7 +869,7 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 
 	AC_MSG_CHECKING([if include/net/bonding.h exists])
 	LB_LINUX_TRY_COMPILE([
-		#include <net/bonding.h>"
+		#include <net/bonding.h>
 	],[
 		return 0;
 	],[
