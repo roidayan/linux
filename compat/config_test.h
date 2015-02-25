@@ -398,6 +398,54 @@
 #error HAVE_NETDEV_BONDING_INFO is not defined
 #endif
 
+#ifndef HAVE_DEV_GET_BY_INDEX_RCU
+#error HAVE_DEV_GET_BY_INDEX_RCU is not defined
+#endif
+
+#ifndef HAVE_NETDEV_MASTER_UPPER_DEV_GET_RCU
+#error HAVE_NETDEV_MASTER_UPPER_DEV_GET_RCU is not defined
+#endif
+
+#ifndef HAVE_INET6_IF_LIST
+#error HAVE_INET6_IF_LIST is not defined
+#endif
+
+#ifndef HAVE_DRAIN_WORKQUEUE
+#error HAVE_DRAIN_WORKQUEUE is not defined
+#endif
+
+#ifndef HAVE_PINNED_VM
+#error HAVE_PINNED_VM is not defined
+#endif
+
+#ifndef HAVE_PROC_SET_USER
+#error HAVE_PROC_SET_USER is not defined
+#endif
+
+#ifndef HAVE_UAPI_IF_BONDING_H
+#error HAVE_UAPI_IF_BONDING_H is not defined
+#endif
+
+#ifndef HAVE_SVC_XPRT_INIT_4_PARAMS
+#error HAVE_SVC_XPRT_INIT_4_PARAMS is not defined
+#endif
+
+#ifndef HAVE_RQ_NEXT_PAGE
+#error HAVE_RQ_NEXT_PAGE is not defined
+#endif
+
+#ifndef HAVE_SUNRPC_ADDR_H
+#error HAVE_SUNRPC_ADDR_H is not defined
+#endif
+
+#ifndef HAVE_XPRT_ALLOC_SLOT
+#error HAVE_XPRT_ALLOC_SLOT is not defined
+#endif
+
+#ifndef HAVE_KMAP_ATOMIC_1_PARAM
+#error HAVE_KMAP_ATOMIC_1_PARAM is not defined
+#endif
+
 #endif /* 3.19 */
 #endif /* 3.18 */
 #endif /* 3.17 */
