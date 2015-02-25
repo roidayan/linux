@@ -3,26 +3,29 @@ Subject: [PATCH] BACKPORT: ib-core
 
 Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
 ---
- drivers/infiniband/core/addr.c          |  105 +++++++++++++++++++++++++++++++
- drivers/infiniband/core/cm.c            |   23 +++++++
- drivers/infiniband/core/cma.c           |   64 +++++++++++++++++++
- drivers/infiniband/core/fmr_pool.c      |    7 ++
- drivers/infiniband/core/iwcm.c          |   16 +++++
- drivers/infiniband/core/iwpm_util.c     |   26 +++++++-
- drivers/infiniband/core/mad.c           |    3 +
- drivers/infiniband/core/netlink.c       |   23 +++++++
- drivers/infiniband/core/roce_gid_mgmt.c |    2 +
- drivers/infiniband/core/sa_query.c      |   19 ++++++
- drivers/infiniband/core/ucm.c           |   38 +++++++++++
- drivers/infiniband/core/ucma.c          |   76 ++++++++++++++++++++++
- drivers/infiniband/core/umem.c          |   16 +++++
- drivers/infiniband/core/user_mad.c      |   19 ++++++
- drivers/infiniband/core/uverbs_cmd.c    |   51 +++++++++++++++
- drivers/infiniband/core/uverbs_main.c   |   40 ++++++++++++
- include/rdma/ib_pack.h                  |    4 +
- include/rdma/ib_umem_odp.h              |    4 +
- include/rdma/ib_verbs.h                 |    5 ++
- 19 files changed, 539 insertions(+), 2 deletions(-)
+ drivers/infiniband/core/addr.c             |  105 ++++++++++++++++++++++++++++
+ drivers/infiniband/core/cm.c               |   23 ++++++
+ drivers/infiniband/core/cma.c              |   64 +++++++++++++++++
+ drivers/infiniband/core/fmr_pool.c         |    7 ++
+ drivers/infiniband/core/iwcm.c             |   16 ++++
+ drivers/infiniband/core/iwpm_util.c        |   26 ++++++-
+ drivers/infiniband/core/mad.c              |    3 +
+ drivers/infiniband/core/netlink.c          |   23 ++++++
+ drivers/infiniband/core/roce_gid_cache.c   |    4 +
+ drivers/infiniband/core/roce_gid_mgmt.c    |   10 +++
+ drivers/infiniband/core/sa_query.c         |   19 +++++
+ drivers/infiniband/core/ucm.c              |   38 ++++++++++
+ drivers/infiniband/core/ucma.c             |   76 ++++++++++++++++++++
+ drivers/infiniband/core/umem.c             |   44 ++++++++++++
+ drivers/infiniband/core/user_mad.c         |   19 +++++
+ drivers/infiniband/core/uverbs_cmd.c       |   51 +++++++++++++
+ drivers/infiniband/core/uverbs_main.c      |   40 +++++++++++
+ drivers/infiniband/hw/mlx4/mr.c            |   12 +++
+ drivers/infiniband/hw/qib/qib_user_pages.c |    9 ++-
+ include/rdma/ib_pack.h                     |    4 +
+ include/rdma/ib_umem_odp.h                 |    4 +
+ include/rdma/ib_verbs.h                    |    5 ++
+ 22 files changed, 599 insertions(+), 3 deletions(-)
 
 diff --git a/drivers/infiniband/core/addr.c b/drivers/infiniband/core/addr.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -636,6 +639,22 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (!nls) {
  		pr_warn("Failed to create netlink socket\n");
  		return -ENOMEM;
+diff --git a/drivers/infiniband/core/roce_gid_cache.c b/drivers/infiniband/core/roce_gid_cache.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/core/roce_gid_cache.c
++++ b/drivers/infiniband/core/roce_gid_cache.c
+@@ -399,7 +399,11 @@ static int get_netdev_from_ifindex(struct net *net, int if_index,
+ {
+ 	if (if_index && net) {
+ 		rcu_read_lock();
++#ifdef HAVE_DEV_GET_BY_INDEX_RCU
+ 		gid_attr_val->ndev = dev_get_by_index_rcu(net, if_index);
++#else
++		gid_attr_val->ndev = __dev_get_by_index(net, if_index);
++#endif
+ 		rcu_read_unlock();
+ 		if (gid_attr_val->ndev)
+ 			return GID_ATTR_FIND_MASK_NETDEV;
 diff --git a/drivers/infiniband/core/roce_gid_mgmt.c b/drivers/infiniband/core/roce_gid_mgmt.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/roce_gid_mgmt.c
@@ -655,6 +674,29 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#endif
  
  	return BONDING_SLAVE_STATE_NA;
+ }
+@@ -378,7 +380,11 @@ static void enum_netdev_ipv6_ips(struct ib_device *ib_dev,
+ 		return;
+ 
+ 	read_lock_bh(&in6_dev->lock);
++#ifdef HAVE_INET6_IF_LIST
+ 	list_for_each_entry(ifp, &in6_dev->addr_list, if_list) {
++#else
++	for (ifp=in6_dev->addr_list; ifp; ifp=ifp->if_next) {
++#endif
+ 		struct sockaddr_in6 ip;
+ 
+ 		ip.sin6_family = AF_INET6;
+@@ -698,6 +704,10 @@ void __exit roce_gid_mgmt_cleanup(void)
+ 	 * so no issue with remaining hardware contexts.
+ 	 */
+ 	synchronize_rcu();
++#ifdef HAVE_DRAIN_WORKQUEUE
+ 	drain_workqueue(roce_gid_mgmt_wq);
++#endif
++	/* Old implementaion of destroy_workqueue will drain the queue and
++	 * destroy it. */
+ 	destroy_workqueue(roce_gid_mgmt_wq);
  }
 diff --git a/drivers/infiniband/core/sa_query.c b/drivers/infiniband/core/sa_query.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -986,11 +1028,95 @@ diff --git a/drivers/infiniband/core/umem.c b/drivers/infiniband/core/umem.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/umem.c
 +++ b/drivers/infiniband/core/umem.c
-@@ -678,7 +678,11 @@ struct ib_umem *ib_umem_get_ex(struct ib_ucontext *context, unsigned long addr,
+@@ -61,7 +61,11 @@ static void umem_vma_open(struct vm_area_struct *area)
+ 	with mm->mmap_sem held for writing.
+ 	*/
+ 	if (current->mm)
++#ifdef HAVE_PINNED_VM
+ 		current->mm->pinned_vm += ntotal_pages;
++#else
++		current->mm->locked_vm += ntotal_pages;
++#endif
+ 	return;
+ }
+ 
+@@ -81,7 +85,11 @@ static void umem_vma_close(struct vm_area_struct *area)
+ 	with mm->mmap_sem held for writing.
+ 	*/
+ 	if (current->mm)
++#ifdef HAVE_PINNED_VM
+ 		current->mm->pinned_vm -= ntotal_pages;
++#else
++		current->mm->locked_vm -= ntotal_pages;
++#endif
+ 	return;
+ 
+ }
+@@ -116,7 +124,11 @@ int ib_umem_map_to_vma(struct ib_umem *umem,
+ 	with mm->mmap_sem held for writing.
+ 	No need to lock.
+ 	*/
++#ifdef HAVE_PINNED_VM
+ 	locked = ntotal_pages + current->mm->pinned_vm;
++#else
++	locked = ntotal_pages + current->mm->locked_vm;
++#endif
+ 	lock_limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
+ 
+ 	if ((locked > lock_limit) && !capable(CAP_IPC_LOCK))
+@@ -145,7 +157,11 @@ int ib_umem_map_to_vma(struct ib_umem *umem,
+ end:
+ 	/* We expect to have enough pages   */
+ 	if (vma_entry_number >= ntotal_pages) {
++#ifdef HAVE_PINNED_VM
+ 		current->mm->pinned_vm = locked;
++#else
++		current->mm->locked_vm = locked;
++#endif
+ 		vma->vm_ops =  &umem_vm_ops;
+ 		return 0;
+ 	}
+@@ -186,7 +202,11 @@ static void ib_cmem_release(struct kref *ref)
+ 	counter not relevant any more.*/
+ 	if (current->mm) {
+ 		ntotal_pages = PAGE_ALIGN(cmem->length) >> PAGE_SHIFT;
++#ifdef HAVE_PINNED_VM
+ 		current->mm->pinned_vm -= ntotal_pages;
++#else
++		current->mm->locked_vm -= ntotal_pages;
++#endif
+ 	}
+ 	kfree(cmem);
+ 
+@@ -344,7 +364,11 @@ struct ib_cmem *ib_cmem_alloc_contiguous_pages(struct ib_ucontext *context,
+ 	with mm->mmap_sem held for writing.
+ 	No need to lock
+ 	 */
++#ifdef HAVE_PINNED_VM
+ 	locked     = ntotal_pages + current->mm->pinned_vm;
++#else
++	locked     = ntotal_pages + current->mm->locked_vm;
++#endif
+ 	lock_limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
+ 
+ 	if ((locked > lock_limit) && !capable(CAP_IPC_LOCK))
+@@ -386,7 +410,11 @@ struct ib_cmem *ib_cmem_alloc_contiguous_pages(struct ib_ucontext *context,
+ 
+ 	cmem->length = total_size;
+ 
++#ifdef HAVE_PINNED_VM
+ 	current->mm->pinned_vm = locked;
++#else
++	current->mm->locked_vm = locked;
++#endif
+ 	return cmem;
+ 
+ err_alloc:
+@@ -678,7 +706,11 @@ struct ib_umem *ib_umem_get_ex(struct ib_ucontext *context, unsigned long addr,
  
  	down_write(&current->mm->mmap_sem);
  
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0))
++#ifdef HAVE_PINNED_VM
  	locked     = npages + current->mm->pinned_vm;
 +#else
 +	locked     = npages + current->mm->locked_vm;
@@ -998,11 +1124,11 @@ index xxxxxxx..xxxxxxx xxxxxx
  	lock_limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
  
  	if ((locked > lock_limit) && !capable(CAP_IPC_LOCK)) {
-@@ -744,7 +748,11 @@ out:
+@@ -744,7 +776,11 @@ out:
  		put_pid(umem->pid);
  		kfree(umem);
  	} else
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0))
++#ifdef HAVE_PINNED_VM
  		current->mm->pinned_vm = locked;
 +#else
 +		current->mm->locked_vm = locked;
@@ -1010,11 +1136,11 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	up_write(&current->mm->mmap_sem);
  	if (vma_list)
-@@ -767,7 +775,11 @@ static void ib_umem_account(struct work_struct *work)
+@@ -767,7 +803,11 @@ static void ib_umem_account(struct work_struct *work)
  	struct ib_umem *umem = container_of(work, struct ib_umem, work);
  
  	down_write(&umem->mm->mmap_sem);
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0))
++#ifdef HAVE_PINNED_VM
  	umem->mm->pinned_vm -= umem->diff;
 +#else
 +	umem->mm->locked_vm -= umem->diff;
@@ -1022,11 +1148,11 @@ index xxxxxxx..xxxxxxx xxxxxx
  	up_write(&umem->mm->mmap_sem);
  	mmput(umem->mm);
  	kfree(umem);
-@@ -827,7 +839,11 @@ void ib_umem_release(struct ib_umem *umem)
+@@ -827,7 +867,11 @@ void ib_umem_release(struct ib_umem *umem)
  	} else
  		down_write(&mm->mmap_sem);
  
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0))
++#ifdef HAVE_PINNED_VM
  	mm->pinned_vm -= diff;
 +#else
 +	mm->locked_vm -= diff;
@@ -1297,6 +1423,79 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (ret) {
  		printk(KERN_ERR "user_verbs: couldn't create abi_version attribute\n");
  		goto out_class;
+diff --git a/drivers/infiniband/hw/mlx4/mr.c b/drivers/infiniband/hw/mlx4/mr.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/hw/mlx4/mr.c
++++ b/drivers/infiniband/hw/mlx4/mr.c
+@@ -449,8 +449,10 @@ static int prepare_shared_mr(struct mlx4_ib_mr *mr, int access_flags, int mr_id)
+ 	struct proc_dir_entry *mr_proc_entry;
+ 	mode_t mode = S_IFREG;
+ 	char name_buff[128];
++#ifdef HAVE_PROC_SET_USER
+ 	kuid_t uid;
+ 	kgid_t gid;
++#endif
+ 
+ 	mode |= convert_shared_access(access_flags);
+ 	sprintf(name_buff, "%X", mr_id);
+@@ -469,9 +471,14 @@ static int prepare_shared_mr(struct mlx4_ib_mr *mr, int access_flags, int mr_id)
+ 		return -ENODEV;
+ 	}
+ 
++#ifdef HAVE_PROC_SET_USER
+ 	current_uid_gid(&uid, &gid);
+ 	proc_set_user(mr_proc_entry, uid, gid);
+ 	proc_set_size(mr_proc_entry, mr->umem->length);
++#else
++	current_uid_gid(&(mr_proc_entry->uid), &(mr_proc_entry->gid));
++	mr_proc_entry->size = mr->umem->length;
++#endif
+ 
+ 	/* now creating an extra entry having a uniqe suffix counter */
+ 	mr->smr_info->counter = atomic64_inc_return(&shared_mr_count);
+@@ -487,8 +494,13 @@ static int prepare_shared_mr(struct mlx4_ib_mr *mr, int access_flags, int mr_id)
+ 	}
+ 
+ 	mr->smr_info->counter_used = 1;
++#ifdef HAVE_PROC_SET_USER
+ 	proc_set_user(mr_proc_entry, uid, gid);
+ 	proc_set_size(mr_proc_entry, mr->umem->length);
++#else
++	current_uid_gid(&(mr_proc_entry->uid), &(mr_proc_entry->gid));
++	mr_proc_entry->size = mr->umem->length;
++#endif
+ 
+ 	return 0;
+ 
+diff --git a/drivers/infiniband/hw/qib/qib_user_pages.c b/drivers/infiniband/hw/qib/qib_user_pages.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/hw/qib/qib_user_pages.c
++++ b/drivers/infiniband/hw/qib/qib_user_pages.c
+@@ -73,8 +73,11 @@ static int __qib_get_user_pages(unsigned long start_page, size_t num_pages,
+ 		if (ret < 0)
+ 			goto bail_release;
+ 	}
+-
++#ifdef HAVE_PINNED_VM
+ 	current->mm->pinned_vm += num_pages;
++#else
++	current->mm->locked_vm += num_pages;
++#endif
+ 
+ 	ret = 0;
+ 	goto bail;
+@@ -151,7 +154,11 @@ void qib_release_user_pages(struct page **p, size_t num_pages)
+ 	__qib_release_user_pages(p, num_pages, 1);
+ 
+ 	if (current->mm) {
++#ifdef HAVE_PINNED_VM
+ 		current->mm->pinned_vm -= num_pages;
++#else
++		current->mm->locked_vm -= num_pages;
++#endif
+ 		up_write(&current->mm->mmap_sem);
+ 	}
+ }
 diff --git a/include/rdma/ib_pack.h b/include/rdma/ib_pack.h
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/include/rdma/ib_pack.h

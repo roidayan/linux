@@ -2078,6 +2078,189 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 	],[
 		AC_MSG_RESULT(no)
 	])
+
+	AC_MSG_CHECKING([if netdevice.h has dev_get_by_index_rcu])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/netdevice.h>
+	],[
+		dev_get_by_index_rcu(NULL, 0);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_DEV_GET_BY_INDEX_RCU, 1,
+			  [dev_get_by_index_rcu is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if netdevice.h has netdev_master_upper_dev_get_rcu])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/netdevice.h>
+	],[
+		netdev_master_upper_dev_get_rcu(NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_NETDEV_MASTER_UPPER_DEV_GET_RCU, 1,
+			  [netdev_master_upper_dev_get_rcu is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if struct inet6_ifaddr has member if_list])
+	LB_LINUX_TRY_COMPILE([
+		#include <net/if_inet6.h>
+	],[
+		struct inet6_ifaddr x;
+		struct list_head xlist;
+		x.if_list = xlist;
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_INET6_IF_LIST, 1,
+			  [if_list is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if workqueue.h has drain_workqueue])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/workqueue.h>
+	],[
+		drain_workqueue(NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_DRAIN_WORKQUEUE, 1,
+			  [drain_workqueue is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if struct mm_struct has member pinned_vm])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/mm_types.h>
+	],[
+		struct mm_struct x;
+		x.pinned_vm = 0;
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_PINNED_VM, 1,
+			  [pinned_vm is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if proc_fs.h has proc_set_user])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/proc_fs.h>
+		#include <linux/uidgid.h>
+	],[
+		kuid_t a;
+		kgid_t b;
+		proc_set_user(NULL, a, b);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_PROC_SET_USER, 1,
+			  [proc_set_user is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if uapi/linux/if_bonding.h exists])
+	LB_LINUX_TRY_COMPILE([
+		#include <uapi/linux/if_bonding.h>
+	],[
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_UAPI_IF_BONDING_H, 1,
+			  [uapi/linux/if_bonding.h exists])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if svc_xprt.h svc_xprt_init has 4 params])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/sunrpc/svc_xprt.h>
+	],[
+		svc_xprt_init(NULL, NULL, NULL, NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_SVC_XPRT_INIT_4_PARAMS, 1,
+			  [svc_xprt_init has 4 parameters])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if svc.h struct svc_rqst has member rq_next_page])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/sunrpc/svc.h>
+	],[
+		struct svc_rqst x;
+		x.rq_next_page = NULL;
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_RQ_NEXT_PAGE, 1,
+			  [rq_next_page is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if linux/sunrpc/addr.h exists])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/sunrpc/addr.h>
+	],[
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_SUNRPC_ADDR_H, 1,
+			  [linux/sunrpc/addr.h exists])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if xprt.h struct rpc_xprt has xprt_alloc_slot])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/sunrpc/xprt.h>
+	],[
+		xprt_alloc_slot(NULL, NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_XPRT_ALLOC_SLOT, 1,
+			  [xprt_alloc_slot is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if highmem.h kmap_atomic has 1 param])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/highmem.h>
+	],[
+		kmap_atomic(NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_KMAP_ATOMIC_1_PARAM, 1,
+			  [kmap_atomic has 1 parameter])
+	],[
+		AC_MSG_RESULT(no)
+	])
 ])
 #
 # COMPAT_CONFIG_HEADERS

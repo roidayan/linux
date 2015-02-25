@@ -3,9 +3,152 @@ Subject: [PATCH] BACKPORT: NFSRDMA
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- net/sunrpc/xprtrdma/svc_rdma_transport.c |    8 ++++++++
- 1 files changed, 8 insertions(+), 0 deletions(-)
+ net/sunrpc/xprtrdma/rpc_rdma.c           |   20 ++++++++++++++++++--
+ net/sunrpc/xprtrdma/svc_rdma_recvfrom.c  |   10 ++++++++++
+ net/sunrpc/xprtrdma/svc_rdma_sendto.c    |    8 ++++++++
+ net/sunrpc/xprtrdma/svc_rdma_transport.c |   12 ++++++++++++
+ net/sunrpc/xprtrdma/transport.c          |   26 ++++++++++++++++++++++----
+ net/sunrpc/xprtrdma/verbs.c              |    8 ++++----
+ 6 files changed, 74 insertions(+), 10 deletions(-)
 
+diff --git a/net/sunrpc/xprtrdma/rpc_rdma.c b/net/sunrpc/xprtrdma/rpc_rdma.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/sunrpc/xprtrdma/rpc_rdma.c
++++ b/net/sunrpc/xprtrdma/rpc_rdma.c
+@@ -49,11 +49,11 @@
+ 
+ #include <linux/highmem.h>
+ 
+-#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
++#if IS_ENABLED(CONFIG_SUNRPC_DEBUG) || defined(RPC_DEBUG)
+ # define RPCDBG_FACILITY	RPCDBG_TRANS
+ #endif
+ 
+-#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
++#if IS_ENABLED(CONFIG_SUNRPC_DEBUG) || defined(RPC_DEBUG)
+ static const char transfertypes[][12] = {
+ 	"pure inline",	/* no chunks */
+ 	" read chunk",	/* some argument via rdma read */
+@@ -361,9 +361,17 @@ rpcrdma_inline_pullup(struct rpc_rqst *rqst, int pad)
+ 			curlen = copy_len;
+ 		dprintk("RPC:       %s: page %d destp 0x%p len %d curlen %d\n",
+ 			__func__, i, destp, copy_len, curlen);
++#ifdef HAVE_KMAP_ATOMIC_1_PARAM
+ 		srcp = kmap_atomic(ppages[i]);
++#else
++		srcp = kmap_atomic(ppages[i], KM_SKB_SUNRPC_DATA);
++#endif
+ 		memcpy(destp, srcp+page_base, curlen);
++#ifdef HAVE_KMAP_ATOMIC_1_PARAM
+ 		kunmap_atomic(srcp);
++#else
++		kunmap_atomic(srcp, KM_SKB_SUNRPC_DATA);
++#endif
+ 		rqst->rq_svec[0].iov_len += curlen;
+ 		destp += curlen;
+ 		copy_len -= curlen;
+@@ -649,10 +657,18 @@ rpcrdma_inline_fixup(struct rpc_rqst *rqst, char *srcp, int copy_len, int pad)
+ 			dprintk("RPC:       %s: page %d"
+ 				" srcp 0x%p len %d curlen %d\n",
+ 				__func__, i, srcp, copy_len, curlen);
++#ifdef HAVE_KMAP_ATOMIC_1_PARAM
+ 			destp = kmap_atomic(ppages[i]);
++#else
++			destp = kmap_atomic(ppages[i], KM_SKB_SUNRPC_DATA);
++#endif
+ 			memcpy(destp + page_base, srcp, curlen);
+ 			flush_dcache_page(ppages[i]);
++#ifdef HAVE_KMAP_ATOMIC_1_PARAM
+ 			kunmap_atomic(destp);
++#else
++			kunmap_atomic(destp, KM_SKB_SUNRPC_DATA);
++#endif
+ 			srcp += curlen;
+ 			copy_len -= curlen;
+ 			if (copy_len == 0)
+diff --git a/net/sunrpc/xprtrdma/svc_rdma_recvfrom.c b/net/sunrpc/xprtrdma/svc_rdma_recvfrom.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/sunrpc/xprtrdma/svc_rdma_recvfrom.c
++++ b/net/sunrpc/xprtrdma/svc_rdma_recvfrom.c
+@@ -93,7 +93,11 @@ static void rdma_build_arg_xdr(struct svc_rqst *rqstp,
+ 		sge_no++;
+ 	}
+ 	rqstp->rq_respages = &rqstp->rq_pages[sge_no];
++#ifdef HAVE_RQ_NEXT_PAGE
+ 	rqstp->rq_next_page = rqstp->rq_respages + 1;
++#else
++	rqstp->rq_resused = 0;
++#endif
+ 
+ 	/* We should never run out of SGE because the limit is defined to
+ 	 * support the max allowed RPC data length
+@@ -168,7 +172,9 @@ static int rdma_read_chunk_lcl(struct svcxprt_rdma *xprt,
+ 		if (!pg_off)
+ 			head->count++;
+ 		rqstp->rq_respages = &rqstp->rq_arg.pages[pg_no+1];
++#ifdef HAVE_RQ_NEXT_PAGE
+ 		rqstp->rq_next_page = rqstp->rq_respages + 1;
++#endif
+ 		ctxt->sge[pno].addr =
+ 			ib_dma_map_page(xprt->sc_cm_id->device,
+ 					head->arg.pages[pg_no], pg_off,
+@@ -273,7 +279,9 @@ static int rdma_read_chunk_frmr(struct svcxprt_rdma *xprt,
+ 		if (!pg_off)
+ 			head->count++;
+ 		rqstp->rq_respages = &rqstp->rq_arg.pages[pg_no+1];
++#ifdef HAVE_RQ_NEXT_PAGE
+ 		rqstp->rq_next_page = rqstp->rq_respages + 1;
++#endif
+ 		frmr->page_list->page_list[pno] =
+ 			ib_dma_map_page(xprt->sc_cm_id->device,
+ 					head->arg.pages[pg_no], 0,
+@@ -483,7 +491,9 @@ static int rdma_read_complete(struct svc_rqst *rqstp,
+ 
+ 	/* rq_respages starts after the last arg page */
+ 	rqstp->rq_respages = &rqstp->rq_arg.pages[page_no];
++#ifdef HAVE_RQ_NEXT_PAGE
+ 	rqstp->rq_next_page = rqstp->rq_respages + 1;
++#endif
+ 
+ 	/* Rebuild rq_arg head and tail. */
+ 	rqstp->rq_arg.head[0] = head->arg.head[0];
+diff --git a/net/sunrpc/xprtrdma/svc_rdma_sendto.c b/net/sunrpc/xprtrdma/svc_rdma_sendto.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/sunrpc/xprtrdma/svc_rdma_sendto.c
++++ b/net/sunrpc/xprtrdma/svc_rdma_sendto.c
+@@ -375,7 +375,9 @@ static int send_reply(struct svcxprt_rdma *rdma,
+ 	int sge_no;
+ 	int sge_bytes;
+ 	int page_no;
++#ifdef HAVE_RQ_NEXT_PAGE
+ 	int pages;
++#endif
+ 	int ret;
+ 
+ 	/* Post a recv buffer to handle another request. */
+@@ -427,8 +429,12 @@ static int send_reply(struct svcxprt_rdma *rdma,
+ 	 * respages array. They are our pages until the I/O
+ 	 * completes.
+ 	 */
++#ifdef HAVE_RQ_NEXT_PAGE
+ 	pages = rqstp->rq_next_page - rqstp->rq_respages;
+ 	for (page_no = 0; page_no < pages; page_no++) {
++#else
++	for (page_no = 0; page_no < rqstp->rq_resused; page_no++) {
++#endif
+ 		ctxt->pages[page_no+1] = rqstp->rq_respages[page_no];
+ 		ctxt->count++;
+ 		rqstp->rq_respages[page_no] = NULL;
+@@ -440,7 +446,9 @@ static int send_reply(struct svcxprt_rdma *rdma,
+ 		if (page_no+1 >= sge_no)
+ 			ctxt->sge[page_no+1].length = 0;
+ 	}
++#ifdef HAVE_RQ_NEXT_PAGE
+ 	rqstp->rq_next_page = rqstp->rq_respages + 1;
++#endif
+ 
+ 	BUG_ON(sge_no > rdma->sc_max_sge);
+ 	memset(&send_wr, 0, sizeof send_wr);
 diff --git a/net/sunrpc/xprtrdma/svc_rdma_transport.c b/net/sunrpc/xprtrdma/svc_rdma_transport.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/sunrpc/xprtrdma/svc_rdma_transport.c
@@ -40,7 +183,19 @@ index xxxxxxx..xxxxxxx xxxxxx
  };
  
  struct svc_rdma_op_ctxt *svc_rdma_get_context(struct svcxprt_rdma *xprt)
-@@ -1205,10 +1211,12 @@ static int svc_rdma_has_wspace(struct svc_xprt *xprt)
+@@ -461,7 +467,11 @@ static struct svcxprt_rdma *rdma_create_xprt(struct svc_serv *serv,
+ 
+ 	if (!cma_xprt)
+ 		return NULL;
++#ifdef HAVE_SVC_XPRT_INIT_4_PARAMS
+ 	svc_xprt_init(&init_net, &svc_rdma_class, &cma_xprt->sc_xprt, serv);
++#else
++	svc_xprt_init(&svc_rdma_class, &cma_xprt->sc_xprt, serv);
++#endif
+ 	INIT_LIST_HEAD(&cma_xprt->sc_accept_q);
+ 	INIT_LIST_HEAD(&cma_xprt->sc_dto_q);
+ 	INIT_LIST_HEAD(&cma_xprt->sc_rq_dto_q);
+@@ -1205,10 +1215,12 @@ static int svc_rdma_has_wspace(struct svc_xprt *xprt)
  	return 1;
  }
  
@@ -53,3 +208,138 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  /*
   * Attempt to register the kvec representing the RPC memory with the
+diff --git a/net/sunrpc/xprtrdma/transport.c b/net/sunrpc/xprtrdma/transport.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/sunrpc/xprtrdma/transport.c
++++ b/net/sunrpc/xprtrdma/transport.c
+@@ -51,11 +51,13 @@
+ #include <linux/init.h>
+ #include <linux/slab.h>
+ #include <linux/seq_file.h>
++#ifdef HAVE_SUNRPC_ADDR_H
+ #include <linux/sunrpc/addr.h>
++#endif
+ 
+ #include "xprt_rdma.h"
+ 
+-#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
++#if IS_ENABLED(CONFIG_SUNRPC_DEBUG) || defined(RPC_DEBUG)
+ # define RPCDBG_FACILITY	RPCDBG_TRANS
+ #endif
+ 
+@@ -75,7 +77,7 @@ static unsigned int xprt_rdma_inline_write_padding;
+ static unsigned int xprt_rdma_memreg_strategy = RPCRDMA_FRMR;
+ 		int xprt_rdma_pad_optimize = 1;
+ 
+-#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
++#if IS_ENABLED(CONFIG_SUNRPC_DEBUG) || defined(RPC_DEBUG)
+ 
+ static unsigned int min_slot_table_size = RPCRDMA_MIN_SLOT_TABLE;
+ static unsigned int max_slot_table_size = RPCRDMA_MAX_SLOT_TABLE;
+@@ -426,8 +428,15 @@ xprt_rdma_set_port(struct rpc_xprt *xprt, u16 port)
+ }
+ 
+ static void
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,1,0))
++xprt_rdma_connect(struct rpc_task *task)
++#else
+ xprt_rdma_connect(struct rpc_xprt *xprt, struct rpc_task *task)
++#endif
+ {
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,1,0))
++	struct rpc_xprt *xprt = task->tk_xprt;
++#endif
+ 	struct rpcrdma_xprt *r_xprt = rpcx_to_rdmax(xprt);
+ 
+ 	if (r_xprt->rx_ep.rep_connected != 0) {
+@@ -463,15 +472,22 @@ xprt_rdma_allocate(struct rpc_task *task, size_t size)
+ 	struct rpcrdma_regbuf *rb;
+ 	struct rpcrdma_req *req;
+ 	size_t min_size;
++#ifdef __GFP_MEMALLOC
+ 	gfp_t flags;
++#else
++	gfp_t flags = task->tk_flags & RPC_TASK_SWAPPER ?
++		GFP_ATOMIC : GFP_NOFS;
++#endif
+ 
+ 	req = rpcrdma_buffer_get(&r_xprt->rx_buf);
+ 	if (req == NULL)
+ 		return NULL;
+ 
++#ifdef __GFP_MEMALLOC
+ 	flags = GFP_NOIO | __GFP_NOWARN;
+ 	if (RPC_IS_SWAPPER(task))
+ 		flags = __GFP_MEMALLOC | GFP_NOWAIT | __GFP_NOWARN;
++#endif
+ 
+ 	if (req->rl_rdmabuf == NULL)
+ 		goto out_rdmabuf;
+@@ -660,7 +676,9 @@ static void xprt_rdma_print_stats(struct rpc_xprt *xprt, struct seq_file *seq)
+ static struct rpc_xprt_ops xprt_rdma_procs = {
+ 	.reserve_xprt		= xprt_reserve_xprt_cong,
+ 	.release_xprt		= xprt_release_xprt_cong, /* sunrpc/xprt.c */
++#ifdef HAVE_XPRT_ALLOC_SLOT
+ 	.alloc_slot		= xprt_alloc_slot,
++#endif
+ 	.release_request	= xprt_release_rqst_cong,       /* ditto */
+ 	.set_retrans_timeout	= xprt_set_retrans_timeout_def, /* ditto */
+ 	.rpcbind		= rpcb_getport_async,	/* sunrpc/rpcb_clnt.c */
+@@ -687,7 +705,7 @@ static void __exit xprt_rdma_cleanup(void)
+ 	int rc;
+ 
+ 	dprintk("RPCRDMA Module Removed, deregister RPC RDMA transport\n");
+-#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
++#if IS_ENABLED(CONFIG_SUNRPC_DEBUG) || defined(RPC_DEBUG)
+ 	if (sunrpc_table_header) {
+ 		unregister_sysctl_table(sunrpc_table_header);
+ 		sunrpc_table_header = NULL;
+@@ -718,7 +736,7 @@ static int __init xprt_rdma_init(void)
+ 	dprintk("\tPadding %d\n\tMemreg %d\n",
+ 		xprt_rdma_inline_write_padding, xprt_rdma_memreg_strategy);
+ 
+-#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
++#if IS_ENABLED(CONFIG_SUNRPC_DEBUG) || defined(RPC_DEBUG)
+ 	if (!sunrpc_table_header)
+ 		sunrpc_table_header = register_sysctl_table(sunrpc_table);
+ #endif
+diff --git a/net/sunrpc/xprtrdma/verbs.c b/net/sunrpc/xprtrdma/verbs.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/sunrpc/xprtrdma/verbs.c
++++ b/net/sunrpc/xprtrdma/verbs.c
+@@ -58,7 +58,7 @@
+  * Globals/Macros
+  */
+ 
+-#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
++#if IS_ENABLED(CONFIG_SUNRPC_DEBUG) || defined(RPC_DEBUG)
+ # define RPCDBG_FACILITY	RPCDBG_TRANS
+ #endif
+ 
+@@ -392,7 +392,7 @@ rpcrdma_flush_cqs(struct rpcrdma_ep *ep)
+ 		rpcrdma_sendcq_process_wc(&wc);
+ }
+ 
+-#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
++#if IS_ENABLED(CONFIG_SUNRPC_DEBUG) || defined(RPC_DEBUG)
+ static const char * const conn[] = {
+ 	"address resolved",
+ 	"address error",
+@@ -423,7 +423,7 @@ rpcrdma_conn_upcall(struct rdma_cm_id *id, struct rdma_cm_event *event)
+ 	struct rpcrdma_xprt *xprt = id->context;
+ 	struct rpcrdma_ia *ia = &xprt->rx_ia;
+ 	struct rpcrdma_ep *ep = &xprt->rx_ep;
+-#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
++#if IS_ENABLED(CONFIG_SUNRPC_DEBUG) || defined(RPC_DEBUG)
+ 	struct sockaddr_in *addr = (struct sockaddr_in *) &ep->rep_remote_addr;
+ #endif
+ 	struct ib_qp_attr *attr = &ia->ri_qp_attr;
+@@ -487,7 +487,7 @@ connected:
+ 		break;
+ 	}
+ 
+-#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
++#if IS_ENABLED(CONFIG_SUNRPC_DEBUG) || defined(RPC_DEBUG)
+ 	if (connstate == 1) {
+ 		int ird = attr->max_dest_rd_atomic;
+ 		int tird = ep->rep_remote_cma.responder_resources;
