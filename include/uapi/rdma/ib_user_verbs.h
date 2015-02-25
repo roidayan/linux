@@ -108,7 +108,7 @@ enum {
 struct ib_uverbs_async_event_desc {
 	__u64 element;
 	__u32 event_type;	/* enum ib_event_type */
-	__u32 reserved;
+	__u32 rsc_type;
 };
 
 struct ib_uverbs_comp_event_desc {
@@ -130,6 +130,13 @@ struct ib_uverbs_comp_event_desc {
 #define IBV_RESP_TO_VERBS_RESP_EX(ex_ptr, ex_type, ibv_type) \
 	IBV_RESP_TO_VERBS_RESP_EX_RAW(ex_ptr, ex_type, ibv_type, comp_mask)
 
+enum ib_event_rsc_type {
+	IB_EVENT_RSC_CQ,
+	IB_EVENT_RSC_QP,
+	IB_EVENT_RSC_DCT,
+	IB_EVENT_RSC_SRQ,
+	IB_EVENT_RSC_DEVICE,
+};
 
 #define IB_USER_VERBS_CMD_COMMAND_MASK 0xff
 #define IB_USER_VERBS_CMD_FLAGS_MASK 0xff000000u

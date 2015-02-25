@@ -530,7 +530,7 @@ void ib_uverbs_comp_handler(struct ib_cq *cq, void *cq_context)
 static void ib_uverbs_async_handler(struct ib_uverbs_file *file,
 				    __u64 element, __u64 event,
 				    struct list_head *obj_list,
-				    u32 *counter)
+				    u32 *counter, u32 rsc_type)
 {
 	struct ib_uverbs_event *entry;
 	unsigned long flags;
@@ -549,8 +549,8 @@ static void ib_uverbs_async_handler(struct ib_uverbs_file *file,
 
 	entry->desc.async.element    = element;
 	entry->desc.async.event_type = event;
-	entry->desc.async.reserved   = 0;
 	entry->counter               = counter;
+	entry->desc.async.rsc_type   = rsc_type;
 
 	list_add_tail(&entry->list, &file->async_file->event_list);
 	if (obj_list)
@@ -568,7 +568,7 @@ void ib_uverbs_cq_event_handler(struct ib_event *event, void *context_ptr)
 
 	ib_uverbs_async_handler(uobj->uverbs_file, uobj->uobject.user_handle,
 				event->event, &uobj->async_list,
-				&uobj->async_events_reported);
+				&uobj->async_events_reported, IB_EVENT_RSC_CQ);
 }
 
 void ib_uverbs_qp_event_handler(struct ib_event *event, void *context_ptr)
@@ -584,7 +584,7 @@ void ib_uverbs_qp_event_handler(struct ib_event *event, void *context_ptr)
 
 	ib_uverbs_async_handler(context_ptr, uobj->uobject.user_handle,
 				event->event, &uobj->event_list,
-				&uobj->events_reported);
+				&uobj->events_reported, IB_EVENT_RSC_QP);
 }
 
 void ib_uverbs_srq_event_handler(struct ib_event *event, void *context_ptr)
@@ -596,7 +596,7 @@ void ib_uverbs_srq_event_handler(struct ib_event *event, void *context_ptr)
 
 	ib_uverbs_async_handler(context_ptr, uobj->uobject.user_handle,
 				event->event, &uobj->event_list,
-				&uobj->events_reported);
+				&uobj->events_reported, IB_EVENT_RSC_SRQ);
 }
 
 void ib_uverbs_event_handler(struct ib_event_handler *handler,
@@ -606,7 +606,7 @@ void ib_uverbs_event_handler(struct ib_event_handler *handler,
 		container_of(handler, struct ib_uverbs_file, event_handler);
 
 	ib_uverbs_async_handler(file, event->element.port_num, event->event,
-				NULL, NULL);
+				NULL, NULL, IB_EVENT_RSC_DEVICE);
 }
 
 struct file *ib_uverbs_alloc_event_file(struct ib_uverbs_file *uverbs_file,
