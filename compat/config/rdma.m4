@@ -618,7 +618,7 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 	LB_LINUX_TRY_COMPILE([
 		#include <linux/if_link.h>
 	],[
-		struct ifla_vf_info x;
+		struct ifla_vf_info *x;
 		x->linkstate = 0;
 
 		return 0;
@@ -1808,7 +1808,7 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(no)
 	])
 
-	AC_MSG_CHECKING([if netdevice.h struct net_device_ops has netdev_features_t])
+	AC_MSG_CHECKING([if netdevice.h struct net_device_ops has ndo_features_check])
 	LB_LINUX_TRY_COMPILE([
 		#include <linux/netdevice.h>
 	],[
