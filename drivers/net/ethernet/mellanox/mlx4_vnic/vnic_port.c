@@ -106,7 +106,7 @@ static inline u8 vnic_mcast_rate_enum(struct vnic_port *port, int rate)
 
 int vnic_port_query(struct vnic_port *port)
 {
-	if (ib_query_gid(port->dev->ca, port->num, 0, &port->gid)) {
+	if (ib_query_gid(port->dev->ca, port->num, 0, &port->gid, NULL)) {
 		vnic_err(port->name, "ib_query_gid failed\n");
 		return -EINVAL;
 	}

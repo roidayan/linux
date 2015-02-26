@@ -635,7 +635,7 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 			goto err;
 
 		if (qp_has_rq(init_attr)) {
-			err = mlx4_db_alloc(dev->dev, &qp->db, 0);
+			err = mlx4_db_alloc(dev->dev, &qp->db, 0, GFP_KERNEL);
 			if (err)
 				goto err;
 
@@ -652,7 +652,8 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 			qp->bf.uar = &dev->priv_uar;
 
 		if (mlx4_buf_alloc(dev->dev, qp->buf_size,
-						   PAGE_SIZE * 2, &qp->buf)) {
+						   PAGE_SIZE * 2, &qp->buf,
+						   GFP_KERNEL)) {
 			err = -ENOMEM;
 			goto err_db;
 		}
@@ -664,7 +665,8 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 			goto err_buf;
 		}
 
-		err = mlx4_buf_write_mtt(dev->dev, &qp->mtt, &qp->buf);
+		err = mlx4_buf_write_mtt(dev->dev, &qp->mtt, &qp->buf,
+					 GFP_KERNEL);
 		if (err) {
 			mlx4_ib_dbg("mlx4_buf_write_mtt error (%d)", err);
 			goto err_mtt;
@@ -686,7 +688,7 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 
 	qpn = sqpn;
 
-	err = mlx4_qp_alloc(dev->dev, qpn, &qp->mqp);
+	err = mlx4_qp_alloc(dev->dev, qpn, &qp->mqp, GFP_KERNEL);
 	if (err)
 		goto err_qpn;
 
@@ -711,9 +713,9 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 	list_add_tail(&qp->qps_list, &dev->qp_list);
 	/* Maintain CQ to QPs access, needed for further handling via reset flow */
 	mcq = to_mcq(init_attr->send_cq);
-	list_add_tail(&qp->cq_send_list, &mcq->list_send_qp);
+	list_add_tail(&qp->cq_send_list, &mcq->send_qp_list);
 	mcq = to_mcq(init_attr->recv_cq);
-	list_add_tail(&qp->cq_recv_list, &mcq->list_recv_qp);
+	list_add_tail(&qp->cq_recv_list, &mcq->recv_qp_list);
 	mlx4_ib_unlock_cqs(to_mcq(init_attr->send_cq), to_mcq(init_attr->recv_cq));
 	spin_unlock_irqrestore(&dev->reset_flow_resource_lock, flags);
 	return 0;
