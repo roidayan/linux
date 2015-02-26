@@ -272,11 +272,9 @@ else
 	install -m 0755 ofed_scripts/mlnx-ofed-kernel-utils.openibd.init $(INSTALL_MOD_PATH)/etc/init.d/openibd
 endif
 
-	install -d $(INSTALL_MOD_PATH)/etc/infiniband
-ifeq ("$(wildcard $(INSTALL_MOD_PATH)/etc/infiniband/openib.conf)","")
-	install -m 0644 ofed_scripts/openib.conf $(INSTALL_MOD_PATH)/etc/infiniband
-	cat ofed_scripts/openib.conf.tmp >> $(INSTALL_MOD_PATH)/etc/infiniband/openib.conf
-endif
+	@echo "Running install helper script"
+	ofed_scripts/install_helper $(INSTALL_MOD_PATH)
+
 # Disable mlx4_en load on SLES10
 ifeq ($(shell echo $(KVERSION) | grep -q '2.6.16' && echo y || echo ''),y)
 	sed -i -e 's/MLX4_EN_LOAD=yes/MLX4_EN_LOAD=no/g' $(INSTALL_MOD_PATH)/etc/infiniband/openib.conf

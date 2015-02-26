@@ -1,0 +1,12 @@
+#!/bin/bash -x
+
+DEST_DIR=$1
+
+install -d ${DEST_DIR}/etc/infiniband
+if [ ! -s ${DEST_DIR}/etc/infiniband/openib.conf ]; then
+	install -m 0644 ofed_scripts/openib.conf ${DEST_DIR}/etc/infiniband
+fi
+
+if ( diff -q ofed_scripts/openib.conf ${DEST_DIR}/etc/infiniband/openib.conf > /dev/null 2>&1 ); then
+	cat ofed_scripts/openib.conf.tmp >> ${DEST_DIR}/etc/infiniband/openib.conf
+fi
