@@ -1480,7 +1480,7 @@ static struct ib_qp *_mlx4_ib_create_qp(struct ib_pd *pd,
 			return ERR_PTR(-EINVAL);
 	}
 
-	err = check_qpg_attr(to_mdev(pd->device), init_attr);
+	err = check_qpg_attr(to_mdev(device), init_attr);
 	if (err)
 		return ERR_PTR(err);
 
@@ -1491,7 +1491,7 @@ static struct ib_qp *_mlx4_ib_create_qp(struct ib_pd *pd,
 		init_attr->send_cq = to_mxrcd(init_attr->xrcd)->cq;
 		/* fall through */
 	case IB_QPT_XRC_INI:
-		if (!(to_mdev(pd->device)->dev->caps.flags & MLX4_DEV_CAP_FLAG_XRC))
+		if (!(to_mdev(device)->dev->caps.flags & MLX4_DEV_CAP_FLAG_XRC))
 			return ERR_PTR(-ENOSYS);
 		init_attr->recv_cq = init_attr->send_cq;
 		/* fall through */
@@ -1506,7 +1506,7 @@ static struct ib_qp *_mlx4_ib_create_qp(struct ib_pd *pd,
 		/* fall through */
 	case IB_QPT_UD:
 	{
-		err = create_qp_common(to_mdev(pd->device), pd, init_attr,
+		err = create_qp_common(to_mdev(device), pd, init_attr,
 				       udata, 0, &qp, gfp);
 		if (err)
 			return ERR_PTR(err);
@@ -1524,12 +1524,12 @@ static struct ib_qp *_mlx4_ib_create_qp(struct ib_pd *pd,
 		/* Userspace is not allowed to create special QPs: */
 		if (udata)
 			return ERR_PTR(-EINVAL);
-		sqpn = get_sqp_num(to_mdev(pd->device), init_attr);
+		sqpn = get_sqp_num(to_mdev(device), init_attr);
 
 		if (sqpn < 0)
 			return ERR_PTR(sqpn);
 
-		err = create_qp_common(to_mdev(pd->device), pd, init_attr, udata,
+		err = create_qp_common(to_mdev(device), pd, init_attr, udata,
 				       sqpn,
 				       &qp, gfp);
 		if (err)
@@ -1561,7 +1561,7 @@ struct ib_qp *mlx4_ib_create_qp(struct ib_pd *pd,
 	    (init_attr->qp_type == IB_QPT_GSI) &&
 	    !(init_attr->create_flags & MLX4_IB_QP_CREATE_ROCE_V2_GSI)) {
 		struct mlx4_ib_sqp *sqp = to_msqp((to_mqp(ibqp)));
-		int is_eth = rdma_port_get_link_layer(pd->device, init_attr->port_num) ==
+		int is_eth = rdma_port_get_link_layer(device, init_attr->port_num) ==
 			IB_LINK_LAYER_ETHERNET;
 
 		if (is_eth &&
