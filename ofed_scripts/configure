@@ -631,7 +631,7 @@ main()
                             CONFIG_MLX4_CORE="m"
                             CONFIG_MLX4_VNIC="m"
                             CONFIG_BACKPORT_LRO="m"
-                            add_conf "# Load MLX4_VNIC module" "MLX4_VNIC_LOAD=yes"
+                            add_conf "# Load MLX4_VNIC module" "MLX4_VNIC_LOAD=no"
                         ;;
                         --without-mlx4_en-mod)
                             CONFIG_MLX4_EN=
@@ -769,7 +769,7 @@ main()
                         ;;
                         --with-qlgc_vnic-mod)
                             CONFIG_INFINIBAND_QLGC_VNIC="m"
-                            add_conf "# Load QLogic VNIC module" "QLGC_VNIC_LOAD=yes"
+                            add_conf "# Load QLogic VNIC module" "QLGC_VNIC_LOAD=no"
                         ;;
                         --without-qlgc_vnic-mod)
                             CONFIG_INFINIBAND_QLGC_VNIC=
@@ -831,7 +831,7 @@ main()
                         ;;
                         --with-ocrdma-mod)
                             CONFIG_INFINIBAND_OCRDMA="m"
-                            add_conf "# Load OCRDMA modules" "OCRDMA_LOAD=yes"
+                            add_conf "# Load OCRDMA modules" "OCRDMA_LOAD=no"
                         ;;
                         --without-ocrdma-mod)
                             CONFIG_INFINIBAND_OCRDMA=
