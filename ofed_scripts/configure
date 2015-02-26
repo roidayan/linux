@@ -266,7 +266,8 @@ function add_conf {
     VALUE=${2#*=}
     OICONF=${PWD}/ofed_scripts/openib.conf.tmp
 
-    if ! (grep -wq "^$PARAM" $OICONF); then
+    touch $OICONF
+    if ! (grep -wq "^$PARAM" $OICONF > /dev/null 2>&1); then
         echo >> "${OICONF}"
         echo "${COMMENT}" >> "${OICONF}"
         echo "${PARAM}=${VALUE}" >> "${OICONF}"
