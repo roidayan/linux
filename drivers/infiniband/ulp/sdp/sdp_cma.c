@@ -208,6 +208,7 @@ static int sdp_connect_handler(struct sock *sk, struct rdma_cm_id *id,
 
 		newnp = inet_sk(child)->pinet6 = sdp_inet6_sk_generic(child);
 
+		memcpy(newnp, inet6_sk(sk), sizeof(struct ipv6_pinfo));
 		if ((h->ipv_cap & HH_IPV_MASK) == HH_IPV4) {
 			/* V6 mapped */
 			sdp_inet_daddr(child) = dst_addr->sin_addr.s_addr;
