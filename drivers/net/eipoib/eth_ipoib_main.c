@@ -2116,8 +2116,8 @@ static netdev_tx_t parent_tx(struct sk_buff *skb, struct net_device *dev)
 	}
 
 	/* obtain VLAN information if present */
-	if (vlan_tx_tag_present(skb)) {
-		vlan = vlan_tx_tag_get(skb) & 0xfff;
+	if (skb_vlan_tag_present(skb)) {
+		vlan = skb_vlan_tag_get(skb) & 0xfff;
 		++parent->port_stats.tx_vlan;
 	} else {
 		vlan = VLAN_N_VID;
