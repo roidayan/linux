@@ -11,4 +11,4 @@ make distclean
 ./configure --kernel-version=$kernelver --kernel-sources=$kernel_source_dir ${config_flag}
 
 make -j`grep ^processor /proc/cpuinfo | wc -l`
-
+./ofed_scripts/install_helper
