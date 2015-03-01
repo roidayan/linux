@@ -3,9 +3,47 @@ Subject: [PATCH] BACKPORT: rds
 
 Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
 ---
- net/rds/connection.c | 12 ++++++++++++
- 1 file changed, 12 insertions(+)
+ net/rds/bind.c       |    7 ++++
+ net/rds/connection.c |   31 +++++++++++++++++
+ net/rds/ib.h         |    5 +++
+ net/rds/ib_rdma.c    |    4 ++
+ net/rds/ib_recv.c    |   80 +++++++++++++++++++++++++++++++++++++++++++
+ net/rds/info.c       |   12 ++++++
+ net/rds/iw.h         |    5 +++
+ net/rds/iw_recv.c    |   45 ++++++++++++++++++++++++-
+ net/rds/message.c    |   92 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ net/rds/rds.h        |   15 ++++++++
+ net/rds/recv.c       |    9 +++++
+ net/rds/send.c       |    4 ++
+ net/rds/tcp.h        |   13 +++++++
+ net/rds/tcp_listen.c |   19 ++++++++++
+ net/rds/tcp_recv.c   |   59 +++++++++++++++++++++++++++++++-
+ 15 files changed, 398 insertions(+), 2 deletions(-)
 
+diff --git a/net/rds/bind.c b/net/rds/bind.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/rds/bind.c
++++ b/net/rds/bind.c
+@@ -52,12 +52,19 @@ static struct rds_sock *rds_bind_lookup(__be32 addr, __be16 port,
+ 					struct rds_sock *insert)
+ {
+ 	struct rds_sock *rs;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++	struct hlist_node *node;
++#endif
+ 	struct hlist_head *head = hash_to_bucket(addr, port);
+ 	u64 cmp;
+ 	u64 needle = ((u64)be32_to_cpu(addr) << 32) | be16_to_cpu(port);
+ 
+ 	rcu_read_lock();
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++	hlist_for_each_entry(rs, node, head, rs_bound_node) {
++#else
+ 	hlist_for_each_entry_rcu(rs, head, rs_bound_node) {
++#endif
+ 		cmp = ((u64)be32_to_cpu(rs->rs_bound_addr) << 32) |
+ 		      be16_to_cpu(rs->rs_bound_port);
+ 
 diff --git a/net/rds/connection.c b/net/rds/connection.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/rds/connection.c
@@ -36,3 +74,896 @@ index xxxxxxx..xxxxxxx xxxxxx
  	return &rds_conn_hash[hash & RDS_CONNECTION_HASH_MASK];
  }
  
+@@ -75,8 +87,13 @@ static struct rds_connection *rds_conn_lookup(struct hlist_head *head,
+ 					      struct rds_transport *trans)
+ {
+ 	struct rds_connection *conn, *ret = NULL;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++	struct hlist_node *pos;
+ 
++	hlist_for_each_entry_rcu(conn, pos, head, c_hash_node) {
++#else
+ 	hlist_for_each_entry_rcu(conn, head, c_hash_node) {
++#endif
+ 		if (conn->c_faddr == faddr && conn->c_laddr == laddr &&
+ 				conn->c_trans == trans) {
+ 			ret = conn;
+@@ -381,6 +398,9 @@ static void rds_conn_message_info(struct socket *sock, unsigned int len,
+ 				  int want_send)
+ {
+ 	struct hlist_head *head;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++	struct hlist_node *pos;
++#endif
+ 	struct list_head *list;
+ 	struct rds_connection *conn;
+ 	struct rds_message *rm;
+@@ -394,7 +414,11 @@ static void rds_conn_message_info(struct socket *sock, unsigned int len,
+ 
+ 	for (i = 0, head = rds_conn_hash; i < ARRAY_SIZE(rds_conn_hash);
+ 	     i++, head++) {
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++		hlist_for_each_entry_rcu(conn, pos, head, c_hash_node) {
++#else
+ 		hlist_for_each_entry_rcu(conn, head, c_hash_node) {
++#endif
+ 			if (want_send)
+ 				list = &conn->c_send_queue;
+ 			else
+@@ -443,6 +467,9 @@ void rds_for_each_conn_info(struct socket *sock, unsigned int len,
+ {
+ 	uint64_t buffer[(item_len + 7) / 8];
+ 	struct hlist_head *head;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++	struct hlist_node *pos;
++#endif
+ 	struct rds_connection *conn;
+ 	size_t i;
+ 
+@@ -453,7 +480,11 @@ void rds_for_each_conn_info(struct socket *sock, unsigned int len,
+ 
+ 	for (i = 0, head = rds_conn_hash; i < ARRAY_SIZE(rds_conn_hash);
+ 	     i++, head++) {
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++		hlist_for_each_entry_rcu(conn, pos, head, c_hash_node) {
++#else
+ 		hlist_for_each_entry_rcu(conn, head, c_hash_node) {
++#endif
+ 
+ 			/* XXX no c_lock usage.. */
+ 			if (!visitor(conn, buffer))
+diff --git a/net/rds/ib.h b/net/rds/ib.h
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/rds/ib.h
++++ b/net/rds/ib.h
+@@ -316,7 +316,12 @@ int rds_ib_recv_alloc_caches(struct rds_ib_connection *ic);
+ void rds_ib_recv_free_caches(struct rds_ib_connection *ic);
+ void rds_ib_recv_refill(struct rds_connection *conn, int prefill);
+ void rds_ib_inc_free(struct rds_incoming *inc);
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++int rds_ib_inc_copy_to_user(struct rds_incoming *inc, struct iovec *iov,
++			    size_t size);
++#else
+ int rds_ib_inc_copy_to_user(struct rds_incoming *inc, struct iov_iter *to);
++#endif
+ void rds_ib_recv_cq_comp_handler(struct ib_cq *cq, void *context);
+ void rds_ib_recv_tasklet_fn(unsigned long data);
+ void rds_ib_recv_init_ring(struct rds_ib_connection *ic);
+diff --git a/net/rds/ib_rdma.c b/net/rds/ib_rdma.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/rds/ib_rdma.c
++++ b/net/rds/ib_rdma.c
+@@ -267,7 +267,11 @@ static inline struct rds_ib_mr *rds_ib_reuse_fmr(struct rds_ib_mr_pool *pool)
+ 	unsigned long *flag;
+ 
+ 	preempt_disable();
++#ifdef CONFIG_COMPAT_IS_THIS_CPU_PTR
+ 	flag = this_cpu_ptr(&clean_list_grace);
++#else
++	flag = &__get_cpu_var(clean_list_grace);
++#endif
+ 	set_bit(CLEAN_LIST_BUSY_BIT, flag);
+ 	ret = llist_del_first(&pool->clean_list);
+ 	if (ret)
+diff --git a/net/rds/ib_recv.c b/net/rds/ib_recv.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/rds/ib_recv.c
++++ b/net/rds/ib_recv.c
+@@ -421,20 +421,38 @@ static void rds_ib_recv_cache_put(struct list_head *new_item,
+ 				 struct rds_ib_refill_cache *cache)
+ {
+ 	unsigned long flags;
++#ifdef HAVE_THIS_CPU_READ
+ 	struct list_head *old, *chpfirst;
++#else
++	struct rds_ib_cache_head *chp;
++	struct list_head *old;
++#endif
+ 
+ 	local_irq_save(flags);
+ 
++#ifdef HAVE_THIS_CPU_READ
+ 	chpfirst = __this_cpu_read(cache->percpu->first);
+ 	if (!chpfirst)
++#else
++	chp = per_cpu_ptr(cache->percpu, smp_processor_id());
++	if (!chp->first)
++#endif
+ 		INIT_LIST_HEAD(new_item);
+ 	else /* put on front */
++#ifdef HAVE_THIS_CPU_READ
+ 		list_add_tail(new_item, chpfirst);
+ 
+ 	__this_cpu_write(cache->percpu->first, new_item);
+ 	__this_cpu_inc(cache->percpu->count);
+ 
+ 	if (__this_cpu_read(cache->percpu->count) < RDS_IB_RECYCLE_BATCH_COUNT)
++#else
++		list_add_tail(new_item, chp->first);
++	chp->first = new_item;
++	chp->count++;
++
++	if (chp->count < RDS_IB_RECYCLE_BATCH_COUNT)
++#endif
+ 		goto end;
+ 
+ 	/*
+@@ -446,13 +464,23 @@ static void rds_ib_recv_cache_put(struct list_head *new_item,
+ 	do {
+ 		old = xchg(&cache->xfer, NULL);
+ 		if (old)
++#ifdef HAVE_THIS_CPU_READ
+ 			list_splice_entire_tail(old, chpfirst);
+ 		old = cmpxchg(&cache->xfer, NULL, chpfirst);
++#else
++			list_splice_entire_tail(old, chp->first);
++		list_splice_entire_tail(old, chp->first);
++#endif
+ 	} while (old);
+ 
+ 
++#ifdef HAVE_THIS_CPU_READ
+ 	__this_cpu_write(cache->percpu->first, NULL);
+ 	__this_cpu_write(cache->percpu->count, 0);
++#else
++	chp->first = NULL;
++	chp->count = 0;
++#endif
+ end:
+ 	local_irq_restore(flags);
+ }
+@@ -472,7 +500,12 @@ static struct list_head *rds_ib_recv_cache_get(struct rds_ib_refill_cache *cache
+ 	return head;
+ }
+ 
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++int rds_ib_inc_copy_to_user(struct rds_incoming *inc, struct iovec *first_iov,
++			    size_t size)
++#else
+ int rds_ib_inc_copy_to_user(struct rds_incoming *inc, struct iov_iter *to)
++#endif
+ {
+ 	struct rds_ib_incoming *ibinc;
+ 	struct rds_page_frag *frag;
+@@ -481,22 +514,52 @@ int rds_ib_inc_copy_to_user(struct rds_incoming *inc, struct iov_iter *to)
+ 	int copied = 0;
+ 	int ret;
+ 	u32 len;
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++	struct iovec *iov = first_iov;
++	unsigned long iov_off = 0;
++#endif
+ 
+ 	ibinc = container_of(inc, struct rds_ib_incoming, ii_inc);
+ 	frag = list_entry(ibinc->ii_frags.next, struct rds_page_frag, f_item);
+ 	len = be32_to_cpu(inc->i_hdr.h_len);
+ 
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++	while (copied < size && copied < len) {
++#else
+ 	while (iov_iter_count(to) && copied < len) {
++#endif
+ 		if (frag_off == RDS_FRAG_SIZE) {
+ 			frag = list_entry(frag->f_item.next,
+ 					  struct rds_page_frag, f_item);
+ 			frag_off = 0;
+ 		}
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++		while (iov_off == iov->iov_len) {
++			iov_off = 0;
++			iov++;
++		}
++
++		to_copy = min(iov->iov_len - iov_off, RDS_FRAG_SIZE - frag_off);
++		to_copy = min_t(size_t, to_copy, size - copied);
++#else
+ 		to_copy = min_t(unsigned long, iov_iter_count(to),
+ 				RDS_FRAG_SIZE - frag_off);
++#endif
+ 		to_copy = min_t(unsigned long, to_copy, len - copied);
+ 
+ 		/* XXX needs + offset for multiple recvs per page */
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++		ret = rds_page_copy_to_user(sg_page(&frag->f_sg),
++					    frag->f_sg.offset + frag_off,
++					    iov->iov_base + iov_off,
++					    to_copy);
++		if (ret) {
++			copied = ret;
++			break;
++		}
++
++		iov_off += to_copy;
++#else
+ 		rds_stats_add(s_copy_to_user, to_copy);
+ 		ret = copy_page_to_iter(sg_page(&frag->f_sg),
+ 					frag->f_sg.offset + frag_off,
+@@ -504,6 +567,7 @@ int rds_ib_inc_copy_to_user(struct rds_incoming *inc, struct iov_iter *to)
+ 					to);
+ 		if (ret != to_copy)
+ 			return -EFAULT;
++#endif
+ 
+ 		frag_off += to_copy;
+ 		copied += to_copy;
+@@ -583,7 +647,11 @@ static void rds_ib_set_ack(struct rds_ib_connection *ic, u64 seq,
+ {
+ 	atomic64_set(&ic->i_ack_next, seq);
+ 	if (ack_required) {
++#ifndef CONFIG_COMPAT_IS_SMP_MB__AFTER_ATOMIC
++		smp_mb__before_clear_bit();
++#else
+ 		smp_mb__before_atomic();
++#endif
+ 		set_bit(IB_ACK_REQUESTED, &ic->i_ack_flags);
+ 	}
+ }
+@@ -591,7 +659,11 @@ static void rds_ib_set_ack(struct rds_ib_connection *ic, u64 seq,
+ static u64 rds_ib_get_ack(struct rds_ib_connection *ic)
+ {
+ 	clear_bit(IB_ACK_REQUESTED, &ic->i_ack_flags);
++#ifndef CONFIG_COMPAT_IS_SMP_MB__AFTER_ATOMIC
++	smp_mb__after_clear_bit();
++#else
+ 	smp_mb__after_atomic();
++#endif
+ 
+ 	return atomic64_read(&ic->i_ack_next);
+ }
+@@ -752,7 +824,11 @@ static void rds_ib_cong_recv(struct rds_connection *conn,
+ 		to_copy = min(RDS_FRAG_SIZE - frag_off, PAGE_SIZE - map_off);
+ 		BUG_ON(to_copy & 7); /* Must be 64bit aligned. */
+ 
++#ifdef HAVE_KMAP_ATOMIC_1_PARAM
+ 		addr = kmap_atomic(sg_page(&frag->f_sg));
++#else
++		addr = kmap_atomic(sg_page(&frag->f_sg), KM_USER0);
++#endif
+ 
+ 		src = addr + frag_off;
+ 		dst = (void *)map->m_page_addrs[map_page] + map_off;
+@@ -762,7 +838,11 @@ static void rds_ib_cong_recv(struct rds_connection *conn,
+ 			uncongested |= ~(*src) & *dst;
+ 			*dst++ = *src++;
+ 		}
++#ifdef HAVE_KMAP_ATOMIC_1_PARAM
+ 		kunmap_atomic(addr);
++#else
++		kunmap_atomic(addr, KM_USER0);
++#endif
+ 
+ 		copied += to_copy;
+ 
+diff --git a/net/rds/info.c b/net/rds/info.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/rds/info.c
++++ b/net/rds/info.c
+@@ -104,7 +104,11 @@ EXPORT_SYMBOL_GPL(rds_info_deregister_func);
+ void rds_info_iter_unmap(struct rds_info_iterator *iter)
+ {
+ 	if (iter->addr) {
++#ifdef HAVE_KMAP_ATOMIC_1_PARAM
+ 		kunmap_atomic(iter->addr);
++#else
++		kunmap_atomic(iter->addr, KM_USER0);
++#endif
+ 		iter->addr = NULL;
+ 	}
+ }
+@@ -119,7 +123,11 @@ void rds_info_copy(struct rds_info_iterator *iter, void *data,
+ 
+ 	while (bytes) {
+ 		if (!iter->addr)
++#ifdef HAVE_KMAP_ATOMIC_1_PARAM
+ 			iter->addr = kmap_atomic(*iter->pages);
++#else
++			iter->addr = kmap_atomic(*iter->pages,KM_USER0);
++#endif
+ 
+ 		this = min(bytes, PAGE_SIZE - iter->offset);
+ 
+@@ -134,7 +142,11 @@ void rds_info_copy(struct rds_info_iterator *iter, void *data,
+ 		iter->offset += this;
+ 
+ 		if (iter->offset == PAGE_SIZE) {
++#ifdef HAVE_KMAP_ATOMIC_1_PARAM
+ 			kunmap_atomic(iter->addr);
++#else
++			kunmap_atomic(iter->addr, KM_USER0);
++#endif
+ 			iter->addr = NULL;
+ 			iter->offset = 0;
+ 			iter->pages++;
+diff --git a/net/rds/iw.h b/net/rds/iw.h
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/rds/iw.h
++++ b/net/rds/iw.h
+@@ -325,7 +325,12 @@ int rds_iw_recv(struct rds_connection *conn);
+ int rds_iw_recv_refill(struct rds_connection *conn, gfp_t kptr_gfp,
+ 		       gfp_t page_gfp, int prefill);
+ void rds_iw_inc_free(struct rds_incoming *inc);
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++int rds_iw_inc_copy_to_user(struct rds_incoming *inc, struct iovec *iov,
++			    size_t size);
++#else
+ int rds_iw_inc_copy_to_user(struct rds_incoming *inc, struct iov_iter *to);
++#endif
+ void rds_iw_recv_cq_comp_handler(struct ib_cq *cq, void *context);
+ void rds_iw_recv_tasklet_fn(unsigned long data);
+ void rds_iw_recv_init_ring(struct rds_iw_connection *ic);
+diff --git a/net/rds/iw_recv.c b/net/rds/iw_recv.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/rds/iw_recv.c
++++ b/net/rds/iw_recv.c
+@@ -303,7 +303,12 @@ void rds_iw_inc_free(struct rds_incoming *inc)
+ 	BUG_ON(atomic_read(&rds_iw_allocation) < 0);
+ }
+ 
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++int rds_iw_inc_copy_to_user(struct rds_incoming *inc, struct iovec *first_iov,
++			    size_t size)
++#else
+ int rds_iw_inc_copy_to_user(struct rds_incoming *inc, struct iov_iter *to)
++#endif
+ {
+ 	struct rds_iw_incoming *iwinc;
+ 	struct rds_page_frag *frag;
+@@ -312,22 +317,52 @@ int rds_iw_inc_copy_to_user(struct rds_incoming *inc, struct iov_iter *to)
+ 	int copied = 0;
+ 	int ret;
+ 	u32 len;
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++	struct iovec *iov = first_iov;
++	unsigned long iov_off = 0;
++#endif
+ 
+ 	iwinc = container_of(inc, struct rds_iw_incoming, ii_inc);
+ 	frag = list_entry(iwinc->ii_frags.next, struct rds_page_frag, f_item);
+ 	len = be32_to_cpu(inc->i_hdr.h_len);
+ 
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++	while (copied < size && copied < len) {
++#else
+ 	while (iov_iter_count(to) && copied < len) {
++#endif
+ 		if (frag_off == RDS_FRAG_SIZE) {
+ 			frag = list_entry(frag->f_item.next,
+ 					  struct rds_page_frag, f_item);
+ 			frag_off = 0;
+ 		}
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++		while (iov_off == iov->iov_len) {
++			iov_off = 0;
++			iov++;
++		}
++
++		to_copy = min(iov->iov_len - iov_off, RDS_FRAG_SIZE - frag_off);
++		to_copy = min_t(size_t, to_copy, size - copied);
++#else
+ 		to_copy = min_t(unsigned long, iov_iter_count(to),
+ 				RDS_FRAG_SIZE - frag_off);
++#endif
+ 		to_copy = min_t(unsigned long, to_copy, len - copied);
+ 
+ 		/* XXX needs + offset for multiple recvs per page */
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++		ret = rds_page_copy_to_user(frag->f_page,
++					    frag->f_offset + frag_off,
++					    iov->iov_base + iov_off,
++					    to_copy);
++		if (ret) {
++			copied = ret;
++			break;
++		}
++
++		iov_off += to_copy;
++#else
+ 		rds_stats_add(s_copy_to_user, to_copy);
+ 		ret = copy_page_to_iter(frag->f_page,
+ 					frag->f_offset + frag_off,
+@@ -335,6 +370,7 @@ int rds_iw_inc_copy_to_user(struct rds_incoming *inc, struct iov_iter *to)
+ 					to);
+ 		if (ret != to_copy)
+ 			return -EFAULT;
++#endif
+ 
+ 		frag_off += to_copy;
+ 		copied += to_copy;
+@@ -582,8 +618,11 @@ static void rds_iw_cong_recv(struct rds_connection *conn,
+ 
+ 		to_copy = min(RDS_FRAG_SIZE - frag_off, PAGE_SIZE - map_off);
+ 		BUG_ON(to_copy & 7); /* Must be 64bit aligned. */
+-
++#ifdef HAVE_KMAP_ATOMIC_1_PARAM
+ 		addr = kmap_atomic(frag->f_page);
++#else
++		addr = kmap_atomic(frag->f_page, KM_USER0);
++#endif
+ 
+ 		src = addr + frag_off;
+ 		dst = (void *)map->m_page_addrs[map_page] + map_off;
+@@ -593,7 +632,11 @@ static void rds_iw_cong_recv(struct rds_connection *conn,
+ 			uncongested |= ~(*src) & *dst;
+ 			*dst++ = *src++;
+ 		}
++#ifdef HAVE_KMAP_ATOMIC_1_PARAM
+ 		kunmap_atomic(addr);
++#else
++		kunmap_atomic(addr, KM_USER0);
++#endif
+ 
+ 		copied += to_copy;
+ 
+diff --git a/net/rds/message.c b/net/rds/message.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/rds/message.c
++++ b/net/rds/message.c
+@@ -264,31 +264,82 @@ struct rds_message *rds_message_map_pages(unsigned long *page_addrs, unsigned in
+ 	return rm;
+ }
+ 
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++int rds_message_copy_from_user(struct rds_message *rm, struct iovec *first_iov,
++			       size_t total_len, gfp_t gfp)
++#else
+ int rds_message_copy_from_user(struct rds_message *rm, struct iov_iter *from)
++#endif
+ {
+ 	unsigned long to_copy, nbytes;
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++	unsigned long iov_off;
++	struct iovec *iov;
++#endif
+ 	unsigned long sg_off;
+ 	struct scatterlist *sg;
+ 	int ret = 0;
+ 
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++	rm->m_inc.i_hdr.h_len = cpu_to_be32(total_len);
++#else
+ 	rm->m_inc.i_hdr.h_len = cpu_to_be32(iov_iter_count(from));
++#endif
+ 
+ 	/*
+ 	 * now allocate and copy in the data payload.
+ 	 */
+ 	sg = rm->data.op_sg;
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++	iov = first_iov;
++	iov_off = 0;
++#endif
+ 	sg_off = 0; /* Dear gcc, sg->page will be null from kzalloc. */
+ 
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++	while (total_len) {
++#else
+ 	while (iov_iter_count(from)) {
++#endif
+ 		if (!sg_page(sg)) {
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++			ret = rds_page_remainder_alloc(sg, total_len,
++							GFP_ATOMIC == gfp ?
++								      gfp :
++								      GFP_HIGHUSER);
++#else
+ 			ret = rds_page_remainder_alloc(sg, iov_iter_count(from),
+ 						       GFP_HIGHUSER);
++#endif
+ 			if (ret)
+ 				return ret;
+ 			rm->data.op_nents++;
+ 			sg_off = 0;
+ 		}
+ 
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++		while (iov_off == iov->iov_len) {
++			iov_off = 0;
++			iov++;
++		}
++
++		to_copy = min(iov->iov_len - iov_off, sg->length - sg_off);
++		to_copy = min_t(size_t, to_copy, total_len);
++
++		rdsdebug("copying %lu bytes from user iov [%p, %zu] + %lu to "
++			 "sg [%p, %u, %u] + %lu\n",
++			 to_copy, iov->iov_base, iov->iov_len, iov_off,
++			 (void *)sg_page(sg), sg->offset, sg->length, sg_off);
++
++		ret = rds_page_copy_from_user(sg_page(sg), sg->offset + sg_off,
++					      iov->iov_base + iov_off,
++					      to_copy);
++		if (ret)
++			return ret;
++
++		iov_off += to_copy;
++		total_len -= to_copy;
++#else
+ 		to_copy = min_t(unsigned long, iov_iter_count(from),
+ 				sg->length - sg_off);
+ 
+@@ -297,6 +348,7 @@ int rds_message_copy_from_user(struct rds_message *rm, struct iov_iter *from)
+ 					     to_copy, from);
+ 		if (nbytes != to_copy)
+ 			return -EFAULT;
++#endif
+ 
+ 		sg_off += to_copy;
+ 
+@@ -307,9 +359,18 @@ int rds_message_copy_from_user(struct rds_message *rm, struct iov_iter *from)
+ 	return ret;
+ }
+ 
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++int rds_message_inc_copy_to_user(struct rds_incoming *inc,
++				 struct iovec *first_iov, size_t size)
++#else
+ int rds_message_inc_copy_to_user(struct rds_incoming *inc, struct iov_iter *to)
++#endif
+ {
+ 	struct rds_message *rm;
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++	struct iovec *iov;
++	unsigned long iov_off;
++#endif
+ 	struct scatterlist *sg;
+ 	unsigned long to_copy;
+ 	unsigned long vec_off;
+@@ -320,10 +381,40 @@ int rds_message_inc_copy_to_user(struct rds_incoming *inc, struct iov_iter *to)
+ 	rm = container_of(inc, struct rds_message, m_inc);
+ 	len = be32_to_cpu(rm->m_inc.i_hdr.h_len);
+ 
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++	iov = first_iov;
++	iov_off = 0;
++#endif
+ 	sg = rm->data.op_sg;
+ 	vec_off = 0;
+ 	copied = 0;
+ 
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++	while (copied < size && copied < len) {
++		while (iov_off == iov->iov_len) {
++			iov_off = 0;
++			iov++;
++		}
++
++		to_copy = min(iov->iov_len - iov_off, sg->length - vec_off);
++		to_copy = min_t(size_t, to_copy, size - copied);
++		to_copy = min_t(unsigned long, to_copy, len - copied);
++
++		rdsdebug("copying %lu bytes to user iov [%p, %zu] + %lu to "
++			 "sg [%p, %u, %u] + %lu\n",
++			 to_copy, iov->iov_base, iov->iov_len, iov_off,
++			 sg_page(sg), sg->offset, sg->length, vec_off);
++
++		ret = rds_page_copy_to_user(sg_page(sg), sg->offset + vec_off,
++					    iov->iov_base + iov_off,
++					    to_copy);
++		if (ret) {
++			copied = ret;
++			break;
++		}
++
++		iov_off += to_copy;
++#else
+ 	while (iov_iter_count(to) && copied < len) {
+ 		to_copy = min_t(unsigned long, iov_iter_count(to),
+ 				sg->length - vec_off);
+@@ -334,6 +425,7 @@ int rds_message_inc_copy_to_user(struct rds_incoming *inc, struct iov_iter *to)
+ 					to_copy, to);
+ 		if (ret != to_copy)
+ 			return -EFAULT;
++#endif
+ 
+ 		vec_off += to_copy;
+ 		copied += to_copy;
+diff --git a/net/rds/rds.h b/net/rds/rds.h
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/rds/rds.h
++++ b/net/rds/rds.h
+@@ -431,7 +431,12 @@ struct rds_transport {
+ 	int (*xmit_rdma)(struct rds_connection *conn, struct rm_rdma_op *op);
+ 	int (*xmit_atomic)(struct rds_connection *conn, struct rm_atomic_op *op);
+ 	int (*recv)(struct rds_connection *conn);
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++	int (*inc_copy_to_user)(struct rds_incoming *inc, struct iovec *iov,
++				size_t size);
++#else
+ 	int (*inc_copy_to_user)(struct rds_incoming *inc, struct iov_iter *to);
++#endif
+ 	void (*inc_free)(struct rds_incoming *inc);
+ 
+ 	int (*cm_handle_connect)(struct rdma_cm_id *cm_id,
+@@ -656,7 +661,12 @@ rds_conn_connecting(struct rds_connection *conn)
+ /* message.c */
+ struct rds_message *rds_message_alloc(unsigned int nents, gfp_t gfp);
+ struct scatterlist *rds_message_alloc_sgs(struct rds_message *rm, int nents);
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++int rds_message_copy_from_user(struct rds_message *rm, struct iovec *first_iov,
++			       size_t total_len, gfp_t gfp);
++#else
+ int rds_message_copy_from_user(struct rds_message *rm, struct iov_iter *from);
++#endif
+ struct rds_message *rds_message_map_pages(unsigned long *page_addrs, unsigned int total_len);
+ void rds_message_populate_header(struct rds_header *hdr, __be16 sport,
+ 				 __be16 dport, u64 seq);
+@@ -665,7 +675,12 @@ int rds_message_add_extension(struct rds_header *hdr,
+ int rds_message_next_extension(struct rds_header *hdr,
+ 			       unsigned int *pos, void *buf, unsigned int *buflen);
+ int rds_message_add_rdma_dest_extension(struct rds_header *hdr, u32 r_key, u32 offset);
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++int rds_message_inc_copy_to_user(struct rds_incoming *inc,
++				 struct iovec *first_iov, size_t size);
++#else
+ int rds_message_inc_copy_to_user(struct rds_incoming *inc, struct iov_iter *to);
++#endif
+ void rds_message_inc_free(struct rds_incoming *inc);
+ void rds_message_addref(struct rds_message *rm);
+ void rds_message_put(struct rds_message *rm);
+diff --git a/net/rds/recv.c b/net/rds/recv.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/rds/recv.c
++++ b/net/rds/recv.c
+@@ -414,7 +414,9 @@ int rds_recvmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
+ 		goto out;
+ 
+ 	while (1) {
++#ifndef CONFIG_COMPAT_IS_MSG_IOV
+ 		struct iov_iter save;
++#endif
+ 		/* If there are pending notifications, do those - and nothing else */
+ 		if (!list_empty(&rs->rs_notify_queue)) {
+ 			ret = rds_notify_queue_get(rs, msg);
+@@ -450,8 +452,13 @@ int rds_recvmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
+ 		rdsdebug("copying inc %p from %pI4:%u to user\n", inc,
+ 			 &inc->i_conn->c_faddr,
+ 			 ntohs(inc->i_hdr.h_sport));
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++		ret = inc->i_conn->c_trans->inc_copy_to_user(inc, msg->msg_iov,
++							     size);
++#else
+ 		save = msg->msg_iter;
+ 		ret = inc->i_conn->c_trans->inc_copy_to_user(inc, &msg->msg_iter);
++#endif
+ 		if (ret < 0)
+ 			break;
+ 
+@@ -464,7 +471,9 @@ int rds_recvmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
+ 			rds_inc_put(inc);
+ 			inc = NULL;
+ 			rds_stats_inc(s_recv_deliver_raced);
++#ifndef CONFIG_COMPAT_IS_MSG_IOV
+ 			msg->msg_iter = save;
++#endif
+ 			continue;
+ 		}
+ 
+diff --git a/net/rds/send.c b/net/rds/send.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/rds/send.c
++++ b/net/rds/send.c
+@@ -982,7 +982,11 @@ int rds_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
+ 			ret = -ENOMEM;
+ 			goto out;
+ 		}
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++		ret = rds_message_copy_from_user(rm, msg->msg_iov, payload_len, GFP_KERNEL);
++#else
+ 		ret = rds_message_copy_from_user(rm, &msg->msg_iter);
++#endif
+ 		if (ret)
+ 			goto out;
+ 	}
+diff --git a/net/rds/tcp.h b/net/rds/tcp.h
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/rds/tcp.h
++++ b/net/rds/tcp.h
+@@ -61,15 +61,28 @@ void rds_tcp_state_change(struct sock *sk);
+ /* tcp_listen.c */
+ int rds_tcp_listen_init(void);
+ void rds_tcp_listen_stop(void);
++#ifdef HAVE_SK_DATA_READY_2_PARAMS
++void rds_tcp_listen_data_ready(struct sock *sk, int bytes);
++#else
+ void rds_tcp_listen_data_ready(struct sock *sk);
++#endif
+ 
+ /* tcp_recv.c */
+ int rds_tcp_recv_init(void);
+ void rds_tcp_recv_exit(void);
++#ifdef HAVE_SK_DATA_READY_2_PARAMS
++void rds_tcp_data_ready(struct sock *sk, int bytes);
++#else
+ void rds_tcp_data_ready(struct sock *sk);
++#endif
+ int rds_tcp_recv(struct rds_connection *conn);
+ void rds_tcp_inc_free(struct rds_incoming *inc);
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++int rds_tcp_inc_copy_to_user(struct rds_incoming *inc, struct iovec *iov,
++			     size_t size);
++#else
+ int rds_tcp_inc_copy_to_user(struct rds_incoming *inc, struct iov_iter *to);
++#endif
+ 
+ /* tcp_send.c */
+ void rds_tcp_xmit_prepare(struct rds_connection *conn);
+diff --git a/net/rds/tcp_listen.c b/net/rds/tcp_listen.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/rds/tcp_listen.c
++++ b/net/rds/tcp_listen.c
+@@ -67,12 +67,21 @@ static int rds_tcp_accept_one(struct socket *sock)
+ 
+ 	inet = inet_sk(new_sock->sk);
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33))
+ 	rdsdebug("accepted tcp %pI4:%u -> %pI4:%u\n",
+ 		 &inet->inet_saddr, ntohs(inet->inet_sport),
+ 		 &inet->inet_daddr, ntohs(inet->inet_dport));
+ 
+ 	conn = rds_conn_create(inet->inet_saddr, inet->inet_daddr,
+ 			       &rds_tcp_transport, GFP_KERNEL);
++#else
++	rdsdebug("accepted tcp %pI4:%u -> %pI4:%u\n",
++		 &inet->saddr, ntohs(inet->sport),
++		 &inet->daddr, ntohs(inet->dport));
++
++	conn = rds_conn_create(inet->saddr, inet->daddr, &rds_tcp_transport,
++			       GFP_KERNEL);
++#endif
+ 	if (IS_ERR(conn)) {
+ 		ret = PTR_ERR(conn);
+ 		goto out;
+@@ -108,9 +117,15 @@ static void rds_tcp_accept_worker(struct work_struct *work)
+ 		cond_resched();
+ }
+ 
++#ifdef HAVE_SK_DATA_READY_2_PARAMS
++void rds_tcp_listen_data_ready(struct sock *sk, int bytes)
++{
++	void (*ready)(struct sock *sk, int bytes);
++#else
+ void rds_tcp_listen_data_ready(struct sock *sk)
+ {
+ 	void (*ready)(struct sock *sk);
++#endif
+ 
+ 	rdsdebug("listen data ready sk %p\n", sk);
+ 
+@@ -132,7 +147,11 @@ void rds_tcp_listen_data_ready(struct sock *sk)
+ 
+ out:
+ 	read_unlock(&sk->sk_callback_lock);
++#ifdef HAVE_SK_DATA_READY_2_PARAMS
++	ready(sk, bytes);
++#else
+ 	ready(sk);
++#endif
+ }
+ 
+ int rds_tcp_listen_init(void)
+diff --git a/net/rds/tcp_recv.c b/net/rds/tcp_recv.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/rds/tcp_recv.c
++++ b/net/rds/tcp_recv.c
+@@ -59,18 +59,64 @@ void rds_tcp_inc_free(struct rds_incoming *inc)
+ /*
+  * this is pretty lame, but, whatever.
+  */
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++int rds_tcp_inc_copy_to_user(struct rds_incoming *inc, struct iovec *first_iov,
++			     size_t size)
++#else
+ int rds_tcp_inc_copy_to_user(struct rds_incoming *inc, struct iov_iter *to)
++#endif
+ {
+ 	struct rds_tcp_incoming *tinc;
+ 	struct sk_buff *skb;
+ 	int ret = 0;
+-
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++	struct iovec *iov, tmp;
++	unsigned long to_copy, skb_off;
++#endif
++
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++	if (size == 0)
++#else
+ 	if (!iov_iter_count(to))
++#endif
+ 		goto out;
+ 
+ 	tinc = container_of(inc, struct rds_tcp_incoming, ti_inc);
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++	iov = first_iov;
++	tmp = *iov;
++#endif
+ 
+ 	skb_queue_walk(&tinc->ti_skb_list, skb) {
++#ifdef CONFIG_COMPAT_IS_MSG_IOV
++		skb_off = 0;
++		while (skb_off < skb->len) {
++			while (tmp.iov_len == 0) {
++				iov++;
++				tmp = *iov;
++			}
++
++			to_copy = min(tmp.iov_len, size);
++			to_copy = min(to_copy, skb->len - skb_off);
++
++			rdsdebug("ret %d size %zu skb %p skb_off %lu "
++				 "skblen %d iov_base %p iov_len %zu cpy %lu\n",
++				 ret, size, skb, skb_off, skb->len,
++				 tmp.iov_base, tmp.iov_len, to_copy);
++
++			/* modifies tmp as it copies */
++			if (skb_copy_datagram_iovec(skb, skb_off, &tmp,
++						    to_copy)) {
++				ret = -EFAULT;
++				goto out;
++			}
++
++			rds_stats_add(s_copy_to_user, to_copy);
++			size -= to_copy;
++			ret += to_copy;
++			skb_off += to_copy;
++			if (size == 0)
++#else
+ 		unsigned long to_copy, skb_off;
+ 		for (skb_off = 0; skb_off < skb->len; skb_off += to_copy) {
+ 			to_copy = iov_iter_count(to);
+@@ -83,6 +129,7 @@ int rds_tcp_inc_copy_to_user(struct rds_incoming *inc, struct iov_iter *to)
+ 			ret += to_copy;
+ 
+ 			if (!iov_iter_count(to))
++#endif
+ 				goto out;
+ 		}
+ 	}
+@@ -294,9 +341,15 @@ int rds_tcp_recv(struct rds_connection *conn)
+ 	return ret;
+ }
+ 
++#ifdef HAVE_SK_DATA_READY_2_PARAMS
++void rds_tcp_data_ready(struct sock *sk, int bytes)
++{
++	void (*ready)(struct sock *sk, int bytes);
++#else
+ void rds_tcp_data_ready(struct sock *sk)
+ {
+ 	void (*ready)(struct sock *sk);
++#endif
+ 	struct rds_connection *conn;
+ 	struct rds_tcp_connection *tc;
+ 
+@@ -317,7 +370,11 @@ void rds_tcp_data_ready(struct sock *sk)
+ 		queue_delayed_work(rds_wq, &conn->c_recv_w, 0);
+ out:
+ 	read_unlock(&sk->sk_callback_lock);
++#ifdef HAVE_SK_DATA_READY_2_PARAMS
++	ready(sk, bytes);
++#else
+ 	ready(sk);
++#endif
+ }
+ 
+ int rds_tcp_recv_init(void)

@@ -184,6 +184,16 @@ extern char * __must_check skip_spaces(const char *);
 #define VLAN_PRIO_SHIFT		13
 #endif /* VLAN_PRIO_SHIFT */
 
+#ifndef __sockaddr_check_size
+#define __sockaddr_check_size(size)    \
+	UILD_BUG_ON(((size) > sizeof(struct __kernel_sockaddr_storage)))
+#endif
+
+#ifndef DECLARE_SOCKADDR
+#define DECLARE_SOCKADDR(type, dst, src)       \
+	type dst = ({ __sockaddr_check_size(sizeof(*dst)); (type) src; })
+#endif
+
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,33)) */
 
 #endif /* LINUX_26_33_COMPAT_H */

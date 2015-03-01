@@ -2261,6 +2261,43 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 	],[
 		AC_MSG_RESULT(no)
 	])
+
+	AC_MSG_CHECKING([if percpu.h has __this_cpu_read])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/percpu.h>
+	],[
+		__this_cpu_read(0);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_THIS_CPU_READ, 1,
+			  [__this_cpu_read has 1 parameter])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if sock.h struct sock has sk_data_ready has 2 parameter])
+	LB_LINUX_TRY_COMPILE([
+		#include <net/sock.h>
+
+		void listen_data_ready(struct sock *sk, int len)
+		{
+			return;
+		}
+	],[
+		struct sock x = {
+			.sk_data_ready = listen_data_ready,
+		};
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_SK_DATA_READY_2_PARAMS, 1,
+			  [sk_data_ready has 2 params])
+	],[
+		AC_MSG_RESULT(no)
+	])
 ])
 #
 # COMPAT_CONFIG_HEADERS
