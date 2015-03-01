@@ -1085,8 +1085,8 @@ enum ib_qp_attr_mask {
 	IB_QP_PATH_MIG_STATE		= (1<<18),
 	IB_QP_CAP			= (1<<19),
 	IB_QP_DEST_QPN			= (1<<20),
-	IB_QP_GROUP_RSS			= (1<<25),
-	IB_QP_DC_KEY			= (1<<26),
+	IB_QP_GROUP_RSS			= (1<<21),
+	IB_QP_DC_KEY			= (1<<22),
 };
 
 enum ib_qp_state {
