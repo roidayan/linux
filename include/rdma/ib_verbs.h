@@ -1087,6 +1087,7 @@ enum ib_qp_attr_mask {
 	IB_QP_DEST_QPN			= (1<<20),
 	IB_QP_GROUP_RSS			= (1<<21),
 	IB_QP_DC_KEY			= (1<<22),
+	IB_QP_FLOW_ENTROPY		= (1<<23),
 };
 
 enum ib_qp_state {
@@ -1137,6 +1138,7 @@ struct ib_qp_attr {
 	u8			alt_port_num;
 	u8			alt_timeout;
 	u64			dct_key;
+	u32			flow_entropy;
 };
 
 enum ib_wr_opcode {
