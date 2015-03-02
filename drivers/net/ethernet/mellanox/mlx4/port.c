@@ -37,6 +37,7 @@
 
 #include <linux/mlx4/cmd.h>
 
+#include <rdma/ib_verbs.h>
 #include "mlx4.h"
 
 #define MLX4_MAC_VALID		(1ull << 63)
@@ -955,6 +956,7 @@ int mlx4_SET_PORT(struct mlx4_dev *dev, u8 port, int pkey_tbl_sz)
 	return err;
 }
 
+#define SET_PORT_ROCE_1_5_FLAGS        0x30
 #define SET_PORT_ROCE_2_FLAGS          0x10
 #define MLX4_SET_PORT_ROCE_V1_V2       0x2
 int mlx4_SET_PORT_general(struct mlx4_dev *dev, u8 port, int mtu,
@@ -975,12 +977,25 @@ int mlx4_SET_PORT_general(struct mlx4_dev *dev, u8 port, int mtu,
 	context->pfctx = pfctx;
 	context->pprx = (pprx * (!pfcrx)) << 7;
 	context->pfcrx = pfcrx;
-	if (dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_ROCE_V1_V2) {
-		context->flags |= SET_PORT_ROCE_2_FLAGS;
-		context->roce_mode |=
-			(MLX4_SET_PORT_ROCE_V1_V2 & 7)
-			<< 4;
+
+	if (dev->caps.port_type[port] == MLX4_PORT_TYPE_ETH) {
+		context->roce_mode |= (dev->caps.roce_mode & 7) << 4;
+		if (dev->caps.roce_mode == MLX4_SET_ROCE_MODE_1_5 ||
+		    dev->caps.roce_mode == MLX4_SET_ROCE_MODE_1_5_PLUS_2) {
+			context->flags |= SET_PORT_ROCE_1_5_FLAGS;
+			context->rr_proto = 0xfe;
+		} else if (dev->caps.roce_mode == MLX4_SET_ROCE_MODE_1_PLUS_2) {
+			context->flags |= SET_PORT_ROCE_2_FLAGS;
+		}
+
+		if (dev->caps.roce_mode == MLX4_SET_ROCE_MODE_1_5_PLUS_2 ||
+		    dev->caps.roce_mode == MLX4_SET_ROCE_MODE_1_PLUS_2) {
+			err = mlx4_config_roce_v2_port(dev, ROCE_V2_UDP_DPORT);
+			if (err)
+				return err;
+		}
 	}
+
 	in_mod = MLX4_SET_PORT_GENERAL << 8 | port;
 	err = mlx4_cmd(dev, mailbox->dma, in_mod, 1, MLX4_CMD_SET_PORT,
 		       MLX4_CMD_TIME_CLASS_B,  MLX4_CMD_WRAPPED);

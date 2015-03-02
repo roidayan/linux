@@ -373,7 +373,7 @@ int ib_ud_header_init(int     payload_bytes,
 				     IB_DETH_BYTES +
 				     payload_bytes +
 				     4);     /* ICRC     */
-		header->ip4.protocol = IPPROTO_UDP;
+		header->ip4.protocol = udp_present ? IPPROTO_UDP : 0xfe;
 	}
 	if (udp_present && ip_version)
 		header->udp.length =

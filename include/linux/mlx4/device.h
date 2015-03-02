@@ -147,25 +147,6 @@ static inline const char *mlx4_steering_mode_str(int steering_mode)
 }
 
 enum {
-	MLX4_ROCE_MODE_NONE = -1,
-	MLX4_ROCE_MODE_1,
-	MLX4_ROCE_MODE_1_5,
-	MLX4_ROCE_MODE_2
-};
-
-const char *mlx4_roce_mode_str(int roce_mode);
-
-static inline int mlx4_roce_is_supported(int roce_mode)
-{
-	return roce_mode != MLX4_ROCE_MODE_NONE;
-}
-
-static inline int mlx4_roce_is_over_ip(int roce_mode)
-{
-	return roce_mode != MLX4_ROCE_MODE_1;
-}
-
-enum {
 	MLX4_TUNNEL_OFFLOAD_MODE_NONE,
 	MLX4_TUNNEL_OFFLOAD_MODE_VXLAN
 };
@@ -501,6 +482,16 @@ enum mlx4_module_id {
 	MLX4_MODULE_ID_QSFP28           = 0x11,
 };
 
+enum mlx4_set_roce_mode {
+	MLX4_SET_ROCE_MODE_1,
+	MLX4_SET_ROCE_MODE_1_5,
+	MLX4_SET_ROCE_MODE_1_PLUS_2,
+	MLX4_SET_ROCE_MODE_1_5_PLUS_2,
+	MLX4_SET_ROCE_MODE_MAX
+};
+
+#define MLX4_ROCE_NOT_SUPPORTED MLX4_SET_ROCE_MODE_MAX
+
 static inline u64 mlx4_fw_ver(u64 major, u64 minor, u64 subminor)
 {
 	return (major << 32) | (minor << 16) | subminor;
@@ -572,6 +563,7 @@ struct mlx4_caps {
 	int			reserved_mcgs;
 	int			num_qp_per_mgm;
 	int			steering_mode;
+	enum mlx4_set_roce_mode roce_mode;
 	int			dmfs_high_steer_mode;
 	int			fs_log_max_ucast_qp_range_size;
 	int			num_pds;

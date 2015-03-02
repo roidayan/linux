@@ -121,22 +121,22 @@ struct param_data {
 	struct mlx4_dbdf2val_lst	dbdf2val;
 };
 
-static struct param_data roce_mode = {
+static struct param_data roce_mode_prefer_routable = {
 	.id		= ROCE_MODE,
 	.dbdf2val = {
 		.name		= "roce_mode param",
 		.num_vals	= 1,
-		.def_val	= {MLX4_ROCE_MODE_1},
-		.range		= {MLX4_ROCE_MODE_1, MLX4_ROCE_MODE_2},
+		.def_val	= {1},
+		.range		= {0, 1},
 		.num_inval_vals = 0
 	}
 };
-module_param_string(roce_mode, roce_mode.dbdf2val.str,
-		    sizeof(roce_mode.dbdf2val.str), 0444);
-MODULE_PARM_DESC(roce_mode,
-		 "A single value (e.g. 1) to define uniform RoCE_mode value for all devices\n"
+module_param_string(roce_mode_prefer_routable, roce_mode_prefer_routable.dbdf2val.str,
+		    sizeof(roce_mode_prefer_routable.dbdf2val.str), 0444);
+MODULE_PARM_DESC(roce_mode_prefer_routable,
+		 "A single value (e.g. 1) to define uniform preferred RoCE_mode value for all devices\n"
 		 "\t\tor a string to map device function numbers to their RoCE mode value (e.g. '0000:04:00.0-0,002b:1c:0b.a-1').\n"
-		 "\t\tAllowed values are 0 for RoCEv1 (default), 1 for RoCEv1.5 and 2 for RoCEv2");
+		 "\t\tAllowed values are 1 for prefer routable (default),  0 for prefer non routable");
 
 static struct param_data num_vfs = {
 	.id		= NUM_VFS,
@@ -2499,6 +2499,32 @@ static void choose_steering_mode(struct mlx4_dev *dev,
 		 mlx4_log_num_mgm_entry_size);
 }
 
+static void choose_roce_mode(struct mlx4_dev *dev,
+			     struct mlx4_dev_cap *dev_cap)
+{
+	int pref_routable;
+	enum mlx4_set_roce_mode set_roce_mode =
+		MLX4_ROCE_NOT_SUPPORTED;
+
+	mlx4_get_val(roce_mode_prefer_routable.dbdf2val.tbl, pci_physfn(dev->persist->pdev), 0, &pref_routable);
+
+	if (pref_routable) {
+		if (dev_cap->flags2 & MLX4_DEV_CAP_FLAG2_ROCEV2)
+			set_roce_mode = MLX4_SET_ROCE_MODE_1_5_PLUS_2;
+		else if (dev_cap->flags & MLX4_DEV_CAP_FLAG_R_ROCE)
+			set_roce_mode = MLX4_SET_ROCE_MODE_1_5;
+		else
+			set_roce_mode = MLX4_SET_ROCE_MODE_1;
+	} else {
+		if (dev_cap->flags2 & MLX4_DEV_CAP_FLAG2_ROCE_V1_V2)
+			set_roce_mode = MLX4_SET_ROCE_MODE_1_PLUS_2;
+		else
+			set_roce_mode = MLX4_SET_ROCE_MODE_1;
+	}
+
+	dev->caps.roce_mode = set_roce_mode;
+}
+
 static void choose_tunnel_offload_mode(struct mlx4_dev *dev,
 				       struct mlx4_dev_cap *dev_cap)
 {
@@ -2591,6 +2617,7 @@ static int mlx4_init_hca(struct mlx4_dev *dev)
 		}
 
 		choose_steering_mode(dev, &dev_cap);
+		choose_roce_mode(dev, &dev_cap);
 		choose_tunnel_offload_mode(dev, &dev_cap);
 
 		if (dev->caps.dmfs_high_steer_mode == MLX4_STEERING_DMFS_A0_STATIC &&
@@ -4651,9 +4678,9 @@ static int __init mlx4_verify_params(void)
 		return -1;
 	}
 
-	status = update_defaults(&roce_mode);
+	status = update_defaults(&roce_mode_prefer_routable);
 	if (status == INVALID_STR) {
-		if (mlx4_fill_dbdf2val_tbl(&roce_mode.dbdf2val))
+		if (mlx4_fill_dbdf2val_tbl(&roce_mode_prefer_routable.dbdf2val))
 			return -1;
 	} else if (status == INVALID_DATA) {
 		return -1;
