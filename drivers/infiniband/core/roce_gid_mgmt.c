@@ -56,7 +56,7 @@ struct  update_gid_event_work {
 	enum gid_op_type gid_op;
 };
 
-#define ROCE_NETDEV_CALLBACK_SZ		2
+#define ROCE_NETDEV_CALLBACK_SZ		3
 struct netdev_event_work_cmd {
 	roce_netdev_callback	cb;
 	roce_netdev_filter	filter;
@@ -134,9 +134,9 @@ static void update_gid(enum gid_op_type gid_op, struct ib_device *ib_dev,
 	  (IFF_BONDING | IFF_MASTER)) == (IFF_BONDING | IFF_MASTER))
 
 enum bonding_slave_state {
-	BONDING_SLAVE_STATE_ACTIVE,
-	BONDING_SLAVE_STATE_INACTIVE,
-	BONDING_SLAVE_STATE_NA
+	BONDING_SLAVE_STATE_ACTIVE	= 1UL << 0,
+	BONDING_SLAVE_STATE_INACTIVE	= 1UL << 1,
+	BONDING_SLAVE_STATE_NA		= 1UL << 2,
 };
 
 static enum bonding_slave_state is_eth_active_slave_of_bonding(struct net_device *idev,
@@ -156,29 +156,68 @@ static enum bonding_slave_state is_eth_active_slave_of_bonding(struct net_device
 	return BONDING_SLAVE_STATE_NA;
 }
 
-static int is_eth_port_of_netdev(struct ib_device *ib_dev, u8 port,
-				 struct net_device *idev, void *cookie)
+static bool is_upper_dev_rcu(struct net_device *dev, struct net_device *upper)
 {
-	struct net_device *rdev;
-	struct net_device *mdev;
+	struct net_device *_upper = NULL;
+	struct list_head *iter;
+
+	rcu_read_lock();
+	netdev_for_each_all_upper_dev_rcu(dev, _upper, iter) {
+		if (_upper == upper)
+			break;
+	}
+
+	rcu_read_unlock();
+	return _upper == upper;
+}
+
+static int _is_eth_port_of_netdev(struct ib_device *ib_dev, u8 port,
+				  struct net_device *idev, void *cookie,
+				  unsigned long bond_state)
+{
 	struct net_device *ndev = (struct net_device *)cookie;
+	struct net_device *rdev;
 	int res;
 
 	if (!idev)
 		return 0;
 
 	rcu_read_lock();
-	mdev = netdev_master_upper_dev_get_rcu(idev);
 	rdev = rdma_vlan_dev_real_dev(ndev);
 	if (!rdev)
 		rdev = ndev;
 
-	res = (rdev == idev ||
-	       (rdev == mdev &&
-		is_eth_active_slave_of_bonding(idev, mdev) !=
-		BONDING_SLAVE_STATE_INACTIVE));
+	res = ((is_upper_dev_rcu(idev, ndev) &&
+	       (is_eth_active_slave_of_bonding(idev, rdev) &
+	        bond_state)) ||
+	       rdev == idev);
 
 	rcu_read_unlock();
+	return res;
+}
+
+static int is_eth_port_of_netdev(struct ib_device *ib_dev, u8 port,
+				 struct net_device *idev, void *cookie)
+{
+	return _is_eth_port_of_netdev(ib_dev, port, idev, cookie,
+				      BONDING_SLAVE_STATE_ACTIVE |
+				      BONDING_SLAVE_STATE_NA);
+}
+
+static int is_eth_port_inactive_slave(struct ib_device *ib_dev, u8 port,
+				      struct net_device *idev, void *cookie)
+{
+	struct net_device *mdev;
+	int res;
+	if (!idev)
+		return 0;
+
+	rcu_read_lock();
+	mdev = netdev_master_upper_dev_get_rcu(idev);
+	res = is_eth_active_slave_of_bonding(idev, mdev) ==
+		BONDING_SLAVE_STATE_INACTIVE;
+	rcu_read_unlock();
+
 	return res;
 }
 
@@ -191,9 +230,9 @@ static int pass_all_filter(struct ib_device *ib_dev, u8 port,
 static int bonding_slaves_filter(struct ib_device *ib_dev, u8 port,
 				 struct net_device *idev, void *cookie)
 {
-	struct net_device *mdev;
 	struct net_device *rdev;
 	struct net_device *ndev = (struct net_device *)cookie;
+	int res;
 
 	rdev = rdma_vlan_dev_real_dev(ndev);
 
@@ -201,11 +240,9 @@ static int bonding_slaves_filter(struct ib_device *ib_dev, u8 port,
 	if (!idev || !IS_NETDEV_BONDING_MASTER(ndev))
 		return 0;
 
-	rcu_read_lock();
-	mdev = netdev_master_upper_dev_get_rcu(idev);
-	rcu_read_unlock();
+	res = is_upper_dev_rcu(idev, ndev);
 
-	return ndev == mdev;
+	return res;
 }
 
 static void netdevice_event_work_handler(struct work_struct *_work)
@@ -242,12 +279,15 @@ static void enum_netdev_default_gids(struct ib_device *ib_dev,
 				     struct net_device *idev)
 {
 	unsigned long gid_type_mask;
+	struct net_device *rdev = rdma_vlan_dev_real_dev(ndev);
+
+	if (!rdev)
+		rdev = ndev;
 
 	rcu_read_lock();
 	if (!idev ||
-	    ((idev != ndev && netdev_master_upper_dev_get_rcu(idev) != ndev) ||
-	     is_eth_active_slave_of_bonding(idev,
-					    netdev_master_upper_dev_get_rcu(idev)) ==
+	    ((idev != ndev && !is_upper_dev_rcu(idev, ndev)) ||
+	     is_eth_active_slave_of_bonding(idev, rdev) ==
 	     BONDING_SLAVE_STATE_INACTIVE)) {
 		rcu_read_unlock();
 		return;
@@ -264,16 +304,18 @@ static void bond_delete_netdev_default_gids(struct ib_device *ib_dev,
 					    u8 port, struct net_device *ndev,
 					    struct net_device *idev)
 {
-	struct net_device *upper;
+	struct net_device *rdev = rdma_vlan_dev_real_dev(ndev);
 
 	if (!idev)
 		return;
 
-	rcu_read_lock();
-	upper = netdev_master_upper_dev_get_rcu(idev);
+	if (!rdev)
+		rdev = ndev;
 
-	if ((upper == ndev) &&
-	    is_eth_active_slave_of_bonding(idev, upper) ==
+	rcu_read_lock();
+
+	if (is_upper_dev_rcu(idev, ndev) &&
+	    is_eth_active_slave_of_bonding(idev, rdev) ==
 	    BONDING_SLAVE_STATE_INACTIVE) {
 		unsigned long gid_type_mask;
 
@@ -411,18 +453,46 @@ static void del_netdev_ips(struct ib_device *ib_dev, u8 port,
 	struct net_device *ndev = (struct net_device *)cookie;
 
 	roce_del_all_netdev_gids(ib_dev, port, ndev);
+}
+
+static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
+				 struct net_device *idev, void *cookie)
+{
 	if (idev) {
-		bool is_upper;
+		struct upper_list {
+			struct list_head list;
+			struct net_device *upper;
+		};
+		struct net_device *upper;
+		struct list_head *iter;
+		struct upper_list *upper_iter;
+		struct upper_list *upper_temp;
+		LIST_HEAD(upper_list);
 
 		rcu_read_lock();
-		is_upper = netdev_master_upper_dev_get_rcu(idev) == ndev;
+		netdev_for_each_all_upper_dev_rcu(idev, upper, iter) {
+			struct upper_list *entry = kmalloc(sizeof(*entry),
+							   GFP_ATOMIC);
+
+			if (!entry) {
+				pr_info("roce_gid_mgmt: couldn't allocate entry to delete ndev\n");
+				continue;
+			}
+
+			list_add_tail(&entry->list, &upper_list);
+			dev_hold(upper);
+			entry->upper = upper;
+		}
 		rcu_read_unlock();
 
-		if (is_upper)
-			/* Delete default GIDs, vlans should be deleted
-			 * first by user
-			 */
-			roce_del_all_netdev_gids(ib_dev, port, idev);
+		list_for_each_entry_safe(upper_iter, upper_temp, &upper_list,
+					 list) {
+			roce_del_all_netdev_gids(ib_dev, port,
+						 upper_iter->upper);
+			list_del(&upper_iter->list);
+			dev_put(upper_iter->upper);
+			kfree(upper_iter);
+		}
 	}
 }
 
@@ -442,9 +512,11 @@ static int netdevice_event(struct notifier_block *this, unsigned long event,
 	static const struct netdev_event_work_cmd del_cmd = {
 		.cb = del_netdev_ips, .filter = pass_all_filter};
 	static const struct netdev_event_work_cmd bonding_default_del_cmd = {
-		.cb = del_netdev_default_ips, .filter = bonding_slaves_filter};
-	static const struct netdev_event_work_cmd bonding_ips_del_cmd = {
+		.cb = del_netdev_default_ips, .filter = is_eth_port_inactive_slave};
+	static const struct netdev_event_work_cmd bonding_event_ips_del_cmd = {
 		.cb = del_netdev_ips, .filter = bonding_slaves_filter};
+	static const struct netdev_event_work_cmd upper_ips_del_cmd = {
+		.cb = del_netdev_upper_ips, .filter = pass_all_filter};
 	struct net_device *ndev = netdev_notifier_info_to_dev(ptr);
 	struct netdev_event_work *ndev_work;
 	struct netdev_event_work_cmd cmds[ROCE_NETDEV_CALLBACK_SZ] = { {NULL} };
@@ -455,6 +527,7 @@ static int netdevice_event(struct notifier_block *this, unsigned long event,
 	switch (event) {
 	case NETDEV_REGISTER:
 	case NETDEV_UP:
+	case NETDEV_JOIN:
 		cmds[0] = bonding_default_del_cmd;
 		cmds[1] = add_cmd;
 		break;
@@ -471,13 +544,15 @@ static int netdevice_event(struct notifier_block *this, unsigned long event,
 		cmds[1] = add_cmd;
 		break;
 
-	case NETDEV_BONDING_FAILOVER:
-		cmds[0] = bonding_ips_del_cmd;
+	case NETDEV_CHANGEUPPER:
+		cmds[0] = upper_ips_del_cmd;
 		cmds[1] = add_cmd;
 		break;
-	case NETDEV_JOIN:
-		cmds[0] = bonding_default_del_cmd;
-		cmds[1] = add_cmd;
+
+	case NETDEV_BONDING_FAILOVER:
+		cmds[0] = bonding_event_ips_del_cmd;
+		cmds[1] = bonding_default_del_cmd;
+		cmds[2] = add_cmd;
 		break;
 
 	default:
