@@ -91,3 +91,4 @@ makefile
 Makefile
 backports_applied
 openib.conf.tmp
+ofed_scripts/utils/build/
