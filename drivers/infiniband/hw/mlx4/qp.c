@@ -2069,6 +2069,8 @@ static int __mlx4_ib_modify_qp(struct ib_qp *ibqp,
 			rcu_read_lock();
 			status = ib_get_cached_gid(ibqp->device, port_num,
 						   index, &gid, &gid_attr);
+			if (!status && !(memcmp(&gid, &zgid, sizeof(gid))))
+				status = -ENONET;
 			if (!status) {
 				vlan = rdma_vlan_dev_vlan_id(gid_attr.ndev);
 				memcpy(smac, gid_attr.ndev->dev_addr, ETH_ALEN);
@@ -2791,6 +2793,8 @@ static int build_mlx_header(struct mlx4_ib_sqp *sqp, struct ib_send_wr *wr,
 			err = ib_get_cached_gid(sqp->qp.ibqp.device,
 						be32_to_cpu(ah->av.ib.port_pd) >> 24,
 						ah->av.ib.gid_index, &sgid, &gid_attr);
+			if (!err && !memcmp(&sgid, &zgid, sizeof(sgid)))
+				err = -ENOENT;
 			if (!err) {
 				is_udp = (gid_attr.gid_type == IB_GID_TYPE_ROCE_V2) ? true : false;
 				if (ipv6_addr_v4mapped((struct in6_addr *)&sgid))
