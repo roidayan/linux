@@ -3,9 +3,105 @@ Subject: [PATCH] BACKPORT: qib
 
 Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
 ---
- drivers/infiniband/hw/qib/qib_pcie.c | 43 ++++++++++++++++++++++++++++++++++++
- 1 file changed, 43 insertions(+)
+ drivers/infiniband/hw/qib/qib_fs.c   |   20 ++++
+ drivers/infiniband/hw/qib/qib_init.c |   12 ++-
+ drivers/infiniband/hw/qib/qib_pcie.c |  161 ++++++++++++++++++++++++++++++++++
+ 3 files changed, 191 insertions(+), 2 deletions(-)
 
+diff --git a/drivers/infiniband/hw/qib/qib_fs.c b/drivers/infiniband/hw/qib/qib_fs.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/hw/qib/qib_fs.c
++++ b/drivers/infiniband/hw/qib/qib_fs.c
+@@ -45,7 +45,11 @@
+ 
+ static struct super_block *qib_super;
+ 
++#ifdef CONFIG_COMPAT_IS_FILE_INODE
+ #define private2dd(file) (file_inode(file)->i_private)
++#else
++#define private2dd(file) ((file)->f_dentry->d_inode->i_private)
++#endif
+ 
+ static int qibfs_mknod(struct inode *dir, struct dentry *dentry,
+ 		       umode_t mode, const struct file_operations *fops,
+@@ -59,7 +63,9 @@ static int qibfs_mknod(struct inode *dir, struct dentry *dentry,
+ 		goto bail;
+ 	}
+ 
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,36))
+ 	inode->i_ino = get_next_ino();
++#endif
+ 	inode->i_mode = mode;
+ 	inode->i_uid = GLOBAL_ROOT_UID;
+ 	inode->i_gid = GLOBAL_ROOT_GID;
+@@ -556,6 +562,7 @@ bail:
+ 	return ret;
+ }
+ 
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,36))
+ static struct dentry *qibfs_mount(struct file_system_type *fs_type, int flags,
+ 			const char *dev_name, void *data)
+ {
+@@ -563,6 +570,15 @@ static struct dentry *qibfs_mount(struct file_system_type *fs_type, int flags,
+ 	ret = mount_single(fs_type, flags, data, qibfs_fill_super);
+ 	if (!IS_ERR(ret))
+ 		qib_super = ret->d_sb;
++#else
++static int qibfs_get_sb(struct file_system_type *fs_type, int flags,
++			const char *dev_name, void *data, struct vfsmount *mnt)
++{
++	int ret = get_sb_single(fs_type, flags, data,
++					qibfs_fill_super, mnt);
++	if (ret >= 0)
++		qib_super = mnt->mnt_sb;
++#endif
+ 	return ret;
+ }
+ 
+@@ -604,7 +620,11 @@ int qibfs_remove(struct qib_devdata *dd)
+ static struct file_system_type qibfs_fs_type = {
+ 	.owner =        THIS_MODULE,
+ 	.name =         "ipathfs",
++#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,36))
+ 	.mount =        qibfs_mount,
++#else
++	.get_sb =        qibfs_get_sb,
++#endif
+ 	.kill_sb =      qibfs_kill_super,
+ };
+ MODULE_ALIAS_FS("ipathfs");
+diff --git a/drivers/infiniband/hw/qib/qib_init.c b/drivers/infiniband/hw/qib/qib_init.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/hw/qib/qib_init.c
++++ b/drivers/infiniband/hw/qib/qib_init.c
+@@ -1136,17 +1136,25 @@ struct qib_devdata *qib_alloc_devdata(struct pci_dev *pdev, size_t extra)
+ 
+ 	INIT_LIST_HEAD(&dd->list);
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,9,0))
+ 	idr_preload(GFP_KERNEL);
++#endif
+ 	spin_lock_irqsave(&qib_devs_lock, flags);
+-
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++	ret = idr_get_new(&qib_unit_table, dd, &dd->unit);
++	if (ret >= 0)
++		list_add(&dd->list, &qib_dev_list);
++#else
+ 	ret = idr_alloc(&qib_unit_table, dd, 0, 0, GFP_NOWAIT);
+ 	if (ret >= 0) {
+ 		dd->unit = ret;
+ 		list_add(&dd->list, &qib_dev_list);
+ 	}
+-
++#endif
+ 	spin_unlock_irqrestore(&qib_devs_lock, flags);
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,9,0))
+ 	idr_preload_end();
++#endif
+ 
+ 	if (ret < 0) {
+ 		qib_early_err(&pdev->dev,
 diff --git a/drivers/infiniband/hw/qib/qib_pcie.c b/drivers/infiniband/hw/qib/qib_pcie.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/hw/qib/qib_pcie.c
@@ -97,3 +193,179 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  /**
+@@ -284,12 +327,20 @@ int qib_pcie_params(struct qib_devdata *dd, u32 minw, u32 *nent,
+ 		goto bail;
+ 	}
+ 
++#ifdef HAVE_MSIX_CAP
+ 	pos = dd->pcidev->msix_cap;
++#else
++	pos = pci_find_capability(dd->pcidev, PCI_CAP_ID_MSIX);
++#endif
+ 	if (nent && *nent && pos) {
+ 		qib_msix_setup(dd, pos, nent, entry);
+ 		ret = 0; /* did it, either MSIx or INTx */
+ 	} else {
++#ifdef HAVE_MSIX_CAP
+ 		pos = dd->pcidev->msi_cap;
++#else
++		pos = pci_find_capability(dd->pcidev, PCI_CAP_ID_MSI);
++#endif
+ 		if (pos)
+ 			ret = qib_msi_setup(dd, pos);
+ 		else
+@@ -358,7 +409,11 @@ int qib_reinit_intr(struct qib_devdata *dd)
+ 	if (!dd->msi_lo)
+ 		goto bail;
+ 
++#ifdef HAVE_MSIX_CAP
+ 	pos = dd->pcidev->msi_cap;
++#else
++	pos = pci_find_capability(dd->pcidev, PCI_CAP_ID_MSI);
++#endif
+ 	if (!pos) {
+ 		qib_dev_err(dd,
+ 			"Can't find MSI capability, can't restore MSI settings\n");
+@@ -427,7 +482,11 @@ void qib_enable_intx(struct pci_dev *pdev)
+ 	if (new != cw)
+ 		pci_write_config_word(pdev, PCI_COMMAND, new);
+ 
++#ifdef HAVE_MSIX_CAP
+ 	pos = pdev->msi_cap;
++#else
++	pos = pci_find_capability(pdev, PCI_CAP_ID_MSI);
++#endif
+ 	if (pos) {
+ 		/* then turn off MSI */
+ 		pci_read_config_word(pdev, pos + PCI_MSI_FLAGS, &cw);
+@@ -435,7 +494,11 @@ void qib_enable_intx(struct pci_dev *pdev)
+ 		if (new != cw)
+ 			pci_write_config_word(pdev, pos + PCI_MSI_FLAGS, new);
+ 	}
++#ifdef HAVE_MSIX_CAP
+ 	pos = pdev->msix_cap;
++#else
++	pos = pci_find_capability(pdev, PCI_CAP_ID_MSIX);
++#endif
+ 	if (pos) {
+ 		/* then turn off MSIx */
+ 		pci_read_config_word(pdev, pos + PCI_MSIX_FLAGS, &cw);
+@@ -477,6 +540,32 @@ void qib_pcie_reenable(struct qib_devdata *dd, u16 cmd, u8 iline, u8 cline)
+ 			"pci_enable_device failed after reset: %d\n", r);
+ }
+ 
++#ifndef HAVE_PCI_DEV_PCIE_MPSS
++/* code to adjust PCIe capabilities. */
++
++static int fld2val(int wd, int mask)
++{
++	int lsbmask;
++
++	if (!mask)
++		return 0;
++	wd &= mask;
++	lsbmask = mask ^ (mask & (mask - 1));
++	wd /= lsbmask;
++	return wd;
++}
++
++static int val2fld(int wd, int mask)
++{
++	int lsbmask;
++
++	if (!mask)
++		return 0;
++	lsbmask = mask ^ (mask & (mask - 1));
++	wd *= lsbmask;
++	return wd;
++}
++#endif
+ 
+ static int qib_pcie_coalesce;
+ module_param_named(pcie_coalesce, qib_pcie_coalesce, int, S_IRUGO);
+@@ -559,6 +648,7 @@ MODULE_PARM_DESC(pcie_caps, "Max PCIe tuning: Payload (0..3), ReadReq (4..7)");
+ static void qib_tune_pcie_caps(struct qib_devdata *dd)
+ {
+ 	struct pci_dev *parent;
++#ifdef HAVE_PCI_DEV_PCIE_MPSS
+ 	u16 rc_mpss, rc_mps, ep_mpss, ep_mps;
+ 	u16 rc_mrrs, ep_mrrs, max_mrrs;
+ 
+@@ -617,6 +707,77 @@ static void qib_tune_pcie_caps(struct qib_devdata *dd)
+ 		ep_mrrs = max_mrrs;
+ 		pcie_set_readrq(dd->pcidev, ep_mrrs);
+ 	}
++#else
++	u16 pcaps, pctl, ecaps, ectl;
++	int rc_sup, ep_sup;
++	int rc_cur, ep_cur;
++
++	/* Find out supported and configured values for parent (root) */
++	parent = dd->pcidev->bus->self;
++	if (parent->bus->parent) {
++		qib_devinfo(dd->pcidev, "Parent not root\n");
++		return;
++	}
++
++	if (!pci_is_pcie(parent) || !pci_is_pcie(dd->pcidev))
++		return;
++	pcie_capability_read_word(parent, PCI_EXP_DEVCAP, &pcaps);
++	pcie_capability_read_word(parent, PCI_EXP_DEVCTL, &pctl);
++	/* Find out supported and configured values for endpoint (us) */
++	pcie_capability_read_word(dd->pcidev, PCI_EXP_DEVCAP, &ecaps);
++	pcie_capability_read_word(dd->pcidev, PCI_EXP_DEVCTL, &ectl);
++
++	/* Find max payload supported by root, endpoint */
++	rc_sup = fld2val(pcaps, PCI_EXP_DEVCAP_PAYLOAD);
++	ep_sup = fld2val(ecaps, PCI_EXP_DEVCAP_PAYLOAD);
++	if (rc_sup > ep_sup)
++		rc_sup = ep_sup;
++
++	rc_cur = fld2val(pctl, PCI_EXP_DEVCTL_PAYLOAD);
++	ep_cur = fld2val(ectl, PCI_EXP_DEVCTL_PAYLOAD);
++
++	/* If Supported greater than limit in module param, limit it */
++	if (rc_sup > (qib_pcie_caps & 7))
++		rc_sup = qib_pcie_caps & 7;
++	/* If less than (allowed, supported), bump root payload */
++	if (rc_sup > rc_cur) {
++		rc_cur = rc_sup;
++		pctl = (pctl & ~PCI_EXP_DEVCTL_PAYLOAD) |
++			val2fld(rc_cur, PCI_EXP_DEVCTL_PAYLOAD);
++		pcie_capability_write_word(parent, PCI_EXP_DEVCTL, pctl);
++	}
++	/* If less than (allowed, supported), bump endpoint payload */
++	if (rc_sup > ep_cur) {
++		ep_cur = rc_sup;
++		ectl = (ectl & ~PCI_EXP_DEVCTL_PAYLOAD) |
++			val2fld(ep_cur, PCI_EXP_DEVCTL_PAYLOAD);
++		pcie_capability_write_word(dd->pcidev, PCI_EXP_DEVCTL, ectl);
++	}
++
++	/*
++	 * Now the Read Request size.
++	 * No field for max supported, but PCIe spec limits it to 4096,
++	 * which is code '5' (log2(4096) - 7)
++	 */
++	rc_sup = 5;
++	if (rc_sup > ((qib_pcie_caps >> 4) & 7))
++		rc_sup = (qib_pcie_caps >> 4) & 7;
++	rc_cur = fld2val(pctl, PCI_EXP_DEVCTL_READRQ);
++	ep_cur = fld2val(ectl, PCI_EXP_DEVCTL_READRQ);
++
++	if (rc_sup > rc_cur) {
++		rc_cur = rc_sup;
++		pctl = (pctl & ~PCI_EXP_DEVCTL_READRQ) |
++			val2fld(rc_cur, PCI_EXP_DEVCTL_READRQ);
++		pcie_capability_write_word(parent, PCI_EXP_DEVCTL, pctl);
++	}
++	if (rc_sup > ep_cur) {
++		ep_cur = rc_sup;
++		ectl = (ectl & ~PCI_EXP_DEVCTL_READRQ) |
++			val2fld(ep_cur, PCI_EXP_DEVCTL_READRQ);
++		pcie_capability_write_word(dd->pcidev, PCI_EXP_DEVCTL, ectl);
++	}
++#endif
+ }
+ /* End of PCIe capability tuning */
+ 

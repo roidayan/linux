@@ -212,8 +212,9 @@ static void send_complete(struct kthread_work *work)
  *
  * Called by ib_create_cq() in the generic verbs code.
  */
-struct ib_cq *qib_create_cq(struct ib_device *ibdev, int entries,
-			    int comp_vector, struct ib_ucontext *context,
+struct ib_cq *qib_create_cq(struct ib_device *ibdev,
+			    struct ib_cq_init_attr *attr,
+			    struct ib_ucontext *context,
 			    struct ib_udata *udata)
 {
 	struct qib_ibdev *dev = to_idev(ibdev);
@@ -221,6 +222,7 @@ struct ib_cq *qib_create_cq(struct ib_device *ibdev, int entries,
 	struct qib_cq_wc *wc;
 	struct ib_cq *ret;
 	u32 sz;
+	int entries = attr->cqe;
 
 	if (entries < 1 || entries > ib_qib_max_cqes) {
 		ret = ERR_PTR(-EINVAL);

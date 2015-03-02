@@ -228,7 +228,8 @@ bail:
  */
 struct ib_mr *qib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 			      u64 virt_addr, int mr_access_flags,
-			      struct ib_udata *udata)
+			      struct ib_udata *udata,
+			      int mr_id)
 {
 	struct qib_mr *mr;
 	struct ib_umem *umem;

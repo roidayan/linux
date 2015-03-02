@@ -433,6 +433,10 @@ enum pci_bus_speed {
 };
 #endif
 
+#ifndef this_cpu_inc
+#define this_cpu_inc(x) ((x)++)
+#endif
+
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,34)) */
 
 
