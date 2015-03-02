@@ -110,7 +110,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  			   struct qib_msix_entry *qib_msix_entry)
  {
  	int ret;
-+#ifdef HAVE_PCI_ENABLE_MSIX_RANGE
++#if defined(HAVE_PCI_ENABLE_MSIX_RANGE) && defined(HAVE_PCI_MSIX_VEC_COUNT)
  	int nvec = *msixcnt;
 +#else
 +	u32 tabsize = 0;
@@ -119,7 +119,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct msix_entry *msix_entry;
  	int i;
  
-+#ifdef HAVE_PCI_ENABLE_MSIX_RANGE
++#if defined(HAVE_PCI_ENABLE_MSIX_RANGE) && defined(HAVE_PCI_MSIX_VEC_COUNT)
  	ret = pci_msix_vec_count(dd->pcidev);
  	if (ret < 0)
  		goto do_intx;
@@ -130,7 +130,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	/* We can't pass qib_msix_entry array to qib_msix_setup
  	 * so use a dummy msix_entry array and copy the allocated
  	 * irq back to the qib_msix_entry array. */
-+#ifdef HAVE_PCI_ENABLE_MSIX_RANGE
++#if defined(HAVE_PCI_ENABLE_MSIX_RANGE) && defined(HAVE_PCI_MSIX_VEC_COUNT)
  	msix_entry = kmalloc(nvec * sizeof(*msix_entry), GFP_KERNEL);
  	if (!msix_entry)
  		goto do_intx;
@@ -146,7 +146,7 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#endif
  		msix_entry[i] = qib_msix_entry[i].msix;
  
-+#ifdef HAVE_PCI_ENABLE_MSIX_RANGE
++#if defined(HAVE_PCI_ENABLE_MSIX_RANGE) && defined(HAVE_PCI_MSIX_VEC_COUNT)
  	ret = pci_enable_msix_range(dd->pcidev, msix_entry, 1, nvec);
  	if (ret < 0)
  		goto free_msix_entry;
@@ -176,7 +176,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		qib_msix_entry[i].msix = msix_entry[i];
  
  	kfree(msix_entry);
-+#ifdef HAVE_PCI_ENABLE_MSIX_RANGE
++#if defined(HAVE_PCI_ENABLE_MSIX_RANGE) && defined(HAVE_PCI_MSIX_VEC_COUNT)
  	*msixcnt = nvec;
  	return;
  

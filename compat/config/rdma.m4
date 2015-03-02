@@ -346,6 +346,21 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(no)
 	])
 
+	AC_MSG_CHECKING([if pci.h pci_msix_vec_count])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/pci.h>
+	],[
+		int x = pci_msix_vec_count(NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_PCI_MSIX_VEC_COUNT, 1,
+			  [pci_msix_vec_count is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
 	AC_MSG_CHECKING([if struct iscsi_transport has attr_is_visible])
 	LB_LINUX_TRY_COMPILE([
 		#include <scsi/scsi_transport_iscsi.h>
