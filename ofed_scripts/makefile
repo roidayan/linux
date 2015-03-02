@@ -254,7 +254,7 @@ ifeq ($(shell /usr/bin/lsb_release -s -i 2>/dev/null | grep -qiE "debian|ubuntu"
 		$(WITH_MAKE_PARAMS) modules_install;
 else
 	install -d $(INSTALL_MOD_PATH)/lib/modules/$(KVERSION)/updates/dkms/
-	find $(CWD) -name "*.ko" -exec /bin/cp -f '{}' $(INSTALL_MOD_PATH)/lib/modules/$(KVERSION)/updates/dkms/ \;
+	find $(CWD)/ -name "*.ko" -exec /bin/cp -f '{}' $(INSTALL_MOD_PATH)/lib/modules/$(KVERSION)/updates/dkms/ \;
 endif
 
 	if [ ! -n "$(INSTALL_MOD_PATH)" ]; then $(DEPMOD) $(KVERSION);fi;
