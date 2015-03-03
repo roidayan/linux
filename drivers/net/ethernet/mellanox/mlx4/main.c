@@ -42,6 +42,7 @@
 #include <linux/io-mapping.h>
 #include <linux/delay.h>
 #include <linux/kmod.h>
+#include <linux/etherdevice.h>
 
 #include <linux/mlx4/device.h>
 #include <linux/mlx4/doorbell.h>
@@ -2244,6 +2245,28 @@ __be64 mlx4_get_admin_guid(struct mlx4_dev *dev, int entry, int port)
 	return priv->mfunc.master.vf_admin[entry].vport[port].guid;
 }
 EXPORT_SYMBOL_GPL(mlx4_get_admin_guid);
+
+void mlx4_set_random_admin_guid(struct mlx4_dev *dev, int entry, int port)
+{
+	struct mlx4_priv *priv = mlx4_priv(dev);
+	u8 random_mac[6];
+	char *raw_gid;
+
+	/* hw GUID */
+	if (entry == 0)
+		return;
+
+	eth_random_addr(random_mac);
+	raw_gid = (char *)&priv->mfunc.master.vf_admin[entry].vport[port].guid;
+	raw_gid[0] = random_mac[0] ^ 2;
+	raw_gid[1] = random_mac[1];
+	raw_gid[2] = random_mac[2];
+	raw_gid[3] = 0xff;
+	raw_gid[4] = 0xfe;
+	raw_gid[5] = random_mac[3];
+	raw_gid[6] = random_mac[4];
+	raw_gid[7] = random_mac[5];
+}
 
 static int mlx4_setup_hca(struct mlx4_dev *dev)
 {
