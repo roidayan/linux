@@ -513,6 +513,7 @@ struct mlx4_vport_state {
 	u32 tx_rate;
 	bool spoofchk;
 	u32 link_state;
+	__be64 guid;
 };
 
 struct mlx4_vf_admin_state {
