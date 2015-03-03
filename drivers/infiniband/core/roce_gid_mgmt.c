@@ -357,61 +357,19 @@ static void enum_netdev_ipv4_ips(struct ib_device *ib_dev,
 }
 
 #if IS_ENABLED(CONFIG_IPV6)
-struct update_gid_work {
-	struct work_struct work;
-	enum gid_op_type   gid_op;
-	struct ib_device   *ib_dev;
-	u8                 port;
-	union ib_gid       gid;
-	struct ib_gid_attr gid_attr;
-};
-
-static void update_gid_work_handler(struct work_struct *_work)
-{
-	struct update_gid_work *work =
-		container_of(_work, struct update_gid_work, work);
-
-	update_gid(work->gid_op, work->ib_dev, work->port,
-		   &work->gid, &work->gid_attr);
-
-	dev_put(work->gid_attr.ndev);
-	kfree(work);
-}
-
-static void queue_update_gid_work(enum gid_op_type gid_op,
-				  struct ib_device *ib_dev,
-				  u8 port, struct net_device *ndev,
-				  const struct sockaddr *addr)
-{
-	struct update_gid_work *work;
-
-	if (!roce_gid_cache_is_active(ib_dev, port))
-		return;
-
-	work = kmalloc(sizeof(*work), GFP_ATOMIC);
-	if (!work)
-		return;
-
-	INIT_WORK(&work->work, update_gid_work_handler);
-
-	work->gid_op = gid_op;
-	work->ib_dev = ib_dev;
-	work->port   = port;
-	rdma_ip2gid(addr, &work->gid);
-
-	memset(&work->gid_attr, 0, sizeof(work->gid_attr));
-
-	dev_hold(ndev);
-	work->gid_attr.ndev   = ndev;
-
-	queue_work(roce_gid_mgmt_wq, &work->work);
-}
-
 static void enum_netdev_ipv6_ips(struct ib_device *ib_dev,
 				 u8 port, struct net_device *ndev)
 {
 	struct inet6_ifaddr *ifp;
 	struct inet6_dev *in6_dev;
+	struct sin6_list {
+		struct list_head	list;
+		struct sockaddr_in6	sin6;
+	};
+	struct sin6_list *sin6_iter;
+	struct sin6_list *sin6_temp;
+	struct ib_gid_attr gid_attr = {.ndev = ndev};
+	LIST_HEAD(sin6_list);
 
 	if (ndev->reg_state >= NETREG_UNREGISTERING)
 		return;
@@ -422,16 +380,29 @@ static void enum_netdev_ipv6_ips(struct ib_device *ib_dev,
 
 	read_lock_bh(&in6_dev->lock);
 	list_for_each_entry(ifp, &in6_dev->addr_list, if_list) {
-		struct sockaddr_in6 ip;
+		struct sin6_list *entry = kzalloc(sizeof(*entry), GFP_ATOMIC);
 
-		ip.sin6_family = AF_INET6;
-		ip.sin6_addr = ifp->addr;
-		queue_update_gid_work(GID_ADD, ib_dev, port, ndev,
-				      (const struct sockaddr *)&ip);
+		if (!entry) {
+			pr_warn("roce_gid_mgmt: couldn't allocate entry for IPv6 update\n");
+			continue;
+		}
+
+		entry->sin6.sin6_family = AF_INET6;
+		entry->sin6.sin6_addr = ifp->addr;
+		list_add_tail(&entry->list, &sin6_list);
 	}
 	read_unlock_bh(&in6_dev->lock);
 
 	in6_dev_put(in6_dev);
+
+	list_for_each_entry_safe(sin6_iter, sin6_temp, &sin6_list, list) {
+		union ib_gid	gid;
+
+		rdma_ip2gid((const struct sockaddr *)&sin6_iter->sin6, &gid);
+		update_gid(GID_ADD, ib_dev, port, &gid, &gid_attr);
+		list_del(&sin6_iter->list);
+		kfree(sin6_iter);
+	}
 }
 #endif
 
