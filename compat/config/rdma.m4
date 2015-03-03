@@ -277,7 +277,7 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		return 0;
 	],[
 		AC_MSG_RESULT(yes)
-		AC_DEFINE(HAVE_GET_SET_RXFH_INDIR, 1,
+		AC_DEFINE(HAVE_GET_SET_RXFH_INDIR_EXT, 1,
 			  [get/set_rxfh_indir is defined])
 	],[
 		AC_MSG_RESULT(no)
@@ -1613,26 +1613,29 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(no)
 	])
 
-	AC_MSG_CHECKING([if if_vlan.h has vlan_hwaccel_receive_skb])
-	LB_LINUX_TRY_COMPILE([
-		#include <linux/if_vlan.h>
-	],[
-		struct sk_buff *skb;
-		vlan_hwaccel_receive_skb(skb,0,0);
-		return 0;
-	],[
-		AC_MSG_RESULT(yes)
-		AC_DEFINE(HAVE_VLAN_HWACCEL_RECEIVE_SKB, 1,
-			  [vlan_hwaccel_receive_skb is defined])
-	],[
-		AC_MSG_RESULT(no)
-	])
+#	AC_MSG_CHECKING([if if_vlan.h has vlan_hwaccel_receive_skb])
+#	LB_LINUX_TRY_COMPILE([
+#		#include <linux/if_vlan.h>
+#	],[
+#		struct sk_buff *skb;
+#		vlan_hwaccel_receive_skb(skb,0,0);
+#		return 0;
+#	],[
+#		AC_MSG_RESULT(yes)
+#		AC_DEFINE(HAVE_VLAN_HWACCEL_RECEIVE_SKB, 1,
+#			  [vlan_hwaccel_receive_skb is defined])
+#	],[
+#		AC_MSG_RESULT(no)
+#	])
 
 	AC_MSG_CHECKING([if irqdesc.h has irq_desc_get_irq_data])
 	LB_LINUX_TRY_COMPILE([
+		#include <linux/irq.h>
 		#include <linux/irqdesc.h>
 	],[
-		struct irq_data *data = irq_desc_get_irq_data(NULL);
+		struct irq_desc desc;
+		struct irq_data *data = irq_desc_get_irq_data(&desc);
+
 		return 0;
 	],[
 		AC_MSG_RESULT(yes)
@@ -1647,7 +1650,7 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 	LB_LINUX_TRY_COMPILE([
 		#include <linux/pci.h>
 	],[
-		struct pci_dev pdev;
+		struct pci_dev *pdev;
 
 		pdev->pcie_mpss = 0;
 		return 0;
@@ -1829,7 +1832,7 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 	],[
 		static const struct net_device_ops mlx4_netdev_ops = {
 			.ndo_features_check	= NULL,
-		}
+		};
 
 		return 0;
 	],[
@@ -1969,7 +1972,7 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 	],[
 		static struct scsi_host_template iscsi_iser_sht = {
 			.track_queue_depth  = 1,
-		}
+		};
 
 		return 0;
 	],[
@@ -2003,7 +2006,7 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 	],[
 		struct net_device x = {
 			.wanted_features  = 0,
-		}
+		};
 
 		return 0;
 	],[

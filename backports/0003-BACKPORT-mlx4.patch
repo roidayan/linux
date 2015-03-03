@@ -309,7 +309,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	return priv->rx_ring_num;
  }
  
-+#if defined(HAVE_GET_SET_RXFH) && !defined(HAVE_GET_SET_RXFH_INDIR)
++#if defined(HAVE_GET_SET_RXFH) && !defined(HAVE_GET_SET_RXFH_INDIR_EXT)
  static u32 mlx4_en_get_rxfh_key_size(struct net_device *netdev)
  {
  	return MLX4_EN_RSS_KEY_SIZE;
@@ -329,7 +329,7 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#ifdef CONFIG_SYSFS_INDIR_SETTING
 +int mlx4_en_get_rxfh_indir(struct net_device *dev, u32 *ring_index)
 +#else
-+#ifdef HAVE_GET_SET_RXFH_INDIR
++#ifdef HAVE_GET_SET_RXFH_INDIR_EXT
 +static int mlx4_en_get_rxfh_indir(struct net_device *dev, u32 *ring_index)
 +#else
 +#ifdef HAVE_ETH_SS_RSS_HASH_FUNCS
@@ -347,7 +347,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		ring_index[n] = rss_map->qps[n % rss_rings].qpn -
  			rss_map->base_qpn;
  	}
-+#if !defined(HAVE_GET_SET_RXFH_INDIR) && !defined(CONFIG_SYSFS_INDIR_SETTING)
++#if !defined(HAVE_GET_SET_RXFH_INDIR_EXT) && !defined(CONFIG_SYSFS_INDIR_SETTING)
  	if (key)
  		memcpy(key, priv->rss_key, MLX4_EN_RSS_KEY_SIZE);
 +#endif
@@ -362,7 +362,7 @@ index xxxxxxx..xxxxxxx xxxxxx
 +int mlx4_en_set_rxfh_indir(struct net_device *dev,
 +		const u32 *ring_index)
 +#else
-+#ifdef HAVE_GET_SET_RXFH_INDIR
++#ifdef HAVE_GET_SET_RXFH_INDIR_EXT
 +static int mlx4_en_set_rxfh_indir(struct net_device *dev,
 +		const u32 *ring_index)
 +#else
@@ -395,7 +395,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	if (ring_index)
  		priv->prof->rss_rings = rss_rings;
-+#if !defined(HAVE_GET_SET_RXFH_INDIR) && !defined(CONFIG_SYSFS_INDIR_SETTING)
++#if !defined(HAVE_GET_SET_RXFH_INDIR_EXT) && !defined(CONFIG_SYSFS_INDIR_SETTING)
  	if (key)
  		memcpy(priv->rss_key, key, MLX4_EN_RSS_KEY_SIZE);
 +#endif
@@ -534,7 +534,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.set_ringparam = mlx4_en_set_ringparam,
  	.get_rxnfc = mlx4_en_get_rxnfc,
  	.set_rxnfc = mlx4_en_set_rxnfc,
-+#if defined(HAVE_GET_SET_RXFH) && !defined(HAVE_GET_SET_RXFH_INDIR)
++#if defined(HAVE_GET_SET_RXFH) && !defined(HAVE_GET_SET_RXFH_INDIR_EXT)
  	.get_rxfh_indir_size = mlx4_en_get_rxfh_indir_size,
  	.get_rxfh_key_size = mlx4_en_get_rxfh_key_size,
  	.get_rxfh = mlx4_en_get_rxfh,
@@ -563,7 +563,7 @@ index xxxxxxx..xxxxxxx xxxxxx
 +const struct ethtool_ops_ext mlx4_en_ethtool_ops_ext = {
 +	.size = sizeof(struct ethtool_ops_ext),
 +	.get_rxfh_indir_size = mlx4_en_get_rxfh_indir_size,
-+#ifdef HAVE_GET_SET_RXFH_INDIR
++#ifdef HAVE_GET_SET_RXFH_INDIR_EXT
 +	.get_rxfh_indir = mlx4_en_get_rxfh_indir,
 +	.set_rxfh_indir = mlx4_en_set_rxfh_indir,
 +#endif
@@ -1836,7 +1836,7 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#endif
 +#endif
 +
-+#if !defined(HAVE_GET_SET_RXFH) && !defined(HAVE_GET_SET_RXFH_INDIR)
++#if !defined(HAVE_GET_SET_RXFH) && !defined(HAVE_GET_SET_RXFH_INDIR_EXT)
 +#define CONFIG_SYSFS_INDIR_SETTING
 +#endif
 +

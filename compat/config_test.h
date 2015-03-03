@@ -1,6 +1,13 @@
 #include <linux/version.h>
 #include "config.h"
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION (2, 6, 28)
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION (2, 6, 34) && \
+!defined (HAVE_ISCSI_EH_TARGET_RESET)
+#error HAVE_ISCSI_EH_TARGET_RESET is not defined
+#endif
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION (2, 6, 34)
 
 #ifndef HAVE_PCI_BUS_SPEED
@@ -13,6 +20,10 @@
 #error HAVE_ISCSI_GET_EP_PARAM is not defined
 #endif
 
+/*#ifndef HAVE_VLAN_HWACCEL_RECEIVE_SKB
+#error HAVE_VLAN_HWACCEL_RECEIVE_SKB is not defined
+#endif*/
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION (3, 1, 0)
 
 #ifndef HAVE_ISCSI_SCSI_REQ
@@ -23,6 +34,18 @@
 
 #ifndef HAVE_ISCSI_ATTR_IS_VISIBLE
 #error HAVE_ISCSI_ATTR_IS_VISIBLE is not defined
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION (3, 3, 0)
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION (3, 6, 0) && \
+!defined (HAVE_DST_GET_NEIGHBOUR)
+#error HAVE_DST_GET_NEIGHBOUR is not defined
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION (3, 18, 0) && \
+!defined (HAVE_ISCSI_CHANGE_QUEUE_DEPTH)
+#error HAVE_ISCSI_CHANGE_QUEUE_DEPTH is not defined
 #endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION (3, 8, 0)
@@ -128,10 +151,6 @@
 #if LINUX_VERSION_CODE >= KERNEL_VERSION (3, 19, 0)
 
 /* TBD - move the checkers below to the corresponding kernel version #if */
-#ifndef HAVE_GET_SET_RXFH_INDIR
-#error HAVE_GET_SET_RXFH_INDIR is not defined
-#endif
-
 #ifndef HAVE_LINKSTATE
 #error HAVE_LINKSTATE is not defined
 #endif
@@ -210,10 +229,6 @@
 
 #ifndef HAVE_SET_VF_RATE
 #error HAVE_SET_VF_RATE is not defined
-#endif
-
-#ifndef HAVE_SET_NETDEV_HW_FEATURES
-#error HAVE_SET_NETDEV_HW_FEATURES is not defined
 #endif
 
 #ifndef HAVE_NETIF_SET_XPS_QUEUE
@@ -296,10 +311,6 @@
 #error HAVE_NETDEV_RX_CPU_RMAP is not defined
 #endif
 
-#ifndef HAVE_VLAN_HWACCEL_RECEIVE_SKB
-#error HAVE_VLAN_HWACCEL_RECEIVE_SKB is not defined
-#endif
-
 #ifndef HAVE_IRQ_DESC_GET_IRQ_DATA
 #error HAVE_IRQ_DESC_GET_IRQ_DATA is not defined
 #endif
@@ -354,20 +365,8 @@
 #endif
 */
 
-#ifndef HAVE_DST_GET_NEIGHBOUR
-#error HAVE_DST_GET_NEIGHBOUR is not defined
-#endif
-
 #ifndef HAVE_IEEE_GET_SET_MAXRATE
 #error HAVE_IEEE_GET_SET_MAXRATE is not defined
-#endif
-
-#ifndef HAVE_ISCSI_CHANGE_QUEUE_DEPTH
-#error HAVE_ISCSI_CHANGE_QUEUE_DEPTH is not defined
-#endif
-
-#ifndef HAVE_ISCSI_EH_TARGET_RESET
-#error HAVE_ISCSI_EH_TARGET_RESET is not defined
 #endif
 
 #ifndef HAVE_SCSI_PROT_INTERVAL
@@ -455,10 +454,12 @@
 #endif /* 3.13 */
 #endif /* 3.12 */
 #endif /* 3.8 */
+#endif /* 3.3 */
 #endif /* 3.2 */
 #endif /* 3.1 */
 #endif /* 2.6.39 */
 #endif /* 2.6.34 */
+#endif /* 2.6.28 */
 
 
 /*
@@ -502,6 +503,13 @@
 
 /*
  *  TBD - enable RedHat specific tests
+ * #ifndef HAVE_GET_SET_RXFH_INDIR_EXT
+ * #error HAVE_GET_SET_RXFH_INDIR_EXT is not defined
+ * #endif
+ *
+ * #ifndef HAVE_SET_NETDEV_HW_FEATURES
+ * #error HAVE_SET_NETDEV_HW_FEATURES is not defined
+ * #endif
  *
  * #ifndef HAVE_ETHTOOL_OPS_EXT
  * #error HAVE_ETHTOOL_OPS_EXT is not defined
