@@ -2708,12 +2708,12 @@ err_steer_qp_release:
 		mlx4_qp_release_range(dev, ibdev->steer_qpn_base,
 				      ibdev->steer_qpn_count);
 err_counter:
-	for (; i; --i) {
-		if (mlx4_ib_port_link_layer(&ibdev->ib_dev, i) ==
+	for (i = 0; i < num_req_counters; i++) {
+		if (mlx4_ib_port_link_layer(&ibdev->ib_dev, i + 1) ==
 						IB_LINK_LAYER_ETHERNET) {
 			mlx4_counter_free(ibdev->dev,
-					  i,
-					  ibdev->counters[i - 1].counter_index);
+					  i + 1,
+					  ibdev->counters[i].counter_index);
 		}
 	}
 
