@@ -2268,6 +2268,7 @@ int mlx4_multi_func_init(struct mlx4_dev *dev)
 				priv->mfunc.master.vf_oper[i].vport[port].state.default_vlan = MLX4_VGT;
 				priv->mfunc.master.vf_oper[i].vport[port].vlan_idx = NO_INDX;
 				priv->mfunc.master.vf_oper[i].vport[port].mac_idx = NO_INDX;
+				mlx4_set_random_admin_guid(dev, i, port);
 			}
 			spin_lock_init(&s_state->lock);
 		}
