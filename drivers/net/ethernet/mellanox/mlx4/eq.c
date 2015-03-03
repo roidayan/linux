@@ -1372,7 +1372,7 @@ int mlx4_test_interrupts(struct mlx4_dev *dev)
 EXPORT_SYMBOL(mlx4_test_interrupts);
 
 int mlx4_assign_eq(struct mlx4_dev *dev, char *name, struct cpu_rmap *rmap,
-		   int *vector, cpumask_var_t cpu_hint_mask)
+		   int *vector)
 {
 	struct mlx4_priv *priv = mlx4_priv(dev);
 	int vec = 0, err = 0, i;

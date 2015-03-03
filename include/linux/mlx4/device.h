@@ -1429,7 +1429,7 @@ int mlx4_query_diag_counters(struct mlx4_dev *mlx4_dev, int array_length,
 
 int mlx4_test_interrupts(struct mlx4_dev *dev);
 int mlx4_assign_eq(struct mlx4_dev *dev, char *name, struct cpu_rmap *rmap,
-		   int *vector, cpumask_var_t affinity_mask);
+		   int *vector);
 void mlx4_release_eq(struct mlx4_dev *dev, int vec);
 int mlx4_eq_get_irq(struct mlx4_dev *dev, int vec);
 
