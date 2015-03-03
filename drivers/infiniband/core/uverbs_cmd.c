@@ -2476,9 +2476,10 @@ static int modify_qp_mask(enum ib_qp_type qp_type, int mask)
 	}
 }
 
-static ssize_t __uverbs_modify_qp(struct ib_uverbs_file *file, int in_len,
+static ssize_t __uverbs_modify_qp(struct ib_uverbs_file *file, int cmd_len,
 				  enum uverbs_cmd_type cmd_type,
 				  struct ib_uverbs_exp_modify_qp *cmd,
+				  int hw_len,
 				  struct ib_udata *udata)
 {
 	struct ib_qp		       *qp;
@@ -2518,6 +2519,14 @@ static ssize_t __uverbs_modify_qp(struct ib_uverbs_file *file, int in_len,
 	attr->rnr_retry           = cmd->rnr_retry;
 	attr->alt_port_num        = cmd->alt_port_num;
 	attr->alt_timeout         = cmd->alt_timeout;
+	if (cmd->comp_mask & IB_UVERBS_EXP_QP_ATTR_FLOW_ENTROPY) {
+	    if (offsetof(typeof(*cmd), flow_entropy) + sizeof(cmd->flow_entropy) <= cmd_len) {
+		attr->flow_entropy        = cmd->flow_entropy;
+	    } else {
+		    ret = -EINVAL;
+		    goto out;
+	    }
+	}
 
 	memcpy(attr->ah_attr.grh.dgid.raw, cmd->dest.dgid, 16);
 	attr->ah_attr.grh.flow_label        = cmd->dest.flow_label;
@@ -2563,7 +2572,7 @@ static ssize_t __uverbs_modify_qp(struct ib_uverbs_file *file, int in_len,
 	if (ret)
 		goto out;
 
-	ret = in_len;
+	ret = cmd_len + hw_len;
 
 out:
 	put_qp_read(qp);
@@ -3889,15 +3898,19 @@ int ib_uverbs_exp_modify_qp(struct ib_uverbs_file *file,
 	struct ib_uverbs_exp_modify_qp	cmd;
 	int ret;
 
-	ret = ucore->ops->copy_from(&cmd, ucore, sizeof(cmd));
+	if (ucore->inlen < offsetof(typeof(cmd), comp_mask) +  sizeof(cmd.comp_mask))
+		return -EINVAL;
+
+	ret = ucore->ops->copy_from(&cmd, ucore, min(sizeof(cmd), ucore->inlen));
+
 	if (ret)
 		return ret;
 
 	if (cmd.comp_mask >= IB_UVERBS_EXP_QP_ATTR_RESERVED)
 		return -ENOSYS;
 
-	ret = __uverbs_modify_qp(file, ucore->inlen + uhw->inlen,
-				 IB_USER_VERBS_CMD_EXP, &cmd, uhw);
+	ret = __uverbs_modify_qp(file, ucore->inlen,
+				 IB_USER_VERBS_CMD_EXP, &cmd, uhw->inlen, uhw);
 	if (ret < 0)
 		return ret;
 
