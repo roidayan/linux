@@ -2597,7 +2597,7 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 	INIT_LIST_HEAD(&ibdev->qp_list);
 	spin_lock_init(&ibdev->reset_flow_resource_lock);
 
-	if (dev->caps.steering_mode == MLX4_STEERING_MODE_DEVICE_MANAGED &&
+	if (ibdev->steering_support == MLX4_STEERING_MODE_DEVICE_MANAGED &&
 	    !mlx4_is_mfunc(dev)) {
 		ibdev->steer_qpn_count = MLX4_IB_UC_MAX_NUM_QPS;
 		err = mlx4_qp_reserve_range(dev, ibdev->steer_qpn_count,
