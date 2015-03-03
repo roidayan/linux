@@ -3,29 +3,30 @@ Subject: [PATCH] BACKPORT: ib-core
 
 Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
 ---
- drivers/infiniband/core/addr.c             |  105 ++++++++++++++++++++++++++++
- drivers/infiniband/core/cm.c               |   23 ++++++
- drivers/infiniband/core/cma.c              |   64 +++++++++++++++++
- drivers/infiniband/core/fmr_pool.c         |    7 ++
- drivers/infiniband/core/iwcm.c             |   16 ++++
- drivers/infiniband/core/iwpm_util.c        |   26 ++++++-
- drivers/infiniband/core/mad.c              |    3 +
- drivers/infiniband/core/netlink.c          |   23 ++++++
- drivers/infiniband/core/roce_gid_cache.c   |    4 +
- drivers/infiniband/core/roce_gid_mgmt.c    |   10 +++
- drivers/infiniband/core/sa_query.c         |   19 +++++
- drivers/infiniband/core/ucm.c              |   38 ++++++++++
- drivers/infiniband/core/ucma.c             |   76 ++++++++++++++++++++
- drivers/infiniband/core/umem.c             |   44 ++++++++++++
- drivers/infiniband/core/user_mad.c         |   19 +++++
- drivers/infiniband/core/uverbs_cmd.c       |   51 +++++++++++++
- drivers/infiniband/core/uverbs_main.c      |   40 +++++++++++
- drivers/infiniband/hw/mlx4/mr.c            |   12 +++
- drivers/infiniband/hw/qib/qib_user_pages.c |    9 ++-
- include/rdma/ib_pack.h                     |    4 +
- include/rdma/ib_umem_odp.h                 |    4 +
- include/rdma/ib_verbs.h                    |    5 ++
- 22 files changed, 599 insertions(+), 3 deletions(-)
+ drivers/infiniband/core/addr.c             | 105 +++++++++++++++++++++++++++++
+ drivers/infiniband/core/cm.c               |  23 +++++++
+ drivers/infiniband/core/cma.c              |  64 ++++++++++++++++++
+ drivers/infiniband/core/fmr_pool.c         |   7 ++
+ drivers/infiniband/core/iwcm.c             |  16 +++++
+ drivers/infiniband/core/iwpm_util.c        |  26 ++++++-
+ drivers/infiniband/core/mad.c              |   3 +
+ drivers/infiniband/core/netlink.c          |  23 +++++++
+ drivers/infiniband/core/roce_gid_cache.c   |   4 ++
+ drivers/infiniband/core/roce_gid_mgmt.c    |  10 +++
+ drivers/infiniband/core/sa_query.c         |  19 ++++++
+ drivers/infiniband/core/ucm.c              |  38 +++++++++++
+ drivers/infiniband/core/ucma.c             |  76 +++++++++++++++++++++
+ drivers/infiniband/core/umem.c             |  44 ++++++++++++
+ drivers/infiniband/core/user_mad.c         |  19 ++++++
+ drivers/infiniband/core/uverbs_cmd.c       |  51 ++++++++++++++
+ drivers/infiniband/core/uverbs_main.c      |  40 +++++++++++
+ drivers/infiniband/hw/mlx4/main.c          |   4 ++
+ drivers/infiniband/hw/mlx4/mr.c            |  12 ++++
+ drivers/infiniband/hw/qib/qib_user_pages.c |   9 ++-
+ include/rdma/ib_pack.h                     |   4 ++
+ include/rdma/ib_umem_odp.h                 |   4 ++
+ include/rdma/ib_verbs.h                    |   5 ++
+ 23 files changed, 603 insertions(+), 3 deletions(-)
 
 diff --git a/drivers/infiniband/core/addr.c b/drivers/infiniband/core/addr.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -303,7 +304,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
  {
-@@ -2055,7 +2059,16 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
+@@ -2052,7 +2056,16 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
  	route->path_rec->reversible = 1;
  	route->path_rec->pkey = cpu_to_be16(0xffff);
  	route->path_rec->mtu_selector = IB_SA_EQ;
@@ -320,7 +321,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	route->path_rec->mtu = iboe_get_mtu(ndev->mtu);
  	route->path_rec->rate_selector = IB_SA_EQ;
  	route->path_rec->rate = iboe_get_rate(ndev);
-@@ -2438,6 +2451,7 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
+@@ -2435,6 +2448,7 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
  			  unsigned short snum)
  {
  	struct rdma_bind_list *bind_list;
@@ -328,7 +329,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	int ret;
  
  	bind_list = kzalloc(sizeof *bind_list, GFP_KERNEL);
-@@ -2455,6 +2469,35 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
+@@ -2452,6 +2466,35 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
  err:
  	kfree(bind_list);
  	return ret == -ENOSPC ? -EADDRNOTAVAIL : ret;
@@ -364,7 +365,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  static int cma_alloc_any_port(struct idr *ps, struct rdma_id_private *id_priv)
-@@ -2463,7 +2506,11 @@ static int cma_alloc_any_port(struct idr *ps, struct rdma_id_private *id_priv)
+@@ -2460,7 +2503,11 @@ static int cma_alloc_any_port(struct idr *ps, struct rdma_id_private *id_priv)
  	int low, high, remaining;
  	unsigned int rover;
  
@@ -376,7 +377,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	remaining = (high - low) + 1;
  	rover = prandom_u32() % remaining + low;
  retry:
-@@ -2499,9 +2546,16 @@ static int cma_check_port(struct rdma_bind_list *bind_list,
+@@ -2496,9 +2543,16 @@ static int cma_check_port(struct rdma_bind_list *bind_list,
  {
  	struct rdma_id_private *cur_id;
  	struct sockaddr *addr, *cur_addr;
@@ -393,7 +394,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		if (id_priv == cur_id)
  			continue;
  
-@@ -3370,7 +3424,11 @@ static int cma_join_ib_multicast(struct rdma_id_private *id_priv,
+@@ -3367,7 +3421,11 @@ static int cma_join_ib_multicast(struct rdma_id_private *id_priv,
  						id_priv->id.port_num, &rec,
  						comp_mask, GFP_KERNEL,
  						cma_ib_mc_handler, mc);
@@ -405,7 +406,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  static void iboe_mcast_work_handler(struct work_struct *work)
-@@ -3618,9 +3676,15 @@ static int cma_netdev_change(struct net_device *ndev, struct rdma_id_private *id
+@@ -3615,9 +3673,15 @@ static int cma_netdev_change(struct net_device *ndev, struct rdma_id_private *id
  }
  
  static int cma_netdev_callback(struct notifier_block *self, unsigned long event,
@@ -643,7 +644,7 @@ diff --git a/drivers/infiniband/core/roce_gid_cache.c b/drivers/infiniband/core/
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/roce_gid_cache.c
 +++ b/drivers/infiniband/core/roce_gid_cache.c
-@@ -399,7 +399,11 @@ static int get_netdev_from_ifindex(struct net *net, int if_index,
+@@ -400,7 +400,11 @@ static int get_netdev_from_ifindex(struct net *net, int if_index,
  {
  	if (if_index && net) {
  		rcu_read_lock();
@@ -659,7 +660,7 @@ diff --git a/drivers/infiniband/core/roce_gid_mgmt.c b/drivers/infiniband/core/r
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/roce_gid_mgmt.c
 +++ b/drivers/infiniband/core/roce_gid_mgmt.c
-@@ -141,6 +141,7 @@ enum bonding_slave_state {
+@@ -142,6 +142,7 @@ enum bonding_slave_state {
  static enum bonding_slave_state is_eth_active_slave_of_bonding(struct net_device *idev,
  							       struct net_device *upper)
  {
@@ -667,7 +668,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (upper && IS_NETDEV_BONDING_MASTER(upper)) {
  		struct net_device *pdev;
  
-@@ -151,6 +152,7 @@ static enum bonding_slave_state is_eth_active_slave_of_bonding(struct net_device
+@@ -152,6 +153,7 @@ static enum bonding_slave_state is_eth_active_slave_of_bonding(struct net_device
  			return idev == pdev ? BONDING_SLAVE_STATE_ACTIVE :
  				BONDING_SLAVE_STATE_INACTIVE;
  	}
@@ -675,7 +676,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	return BONDING_SLAVE_STATE_NA;
  }
-@@ -378,7 +380,11 @@ static void enum_netdev_ipv6_ips(struct ib_device *ib_dev,
+@@ -379,7 +381,11 @@ static void enum_netdev_ipv6_ips(struct ib_device *ib_dev,
  		return;
  
  	read_lock_bh(&in6_dev->lock);
@@ -687,7 +688,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		struct sockaddr_in6 ip;
  
  		ip.sin6_family = AF_INET6;
-@@ -698,6 +704,10 @@ void __exit roce_gid_mgmt_cleanup(void)
+@@ -699,6 +705,10 @@ void __exit roce_gid_mgmt_cleanup(void)
  	 * so no issue with remaining hardware contexts.
  	 */
  	synchronize_rcu();
@@ -1423,6 +1424,22 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (ret) {
  		printk(KERN_ERR "user_verbs: couldn't create abi_version attribute\n");
  		goto out_class;
+diff --git a/drivers/infiniband/hw/mlx4/main.c b/drivers/infiniband/hw/mlx4/main.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/hw/mlx4/main.c
++++ b/drivers/infiniband/hw/mlx4/main.c
+@@ -1606,7 +1606,11 @@ static int del_gid_entry(struct ib_qp *ibqp, union ib_gid *gid)
+ 		rdma_get_mcast_mac((struct in6_addr *)gid, mac);
+ 		if (ndev) {
+ 			rtnl_lock();
++#ifdef HAVE_DEV_MC_DEL
+ 			dev_mc_del(ndev, mac);
++#else
++			dev_mc_delete(ndev, mac, 6, 0);
++#endif
+ 			rtnl_unlock();
+ 			dev_put(ndev);
+ 		}
 diff --git a/drivers/infiniband/hw/mlx4/mr.c b/drivers/infiniband/hw/mlx4/mr.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/hw/mlx4/mr.c
