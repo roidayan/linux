@@ -11,7 +11,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  drivers/net/ethernet/mellanox/mlx4/en_ethtool.c |  101 ++++++++++-
  drivers/net/ethernet/mellanox/mlx4/en_main.c    |    2 +
  drivers/net/ethernet/mellanox/mlx4/en_netdev.c  |  237 ++++++++++++++++++++++-
- drivers/net/ethernet/mellanox/mlx4/en_rx.c      |   98 +++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_rx.c      |  113 +++++++++++-
  drivers/net/ethernet/mellanox/mlx4/en_tx.c      |   56 ++++++
  drivers/net/ethernet/mellanox/mlx4/eq.c         |   16 ++
  drivers/net/ethernet/mellanox/mlx4/main.c       |   23 +++
@@ -19,7 +19,8 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  include/linux/ethtool.h                         |   12 ++
  include/linux/mlx4/cq.h                         |    5 +
  include/linux/mlx4/device.h                     |    8 +
- 16 files changed, 752 insertions(+), 10 deletions(-)
+ include/linux/mlx4/qp.h                         |    8 +
+ 17 files changed, 775 insertions(+), 10 deletions(-)
 
 diff --git a/drivers/infiniband/hw/mlx4/cm.c b/drivers/infiniband/hw/mlx4/cm.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -1544,7 +1545,19 @@ index xxxxxxx..xxxxxxx xxxxxx
  	mlx4_en_arm_cq(priv, cq);
  	return done;
  }
-@@ -1230,6 +1322,7 @@ int mlx4_en_config_rss_steer(struct mlx4_en_priv *priv)
+@@ -1176,6 +1268,11 @@ int mlx4_en_config_rss_steer(struct mlx4_en_priv *priv)
+ 	int i, qpn;
+ 	int err = 0;
+ 	int good_qps = 0;
++#ifndef HAVE_NETDEV_RSS_KEY_FILL
++	static const u32 rsskey[MLX4_EN_RSS_KEY_SIZE] = { 0xD181C62C, 0xF7F4DB5B, 0x1983A2FC,
++		0x943E1ADB, 0xD9389E6B, 0xD1039C2C, 0xA74499AD,
++		0x593D56D9, 0xF3253C06, 0x2ADC1FFC};
++#endif
+ 
+ 	en_dbg(DRV, priv, "Configuring rss steering\n");
+ 	err = mlx4_qp_reserve_range(mdev->dev, priv->rx_ring_num,
+@@ -1230,19 +1327,33 @@ int mlx4_en_config_rss_steer(struct mlx4_en_priv *priv)
  
  	rss_context->flags = rss_mask;
  	rss_context->hash_fn = MLX4_RSS_HASH_TOP;
@@ -1552,12 +1565,28 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (priv->rss_hash_fn == ETH_RSS_HASH_XOR) {
  		rss_context->hash_fn = MLX4_RSS_HASH_XOR;
  	} else if (priv->rss_hash_fn == ETH_RSS_HASH_TOP) {
-@@ -1243,6 +1336,9 @@ int mlx4_en_config_rss_steer(struct mlx4_en_priv *priv)
+ 		rss_context->hash_fn = MLX4_RSS_HASH_TOP;
+ 		memcpy(rss_context->rss_key, priv->rss_key,
+ 		       MLX4_EN_RSS_KEY_SIZE);
++#ifdef HAVE_NETDEV_RSS_KEY_FILL
+ 		netdev_rss_key_fill(rss_context->rss_key,
+ 				    MLX4_EN_RSS_KEY_SIZE);
++#else
++		for (i = 0; i < MLX4_EN_RSS_KEY_SIZE; i++)
++			rss_context->rss_key[i] = cpu_to_be32(rsskey[i]);
++#endif
+ 	} else {
+ 		en_err(priv, "Unknown RSS hash function requested\n");
  		err = -EINVAL;
  		goto indir_err;
  	}
 +#else
++#ifndef HAVE_NETDEV_RSS_KEY_FILL
++	for (i = 0; i < MLX4_EN_RSS_KEY_SIZE; i++)
++		rss_context->rss_key[i] = cpu_to_be32(rsskey[i]);
++#else
 +	memcpy(rss_context->rss_key, priv->rss_key, MLX4_EN_RSS_KEY_SIZE);
++#endif
 +#endif
  	err = mlx4_qp_to_ready(mdev->dev, &priv->res.mtt, &context,
  			       &rss_map->indir_qp, &rss_map->indir_state);
@@ -2114,4 +2143,32 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#endif
  void mlx4_release_eq(struct mlx4_dev *dev, int vec);
  int mlx4_eq_get_irq(struct mlx4_dev *dev, int vec);
+ 
+diff --git a/include/linux/mlx4/qp.h b/include/linux/mlx4/qp.h
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/include/linux/mlx4/qp.h
++++ b/include/linux/mlx4/qp.h
+@@ -124,7 +124,11 @@ enum {
+ 	MLX4_RSS_QPC_FLAG_OFFSET		= 13,
+ };
+ 
++#ifdef HAVE_NETDEV_RSS_KEY_FILL
+ #define MLX4_EN_RSS_KEY_SIZE 40
++#else
++#define MLX4_EN_RSS_KEY_SIZE 10
++#endif
+ 
+ struct mlx4_rss_context {
+ 	__be32			base_qpn;
+@@ -132,7 +136,11 @@ struct mlx4_rss_context {
+ 	u16			reserved;
+ 	u8			hash_fn;
+ 	u8			flags;
++#ifdef HAVE_NETDEV_RSS_KEY_FILL
+ 	__be32			rss_key[MLX4_EN_RSS_KEY_SIZE / sizeof(__be32)];
++#else
++	__be32			rss_key[MLX4_EN_RSS_KEY_SIZE];
++#endif
+ 	__be32			base_qpn_udp;
+ };
  
