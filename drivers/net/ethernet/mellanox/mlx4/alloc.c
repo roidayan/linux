@@ -587,13 +587,13 @@ int mlx4_buf_alloc(struct mlx4_dev *dev, int size, int max_direct,
 		   struct mlx4_buf *buf, gfp_t gfp)
 {
 	dma_addr_t t;
-	struct device *ddev = &dev->persist->pdev->dev;
 
 	if (size <= max_direct) {
 		buf->nbufs        = 1;
 		buf->npages       = 1;
 		buf->page_shift   = get_order(size) + PAGE_SHIFT;
-		buf->direct.buf   = dma_alloc_coherent(ddev, size, &t, gfp);
+		buf->direct.buf   = dma_alloc_coherent(&dev->persist->pdev->dev,
+						       size, &t, gfp);
 		if (!buf->direct.buf)
 			return -ENOMEM;
 
@@ -619,7 +619,9 @@ int mlx4_buf_alloc(struct mlx4_dev *dev, int size, int max_direct,
 
 		for (i = 0; i < buf->nbufs; ++i) {
 			buf->page_list[i].buf =
-				dma_alloc_coherent(ddev, PAGE_SIZE, &t, gfp);
+				dma_alloc_coherent(&dev->persist->pdev->dev,
+						   PAGE_SIZE,
+						   &t, gfp);
 			if (!buf->page_list[i].buf)
 				goto err_free;
 
@@ -633,12 +635,8 @@ int mlx4_buf_alloc(struct mlx4_dev *dev, int size, int max_direct,
 			pages = kmalloc(sizeof *pages * buf->nbufs, gfp);
 			if (!pages)
 				goto err_free;
-			for (i = 0; i < buf->nbufs; ++i) {
-				phys_addr_t phys;
-
-				phys = dma_to_phys(ddev, buf->page_list[i].map);
-				pages[i] = pfn_to_page(phys >> PAGE_SHIFT);
-			}
+			for (i = 0; i < buf->nbufs; ++i)
+				pages[i] = virt_to_page(buf->page_list[i].buf);
 			buf->direct.buf = vmap(pages, buf->nbufs, VM_MAP, PAGE_KERNEL);
 			kfree(pages);
 			if (!buf->direct.buf)
