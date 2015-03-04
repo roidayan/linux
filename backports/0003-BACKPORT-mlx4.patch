@@ -1507,18 +1507,18 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#endif
  
  	/* If we used up all the quota - we're probably not done yet... */
-+#ifndef HAVE_IRQ_DESC_GET_IRQ_DATA
++#if !(defined(HAVE_IRQ_DESC_GET_IRQ_DATA) && defined(HAVE_IRQ_TO_DESC_EXPORTED))
 +	cq->tot_rx += done;
 +#endif
  	if (done == budget) {
-+#ifdef HAVE_IRQ_DESC_GET_IRQ_DATA
++#if defined(HAVE_IRQ_DESC_GET_IRQ_DATA) && defined(HAVE_IRQ_TO_DESC_EXPORTED)
  		int cpu_curr;
  		const struct cpumask *aff;
 +#endif
  
  		INC_PERF_COUNTER(priv->pstats.napi_quota);
  
-+#ifdef HAVE_IRQ_DESC_GET_IRQ_DATA
++#if defined(HAVE_IRQ_DESC_GET_IRQ_DATA) && defined(HAVE_IRQ_TO_DESC_EXPORTED)
  		cpu_curr = smp_processor_id();
  		aff = irq_desc_get_irq_data(cq->irq_desc)->affinity;
  
@@ -1935,7 +1935,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	FRAG_SZ3 = MLX4_EN_ALLOC_SIZE
  };
  #define MLX4_EN_MAX_RX_FRAGS	4
-+#ifndef HAVE_IRQ_DESC_GET_IRQ_DATA
++#if !(defined(HAVE_IRQ_DESC_GET_IRQ_DATA) && defined(HAVE_IRQ_TO_DESC_EXPORTED))
 +/* Minimum packet number till arming the CQ */
 +#define MLX4_EN_MIN_RX_ARM	2097152
 +#endif
@@ -1946,7 +1946,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	u16 moder_cnt;
  	struct mlx4_cqe *buf;
  #define MLX4_EN_OPCODE_ERROR	0x1e
-+#ifndef HAVE_IRQ_DESC_GET_IRQ_DATA
++#if !(defined(HAVE_IRQ_DESC_GET_IRQ_DATA) && defined(HAVE_IRQ_TO_DESC_EXPORTED))
 +	u32 tot_rx;
 +#endif
  
