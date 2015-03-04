@@ -46,13 +46,6 @@
 
 #define random32() prandom_u32()
 
-#ifndef NAPI_POLL_WEIGHT
-/* Default NAPI poll() weight
- * Device drivers are strongly advised to not use bigger value
- */
-#define NAPI_POLL_WEIGHT 64
-#endif
-
 #define netif_is_bond_master LINUX_BACKPORT(netif_is_bond_master)
 static inline bool netif_is_bond_master(struct net_device *dev)
 {

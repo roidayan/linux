@@ -17,4 +17,11 @@
 #define netdev_master_upper_dev_get_rcu(x) (x)->master
 #endif
 
+#ifndef NAPI_POLL_WEIGHT
+/* Default NAPI poll() weight
+ * Device drivers are strongly advised to not use bigger value
+ */
+#define NAPI_POLL_WEIGHT 64
+#endif
+
 #endif	/* _COMPAT_LINUX_NETDEVICE_H */
