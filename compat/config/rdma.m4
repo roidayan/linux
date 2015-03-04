@@ -1696,7 +1696,6 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		#include <linux/kthread.h>
 	],[
 		struct kthread_work x;
-		x.worker = NULL;
 
 		return 0;
 	],[
@@ -2265,6 +2264,36 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(no)
 	])
 
+	AC_MSG_CHECKING([if xprt.h xprt_alloc has 3 params])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/sunrpc/xprt.h>
+	],[
+		xprt_alloc(NULL, 0, 0);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_XPRT_ALLOC_HAS_3_PARAMS, 1,
+			  [xprt_alloc has 3 params is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if xprt.h xprt_alloc has 4 params])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/sunrpc/xprt.h>
+	],[
+		xprt_alloc(NULL, 0, 0, 0);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_XPRT_ALLOC_HAS_4_PARAMS, 1,
+			  [xprt_alloc has 4 params is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
 	AC_MSG_CHECKING([if highmem.h kmap_atomic has 1 param])
 	LB_LINUX_TRY_COMPILE([
 		#include <linux/highmem.h>
@@ -2376,6 +2405,29 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 	],[
 		AC_MSG_RESULT(no)
 	])
+
+	AC_MSG_CHECKING([if route.h struct has member rt_uses_gateway])
+	LB_LINUX_TRY_COMPILE([
+		#include <net/route.h>
+	],[
+		struct rtable x = {
+			.rt_uses_gateway = 0,
+		};
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_RT_USES_GATEWAY, 1,
+			  [rt_uses_gateway is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	LB_CHECK_SYMBOL_EXPORT([irq_to_desc],
+		[kernel/irq/irqdesc.c],
+		[AC_DEFINE(HAVE_IRQ_TO_DESC_EXPORTED, 1,
+			[irq_to_desc is exported by the kernel])],
+	[])
 ])
 #
 # COMPAT_CONFIG_HEADERS

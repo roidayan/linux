@@ -3,23 +3,23 @@ Subject: [PATCH] BACKPORT: mlx4
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- drivers/infiniband/hw/mlx4/cm.c                 |   27 +++
- drivers/net/ethernet/mellanox/mlx4/cmd.c        |    6 +
- drivers/net/ethernet/mellanox/mlx4/en_clock.c   |   10 +
- drivers/net/ethernet/mellanox/mlx4/en_cq.c      |   16 ++
- drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c  |   31 +++-
- drivers/net/ethernet/mellanox/mlx4/en_ethtool.c |  101 ++++++++++-
- drivers/net/ethernet/mellanox/mlx4/en_main.c    |    2 +
- drivers/net/ethernet/mellanox/mlx4/en_netdev.c  |  237 ++++++++++++++++++++++-
- drivers/net/ethernet/mellanox/mlx4/en_rx.c      |  113 +++++++++++-
- drivers/net/ethernet/mellanox/mlx4/en_tx.c      |   56 ++++++
- drivers/net/ethernet/mellanox/mlx4/eq.c         |   16 ++
- drivers/net/ethernet/mellanox/mlx4/main.c       |   23 +++
- drivers/net/ethernet/mellanox/mlx4/mlx4_en.h    |  114 +++++++++++-
- include/linux/ethtool.h                         |   12 ++
- include/linux/mlx4/cq.h                         |    5 +
- include/linux/mlx4/device.h                     |    8 +
- include/linux/mlx4/qp.h                         |    8 +
+ drivers/infiniband/hw/mlx4/cm.c                 |  27 +++
+ drivers/net/ethernet/mellanox/mlx4/cmd.c        |   6 +
+ drivers/net/ethernet/mellanox/mlx4/en_clock.c   |  10 +
+ drivers/net/ethernet/mellanox/mlx4/en_cq.c      |  16 ++
+ drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c  |  31 +++-
+ drivers/net/ethernet/mellanox/mlx4/en_ethtool.c | 101 +++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_main.c    |   2 +
+ drivers/net/ethernet/mellanox/mlx4/en_netdev.c  | 237 +++++++++++++++++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_rx.c      | 113 ++++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_tx.c      |  56 ++++++
+ drivers/net/ethernet/mellanox/mlx4/eq.c         |  16 ++
+ drivers/net/ethernet/mellanox/mlx4/main.c       |  23 +++
+ drivers/net/ethernet/mellanox/mlx4/mlx4_en.h    | 114 +++++++++++-
+ include/linux/ethtool.h                         |  12 ++
+ include/linux/mlx4/cq.h                         |   5 +
+ include/linux/mlx4/device.h                     |   8 +
+ include/linux/mlx4/qp.h                         |   8 +
  17 files changed, 775 insertions(+), 10 deletions(-)
 
 diff --git a/drivers/infiniband/hw/mlx4/cm.c b/drivers/infiniband/hw/mlx4/cm.c
@@ -179,7 +179,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  				mdev->dev->caps.num_comp_vectors;
  		}
  
-+#ifdef HAVE_IRQ_DESC_GET_IRQ_DATA
++#if defined(HAVE_IRQ_DESC_GET_IRQ_DATA) && defined(HAVE_IRQ_TO_DESC_EXPORTED)
  		cq->irq_desc =
  			irq_to_desc(mlx4_eq_get_irq(mdev->dev,
  						    cq->vector));
