@@ -49,6 +49,8 @@
 #include <rdma/ib_addr.h>
 #include <rdma/ib_cache.h>
 
+#include <net/bonding.h>
+
 #include <linux/mlx4/driver.h>
 #include <linux/mlx4/cmd.h>
 #include <linux/mlx4/qp.h>
@@ -1866,12 +1868,22 @@ static struct net_device *mlx4_ib_get_netdev(struct ib_device *device, u8 port_n
 	struct mlx4_ib_dev *ibdev = to_mdev(device);
 
 	if (mlx4_is_bonded(ibdev->dev)) {
-		u8 true_port_num;
+		struct net_device *dev;
+		struct net_device *upper = NULL;
 
-		if (!mlx4_port_map_get(ibdev->dev, port_num, &true_port_num))
-			port_num = true_port_num;
+		rcu_read_lock();
+
+		dev = mlx4_get_protocol_dev(ibdev->dev, MLX4_PROT_ETH, port_num);
+		if (dev)
+			upper = netdev_master_upper_dev_get_rcu(dev);
 		else
-			return NULL;
+			goto unlock;
+		if (upper)
+			dev = bond_option_active_slave_get_rcu(netdev_priv(upper));
+unlock:
+		rcu_read_unlock();
+
+		return dev;
 	}
 
 	return mlx4_get_protocol_dev(ibdev->dev, MLX4_PROT_ETH, port_num);
