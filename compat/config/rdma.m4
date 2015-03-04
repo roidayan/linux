@@ -2346,6 +2346,36 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 	],[
 		AC_MSG_RESULT(no)
 	])
+
+	AC_MSG_CHECKING([if cpu_rmap.h has struct cpu_rmap])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/cpu_rmap.h>
+	],[
+		struct cpu_rmap rmap;
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_CPU_RMAP, 1,
+			  [cpu_rmap is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if proc_fs.h has PDE_DATA])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/proc_fs.h>
+	],[
+		PDE_DATA(NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_PDE_DATA, 1,
+			  [PDE_DATA is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
 ])
 #
 # COMPAT_CONFIG_HEADERS

@@ -3,30 +3,30 @@ Subject: [PATCH] BACKPORT: ib-core
 
 Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
 ---
- drivers/infiniband/core/addr.c             | 105 +++++++++++++++++++++++++++++
- drivers/infiniband/core/cm.c               |  23 +++++++
- drivers/infiniband/core/cma.c              |  64 ++++++++++++++++++
- drivers/infiniband/core/fmr_pool.c         |   7 ++
- drivers/infiniband/core/iwcm.c             |  16 +++++
- drivers/infiniband/core/iwpm_util.c        |  26 ++++++-
- drivers/infiniband/core/mad.c              |   3 +
- drivers/infiniband/core/netlink.c          |  23 +++++++
- drivers/infiniband/core/roce_gid_cache.c   |   4 ++
- drivers/infiniband/core/roce_gid_mgmt.c    |  10 +++
- drivers/infiniband/core/sa_query.c         |  19 ++++++
- drivers/infiniband/core/ucm.c              |  38 +++++++++++
- drivers/infiniband/core/ucma.c             |  76 +++++++++++++++++++++
- drivers/infiniband/core/umem.c             |  44 ++++++++++++
- drivers/infiniband/core/user_mad.c         |  19 ++++++
- drivers/infiniband/core/uverbs_cmd.c       |  51 ++++++++++++++
- drivers/infiniband/core/uverbs_main.c      |  40 +++++++++++
- drivers/infiniband/hw/mlx4/main.c          |   4 ++
- drivers/infiniband/hw/mlx4/mr.c            |  12 ++++
- drivers/infiniband/hw/qib/qib_user_pages.c |   9 ++-
- include/rdma/ib_pack.h                     |   4 ++
- include/rdma/ib_umem_odp.h                 |   4 ++
- include/rdma/ib_verbs.h                    |   5 ++
- 23 files changed, 603 insertions(+), 3 deletions(-)
+ drivers/infiniband/core/addr.c             |  105 ++++++++++++++++++++++++++++
+ drivers/infiniband/core/cm.c               |   23 ++++++
+ drivers/infiniband/core/cma.c              |   64 +++++++++++++++++
+ drivers/infiniband/core/fmr_pool.c         |    7 ++
+ drivers/infiniband/core/iwcm.c             |   16 ++++
+ drivers/infiniband/core/iwpm_util.c        |   26 ++++++-
+ drivers/infiniband/core/mad.c              |    3 +
+ drivers/infiniband/core/netlink.c          |   23 ++++++
+ drivers/infiniband/core/roce_gid_cache.c   |    4 +
+ drivers/infiniband/core/roce_gid_mgmt.c    |   10 +++
+ drivers/infiniband/core/sa_query.c         |   19 +++++
+ drivers/infiniband/core/ucm.c              |   38 ++++++++++
+ drivers/infiniband/core/ucma.c             |   76 ++++++++++++++++++++
+ drivers/infiniband/core/umem.c             |   44 ++++++++++++
+ drivers/infiniband/core/user_mad.c         |   19 +++++
+ drivers/infiniband/core/uverbs_cmd.c       |   51 +++++++++++++
+ drivers/infiniband/core/uverbs_main.c      |   40 +++++++++++
+ drivers/infiniband/hw/mlx4/main.c          |    8 ++
+ drivers/infiniband/hw/mlx4/mr.c            |   18 +++++
+ drivers/infiniband/hw/qib/qib_user_pages.c |    9 ++-
+ include/rdma/ib_pack.h                     |    4 +
+ include/rdma/ib_umem_odp.h                 |    4 +
+ include/rdma/ib_verbs.h                    |    5 ++
+ 23 files changed, 613 insertions(+), 3 deletions(-)
 
 diff --git a/drivers/infiniband/core/addr.c b/drivers/infiniband/core/addr.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -282,7 +282,7 @@ diff --git a/drivers/infiniband/core/cma.c b/drivers/infiniband/core/cma.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/cma.c
 +++ b/drivers/infiniband/core/cma.c
-@@ -1981,8 +1981,10 @@ static int cma_resolve_iw_route(struct rdma_id_private *id_priv, int timeout_ms)
+@@ -2115,8 +2115,10 @@ static int cma_resolve_iw_route(struct rdma_id_private *id_priv, int timeout_ms)
  	return 0;
  }
  
@@ -293,7 +293,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	int prio;
  	struct net_device *dev;
  
-@@ -1998,8 +2000,10 @@ static int iboe_tos_to_sl(struct net_device *ndev, int tos)
+@@ -2132,8 +2134,10 @@ static int iboe_tos_to_sl(struct net_device *ndev, int tos)
  		return (vlan_dev_get_egress_qos_mask(ndev, prio) &
  			VLAN_PRIO_MASK) >> VLAN_PRIO_SHIFT;
  #endif
@@ -304,7 +304,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
  {
-@@ -2052,7 +2056,16 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
+@@ -2186,7 +2190,16 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
  	route->path_rec->reversible = 1;
  	route->path_rec->pkey = cpu_to_be16(0xffff);
  	route->path_rec->mtu_selector = IB_SA_EQ;
@@ -321,7 +321,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	route->path_rec->mtu = iboe_get_mtu(ndev->mtu);
  	route->path_rec->rate_selector = IB_SA_EQ;
  	route->path_rec->rate = iboe_get_rate(ndev);
-@@ -2435,6 +2448,7 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
+@@ -2569,6 +2582,7 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
  			  unsigned short snum)
  {
  	struct rdma_bind_list *bind_list;
@@ -329,7 +329,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	int ret;
  
  	bind_list = kzalloc(sizeof *bind_list, GFP_KERNEL);
-@@ -2452,6 +2466,35 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
+@@ -2586,6 +2600,35 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
  err:
  	kfree(bind_list);
  	return ret == -ENOSPC ? -EADDRNOTAVAIL : ret;
@@ -365,7 +365,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  static int cma_alloc_any_port(struct idr *ps, struct rdma_id_private *id_priv)
-@@ -2460,7 +2503,11 @@ static int cma_alloc_any_port(struct idr *ps, struct rdma_id_private *id_priv)
+@@ -2594,7 +2637,11 @@ static int cma_alloc_any_port(struct idr *ps, struct rdma_id_private *id_priv)
  	int low, high, remaining;
  	unsigned int rover;
  
@@ -377,7 +377,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	remaining = (high - low) + 1;
  	rover = prandom_u32() % remaining + low;
  retry:
-@@ -2496,9 +2543,16 @@ static int cma_check_port(struct rdma_bind_list *bind_list,
+@@ -2630,9 +2677,16 @@ static int cma_check_port(struct rdma_bind_list *bind_list,
  {
  	struct rdma_id_private *cur_id;
  	struct sockaddr *addr, *cur_addr;
@@ -394,7 +394,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		if (id_priv == cur_id)
  			continue;
  
-@@ -3367,7 +3421,11 @@ static int cma_join_ib_multicast(struct rdma_id_private *id_priv,
+@@ -3532,7 +3586,11 @@ static int cma_join_ib_multicast(struct rdma_id_private *id_priv,
  						id_priv->id.port_num, &rec,
  						comp_mask, GFP_KERNEL,
  						cma_ib_mc_handler, mc);
@@ -406,7 +406,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  static void iboe_mcast_work_handler(struct work_struct *work)
-@@ -3615,9 +3673,15 @@ static int cma_netdev_change(struct net_device *ndev, struct rdma_id_private *id
+@@ -3780,9 +3838,15 @@ static int cma_netdev_change(struct net_device *ndev, struct rdma_id_private *id
  }
  
  static int cma_netdev_callback(struct notifier_block *self, unsigned long event,
@@ -1428,7 +1428,7 @@ diff --git a/drivers/infiniband/hw/mlx4/main.c b/drivers/infiniband/hw/mlx4/main
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/hw/mlx4/main.c
 +++ b/drivers/infiniband/hw/mlx4/main.c
-@@ -1606,7 +1606,11 @@ static int del_gid_entry(struct ib_qp *ibqp, union ib_gid *gid)
+@@ -1616,7 +1616,11 @@ static int del_gid_entry(struct ib_qp *ibqp, union ib_gid *gid)
  		rdma_get_mcast_mac((struct in6_addr *)gid, mac);
  		if (ndev) {
  			rtnl_lock();
@@ -1440,11 +1440,39 @@ index xxxxxxx..xxxxxxx xxxxxx
  			rtnl_unlock();
  			dev_put(ndev);
  		}
+@@ -2213,8 +2217,12 @@ static void mlx4_ib_alloc_eqs(struct mlx4_dev *dev, struct mlx4_ib_dev *ibdev)
+ 			sprintf(name, "mlx4-ib-%d-%d@pci:%s",
+ 				i, j, pci_name(dev->persist->pdev));
+ 			/* Set IRQ for specific name (per ring) */
++#ifdef HAVE_CPU_RMAP
+ 			if (mlx4_assign_eq(dev, name, NULL,
+ 					   &ibdev->eq_table[eq])) {
++#else
++			if (mlx4_assign_eq(dev, name, &ibdev->eq_table[eq])) {
++#endif
+ 				/* Use legacy (same as mlx4_en driver) */
+ 				pr_warn("Can't allocate EQ %d; reverting to legacy\n", eq);
+ 				ibdev->eq_table[eq] =
 diff --git a/drivers/infiniband/hw/mlx4/mr.c b/drivers/infiniband/hw/mlx4/mr.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/hw/mlx4/mr.c
 +++ b/drivers/infiniband/hw/mlx4/mr.c
-@@ -449,8 +449,10 @@ static int prepare_shared_mr(struct mlx4_ib_mr *mr, int access_flags, int mr_id)
+@@ -76,8 +76,14 @@ static ssize_t shared_mr_proc_write(struct file *file,
+ static int shared_mr_mmap(struct file *filep, struct vm_area_struct *vma)
+ {
+ 
++#ifdef HAVE_PDE_DATA
+ 	struct mlx4_shared_mr_info *smr_info =
+ 		(struct mlx4_shared_mr_info *)PDE_DATA(filep->f_path.dentry->d_inode);
++#else
++	struct proc_dir_entry *pde = PDE(filep->f_path.dentry->d_inode);
++	struct mlx4_shared_mr_info *smr_info =
++		(struct mlx4_shared_mr_info *)pde->data;
++#endif
+ 
+ 	/* Prevent any mapping not on start of area */
+ 	if (vma->vm_pgoff != 0)
+@@ -449,8 +455,10 @@ static int prepare_shared_mr(struct mlx4_ib_mr *mr, int access_flags, int mr_id)
  	struct proc_dir_entry *mr_proc_entry;
  	mode_t mode = S_IFREG;
  	char name_buff[128];
@@ -1455,7 +1483,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	mode |= convert_shared_access(access_flags);
  	sprintf(name_buff, "%X", mr_id);
-@@ -469,9 +471,14 @@ static int prepare_shared_mr(struct mlx4_ib_mr *mr, int access_flags, int mr_id)
+@@ -469,9 +477,14 @@ static int prepare_shared_mr(struct mlx4_ib_mr *mr, int access_flags, int mr_id)
  		return -ENODEV;
  	}
  
@@ -1470,7 +1498,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	/* now creating an extra entry having a uniqe suffix counter */
  	mr->smr_info->counter = atomic64_inc_return(&shared_mr_count);
-@@ -487,8 +494,13 @@ static int prepare_shared_mr(struct mlx4_ib_mr *mr, int access_flags, int mr_id)
+@@ -487,8 +500,13 @@ static int prepare_shared_mr(struct mlx4_ib_mr *mr, int access_flags, int mr_id)
  	}
  
  	mr->smr_info->counter_used = 1;

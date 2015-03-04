@@ -6,20 +6,20 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  drivers/infiniband/hw/mlx4/cm.c                 |   27 +++
  drivers/net/ethernet/mellanox/mlx4/cmd.c        |    6 +
  drivers/net/ethernet/mellanox/mlx4/en_clock.c   |   10 +
- drivers/net/ethernet/mellanox/mlx4/en_cq.c      |   11 +
- drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c  |   23 ++-
+ drivers/net/ethernet/mellanox/mlx4/en_cq.c      |   16 ++
+ drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c  |   31 +++-
  drivers/net/ethernet/mellanox/mlx4/en_ethtool.c |  101 ++++++++++-
  drivers/net/ethernet/mellanox/mlx4/en_main.c    |    2 +
  drivers/net/ethernet/mellanox/mlx4/en_netdev.c  |  237 ++++++++++++++++++++++-
  drivers/net/ethernet/mellanox/mlx4/en_rx.c      |   98 +++++++++-
  drivers/net/ethernet/mellanox/mlx4/en_tx.c      |   56 ++++++
- drivers/net/ethernet/mellanox/mlx4/eq.c         |   10 +
+ drivers/net/ethernet/mellanox/mlx4/eq.c         |   16 ++
  drivers/net/ethernet/mellanox/mlx4/main.c       |   23 +++
  drivers/net/ethernet/mellanox/mlx4/mlx4_en.h    |  114 +++++++++++-
  include/linux/ethtool.h                         |   12 ++
  include/linux/mlx4/cq.h                         |    5 +
- include/linux/mlx4/device.h                     |    4 +
- 16 files changed, 731 insertions(+), 8 deletions(-)
+ include/linux/mlx4/device.h                     |    8 +
+ 16 files changed, 752 insertions(+), 10 deletions(-)
 
 diff --git a/drivers/infiniband/hw/mlx4/cm.c b/drivers/infiniband/hw/mlx4/cm.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -160,7 +160,21 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	cq->dev = mdev->pndev[priv->port];
  	cq->mcq.set_ci_db  = cq->wqres.db.db;
-@@ -135,9 +140,11 @@ int mlx4_en_activate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq,
+@@ -121,8 +126,13 @@ int mlx4_en_activate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq,
+ 				sprintf(name, "%s-%d", priv->dev->name,
+ 					cq->ring);
+ 				/* Set IRQ for specific name (per ring) */
++#ifdef HAVE_CPU_RMAP
+ 				if (mlx4_assign_eq(mdev->dev, name, rmap,
+ 						   &cq->vector)) {
++#else
++				if (mlx4_assign_eq(mdev->dev, name,
++						   &cq->vector)) {
++#endif
+ 					cq->vector = (cq->ring + 1 + priv->port)
+ 					    % mdev->dev->caps.num_comp_vectors;
+ 					mlx4_warn(mdev, "Failed assigning an EQ to %s, falling back to legacy EQ's\n",
+@@ -135,9 +145,11 @@ int mlx4_en_activate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq,
  				mdev->dev->caps.num_comp_vectors;
  		}
  
@@ -172,7 +186,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	} else {
  		/* For TX we use the same irq per
  		ring we assigned for the RX    */
-@@ -176,7 +183,9 @@ int mlx4_en_activate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq,
+@@ -176,7 +188,9 @@ int mlx4_en_activate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq,
  			mlx4_warn(mdev, "Failed setting affinity hint\n");
  
  		netif_napi_add(cq->dev, &cq->napi, mlx4_en_poll_rx_cq, 64);
@@ -182,7 +196,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	}
  
  	napi_enable(&cq->napi);
-@@ -205,8 +214,10 @@ void mlx4_en_deactivate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq)
+@@ -205,8 +219,10 @@ void mlx4_en_deactivate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq)
  {
  	napi_disable(&cq->napi);
  	if (!cq->is_tx) {
@@ -197,23 +211,31 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c b/drivers/net/ethern
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c
-@@ -261,6 +261,7 @@ static u8 mlx4_en_dcbnl_setdcbx(struct net_device *dev, u8 mode)
- 	return 0;
+@@ -262,7 +262,10 @@ static u8 mlx4_en_dcbnl_setdcbx(struct net_device *dev, u8 mode)
  }
  
-+#ifdef HAVE_IEEE_GET_SET_MAXRATE
  #define MLX4_RATELIMIT_UNITS_IN_KB 100000 /* rate-limit HW unit in Kbps */
- static int mlx4_en_dcbnl_ieee_getmaxrate(struct net_device *dev,
+-static int mlx4_en_dcbnl_ieee_getmaxrate(struct net_device *dev,
++#ifndef CONFIG_SYSFS_MAXRATE
++static
++#endif
++int mlx4_en_dcbnl_ieee_getmaxrate(struct net_device *dev,
  				   struct ieee_maxrate *maxrate)
-@@ -274,6 +275,7 @@ static int mlx4_en_dcbnl_ieee_getmaxrate(struct net_device *dev,
- 
+ {
+ 	struct mlx4_en_priv *priv = netdev_priv(dev);
+@@ -275,7 +278,10 @@ static int mlx4_en_dcbnl_ieee_getmaxrate(struct net_device *dev,
  	return 0;
  }
-+#endif
  
- static int mlx4_en_dcbnl_ieee_setmaxrate(struct net_device *dev,
+-static int mlx4_en_dcbnl_ieee_setmaxrate(struct net_device *dev,
++#ifndef CONFIG_SYSFS_MAXRATE
++static
++#endif
++int mlx4_en_dcbnl_ieee_setmaxrate(struct net_device *dev,
  		struct ieee_maxrate *maxrate)
-@@ -303,7 +305,10 @@ static int mlx4_en_dcbnl_ieee_setmaxrate(struct net_device *dev,
+ {
+ 	struct mlx4_en_priv *priv = netdev_priv(dev);
+@@ -303,7 +309,10 @@ static int mlx4_en_dcbnl_ieee_setmaxrate(struct net_device *dev,
  #define RPG_ENABLE_BIT	31
  #define CN_TAG_BIT	30
  
@@ -225,7 +247,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  				     struct ieee_qcn *qcn)
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
-@@ -366,7 +371,10 @@ static int mlx4_en_dcbnl_ieee_getqcn(struct net_device *dev,
+@@ -366,7 +375,10 @@ static int mlx4_en_dcbnl_ieee_getqcn(struct net_device *dev,
  	return 0;
  }
  
@@ -237,7 +259,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  				     struct ieee_qcn *qcn)
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
-@@ -429,7 +437,10 @@ static int mlx4_en_dcbnl_ieee_setqcn(struct net_device *dev,
+@@ -429,7 +441,10 @@ static int mlx4_en_dcbnl_ieee_setqcn(struct net_device *dev,
  	return 0;
  }
  
@@ -249,7 +271,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  					  struct ieee_qcn_stats *qcn_stats)
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
-@@ -475,16 +486,20 @@ static int mlx4_en_dcbnl_ieee_getqcnstats(struct net_device *dev,
+@@ -475,16 +490,20 @@ static int mlx4_en_dcbnl_ieee_getqcnstats(struct net_device *dev,
  const struct dcbnl_rtnl_ops mlx4_en_dcbnl_ops = {
  	.ieee_getets	= mlx4_en_dcbnl_ieee_getets,
  	.ieee_setets	= mlx4_en_dcbnl_ieee_setets,
@@ -270,7 +292,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  };
  
  const struct dcbnl_rtnl_ops mlx4_en_dcbnl_pfc_ops = {
-@@ -493,7 +508,9 @@ const struct dcbnl_rtnl_ops mlx4_en_dcbnl_pfc_ops = {
+@@ -493,7 +512,9 @@ const struct dcbnl_rtnl_ops mlx4_en_dcbnl_pfc_ops = {
  
  	.getdcbx	= mlx4_en_dcbnl_getdcbx,
  	.setdcbx	= mlx4_en_dcbnl_setdcbx,
@@ -1757,11 +1779,40 @@ index xxxxxxx..xxxxxxx xxxxxx
  					}
  				else /* IB port */
  					/* port-up event will be sent to a slave when the
+@@ -1371,8 +1381,12 @@ int mlx4_test_interrupts(struct mlx4_dev *dev)
+ }
+ EXPORT_SYMBOL(mlx4_test_interrupts);
+ 
++#ifdef HAVE_CPU_RMAP
+ int mlx4_assign_eq(struct mlx4_dev *dev, char *name, struct cpu_rmap *rmap,
+ 		   int *vector)
++#else
++int mlx4_assign_eq(struct mlx4_dev *dev, char *name, int *vector)
++#endif
+ {
+ 	struct mlx4_priv *priv = mlx4_priv(dev);
+ 	int vec = 0, err = 0, i;
+@@ -1385,6 +1399,7 @@ int mlx4_assign_eq(struct mlx4_dev *dev, char *name, struct cpu_rmap *rmap,
+ 			snprintf(priv->eq_table.irq_names +
+ 					vec * MLX4_IRQNAME_SIZE,
+ 					MLX4_IRQNAME_SIZE, "%s", name);
++#ifdef HAVE_CPU_RMAP
+ #ifdef CONFIG_RFS_ACCEL
+ 			if (rmap) {
+ 				err = irq_cpu_rmap_add(rmap,
+@@ -1393,6 +1408,7 @@ int mlx4_assign_eq(struct mlx4_dev *dev, char *name, struct cpu_rmap *rmap,
+ 					mlx4_warn(dev, "Failed adding irq rmap\n");
+ 			}
+ #endif
++#endif
+ 			err = request_irq(priv->eq_table.eq[vec].irq,
+ 					  mlx4_msi_x_interrupt, 0,
+ 					  &priv->eq_table.irq_names[vec<<5],
 diff --git a/drivers/net/ethernet/mellanox/mlx4/main.c b/drivers/net/ethernet/mellanox/mlx4/main.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/main.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/main.c
-@@ -3407,6 +3407,9 @@ static void mlx4_enable_msi_x(struct mlx4_dev *dev)
+@@ -3434,6 +3434,9 @@ static void mlx4_enable_msi_x(struct mlx4_dev *dev)
  	struct mlx4_priv *priv = mlx4_priv(dev);
  	struct msix_entry *entries;
  	int i;
@@ -1771,7 +1822,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	if (msi_x) {
  		int nreq = dev->caps.num_ports * num_online_cpus() + MSIX_LEGACY_SZ;
-@@ -3421,6 +3424,7 @@ static void mlx4_enable_msi_x(struct mlx4_dev *dev)
+@@ -3448,6 +3451,7 @@ static void mlx4_enable_msi_x(struct mlx4_dev *dev)
  		for (i = 0; i < nreq; ++i)
  			entries[i].entry = i;
  
@@ -1779,7 +1830,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		nreq = pci_enable_msix_range(dev->persist->pdev, entries, 2,
  					     nreq);
  
-@@ -3429,6 +3433,25 @@ static void mlx4_enable_msi_x(struct mlx4_dev *dev)
+@@ -3456,6 +3460,25 @@ static void mlx4_enable_msi_x(struct mlx4_dev *dev)
  			goto no_msi;
  		} else if (nreq < MSIX_LEGACY_SZ +
  			   dev->caps.num_ports * MIN_MSIX_P_PORT) {
@@ -2051,3 +2102,16 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  #define MAX_MSIX_P_PORT		17
  #define MAX_MSIX		64
+@@ -1428,8 +1432,12 @@ int mlx4_query_diag_counters(struct mlx4_dev *mlx4_dev, int array_length,
+ 			     u32 counter_out[]);
+ 
+ int mlx4_test_interrupts(struct mlx4_dev *dev);
++#ifdef HAVE_CPU_RMAP
+ int mlx4_assign_eq(struct mlx4_dev *dev, char *name, struct cpu_rmap *rmap,
+ 		   int *vector);
++#else
++int mlx4_assign_eq(struct mlx4_dev *dev, char *name, int *vector);
++#endif
+ void mlx4_release_eq(struct mlx4_dev *dev, int vec);
+ int mlx4_eq_get_irq(struct mlx4_dev *dev, int vec);
+ 
