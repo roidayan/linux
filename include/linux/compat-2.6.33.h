@@ -186,7 +186,7 @@ extern char * __must_check skip_spaces(const char *);
 
 #ifndef __sockaddr_check_size
 #define __sockaddr_check_size(size)    \
-	UILD_BUG_ON(((size) > sizeof(struct __kernel_sockaddr_storage)))
+	BUILD_BUG_ON(((size) > sizeof(struct __kernel_sockaddr_storage)))
 #endif
 
 #ifndef DECLARE_SOCKADDR
