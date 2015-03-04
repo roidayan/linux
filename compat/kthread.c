@@ -5,6 +5,8 @@
  * even if we're invoked from userspace (think modprobe, hotplug cpu,
  * etc.).
  */
+#ifndef HAVE_KTHREAD_WORK
+
 #include <linux/sched.h>
 #include <linux/kthread.h>
 #include <linux/completion.h>
@@ -175,3 +177,5 @@ void flush_kthread_worker(struct kthread_worker *worker)
 	wait_for_completion(&fwork.done);
 }
 EXPORT_SYMBOL_GPL(flush_kthread_worker);
+
+#endif /* HAVE_KTHREAD_WORK */
