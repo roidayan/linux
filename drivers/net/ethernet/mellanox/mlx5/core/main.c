@@ -1159,6 +1159,8 @@ static int __init init(void)
 	if (err)
 		goto err_health;
 
+	mlx5e_init();
+
 	return 0;
 
 err_health:
@@ -1171,6 +1173,7 @@ err_debug:
 
 static void __exit cleanup(void)
 {
+	mlx5e_cleanup();
 	pci_unregister_driver(&mlx5_core_driver);
 	mlx5_health_cleanup();
 	destroy_workqueue(mlx5_core_wq);
