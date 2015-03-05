@@ -309,7 +309,7 @@ static void fw2drv_caps(struct mlx5_caps *caps, void *out)
 	gen->max_wqes = 1 << MLX5_GET_PR(cmd_hca_cap, out, log_max_qp_sz);
 	gen->log_max_qp = MLX5_GET_PR(cmd_hca_cap, out, log_max_qp);
 	gen->log_max_strq = MLX5_GET_PR(cmd_hca_cap, out, log_max_strq_sz);
-	gen->log_max_srq = MLX5_GET_PR(cmd_hca_cap, out, log_max_srqs);
+	gen->log_max_srq = MLX5_GET_PR(cmd_hca_cap, out, log_max_srq);
 	gen->max_cqes = 1 << MLX5_GET_PR(cmd_hca_cap, out, log_max_cq_sz);
 	gen->log_max_cq = MLX5_GET_PR(cmd_hca_cap, out, log_max_cq);
 	gen->max_eqes = 1 << MLX5_GET_PR(cmd_hca_cap, out, log_max_eq_sz);
@@ -380,7 +380,7 @@ int mlx5_core_get_caps(struct mlx5_core_dev *dev, struct mlx5_caps *caps,
 		goto query_ex;
 	}
 	mlx5_core_dbg(dev, "%s\n", caps_opmod_str(opmod));
-	fw2drv_caps(caps, MLX5_ADDR_OF(query_hca_cap_out, out, capability_struct));
+	fw2drv_caps(caps, MLX5_ADDR_OF(query_hca_cap_out, out, capability));
 
 query_ex:
 	kfree(out);
