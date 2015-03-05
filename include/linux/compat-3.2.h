@@ -59,6 +59,19 @@ static inline void skb_frag_set_page(struct sk_buff *skb, int f,
 }
 
 /**
+ * skb_frag_address - gets the address of the data contained in a paged fragment
+ * @frag: the paged fragment buffer
+ *
+ * Returns the address of the data within @frag. The page must already
+ * be mapped.
+ */
+#define skb_frag_address LINUX_BACKPORT(skb_frag_address)
+static inline void *skb_frag_address(const skb_frag_t *frag)
+{
+	return page_address(skb_frag_page(frag)) + frag->page_offset;
+}
+
+/**
  * skb_frag_address_safe - gets the address of the data contained in a paged fragment
  * @frag: the paged fragment buffer
  *
