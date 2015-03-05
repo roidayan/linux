@@ -2126,6 +2126,39 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(no)
 	])
 
+	AC_MSG_CHECKING([if netdevice.h has netdev_for_each_all_upper_dev_rcu])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/netdevice.h>
+	],[
+		struct net_device *dev;
+		struct net_device *upper;
+		struct list_head *list;
+
+		netdev_for_each_all_upper_dev_rcu(dev, upper, list);
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_NETDEV_FOR_EACH_ALL_UPPER_DEV_RCU, 1,
+			  [netdev_master_upper_dev_get_rcu is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if netdevice.h has NETDEV_CHANGEUPPER])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/netdevice.h>
+	],[
+		int a = NETDEV_CHANGEUPPER;
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_NETDEV_CHANGEUPPER, 1,
+			  [netdev_master_upper_dev_get_rcu is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
 	AC_MSG_CHECKING([if struct inet6_ifaddr has member if_list])
 	LB_LINUX_TRY_COMPILE([
 		#include <net/if_inet6.h>

@@ -4,30 +4,30 @@ Subject: [PATCH] BACKPORT: ib-core
 Change-Id: Ie209820349292d72897ef4a621c850ee575379c8
 Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
 ---
- drivers/infiniband/core/addr.c             |  107 ++++++++++++++++++++++++++++
- drivers/infiniband/core/cm.c               |   23 ++++++
- drivers/infiniband/core/cma.c              |   64 +++++++++++++++++
- drivers/infiniband/core/fmr_pool.c         |    7 ++
- drivers/infiniband/core/iwcm.c             |   16 ++++
- drivers/infiniband/core/iwpm_util.c        |   26 ++++++-
- drivers/infiniband/core/mad.c              |    3 +
- drivers/infiniband/core/netlink.c          |   23 ++++++
- drivers/infiniband/core/roce_gid_cache.c   |    4 +
- drivers/infiniband/core/roce_gid_mgmt.c    |   10 +++
- drivers/infiniband/core/sa_query.c         |   19 +++++
- drivers/infiniband/core/ucm.c              |   38 ++++++++++
- drivers/infiniband/core/ucma.c             |   76 ++++++++++++++++++++
- drivers/infiniband/core/umem.c             |   44 +++++++++++
- drivers/infiniband/core/user_mad.c         |   19 +++++
- drivers/infiniband/core/uverbs_cmd.c       |   51 +++++++++++++
- drivers/infiniband/core/uverbs_main.c      |   40 ++++++++++
- drivers/infiniband/hw/mlx4/main.c          |   10 +++
- drivers/infiniband/hw/mlx4/mr.c            |   18 +++++
- drivers/infiniband/hw/qib/qib_user_pages.c |    9 ++-
- include/rdma/ib_pack.h                     |    4 +
- include/rdma/ib_umem_odp.h                 |    4 +
- include/rdma/ib_verbs.h                    |    5 ++
- 23 files changed, 617 insertions(+), 3 deletions(-)
+ drivers/infiniband/core/addr.c             | 107 +++++++++++++++++++++++++++++
+ drivers/infiniband/core/cm.c               |  23 +++++++
+ drivers/infiniband/core/cma.c              |  64 +++++++++++++++++
+ drivers/infiniband/core/fmr_pool.c         |   7 ++
+ drivers/infiniband/core/iwcm.c             |  16 +++++
+ drivers/infiniband/core/iwpm_util.c        |  26 ++++++-
+ drivers/infiniband/core/mad.c              |   3 +
+ drivers/infiniband/core/netlink.c          |  23 +++++++
+ drivers/infiniband/core/roce_gid_cache.c   |   4 ++
+ drivers/infiniband/core/roce_gid_mgmt.c    |  40 +++++++++++
+ drivers/infiniband/core/sa_query.c         |  19 +++++
+ drivers/infiniband/core/ucm.c              |  38 ++++++++++
+ drivers/infiniband/core/ucma.c             |  76 ++++++++++++++++++++
+ drivers/infiniband/core/umem.c             |  44 ++++++++++++
+ drivers/infiniband/core/user_mad.c         |  19 +++++
+ drivers/infiniband/core/uverbs_cmd.c       |  51 ++++++++++++++
+ drivers/infiniband/core/uverbs_main.c      |  40 +++++++++++
+ drivers/infiniband/hw/mlx4/main.c          |  10 +++
+ drivers/infiniband/hw/mlx4/mr.c            |  18 +++++
+ drivers/infiniband/hw/qib/qib_user_pages.c |   9 ++-
+ include/rdma/ib_pack.h                     |   4 ++
+ include/rdma/ib_umem_odp.h                 |   4 ++
+ include/rdma/ib_verbs.h                    |   5 ++
+ 23 files changed, 647 insertions(+), 3 deletions(-)
 
 diff --git a/drivers/infiniband/core/addr.c b/drivers/infiniband/core/addr.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -680,7 +680,47 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	return BONDING_SLAVE_STATE_NA;
  }
-@@ -379,7 +381,11 @@ static void enum_netdev_ipv6_ips(struct ib_device *ib_dev,
+@@ -159,15 +161,23 @@ static enum bonding_slave_state is_eth_active_slave_of_bonding(struct net_device
+ static bool is_upper_dev_rcu(struct net_device *dev, struct net_device *upper)
+ {
+ 	struct net_device *_upper = NULL;
++#ifdef HAVE_NETDEV_FOR_EACH_ALL_UPPER_DEV_RCU
+ 	struct list_head *iter;
++#endif
+ 
++#if defined(HAVE_NETDEV_FOR_EACH_ALL_UPPER_DEV_RCU) || defined(HAVE_NETDEV_MASTER_UPPER_DEV_GET_RCU)
+ 	rcu_read_lock();
++#ifdef HAVE_NETDEV_FOR_EACH_ALL_UPPER_DEV_RCU
+ 	netdev_for_each_all_upper_dev_rcu(dev, _upper, iter) {
+ 		if (_upper == upper)
+ 			break;
+ 	}
++#else
++	_upper = netdev_master_upper_dev_get_rcu(dev);
++#endif
+ 
+ 	rcu_read_unlock();
++#endif
+ 	return _upper == upper;
+ }
+ 
+@@ -212,11 +222,15 @@ static int is_eth_port_inactive_slave(struct ib_device *ib_dev, u8 port,
+ 	if (!idev)
+ 		return 0;
+ 
++#ifdef HAVE_NETDEV_MASTER_UPPER_DEV_GET_RCU
+ 	rcu_read_lock();
++#endif
+ 	mdev = netdev_master_upper_dev_get_rcu(idev);
+ 	res = is_eth_active_slave_of_bonding(idev, mdev) ==
+ 		BONDING_SLAVE_STATE_INACTIVE;
++#ifdef HAVE_NETDEV_MASTER_UPPER_DEV_GET_RCU
+ 	rcu_read_unlock();
++#endif
+ 
+ 	return res;
+ }
+@@ -379,7 +393,11 @@ static void enum_netdev_ipv6_ips(struct ib_device *ib_dev,
  		return;
  
  	read_lock_bh(&in6_dev->lock);
@@ -689,10 +729,82 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#else
 +	for (ifp=in6_dev->addr_list; ifp; ifp=ifp->if_next) {
 +#endif
- 		struct sockaddr_in6 ip;
+ 		struct sin6_list *entry = kzalloc(sizeof(*entry), GFP_ATOMIC);
  
- 		ip.sin6_family = AF_INET6;
-@@ -699,6 +705,10 @@ void __exit roce_gid_mgmt_cleanup(void)
+ 		if (!entry) {
+@@ -426,9 +444,11 @@ static void del_netdev_ips(struct ib_device *ib_dev, u8 port,
+ 	roce_del_all_netdev_gids(ib_dev, port, ndev);
+ }
+ 
++#ifdef HAVE_NETDEV_CHANGEUPPER
+ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
+ 				 struct net_device *idev, void *cookie)
+ {
++#if defined(HAVE_NETDEV_FOR_EACH_ALL_UPPER_DEV_RCU) || defined(HAVE_NETDEV_MASTER_UPPER_DEV_GET_RCU)
+ 	if (idev) {
+ 		struct upper_list {
+ 			struct list_head list;
+@@ -441,7 +461,13 @@ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
+ 		LIST_HEAD(upper_list);
+ 
+ 		rcu_read_lock();
++#ifdef HAVE_NETDEV_FOR_EACH_ALL_UPPER_DEV_RCU
+ 		netdev_for_each_all_upper_dev_rcu(idev, upper, iter) {
++#else
++		/* We only support the bond itself here, vlans will be
++		 * problematic */
++		{
++#endif
+ 			struct upper_list *entry = kmalloc(sizeof(*entry),
+ 							   GFP_ATOMIC);
+ 
+@@ -452,7 +478,11 @@ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
+ 
+ 			list_add_tail(&entry->list, &upper_list);
+ 			dev_hold(upper);
++#ifdef HAVE_NETDEV_FOR_EACH_ALL_UPPER_DEV_RCU
+ 			entry->upper = upper;
++#else
++			entry->upper = netdev_master_upper_dev_get_rcu(idev);
++#endif
+ 		}
+ 		rcu_read_unlock();
+ 
+@@ -465,7 +495,9 @@ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
+ 			kfree(upper_iter);
+ 		}
+ 	}
++#endif
+ }
++#endif
+ 
+ static void del_netdev_default_ips(struct ib_device *ib_dev, u8 port,
+ 				   struct net_device *idev, void *cookie)
+@@ -486,8 +518,10 @@ static int netdevice_event(struct notifier_block *this, unsigned long event,
+ 		.cb = del_netdev_default_ips, .filter = is_eth_port_inactive_slave};
+ 	static const struct netdev_event_work_cmd bonding_event_ips_del_cmd = {
+ 		.cb = del_netdev_ips, .filter = bonding_slaves_filter};
++#ifdef HAVE_NETDEV_CHANGEUPPER
+ 	static const struct netdev_event_work_cmd upper_ips_del_cmd = {
+ 		.cb = del_netdev_upper_ips, .filter = pass_all_filter};
++#endif
+ 	struct net_device *ndev = netdev_notifier_info_to_dev(ptr);
+ 	struct netdev_event_work *ndev_work;
+ 	struct netdev_event_work_cmd cmds[ROCE_NETDEV_CALLBACK_SZ] = { {NULL} };
+@@ -515,10 +549,12 @@ static int netdevice_event(struct notifier_block *this, unsigned long event,
+ 		cmds[1] = add_cmd;
+ 		break;
+ 
++#ifdef HAVE_NETDEV_CHANGEUPPER
+ 	case NETDEV_CHANGEUPPER:
+ 		cmds[0] = upper_ips_del_cmd;
+ 		cmds[1] = add_cmd;
+ 		break;
++#endif
+ 
+ 	case NETDEV_BONDING_FAILOVER:
+ 		cmds[0] = bonding_event_ips_del_cmd;
+@@ -745,6 +781,10 @@ void __exit roce_gid_mgmt_cleanup(void)
  	 * so no issue with remaining hardware contexts.
  	 */
  	synchronize_rcu();
