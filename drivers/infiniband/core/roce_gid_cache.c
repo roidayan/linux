@@ -229,7 +229,7 @@ int roce_add_gid(struct ib_device *ib_dev, u8 port,
 	if (ib_dev->get_netdev) {
 		rcu_read_lock();
 		idev = ib_dev->get_netdev(ib_dev, port);
-		if (attr->ndev != idev) {
+		if (idev && attr->ndev != idev) {
 			union ib_gid default_gid;
 
 			/* Adding default GIDs in not permitted */
