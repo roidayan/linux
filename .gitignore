@@ -92,3 +92,13 @@ Makefile
 backports_applied
 openib.conf.tmp
 ofed_scripts/utils/build/
+
+# compat/autotools stauff
+compat/COPYING
+compat/Makefile.in
+compat/INSTALL
+compat/aclocal.m4
+compat/autom4te.cache/
+compat/confdefs.h
+compat/config.h.in
+compat/config.log

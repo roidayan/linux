@@ -1712,6 +1712,9 @@ EOFAUTOCONF
             ex ./autogen.sh
         fi
 
+	/bin/cp -f Makefile.real Makefile
+	/bin/cp -f Makefile.real Makefile.in
+
         if [[ -e "/etc/SuSE-release" && "$KSRC" =~ "build" ]]; then
             ex ./configure --with-linux-obj=$KSRC --with-linux=${KSRC/build/source}
         elif [[ -e "/etc/SuSE-release" && "$KSRC" =~ "linux-obj" ]]; then

@@ -16,5 +16,5 @@ run_cmd()
 
 run_cmd "aclocal -I $PWD/config $ACLOCAL_FLAGS"
 run_cmd "autoheader"
-# run_cmd "automake -a -c"
+run_cmd "automake -a -c --force-missing"
 run_cmd autoconf
