@@ -2428,6 +2428,21 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		[AC_DEFINE(HAVE_IRQ_TO_DESC_EXPORTED, 1,
 			[irq_to_desc is exported by the kernel])],
 	[])
+
+	AC_MSG_CHECKING([if ptp_clock_kernel.h ptp_clock_register has 2 params])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/ptp_clock_kernel.h>
+	],[
+		ptp_clock_register(NULL, NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_PTP_CLOCK_REGISTER_2_PARAMS, 1,
+			  [ptp_clock_register has 2 params is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
 ])
 #
 # COMPAT_CONFIG_HEADERS
