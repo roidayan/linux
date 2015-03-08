@@ -286,7 +286,7 @@ diff --git a/drivers/infiniband/core/cma.c b/drivers/infiniband/core/cma.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/cma.c
 +++ b/drivers/infiniband/core/cma.c
-@@ -2115,8 +2115,10 @@ static int cma_resolve_iw_route(struct rdma_id_private *id_priv, int timeout_ms)
+@@ -2114,8 +2114,10 @@ static int cma_resolve_iw_route(struct rdma_id_private *id_priv, int timeout_ms)
  	return 0;
  }
  
@@ -297,7 +297,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	int prio;
  	struct net_device *dev;
  
-@@ -2132,8 +2134,10 @@ static int iboe_tos_to_sl(struct net_device *ndev, int tos)
+@@ -2131,8 +2133,10 @@ static int iboe_tos_to_sl(struct net_device *ndev, int tos)
  		return (vlan_dev_get_egress_qos_mask(ndev, prio) &
  			VLAN_PRIO_MASK) >> VLAN_PRIO_SHIFT;
  #endif
@@ -308,7 +308,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
  {
-@@ -2186,7 +2190,16 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
+@@ -2185,7 +2189,16 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
  	route->path_rec->reversible = 1;
  	route->path_rec->pkey = cpu_to_be16(0xffff);
  	route->path_rec->mtu_selector = IB_SA_EQ;
@@ -325,7 +325,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	route->path_rec->mtu = iboe_get_mtu(ndev->mtu);
  	route->path_rec->rate_selector = IB_SA_EQ;
  	route->path_rec->rate = iboe_get_rate(ndev);
-@@ -2569,6 +2582,7 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
+@@ -2568,6 +2581,7 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
  			  unsigned short snum)
  {
  	struct rdma_bind_list *bind_list;
@@ -333,7 +333,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	int ret;
  
  	bind_list = kzalloc(sizeof *bind_list, GFP_KERNEL);
-@@ -2586,6 +2600,35 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
+@@ -2585,6 +2599,35 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
  err:
  	kfree(bind_list);
  	return ret == -ENOSPC ? -EADDRNOTAVAIL : ret;
@@ -369,7 +369,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  static int cma_alloc_any_port(struct idr *ps, struct rdma_id_private *id_priv)
-@@ -2594,7 +2637,11 @@ static int cma_alloc_any_port(struct idr *ps, struct rdma_id_private *id_priv)
+@@ -2593,7 +2636,11 @@ static int cma_alloc_any_port(struct idr *ps, struct rdma_id_private *id_priv)
  	int low, high, remaining;
  	unsigned int rover;
  
@@ -381,7 +381,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	remaining = (high - low) + 1;
  	rover = prandom_u32() % remaining + low;
  retry:
-@@ -2630,9 +2677,16 @@ static int cma_check_port(struct rdma_bind_list *bind_list,
+@@ -2629,9 +2676,16 @@ static int cma_check_port(struct rdma_bind_list *bind_list,
  {
  	struct rdma_id_private *cur_id;
  	struct sockaddr *addr, *cur_addr;
@@ -398,7 +398,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		if (id_priv == cur_id)
  			continue;
  
-@@ -3532,7 +3586,11 @@ static int cma_join_ib_multicast(struct rdma_id_private *id_priv,
+@@ -3531,7 +3585,11 @@ static int cma_join_ib_multicast(struct rdma_id_private *id_priv,
  						id_priv->id.port_num, &rec,
  						comp_mask, GFP_KERNEL,
  						cma_ib_mc_handler, mc);
@@ -410,7 +410,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  static void iboe_mcast_work_handler(struct work_struct *work)
-@@ -3780,9 +3838,15 @@ static int cma_netdev_change(struct net_device *ndev, struct rdma_id_private *id
+@@ -3778,9 +3836,15 @@ static int cma_netdev_change(struct net_device *ndev, struct rdma_id_private *id
  }
  
  static int cma_netdev_callback(struct notifier_block *self, unsigned long event,
@@ -739,7 +739,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		struct sin6_list *entry = kzalloc(sizeof(*entry), GFP_ATOMIC);
  
  		if (!entry) {
-@@ -426,34 +448,50 @@ static void del_netdev_ips(struct ib_device *ib_dev, u8 port,
+@@ -426,9 +448,11 @@ static void del_netdev_ips(struct ib_device *ib_dev, u8 port,
  	roce_del_all_netdev_gids(ib_dev, port, ndev);
  }
  
@@ -748,8 +748,10 @@ index xxxxxxx..xxxxxxx xxxxxx
  				 struct net_device *idev, void *cookie)
  {
 +#if defined(HAVE_NETDEV_FOR_EACH_ALL_UPPER_DEV_RCU) || defined(HAVE_NETDEV_MASTER_UPPER_DEV_GET_RCU)
- 	if (idev) {
- 		struct upper_list {
+ 	struct net_device *ndev = (struct net_device *)cookie;
+ 
+ 	if (idev == ndev) {
+@@ -436,26 +460,40 @@ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
  			struct list_head list;
  			struct net_device *upper;
  		};
@@ -791,7 +793,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		rcu_read_unlock();
  
  		list_for_each_entry_safe(upper_iter, upper_temp, &upper_list,
-@@ -465,7 +503,9 @@ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
+@@ -467,7 +505,9 @@ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
  			kfree(upper_iter);
  		}
  	}
@@ -801,7 +803,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static void del_netdev_default_ips(struct ib_device *ib_dev, u8 port,
  				   struct net_device *idev, void *cookie)
-@@ -486,8 +526,10 @@ static int netdevice_event(struct notifier_block *this, unsigned long event,
+@@ -488,8 +528,10 @@ static int netdevice_event(struct notifier_block *this, unsigned long event,
  		.cb = del_netdev_default_ips, .filter = is_eth_port_inactive_slave};
  	static const struct netdev_event_work_cmd bonding_event_ips_del_cmd = {
  		.cb = del_netdev_ips, .filter = bonding_slaves_filter};
@@ -812,7 +814,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct net_device *ndev = netdev_notifier_info_to_dev(ptr);
  	struct netdev_event_work *ndev_work;
  	struct netdev_event_work_cmd cmds[ROCE_NETDEV_CALLBACK_SZ] = { {NULL} };
-@@ -515,10 +557,12 @@ static int netdevice_event(struct notifier_block *this, unsigned long event,
+@@ -517,10 +559,12 @@ static int netdevice_event(struct notifier_block *this, unsigned long event,
  		cmds[1] = add_cmd;
  		break;
  
@@ -825,7 +827,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	case NETDEV_BONDING_FAILOVER:
  		cmds[0] = bonding_event_ips_del_cmd;
-@@ -745,6 +789,10 @@ void __exit roce_gid_mgmt_cleanup(void)
+@@ -747,6 +791,10 @@ void __exit roce_gid_mgmt_cleanup(void)
  	 * so no issue with remaining hardware contexts.
  	 */
  	synchronize_rcu();

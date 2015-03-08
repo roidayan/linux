@@ -429,7 +429,9 @@ static void del_netdev_ips(struct ib_device *ib_dev, u8 port,
 static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
 				 struct net_device *idev, void *cookie)
 {
-	if (idev) {
+	struct net_device *ndev = (struct net_device *)cookie;
+
+	if (idev == ndev) {
 		struct upper_list {
 			struct list_head list;
 			struct net_device *upper;
