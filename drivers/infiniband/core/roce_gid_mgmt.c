@@ -430,8 +430,12 @@ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
 				 struct net_device *idev, void *cookie)
 {
 	struct net_device *ndev = (struct net_device *)cookie;
+	struct net_device *rdev = rdma_vlan_dev_real_dev(ndev);
 
-	if (idev == ndev) {
+	if (!rdev)
+		rdev = ndev;
+
+	if (idev == rdev) {
 		struct upper_list {
 			struct list_head list;
 			struct net_device *upper;
