@@ -101,6 +101,10 @@ mlx4_en_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *drvinfo)
 
 static const char mlx4_en_priv_flags[][ETH_GSTRING_LEN] = {
 	"blueflame",
+	"mlx4_flow_steering_ethernet_l2",
+	"mlx4_flow_steering_ipv4",
+	"mlx4_flow_steering_tcp",
+	"mlx4_flow_steering_udp",
 };
 
 static const char main_strings[][ETH_GSTRING_LEN] = {
@@ -1660,6 +1664,13 @@ static int mlx4_en_set_priv_flags(struct net_device *dev, u32 flags)
 	bool bf_enabled_old = !!(priv->pflags & MLX4_EN_PRIV_FLAGS_BLUEFLAME);
 	int i;
 
+	if ((flags ^ priv->pflags) &
+	    (MLX4_EN_PRIV_FLAGS_FS_EN_L2	|
+	     MLX4_EN_PRIV_FLAGS_FS_EN_IPV4	|
+	     MLX4_EN_PRIV_FLAGS_FS_EN_TCP	|
+	     MLX4_EN_PRIV_FLAGS_FS_EN_UDP))
+		return -EINVAL;
+
 	if (bf_enabled_new == bf_enabled_old)
 		return 0; /* Nothing to do */
 
@@ -1685,7 +1696,7 @@ static int mlx4_en_set_priv_flags(struct net_device *dev, u32 flags)
 	en_info(priv, "BlueFlame %s\n",
 		bf_enabled_new ?  "Enabled" : "Disabled");
 
-	return 0;
+	return !(flags == priv->pflags);
 }
 
 static u32 mlx4_en_get_priv_flags(struct net_device *dev)

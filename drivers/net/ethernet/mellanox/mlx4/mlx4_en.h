@@ -93,7 +93,13 @@
  * OS related constants and tunables
  */
 
-#define MLX4_EN_PRIV_FLAGS_BLUEFLAME 1
+enum {
+	MLX4_EN_PRIV_FLAGS_BLUEFLAME = (1 << 0),
+	MLX4_EN_PRIV_FLAGS_FS_EN_L2 = (1 << 1),
+	MLX4_EN_PRIV_FLAGS_FS_EN_IPV4 = (1 << 2),
+	MLX4_EN_PRIV_FLAGS_FS_EN_TCP = (1 << 3),
+	MLX4_EN_PRIV_FLAGS_FS_EN_UDP = (1 << 4)
+};
 
 #define MLX4_EN_WATCHDOG_TIMEOUT	(15 * HZ)
 

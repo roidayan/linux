@@ -2858,6 +2858,14 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
 	}
 	queue_delayed_work(mdev->workqueue, &priv->stats_task, STATS_DELAY);
 
+	if (mdev->dev->caps.steering_mode ==
+	    MLX4_STEERING_MODE_DEVICE_MANAGED) {
+		priv->pflags |= MLX4_EN_PRIV_FLAGS_FS_EN_L2;
+		if (mdev->dev->caps.dmfs_high_steer_mode != MLX4_STEERING_DMFS_A0_STATIC)
+			priv->pflags |= MLX4_EN_PRIV_FLAGS_FS_EN_IPV4	|
+					MLX4_EN_PRIV_FLAGS_FS_EN_TCP	|
+					MLX4_EN_PRIV_FLAGS_FS_EN_UDP;
+	}
 	if (mdev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_TS)
 		queue_delayed_work(mdev->workqueue, &priv->service_task,
 				   SERVICE_TASK_DELAY);
