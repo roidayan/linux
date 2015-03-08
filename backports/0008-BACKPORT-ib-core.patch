@@ -4,30 +4,31 @@ Subject: [PATCH] BACKPORT: ib-core
 Change-Id: Ie209820349292d72897ef4a621c850ee575379c8
 Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
 ---
- drivers/infiniband/core/addr.c             |  107 ++++++++++++++++++++++++++++
- drivers/infiniband/core/cm.c               |   23 ++++++
- drivers/infiniband/core/cma.c              |   64 +++++++++++++++++
+ drivers/infiniband/core/addr.c             |  124 ++++++++++++++++++++++++++++
+ drivers/infiniband/core/cm.c               |   23 +++++
+ drivers/infiniband/core/cma.c              |   64 ++++++++++++++
  drivers/infiniband/core/fmr_pool.c         |    7 ++
- drivers/infiniband/core/iwcm.c             |   16 ++++
+ drivers/infiniband/core/iwcm.c             |   22 +++++
  drivers/infiniband/core/iwpm_util.c        |   26 ++++++-
  drivers/infiniband/core/mad.c              |    3 +
- drivers/infiniband/core/netlink.c          |   23 ++++++
+ drivers/infiniband/core/netlink.c          |   23 +++++
  drivers/infiniband/core/roce_gid_cache.c   |    4 +
- drivers/infiniband/core/roce_gid_mgmt.c    |   63 ++++++++++++++++-
- drivers/infiniband/core/sa_query.c         |   19 +++++
- drivers/infiniband/core/ucm.c              |   38 ++++++++++
- drivers/infiniband/core/ucma.c             |   76 ++++++++++++++++++++
- drivers/infiniband/core/umem.c             |   44 +++++++++++
- drivers/infiniband/core/user_mad.c         |   19 +++++
- drivers/infiniband/core/uverbs_cmd.c       |   51 +++++++++++++
- drivers/infiniband/core/uverbs_main.c      |   40 ++++++++++
- drivers/infiniband/hw/mlx4/main.c          |   13 +++-
- drivers/infiniband/hw/mlx4/mr.c            |   18 +++++
+ drivers/infiniband/core/roce_gid_mgmt.c    |   63 +++++++++++++-
+ drivers/infiniband/core/sa_query.c         |   19 ++++
+ drivers/infiniband/core/ucm.c              |   38 +++++++++
+ drivers/infiniband/core/ucma.c             |   76 +++++++++++++++++
+ drivers/infiniband/core/umem.c             |   68 +++++++++++++++
+ drivers/infiniband/core/user_mad.c         |   19 ++++
+ drivers/infiniband/core/uverbs_cmd.c       |   53 ++++++++++++
+ drivers/infiniband/core/uverbs_main.c      |   42 ++++++++++
+ drivers/infiniband/hw/mlx4/main.c          |   21 ++++-
+ drivers/infiniband/hw/mlx4/mr.c            |   18 ++++
  drivers/infiniband/hw/qib/qib_user_pages.c |    9 ++-
  include/rdma/ib_pack.h                     |    4 +
+ include/rdma/ib_umem.h                     |    2 +
  include/rdma/ib_umem_odp.h                 |    4 +
- include/rdma/ib_verbs.h                    |    5 ++
- 23 files changed, 668 insertions(+), 8 deletions(-)
+ include/rdma/ib_verbs.h                    |    5 +
+ 24 files changed, 729 insertions(+), 8 deletions(-)
 
 diff --git a/drivers/infiniband/core/addr.c b/drivers/infiniband/core/addr.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -95,7 +96,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	memset(&fl4, 0, sizeof(fl4));
  	fl4.daddr = dst_ip;
  	fl4.saddr = src_ip;
-@@ -241,10 +264,25 @@ static int addr4_resolve(struct sockaddr_in *src_in,
+@@ -241,10 +264,29 @@ static int addr4_resolve(struct sockaddr_in *src_in,
  		ret = PTR_ERR(rt);
  		goto out;
  	}
@@ -116,12 +117,16 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#else
 +	src_in->sin_addr.s_addr = rt->rt_src;
 +
++#ifdef HAVE_RTABLE_IDEV
 +	if (rt->idev->dev->flags & IFF_LOOPBACK) {
++#else
++	if (rt->dst.dev->flags & IFF_LOOPBACK) {
++#endif
 +#endif
  		ret = rdma_translate_ip((struct sockaddr *)dst_in, addr, NULL);
  		if (!ret)
  			memcpy(addr->dst_dev_addr, addr->src_dev_addr, MAX_ADDR_LEN);
-@@ -252,15 +290,42 @@ static int addr4_resolve(struct sockaddr_in *src_in,
+@@ -252,15 +294,55 @@ static int addr4_resolve(struct sockaddr_in *src_in,
  	}
  
  	/* If the device does ARP internally, return 'done' */
@@ -142,14 +147,27 @@ index xxxxxxx..xxxxxxx xxxxxx
 +	ret = dst_fetch_ha(&rt->dst, addr);
 +#endif
 +#else
++#ifdef HAVE_RTABLE_IDEV
 +	if (rt->idev->dev->flags & IFF_NOARP) {
 +		ret = rdma_copy_addr(addr, rt->idev->dev, NULL);
++#else
++	if (rt->dst.dev->flags & IFF_NOARP) {
++		ret = rdma_copy_addr(addr, rt->dst.dev, NULL);
++#endif
 +		goto put;
 +	}
 +
++#ifdef HAVE_RTABLE_IDEV
 +	neigh = neigh_lookup(&arp_tbl, &rt->rt_gateway, rt->idev->dev);
++#else
++	neigh = neigh_lookup(&arp_tbl, &rt->rt_gateway, rt->dst.dev);
++#endif
 +	if (!neigh || !(neigh->nud_state & NUD_VALID)) {
++#ifdef HAVE_RTABLE_IDEV
 +		neigh_event_send(rt->u.dst.neighbour, NULL);
++#else
++		neigh_event_send(rt->dst.neighbour, NULL);
++#endif
 +		ret = -ENODATA;
 +		if (neigh)
 +			goto release;
@@ -164,7 +182,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  put:
  	ip_rt_put(rt);
  out:
-@@ -272,11 +337,17 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
+@@ -272,11 +354,17 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
  			 struct sockaddr_in6 *dst_in,
  			 struct rdma_dev_addr *addr)
  {
@@ -182,7 +200,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	memset(&fl6, 0, sizeof fl6);
  	fl6.daddr = dst_in->sin6_addr;
  	fl6.saddr = src_in->sin6_addr;
-@@ -296,6 +367,26 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
+@@ -296,6 +384,26 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
  		src_in->sin6_family = AF_INET6;
  		src_in->sin6_addr = fl6.saddr;
  	}
@@ -209,7 +227,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	if (dst->dev->flags & IFF_LOOPBACK) {
  		ret = rdma_translate_ip((struct sockaddr *)dst_in, addr, NULL);
-@@ -313,7 +404,23 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
+@@ -313,7 +421,23 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
  	if (rt->rt6i_flags & RTF_GATEWAY)
  		addr->network = RDMA_NETWORK_IPV6;
  
@@ -241,7 +259,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static int cm_alloc_id(struct cm_id_private *cm_id_priv)
  {
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0))
++#ifdef HAVE_IDR_ALLOC_CYCLIC
  	unsigned long flags;
  	int id;
  
@@ -259,7 +277,7 @@ index xxxxxxx..xxxxxxx xxxxxx
 +		ret = idr_get_new_above(&cm.local_id_table, cm_id_priv,
 +					next_id, &id);
 +		if (!ret)
-+			next_id = ((unsigned) id + 1) & MAX_IDR_MASK;
++			next_id = max(id + 1, 0);
 +
 +		spin_unlock_irqrestore(&cm.lock, flags);
 +	} while( (ret == -EAGAIN) && idr_pre_get(&cm.local_id_table, GFP_KERNEL) );
@@ -455,7 +473,15 @@ diff --git a/drivers/infiniband/core/iwcm.c b/drivers/infiniband/core/iwcm.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/iwcm.c
 +++ b/drivers/infiniband/core/iwcm.c
-@@ -80,6 +80,14 @@ static struct ctl_table iwcm_ctl_table[] = {
+@@ -68,6 +68,7 @@ struct iwcm_work {
+ 
+ static unsigned int default_backlog = 256;
+ 
++#ifndef CONFIG_SYSCTL_SYSCALL_CHECK
+ static struct ctl_table_header *iwcm_ctl_table_hdr;
+ static struct ctl_table iwcm_ctl_table[] = {
+ 	{
+@@ -80,6 +81,15 @@ static struct ctl_table iwcm_ctl_table[] = {
  	{ }
  };
  
@@ -466,14 +492,16 @@ index xxxxxxx..xxxxxxx xxxxxx
 +    { }
 +};
 +#endif
++#endif
 +
  /*
   * The following services provide a mechanism for pre-allocating iwcm_work
   * elements.  The design pre-allocates them  based on the cm_id type:
-@@ -1048,8 +1056,12 @@ static int __init iw_cm_init(void)
+@@ -1048,20 +1058,32 @@ static int __init iw_cm_init(void)
  	if (!iwcm_wq)
  		return -ENOMEM;
  
++#ifndef CONFIG_SYSCTL_SYSCALL_CHECK
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
  	iwcm_ctl_table_hdr = register_net_sysctl(&init_net, "net/iw_cm",
  						 iwcm_ctl_table);
@@ -483,14 +511,21 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (!iwcm_ctl_table_hdr) {
  		pr_err("iw_cm: couldn't register sysctl paths\n");
  		destroy_workqueue(iwcm_wq);
-@@ -1061,7 +1073,11 @@ static int __init iw_cm_init(void)
+ 		return -ENOMEM;
+ 	}
++#endif
+ 
+ 	return 0;
+ }
  
  static void __exit iw_cm_cleanup(void)
  {
++#ifndef CONFIG_SYSCTL_SYSCALL_CHECK
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
  	unregister_net_sysctl_table(iwcm_ctl_table_hdr);
 +#else
 +	unregister_sysctl_table(iwcm_ctl_table_hdr);
++#endif
 +#endif
  	destroy_workqueue(iwcm_wq);
  }
@@ -1255,7 +1290,17 @@ index xxxxxxx..xxxxxxx xxxxxx
  	return cmem;
  
  err_alloc:
-@@ -678,7 +706,11 @@ struct ib_umem *ib_umem_get_ex(struct ib_ucontext *context, unsigned long addr,
+@@ -622,7 +650,9 @@ struct ib_umem *ib_umem_get_ex(struct ib_ucontext *context, unsigned long addr,
+ 	umem->length    = size;
+ 	umem->address   = addr;
+ 	umem->page_size = PAGE_SIZE;
++#if defined(HAVE_PUT_TASK_STRUCT_EXPORTED) && defined(HAVE_GET_TASK_PID_EXPORTED) && defined(HAVE_GET_PID_TASK_EXPORTED)
+ 	umem->pid       = get_task_pid(current, PIDTYPE_PID);
++#endif
+ 	/*
+ 	 * We ask for writable memory if any of the following
+ 	 * access flags are set.  "Local write" and "remote write"
+@@ -678,7 +708,11 @@ struct ib_umem *ib_umem_get_ex(struct ib_ucontext *context, unsigned long addr,
  
  	down_write(&current->mm->mmap_sem);
  
@@ -1267,8 +1312,13 @@ index xxxxxxx..xxxxxxx xxxxxx
  	lock_limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
  
  	if ((locked > lock_limit) && !capable(CAP_IPC_LOCK)) {
-@@ -744,7 +776,11 @@ out:
+@@ -741,10 +775,16 @@ out:
+ 	if (ret < 0) {
+ 		if (need_release)
+ 			__ib_umem_release(context->device, umem, 0);
++#if defined(HAVE_PUT_TASK_STRUCT_EXPORTED) && defined(HAVE_GET_TASK_PID_EXPORTED) && defined(HAVE_GET_PID_TASK_EXPORTED)
  		put_pid(umem->pid);
++#endif
  		kfree(umem);
  	} else
 +#ifdef HAVE_PINNED_VM
@@ -1279,7 +1329,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	up_write(&current->mm->mmap_sem);
  	if (vma_list)
-@@ -767,7 +803,11 @@ static void ib_umem_account(struct work_struct *work)
+@@ -767,7 +807,11 @@ static void ib_umem_account(struct work_struct *work)
  	struct ib_umem *umem = container_of(work, struct ib_umem, work);
  
  	down_write(&umem->mm->mmap_sem);
@@ -1291,18 +1341,63 @@ index xxxxxxx..xxxxxxx xxxxxx
  	up_write(&umem->mm->mmap_sem);
  	mmput(umem->mm);
  	kfree(umem);
-@@ -827,7 +867,11 @@ void ib_umem_release(struct ib_umem *umem)
+@@ -781,7 +825,9 @@ void ib_umem_release(struct ib_umem *umem)
+ {
+ 	struct ib_ucontext *context = umem->context;
+ 	struct mm_struct *mm;
++#if defined(HAVE_PUT_TASK_STRUCT_EXPORTED) && defined(HAVE_GET_TASK_PID_EXPORTED) && defined(HAVE_GET_PID_TASK_EXPORTED)
+ 	struct task_struct *task;
++#endif
+ 	unsigned long diff;
+ 
+ 	if (umem->ib_peer_mem) {
+@@ -796,6 +842,7 @@ void ib_umem_release(struct ib_umem *umem)
+ 
+ 	__ib_umem_release(umem->context->device, umem, 1);
+ 
++#if defined(HAVE_PUT_TASK_STRUCT_EXPORTED) && defined(HAVE_GET_TASK_PID_EXPORTED) && defined(HAVE_GET_PID_TASK_EXPORTED)
+ 	task = get_pid_task(umem->pid, PIDTYPE_PID);
+ 	put_pid(umem->pid);
+ 	if (!task)
+@@ -804,6 +851,13 @@ void ib_umem_release(struct ib_umem *umem)
+ 	put_task_struct(task);
+ 	if (!mm)
+ 		goto out;
++#else
++	mm = get_task_mm(current);
++	if (!mm) {
++		kfree(umem);
++		return;
++	}
++#endif
+ 
+ 	diff = ib_umem_num_pages(umem);
+ 
+@@ -827,10 +881,24 @@ void ib_umem_release(struct ib_umem *umem)
  	} else
  		down_write(&mm->mmap_sem);
  
++#if defined(HAVE_PUT_TASK_STRUCT_EXPORTED) && defined(HAVE_GET_TASK_PID_EXPORTED) && defined(HAVE_GET_PID_TASK_EXPORTED)
 +#ifdef HAVE_PINNED_VM
  	mm->pinned_vm -= diff;
 +#else
 +	mm->locked_vm -= diff;
 +#endif
++#else
++#ifdef HAVE_PINNED_VM
++	current->mm->pinned_vm -= diff;
++#else
++	current->mm->locked_vm -= diff;
++#endif
++#endif
  	up_write(&mm->mmap_sem);
  	mmput(mm);
++#if defined(HAVE_PUT_TASK_STRUCT_EXPORTED) && defined(HAVE_GET_TASK_PID_EXPORTED) && defined(HAVE_GET_PID_TASK_EXPORTED)
  out:
++#endif
+ 	kfree(umem);
+ }
+ EXPORT_SYMBOL(ib_umem_release);
 diff --git a/drivers/infiniband/core/user_mad.c b/drivers/infiniband/core/user_mad.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/user_mad.c
@@ -1391,7 +1486,19 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  void idr_remove_uobj(struct idr *idr, struct ib_uobject *uobj)
-@@ -408,7 +423,11 @@ ssize_t ib_uverbs_get_context(struct ib_uverbs_file *file,
+@@ -381,9 +396,11 @@ ssize_t ib_uverbs_get_context(struct ib_uverbs_file *file,
+ 	INIT_LIST_HEAD(&ucontext->ah_list);
+ 	INIT_LIST_HEAD(&ucontext->xrcd_list);
+ 	INIT_LIST_HEAD(&ucontext->rule_list);
++#if defined(HAVE_PUT_TASK_STRUCT_EXPORTED) && defined (HAVE_GET_TASK_PID_EXPORTED) && defined(HAVE_GET_PID_TASK_EXPORTED)
+ 	rcu_read_lock();
+ 	ucontext->tgid = get_task_pid(current->group_leader, PIDTYPE_PID);
+ 	rcu_read_unlock();
++#endif
+ 	ucontext->closing = 0;
+ 
+ #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
+@@ -408,7 +425,11 @@ ssize_t ib_uverbs_get_context(struct ib_uverbs_file *file,
  
  	resp.num_comp_vectors = file->device->num_comp_vectors;
  
@@ -1403,7 +1510,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (ret < 0)
  		goto err_free;
  	resp.async_fd = ret;
-@@ -832,7 +851,11 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
+@@ -832,7 +853,11 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
  	struct ib_udata			udata;
  	struct ib_uxrcd_object         *obj;
  	struct ib_xrcd                 *xrcd = NULL;
@@ -1415,7 +1522,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct inode                   *inode = NULL;
  	int				ret = 0;
  	int				new_xrcd = 0;
-@@ -851,6 +874,7 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
+@@ -851,6 +876,7 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
  
  	if (cmd.fd != -1) {
  		/* search for file descriptor */
@@ -1423,7 +1530,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		f = fdget(cmd.fd);
  		if (!f.file) {
  			ret = -EBADF;
-@@ -858,6 +882,19 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
+@@ -858,6 +884,19 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
  		}
  
  		inode = file_inode(f.file);
@@ -1443,7 +1550,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		xrcd = find_xrcd(file->device, inode);
  		if (!xrcd && !(cmd.oflags & O_CREAT)) {
  			/* no file descriptor. Need CREATE flag */
-@@ -922,8 +959,13 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
+@@ -922,8 +961,13 @@ ssize_t ib_uverbs_open_xrcd(struct ib_uverbs_file *file,
  		goto err_copy;
  	}
  
@@ -1457,7 +1564,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	mutex_lock(&file->mutex);
  	list_add_tail(&obj->uobject.list, &file->ucontext->xrcd_list);
-@@ -952,8 +994,13 @@ err:
+@@ -952,8 +996,13 @@ err:
  	put_uobj_write(&obj->uobject);
  
  err_tree_mutex_unlock:
@@ -1471,7 +1578,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	mutex_unlock(&file->device->xrcd_tree_mutex);
  
-@@ -1700,7 +1747,11 @@ ssize_t ib_uverbs_create_comp_channel(struct ib_uverbs_file *file,
+@@ -1700,7 +1749,11 @@ ssize_t ib_uverbs_create_comp_channel(struct ib_uverbs_file *file,
  	if (copy_from_user(&cmd, buf, sizeof cmd))
  		return -EFAULT;
  
@@ -1487,7 +1594,17 @@ diff --git a/drivers/infiniband/core/uverbs_main.c b/drivers/infiniband/core/uve
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/uverbs_main.c
 +++ b/drivers/infiniband/core/uverbs_main.c
-@@ -659,6 +659,7 @@ struct file *ib_uverbs_alloc_event_file(struct ib_uverbs_file *uverbs_file,
+@@ -353,7 +353,9 @@ static int ib_uverbs_cleanup_ucontext(struct ib_uverbs_file *file,
+ 		kfree(uobj);
+ 	}
+ 
++#if defined(HAVE_PUT_TASK_STRUCT_EXPORTED) && defined (HAVE_GET_TASK_PID_EXPORTED) && defined(HAVE_GET_PID_TASK_EXPORTED)
+ 	put_pid(context->tgid);
++#endif
+ 
+ 	return context->device->dealloc_ucontext(context);
+ }
+@@ -659,6 +661,7 @@ struct file *ib_uverbs_alloc_event_file(struct ib_uverbs_file *uverbs_file,
  struct ib_uverbs_event_file *ib_uverbs_lookup_comp_file(int fd)
  {
  	struct ib_uverbs_event_file *ev_file = NULL;
@@ -1495,7 +1612,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct fd f = fdget(fd);
  
  	if (!f.file)
-@@ -678,6 +679,29 @@ struct ib_uverbs_event_file *ib_uverbs_lookup_comp_file(int fd)
+@@ -678,6 +681,29 @@ struct ib_uverbs_event_file *ib_uverbs_lookup_comp_file(int fd)
  out:
  	fdput(f);
  	return ev_file;
@@ -1525,7 +1642,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  enum {
-@@ -1060,8 +1084,16 @@ static ssize_t show_dev_abi_version(struct device *device,
+@@ -1060,8 +1086,16 @@ static ssize_t show_dev_abi_version(struct device *device,
  }
  static DEVICE_ATTR(abi_version, S_IRUGO, show_dev_abi_version, NULL);
  
@@ -1542,7 +1659,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static dev_t overflow_maj;
  static DECLARE_BITMAP(overflow_map, IB_UVERBS_MAX_DEVICES);
-@@ -1278,7 +1310,11 @@ static void ib_uverbs_remove_one(struct ib_device *device)
+@@ -1278,7 +1312,11 @@ static void ib_uverbs_remove_one(struct ib_device *device)
  	}
  }
  
@@ -1554,7 +1671,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	if (mode)
  		*mode = 0666;
-@@ -1305,7 +1341,11 @@ static int __init ib_uverbs_init(void)
+@@ -1305,7 +1343,11 @@ static int __init ib_uverbs_init(void)
  
  	uverbs_class->devnode = uverbs_devnode;
  
@@ -1570,7 +1687,43 @@ diff --git a/drivers/infiniband/hw/mlx4/main.c b/drivers/infiniband/hw/mlx4/main
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/hw/mlx4/main.c
 +++ b/drivers/infiniband/hw/mlx4/main.c
-@@ -1619,7 +1619,11 @@ static int del_gid_entry(struct ib_qp *ibqp, union ib_gid *gid)
+@@ -759,6 +759,7 @@ static int mlx4_ib_dealloc_ucontext(struct ib_ucontext *ibcontext)
+ 	return 0;
+ }
+ 
++#if defined(HAVE_PUT_TASK_STRUCT_EXPORTED) && defined (HAVE_GET_TASK_PID_EXPORTED) && defined(HAVE_GET_PID_TASK_EXPORTED)
+ static void  mlx4_ib_vma_open(struct vm_area_struct *area)
+ {
+ 	/* vma_open is called when a new VMA is created on top of our VMA.
+@@ -865,6 +866,7 @@ static void mlx4_ib_set_vma_data(struct vm_area_struct *vma,
+ 	vma->vm_private_data = vma_private_data;
+ 	vma->vm_ops =  &mlx4_ib_vm_ops;
+ }
++#endif
+ 
+ static unsigned long mlx4_ib_get_unmapped_area(struct file *file,
+ 			unsigned long addr,
+@@ -918,7 +920,9 @@ static int mlx4_ib_mmap(struct ib_ucontext *context, struct vm_area_struct *vma)
+ 				       PAGE_SIZE, vma->vm_page_prot))
+ 			return -EAGAIN;
+ 
++#if defined(HAVE_PUT_TASK_STRUCT_EXPORTED) && defined (HAVE_GET_TASK_PID_EXPORTED) && defined(HAVE_GET_PID_TASK_EXPORTED)
+ 		mlx4_ib_set_vma_data(vma, &mucontext->hw_bar_info[HW_BAR_DB]);
++#endif
+ 
+ 	} else if (command == MLX4_IB_MMAP_BLUE_FLAME_PAGE &&
+ 			dev->dev->caps.bf_reg_size != 0) {
+@@ -934,7 +938,9 @@ static int mlx4_ib_mmap(struct ib_ucontext *context, struct vm_area_struct *vma)
+ 				       PAGE_SIZE, vma->vm_page_prot))
+ 			return -EAGAIN;
+ 
++#if defined(HAVE_PUT_TASK_STRUCT_EXPORTED) && defined (HAVE_GET_TASK_PID_EXPORTED) && defined(HAVE_GET_PID_TASK_EXPORTED)
+ 		mlx4_ib_set_vma_data(vma, &mucontext->hw_bar_info[HW_BAR_BF]);
++#endif
+ 
+ 	} else if (command == MLX4_IB_MMAP_GET_CONTIGUOUS_PAGES) {
+ 		/* Getting contiguous physical pages */
+@@ -1619,7 +1625,11 @@ static int del_gid_entry(struct ib_qp *ibqp, union ib_gid *gid)
  		rdma_get_mcast_mac((struct in6_addr *)gid, mac);
  		if (ndev) {
  			rtnl_lock();
@@ -1582,7 +1735,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  			rtnl_unlock();
  			dev_put(ndev);
  		}
-@@ -1869,13 +1873,14 @@ static struct net_device *mlx4_ib_get_netdev(struct ib_device *device, u8 port_n
+@@ -1869,13 +1879,14 @@ static struct net_device *mlx4_ib_get_netdev(struct ib_device *device, u8 port_n
  {
  	struct mlx4_ib_dev *ibdev = to_mdev(device);
  
@@ -1598,7 +1751,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		if (dev)
  			upper = netdev_master_upper_dev_get_rcu(dev);
  		else
-@@ -1884,9 +1889,9 @@ static struct net_device *mlx4_ib_get_netdev(struct ib_device *device, u8 port_n
+@@ -1884,9 +1895,9 @@ static struct net_device *mlx4_ib_get_netdev(struct ib_device *device, u8 port_n
  			dev = bond_option_active_slave_get_rcu(netdev_priv(upper));
  unlock:
  		rcu_read_unlock();
@@ -1609,7 +1762,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	return mlx4_get_protocol_dev(ibdev->dev, MLX4_PROT_ETH, port_num);
  }
-@@ -2229,8 +2234,12 @@ static void mlx4_ib_alloc_eqs(struct mlx4_dev *dev, struct mlx4_ib_dev *ibdev)
+@@ -2229,8 +2240,12 @@ static void mlx4_ib_alloc_eqs(struct mlx4_dev *dev, struct mlx4_ib_dev *ibdev)
  			sprintf(name, "mlx4-ib-%d-%d@pci:%s",
  				i, j, pci_name(dev->persist->pdev));
  			/* Set IRQ for specific name (per ring) */
@@ -1622,6 +1775,16 @@ index xxxxxxx..xxxxxxx xxxxxx
  				/* Use legacy (same as mlx4_en driver) */
  				pr_warn("Can't allocate EQ %d; reverting to legacy\n", eq);
  				ibdev->eq_table[eq] =
+@@ -2615,7 +2630,9 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
+ 	ibdev->ib_dev.process_mad	= mlx4_ib_process_mad;
+ 	ibdev->ib_dev.get_netdev	= mlx4_ib_get_netdev;
+ 	ibdev->ib_dev.modify_gid	= mlx4_ib_modify_gid;
++#if defined(HAVE_PUT_TASK_STRUCT_EXPORTED) && defined (HAVE_GET_TASK_PID_EXPORTED) && defined(HAVE_GET_PID_TASK_EXPORTED)
+ 	ibdev->ib_dev.disassociate_ucontext = mlx4_ib_disassociate_ucontext;
++#endif
+ 
+ 	if (!mlx4_is_slave(ibdev->dev)) {
+ 		ibdev->ib_dev.alloc_fmr		= mlx4_ib_fmr_alloc;
 diff --git a/drivers/infiniband/hw/mlx4/mr.c b/drivers/infiniband/hw/mlx4/mr.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/hw/mlx4/mr.c
@@ -1726,6 +1889,20 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  enum {
  	IB_LRH_BYTES  = 8,
+diff --git a/include/rdma/ib_umem.h b/include/rdma/ib_umem.h
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/include/rdma/ib_umem.h
++++ b/include/rdma/ib_umem.h
+@@ -65,7 +65,9 @@ struct ib_umem {
+ 	int                     writable;
+ 	int                     hugetlb;
+ 	struct work_struct	work;
++#if defined(HAVE_PUT_TASK_STRUCT_EXPORTED) && defined(HAVE_GET_TASK_PID_EXPORTED) && defined(HAVE_GET_PID_TASK_EXPORTED)
+ 	struct pid             *pid;
++#endif
+ 	struct mm_struct       *mm;
+ 	unsigned long		diff;
+ 	struct ib_umem_odp     *odp_data;
 diff --git a/include/rdma/ib_umem_odp.h b/include/rdma/ib_umem_odp.h
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/include/rdma/ib_umem_odp.h

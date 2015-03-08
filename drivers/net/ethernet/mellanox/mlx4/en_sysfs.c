@@ -341,7 +341,7 @@ static ssize_t mlx4_en_store_skprio2up(struct device *d,
 	if (i != MLX4_EN_NUM_SKPRIO)
 		goto bad_elem_count;
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) || defined (CONFIG_COMPAT_NEW_TX_RING_SCHEME)
+#ifdef HAVE_NEW_TX_RING_SCHEME
 	mlx4_en_setup_tc(dev, MLX4_EN_NUM_UP);
 #endif
 

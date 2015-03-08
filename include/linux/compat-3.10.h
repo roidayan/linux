@@ -19,7 +19,7 @@
 #define NETIF_F_HW_VLAN_CTAG_FILTER NETIF_F_HW_VLAN_FILTER
 #endif
 
-#ifndef prandom_u32
+#ifndef HAVE_PRANDOM_U32
 #define prandom_u32() random32()
 #endif
 

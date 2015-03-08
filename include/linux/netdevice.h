@@ -24,4 +24,8 @@
 #define NAPI_POLL_WEIGHT 64
 #endif
 
+#ifndef NETDEV_JOIN
+#define NETDEV_JOIN           0x0014
+#endif
+
 #endif	/* _COMPAT_LINUX_NETDEVICE_H */

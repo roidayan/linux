@@ -300,6 +300,21 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(no)
 	])
 
+	AC_MSG_CHECKING([if struct ptp_clock_info exists])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/ptp_clock_kernel.h>
+	],[
+		struct ptp_clock_info info;
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_PTP_CLOCK_INFO, 1,
+			  [ptp_clock_info is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
 	AC_MSG_CHECKING([if struct ptp_clock_info has n_pins])
 	MLNX_BG_LB_LINUX_TRY_COMPILE([
 		#include <linux/ptp_clock_kernel.h>
@@ -2456,7 +2471,7 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(no)
 	])
 
-	AC_MSG_CHECKING([if route.h struct has member rt_uses_gateway])
+	AC_MSG_CHECKING([if route.h struct rtable has member rt_uses_gateway])
 	MLNX_BG_LB_LINUX_TRY_COMPILE([
 		#include <net/route.h>
 	],[
@@ -2469,6 +2484,23 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(yes)
 		MLNX_AC_DEFINE(HAVE_RT_USES_GATEWAY, 1,
 			  [rt_uses_gateway is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if route.h struct rtable has member *idev])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <net/route.h>
+	],[
+		struct rtable x = {
+			.idev = NULL,
+		};
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_RTABLE_IDEV, 1,
+			  [idev is defined])
 	],[
 		AC_MSG_RESULT(no)
 	])
@@ -2490,6 +2522,250 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(yes)
 		MLNX_AC_DEFINE(HAVE_PTP_CLOCK_REGISTER_2_PARAMS, 1,
 			  [ptp_clock_register has 2 params is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if pci.h pci_physfn])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/pci.h>
+	],[
+		struct pci_dev x;
+		pci_physfn(&x);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_PCI_PHYSFN, 1,
+			  [pci_physfn is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if printk.h has struct va_format])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/printk.h>
+	],[
+		struct va_format x;
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_VA_FORMAT, 1,
+			  [va_format is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if struct netdevice.h has NETIF_F_RXHASH])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/netdevice.h>
+	],[
+		int x = NETIF_F_RXHASH;
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_NETIF_F_RXHASH, 1,
+			  [NETIF_F_RXHASH is defined in netdevice.h])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if struct netdev_features.h has NETIF_F_RXHASH])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/netdev_features.h>
+	],[
+		int x = NETIF_F_RXHASH;
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_NETIF_F_RXHASH, 1,
+			  [NETIF_F_RXHASH is defined in netdev_features.h])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if etherdevice.h has alloc_etherdev_mqs, alloc_etherdev_mqs, num_tc])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/etherdevice.h>
+		#include <linux/netdevice.h>
+	],[
+		struct net_device x = {
+			.num_tx_queues = 0,
+			.num_tc = 0,
+		};
+		alloc_etherdev_mqs(0, 0, 0);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_NEW_TX_RING_SCHEME, 1,
+			  [alloc_etherdev_mqs, alloc_etherdev_mqs, num_tc is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	# same as previous check, only that num_tc comes from netdev_qos_info (RH backports)
+	AC_MSG_CHECKING([if etherdevice.h has alloc_etherdev_mqs, alloc_etherdev_mqs, num_tc extended])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/etherdevice.h>
+		#include <linux/netdevice.h>
+	],[
+		struct net_device x = {
+			.num_tx_queues = 0,
+		};
+		struct netdev_qos_info y = {
+			.num_tc = 0,
+		};
+		alloc_etherdev_mqs(0, 0, 0);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_NEW_TX_RING_SCHEME, 1,
+			  [alloc_etherdev_mqs, alloc_etherdev_mqs, num_tc extended is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if netdevice.h netdev_get_num_tc])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/netdevice.h>
+	],[
+		netdev_get_num_tc(NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_NETDEV_GET_NUM_TC, 1,
+			  [netdev_get_num_tc is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	LB_CHECK_SYMBOL_EXPORT([__put_task_struct],
+		[kernel/fork.c],
+		[AC_DEFINE(HAVE_PUT_TASK_STRUCT_EXPORTED, 1,
+			[__put_task_struct is exported by the kernel])],
+	[])
+
+	LB_CHECK_SYMBOL_EXPORT([get_pid_task],
+		[kernel/pid.c],
+		[AC_DEFINE(HAVE_GET_PID_TASK_EXPORTED, 1,
+			[get_pid_task is exported by the kernel])],
+	[])
+
+	LB_CHECK_SYMBOL_EXPORT([get_task_pid],
+		[kernel/pid.c],
+		[AC_DEFINE(HAVE_GET_TASK_PID_EXPORTED, 1,
+			[get_task_pid is exported by the kernel])],
+	[])
+
+	AC_MSG_CHECKING([if if_vlan.h has is_vlan_dev])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/netdevice.h>
+		#include <linux/if_vlan.h>
+	],[
+		struct net_device dev;
+		is_vlan_dev(&dev);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_IS_VLAN_DEV, 1,
+			  [is_vlan_dev is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if struct net_device_ops has *ndo_set_vf_mac])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/netdevice.h>
+
+		int set_vf_mac(struct net_device *dev, int queue, u8 *mac)
+		{
+			return 0;
+		}
+	],[
+		struct net_device_ops netdev_ops;
+		netdev_ops.ndo_set_vf_mac = set_vf_mac;
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_NDO_SET_VF_MAC, 1,
+			  [ndo_set_vf_mac is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if pci.h has pci_num_vf])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/pci.h>
+	],[
+		struct pci_dev x;
+		pci_num_vf(&x);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_PCI_NUM_VF, 1,
+			  [pci_num_vf is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if xprt.h struct rpc_rqst has member rq_xmit_bytes_sent])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/sunrpc/xprt.h>
+	],[
+		struct rpc_rqst x = {
+			.rq_xmit_bytes_sent = 0,
+		};
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_RQ_XMIT_BYTES_SENT, 1,
+			  [rq_xmit_bytes_sent is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	LB_CHECK_SYMBOL_EXPORT([elfcorehdr_addr],
+		[kernel/crash_dump.c],
+		[AC_DEFINE(HAVE_ELFCOREHDR_ADDR_EXPORTED, 1,
+			[elfcorehdr_addr is exported by the kernel])],
+	[])
+
+	AC_MSG_CHECKING([if idr.h has idr_alloc_cyclic])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/idr.h>
+	],[
+		idr_alloc_cyclic(NULL, NULL, 0, 0, 0);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_IDR_ALLOC_CYCLIC, 1,
+			  [idr_alloc_cyclic is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if random.h has prandom_u32])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/random.h>
+	],[
+		prandom_u32();
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_PRANDOM_U32, 1,
+			  [prandom_u32 is defined])
 	],[
 		AC_MSG_RESULT(no)
 	])

@@ -668,7 +668,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		priv->tss_qp_num = num_tx - 1;
  	else
  		priv->tss_qp_num = num_tx;
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)) || defined (CONFIG_COMPAT_IS_NUM_TX_QUEUES)
++#ifdef HAVE_NEW_TX_RING_SCHEME
  	netif_set_real_num_tx_queues(dev, num_tx);
 +#endif
  	netif_set_real_num_rx_queues(dev, num_rx);
@@ -784,7 +784,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (!dev)
  		return NULL;
  
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)) || defined (CONFIG_COMPAT_IS_NUM_TX_QUEUES)
++#ifdef HAVE_NEW_TX_RING_SCHEME
  	netif_set_real_num_tx_queues(dev, template_priv->num_tx_queues);
 +#endif
  	netif_set_real_num_rx_queues(dev, template_priv->num_rx_queues);

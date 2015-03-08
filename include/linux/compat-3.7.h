@@ -135,10 +135,10 @@ extern struct file *fget_light(unsigned int fd, int *fput_needed);
 
 #else /* (LINUX_VERSION_CODE > KERNEL_VERSION(3,7,0)) */
 
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3,7,0)) */
+
 #ifndef PCI_EXP_LNKSTA_NLW_SHIFT
 #define  PCI_EXP_LNKSTA_NLW_SHIFT 4    /* start of NLW mask in link status */
 #endif
-
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3,7,0)) */
 
 #endif /* LINUX_3_7_COMPAT_H */

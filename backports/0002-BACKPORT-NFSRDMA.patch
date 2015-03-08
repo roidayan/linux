@@ -3,13 +3,13 @@ Subject: [PATCH] BACKPORT: NFSRDMA
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- net/sunrpc/xprtrdma/rpc_rdma.c           | 20 ++++++++++++++++++--
- net/sunrpc/xprtrdma/svc_rdma_recvfrom.c  | 10 ++++++++++
- net/sunrpc/xprtrdma/svc_rdma_sendto.c    |  8 ++++++++
- net/sunrpc/xprtrdma/svc_rdma_transport.c | 12 ++++++++++++
- net/sunrpc/xprtrdma/transport.c          | 32 ++++++++++++++++++++++++++++----
- net/sunrpc/xprtrdma/verbs.c              |  8 ++++----
- 6 files changed, 80 insertions(+), 10 deletions(-)
+ net/sunrpc/xprtrdma/rpc_rdma.c           |   20 +++++++++++++++-
+ net/sunrpc/xprtrdma/svc_rdma_recvfrom.c  |   10 ++++++++
+ net/sunrpc/xprtrdma/svc_rdma_sendto.c    |    8 ++++++
+ net/sunrpc/xprtrdma/svc_rdma_transport.c |   12 ++++++++++
+ net/sunrpc/xprtrdma/transport.c          |   36 ++++++++++++++++++++++++++---
+ net/sunrpc/xprtrdma/verbs.c              |    8 +++---
+ 6 files changed, 84 insertions(+), 10 deletions(-)
 
 diff --git a/net/sunrpc/xprtrdma/rpc_rdma.c b/net/sunrpc/xprtrdma/rpc_rdma.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -290,7 +290,19 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	if (req->rl_rdmabuf == NULL)
  		goto out_rdmabuf;
-@@ -660,7 +682,9 @@ static void xprt_rdma_print_stats(struct rpc_xprt *xprt, struct seq_file *seq)
+@@ -603,7 +625,11 @@ xprt_rdma_send_request(struct rpc_task *task)
+ 	if (rpcrdma_ep_post(&r_xprt->rx_ia, &r_xprt->rx_ep, req))
+ 		goto drop_connection;
+ 
++#ifdef HAVE_RQ_XMIT_BYTES_SENT
+ 	rqst->rq_xmit_bytes_sent += rqst->rq_snd_buf.len;
++#else
++	task->tk_bytes_sent += rqst->rq_snd_buf.len;
++#endif
+ 	rqst->rq_bytes_sent = 0;
+ 	return 0;
+ 
+@@ -660,7 +686,9 @@ static void xprt_rdma_print_stats(struct rpc_xprt *xprt, struct seq_file *seq)
  static struct rpc_xprt_ops xprt_rdma_procs = {
  	.reserve_xprt		= xprt_reserve_xprt_cong,
  	.release_xprt		= xprt_release_xprt_cong, /* sunrpc/xprt.c */
@@ -300,7 +312,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.release_request	= xprt_release_rqst_cong,       /* ditto */
  	.set_retrans_timeout	= xprt_set_retrans_timeout_def, /* ditto */
  	.rpcbind		= rpcb_getport_async,	/* sunrpc/rpcb_clnt.c */
-@@ -687,7 +711,7 @@ static void __exit xprt_rdma_cleanup(void)
+@@ -687,7 +715,7 @@ static void __exit xprt_rdma_cleanup(void)
  	int rc;
  
  	dprintk("RPCRDMA Module Removed, deregister RPC RDMA transport\n");
@@ -309,7 +321,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (sunrpc_table_header) {
  		unregister_sysctl_table(sunrpc_table_header);
  		sunrpc_table_header = NULL;
-@@ -718,7 +742,7 @@ static int __init xprt_rdma_init(void)
+@@ -718,7 +746,7 @@ static int __init xprt_rdma_init(void)
  	dprintk("\tPadding %d\n\tMemreg %d\n",
  		xprt_rdma_inline_write_padding, xprt_rdma_memreg_strategy);
  

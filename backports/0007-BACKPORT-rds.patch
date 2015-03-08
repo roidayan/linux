@@ -12,13 +12,13 @@ Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
  net/rds/iw.h         |    5 +++
  net/rds/iw_recv.c    |   45 ++++++++++++++++++++++++-
  net/rds/message.c    |   92 ++++++++++++++++++++++++++++++++++++++++++++++++++
- net/rds/rds.h        |   15 ++++++++
+ net/rds/rds.h        |   16 +++++++++
  net/rds/recv.c       |    9 +++++
  net/rds/send.c       |    4 ++
  net/rds/tcp.h        |   13 +++++++
  net/rds/tcp_listen.c |   19 ++++++++++
  net/rds/tcp_recv.c   |   59 +++++++++++++++++++++++++++++++-
- 15 files changed, 398 insertions(+), 2 deletions(-)
+ 15 files changed, 399 insertions(+), 2 deletions(-)
 
 diff --git a/net/rds/bind.c b/net/rds/bind.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -681,7 +681,15 @@ diff --git a/net/rds/rds.h b/net/rds/rds.h
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/rds/rds.h
 +++ b/net/rds/rds.h
-@@ -431,7 +431,12 @@ struct rds_transport {
+@@ -7,6 +7,7 @@
+ #include <rdma/rdma_cm.h>
+ #include <linux/mutex.h>
+ #include <linux/rds.h>
++#include <linux/printk.h>
+ 
+ #include "info.h"
+ 
+@@ -431,7 +432,12 @@ struct rds_transport {
  	int (*xmit_rdma)(struct rds_connection *conn, struct rm_rdma_op *op);
  	int (*xmit_atomic)(struct rds_connection *conn, struct rm_atomic_op *op);
  	int (*recv)(struct rds_connection *conn);
@@ -694,7 +702,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	void (*inc_free)(struct rds_incoming *inc);
  
  	int (*cm_handle_connect)(struct rdma_cm_id *cm_id,
-@@ -656,7 +661,12 @@ rds_conn_connecting(struct rds_connection *conn)
+@@ -656,7 +662,12 @@ rds_conn_connecting(struct rds_connection *conn)
  /* message.c */
  struct rds_message *rds_message_alloc(unsigned int nents, gfp_t gfp);
  struct scatterlist *rds_message_alloc_sgs(struct rds_message *rm, int nents);
@@ -707,7 +715,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  struct rds_message *rds_message_map_pages(unsigned long *page_addrs, unsigned int total_len);
  void rds_message_populate_header(struct rds_header *hdr, __be16 sport,
  				 __be16 dport, u64 seq);
-@@ -665,7 +675,12 @@ int rds_message_add_extension(struct rds_header *hdr,
+@@ -665,7 +676,12 @@ int rds_message_add_extension(struct rds_header *hdr,
  int rds_message_next_extension(struct rds_header *hdr,
  			       unsigned int *pos, void *buf, unsigned int *buflen);
  int rds_message_add_rdma_dest_extension(struct rds_header *hdr, u32 r_key, u32 offset);

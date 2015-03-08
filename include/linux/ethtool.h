@@ -56,4 +56,24 @@
 #define DUPLEX_UNKNOWN		-1
 #endif
 
+#ifndef SUPPORTED_40000baseKR4_Full
+/* Add missing defines for supported and advertised speed features */
+#define SUPPORTED_40000baseKR4_Full     (1 << 23)
+#define SUPPORTED_40000baseCR4_Full     (1 << 24)
+#define SUPPORTED_40000baseSR4_Full     (1 << 25)
+#define SUPPORTED_40000baseLR4_Full     (1 << 26)
+#define ADVERTISED_40000baseKR4_Full    (1 << 23)
+#define ADVERTISED_40000baseCR4_Full    (1 << 24)
+#define ADVERTISED_40000baseSR4_Full    (1 << 25)
+#define ADVERTISED_40000baseLR4_Full    (1 << 26)
+#endif
+
+#ifndef FLOW_EXT
+#define FLOW_EXT	0x80000000
+#endif
+
+#ifndef ETHER_FLOW
+#define ETHER_FLOW      0x12    /* spec only (ether_spec) */
+#endif
+
 #endif
