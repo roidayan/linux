@@ -3,24 +3,24 @@ Subject: [PATCH] BACKPORT: mlx4
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- drivers/infiniband/hw/mlx4/cm.c                 |   27 +++
- drivers/net/ethernet/mellanox/mlx4/cmd.c        |    6 +
- drivers/net/ethernet/mellanox/mlx4/en_clock.c   |   10 +
- drivers/net/ethernet/mellanox/mlx4/en_cq.c      |   16 ++
- drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c  |   31 +++-
- drivers/net/ethernet/mellanox/mlx4/en_ethtool.c |  101 +++++++++-
- drivers/net/ethernet/mellanox/mlx4/en_main.c    |    2 +
- drivers/net/ethernet/mellanox/mlx4/en_netdev.c  |  249 ++++++++++++++++++++++-
- drivers/net/ethernet/mellanox/mlx4/en_rx.c      |  113 ++++++++++-
- drivers/net/ethernet/mellanox/mlx4/en_tx.c      |   56 +++++
- drivers/net/ethernet/mellanox/mlx4/eq.c         |   16 ++
- drivers/net/ethernet/mellanox/mlx4/main.c       |   23 ++
- drivers/net/ethernet/mellanox/mlx4/mlx4_en.h    |  117 +++++++++++-
- include/linux/ethtool.h                         |   12 +
- include/linux/mlx4/cq.h                         |    5 +
- include/linux/mlx4/device.h                     |    8 +
- include/linux/mlx4/qp.h                         |    8 +
- 17 files changed, 790 insertions(+), 10 deletions(-)
+ drivers/infiniband/hw/mlx4/cm.c                 |  27 +++
+ drivers/net/ethernet/mellanox/mlx4/cmd.c        |   6 +
+ drivers/net/ethernet/mellanox/mlx4/en_clock.c   |  10 +
+ drivers/net/ethernet/mellanox/mlx4/en_cq.c      |  16 ++
+ drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c  |  31 ++-
+ drivers/net/ethernet/mellanox/mlx4/en_ethtool.c | 101 +++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_main.c    |   2 +
+ drivers/net/ethernet/mellanox/mlx4/en_netdev.c  | 249 +++++++++++++++++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_rx.c      | 113 ++++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_tx.c      |  56 ++++++
+ drivers/net/ethernet/mellanox/mlx4/eq.c         |  16 ++
+ drivers/net/ethernet/mellanox/mlx4/main.c       |  23 +++
+ drivers/net/ethernet/mellanox/mlx4/mlx4_en.h    | 115 ++++++++++-
+ include/linux/ethtool.h                         |  12 ++
+ include/linux/mlx4/cq.h                         |   5 +
+ include/linux/mlx4/device.h                     |   8 +
+ include/linux/mlx4/qp.h                         |   8 +
+ 17 files changed, 788 insertions(+), 10 deletions(-)
 
 diff --git a/drivers/infiniband/hw/mlx4/cm.c b/drivers/infiniband/hw/mlx4/cm.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -1914,7 +1914,7 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h b/drivers/net/ethernet
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
 +++ b/drivers/net/ethernet/mellanox/mlx4/mlx4_en.h
-@@ -60,6 +60,41 @@
+@@ -60,6 +60,39 @@
  #define DRV_VERSION	"2.2-1"
  #define DRV_RELDATE	"Feb 2014"
  
@@ -1932,10 +1932,8 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#define CONFIG_SYSFS_QCN
 +#endif
 +
-+#ifndef HAVE_NETDEV_GET_PRIO_TC_MAP
-+#ifndef CONFIG_NET_SCH_MULTIQ
++#ifdef HAVE_NETDEV_GET_PRIO_TC_MAP
 +#define CONFIG_SYSFS_MQPRIO
-+#endif
 +#endif
 +
 +#endif
@@ -1956,7 +1954,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  #define MLX4_EN_MSG_LEVEL	(NETIF_MSG_LINK | NETIF_MSG_IFDOWN)
  
  /*
-@@ -111,6 +146,10 @@ enum {
+@@ -111,6 +144,10 @@ enum {
  	FRAG_SZ3 = MLX4_EN_ALLOC_SIZE
  };
  #define MLX4_EN_MAX_RX_FRAGS	4
@@ -1967,7 +1965,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  /* Maximum ring sizes */
  #define MLX4_EN_MAX_TX_SIZE	8192
-@@ -345,6 +384,9 @@ struct mlx4_en_cq {
+@@ -345,6 +382,9 @@ struct mlx4_en_cq {
  	u16 moder_cnt;
  	struct mlx4_cqe *buf;
  #define MLX4_EN_OPCODE_ERROR	0x1e
@@ -1977,7 +1975,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  #ifdef CONFIG_NET_RX_BUSY_POLL
  	unsigned int state;
-@@ -376,6 +418,9 @@ struct mlx4_en_port_profile {
+@@ -376,6 +416,9 @@ struct mlx4_en_port_profile {
  };
  
  struct mlx4_en_profile {
@@ -1987,7 +1985,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	int udp_rss;
  	u8 rss_mask;
  	u32 active_ports;
-@@ -619,10 +664,15 @@ struct mlx4_en_priv {
+@@ -619,10 +662,15 @@ struct mlx4_en_priv {
  #endif
  	u64 tunnel_reg_id;
  	__be16 vxlan_port;
@@ -2003,7 +2001,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  };
  
  enum mlx4_en_wol {
-@@ -776,8 +826,16 @@ int mlx4_en_set_cq_moder(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq);
+@@ -776,8 +824,16 @@ int mlx4_en_set_cq_moder(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq);
  int mlx4_en_arm_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq);
  
  void mlx4_en_tx_irq(struct mlx4_cq *mcq);
@@ -2020,7 +2018,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  netdev_tx_t mlx4_en_xmit(struct sk_buff *skb, struct net_device *dev);
  
  int mlx4_en_create_tx_ring(struct mlx4_en_priv *priv,
-@@ -827,16 +885,62 @@ int mlx4_SET_VLAN_FLTR(struct mlx4_dev *dev, struct mlx4_en_priv *priv);
+@@ -827,16 +883,62 @@ int mlx4_SET_VLAN_FLTR(struct mlx4_dev *dev, struct mlx4_en_priv *priv);
  int mlx4_en_DUMP_ETH_STATS(struct mlx4_en_dev *mdev, u8 port, u8 reset);
  int mlx4_en_QUERY_PORT(struct mlx4_en_dev *mdev, u8 port);
  
@@ -2083,7 +2081,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  #define MLX4_EN_NUM_SELF_TEST	5
  void mlx4_en_ex_selftest(struct net_device *dev, u32 *flags, u64 *buf);
-@@ -865,7 +969,9 @@ void mlx4_en_remove_timestamp(struct mlx4_en_dev *mdev);
+@@ -865,7 +967,9 @@ void mlx4_en_remove_timestamp(struct mlx4_en_dev *mdev);
  /* Globals
   */
  extern const struct ethtool_ops mlx4_en_ethtool_ops;
@@ -2094,7 +2092,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  
  /*
-@@ -898,4 +1004,13 @@ do {									\
+@@ -898,4 +1002,13 @@ do {									\
  	pr_warn(DRV_NAME " %s: " format,				\
  		dev_name(&(mdev)->pdev->dev), ##__VA_ARGS__)
  
