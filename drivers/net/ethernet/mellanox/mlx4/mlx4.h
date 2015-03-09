@@ -45,6 +45,7 @@
 #include <linux/workqueue.h>
 #include <linux/interrupt.h>
 #include <linux/spinlock.h>
+#include <linux/configfs.h>
 
 #include <linux/mlx4/device.h>
 #include <linux/mlx4/driver.h>
@@ -904,6 +905,8 @@ static inline struct mlx4_priv *mlx4_priv(struct mlx4_dev *dev)
 
 extern struct workqueue_struct *mlx4_wq;
 
+int mlx4_how_many_lives_vf(struct mlx4_dev *dev);
+
 u32 mlx4_bitmap_alloc(struct mlx4_bitmap *bitmap);
 void mlx4_bitmap_free(struct mlx4_bitmap *bitmap, u32 obj, int use_rr);
 u32 mlx4_bitmap_alloc_range(struct mlx4_bitmap *bitmap, int cnt,
@@ -1008,7 +1011,7 @@ void mlx4_start_catas_poll(struct mlx4_dev *dev);
 void mlx4_stop_catas_poll(struct mlx4_dev *dev);
 int mlx4_catas_init(struct mlx4_dev *dev);
 void mlx4_catas_end(struct mlx4_dev *dev);
-int mlx4_restart_one(struct pci_dev *pdev);
+int mlx4_restart_one(struct pci_dev *pdev, int restore);
 int mlx4_register_device(struct mlx4_dev *dev);
 void mlx4_unregister_device(struct mlx4_dev *dev);
 void mlx4_dispatch_event(struct mlx4_dev *dev, enum mlx4_dev_event type,
@@ -1437,5 +1440,23 @@ u32 mlx4_zone_free_entries_unique(struct mlx4_zone_allocator *zones, u32 obj, u3
 
 /* Returns a pointer to mlx4_bitmap that was attached to <zones> with <uid> */
 struct mlx4_bitmap *mlx4_zone_get_bitmap(struct mlx4_zone_allocator *zones, u32 uid);
+
+#if IS_ENABLED(CONFIG_MLX4_CONFIGFS_FS)
+struct pdev_config {
+	struct config_group group;
+	struct pci_dev *pdev;
+	int commit;
+};
+
+static inline struct pdev_config *to_pdev_config(struct config_item *item)
+{
+	return item ? container_of(to_config_group(item),
+				   struct pdev_config, group) : NULL;
+}
+
+int mlx4_configfs_init(void);
+void mlx4_configfs_exit(void);
+int mlx4_conf_get_config(struct mlx4_dev *dev, struct pci_dev *pdev);
+#endif /* CONFIG_MLX4_CONFIGFS_FS */
 
 #endif /* MLX4_H */
