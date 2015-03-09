@@ -107,7 +107,8 @@ enum {
 	NUM_VFS,
 	PROBE_VF,
 	PORT_TYPE_ARRAY,
-	ROCE_MODE
+	ROCE_MODE,
+	UD_GID_TYPE
 };
 
 enum {
@@ -134,9 +135,28 @@ static struct param_data roce_mode_prefer_routable = {
 module_param_string(roce_mode_prefer_routable, roce_mode_prefer_routable.dbdf2val.str,
 		    sizeof(roce_mode_prefer_routable.dbdf2val.str), 0444);
 MODULE_PARM_DESC(roce_mode_prefer_routable,
+		 "Set RoCE modes supported by the port\n"
 		 "A single value (e.g. 1) to define uniform preferred RoCE_mode value for all devices\n"
 		 "\t\tor a string to map device function numbers to their RoCE mode value (e.g. '0000:04:00.0-0,002b:1c:0b.a-1').\n"
 		 "\t\tAllowed values are 1 for prefer routable (default),  0 for prefer non routable");
+
+static struct param_data ud_gid_type = {
+	.id		= UD_GID_TYPE,
+	.dbdf2val = {
+		.name		= "ud_gid_type param",
+		.num_vals	= 1,
+		.def_val	= {MLX4_ROCE_GID_TYPE_V1_5},
+		.range		= {MLX4_ROCE_GID_TYPE_V1, MLX4_ROCE_GID_TYPE_V2},
+		.num_inval_vals = 0
+	}
+};
+module_param_string(ud_gid_type, ud_gid_type.dbdf2val.str,
+		    sizeof(ud_gid_type.dbdf2val.str), 0444);
+MODULE_PARM_DESC(ud_gid_type,
+		 "Set gid type for UD QPs\n"
+		 "\tA single value (e.g. 1) to define uniform UD QP gid type for all devices\n"
+		 "\t\tor a string to map device function numbers to their UD QP gid type (e.g. '0000:04:00.0-0,002b:1c:0b.a-1').\n"
+		 "\t\tAllowed values are 0 for RoCEv1, 1 for RoCEv1.5 (default) and 2 for RoCEv2");
 
 static struct param_data num_vfs = {
 	.id		= NUM_VFS,
@@ -464,6 +484,7 @@ static int update_defaults(struct param_data *pdata)
 		return INVALID_STR;
 
 	switch (pdata->id) {
+	case UD_GID_TYPE:
 	case ROCE_MODE:
 	case PORT_TYPE_ARRAY:
 	case NUM_VFS:
@@ -2503,8 +2524,11 @@ static void choose_roce_mode(struct mlx4_dev *dev,
 			     struct mlx4_dev_cap *dev_cap)
 {
 	int pref_routable;
+	int gid_type;
 	enum mlx4_set_roce_mode set_roce_mode =
 		MLX4_ROCE_NOT_SUPPORTED;
+	enum mlx4_set_roce_mode
+		supported_roce_mode[2]; /* supported modes for ud_gid_type */
 
 	mlx4_get_val(roce_mode_prefer_routable.dbdf2val.tbl, pci_physfn(dev->persist->pdev), 0, &pref_routable);
 
@@ -2523,6 +2547,32 @@ static void choose_roce_mode(struct mlx4_dev *dev,
 	}
 
 	dev->caps.roce_mode = set_roce_mode;
+	mlx4_get_val(ud_gid_type.dbdf2val.tbl, pci_physfn(dev->persist->pdev), 0, &gid_type);
+	switch (gid_type) {
+		case MLX4_ROCE_GID_TYPE_V1:
+			supported_roce_mode[0] = MLX4_SET_ROCE_MODE_1;
+			supported_roce_mode[1] = MLX4_SET_ROCE_MODE_1_PLUS_2;
+			break;
+		case MLX4_ROCE_GID_TYPE_V1_5:
+			supported_roce_mode[0] = MLX4_SET_ROCE_MODE_1_5;
+			supported_roce_mode[1] = MLX4_SET_ROCE_MODE_1_5_PLUS_2;
+			break;
+		case MLX4_ROCE_GID_TYPE_V2:
+			supported_roce_mode[0] = MLX4_DEV_CAP_FLAG2_ROCE_V1_V2;
+			supported_roce_mode[1] = MLX4_SET_ROCE_MODE_1_5_PLUS_2;
+			break;
+		default:
+			supported_roce_mode[0] = 0;
+			supported_roce_mode[1] = 0;
+			break;
+	}
+	/* check if actual device mode matches one of the supported modes for
+	 * the specific ud_gid_type value
+	 */
+	if (set_roce_mode != supported_roce_mode[0] &&
+	    set_roce_mode != supported_roce_mode[1])
+		pr_warn("mlx4_core: gid_type %d for UD QPs is not suppoted by the device\n", gid_type);
+	dev->caps.ud_gid_type = gid_type;
 }
 
 static void choose_tunnel_offload_mode(struct mlx4_dev *dev,
@@ -4681,6 +4731,14 @@ static int __init mlx4_verify_params(void)
 	status = update_defaults(&roce_mode_prefer_routable);
 	if (status == INVALID_STR) {
 		if (mlx4_fill_dbdf2val_tbl(&roce_mode_prefer_routable.dbdf2val))
+			return -1;
+	} else if (status == INVALID_DATA) {
+		return -1;
+	}
+
+	status = update_defaults(&ud_gid_type);
+	if (status == INVALID_STR) {
+		if (mlx4_fill_dbdf2val_tbl(&ud_gid_type.dbdf2val))
 			return -1;
 	} else if (status == INVALID_DATA) {
 		return -1;

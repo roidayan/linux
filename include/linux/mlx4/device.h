@@ -511,6 +511,12 @@ struct mlx4_phys_caps {
 	u32			base_tunnel_sqpn;
 };
 
+enum mlx4_roce_gid_type {
+	MLX4_ROCE_GID_TYPE_V1        = 0,
+	MLX4_ROCE_GID_TYPE_V1_5 = 1,
+	MLX4_ROCE_GID_TYPE_V2   = 2,
+};
+
 struct mlx4_caps {
 	u64			fw_ver;
 	u32			function;
@@ -569,6 +575,7 @@ struct mlx4_caps {
 	int			num_qp_per_mgm;
 	int			steering_mode;
 	enum mlx4_set_roce_mode roce_mode;
+	enum mlx4_roce_gid_type	ud_gid_type;
 	int			dmfs_high_steer_mode;
 	int			fs_log_max_ucast_qp_range_size;
 	int			num_pds;

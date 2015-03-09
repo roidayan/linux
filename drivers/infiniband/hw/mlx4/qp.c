@@ -1913,6 +1913,20 @@ enum {
 	MLX4_QPC_ROCE_MODE_MAX = 0xff
 };
 
+static enum ib_gid_type mlx4_gid_type_to_ib_gid_type(enum mlx4_roce_gid_type mlx4_gid_type)
+{
+	switch (mlx4_gid_type) {
+	case MLX4_ROCE_GID_TYPE_V1:
+		return IB_GID_TYPE_IB;
+	case MLX4_ROCE_GID_TYPE_V1_5:
+		return IB_GID_TYPE_ROCE_V1_5;
+	case MLX4_ROCE_GID_TYPE_V2:
+		return IB_GID_TYPE_ROCE_V2;
+	default:
+		return IB_GID_TYPE_SIZE;
+	}
+}
+
 static u8 gid_type_to_qpc(enum ib_gid_type gid_type)
 {
 	switch (gid_type) {
@@ -2037,6 +2051,13 @@ static int __mlx4_ib_modify_qp(struct ib_qp *ibqp,
 			steer_qp = 1;
 		}
 
+		if (ibqp->qp_type == IB_QPT_UD) {
+			enum ib_gid_type ud_gid_type =
+				mlx4_gid_type_to_ib_gid_type(dev->dev->caps.ud_gid_type);
+			u8 qpc_roce_mode = gid_type_to_qpc(ud_gid_type);
+
+			context->rlkey_roce_mode |= (qpc_roce_mode << 6);
+		}
 		if (ibqp->qp_type == IB_QPT_GSI) {
 			enum ib_gid_type main_gsi_gid_type =
 				(dev->dev->caps.roce_mode == MLX4_SET_ROCE_MODE_1 ||
