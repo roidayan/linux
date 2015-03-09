@@ -615,7 +615,7 @@ static void mlx4_check_pcie_caps(struct mlx4_dev *dev)
 }
 
 /*The function checks if there are live vf, return the num of them*/
-static int mlx4_how_many_lives_vf(struct mlx4_dev *dev)
+int mlx4_how_many_lives_vf(struct mlx4_dev *dev)
 {
 	struct mlx4_priv *priv = mlx4_priv(dev);
 	struct mlx4_slave_state *s_state;
@@ -3492,7 +3492,7 @@ static int restore_current_port_types(struct mlx4_dev *dev,
 	return err;
 }
 
-int mlx4_restart_one(struct pci_dev *pdev)
+int mlx4_restart_one(struct pci_dev *pdev, int restore)
 {
 	struct mlx4_dev_persistent *persist = pci_get_drvdata(pdev);
 	struct mlx4_dev	 *dev  = persist->dev;
@@ -3512,12 +3512,14 @@ int mlx4_restart_one(struct pci_dev *pdev)
 		return err;
 	}
 
-	err = restore_current_port_types(dev, dev->persist->curr_port_type,
-					 dev->persist->curr_port_poss_type);
-	if (err)
-		mlx4_err(dev, "could not restore original port types (%d)\n",
-			 err);
-
+	if (restore) {
+		err = restore_current_port_types(dev,
+						 dev->persist->curr_port_type,
+						 dev->persist->curr_port_poss_type);
+		if (err)
+			mlx4_err(dev, "could not restore original port types (%d)\n",
+				 err);
+	}
 	return err;
 }
 
@@ -3711,15 +3713,33 @@ static int __init mlx4_init(void)
 	if (!mlx4_wq)
 		return -ENOMEM;
 
+#if IS_ENABLED(CONFIG_MLX4_CONFIGFS_FS)
+	ret = mlx4_configfs_init();
+	if (ret)
+		goto out_wq;
+#endif
+
 	ret = pci_register_driver(&mlx4_driver);
 	if (ret < 0)
-		destroy_workqueue(mlx4_wq);
-	return ret < 0 ? ret : 0;
+		goto out_unregister;
+
+	return 0;
+
+out_unregister:
+#if IS_ENABLED(CONFIG_MLX4_CONFIGFS_FS)
+	mlx4_configfs_exit();
+out_wq:
+#endif
+	destroy_workqueue(mlx4_wq);
+	return ret;
 }
 
 static void __exit mlx4_cleanup(void)
 {
 	pci_unregister_driver(&mlx4_driver);
+#if IS_ENABLED(CONFIG_MLX4_CONFIGFS_FS)
+	mlx4_configfs_exit();
+#endif
 	destroy_workqueue(mlx4_wq);
 }
 
