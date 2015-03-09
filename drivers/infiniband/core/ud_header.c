@@ -359,7 +359,6 @@ int ib_ud_header_init(int     payload_bytes,
 				     payload_bytes    +
 				     4                + /* ICRC     */
 				     3) & ~3);          /* round up */
-		header->grh.next_header     = udp_present ? IPPROTO_UDP : 0x1b;
 	}
 
 	if (ipv4_present) {
@@ -373,7 +372,6 @@ int ib_ud_header_init(int     payload_bytes,
 				     IB_DETH_BYTES +
 				     payload_bytes +
 				     4);     /* ICRC     */
-		header->ip4.protocol = udp_present ? IPPROTO_UDP : 0xfe;
 	}
 	if (udp_present && ip_version)
 		header->udp.length =

@@ -627,6 +627,7 @@ struct mlx4_caps {
 	u32			dmfs_high_rate_qpn_base;
 	u32			dmfs_high_rate_qpn_range;
 	u32			vf_caps;
+	u8			rr_proto;
 };
 
 struct mlx4_buf_list {

@@ -89,7 +89,7 @@ MODULE_PARM_DESC(block_loopback, "Block multicast loopback packets if > 0 "
 #define MLX4_ROCE_1_5_DEF_PROTO 0xfe
 #define MLX4_ROCE_2_DEF_PROTO	1021
 
-int mlx4_roce_proto_config;
+int mlx4_roce_proto_config = MLX4_ROCE_1_5_DEF_PROTO;
 module_param_named(rr_proto, mlx4_roce_proto_config, int, 0444);
 MODULE_PARM_DESC(rr_proto, "IP next protocol for RoCEv1.5 or destination port for RoCEv2. Setting 0 means using driver default values");
 
@@ -2573,6 +2573,7 @@ static void choose_roce_mode(struct mlx4_dev *dev,
 	    set_roce_mode != supported_roce_mode[1])
 		pr_warn("mlx4_core: gid_type %d for UD QPs is not suppoted by the device\n", gid_type);
 	dev->caps.ud_gid_type = gid_type;
+	dev->caps.rr_proto = mlx4_roce_proto_config;
 }
 
 static void choose_tunnel_offload_mode(struct mlx4_dev *dev,

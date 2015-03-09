@@ -2864,9 +2864,11 @@ static int build_mlx_header(struct mlx4_ib_sqp *sqp, struct ib_send_wr *wr,
 			ah->av.ib.sl_tclass_flowlabel & cpu_to_be32(0xfffff);
 
 		sqp->ud_header.grh.hop_limit = ip_version ? IPV6_DEFAULT_HOPLIMIT : 1;
-		if (is_eth)
+		if (is_eth) {
 			memcpy(sqp->ud_header.grh.source_gid.raw, sgid.raw, 16);
-		else {
+			sqp->ud_header.grh.next_header     = is_udp ? IPPROTO_UDP : mibdev->dev->caps.rr_proto;
+		} else {
+		sqp->ud_header.grh.next_header     = 0x1b;
 		if (mlx4_is_mfunc(to_mdev(ib_dev)->dev)) {
 			/* When multi-function is enabled, the ib_core gid
 			 * indexes don't necessarily match the hw ones, so
@@ -2897,6 +2899,7 @@ static int build_mlx_header(struct mlx4_ib_sqp *sqp, struct ib_send_wr *wr,
 		memcpy(&sqp->ud_header.ip4.saddr,
 		       sgid.raw + 12, 4);
 		memcpy(&sqp->ud_header.ip4.daddr, ah->av.ib.dgid + 12, 4);
+		sqp->ud_header.ip4.protocol = is_udp ? IPPROTO_UDP : mibdev->dev->caps.rr_proto;
 		sqp->ud_header.ip4.check = ib_ud_ip4_csum(&sqp->ud_header);
 	}
 

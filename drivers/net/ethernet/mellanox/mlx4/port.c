@@ -983,7 +983,7 @@ int mlx4_SET_PORT_general(struct mlx4_dev *dev, u8 port, int mtu,
 		if (dev->caps.roce_mode == MLX4_SET_ROCE_MODE_1_5 ||
 		    dev->caps.roce_mode == MLX4_SET_ROCE_MODE_1_5_PLUS_2) {
 			context->flags |= SET_PORT_ROCE_1_5_FLAGS;
-			context->rr_proto = 0xfe;
+			context->rr_proto = dev->caps.rr_proto;
 		} else if (dev->caps.roce_mode == MLX4_SET_ROCE_MODE_1_PLUS_2) {
 			context->flags |= SET_PORT_ROCE_2_FLAGS;
 		}
