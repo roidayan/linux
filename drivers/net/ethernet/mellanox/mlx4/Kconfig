@@ -35,6 +35,14 @@ config MLX4_CORE
 	depends on PCI
 	default n
 
+config MLX4_CONFIGFS_FS
+	bool "Config File System Support (configfs)"
+	default y
+	depends on MLX4_CORE && CONFIGFS_FS && !(MLX4_CORE=y && CONFIGFS_FS=m)
+	---help---
+	Provides support for the configfs file system for driver configuration.
+
+
 config MLX4_DEBUG
 	bool "Verbose debugging output" if (MLX4_CORE && EXPERT)
 	depends on MLX4_CORE
