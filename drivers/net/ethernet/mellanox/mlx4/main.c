@@ -136,7 +136,7 @@ module_param_string(roce_mode_prefer_routable, roce_mode_prefer_routable.dbdf2va
 		    sizeof(roce_mode_prefer_routable.dbdf2val.str), 0444);
 MODULE_PARM_DESC(roce_mode_prefer_routable,
 		 "Set RoCE modes supported by the port\n"
-		 "A single value (e.g. 1) to define uniform preferred RoCE_mode value for all devices\n"
+		 "\tA single value (e.g. 1) to define uniform preferred RoCE_mode value for all devices\n"
 		 "\t\tor a string to map device function numbers to their RoCE mode value (e.g. '0000:04:00.0-0,002b:1c:0b.a-1').\n"
 		 "\t\tAllowed values are 1 for prefer routable (default),  0 for prefer non routable");
 
