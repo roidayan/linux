@@ -506,6 +506,57 @@ static int mlx5_core_disable_hca(struct mlx5_core_dev *dev)
 	return 0;
 }
 
+static int mlx5_core_set_issi(struct mlx5_core_dev *dev)
+{
+	u32 query_in[MLX5_ST_SZ_DW(query_issi_in)];
+	u32 query_out[MLX5_ST_SZ_DW(query_issi_out)];
+	u32 set_in[MLX5_ST_SZ_DW(set_issi_in)];
+	u32 set_out[MLX5_ST_SZ_DW(set_issi_out)];
+	int err;
+	u32 sup_issi;
+
+	memset(query_in, 0, sizeof(query_in));
+	memset(query_out, 0, sizeof(query_out));
+
+	MLX5_SET(query_issi_in, query_in, opcode, MLX5_CMD_OP_QUERY_ISSI);
+
+	err = mlx5_cmd_exec_check_status(dev, query_in, sizeof(query_in),
+					 query_out, sizeof(query_out));
+	if (err) {
+		if (((struct mlx5_outbox_hdr *)query_out)->status ==
+		    MLX5_CMD_STAT_BAD_OP_ERR) {
+			pr_debug("Only ISSI 0 is supported\n");
+			return 0;
+		}
+
+		pr_err("failed to query ISSI\n");
+		return err;
+	}
+
+	sup_issi = MLX5_GET(query_issi_out, query_out, supported_issi_dw0);
+
+	if (sup_issi & (1 << 1)) {
+		memset(set_in, 0, sizeof(set_in));
+		memset(set_out, 0, sizeof(set_out));
+
+		MLX5_SET(set_issi_in, set_in, opcode, MLX5_CMD_OP_SET_ISSI);
+		MLX5_SET(set_issi_in, set_in, current_issi, 1);
+
+		err = mlx5_cmd_exec_check_status(dev, set_in, sizeof(set_in),
+						 set_out, sizeof(set_out));
+		if (err) {
+			pr_err("failed to set ISSI=1\n");
+			return err;
+		}
+
+		return 0;
+	} else if (sup_issi & (1 << 0)) {
+		return 0;
+	}
+
+	return -ENOTSUPP;
+}
+
 static void mlx5_set_comp_eqs_affinity(struct mlx5_core_dev *dev)
 {
 	struct mlx5_priv *priv = &dev->priv;
@@ -731,6 +782,12 @@ static int mlx5_dev_init(struct mlx5_core_dev *dev, struct pci_dev *pdev)
 	if (err) {
 		dev_err(&pdev->dev, "enable hca failed\n");
 		goto err_pagealloc_cleanup;
+	}
+
+	err = mlx5_core_set_issi(dev);
+	if (err) {
+		dev_err(&pdev->dev, "failed to set issi\n");
+		goto err_disable_hca;
 	}
 
 	err = mlx5_satisfy_startup_pages(dev, 1);

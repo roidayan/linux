@@ -3409,7 +3409,8 @@ struct mlx5_ifc_query_issi_out_bits {
 
 	u8         reserved_2[0xa0];
 
-	u8         supported_issi[80][0x8];
+	u8         supported_issi_reserved[76][0x8];
+	u8         supported_issi_dw0[0x20];
 };
 
 struct mlx5_ifc_query_issi_in_bits {
