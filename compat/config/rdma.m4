@@ -914,21 +914,6 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(no)
 	])
 
-	AC_MSG_CHECKING([if bonding.h has bond_option_active_slave_get_safe])
-	LB_LINUX_TRY_COMPILE([
-		#include <net/bonding.h>
-	],[
-		struct bonding x;
-		bond_option_active_slave_get_safe(&x);
-
-		return 0;
-	],[
-		AC_MSG_RESULT(yes)
-		AC_DEFINE(HAVE_BOND_OPTION_ACTIVE_SLAVE_GET_SAFE, 1,
-			  [bond_option_active_slave_get_safe is defined])
-	],[
-		AC_MSG_RESULT(no)
-	])
 
 	AC_MSG_CHECKING([if u64_stats_sync.h has u64_stats_init])
 	LB_LINUX_TRY_COMPILE([
