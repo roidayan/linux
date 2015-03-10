@@ -767,7 +767,7 @@ void ipoib_cm_send(struct net_device *dev, struct sk_buff *skb, struct ipoib_cm_
 			if (rc < 0)
 				ipoib_warn(priv, "request notify on send CQ failed\n");
 			else if (rc)
-				ipoib_send_comp_handler(priv->send_cq, dev);
+				napi_reschedule(&priv->napi_tx);
 		}
 	}
 }
@@ -1023,7 +1023,7 @@ static struct ib_qp *ipoib_cm_create_tx_qp(struct net_device *dev, struct ipoib_
 {
 	struct ipoib_dev_priv *priv = netdev_priv(dev);
 	struct ib_qp_init_attr attr = {
-		.send_cq		= priv->recv_cq,
+		.send_cq		= priv->send_cq,
 		.recv_cq		= priv->recv_cq,
 		.srq			= priv->cm.srq,
 		.cap.max_send_wr	= ipoib_sendq_size,
