@@ -87,7 +87,6 @@ MODULE_PARM_DESC(block_loopback, "Block multicast loopback packets if > 0 "
 				 "(default: 1)");
 
 #define MLX4_ROCE_1_5_DEF_PROTO 0xfe
-#define MLX4_ROCE_2_DEF_PROTO	1021
 
 int mlx4_roce_proto_config = MLX4_ROCE_1_5_DEF_PROTO;
 module_param_named(rr_proto, mlx4_roce_proto_config, int, 0444);
