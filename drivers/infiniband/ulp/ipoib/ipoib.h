@@ -175,6 +175,7 @@ struct ipoib_rx_buf {
 struct ipoib_tx_buf {
 	struct sk_buff *skb;
 	u64		mapping[MAX_SKB_FRAGS + 1];
+	struct ipoib_ah *ah;
 };
 
 struct ipoib_cm_tx_buf {
@@ -399,7 +400,7 @@ struct ipoib_ah {
 	struct ib_ah	  *ah;
 	struct list_head   list;
 	struct kref	   ref;
-	unsigned	   last_send;
+	atomic_t	   refcnt;
 };
 
 struct ipoib_path {

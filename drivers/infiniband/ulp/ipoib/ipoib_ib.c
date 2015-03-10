@@ -64,7 +64,6 @@ struct ipoib_ah *ipoib_create_ah(struct net_device *dev,
 		return ERR_PTR(-ENOMEM);
 
 	ah->dev       = dev;
-	ah->last_send = 0;
 	kref_init(&ah->ref);
 
 	vah = ib_create_ah(pd, attr);
@@ -73,6 +72,7 @@ struct ipoib_ah *ipoib_create_ah(struct net_device *dev,
 		ah = (struct ipoib_ah *)vah;
 	} else {
 		ah->ah = vah;
+		atomic_set(&ah->refcnt, 0);
 		ipoib_dbg(netdev_priv(dev), "Created ah %p\n", ah->ah);
 	}
 
@@ -394,6 +394,8 @@ static void ipoib_ib_handle_tx_wc(struct net_device *dev, struct ib_wc *wc)
 	++dev->stats.tx_packets;
 	dev->stats.tx_bytes += tx_req->skb->len;
 
+	atomic_dec(&tx_req->ah->refcnt);
+
 	dev_kfree_skb_any(tx_req->skb);
 
 	++priv->tx_tail;
@@ -630,6 +632,9 @@ void ipoib_send(struct net_device *dev, struct sk_buff *skb,
 		return;
 	}
 
+	/* save the ah till the completion */
+	tx_req->ah = address;
+
 	if (skb->ip_summed == CHECKSUM_PARTIAL)
 		priv->tx_wr.send_flags |= IB_SEND_IP_CSUM;
 	else
@@ -645,6 +650,7 @@ void ipoib_send(struct net_device *dev, struct sk_buff *skb,
 
 	skb_orphan(skb);
 	skb_dst_drop(skb);
+	atomic_inc(&address->refcnt);
 
 	rc = post_send(priv, priv->tx_head & (ipoib_sendq_size - 1),
 		       address->ah, qpn, tx_req, phead, hlen);
@@ -653,13 +659,12 @@ void ipoib_send(struct net_device *dev, struct sk_buff *skb,
 		++dev->stats.tx_errors;
 		atomic_dec(&priv->tx_outstanding);
 		ipoib_dma_unmap_tx(priv->ca, tx_req);
+		atomic_dec(&address->refcnt);
 		dev_kfree_skb_any(skb);
 		if (netif_queue_stopped(dev))
 			netif_wake_queue(dev);
 	} else {
 		dev->trans_start = jiffies;
-
-		address->last_send = priv->tx_head;
 		++priv->tx_head;
 	}
 }
@@ -675,7 +680,7 @@ static void __ipoib_reap_ah(struct net_device *dev)
 	spin_lock_irqsave(&priv->lock, flags);
 
 	list_for_each_entry_safe(ah, tah, &priv->dead_ahs, list)
-		if ((int) priv->tx_tail - (int) ah->last_send >= 0) {
+		if (atomic_read(&ah->refcnt) == 0) {
 			list_del(&ah->list);
 			ib_destroy_ah(ah->ah);
 			kfree(ah);
