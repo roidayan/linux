@@ -2192,6 +2192,7 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
 	dev_put(ndev);
 	route->path_rec->packet_life_time_selector = IB_SA_EQ;
 	route->path_rec->packet_life_time = CMA_IBOE_PACKET_LIFETIME;
+	route->path_rec->traffic_class = id_priv->tos;
 	if (!route->path_rec->mtu) {
 		ret = -EINVAL;
 		goto err2;
