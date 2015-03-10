@@ -82,6 +82,8 @@ def pretty_print(prio_tc, tsa, tcbw, ratelimit):
 				msg +="ets, bw: %s%%" % (tcbw[tc])
 			elif (tsa[tc] == IEEE_8021QAZ_TSA_STRICT):
 				msg += "strict"
+			elif (tsa[tc] == IEEE_8021QAZ_TSA_VENDOR):
+				msg += "vendor"
 			else:
 				msg += "unknown"
 		except Exception, err:
