@@ -255,7 +255,7 @@ static void ipoib_ib_handle_rx_wc(struct net_device *dev, struct ib_wc *wc)
 			likely(wc->wc_flags & IB_WC_IP_CSUM_OK))
 		skb->ip_summed = CHECKSUM_UNNECESSARY;
 
-	napi_gro_receive(&priv->napi, skb);
+	napi_gro_receive(&priv->napi_rx, skb);
 
 repost:
 	if (unlikely(ipoib_ib_post_receive(dev, wr_id)))
@@ -377,7 +377,7 @@ static int poll_tx(struct ipoib_dev_priv *priv)
 
 int ipoib_poll(struct napi_struct *napi, int budget)
 {
-	struct ipoib_dev_priv *priv = container_of(napi, struct ipoib_dev_priv, napi);
+	struct ipoib_dev_priv *priv = container_of(napi, struct ipoib_dev_priv, napi_rx);
 	struct net_device *dev = priv->dev;
 	int done;
 	int t;
@@ -421,33 +421,67 @@ poll_more:
 	return done;
 }
 
-void ipoib_ib_completion(struct ib_cq *cq, void *dev_ptr)
+static int ipoib_tx_poll(struct napi_struct *napi, int budget)
+{
+	struct ipoib_dev_priv *priv =
+		container_of(napi, struct ipoib_dev_priv, napi_tx);
+	struct net_device *dev = priv->dev;
+	int n, i;
+
+poll_more:
+
+	n = ib_poll_cq(priv->send_cq, MAX_SEND_CQE, priv->send_wc);
+
+	for (i = 0; i < n; i++)
+		ipoib_ib_handle_tx_wc(dev, priv->send_wc + i);
+
+	if (n < budget) {
+		napi_complete(napi);
+		if (unlikely(ib_req_notify_cq(priv->send_cq, IB_CQ_NEXT_COMP)) &&
+		    napi_reschedule(napi))
+			goto poll_more;
+		if (unlikely(atomic_read(&priv->tx_outstanding) <= ipoib_sendq_size >> 1) &&
+		    netif_queue_stopped(dev) &&
+		    test_bit(IPOIB_FLAG_ADMIN_UP, &priv->flags))
+					netif_wake_queue(dev);
+	}
+
+		return n < 0 ? 0 : n;
+}
+
+void ipoib_ib_rx_completion(struct ib_cq *cq, void *dev_ptr)
 {
 	struct net_device *dev = dev_ptr;
 	struct ipoib_dev_priv *priv = netdev_priv(dev);
 
-	napi_schedule(&priv->napi);
+	napi_schedule(&priv->napi_rx);
 }
 
-static void drain_tx_cq(struct net_device *dev)
+void ipoib_ib_tx_completion(struct ib_cq *cq, void *ctx_ptr)
 {
-	struct ipoib_dev_priv *priv = netdev_priv(dev);
+	struct ipoib_dev_priv *priv = (struct ipoib_dev_priv *)ctx_ptr;
 
-	netif_tx_lock(dev);
-	while (poll_tx(priv))
-		; /* nothing */
-
-	if (netif_queue_stopped(dev))
-		mod_timer(&priv->poll_timer, jiffies + 1);
-
-	netif_tx_unlock(dev);
+	napi_schedule(&priv->napi_tx);
 }
 
-void ipoib_send_comp_handler(struct ib_cq *cq, void *dev_ptr)
+static void ipoib_napi_enable(struct ipoib_dev_priv *priv)
 {
-	struct ipoib_dev_priv *priv = netdev_priv(dev_ptr);
 
-	mod_timer(&priv->poll_timer, jiffies);
+	netif_napi_add(priv->dev, &priv->napi_rx, ipoib_poll, NAPI_POLL_WEIGHT);
+	napi_enable(&priv->napi_rx);
+
+	netif_napi_add(priv->dev, &priv->napi_tx, ipoib_tx_poll, NAPI_POLL_WEIGHT);
+	napi_enable(&priv->napi_tx);
+}
+
+static void ipoib_napi_disable(struct ipoib_dev_priv *priv)
+{
+
+	napi_disable(&priv->napi_rx);
+	netif_napi_del(&priv->napi_rx);
+
+	napi_disable(&priv->napi_tx);
+	netif_napi_del(&priv->napi_tx);
 }
 
 static inline int post_send(struct ipoib_dev_priv *priv,
@@ -548,6 +582,7 @@ void ipoib_send(struct net_device *dev, struct sk_buff *skb,
 		ipoib_dbg(priv, "TX ring full, stopping kernel net queue\n");
 		if (ib_req_notify_cq(priv->send_cq, IB_CQ_NEXT_COMP))
 			ipoib_warn(priv, "request notify on send CQ failed\n");
+		napi_reschedule(&priv->napi_tx);
 		netif_stop_queue(dev);
 	}
 
@@ -570,10 +605,6 @@ void ipoib_send(struct net_device *dev, struct sk_buff *skb,
 		address->last_send = priv->tx_head;
 		++priv->tx_head;
 	}
-
-	if (unlikely(atomic_read(&priv->tx_outstanding) > MAX_SEND_CQE))
-		while (poll_tx(priv))
-			; /* nothing */
 }
 
 static void __ipoib_reap_ah(struct net_device *dev)
@@ -627,11 +658,6 @@ static void ipoib_stop_ah(struct net_device *dev)
 	ipoib_flush_ah(dev);
 }
 
-static void ipoib_ib_tx_timer_func(unsigned long ctx)
-{
-	drain_tx_cq((struct net_device *)ctx);
-}
-
 int ipoib_ib_dev_open(struct net_device *dev)
 {
 	struct ipoib_dev_priv *priv = netdev_priv(dev);
@@ -668,12 +694,12 @@ int ipoib_ib_dev_open(struct net_device *dev)
 			   round_jiffies_relative(HZ));
 
 	if (!test_and_set_bit(IPOIB_FLAG_INITIALIZED, &priv->flags))
-		napi_enable(&priv->napi);
+		ipoib_napi_enable(priv);
 
 	return 0;
 dev_stop:
 	if (!test_and_set_bit(IPOIB_FLAG_INITIALIZED, &priv->flags))
-		napi_enable(&priv->napi);
+		ipoib_napi_enable(priv);
 	ipoib_ib_dev_stop(dev);
 	return -1;
 }
@@ -784,7 +810,7 @@ int ipoib_ib_dev_stop(struct net_device *dev)
 	int i;
 
 	if (test_and_clear_bit(IPOIB_FLAG_INITIALIZED, &priv->flags))
-		napi_disable(&priv->napi);
+		ipoib_napi_disable(priv);
 
 	ipoib_cm_dev_stop(dev);
 
@@ -840,7 +866,6 @@ int ipoib_ib_dev_stop(struct net_device *dev)
 	ipoib_dbg(priv, "All sends and receives done.\n");
 
 timeout:
-	del_timer_sync(&priv->poll_timer);
 	qp_attr.qp_state = IB_QPS_RESET;
 	if (ib_modify_qp(priv->qp, &qp_attr, IB_QP_STATE))
 		ipoib_warn(priv, "Failed to modify QP to RESET state\n");
@@ -864,9 +889,6 @@ int ipoib_ib_dev_init(struct net_device *dev, struct ib_device *ca, int port)
 		printk(KERN_WARNING "%s: ipoib_transport_dev_init failed\n", ca->name);
 		return -ENODEV;
 	}
-
-	setup_timer(&priv->poll_timer, ipoib_ib_tx_timer_func,
-		    (unsigned long) dev);
 
 	if (dev->flags & IFF_UP) {
 		if (ipoib_ib_dev_open(dev)) {
