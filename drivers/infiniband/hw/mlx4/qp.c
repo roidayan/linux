@@ -1404,7 +1404,8 @@ static int check_qpg_attr(struct mlx4_ib_dev *dev,
 	if (attr->qpg_type == IB_QPG_NONE)
 		return 0;
 
-	if (attr->qp_type != IB_QPT_UD)
+	if (attr->qp_type != IB_QPT_UD &&
+	    attr->qp_type != IB_QPT_RAW_PACKET)
 		return -EINVAL;
 
 	if (attr->qpg_type == IB_QPG_PARENT) {
