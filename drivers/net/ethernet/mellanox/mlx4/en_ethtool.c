@@ -1678,17 +1678,19 @@ static int mlx4_en_set_priv_flags(struct net_device *dev, u32 flags)
 #ifdef CONFIG_MLX4_EN_DCB
 	if ((flags & MLX4_EN_PRIV_FLAGS_DISABLE_32_14_4_E) &&
 	    !(priv->pflags & MLX4_EN_PRIV_FLAGS_DISABLE_32_14_4_E)) {
-		if (mlx4_disable_32_14_4_e_write(mdev->dev, 1, priv->port))
+		if (mlx4_disable_32_14_4_e_write(mdev->dev, 1, priv->port)) {
 			en_err(priv, "Failed configure QCN parameter\n");
-		else
+		} else {
 			priv->pflags |= MLX4_EN_PRIV_FLAGS_DISABLE_32_14_4_E;
+		}
 
 	} else if (!(flags & MLX4_EN_PRIV_FLAGS_DISABLE_32_14_4_E) &&
 		   (priv->pflags & MLX4_EN_PRIV_FLAGS_DISABLE_32_14_4_E)) {
-		if (mlx4_disable_32_14_4_e_write(mdev->dev, 0, priv->port))
+		if (mlx4_disable_32_14_4_e_write(mdev->dev, 0, priv->port)) {
 			en_err(priv, "Failed configure QCN parameter\n");
-		else
+		} else {
 			priv->pflags &= ~MLX4_EN_PRIV_FLAGS_DISABLE_32_14_4_E;
+		}
 	}
 #endif
 
