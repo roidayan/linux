@@ -169,6 +169,7 @@ struct congestion_dbgfs_entry {
 	u8				port;
 	u8				prio;
 	u8				algo;
+	u8				reserved[5];
 };
 
 struct congestion_dbgfs_param_entry {
@@ -685,23 +686,27 @@ void *con_ctrl_dbgfs_add_algo
 	struct dentry *ports_dir;
 	struct dentry *gen_params_dir;
 	void *algo_alloced;
+	size_t algo_alloced_size;
+	size_t param_size;
+	size_t stats_size;
+	size_t clear_enable_size;
 
 	const struct congestion_algo_desc *algo_desc =
 		&congestion_dbgfs_algo[algo];
 
-	algo_alloced = kmalloc((((algo_desc->nparams +
-			       algo_desc->nstatistics + CLEAR_PER_PRIO +
-			       ENABLE_PER_PRIO)
-			       * CONGESTION_NPRIOS) * dev->num_ports) *
-			       sizeof(*algo_entries) + algo_desc->ngen_params
-			       + CLEAR_GEN_PARAM +
-			       sizeof(struct list_head), GFP_KERNEL);
+	param_size = algo_desc->nparams * CONGESTION_NPRIOS;
+	stats_size = algo_desc->nstatistics * CONGESTION_NPRIOS;
+	clear_enable_size = (CLEAR_PER_PRIO + ENABLE_PER_PRIO) * CONGESTION_NPRIOS;
+	algo_alloced_size = ((param_size + stats_size + clear_enable_size) * dev->num_ports) + algo_desc->ngen_params +
+			    CLEAR_GEN_PARAM;
+	algo_alloced_size *= sizeof(*algo_entries);
+	algo_alloced_size += sizeof(struct list_head);
+	algo_alloced = kmalloc(algo_alloced_size, GFP_KERNEL);
 
 	if (algo_alloced == NULL) {
 		pr_warn("couldn't allocate space for ecn debugfs");
 		return NULL;
 	}
-
 
 	algo_entries = (struct congestion_dbgfs_entry *)
 			(((char *)algo_alloced) + sizeof(struct list_head));

@@ -636,6 +636,7 @@ struct mlx4_ib_dev {
 #ifdef CONFIG_MLX4_IB_DEBUG_FS
 	struct dentry		*dev_root;
 	struct ecn_control	cong;
+	struct list_head	dbgfs_resources_list;
 #endif
 };
 

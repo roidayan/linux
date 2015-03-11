@@ -38,16 +38,15 @@
 
 static struct dentry *mlx4_root;
 
-LIST_HEAD(dbgfs_resources_list);
-
 void mlx4_ib_create_debug_files(struct mlx4_ib_dev *dev)
 {
 	int i;
 	struct dentry *ecn;
 
-	dev->dev_root = NULL;
+	mlx4_ib_delete_debug_files(dev);
 	if (!mlx4_root)
 		return;
+	INIT_LIST_HEAD(&dev->dbgfs_resources_list);
 	dev->dev_root = debugfs_create_dir(dev->ib_dev.name, mlx4_root);
 	if (!dev->dev_root)
 		return;
@@ -64,7 +63,7 @@ void mlx4_ib_create_debug_files(struct mlx4_ib_dev *dev)
 						 algo_alloced);
 					list_add((struct list_head *)
 						 algo_alloced,
-						 &dbgfs_resources_list);
+						 &dev->dbgfs_resources_list);
 				}
 			}
 		} else {
@@ -79,11 +78,12 @@ void mlx4_ib_delete_debug_files(struct mlx4_ib_dev *dev)
 		struct list_head *dev_res, *temp;
 
 		debugfs_remove_recursive(dev->dev_root);
-		list_for_each_safe(dev_res, temp, &dbgfs_resources_list) {
+		list_for_each_safe(dev_res, temp, &dev->dbgfs_resources_list) {
 			list_del(dev_res);
 			kfree(dev_res);
 		}
 		con_ctrl_dbgfs_free(dev);
+		dev->dev_root = NULL;
 	}
 }
 
