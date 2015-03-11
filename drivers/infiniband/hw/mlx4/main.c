@@ -1511,8 +1511,9 @@ static int mlx4_ib_mcg_attach(struct ib_qp *ibqp, union ib_gid *gid, u16 lid)
 	int err = -ENODEV;
 	struct mlx4_ib_dev *mdev = to_mdev(ibqp->device);
 	struct mlx4_ib_qp *mqp = to_mqp(ibqp);
-	enum mlx4_protocol prot = (gid->raw[1] == 0x0e) ?
-		MLX4_PROT_IB_IPV4 : MLX4_PROT_IB_IPV6;
+	enum mlx4_protocol prot =
+		(ibqp->qp_type == IB_QPT_RAW_PACKET) ? MLX4_PROT_ETH :
+		(gid->raw[1] == 0x0e) ? MLX4_PROT_IB_IPV4 : MLX4_PROT_IB_IPV6;
 	DECLARE_BITMAP(ports, MLX4_MAX_PORTS);
 	int i = 0;
 
@@ -1560,7 +1561,7 @@ static int mlx4_ib_mcg_attach(struct ib_qp *ibqp, union ib_gid *gid, u16 lid)
 		err = add_gid_entry(ibqp, gid);
 		if (err) {
 			mlx4_multicast_detach(mdev->dev, &mqp->mqp, gid->raw,
-					      MLX4_PROT_IB_IPV6, reg_id.id);
+					      prot, reg_id.id);
 			kfree(ib_steering);
 			goto err_add;
 		}
@@ -1664,8 +1665,9 @@ static int _mlx4_ib_mcg_detach(struct ib_qp *ibqp, union ib_gid *gid, u16 lid,
 	struct mlx4_ib_qp *mqp = to_mqp(ibqp);
 	u64 reg_id = 0;
 	int record_err = 0;
-	enum mlx4_protocol prot = (gid->raw[1] == 0x0e) ?
-		MLX4_PROT_IB_IPV4 : MLX4_PROT_IB_IPV6;
+	enum mlx4_protocol prot =
+		(ibqp->qp_type == IB_QPT_RAW_PACKET) ? MLX4_PROT_ETH :
+		(gid->raw[1] == 0x0e) ? MLX4_PROT_IB_IPV4 : MLX4_PROT_IB_IPV6;
 
 	if (mdev->dev->caps.steering_mode ==
 	    MLX4_STEERING_MODE_DEVICE_MANAGED) {
