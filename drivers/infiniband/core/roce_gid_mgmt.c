@@ -436,20 +436,16 @@ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
 		rdev = ndev;
 
 	if (idev == rdev) {
-		struct upper_list {
-			struct list_head list;
-			struct net_device *upper;
-		};
 		struct net_device *upper;
 		struct list_head *iter;
-		struct upper_list *upper_iter;
-		struct upper_list *upper_temp;
+		struct roce_netdev_list *upper_iter;
+		struct roce_netdev_list *upper_temp;
 		LIST_HEAD(upper_list);
 
 		rcu_read_lock();
 		netdev_for_each_all_upper_dev_rcu(idev, upper, iter) {
-			struct upper_list *entry = kmalloc(sizeof(*entry),
-							   GFP_ATOMIC);
+			struct roce_netdev_list *entry = kmalloc(sizeof(*entry),
+								 GFP_ATOMIC);
 
 			if (!entry) {
 				pr_info("roce_gid_mgmt: couldn't allocate entry to delete ndev\n");
@@ -458,16 +454,16 @@ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
 
 			list_add_tail(&entry->list, &upper_list);
 			dev_hold(upper);
-			entry->upper = upper;
+			entry->ndev = upper;
 		}
 		rcu_read_unlock();
 
+		roce_sync_all_netdev_gids(ib_dev, port, &upper_list);
+
 		list_for_each_entry_safe(upper_iter, upper_temp, &upper_list,
 					 list) {
-			roce_del_all_netdev_gids(ib_dev, port,
-						 upper_iter->upper);
 			list_del(&upper_iter->list);
-			dev_put(upper_iter->upper);
+			dev_put(upper_iter->ndev);
 			kfree(upper_iter);
 		}
 	}

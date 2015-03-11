@@ -323,6 +323,40 @@ int roce_del_all_netdev_gids(struct ib_device *ib_dev, u8 port,
 	return 0;
 }
 
+int roce_sync_all_netdev_gids(struct ib_device *ib_dev, u8 port,
+			      struct list_head *list)
+{
+	struct ib_roce_gid_cache *cache;
+	int ix;
+
+	if (!ib_dev->cache.roce_gid_cache)
+		return 0;
+
+	cache  = ib_dev->cache.roce_gid_cache[port - start_port(ib_dev)];
+
+	if (!cache || !cache->active)
+		return -ENOSYS;
+
+	mutex_lock(&cache->lock);
+
+	for (ix = 0; ix < cache->sz; ix++) {
+		bool found = false;
+		struct roce_netdev_list *entry;
+
+		list_for_each_entry(entry, list, list) {
+			if (cache->data_vec[ix].attr.ndev == entry->ndev) {
+				found = true;
+				break;
+			}
+		}
+		if (!found)
+			write_gid(ib_dev, port, cache, ix, &zgid, &zattr);
+	}
+
+	mutex_unlock(&cache->lock);
+	return 0;
+}
+
 int roce_gid_cache_get_gid(struct ib_device *ib_dev, u8 port, int index,
 			   union ib_gid *gid, struct ib_gid_attr *attr)
 {

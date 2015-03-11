@@ -325,7 +325,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	route->path_rec->mtu = iboe_get_mtu(ndev->mtu);
  	route->path_rec->rate_selector = IB_SA_EQ;
  	route->path_rec->rate = iboe_get_rate(ndev);
-@@ -2568,6 +2581,7 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
+@@ -2569,6 +2582,7 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
  			  unsigned short snum)
  {
  	struct rdma_bind_list *bind_list;
@@ -333,7 +333,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	int ret;
  
  	bind_list = kzalloc(sizeof *bind_list, GFP_KERNEL);
-@@ -2585,6 +2599,35 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
+@@ -2586,6 +2600,35 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
  err:
  	kfree(bind_list);
  	return ret == -ENOSPC ? -EADDRNOTAVAIL : ret;
@@ -369,7 +369,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  static int cma_alloc_any_port(struct idr *ps, struct rdma_id_private *id_priv)
-@@ -2593,7 +2636,11 @@ static int cma_alloc_any_port(struct idr *ps, struct rdma_id_private *id_priv)
+@@ -2594,7 +2637,11 @@ static int cma_alloc_any_port(struct idr *ps, struct rdma_id_private *id_priv)
  	int low, high, remaining;
  	unsigned int rover;
  
@@ -381,7 +381,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	remaining = (high - low) + 1;
  	rover = prandom_u32() % remaining + low;
  retry:
-@@ -2629,9 +2676,16 @@ static int cma_check_port(struct rdma_bind_list *bind_list,
+@@ -2630,9 +2677,16 @@ static int cma_check_port(struct rdma_bind_list *bind_list,
  {
  	struct rdma_id_private *cur_id;
  	struct sockaddr *addr, *cur_addr;
@@ -398,7 +398,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		if (id_priv == cur_id)
  			continue;
  
-@@ -3531,7 +3585,11 @@ static int cma_join_ib_multicast(struct rdma_id_private *id_priv,
+@@ -3532,7 +3586,11 @@ static int cma_join_ib_multicast(struct rdma_id_private *id_priv,
  						id_priv->id.port_num, &rec,
  						comp_mask, GFP_KERNEL,
  						cma_ib_mc_handler, mc);
@@ -410,7 +410,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  static void iboe_mcast_work_handler(struct work_struct *work)
-@@ -3778,9 +3836,15 @@ static int cma_netdev_change(struct net_device *ndev, struct rdma_id_private *id
+@@ -3779,9 +3837,15 @@ static int cma_netdev_change(struct net_device *ndev, struct rdma_id_private *id
  }
  
  static int cma_netdev_callback(struct notifier_block *self, unsigned long event,
@@ -648,7 +648,7 @@ diff --git a/drivers/infiniband/core/roce_gid_cache.c b/drivers/infiniband/core/
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/roce_gid_cache.c
 +++ b/drivers/infiniband/core/roce_gid_cache.c
-@@ -400,7 +400,11 @@ static int get_netdev_from_ifindex(struct net *net, int if_index,
+@@ -434,7 +434,11 @@ static int get_netdev_from_ifindex(struct net *net, int if_index,
  {
  	if (if_index && net) {
  		rcu_read_lock();
@@ -742,17 +742,17 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
 +#if defined(HAVE_NETDEV_FOR_EACH_ALL_UPPER_DEV_RCU) || defined(HAVE_NETDEV_MASTER_UPPER_DEV_GET_RCU)
  	struct net_device *ndev = (struct net_device *)cookie;
+ 	struct net_device *rdev = rdma_vlan_dev_real_dev(ndev);
  
- 	if (idev == ndev) {
 @@ -436,26 +456,40 @@ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
- 			struct list_head list;
- 			struct net_device *upper;
- 		};
+ 		rdev = ndev;
+ 
+ 	if (idev == rdev) {
 -		struct net_device *upper;
 +		struct net_device *upper = NULL;
  		struct list_head *iter;
- 		struct upper_list *upper_iter;
- 		struct upper_list *upper_temp;
+ 		struct roce_netdev_list *upper_iter;
+ 		struct roce_netdev_list *upper_temp;
  		LIST_HEAD(upper_list);
  
  		rcu_read_lock();
@@ -764,8 +764,8 @@ index xxxxxxx..xxxxxxx xxxxxx
 +		upper = netdev_master_upper_dev_get_rcu(idev);
 +		if (upper) {
 +#endif
- 			struct upper_list *entry = kmalloc(sizeof(*entry),
- 							   GFP_ATOMIC);
+ 			struct roce_netdev_list *entry = kmalloc(sizeof(*entry),
+ 								 GFP_ATOMIC);
  
  			if (!entry) {
  				pr_info("roce_gid_mgmt: couldn't allocate entry to delete ndev\n");
@@ -778,14 +778,14 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  			list_add_tail(&entry->list, &upper_list);
  			dev_hold(upper);
- 			entry->upper = upper;
+ 			entry->ndev = upper;
  		}
 +#ifdef HAVE_NETDEV_MASTER_UPPER_DEV_GET_RCU
 +unlock:
 +#endif
  		rcu_read_unlock();
  
- 		list_for_each_entry_safe(upper_iter, upper_temp, &upper_list,
+ 		roce_sync_all_netdev_gids(ib_dev, port, &upper_list);
 @@ -467,7 +501,9 @@ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
  			kfree(upper_iter);
  		}

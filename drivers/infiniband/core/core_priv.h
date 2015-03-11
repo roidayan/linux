@@ -73,6 +73,11 @@ typedef void (*roce_netdev_callback)(struct ib_device *device, u8 port,
 typedef int (*roce_netdev_filter)(struct ib_device *device, u8 port,
 	     struct net_device *idev, void *cookie);
 
+struct roce_netdev_list {
+	struct list_head list;
+	struct net_device *ndev;
+};
+
 void ib_dev_roce_ports_of_netdev(struct ib_device *ib_dev,
 				 roce_netdev_filter filter,
 				 void *filter_cookie,
@@ -134,5 +139,7 @@ int roce_gid_mgmt_init(void);
 void roce_gid_mgmt_cleanup(void);
 
 int roce_rescan_device(struct ib_device *ib_dev);
+int roce_sync_all_netdev_gids(struct ib_device *ib_dev, u8 port,
+			      struct list_head *list);
 
 #endif /* _CORE_PRIV_H */
