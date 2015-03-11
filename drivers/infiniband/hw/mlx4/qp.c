@@ -2892,7 +2892,9 @@ static int build_mlx_header(struct mlx4_ib_sqp *sqp, struct ib_send_wr *wr,
 
 	if (ip_version == 4) {
 		sqp->ud_header.ip4.tos =
-			(be32_to_cpu(ah->av.ib.sl_tclass_flowlabel) >> 20) & 0xff;
+			((be32_to_cpu(ah->av.ib.sl_tclass_flowlabel) >> 20) &
+			 ~TRAFFIC_CLASS_MASK(mibdev, sqp->qp.port)) |
+			(ecn & TRAFFIC_CLASS_MASK(mibdev, sqp->qp.port));
 		sqp->ud_header.ip4.id = 0;
 		sqp->ud_header.ip4.frag_off = htons(IP_DF);
 		sqp->ud_header.ip4.ttl = IPV6_DEFAULT_HOPLIMIT;
