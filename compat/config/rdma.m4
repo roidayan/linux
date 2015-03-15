@@ -2500,6 +2500,18 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 # add -include config.h
 #
 AC_DEFUN([COMPAT_CONFIG_HEADERS],[
+#
+#	Wait for remaining build tests running in background
+#
+	wait
+#
+#	Append confdefs.h files from CONFDEFS_H_DIR to the main confdefs.h file
+#
+	/bin/cat CONFDEFS_H_DIR/confdefs.h.* >> confdefs.h
+	/bin/rm -rf CONFDEFS_H_DIR
+#
+#	Generate the config.h header file
+#
 	AC_CONFIG_HEADERS([config.h])
 	EXTRA_KCFLAGS="-include $PWD/config.h $EXTRA_KCFLAGS"
 	AC_SUBST(EXTRA_KCFLAGS)

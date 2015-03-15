@@ -17,5 +17,17 @@ AC_CHECK_TOOLS(AR, ar)
 
 SET_BUILD_ARCH
 LB_PROG_CC
+
+AC_ARG_WITH(njobs,
+	AS_HELP_STRING([--with-njobs=N],[Allow N jobs at once; jobs as number of CPUs with no arg.]),
+	[
+		NJOBS="$withval"
+		if [[ "x$NJOBS" == "x" ]] || [[[ $NJOBS =~ [A-Za-z]+ ]]]; then
+			NJOBS=$(grep ^processor /proc/cpuinfo | wc -l)
+		fi
+	],
+	NJOBS=1
+)
+
 MLNX_PROG_LINUX
 LB_CONDITIONALS
