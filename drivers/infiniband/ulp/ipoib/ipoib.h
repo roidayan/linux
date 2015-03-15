@@ -418,6 +418,14 @@ struct ipoib_path {
 	int  		      valid;
 };
 
+enum ipoib_neigh_state {
+	IPOIB_NEIGH_CREATED,
+	IPOIB_NEIGH_REMOVED,
+};
+
+typedef int (*state_callback_fn)(struct ipoib_dev_priv *priv,
+				 enum ipoib_neigh_state state, void *context);
+
 struct ipoib_neigh {
 	struct ipoib_ah    *ah;
 #ifdef CONFIG_INFINIBAND_IPOIB_CM
@@ -433,6 +441,9 @@ struct ipoib_neigh {
 	struct rcu_head     rcu;
 	atomic_t	    refcnt;
 	unsigned long       alive;
+	/* add the ability to notify the objects that hold that neigh */
+	state_callback_fn state_callback;
+	void *context;
 };
 
 #define IPOIB_UD_MTU(ib_mtu)		(ib_mtu - IPOIB_ENCAP_LEN)
