@@ -40,6 +40,8 @@
 #include <linux/io-mapping.h>
 #include <linux/sched.h>
 #include <rdma/ib_user_verbs.h>
+#include <rdma/ib_user_verbs_exp.h>
+#include <rdma/ib_verbs_exp.h>
 #include <rdma/ib_smi.h>
 #include <rdma/ib_umem.h>
 #include "user.h"
@@ -62,8 +64,9 @@ static char mlx5_version[] =
 	DRIVER_NAME ": Mellanox Connect-IB Infiniband driver v"
 	DRIVER_VERSION " (" DRIVER_RELDATE ")\n";
 
-static int mlx5_ib_query_device(struct ib_device *ibdev,
-				struct ib_device_attr *props)
+static int query_device(struct ib_device *ibdev,
+			struct ib_device_attr *props,
+			int exp)
 {
 	struct mlx5_ib_dev *dev = to_mdev(ibdev);
 	struct mlx5_core_dev *mdev = dev->mdev;
@@ -168,6 +171,11 @@ out:
 	return err;
 }
 
+static int mlx5_ib_query_device(struct ib_device *ibdev,
+				struct ib_device_attr *props)
+{
+	return query_device(ibdev, props, 0);
+}
 int mlx5_ib_query_port(struct ib_device *ibdev, u8 port,
 		       struct ib_port_attr *props)
 {
@@ -405,6 +413,7 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 		return ERR_PTR(-EAGAIN);
 
 	memset(&req, 0, sizeof(req));
+	memset(&resp, 0, sizeof(resp));
 	reqlen = udata->inlen - sizeof(struct ib_uverbs_cmd_hdr);
 	if (reqlen == sizeof(struct mlx5_ib_alloc_ucontext_req))
 		ver = 0;
@@ -479,7 +488,7 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 	for (i = 0; i < num_uars; i++) {
 		err = mlx5_cmd_alloc_uar(dev->mdev, &uars[i].index);
 		if (err)
-			goto out_count;
+			goto out_uars;
 	}
 
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
@@ -505,7 +514,6 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 out_uars:
 	for (i--; i >= 0; i--)
 		mlx5_cmd_free_uar(dev->mdev, uars[i].index);
-out_count:
 	kfree(uuari->count);
 
 out_bitmap:
@@ -590,6 +598,7 @@ static int mlx5_ib_mmap(struct ib_ucontext *ibcontext, struct vm_area_struct *vm
 		mlx5_ib_dbg(dev, "mapped WC at 0x%lx, PA 0x%llx\n",
 			    vma->vm_start,
 			    (unsigned long long)pfn << PAGE_SHIFT);
+
 		break;
 
 	case MLX5_IB_MMAP_GET_CONTIGUOUS_PAGES:
@@ -898,9 +907,52 @@ static void get_ext_port_caps(struct mlx5_ib_dev *dev)
 		mlx5_query_ext_port_caps(dev, port);
 }
 
+int mlx5_ib_exp_query_device(struct ib_device *ibdev,
+			     struct ib_exp_device_attr *props)
+{
+	struct mlx5_ib_dev *dev = to_mdev(ibdev);
+	int err;
+
+	err = query_device(ibdev, &props->base, 1);
+	if (err)
+		return err;
+
+	props->exp_comp_mask = IB_EXP_DEVICE_ATTR_CAP_FLAGS2;
+	props->device_cap_flags2 = 0;
+	props->exp_comp_mask |= IB_EXP_DEVICE_ATTR_DC_REQ_RD;
+	props->exp_comp_mask |= IB_EXP_DEVICE_ATTR_DC_RES_RD;
+	props->exp_comp_mask |= IB_EXP_DEVICE_ATTR_MAX_DCT;
+	if (MLX5_CAP_GEN(dev->mdev, dct)) {
+		props->device_cap_flags2 |= IB_EXP_DEVICE_DC_TRANSPORT;
+		props->dc_rd_req = 1 << MLX5_CAP_GEN(dev->mdev, log_max_ra_req_dc);
+		props->dc_rd_res = 1 << MLX5_CAP_GEN(dev->mdev, log_max_ra_res_dc);
+		props->max_dct = props->base.max_qp;
+	} else {
+		props->dc_rd_req = 0;
+		props->dc_rd_res = 0;
+		props->max_dct = 0;
+	}
+
+	props->exp_comp_mask |= IB_EXP_DEVICE_ATTR_INLINE_RECV_SZ;
+	if (MLX5_CAP_GEN(dev->mdev, sctr_data_cqe))
+		props->inline_recv_sz = MLX5_MAX_INLINE_RECEIVE_SIZE;
+	else
+		props->inline_recv_sz = 0;
+
+	props->device_cap_flags2 |= IB_EXP_DEVICE_NOP;
+
+	props->device_cap_flags2 |= IB_EXP_DEVICE_UMR;
+	props->umr_caps.max_reg_descriptors = 1 << MLX5_CAP_GEN(dev->mdev, log_max_klm_list_size);
+	props->umr_caps.max_send_wqe_inline_klms = 20;
+	props->umr_caps.max_umr_recursion_depth = MLX5_CAP_GEN(dev->mdev, max_indirection);
+	props->umr_caps.max_umr_stride_dimenson = 1;
+	props->exp_comp_mask |= IB_EXP_DEVICE_ATTR_UMR;
+	return err;
+}
+
 static int get_port_caps(struct mlx5_ib_dev *dev)
 {
-	struct ib_device_attr *dprops = NULL;
+	struct ib_exp_device_attr *dprops = NULL;
 	struct ib_port_attr *pprops = NULL;
 	int err = 0;
 	int port;
@@ -913,7 +965,7 @@ static int get_port_caps(struct mlx5_ib_dev *dev)
 	if (!dprops)
 		goto out;
 
-	err = mlx5_ib_query_device(&dev->ib_dev, dprops);
+	err = mlx5_ib_exp_query_device(&dev->ib_dev, dprops);
 	if (err) {
 		mlx5_ib_warn(dev, "query_device failed %d\n", err);
 		goto out;
@@ -926,12 +978,10 @@ static int get_port_caps(struct mlx5_ib_dev *dev)
 				     port, err);
 			break;
 		}
-		dev->mdev->port_caps[port - 1].pkey_table_len =
-						dprops->max_pkeys;
-		dev->mdev->port_caps[port - 1].gid_table_len =
-						pprops->gid_tbl_len;
+		dev->mdev->port_caps[port - 1].pkey_table_len = dprops->base.max_pkeys;
+		dev->mdev->port_caps[port - 1].gid_table_len = pprops->gid_tbl_len;
 		mlx5_ib_dbg(dev, "pkey_table_len %d, gid_table_len %d\n",
-			    dprops->max_pkeys, pprops->gid_tbl_len);
+			    dprops->base.max_pkeys, pprops->gid_tbl_len);
 	}
 
 out:
@@ -1083,6 +1133,7 @@ static int create_dev_resources(struct mlx5_ib_resources *devr)
 {
 	struct ib_srq_init_attr attr;
 	struct mlx5_ib_dev *dev;
+	struct ib_cq_init_attr cq_attr;
 	int ret = 0;
 
 	dev = container_of(devr, struct mlx5_ib_dev, devr);
@@ -1096,7 +1147,9 @@ static int create_dev_resources(struct mlx5_ib_resources *devr)
 	devr->p0->uobject = NULL;
 	atomic_set(&devr->p0->usecnt, 0);
 
-	devr->c0 = mlx5_ib_create_cq(&dev->ib_dev, 1, 0, NULL, NULL);
+	memset(&cq_attr, 0, sizeof(cq_attr));
+	cq_attr.cqe = 1;
+	devr->c0 = mlx5_ib_create_cq(&dev->ib_dev, &cq_attr, NULL, NULL);
 	if (IS_ERR(devr->c0)) {
 		ret = PTR_ERR(devr->c0);
 		goto error1;
@@ -1235,6 +1288,11 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 		(1ull << IB_USER_VERBS_CMD_DESTROY_SRQ)		|
 		(1ull << IB_USER_VERBS_CMD_CREATE_XSRQ)		|
 		(1ull << IB_USER_VERBS_CMD_OPEN_QP);
+	dev->ib_dev.uverbs_exp_cmd_mask	=
+		(1ull << IB_USER_VERBS_EXP_CMD_REG_MR_EX)       |
+		(1ull << IB_USER_VERBS_EXP_CMD_MODIFY_QP)	|
+		(1ull << IB_USER_VERBS_EXP_CMD_CREATE_CQ)	|
+		(1ull << IB_USER_VERBS_EXP_CMD_MODIFY_CQ);
 
 	dev->ib_dev.query_device	= mlx5_ib_query_device;
 	dev->ib_dev.query_port		= mlx5_ib_query_port;
@@ -1289,6 +1347,10 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 			(1ull << IB_USER_VERBS_CMD_OPEN_XRCD) |
 			(1ull << IB_USER_VERBS_CMD_CLOSE_XRCD);
 	}
+
+
+	dev->ib_dev.exp_query_device = mlx5_ib_exp_query_device;
+	dev->ib_dev.uverbs_exp_cmd_mask	|= (1 << IB_USER_VERBS_EXP_CMD_QUERY_DEVICE);
 
 	err = init_node_data(dev);
 	if (err)
