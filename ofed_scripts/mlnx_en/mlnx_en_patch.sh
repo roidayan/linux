@@ -38,6 +38,7 @@ ex()
 
 KER_UNAME_R=`uname -r`
 KER_PATH=/lib/modules/${KER_UNAME_R}/build
+NJOBS=1
 
 usage()
 {
@@ -47,6 +48,7 @@ Usage: `basename $0` [--help]: Prints this message
 		[--with-memtrack]: Compile with memtrack kernel module to debug memory leaks
 		[-k|--kernel <kernel version>]: Build package for this kernel version. Default: $KER_UNAME_R
 		[-s|--kernel-sources  <path to the kernel sources>]: Use these kernel sources for the build. Default: $KER_PATH
+		[-j[N]|--with-njobs=[N]] : Allow N configure jobs at once; jobs as number of CPUs with no arg.
 EOF
 }
 			 
@@ -66,6 +68,16 @@ parseparams() {
 				shift
 				KSRC=$1
 			;;
+                        -j[0-9]*)
+	                        NJOBS=`expr "x$1" : 'x\-j\(.*\)'`
+                        ;;
+                        --with-njobs=*)
+	                        NJOBS=`expr "x$1" : 'x[^=]*=\(.*\)'`
+                        ;;
+                        -j |--with-njobs)
+				shift
+	                        NJOBS=$1
+                        ;;
 			*)
 				echo "Bad input parameter: $1"
 				usage
@@ -154,12 +166,12 @@ fi
 /bin/cp -f Makefile.real Makefile.in
 
 if [[ -e "/etc/SuSE-release" && "$KSRC" =~ "build" ]]; then
-    ex ./configure --with-linux-obj=$KSRC --with-linux=${KSRC/build/source}
+    ex ./configure --with-linux-obj=$KSRC --with-linux=${KSRC/build/source} --with-njobs=$NJOBS
 elif [[ -e "/etc/SuSE-release" && "$KSRC" =~ "linux-obj" ]]; then
     sources_dir=$(/bin/readlink -f $KSRC 2>/dev/null | sed -e 's/-obj.*//g')
-    ex ./configure --with-linux-obj=$KSRC --with-linux=${sources_dir}
+    ex ./configure --with-linux-obj=$KSRC --with-linux=${sources_dir} --with-njobs=$NJOBS
 else
-    ex ./configure --with-linux-obj=$KSRC --with-linux=$KSRC
+    ex ./configure --with-linux-obj=$KSRC --with-linux=$KSRC --with-njobs=$NJOBS
 fi
 
 }

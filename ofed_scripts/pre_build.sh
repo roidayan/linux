@@ -8,7 +8,10 @@ config_flag=`/var/lib/dkms/${PACKAGE_NAME}/${PACKAGE_VERSION}/source/ofed_script
 
 make distclean
 
-./configure --kernel-version=$kernelver --kernel-sources=$kernel_source_dir ${config_flag}
+NJOBS=`grep ^processor /proc/cpuinfo | wc -l`
 
-make -j`grep ^processor /proc/cpuinfo | wc -l`
+./configure --kernel-version=$kernelver --kernel-sources=$kernel_source_dir ${config_flag} --with-njobs=${NJOBS:-1}
+
+make -j${NJOBS:-1}
+
 ./ofed_scripts/install_helper

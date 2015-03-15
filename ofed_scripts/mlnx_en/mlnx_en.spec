@@ -211,8 +211,8 @@ for flavor in %{flavors_to_build}; do
 	%if "%{MEMTRACK}" == "1"
 		export MLNX_EN_PATCH_PARAMS="$MLNX_EN_PATCH_PARAMS --with-memtrack"
 	%endif
-	./scripts/mlnx_en_patch.sh $MLNX_EN_PATCH_PARAMS
-	make KSRC=$KSRC V=0
+	./scripts/mlnx_en_patch.sh $MLNX_EN_PATCH_PARAMS %{?_smp_mflags}
+	make KSRC=$KSRC V=0 %{?_smp_mflags}
 	cd -
 done
 gzip -c source/scripts/mlx4_en.7 > mlx4_en.7.gz
