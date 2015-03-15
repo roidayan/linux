@@ -951,6 +951,10 @@ static void __ipoib_reap_neigh(struct ipoib_dev_priv *priv)
 				rcu_assign_pointer(*np,
 						   rcu_dereference_protected(neigh->hnext,
 									     lockdep_is_held(&priv->lock)));
+				/* inform state if requested */
+				if (NULL != neigh->state_callback)
+					neigh->state_callback(priv, IPOIB_NEIGH_REMOVED, neigh->context);
+
 				/* remove from path/mc list */
 				list_del(&neigh->list);
 				call_rcu(&neigh->rcu, ipoib_neigh_reclaim);
