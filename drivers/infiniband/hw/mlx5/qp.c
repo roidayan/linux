@@ -1313,9 +1313,28 @@ int mlx5_ib_destroy_qp(struct ib_qp *qp)
 	return 0;
 }
 
+static u32 atomic_mode_qp(struct mlx5_ib_dev *dev)
+{
+	unsigned long mask;
+	unsigned long tmp;
+
+	mask = MLX5_CAP_ATOMIC(dev->mdev, atomic_size_qp) &
+		MLX5_CAP_ATOMIC(dev->mdev, atomic_size_dc);
+
+	tmp = find_last_bit(&mask, 8 * sizeof(mask));
+	if (tmp < 2)
+		return MLX5_ATOMIC_MODE_NONE;
+
+	if (tmp == 2)
+		return MLX5_ATOMIC_MODE_CX;
+
+	return tmp << MLX5_ATOMIC_MODE_OFF;
+}
+
 static __be32 to_mlx5_access_flags(struct mlx5_ib_qp *qp, const struct ib_qp_attr *attr,
 				   int attr_mask)
 {
+	struct mlx5_ib_dev *dev = to_mdev(qp->ibqp.device);
 	u32 hw_access_flags = 0;
 	u8 dest_rd_atomic;
 	u32 access_flags;
@@ -1336,7 +1355,8 @@ static __be32 to_mlx5_access_flags(struct mlx5_ib_qp *qp, const struct ib_qp_att
 	if (access_flags & IB_ACCESS_REMOTE_READ)
 		hw_access_flags |= MLX5_QP_BIT_RRE;
 	if (access_flags & IB_ACCESS_REMOTE_ATOMIC)
-		hw_access_flags |= (MLX5_QP_BIT_RAE | MLX5_ATOMIC_MODE_CX);
+		hw_access_flags |= (MLX5_QP_BIT_RAE |
+				    atomic_mode_qp(dev));
 	if (access_flags & IB_ACCESS_REMOTE_WRITE)
 		hw_access_flags |= MLX5_QP_BIT_RWE;
 

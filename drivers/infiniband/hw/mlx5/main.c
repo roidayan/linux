@@ -64,6 +64,81 @@ static char mlx5_version[] =
 	DRIVER_NAME ": Mellanox Connect-IB Infiniband driver v"
 	DRIVER_VERSION " (" DRIVER_RELDATE ")\n";
 
+static void ext_atomic_caps(struct mlx5_ib_dev *dev,
+			    struct ib_exp_device_attr *props)
+{
+	int tmp;
+	unsigned long last;
+	unsigned long arg;
+
+	props->max_fa_bit_boudary = 0;
+	props->log_max_atomic_inline_arg = 0;
+
+	tmp = MLX5_ATOMIC_OPS_CMP_SWAP		|
+	      MLX5_ATOMIC_OPS_FETCH_ADD		|
+	      MLX5_ATOMIC_OPS_MASKED_CMP_SWAP	|
+	      MLX5_ATOMIC_OPS_MASKED_FETCH_ADD;
+
+	if (MLX5_CAP_ATOMIC(dev->mdev, atomic_operations) != tmp)
+		return;
+
+	props->atomic_arg_sizes = MLX5_CAP_ATOMIC(dev->mdev, atomic_size_qp) &
+				  MLX5_CAP_ATOMIC(dev->mdev, atomic_size_dc);
+	props->max_fa_bit_boudary = 64;
+	arg = (unsigned long)props->atomic_arg_sizes;
+	last = find_last_bit(&arg, sizeof(arg));
+	if (last < 6)
+		props->log_max_atomic_inline_arg = last;
+	else
+		props->log_max_atomic_inline_arg = 6;
+
+	props->device_cap_flags2 |= IB_EXP_DEVICE_EXT_ATOMICS;
+}
+
+static void get_atomic_caps(struct mlx5_ib_dev *dev,
+			    struct ib_device_attr *props,
+			    int exp)
+{
+	int tmp;
+	u8 atomic_operations;
+	u8 atomic_size_qp;
+	u8 atomic_req_endianess;
+
+	atomic_operations = MLX5_CAP_ATOMIC(dev->mdev, atomic_operations);
+	atomic_size_qp = MLX5_CAP_ATOMIC(dev->mdev, atomic_size_qp);
+	atomic_req_endianess = MLX5_CAP_ATOMIC(dev->mdev, atomic_req_endianess);
+
+	tmp = MLX5_ATOMIC_OPS_CMP_SWAP | MLX5_ATOMIC_OPS_FETCH_ADD;
+	if (((atomic_operations & tmp) == tmp)
+	    && (atomic_size_qp & 8)) {
+		if (atomic_req_endianess)
+			props->atomic_cap = IB_ATOMIC_HCA;
+		else {
+			if (exp)
+				props->atomic_cap = IB_ATOMIC_HCA_REPLY_BE;
+			else
+			props->atomic_cap = IB_ATOMIC_NONE;
+		}
+	} else {
+		props->atomic_cap = IB_ATOMIC_NONE;
+	}
+
+	tmp = MLX5_ATOMIC_OPS_MASKED_CMP_SWAP | MLX5_ATOMIC_OPS_MASKED_FETCH_ADD;
+	if (((atomic_operations & tmp) == tmp)
+	    &&(atomic_size_qp & 8)) {
+		if (atomic_req_endianess)
+			props->masked_atomic_cap = IB_ATOMIC_HCA;
+		else {
+			if (exp)
+				props->masked_atomic_cap = IB_ATOMIC_HCA_REPLY_BE;
+			else
+				props->masked_atomic_cap = IB_ATOMIC_NONE;
+		}
+	} else {
+		props->masked_atomic_cap = IB_ATOMIC_NONE;
+	}
+}
+
 static int query_device(struct ib_device *ibdev,
 			struct ib_device_attr *props,
 			int exp)
@@ -148,8 +223,8 @@ static int query_device(struct ib_device *ibdev,
 	props->max_res_rd_atom	   = props->max_qp_rd_atom * props->max_qp;
 	props->max_srq_sge	   = max_rq_sg - 1;
 	props->max_fast_reg_page_list_len = (unsigned int)-1;
-	props->atomic_cap	   = IB_ATOMIC_NONE;
-	props->masked_atomic_cap   = IB_ATOMIC_NONE;
+	props->max_indir_reg_mr_list_len = 1 << MLX5_CAP_GEN(mdev, log_max_klm_list_size);
+	get_atomic_caps(dev, props, exp);
 	props->max_pkeys	   = be16_to_cpup((__be16 *)(out_mad->data + 28));
 	props->max_mcast_grp	   = 1 << MLX5_CAP_GEN(mdev, log_max_mcg);
 	props->max_mcast_qp_attach = MLX5_CAP_GEN(mdev, max_qp_mcg);
@@ -907,6 +982,17 @@ static void get_ext_port_caps(struct mlx5_ib_dev *dev)
 		mlx5_query_ext_port_caps(dev, port);
 }
 
+static void config_atomic_responder(struct mlx5_ib_dev *dev,
+				    struct ib_exp_device_attr *props)
+{
+	enum ib_atomic_cap cap = props->base.atomic_cap;
+
+	if (cap == IB_ATOMIC_HCA ||
+	    cap == IB_ATOMIC_GLOB ||
+	    cap == IB_ATOMIC_HCA_REPLY_BE)
+		dev->enable_atomic_resp = 1;
+}
+
 int mlx5_ib_exp_query_device(struct ib_device *ibdev,
 			     struct ib_exp_device_attr *props)
 {
@@ -939,6 +1025,9 @@ int mlx5_ib_exp_query_device(struct ib_device *ibdev,
 	else
 		props->inline_recv_sz = 0;
 
+	ext_atomic_caps(dev, props);
+	props->exp_comp_mask |= IB_EXP_DEVICE_ATTR_EXT_ATOMIC_ARGS;
+
 	props->device_cap_flags2 |= IB_EXP_DEVICE_NOP;
 
 	props->device_cap_flags2 |= IB_EXP_DEVICE_UMR;
@@ -970,6 +1059,8 @@ static int get_port_caps(struct mlx5_ib_dev *dev)
 		mlx5_ib_warn(dev, "query_device failed %d\n", err);
 		goto out;
 	}
+
+	config_atomic_responder(dev, dprops);
 
 	for (port = 1; port <= MLX5_CAP_GEN(dev->mdev, num_ports); port++) {
 		err = mlx5_ib_query_port(&dev->ib_dev, port, pprops);
