@@ -350,11 +350,11 @@ struct mlx5_eq {
 	u8			irqn;
 	u8			eqn;
 	int			nent;
-	u64			mask;
 	char			name[MLX5_MAX_EQ_NAME];
 	struct list_head	list;
 	int			index;
 	struct mlx5_rsc_debug	*dbg;
+	cpumask_var_t		affinity_mask;
 };
 
 struct mlx5_core_psv {
@@ -415,6 +415,7 @@ struct mlx5_eq_table {
 	struct mlx5_eq		async_eq;
 	struct mlx5_eq		cmd_eq;
 	struct msix_entry	*msix_arr;
+	cpumask_var_t		*irq_masks;
 	int			num_comp_vectors;
 	/* protect EQs list
 	 */
@@ -725,7 +726,10 @@ int mlx5_create_map_eq(struct mlx5_core_dev *dev, struct mlx5_eq *eq, u8 vecidx,
 int mlx5_destroy_unmap_eq(struct mlx5_core_dev *dev, struct mlx5_eq *eq);
 int mlx5_start_eqs(struct mlx5_core_dev *dev);
 int mlx5_stop_eqs(struct mlx5_core_dev *dev);
-int mlx5_vector2eqn(struct mlx5_core_dev *dev, int vector, int *eqn, int *irqn);
+int mlx5_vector2comp_eqn(struct mlx5_core_dev *dev, int index,
+			 int *eqn, int *irqn);
+int mlx5_get_comp_eq_affinity(struct mlx5_core_dev *dev, int index,
+			      cpumask_var_t *mask);
 int mlx5_core_attach_mcg(struct mlx5_core_dev *dev, union ib_gid *mgid, u32 qpn);
 int mlx5_core_detach_mcg(struct mlx5_core_dev *dev, union ib_gid *mgid, u32 qpn);
 

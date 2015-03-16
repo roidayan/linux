@@ -506,46 +506,71 @@ static int mlx5_core_disable_hca(struct mlx5_core_dev *dev)
 	return 0;
 }
 
-static void mlx5_irq_set_affinity_hint(struct mlx5_core_dev *mdev, int i)
+static void mlx5_set_comp_eqs_affinity(struct mlx5_core_dev *dev)
 {
-	struct msix_entry *msix = mdev->priv.eq_table.msix_arr;
-	int irq = msix[i + MLX5_EQ_VEC_COMP_BASE].vector;
-	int numa_node = mdev->pdev->dev.numa_node;
-	cpumask_var_t mask;
+	struct mlx5_priv *priv = &dev->priv;
+	struct mlx5_eq_table *table = &priv->eq_table;
+	struct mlx5_eq *eq, *n;
 
-	if (!zalloc_cpumask_var(&mask, GFP_KERNEL)) {
-		mlx5_core_warn(mdev, "zalloc_cpumask_var failed");
-		return;
-	}
+	list_for_each_entry_safe(eq, n, &table->comp_eqs_list, list) {
+		if (!zalloc_cpumask_var(&eq->affinity_mask, GFP_KERNEL)) {
+			mlx5_core_warn(dev,
+				       "zalloc_cpumask_var failed for comp eq: %d",
+				       eq->index);
+			eq->affinity_mask = NULL;
+			return;
+		}
 
-	cpumask_set_cpu_local_first(i, numa_node, mask);
-	if (irq_set_affinity_hint(irq, mask))
-		mlx5_core_warn(mdev, "%s failed, irq=0x%.4x\n", __func__, irq);
+		cpumask_set_cpu(eq->index, eq->affinity_mask);
 
-	free_cpumask_var(mask);
-}
-
-static void mlx5_irq_set_affinity_hints(struct mlx5_core_dev *mdev)
-{
-	int i;
-
-	for (i = 0; i < mdev->priv.eq_table.num_comp_vectors; i++)
-		mlx5_irq_set_affinity_hint(mdev, i);
-}
-
-static void mlx5_irq_clear_affinity_hints(struct mlx5_core_dev *mdev)
-{
-	struct msix_entry *msix = mdev->priv.eq_table.msix_arr;
-	int i;
-
-	for (i = 0; i < mdev->priv.eq_table.num_comp_vectors; i++) {
-		int irq = msix[i + MLX5_EQ_VEC_COMP_BASE].vector;
-
-		irq_set_affinity_hint(irq, NULL);
+		if (irq_set_affinity_hint(table->msix_arr[eq->irqn].vector,
+					  eq->affinity_mask)) {
+			mlx5_core_warn(dev, "irq_set_affinity_hint failed");
+			free_cpumask_var(eq->affinity_mask);
+			eq->affinity_mask = NULL;
+			return;
+		}
 	}
 }
 
-int mlx5_vector2eqn(struct mlx5_core_dev *dev, int vector, int *eqn, int *irqn)
+static void mlx5_clear_comp_eqs_affinity(struct mlx5_core_dev *dev)
+{
+	struct mlx5_priv *priv = &dev->priv;
+	struct mlx5_eq_table *table = &priv->eq_table;
+	struct mlx5_eq *eq, *n;
+
+	list_for_each_entry_safe(eq, n, &table->comp_eqs_list, list) {
+		if (!eq->affinity_mask)
+			continue;
+
+		free_cpumask_var(eq->affinity_mask);
+		irq_set_affinity_hint(table->msix_arr[eq->irqn].vector, NULL);
+	}
+}
+
+int mlx5_get_comp_eq_affinity(struct mlx5_core_dev *dev, int index,
+			      cpumask_var_t *mask)
+{
+	struct mlx5_priv *priv = &dev->priv;
+	struct mlx5_eq_table *table = &priv->eq_table;
+	struct mlx5_eq *eq, *n;
+	int err = -ENOENT;
+
+	spin_lock(&table->lock);
+	list_for_each_entry_safe(eq, n, &table->comp_eqs_list, list) {
+		if (eq->index == index) {
+			*mask = eq->affinity_mask;
+			err = 0;
+		}
+	}
+	spin_unlock(&table->lock);
+
+	return err;
+}
+
+
+int mlx5_vector2comp_eqn(struct mlx5_core_dev *dev, int index,
+			 int *eqn, int *irqn)
 {
 	struct mlx5_eq_table *table = &dev->priv.eq_table;
 	struct mlx5_eq *eq, *n;
@@ -553,7 +578,7 @@ int mlx5_vector2eqn(struct mlx5_core_dev *dev, int vector, int *eqn, int *irqn)
 
 	spin_lock(&table->lock);
 	list_for_each_entry_safe(eq, n, &table->comp_eqs_list, list) {
-		if (eq->index == vector) {
+		if (eq->index == index) {
 			*eqn = eq->eqn;
 			*irqn = eq->irqn;
 			err = 0;
@@ -564,7 +589,7 @@ int mlx5_vector2eqn(struct mlx5_core_dev *dev, int vector, int *eqn, int *irqn)
 
 	return err;
 }
-EXPORT_SYMBOL(mlx5_vector2eqn);
+EXPORT_SYMBOL(mlx5_vector2comp_eqn);
 
 int mlx5_rename_eq(struct mlx5_core_dev *dev, int eq_ix, char *name)
 {
@@ -788,7 +813,7 @@ static int mlx5_dev_init(struct mlx5_core_dev *dev, struct pci_dev *pdev)
 		goto err_stop_eqs;
 	}
 
-	mlx5_irq_set_affinity_hints(dev);
+	mlx5_set_comp_eqs_affinity(dev);
 	MLX5_INIT_DOORBELL_LOCK(&priv->cq_uar_lock);
 
 	mlx5_init_cq_table(dev);
@@ -852,7 +877,7 @@ static void mlx5_dev_cleanup(struct mlx5_core_dev *dev)
 	mlx5_cleanup_srq_table(dev);
 	mlx5_cleanup_qp_table(dev);
 	mlx5_cleanup_cq_table(dev);
-	mlx5_irq_clear_affinity_hints(dev);
+	mlx5_clear_comp_eqs_affinity(dev);
 	free_comp_eqs(dev);
 	mlx5_stop_eqs(dev);
 	mlx5_free_uuars(dev, &priv->uuari);
