@@ -2013,9 +2013,11 @@ static int mlx4_ib_modify_gid(struct ib_device *device,
 		if (ctx) {
 			ctx->refcount--;
 			if (!ctx->refcount) {
-				memcpy(&port_gid_table->gids[ctx->real_index].gid, &zgid, sizeof(*gid));
-				port_gid_table->gids[ctx->real_index].ctx = NULL;
-				kfree(port_gid_table->gids[ctx->real_index].ctx);
+				unsigned int index = ctx->real_index;
+
+				memcpy(&port_gid_table->gids[index].gid, &zgid, sizeof(*gid));
+				kfree(port_gid_table->gids[index].ctx);
+				port_gid_table->gids[index].ctx = NULL;
 				hw_update = 1;
 			}
 		}
