@@ -123,12 +123,6 @@ sub printNlogRED
 sub check_and_update_FW
 {
 	print BLUE "Attempting to perform Firmware update...", RESET "\n" if not $quiet;
-	my $nomst = 0;
-	if (not -x "/usr/bin/mstflint") {
-		$nomst = 1;
-		printNlogRED "mstflint package is not installed.", RESET "\n";
-		printNlogRED "Cannot clear semaphores on devices. Firmware update might fail!", RESET "\n";
-	}
 
 	my $fw_tmp = "$TMPDIR/mlnx.fw.$$";
 	mkpath([$fw_tmp]);
@@ -147,8 +141,8 @@ sub check_and_update_FW
 
 	# loop on Mellanox devices
 	my $founddevs = 0;
-	print "Running: lspci -n 2>/dev/null| grep 15b3 | cut -d\" \" -f\"1\"\n" if $verbose;
-	for my $ibdev ( `lspci -n 2>/dev/null| grep 15b3 | cut -d" " -f"1"` ) {
+	print "Running: lspci -d 15b3: -s.0 2>/dev/null | cut -d\" \" -f\"1\"\n" if $verbose;
+	for my $ibdev ( `lspci -d 15b3: -s.0 2>/dev/null | cut -d" " -f"1"` ) {
 		$founddevs = 1;
 		chomp $ibdev;
 
@@ -160,21 +154,10 @@ sub check_and_update_FW
 			next;
 		}
 
-		if ($nomst) {
-			print "Running: $cmd -d $ibdev\n" if $verbose;
-			system("$cmd -d $ibdev");
-			if ($? >> 8 or $? & 127) {
-				$RC = 1;
-			}
-			system("/bin/cat $log >> $TMPDIR/tmplog 2>/dev/null");
-			system("/bin/rm -f $log >/dev/null 2>&1");
-			next;
-		}
-
-		print "Running: mstflint -clear_semaphore -d $ibdev > /dev/null 2>&1\n" if $verbose;
-		system("mstflint -clear_semaphore -d $ibdev > /dev/null 2>&1");
-		print "running mstflint -d $ibdev q 2>/dev/null | grep PSID: | awk '{print \$NF}'\n" if $verbose;
-		my $psid = `mstflint -d $ibdev q 2>/dev/null | grep PSID: | awk '{print \$NF}'`;
+		print "Running: $mlxfwmanager_sriov_dis --clear-semaphore -d $ibdev > /dev/null 2>&1\n" if $verbose;
+		system("$mlxfwmanager_sriov_dis --clear-semaphore -d $ibdev > /dev/null 2>&1");
+		print "running $mlxfwmanager_sriov_dis -d $ibdev --query 2>/dev/null | grep PSID: | awk '{print \$NF}'\n" if $verbose;
+		my $psid = `$mlxfwmanager_sriov_dis -d $ibdev --query 2>/dev/null | grep PSID: | awk '{print \$NF}'`;
 		chomp $psid;
 		if (exists $fw_info{$psid}) {
 			# we have FW for this device
