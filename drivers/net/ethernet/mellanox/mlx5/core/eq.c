@@ -159,6 +159,10 @@ static const char *eqe_type_str(u8 type)
 		return "MLX5_EVENT_TYPE_PAGE_REQUEST";
 	case MLX5_EVENT_TYPE_PAGE_FAULT:
 		return "MLX5_EVENT_TYPE_PAGE_FAULT";
+	case MLX5_EVENT_TYPE_DCT_DRAINED:
+		return "MLX5_EVENT_TYPE_DCT_DRAINED";
+	case MLX5_EVENT_TYPE_DCT_KEY_VIOLATION:
+		return "MLX5_EVENT_TYPE_DCT_KEY_VIOLATION";
 	default:
 		return "Unrecognized event";
 	}
@@ -194,13 +198,30 @@ static void eq_update_ci(struct mlx5_eq *eq, int arm)
 	mb();
 }
 
+static void dump_eqe(struct mlx5_core_dev *dev, void *eqe)
+{
+	__be32 *buf = eqe;
+	int i;
+
+	mlx5_core_warn(dev, "EQE contents: %08x %08x %08x %08x\n",
+		       be32_to_cpu(buf[0]), be32_to_cpu(buf[1]),
+		       be32_to_cpu(buf[2]), be32_to_cpu(buf[3]));
+	for (i = 4; i < 16; i += 4) {
+		mlx5_core_warn(dev, "              %08x %08x %08x %08x\n",
+			       be32_to_cpu(buf[i]), be32_to_cpu(buf[i + 1]),
+			       be32_to_cpu(buf[i + 2]), be32_to_cpu(buf[i + 3]));
+	}
+}
+
 static int mlx5_eq_int(struct mlx5_core_dev *dev, struct mlx5_eq *eq)
 {
 	struct mlx5_eqe *eqe;
 	int eqes_found = 0;
 	int set_ci = 0;
+	int err;
 	u32 cqn;
 	u32 rsn;
+	u32 dctn;
 	u8 port;
 
 	while ((eqe = next_eqe_sw(eq))) {
@@ -216,6 +237,16 @@ static int mlx5_eq_int(struct mlx5_core_dev *dev, struct mlx5_eq *eq)
 		case MLX5_EVENT_TYPE_COMP:
 			cqn = be32_to_cpu(eqe->data.comp.cqn) & 0xffffff;
 			mlx5_cq_completion(dev, cqn);
+			break;
+
+		case MLX5_EVENT_TYPE_DCT_DRAINED:
+		case MLX5_EVENT_TYPE_DCT_KEY_VIOLATION:
+			dctn = be32_to_cpu(eqe->data.dct.dctn) & 0xffffff;
+			err = mlx5_rsc_event(dev, dctn, eqe->type);
+			if (err) {
+				mlx5_core_warn(dev, "mlx5_rsc_event failed on eq 0x%x\n", eq->eqn);
+				dump_eqe(dev, eqe);
+			}
 			break;
 
 		case MLX5_EVENT_TYPE_PATH_MIG:
@@ -470,7 +501,8 @@ int mlx5_start_eqs(struct mlx5_core_dev *dev)
 	mlx5_cmd_use_events(dev);
 
 	err = mlx5_create_map_eq(dev, &table->async_eq, MLX5_EQ_VEC_ASYNC,
-				 MLX5_NUM_ASYNC_EQE, async_event_mask,
+				 MLX5_NUM_ASYNC_EQE,
+				 dev->aysnc_events_mask | async_event_mask,
 				 "mlx5_async_eq", &dev->priv.uuari.uars[0]);
 	if (err) {
 		mlx5_core_warn(dev, "failed to create async EQ %d\n", err);

@@ -99,6 +99,7 @@ DEFINE_IDR(ib_uverbs_qp_idr);
 DEFINE_IDR(ib_uverbs_srq_idr);
 DEFINE_IDR(ib_uverbs_xrcd_idr);
 DEFINE_IDR(ib_uverbs_rule_idr);
+DEFINE_IDR(ib_uverbs_dct_idr);
 
 static DEFINE_SPINLOCK(map_lock);
 static DECLARE_BITMAP(dev_map, IB_UVERBS_MAX_DEVICES);
@@ -308,6 +309,20 @@ static int ib_uverbs_cleanup_ucontext(struct ib_uverbs_file *file,
 		ib_destroy_cq(cq);
 		ib_uverbs_release_ucq(file, ev_file, ucq);
 		kfree(ucq);
+	}
+
+	list_for_each_entry_safe(uobj, tmp, &context->dct_list, list) {
+		struct ib_dct *dct = uobj->object;
+		struct ib_udct_object *udct =
+			container_of(uobj, struct ib_udct_object, uevent.uobject);
+
+		idr_remove_uobj(&ib_uverbs_dct_idr, uobj);
+
+		err = ib_destroy_dct(dct);
+		if (err)
+			pr_info("destroying uverbs dct failed: err %d\n", err);
+
+		kfree(udct);
 	}
 
 	list_for_each_entry_safe(uobj, tmp, &context->srq_list, list) {
@@ -585,6 +600,18 @@ void ib_uverbs_qp_event_handler(struct ib_event *event, void *context_ptr)
 	ib_uverbs_async_handler(context_ptr, uobj->uobject.user_handle,
 				event->event, &uobj->event_list,
 				&uobj->events_reported, IB_EVENT_RSC_QP);
+}
+
+void ib_uverbs_dct_event_handler(struct ib_event *event, void *context_ptr)
+{
+	struct ib_uevent_object *uobj;
+
+	uobj = container_of(event->element.dct->uobject,
+			    struct ib_uevent_object, uobject);
+
+	ib_uverbs_async_handler(context_ptr, uobj->uobject.user_handle,
+				event->event, &uobj->event_list,
+				&uobj->events_reported, IB_EVENT_RSC_DCT);
 }
 
 void ib_uverbs_srq_event_handler(struct ib_event *event, void *context_ptr)

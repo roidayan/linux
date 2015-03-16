@@ -751,6 +751,9 @@ static const struct {
 				[IB_QPT_RC]  = (IB_QP_PKEY_INDEX		|
 						IB_QP_PORT			|
 						IB_QP_ACCESS_FLAGS),
+				[IB_EXP_QPT_DC_INI]  = (IB_QP_PKEY_INDEX	|
+							IB_QP_PORT		|
+							IB_QP_DC_KEY),
 				[IB_QPT_XRC_INI] = (IB_QP_PKEY_INDEX		|
 						IB_QP_PORT			|
 						IB_QP_ACCESS_FLAGS),
@@ -788,6 +791,9 @@ static const struct {
 				[IB_QPT_RC]  = (IB_QP_PKEY_INDEX		|
 						IB_QP_PORT			|
 						IB_QP_ACCESS_FLAGS),
+				[IB_EXP_QPT_DC_INI]  = (IB_QP_PKEY_INDEX	|
+							IB_QP_PORT		|
+							IB_QP_DC_KEY),
 				[IB_QPT_XRC_INI] = (IB_QP_PKEY_INDEX		|
 						IB_QP_PORT			|
 						IB_QP_ACCESS_FLAGS),
@@ -813,6 +819,8 @@ static const struct {
 						IB_QP_RQ_PSN			|
 						IB_QP_MAX_DEST_RD_ATOMIC	|
 						IB_QP_MIN_RNR_TIMER),
+				[IB_EXP_QPT_DC_INI]  = (IB_QP_AV		|
+							IB_QP_PATH_MTU),
 				[IB_QPT_XRC_INI] = (IB_QP_AV			|
 						IB_QP_PATH_MTU			|
 						IB_QP_DEST_QPN			|
@@ -833,6 +841,8 @@ static const struct {
 				 [IB_QPT_RC]  = (IB_QP_ALT_PATH			|
 						 IB_QP_ACCESS_FLAGS		|
 						 IB_QP_PKEY_INDEX),
+				 [IB_EXP_QPT_DC_INI]  = (IB_QP_PKEY_INDEX	|
+							 IB_QP_DC_KEY),
 				 [IB_QPT_XRC_INI] = (IB_QP_ALT_PATH		|
 						 IB_QP_ACCESS_FLAGS		|
 						 IB_QP_PKEY_INDEX),
@@ -859,6 +869,10 @@ static const struct {
 						IB_QP_RNR_RETRY			|
 						IB_QP_SQ_PSN			|
 						IB_QP_MAX_QP_RD_ATOMIC),
+				[IB_EXP_QPT_DC_INI]  = (IB_QP_TIMEOUT		|
+							IB_QP_RETRY_CNT		|
+							IB_QP_RNR_RETRY		|
+							IB_QP_MAX_QP_RD_ATOMIC),
 				[IB_QPT_XRC_INI] = (IB_QP_TIMEOUT		|
 						IB_QP_RETRY_CNT			|
 						IB_QP_RNR_RETRY			|
@@ -881,6 +895,10 @@ static const struct {
 						 IB_QP_ACCESS_FLAGS		|
 						 IB_QP_MIN_RNR_TIMER		|
 						 IB_QP_PATH_MIG_STATE),
+				 [IB_EXP_QPT_DC_INI] = (IB_QP_CUR_STATE		|
+							IB_QP_ALT_PATH		|
+							IB_QP_MIN_RNR_TIMER	|
+							IB_QP_PATH_MIG_STATE),
 				 [IB_QPT_XRC_INI] = (IB_QP_CUR_STATE		|
 						 IB_QP_ALT_PATH			|
 						 IB_QP_ACCESS_FLAGS		|
@@ -914,6 +932,10 @@ static const struct {
 						IB_QP_ALT_PATH			|
 						IB_QP_PATH_MIG_STATE		|
 						IB_QP_MIN_RNR_TIMER),
+				[IB_EXP_QPT_DC_INI]  = (IB_QP_CUR_STATE		|
+							IB_QP_ALT_PATH		|
+							IB_QP_PATH_MIG_STATE	|
+							IB_QP_MIN_RNR_TIMER),
 				[IB_QPT_XRC_INI] = (IB_QP_CUR_STATE		|
 						IB_QP_ACCESS_FLAGS		|
 						IB_QP_ALT_PATH			|
@@ -1708,6 +1730,69 @@ int ib_destroy_flow(struct ib_flow *flow_id)
 }
 EXPORT_SYMBOL(ib_destroy_flow);
 
+struct ib_dct *ib_create_dct(struct ib_pd *pd, struct ib_dct_init_attr *attr,
+			     struct ib_udata *udata)
+{
+	struct ib_dct *dct;
+
+	if (!pd->device->exp_create_dct)
+		return ERR_PTR(-ENOSYS);
+
+	dct = pd->device->exp_create_dct(pd, attr, udata);
+	if (!IS_ERR(dct)) {
+		dct->pd = pd;
+		dct->srq = attr->srq;
+		dct->cq = attr->cq;
+		atomic_inc(&dct->srq->usecnt);
+		atomic_inc(&dct->cq->usecnt);
+		atomic_inc(&dct->pd->usecnt);
+	}
+
+	return dct;
+}
+EXPORT_SYMBOL(ib_create_dct);
+
+int ib_destroy_dct(struct ib_dct *dct)
+{
+	struct ib_srq *srq;
+	struct ib_cq *cq;
+	struct ib_pd *pd;
+	int err;
+
+	if (!dct->device->exp_destroy_dct)
+		return -ENOSYS;
+
+	srq = dct->srq;
+	cq = dct->cq;
+	pd = dct->pd;
+	err = dct->device->exp_destroy_dct(dct);
+	if (!err) {
+		atomic_dec(&srq->usecnt);
+		atomic_dec(&cq->usecnt);
+		atomic_dec(&pd->usecnt);
+	}
+
+	return err;
+}
+EXPORT_SYMBOL(ib_destroy_dct);
+
+int ib_query_dct(struct ib_dct *dct, struct ib_dct_attr *attr)
+{
+	if (!dct->device->exp_query_dct)
+		return -ENOSYS;
+
+	return dct->device->exp_query_dct(dct, attr);
+}
+EXPORT_SYMBOL(ib_query_dct);
+
+int ib_arm_dct(struct ib_dct *dct)
+{
+	if (!dct->device->exp_arm_dct)
+		return -ENOSYS;
+
+	return dct->device->exp_arm_dct(dct, NULL);
+}
+EXPORT_SYMBOL(ib_arm_dct);
 int ib_check_mr_status(struct ib_mr *mr, u32 check_mask,
 		       struct ib_mr_status *mr_status)
 {

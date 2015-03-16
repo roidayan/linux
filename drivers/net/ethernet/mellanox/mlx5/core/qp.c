@@ -36,6 +36,7 @@
 #include <linux/mlx5/cmd.h>
 #include <linux/mlx5/qp.h>
 #include <linux/mlx5/driver.h>
+#include <linux/mlx5/mlx5_ifc.h>
 
 #include "mlx5_core.h"
 
@@ -67,13 +68,14 @@ void mlx5_core_put_rsc(struct mlx5_core_rsc_common *common)
 		complete(&common->free);
 }
 
-void mlx5_rsc_event(struct mlx5_core_dev *dev, u32 rsn, int event_type)
+int mlx5_rsc_event(struct mlx5_core_dev *dev, u32 rsn, int event_type)
 {
 	struct mlx5_core_rsc_common *common = mlx5_get_rsc(dev, rsn);
+	struct mlx5_core_dct *dct;
 	struct mlx5_core_qp *qp;
 
 	if (!common)
-		return;
+		return -1;
 
 	switch (common->res) {
 	case MLX5_RES_QP:
@@ -81,11 +83,20 @@ void mlx5_rsc_event(struct mlx5_core_dev *dev, u32 rsn, int event_type)
 		qp->event(qp, event_type);
 		break;
 
+	case MLX5_RES_DCT:
+		dct = (struct mlx5_core_dct *)common;
+		if (event_type == MLX5_EVENT_TYPE_DCT_DRAINED)
+			complete(&dct->drained);
+		else
+			dct->event(dct, event_type);
+		break;
+
 	default:
 		mlx5_core_warn(dev, "invalid resource type for 0x%x\n", rsn);
 	}
 
 	mlx5_core_put_rsc(common);
+	return 0;
 }
 
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
@@ -348,6 +359,16 @@ void mlx5_cleanup_qp_table(struct mlx5_core_dev *dev)
 	mlx5_qp_debugfs_cleanup(dev);
 }
 
+void mlx5_init_dct_table(struct mlx5_core_dev *dev)
+{
+	mlx5_dct_debugfs_init(dev);
+}
+
+void mlx5_cleanup_dct_table(struct mlx5_core_dev *dev)
+{
+	mlx5_dct_debugfs_cleanup(dev);
+}
+
 int mlx5_core_qp_query(struct mlx5_core_dev *dev, struct mlx5_core_qp *qp,
 		       struct mlx5_query_qp_mbox_out *out, int outlen)
 {
@@ -412,6 +433,168 @@ int mlx5_core_xrcd_dealloc(struct mlx5_core_dev *dev, u32 xrcdn)
 }
 EXPORT_SYMBOL_GPL(mlx5_core_xrcd_dealloc);
 
+int mlx5_core_create_dct(struct mlx5_core_dev *dev,
+			 struct mlx5_core_dct *dct,
+			 struct mlx5_create_dct_mbox_in *in)
+{
+	struct mlx5_qp_table *table = &dev->priv.qp_table;
+	struct mlx5_create_dct_mbox_out out;
+	struct mlx5_destroy_dct_mbox_in din;
+	struct mlx5_destroy_dct_mbox_out dout;
+	int err;
+
+	init_completion(&dct->drained);
+	memset(&out, 0, sizeof(out));
+	in->hdr.opcode = cpu_to_be16(MLX5_CMD_OP_CREATE_DCT);
+
+	err = mlx5_cmd_exec(dev, in, sizeof(*in), &out, sizeof(out));
+	if (err) {
+		mlx5_core_warn(dev, "create DCT failed, ret %d", err);
+		return err;
+	}
+
+	if (out.hdr.status)
+		return mlx5_cmd_status_to_err(&out.hdr);
+
+	dct->dctn = be32_to_cpu(out.dctn) & 0xffffff;
+
+	dct->common.res = MLX5_RES_DCT;
+	spin_lock_irq(&table->lock);
+	err = radix_tree_insert(&table->tree, dct->dctn, dct);
+	spin_unlock_irq(&table->lock);
+	if (err) {
+		mlx5_core_warn(dev, "err %d", err);
+		goto err_cmd;
+	}
+
+	err = mlx5_debug_dct_add(dev, dct);
+	if (err)
+		mlx5_core_dbg(dev, "failed adding DCT 0x%x to debug file system\n",
+			      dct->dctn);
+
+	dct->pid = current->pid;
+	atomic_set(&dct->common.refcount, 1);
+	init_completion(&dct->common.free);
+
+	return 0;
+
+err_cmd:
+	memset(&din, 0, sizeof(din));
+	memset(&dout, 0, sizeof(dout));
+	din.hdr.opcode = cpu_to_be16(MLX5_CMD_OP_DESTROY_DCT);
+	din.dctn = cpu_to_be32(dct->dctn);
+	mlx5_cmd_exec(dev, &din, sizeof(din), &out, sizeof(dout));
+
+	return err;
+}
+EXPORT_SYMBOL_GPL(mlx5_core_create_dct);
+
+static int mlx5_core_drain_dct(struct mlx5_core_dev *dev,
+			       struct mlx5_core_dct *dct)
+{
+	struct mlx5_drain_dct_mbox_out out;
+	struct mlx5_drain_dct_mbox_in in;
+	int err;
+
+	memset(&in, 0, sizeof(in));
+	memset(&out, 0, sizeof(out));
+	in.hdr.opcode = cpu_to_be16(MLX5_CMD_OP_DRAIN_DCT);
+	in.dctn = cpu_to_be32(dct->dctn);
+	err = mlx5_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
+	if (err)
+		return err;
+
+	if (out.hdr.status)
+		return mlx5_cmd_status_to_err(&out.hdr);
+
+	return 0;
+}
+
+int mlx5_core_destroy_dct(struct mlx5_core_dev *dev,
+			  struct mlx5_core_dct *dct)
+{
+	struct mlx5_qp_table *table = &dev->priv.qp_table;
+	struct mlx5_destroy_dct_mbox_out out;
+	struct mlx5_destroy_dct_mbox_in in;
+	unsigned long flags;
+	int err;
+
+	err = mlx5_core_drain_dct(dev, dct);
+	if (err) {
+		mlx5_core_warn(dev, "failed drain DCT 0x%x\n", dct->dctn);
+		return err;
+	}
+
+	wait_for_completion(&dct->drained);
+
+	mlx5_debug_dct_remove(dev, dct);
+
+	spin_lock_irqsave(&table->lock, flags);
+	if (radix_tree_delete(&table->tree, dct->dctn) != dct)
+		mlx5_core_warn(dev, "dct delete differs\n");
+	spin_unlock_irqrestore(&table->lock, flags);
+
+	if (atomic_dec_and_test(&dct->common.refcount))
+		complete(&dct->common.free);
+	wait_for_completion(&dct->common.free);
+
+	memset(&in, 0, sizeof(in));
+	memset(&out, 0, sizeof(out));
+	in.hdr.opcode = cpu_to_be16(MLX5_CMD_OP_DESTROY_DCT);
+	in.dctn = cpu_to_be32(dct->dctn);
+	err = mlx5_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
+	if (err)
+		return err;
+
+	if (out.hdr.status)
+		return mlx5_cmd_status_to_err(&out.hdr);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(mlx5_core_destroy_dct);
+
+int mlx5_core_dct_query(struct mlx5_core_dev *dev, struct mlx5_core_dct *dct,
+			struct mlx5_query_dct_mbox_out *out)
+{
+	struct mlx5_query_dct_mbox_in in;
+	int err;
+
+	memset(&in, 0, sizeof(in));
+	memset(out, 0, sizeof(*out));
+	in.hdr.opcode = cpu_to_be16(MLX5_CMD_OP_QUERY_DCT);
+	in.dctn = cpu_to_be32(dct->dctn);
+	err = mlx5_cmd_exec(dev, &in, sizeof(in), out, sizeof(*out));
+	if (err)
+		return err;
+
+	if (out->hdr.status)
+		return mlx5_cmd_status_to_err(&out->hdr);
+
+	return err;
+}
+EXPORT_SYMBOL_GPL(mlx5_core_dct_query);
+
+int mlx5_core_arm_dct(struct mlx5_core_dev *dev, struct mlx5_core_dct *dct)
+{
+	struct mlx5_arm_dct_mbox_out out;
+	struct mlx5_arm_dct_mbox_in in;
+	int err;
+
+	memset(&in, 0, sizeof(in));
+	memset(&out, 0, sizeof(out));
+
+	in.hdr.opcode = cpu_to_be16(MLX5_CMD_OP_ARM_DCT_FOR_KEY_VIOLATION);
+	in.dctn = cpu_to_be32(dct->dctn);
+	err = mlx5_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
+	if (err)
+		return err;
+
+	if (out.hdr.status)
+		return mlx5_cmd_status_to_err(&out.hdr);
+
+	return err;
+}
+EXPORT_SYMBOL_GPL(mlx5_core_arm_dct);
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
 int mlx5_core_page_fault_resume(struct mlx5_core_dev *dev, u32 qpn,
 				u8 flags, int error)

@@ -72,6 +72,10 @@ enum {
 	MLX5_REQ_SCAT_DATA64_CQE	= 0x22,
 };
 
+enum {
+	MLX5_DCT_CS_RES_64	= 2,
+};
+
 enum mlx5_ib_latency_class {
 	MLX5_IB_LATENCY_CLASS_LOW,
 	MLX5_IB_LATENCY_CLASS_MEDIUM,
@@ -232,6 +236,11 @@ struct mlx5_ib_qp {
 	spinlock_t              disable_page_faults_lock;
 	struct mlx5_ib_pfault	pagefaults[MLX5_IB_PAGEFAULT_CONTEXTS];
 #endif
+};
+
+struct mlx5_ib_dct {
+	struct ib_dct		ibdct;
+	struct mlx5_core_dct	mdct;
 };
 
 struct mlx5_ib_cq_buf {
@@ -476,6 +485,11 @@ static inline struct mlx5_ib_qp *to_mibqp(struct mlx5_core_qp *mqp)
 	return container_of(mqp, struct mlx5_ib_qp, mqp);
 }
 
+static inline struct mlx5_ib_dct *to_mibdct(struct mlx5_core_dct *mdct)
+{
+	return container_of(mdct, struct mlx5_ib_dct, mdct);
+}
+
 static inline struct mlx5_ib_mr *to_mibmr(struct mlx5_core_mr *mmr)
 {
 	return container_of(mmr, struct mlx5_ib_mr, mmr);
@@ -494,6 +508,11 @@ static inline struct mlx5_ib_srq *to_msrq(struct ib_srq *ibsrq)
 static inline struct mlx5_ib_qp *to_mqp(struct ib_qp *ibqp)
 {
 	return container_of(ibqp, struct mlx5_ib_qp, ibqp);
+}
+
+static inline struct mlx5_ib_dct *to_mdct(struct ib_dct *ibdct)
+{
+	return container_of(ibdct, struct mlx5_ib_dct, ibdct);
 }
 
 static inline struct mlx5_ib_srq *to_mibsrq(struct mlx5_core_srq *msrq)
@@ -615,6 +634,12 @@ int mlx5_mr_cache_init(struct mlx5_ib_dev *dev);
 int mlx5_mr_cache_cleanup(struct mlx5_ib_dev *dev);
 int mlx5_mr_ib_cont_pages(struct ib_umem *umem, u64 addr, int *count, int *shift);
 void mlx5_umr_cq_handler(struct ib_cq *cq, void *cq_context);
+struct ib_dct *mlx5_ib_create_dct(struct ib_pd *pd,
+				  struct ib_dct_init_attr *attr,
+				  struct ib_udata *udata);
+int mlx5_ib_destroy_dct(struct ib_dct *dct);
+int mlx5_ib_query_dct(struct ib_dct *dct, struct ib_dct_attr *attr);
+int mlx5_ib_arm_dct(struct ib_dct *dct, struct ib_udata *udata);
 int mlx5_ib_check_mr_status(struct ib_mr *ibmr, u32 check_mask,
 			    struct ib_mr_status *mr_status);
 

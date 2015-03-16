@@ -45,6 +45,12 @@
 #include <linux/mlx5/device.h>
 #include <linux/mlx5/doorbell.h>
 
+enum mlx5_res_type {
+	MLX5_RES_QP,
+	MLX5_RES_SRQ,
+	MLX5_RES_DCT,
+};
+
 enum {
 	MLX5_BOARD_ID_LEN = 64,
 	MLX5_MAX_NAME_LEN = 16,
@@ -101,6 +107,19 @@ enum {
 };
 
 enum {
+	MLX5_ATOMIC_MODE_DCT_OFF	= 20,
+	MLX5_ATOMIC_MODE_DCT_NONE	= 0 << MLX5_ATOMIC_MODE_DCT_OFF,
+	MLX5_ATOMIC_MODE_DCT_IB_COMP	= 1 << MLX5_ATOMIC_MODE_DCT_OFF,
+	MLX5_ATOMIC_MODE_DCT_CX		= 2 << MLX5_ATOMIC_MODE_DCT_OFF,
+	MLX5_ATOMIC_MODE_DCT_8B		= 3 << MLX5_ATOMIC_MODE_DCT_OFF,
+	MLX5_ATOMIC_MODE_DCT_16B	= 4 << MLX5_ATOMIC_MODE_DCT_OFF,
+	MLX5_ATOMIC_MODE_DCT_32B	= 5 << MLX5_ATOMIC_MODE_DCT_OFF,
+	MLX5_ATOMIC_MODE_DCT_64B	= 6 << MLX5_ATOMIC_MODE_DCT_OFF,
+	MLX5_ATOMIC_MODE_DCT_128B	= 7 << MLX5_ATOMIC_MODE_DCT_OFF,
+	MLX5_ATOMIC_MODE_DCT_256B	= 8 << MLX5_ATOMIC_MODE_DCT_OFF,
+};
+
+enum {
 	MLX5_ATOMIC_OPS_CMP_SWAP		= 1 << 0,
 	MLX5_ATOMIC_OPS_FETCH_ADD		= 1 << 1,
 	MLX5_ATOMIC_OPS_MASKED_CMP_SWAP		= 1 << 2,
@@ -132,6 +151,7 @@ enum dbg_rsc_type {
 	MLX5_DBG_RSC_QP,
 	MLX5_DBG_RSC_EQ,
 	MLX5_DBG_RSC_CQ,
+	MLX5_DBG_RSC_DCT,
 };
 
 struct mlx5_field_desc {
@@ -349,10 +369,6 @@ struct mlx5_core_mr {
 	u32			pd;
 };
 
-enum mlx5_res_type {
-	MLX5_RES_QP,
-};
-
 struct mlx5_core_rsc_common {
 	enum mlx5_res_type	res;
 	atomic_t		refcount;
@@ -457,6 +473,10 @@ struct mlx5_priv {
 	struct dentry	       *cmdif_debugfs;
 	/* end: qp staff */
 
+	/* start: dct stuff */
+	struct dentry	       *dct_debugfs;
+	/* end: dct stuff */
+
 	/* start: cq staff */
 	struct mlx5_cq_table	cq_table;
 	/* end: cq staff */
@@ -496,6 +516,7 @@ struct mlx5_core_dev {
 	struct mlx5_priv	priv;
 	struct mlx5_profile	*profile;
 	atomic_t		num_qps;
+	u64			aysnc_events_mask;
 };
 
 struct mlx5_db {
@@ -510,6 +531,15 @@ struct mlx5_db {
 
 enum {
 	MLX5_DB_PER_PAGE = PAGE_SIZE / L1_CACHE_BYTES,
+};
+
+struct mlx5_core_dct {
+	struct mlx5_core_rsc_common	common; /* must be first */
+	void (*event)(struct mlx5_core_dct *, enum mlx5_event);
+	int			dctn;
+	struct completion	drained;
+	struct mlx5_rsc_debug	*dbg;
+	int			pid;
 };
 
 enum {
@@ -686,7 +716,7 @@ int mlx5_eq_init(struct mlx5_core_dev *dev);
 void mlx5_eq_cleanup(struct mlx5_core_dev *dev);
 void mlx5_fill_page_array(struct mlx5_buf *buf, __be64 *pas);
 void mlx5_cq_completion(struct mlx5_core_dev *dev, u32 cqn);
-void mlx5_rsc_event(struct mlx5_core_dev *dev, u32 rsn, int event_type);
+int mlx5_rsc_event(struct mlx5_core_dev *dev, u32 rsn, int event_type);
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
 void mlx5_eq_pagefault(struct mlx5_core_dev *dev, struct mlx5_eqe *eqe);
 #endif
@@ -708,6 +738,8 @@ int mlx5_core_detach_mcg(struct mlx5_core_dev *dev, union ib_gid *mgid, u32 qpn)
 
 int mlx5_qp_debugfs_init(struct mlx5_core_dev *dev);
 void mlx5_qp_debugfs_cleanup(struct mlx5_core_dev *dev);
+int mlx5_dct_debugfs_init(struct mlx5_core_dev *dev);
+void mlx5_dct_debugfs_cleanup(struct mlx5_core_dev *dev);
 int mlx5_core_access_reg(struct mlx5_core_dev *dev, void *data_in,
 			 int size_in, void *data_out, int size_out,
 			 u16 reg_num, int arg, int write);
@@ -764,6 +796,7 @@ static inline u8 mlx5_mkey_variant(u32 mkey)
 enum {
 	MLX5_PROF_MASK_QP_SIZE		= (u64)1 << 0,
 	MLX5_PROF_MASK_MR_CACHE		= (u64)1 << 1,
+	MLX5_PROF_MASK_DCT		= (u64)1 << 2,
 };
 
 enum {
@@ -792,6 +825,7 @@ void mlx5_unregister_interface(struct mlx5_interface *intf);
 struct mlx5_profile {
 	u64	mask;
 	u8	log_max_qp;
+	int	dct_enable;
 	struct {
 		int	size;
 		int	limit;

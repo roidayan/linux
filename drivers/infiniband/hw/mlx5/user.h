@@ -81,6 +81,11 @@ struct mlx5_ib_alloc_ucontext_resp {
 	__u32	max_srq_recv_wr;
 	__u16	num_ports;
 	__u16	reserved;
+	__u32	max_desc_sz_sq_dc;
+	__u32	atomic_arg_sizes_dc;
+	__u32	reserved1;
+	__u32	flags;
+	__u32	reserved2[5];
 };
 
 struct mlx5_ib_alloc_pd_resp {
@@ -130,4 +135,15 @@ struct mlx5_ib_create_qp {
 struct mlx5_ib_create_qp_resp {
 	__u32	uuar_index;
 };
+
+struct mlx5_ib_arm_dct {
+	__u64	reserved0;
+	__u64	reserved1;
+};
+
+struct mlx5_ib_arm_dct_resp {
+	__u64	reserved0;
+	__u64	reserved1;
+};
+
 #endif /* MLX5_IB_USER_H */

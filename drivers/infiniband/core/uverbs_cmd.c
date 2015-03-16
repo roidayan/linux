@@ -67,6 +67,7 @@ static struct uverbs_lock_class qp_lock_class	= { .name = "QP-uobj" };
 static struct uverbs_lock_class ah_lock_class	= { .name = "AH-uobj" };
 static struct uverbs_lock_class srq_lock_class	= { .name = "SRQ-uobj" };
 static struct uverbs_lock_class xrcd_lock_class = { .name = "XRCD-uobj" };
+static struct uverbs_lock_class dct_lock_class	= { .name = "DCT-uobj" };
 static struct uverbs_lock_class rule_lock_class = { .name = "RULE-uobj" };
 
 static int uverbs_copy_from_udata(void *dest, struct ib_udata *udata, size_t len)
@@ -300,6 +301,16 @@ static void put_qp_write(struct ib_qp *qp)
 	put_uobj_write(qp->uobject);
 }
 
+static struct ib_dct *idr_read_dct(int dct_handle, struct ib_ucontext *context)
+{
+	return idr_read_obj(&ib_uverbs_dct_idr, dct_handle, context, 0);
+}
+
+static void put_dct_read(struct ib_dct *dct)
+{
+	put_uobj_read(dct->uobject);
+}
+
 static struct ib_srq *idr_read_srq(int srq_handle, struct ib_ucontext *context)
 {
 	return idr_read_obj(&ib_uverbs_srq_idr, srq_handle, context, 0);
@@ -381,6 +392,7 @@ ssize_t ib_uverbs_get_context(struct ib_uverbs_file *file,
 	INIT_LIST_HEAD(&ucontext->ah_list);
 	INIT_LIST_HEAD(&ucontext->xrcd_list);
 	INIT_LIST_HEAD(&ucontext->rule_list);
+	INIT_LIST_HEAD(&ucontext->dct_list);
 	rcu_read_lock();
 	ucontext->tgid = get_task_pid(current->group_leader, PIDTYPE_PID);
 	rcu_read_unlock();
@@ -3612,30 +3624,293 @@ int ib_uverbs_exp_create_dct(struct ib_uverbs_file *file,
 			     struct ib_udata *ucore,
 			     struct ib_udata *uhw)
 {
-	return -ENOSYS;
+	int out_len			= ucore->outlen + uhw->outlen;
+	struct ib_uverbs_create_dct	 *cmd;
+	struct ib_uverbs_create_dct_resp resp;
+	struct ib_udata			 udata;
+	struct ib_udct_object		*obj;
+	struct ib_dct			*dct;
+	int                             ret;
+	struct ib_dct_init_attr		*attr;
+	struct ib_pd			*pd = NULL;
+	struct ib_cq			*cq = NULL;
+	struct ib_srq			*srq = NULL;
+
+	if (out_len < sizeof(resp))
+		return -ENOSPC;
+
+	cmd = kzalloc(sizeof(*cmd), GFP_KERNEL);
+	attr = kzalloc(sizeof(*attr), GFP_KERNEL);
+	if (!attr || !cmd) {
+		ret = -ENOMEM;
+		goto err_cmd_attr;
+	}
+
+	ret = ucore->ops->copy_from(cmd, ucore, sizeof(*cmd));
+	if (ret)
+		goto err_cmd_attr;
+
+	obj = kmalloc(sizeof(*obj), GFP_KERNEL);
+	if (!obj) {
+		ret = -ENOMEM;
+		goto err_cmd_attr;
+	}
+
+	init_uobj(&obj->uevent.uobject, cmd->user_handle, file->ucontext,
+		  &dct_lock_class);
+	down_write(&obj->uevent.uobject.mutex);
+
+	pd = idr_read_pd(cmd->pd_handle, file->ucontext);
+	if (!pd) {
+		ret = -EINVAL;
+		goto err_pd;
+	}
+
+	cq = idr_read_cq(cmd->cq_handle, file->ucontext, 0);
+	if (!cq) {
+		ret = -EINVAL;
+		goto err_put;
+	}
+
+	srq = idr_read_srq(cmd->srq_handle, file->ucontext);
+	if (!srq) {
+		ret = -EINVAL;
+		goto err_put;
+	}
+
+	if (cmd->create_flags & ~IB_DCT_CREATE_FLAGS_MASK) {
+		ret = -EINVAL;
+		goto err_put;
+	}
+
+	attr->cq = cq;
+	attr->access_flags = cmd->access_flags;
+	attr->min_rnr_timer = cmd->min_rnr_timer;
+	attr->srq = srq;
+	attr->tclass = cmd->tclass;
+	attr->flow_label = cmd->flow_label;
+	attr->dc_key = cmd->dc_key;
+	attr->mtu = cmd->mtu;
+	attr->port = cmd->port;
+	attr->pkey_index = cmd->pkey_index;
+	attr->gid_index = cmd->gid_index;
+	attr->hop_limit = cmd->hop_limit;
+	attr->create_flags = cmd->create_flags;
+	attr->inline_size = cmd->inline_size;
+	attr->event_handler = ib_uverbs_dct_event_handler;
+	attr->dct_context   = file;
+
+	obj->uevent.events_reported = 0;
+	INIT_LIST_HEAD(&obj->uevent.event_list);
+	dct = ib_create_dct(pd, attr, &udata);
+	if (IS_ERR(dct)) {
+		ret = PTR_ERR(dct);
+		goto err_put;
+	}
+
+	dct->device        = file->device->ib_dev;
+	dct->uobject       = &obj->uevent.uobject;
+	dct->event_handler = attr->event_handler;
+	dct->dct_context   = attr->dct_context;
+
+	obj->uevent.uobject.object = dct;
+	ret = idr_add_uobj(&ib_uverbs_dct_idr, &obj->uevent.uobject);
+	if (ret)
+		goto err_dct;
+
+	memset(&resp, 0, sizeof(resp));
+	resp.dct_handle = obj->uevent.uobject.id;
+	resp.dctn = dct->dct_num;
+	resp.inline_size = attr->inline_size;
+
+	ret = ucore->ops->copy_to(ucore, &resp, sizeof(resp));
+	if (ret)
+		goto err_copy;
+
+	mutex_lock(&file->mutex);
+	list_add_tail(&obj->uevent.uobject.list, &file->ucontext->dct_list);
+	mutex_unlock(&file->mutex);
+
+	obj->uevent.uobject.live = 1;
+
+	put_srq_read(srq);
+	put_cq_read(cq);
+	put_pd_read(pd);
+
+	up_write(&obj->uevent.uobject.mutex);
+	kfree(attr);
+	kfree(cmd);
+
+	return 0;
+
+err_copy:
+	idr_remove_uobj(&ib_uverbs_dct_idr, &obj->uevent.uobject);
+
+err_dct:
+	ib_destroy_dct(dct);
+
+err_put:
+	if (srq)
+		put_srq_read(srq);
+
+	if (cq)
+		put_cq_read(cq);
+
+	put_pd_read(pd);
+
+err_pd:
+	put_uobj_write(&obj->uevent.uobject);
+
+err_cmd_attr:
+	kfree(attr);
+	kfree(cmd);
+	return ret;
 }
 
 int ib_uverbs_exp_destroy_dct(struct ib_uverbs_file *file,
 			      struct ib_udata *ucore,
 			      struct ib_udata *uhw)
 {
-	return -ENOSYS;
+	int out_len				= ucore->outlen + uhw->outlen;
+	struct ib_uverbs_destroy_dct		cmd;
+	struct ib_uverbs_destroy_dct_resp	resp;
+	struct ib_uobject		       *uobj;
+	struct ib_udct_object		       *obj;
+	struct ib_dct			       *dct;
+	int					ret;
+
+	if (out_len < sizeof(resp))
+		return -ENOSPC;
+
+	ret = ucore->ops->copy_from(&cmd, ucore, sizeof(cmd));
+	if (ret)
+		return ret;
+
+	uobj = idr_write_uobj(&ib_uverbs_dct_idr, cmd.dct_handle, file->ucontext);
+	if (!uobj)
+		return -EINVAL;
+
+	dct      = uobj->object;
+	obj = container_of(uobj, struct ib_udct_object, uevent.uobject);
+
+	ret = ib_destroy_dct(dct);
+	if (!ret)
+		uobj->live = 0;
+
+	put_uobj_write(uobj);
+
+	if (ret)
+		return ret;
+
+	idr_remove_uobj(&ib_uverbs_dct_idr, uobj);
+
+	mutex_lock(&file->mutex);
+	list_del(&uobj->list);
+	mutex_unlock(&file->mutex);
+
+	memset(&resp, 0, sizeof(resp));
+	resp.events_reported = obj->uevent.events_reported;
+
+	put_uobj(uobj);
+
+	ret = ucore->ops->copy_to(ucore, &resp, sizeof(resp));
+	if (ret)
+		return ret;
+
+	return 0;
 }
 
 int ib_uverbs_exp_arm_dct(struct ib_uverbs_file *file,
 			  struct ib_udata *ucore,
 			  struct ib_udata *uhw)
 {
-	return -ENOSYS;
+	int out_len			= ucore->outlen + uhw->outlen;
+	struct ib_uverbs_arm_dct	cmd;
+	struct ib_uverbs_arm_dct_resp	resp;
+	struct ib_dct		       *dct;
+	int				err;
+
+	if (out_len < sizeof(resp))
+		return -ENOSPC;
+
+	err = ucore->ops->copy_from(&cmd, ucore, sizeof(cmd));
+	if (err)
+		return err;
+
+	dct = idr_read_dct(cmd.dct_handle, file->ucontext);
+	if (!dct)
+		return -EINVAL;
+
+	err = dct->device->exp_arm_dct(dct, uhw);
+	put_dct_read(dct);
+	if (err)
+		return err;
+
+	memset(&resp, 0, sizeof(resp));
+	err = ucore->ops->copy_to(ucore, &resp, sizeof(resp));
+
+	return err;
 }
 
 int ib_uverbs_exp_query_dct(struct ib_uverbs_file *file,
 			    struct ib_udata *ucore,
 			    struct ib_udata *uhw)
 {
-	return -ENOSYS;
-}
+	int out_len			= ucore->outlen + uhw->outlen;
+	struct ib_uverbs_query_dct	cmd;
+	struct ib_uverbs_query_dct_resp	resp;
+	struct ib_dct		       *dct;
+	struct ib_dct_attr	       *attr;
+	int				err;
 
+	if (out_len < sizeof(resp))
+		return -ENOSPC;
+
+	err = ucore->ops->copy_from(&cmd, ucore, sizeof(cmd));
+	if (err)
+		return err;
+
+	attr = kmalloc(sizeof(*attr), GFP_KERNEL);
+	if (!attr) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	dct = idr_read_dct(cmd.dct_handle, file->ucontext);
+	if (!dct) {
+		err = -EINVAL;
+		goto out;
+	}
+
+	err = ib_query_dct(dct, attr);
+
+	put_dct_read(dct);
+
+	if (err)
+		goto out;
+
+	memset(&resp, 0, sizeof(resp));
+
+	resp.dc_key = attr->dc_key;
+	resp.access_flags = attr->access_flags;
+	resp.flow_label = attr->flow_label;
+	resp.key_violations = attr->key_violations;
+	resp.port = attr->port;
+	resp.min_rnr_timer = attr->min_rnr_timer;
+	resp.tclass = attr->tclass;
+	resp.mtu = attr->mtu;
+	resp.pkey_index = attr->pkey_index;
+	resp.gid_index = attr->gid_index;
+	resp.hop_limit = attr->hop_limit;
+	resp.state = attr->state;
+
+	err = ucore->ops->copy_to(ucore, &resp, sizeof(resp));
+
+out:
+	kfree(attr);
+
+	return err;
+}
 /*
  * Experimental functions
  */
@@ -4023,6 +4298,21 @@ int ib_uverbs_exp_query_device(struct ib_uverbs_file *file,
 		resp->comp_mask |= IB_EXP_DEVICE_ATTR_CAP_FLAGS2;
 		resp->device_cap_flags2 |= IB_EXP_DEVICE_MASK & exp_attr->base.device_cap_flags;
 		resp->base.device_cap_flags &= ~IB_EXP_DEVICE_MASK;
+	}
+
+	if (exp_attr->exp_comp_mask & IB_EXP_DEVICE_ATTR_DC_REQ_RD) {
+		resp->dc_rd_req = exp_attr->dc_rd_req;
+		resp->comp_mask |= IB_EXP_DEVICE_ATTR_DC_REQ_RD;
+	}
+
+	if (exp_attr->exp_comp_mask & IB_EXP_DEVICE_ATTR_DC_RES_RD) {
+		resp->dc_rd_res = exp_attr->dc_rd_res;
+		resp->comp_mask |= IB_EXP_DEVICE_ATTR_DC_RES_RD;
+	}
+
+	if (exp_attr->exp_comp_mask & IB_EXP_DEVICE_ATTR_MAX_DCT) {
+		resp->max_dct = exp_attr->max_dct;
+		resp->comp_mask |= IB_EXP_DEVICE_ATTR_MAX_DCT;
 	}
 
 	if (exp_attr->exp_comp_mask & IB_EXP_DEVICE_ATTR_INLINE_RECV_SZ) {

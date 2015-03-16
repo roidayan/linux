@@ -1439,6 +1439,17 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 			(1ull << IB_USER_VERBS_CMD_CLOSE_XRCD);
 	}
 
+	if (MLX5_CAP_GEN(mdev, dct)) {
+		dev->ib_dev.exp_create_dct = mlx5_ib_create_dct;
+		dev->ib_dev.exp_destroy_dct = mlx5_ib_destroy_dct;
+		dev->ib_dev.exp_query_dct = mlx5_ib_query_dct;
+		dev->ib_dev.exp_arm_dct = mlx5_ib_arm_dct;
+		dev->ib_dev.uverbs_exp_cmd_mask |=
+			(1ull << IB_USER_VERBS_EXP_CMD_CREATE_DCT)	|
+			(1ull << IB_USER_VERBS_EXP_CMD_DESTROY_DCT)	|
+			(1ull << IB_USER_VERBS_EXP_CMD_QUERY_DCT)	|
+			(1ull << IB_USER_VERBS_EXP_CMD_ARM_DCT);
+	}
 
 	dev->ib_dev.exp_query_device = mlx5_ib_exp_query_device;
 	dev->ib_dev.uverbs_exp_cmd_mask	|= (1 << IB_USER_VERBS_EXP_CMD_QUERY_DEVICE);

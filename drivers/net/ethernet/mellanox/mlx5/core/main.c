@@ -78,13 +78,17 @@ static struct mlx5_profile profile[] = {
 		.mask           = 0,
 	},
 	[1] = {
-		.mask		= MLX5_PROF_MASK_QP_SIZE,
+		.mask		= MLX5_PROF_MASK_QP_SIZE |
+				  MLX5_PROF_MASK_DCT,
 		.log_max_qp	= 12,
+		.dct_enable	= 1,
 	},
 	[2] = {
-		.mask		= MLX5_PROF_MASK_QP_SIZE |
-				  MLX5_PROF_MASK_MR_CACHE,
+		.mask		= MLX5_PROF_MASK_QP_SIZE  |
+				  MLX5_PROF_MASK_MR_CACHE |
+				  MLX5_PROF_MASK_DCT,
 		.log_max_qp	= 17,
+		.dct_enable	= 1,
 		.mr_cache[0]	= {
 			.size	= 500,
 			.limit	= 250
@@ -389,6 +393,18 @@ static int handle_hca_cap(struct mlx5_core_dev *dev)
 
 	/* disable cmdif checksum */
 	MLX5_SET(cmd_hca_cap, set_hca_cap, cmdif_checksum, 0);
+
+	if (prof->mask & MLX5_PROF_MASK_DCT) {
+		if (prof->dct_enable) {
+			if (MLX5_CAP_GEN_MAX(dev, dct)) {
+				MLX5_SET(cmd_hca_cap, set_hca_cap, dct, 1);
+				dev->aysnc_events_mask |= (1ull << MLX5_EVENT_TYPE_DCT_DRAINED) |
+					(1ull << MLX5_EVENT_TYPE_DCT_KEY_VIOLATION);
+			}
+		} else {
+			MLX5_SET(cmd_hca_cap, set_hca_cap, dct, 0);
+		}
+	}
 
 	err = set_caps(dev, set_ctx, set_sz);
 
@@ -819,6 +835,7 @@ static int mlx5_dev_init(struct mlx5_core_dev *dev, struct pci_dev *pdev)
 	mlx5_init_qp_table(dev);
 	mlx5_init_srq_table(dev);
 	mlx5_init_mr_table(dev);
+	mlx5_init_dct_table(dev);
 
 	return 0;
 
@@ -873,6 +890,8 @@ static void mlx5_dev_cleanup(struct mlx5_core_dev *dev)
 {
 	struct mlx5_priv *priv = &dev->priv;
 
+	mlx5_cleanup_dct_table(dev);
+	mlx5_cleanup_mr_table(dev);
 	mlx5_cleanup_srq_table(dev);
 	mlx5_cleanup_qp_table(dev);
 	mlx5_cleanup_cq_table(dev);

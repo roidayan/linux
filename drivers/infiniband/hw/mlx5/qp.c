@@ -32,6 +32,7 @@
 
 #include <linux/module.h>
 #include <rdma/ib_umem.h>
+#include <linux/mlx5/mlx5_ifc.h>
 #include "mlx5_ib.h"
 #include "user.h"
 
@@ -584,6 +585,7 @@ static int to_mlx5_st(enum ib_qp_type type)
 	case IB_QPT_GSI:		return MLX5_QP_ST_QP1;
 	case IB_QPT_RAW_IPV6:		return MLX5_QP_ST_RAW_IPV6;
 	case IB_QPT_RAW_ETHERTYPE:	return MLX5_QP_ST_RAW_ETHERTYPE;
+	case IB_EXP_QPT_DC_INI:		return MLX5_QP_ST_DC;
 	case IB_QPT_RAW_PACKET:
 	case IB_QPT_MAX:
 	default:		return -EINVAL;
@@ -841,8 +843,10 @@ static void destroy_qp_kernel(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp)
 
 static __be32 get_rx_type(struct mlx5_ib_qp *qp, struct ib_qp_init_attr *attr)
 {
-	if (attr->srq || (attr->qp_type == IB_QPT_XRC_TGT) ||
-	    (attr->qp_type == IB_QPT_XRC_INI))
+	enum ib_qp_type qt = attr->qp_type;
+
+	if (attr->srq || (qt == IB_QPT_XRC_TGT) || (qt == IB_QPT_XRC_INI) ||
+	    (qt == IB_EXP_QPT_DC_INI))
 		return cpu_to_be32(MLX5_SRQ_RQ);
 	else if (!qp->has_rq)
 		return cpu_to_be32(MLX5_ZERO_LEN_RQ);
@@ -1445,6 +1449,10 @@ static enum mlx5_qp_optpar opt_mask[MLX5_QP_NUM_STATE][MLX5_QP_NUM_STATE][MLX5_Q
 			[MLX5_QP_ST_UD] = MLX5_QP_OPTPAR_PKEY_INDEX	|
 					  MLX5_QP_OPTPAR_Q_KEY		|
 					  MLX5_QP_OPTPAR_PRI_PORT,
+			[MLX5_QP_ST_DC] = MLX5_QP_OPTPAR_PRI_PORT	|
+					  MLX5_QP_OPTPAR_DC_KEY		|
+					  MLX5_QP_OPTPAR_PKEY_INDEX	|
+					  MLX5_QP_OPTPAR_RAE,
 		},
 		[MLX5_QP_STATE_RTR] = {
 			[MLX5_QP_ST_RC] = MLX5_QP_OPTPAR_ALT_ADDR_PATH  |
@@ -1464,6 +1472,9 @@ static enum mlx5_qp_optpar opt_mask[MLX5_QP_NUM_STATE][MLX5_QP_NUM_STATE][MLX5_Q
 					  MLX5_QP_OPTPAR_RAE            |
 					  MLX5_QP_OPTPAR_RWE            |
 					  MLX5_QP_OPTPAR_PKEY_INDEX,
+			[MLX5_QP_ST_DC] = MLX5_QP_OPTPAR_PKEY_INDEX	|
+					  MLX5_QP_OPTPAR_RAE		|
+					  MLX5_QP_OPTPAR_DC_KEY,
 		},
 	},
 	[MLX5_QP_STATE_RTR] = {
@@ -1478,6 +1489,9 @@ static enum mlx5_qp_optpar opt_mask[MLX5_QP_NUM_STATE][MLX5_QP_NUM_STATE][MLX5_Q
 					  MLX5_QP_OPTPAR_RWE		|
 					  MLX5_QP_OPTPAR_PM_STATE,
 			[MLX5_QP_ST_UD] = MLX5_QP_OPTPAR_Q_KEY,
+			[MLX5_QP_ST_DC] = MLX5_QP_OPTPAR_DC_KEY		|
+					  MLX5_QP_OPTPAR_PM_STATE	|
+					  MLX5_QP_OPTPAR_RAE,
 		},
 	},
 	[MLX5_QP_STATE_RTS] = {
@@ -1494,6 +1508,9 @@ static enum mlx5_qp_optpar opt_mask[MLX5_QP_NUM_STATE][MLX5_QP_NUM_STATE][MLX5_Q
 			[MLX5_QP_ST_UD] = MLX5_QP_OPTPAR_Q_KEY		|
 					  MLX5_QP_OPTPAR_SRQN		|
 					  MLX5_QP_OPTPAR_CQN_RCV,
+			[MLX5_QP_ST_DC] = MLX5_QP_OPTPAR_DC_KEY		|
+					  MLX5_QP_OPTPAR_PM_STATE	|
+					  MLX5_QP_OPTPAR_RAE,
 		},
 	},
 	[MLX5_QP_STATE_SQER] = {
@@ -1505,6 +1522,9 @@ static enum mlx5_qp_optpar opt_mask[MLX5_QP_NUM_STATE][MLX5_QP_NUM_STATE][MLX5_Q
 					   MLX5_QP_OPTPAR_RWE		|
 					   MLX5_QP_OPTPAR_RAE		|
 					   MLX5_QP_OPTPAR_RRE,
+			[MLX5_QP_ST_DC]  = MLX5_QP_OPTPAR_DC_KEY	|
+					   MLX5_QP_OPTPAR_RAE,
+
 		},
 	},
 };
@@ -1635,6 +1655,9 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 
 	if (attr_mask & IB_QP_DEST_QPN)
 		context->log_pg_sz_remote_qpn = cpu_to_be32(attr->dest_qp_num);
+
+	if (attr_mask & IB_QP_DC_KEY)
+		context->dc_access_key = cpu_to_be64(attr->dct_key);
 
 	if (attr_mask & IB_QP_PKEY_INDEX)
 		context->pri_path.pkey_index = attr->pkey_index;
@@ -3183,4 +3206,229 @@ int mlx5_ib_dealloc_xrcd(struct ib_xrcd *xrcd)
 	kfree(xrcd);
 
 	return 0;
+}
+
+static u32 atomic_mode_dct(struct mlx5_ib_dev *dev)
+{
+	unsigned long mask;
+	unsigned long tmp;
+
+	mask = MLX5_CAP_ATOMIC(dev->mdev, atomic_size_qp) &
+	       MLX5_CAP_ATOMIC(dev->mdev, atomic_size_dc);
+
+	tmp = find_last_bit(&mask, sizeof(mask));
+	if (tmp < 2)
+		return MLX5_ATOMIC_MODE_DCT_NONE;
+
+	if (tmp == 2)
+		return MLX5_ATOMIC_MODE_DCT_CX;
+
+	return tmp << MLX5_ATOMIC_MODE_DCT_OFF;
+}
+
+static u32 ib_to_dct_acess(struct mlx5_ib_dev *dev, u32 ib_flags)
+{
+	u32 flags = 0;
+
+	if (ib_flags & IB_ACCESS_REMOTE_READ)
+		flags |= MLX5_DCT_BIT_RRE;
+	if (ib_flags & IB_ACCESS_REMOTE_WRITE)
+		flags |= (MLX5_DCT_BIT_RWE | MLX5_DCT_BIT_RRE);
+	if (ib_flags & IB_ACCESS_REMOTE_ATOMIC) {
+		flags |= (MLX5_DCT_BIT_RAE | MLX5_DCT_BIT_RWE | MLX5_DCT_BIT_RRE);
+		flags |= atomic_mode_dct(dev);
+	}
+
+	return flags;
+}
+
+static void mlx5_ib_dct_event(struct mlx5_core_dct *dct, enum mlx5_event type)
+{
+	struct ib_dct *ibdct = &to_mibdct(dct)->ibdct;
+	struct ib_event event;
+
+	if (ibdct->event_handler) {
+		event.device     = ibdct->device;
+		event.element.dct = ibdct;
+		switch (type) {
+		case MLX5_EVENT_TYPE_WQ_INVAL_REQ_ERROR:
+			event.event = IB_EXP_EVENT_DCT_REQ_ERR;
+			break;
+		case MLX5_EVENT_TYPE_WQ_ACCESS_ERROR:
+			event.event = IB_EXP_EVENT_DCT_ACCESS_ERR;
+			break;
+		case MLX5_EVENT_TYPE_DCT_KEY_VIOLATION:
+			event.event = IB_EXP_EVENT_DCT_KEY_VIOLATION;
+			break;
+		default:
+			pr_warn("mlx5_ib: Unexpected event type %d on DCT %06x\n",
+				type, dct->dctn);
+			return;
+		}
+
+		ibdct->event_handler(&event, ibdct->dct_context);
+	}
+}
+
+struct ib_dct *mlx5_ib_create_dct(struct ib_pd *pd,
+				  struct ib_dct_init_attr *attr,
+				  struct ib_udata *udata)
+{
+	struct mlx5_create_dct_mbox_in *in;
+	struct mlx5_dct_context *dctx;
+	struct mlx5_ib_dev *dev;
+	struct mlx5_ib_dct *dct;
+	int cqe_sz;
+	u32 cqn;
+	int err;
+
+	dct = kzalloc(sizeof(*dct), GFP_KERNEL);
+	if (!dct)
+		return ERR_PTR(-ENOMEM);
+
+	in = kzalloc(sizeof(*in), GFP_KERNEL);
+	if (!in) {
+		err = -ENOMEM;
+		goto err_alloc;
+	}
+
+	dctx = &in->context;
+	dev = to_mdev(pd->device);
+
+	cqn = to_mcq(attr->cq)->mcq.cqn;
+	if (cqn & 0xff000000) {
+		mlx5_ib_warn(dev, "invalid cqn 0x%x\n", cqn);
+		err = -EINVAL;
+		goto err_alloc;
+	}
+	dctx->cqn = cpu_to_be32(cqn);
+	dctx->flags |= cpu_to_be32(ib_to_dct_acess(dev, attr->access_flags));
+
+	if (attr->inline_size) {
+		cqe_sz = mlx5_ib_get_cqe_size(dev, attr->cq);
+		if (cqe_sz == 128) {
+			dctx->cs_res = MLX5_DCT_CS_RES_64;
+			attr->inline_size = 64;
+		} else {
+			attr->inline_size = 0;
+		}
+	}
+	dctx->min_rnr = attr->min_rnr_timer;
+	dctx->srqn = cpu_to_be32(to_msrq(attr->srq)->msrq.srqn);
+	dctx->pdn = cpu_to_be32(to_mpd(pd)->pdn);
+	dctx->tclass_flow_label |= cpu_to_be32(attr->tclass << 24);
+	dctx->tclass_flow_label |= cpu_to_be32(attr->flow_label);
+	dctx->access_key = cpu_to_be64(attr->dc_key);
+	dctx->mtu = attr->mtu;
+	dctx->port = attr->port;
+	dctx->pkey_index = cpu_to_be16(attr->pkey_index);
+	dctx->mgid_index = attr->gid_index;
+	dctx->hop_limit = attr->hop_limit;
+
+	err = mlx5_core_create_dct(dev->mdev, &dct->mdct, in);
+	if (err)
+		goto err_alloc;
+
+	dct->ibdct.dct_num = dct->mdct.dctn;
+	dct->mdct.event = mlx5_ib_dct_event;
+	kfree(in);
+	return &dct->ibdct;
+
+err_alloc:
+	kfree(in);
+	kfree(dct);
+	return ERR_PTR(err);
+}
+
+int mlx5_ib_destroy_dct(struct ib_dct *dct)
+{
+	struct mlx5_ib_dev *dev = to_mdev(dct->device);
+	struct mlx5_ib_dct *mdct = to_mdct(dct);
+	int err;
+
+	err = mlx5_core_destroy_dct(dev->mdev, &mdct->mdct);
+	if (!err)
+		kfree(mdct);
+
+	return err;
+}
+
+int dct_to_ib_access(u32 dc_flags)
+{
+	u32 flags = 0;
+
+	if (dc_flags & MLX5_DCT_BIT_RRE)
+		flags |= IB_ACCESS_REMOTE_READ;
+	if (dc_flags & MLX5_QP_BIT_RWE)
+		flags |= IB_ACCESS_REMOTE_WRITE;
+	if ((dc_flags & MLX5_ATOMIC_MODE_CX) == MLX5_ATOMIC_MODE_CX)
+		flags |= IB_ACCESS_REMOTE_ATOMIC;
+
+	return flags;
+}
+
+int mlx5_ib_query_dct(struct ib_dct *dct, struct ib_dct_attr *attr)
+{
+	struct mlx5_ib_dev *dev = to_mdev(dct->device);
+	struct mlx5_ib_dct *mdct = to_mdct(dct);
+	struct mlx5_query_dct_mbox_out *out;
+	struct mlx5_dct_context *ctx;
+	int err;
+
+	out = kzalloc(sizeof(*out), GFP_KERNEL);
+	if (!out)
+		return -ENOMEM;
+
+	err = mlx5_core_dct_query(dev->mdev, &mdct->mdct, out);
+	if (err)
+		goto out;
+
+	ctx = &out->ctx;
+
+	attr->dc_key = be64_to_cpu(ctx->access_key);
+	attr->port = ctx->port;
+	attr->access_flags = dct_to_ib_access(be32_to_cpu(ctx->flags));
+	attr->min_rnr_timer = ctx->min_rnr & 0x1f;
+	attr->tclass = be32_to_cpu(ctx->tclass_flow_label) >> 24;
+	attr->flow_label = be32_to_cpu(ctx->tclass_flow_label) & 0xfffff;
+	attr->mtu = ctx->mtu & 7;
+	attr->pkey_index = be16_to_cpu(ctx->pkey_index);
+	attr->gid_index = ctx->mgid_index;
+	attr->hop_limit = ctx->hop_limit;
+	attr->key_violations = be32_to_cpu(ctx->access_violations);
+	attr->state = ctx->state;
+
+out:
+	kfree(out);
+	return err;
+}
+
+int mlx5_ib_arm_dct(struct ib_dct *dct, struct ib_udata *udata)
+{
+	struct mlx5_ib_dev *dev = to_mdev(dct->device);
+	struct mlx5_ib_dct *mdct = to_mdct(dct);
+	struct mlx5_ib_arm_dct ucmd;
+	struct mlx5_ib_arm_dct_resp resp;
+	int err;
+
+	err = ib_copy_from_udata(&ucmd, udata, sizeof(ucmd));
+	if (err) {
+		mlx5_ib_dbg(dev, "copy failed\n");
+		return err;
+	}
+
+	if (ucmd.reserved0 || ucmd.reserved1)
+		return -EINVAL;
+
+	err = mlx5_core_arm_dct(dev->mdev, &mdct->mdct);
+	if (err)
+		goto out;
+
+	memset(&resp, 0, sizeof(resp));
+	err = ib_copy_to_udata(udata, &resp, sizeof(resp));
+	if (err)
+		mlx5_ib_dbg(dev, "copy failed\n");
+
+out:
+	return err;
 }

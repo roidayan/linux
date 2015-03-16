@@ -383,6 +383,21 @@ const char *mlx5_command_str(int command)
 	case MLX5_CMD_OP_ARM_XRC_SRQ:
 		return "ARM_XRC_SRQ";
 
+	case MLX5_CMD_OP_CREATE_DCT:
+		return "CREATE_DCT";
+
+	case MLX5_CMD_OP_DESTROY_DCT:
+		return "DESTROY_DCT";
+
+	case MLX5_CMD_OP_DRAIN_DCT:
+		return "DRAIN_DCT";
+
+	case MLX5_CMD_OP_QUERY_DCT:
+		return "QUERY_DCT";
+
+	case MLX5_CMD_OP_ARM_DCT_FOR_KEY_VIOLATION:
+		return "ARM_DCT";
+
 	case MLX5_CMD_OP_ALLOC_PD:
 		return "ALLOC_PD";
 

@@ -241,6 +241,9 @@ enum mlx5_event {
 	MLX5_EVENT_TYPE_PAGE_REQUEST	   = 0xb,
 
 	MLX5_EVENT_TYPE_PAGE_FAULT	   = 0xc,
+
+	MLX5_EVENT_TYPE_DCT_DRAINED	   = 0x1c,
+	MLX5_EVENT_TYPE_DCT_KEY_VIOLATION  = 0x1d,
 };
 
 enum {
@@ -325,6 +328,7 @@ enum {
 };
 
 enum {
+	MLX5_CAP_OFF_DCT		= 41,
 	MLX5_CAP_OFF_CMDIF_CSUM		= 46,
 };
 
@@ -513,6 +517,11 @@ struct mlx5_eqe_page_fault {
 	__be32 flags_qpn;
 } __packed;
 
+struct mlx5_eqe_dct {
+	__be32	reserved[6];
+	__be32	dctn;
+};
+
 union ev_data {
 	__be32				raw[7];
 	struct mlx5_eqe_cmd		cmd;
@@ -525,6 +534,7 @@ union ev_data {
 	struct mlx5_eqe_stall_vl	stall_vl;
 	struct mlx5_eqe_page_req	req_pages;
 	struct mlx5_eqe_page_fault	page_fault;
+	struct mlx5_eqe_dct		dct;
 } __packed;
 
 struct mlx5_eqe {
@@ -1028,6 +1038,22 @@ struct mlx5_access_reg_mbox_out {
 enum {
 	MLX_EXT_PORT_CAP_FLAG_EXTENDED_PORT_INFO	= 1 <<  0
 };
+
+enum {
+	DCT_STATE_ACTIVE	= 0,
+	DCT_STATE_DRAINING	= 1,
+	DCT_STATE_DRAINED	= 2
+};
+
+static inline const char *mlx5_dct_state_str(u8 state)
+{
+	switch (state) {
+	case DCT_STATE_ACTIVE:		return "Active";
+	case DCT_STATE_DRAINING:	return "Drained";
+	case DCT_STATE_DRAINED:		return "Drained";
+	default: return "Invalid";
+	}
+}
 
 struct mlx5_allocate_psv_in {
 	struct mlx5_inbox_hdr   hdr;
