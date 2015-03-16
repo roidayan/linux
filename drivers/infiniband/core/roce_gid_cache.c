@@ -127,7 +127,7 @@ static int write_gid(struct ib_device *ib_dev, u8 port,
 		}
 	}
 	/* if modify_gid failed, just delete the old gid */
-	if (ret) {
+	if (ret || !memcmp(gid, &zgid, sizeof(*gid))) {
 		gid = &zgid;
 		attr = &zattr;
 		cache->data_vec[ix].context = NULL;
@@ -225,6 +225,9 @@ int roce_add_gid(struct ib_device *ib_dev, u8 port,
 
 	if (!cache || !cache->active)
 		return -ENOSYS;
+
+	if (!memcmp(gid, &zgid, sizeof(*gid)))
+		return -EINVAL;
 
 	if (ib_dev->get_netdev) {
 		rcu_read_lock();
@@ -572,16 +575,18 @@ err_free_cache:
 	return NULL;
 }
 
-static void free_roce_gid_cache(struct ib_roce_gid_cache *cache)
+static void free_roce_gid_cache(struct ib_device *ib_dev, u8 port)
 {
 	int i;
+	struct ib_roce_gid_cache *cache = ib_dev->cache.roce_gid_cache[port - 1];
 
 	if (!cache)
 		return;
 
 	for (i = 0; i < cache->sz; ++i) {
-		if (cache->data_vec[i].attr.ndev)
-			dev_put(cache->data_vec[i].attr.ndev);
+		if (memcmp(&cache->data_vec[i].gid, &zgid,
+			   sizeof(cache->data_vec[i].gid)))
+			write_gid(ib_dev, port, cache, i, &zgid, &zattr);
 	}
 	kfree(cache->data_vec);
 	kfree(cache);
@@ -682,8 +687,8 @@ static int roce_gid_cache_setup_one(struct ib_device *ib_dev)
 	return 0;
 
 rollback_cache_setup:
-	for (port = 0; port < ib_dev->phys_port_cnt; port++)
-		free_roce_gid_cache(ib_dev->cache.roce_gid_cache[port]);
+	for (port = 1; port <= ib_dev->phys_port_cnt; port++)
+		free_roce_gid_cache(ib_dev, port);
 
 	kfree(ib_dev->cache.roce_gid_cache);
 	ib_dev->cache.roce_gid_cache = NULL;
@@ -697,8 +702,8 @@ static void roce_gid_cache_cleanup_one(struct ib_device *ib_dev)
 	if (!ib_dev->cache.roce_gid_cache)
 		return;
 
-	for (port = 0; port < ib_dev->phys_port_cnt; port++)
-		free_roce_gid_cache(ib_dev->cache.roce_gid_cache[port]);
+	for (port = 1; port <= ib_dev->phys_port_cnt; port++)
+		free_roce_gid_cache(ib_dev, port);
 
 	kfree(ib_dev->cache.roce_gid_cache);
 	ib_dev->cache.roce_gid_cache = NULL;
@@ -787,4 +792,6 @@ void __exit roce_gid_cache_cleanup(void)
 	roce_gid_mgmt_cleanup();
 
 	flush_workqueue(system_wq);
+
+	rcu_barrier();
 }
