@@ -418,6 +418,12 @@ struct ipoib_path {
 	int  		      valid;
 };
 
+struct ipoib_free_sendonly_task {
+	struct work_struct work;
+	struct ipoib_mcast *mcast;
+	struct ipoib_dev_priv *priv;
+};
+
 enum ipoib_neigh_state {
 	IPOIB_NEIGH_CREATED,
 	IPOIB_NEIGH_REMOVED,
