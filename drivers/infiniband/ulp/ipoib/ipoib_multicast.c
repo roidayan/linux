@@ -678,6 +678,95 @@ static int ipoib_mcast_leave(struct net_device *dev, struct ipoib_mcast *mcast)
 	return 0;
 }
 
+/* leave / free sendonly mcast */
+static void ipoib_sendonly_free_work(struct work_struct *work)
+{
+	unsigned long flags;
+	struct ipoib_mcast *tmcast;
+	bool found = false;
+	struct ipoib_free_sendonly_task *so_work =
+		container_of(work, struct ipoib_free_sendonly_task, work);
+	struct ipoib_mcast *mcast = so_work->mcast;
+	struct ipoib_dev_priv *priv = so_work->priv;
+
+	spin_lock_irqsave(&priv->lock, flags);
+	/*
+	 * check the mcast is still in the list.
+	 * make sure we are not racing against ipoib_mcast_dev_flush
+	 */
+	list_for_each_entry(tmcast, &priv->multicast_list, list)
+		if (!memcmp(tmcast->mcmember.mgid.raw,
+			    mcast->mcmember.mgid.raw,
+			    sizeof(union ib_gid)))
+			found = true;
+
+	if (!found) {
+		pr_info("%s mcast: %pI6 already removed\n", __func__,
+			mcast->mcmember.mgid.raw);
+		spin_unlock(&priv->lock);
+		local_irq_restore(flags);
+		goto out;
+	}
+
+	/* delete from multicast_list and rb_tree */
+	rb_erase(&mcast->rb_node, &priv->multicast_tree);
+	list_del(&mcast->list);
+
+	spin_unlock_irqrestore(&priv->lock, flags);
+
+	/*
+	 * make sure the in-flight joins have finished before we attempt
+	 * to leave
+	 */
+	if (test_bit(IPOIB_MCAST_FLAG_BUSY, &mcast->flags))
+		wait_for_completion(&mcast->done);
+
+	ipoib_mcast_leave(mcast->dev, mcast);
+	ipoib_mcast_free(mcast);
+
+out:
+	kfree(so_work);
+}
+
+/* get notification from the neigh that connected to mcast on its state */
+static int handle_neigh_state_change(struct ipoib_dev_priv *priv,
+				     enum ipoib_neigh_state state, void *context)
+{
+	struct ipoib_mcast *mcast = context;
+
+	switch (state) {
+	case IPOIB_NEIGH_REMOVED:
+		/* in sendonly the kernel doesn't clean the mc, so we use the
+		 * gc mechanism of the neig that connected to that mc in order
+		 * to clean the mc, till the next time someone will send packet
+		 * to that mc, and the whole process of creation will start.
+		 */
+		if (test_bit(IPOIB_MCAST_FLAG_SENDONLY, &mcast->flags)) {
+			struct ipoib_free_sendonly_task *sendonly_mcast_work;
+
+			sendonly_mcast_work = kzalloc(sizeof(*sendonly_mcast_work), GFP_KERNEL);
+			if (!sendonly_mcast_work) {
+				pr_warn("%s Failed alloc sendonly_task for mcast: %pI6\n",
+					__func__, mcast->mcmember.mgid.raw);
+				return -ENOMEM;
+			}
+
+			INIT_WORK(&sendonly_mcast_work->work,
+				  ipoib_sendonly_free_work);
+			sendonly_mcast_work->mcast = mcast;
+			sendonly_mcast_work->priv = priv;
+			queue_work(priv->wq, &sendonly_mcast_work->work);
+		}
+		break;
+	default:
+		pr_info("%s doesn't handle state %d for mcast: %pI6\n",
+			__func__, state, mcast->mcmember.mgid.raw);
+		break;
+	}
+
+	return 0;
+}
+
 void ipoib_mcast_send(struct net_device *dev, u8 *daddr, struct sk_buff *skb)
 {
 	struct ipoib_dev_priv *priv = netdev_priv(dev);
@@ -738,6 +827,8 @@ void ipoib_mcast_send(struct net_device *dev, u8 *daddr, struct sk_buff *skb)
 				kref_get(&mcast->ah->ref);
 				neigh->ah	= mcast->ah;
 				list_add_tail(&neigh->list, &mcast->neigh_list);
+				neigh->state_callback = handle_neigh_state_change;
+				neigh->context = mcast;
 			}
 		}
 		spin_unlock_irqrestore(&priv->lock, flags);
