@@ -76,4 +76,6 @@ int mlx5_cmd_query_adapter(struct mlx5_core_dev *dev);
 int mlx5_cmd_init_hca(struct mlx5_core_dev *dev);
 int mlx5_cmd_teardown_hca(struct mlx5_core_dev *dev);
 
+int mlx5_rename_eq(struct mlx5_core_dev *dev, int eq_ix, char *name);
+
 #endif /* __MLX5_CORE_H__ */

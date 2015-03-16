@@ -526,6 +526,26 @@ int mlx5_vector2eqn(struct mlx5_core_dev *dev, int vector, int *eqn, int *irqn)
 }
 EXPORT_SYMBOL(mlx5_vector2eqn);
 
+int mlx5_rename_eq(struct mlx5_core_dev *dev, int eq_ix, char *name)
+{
+	struct mlx5_eq_table *table = &dev->priv.eq_table;
+	struct mlx5_eq *eq;
+	int err = -ENOENT;
+
+	spin_lock(&table->lock);
+	list_for_each_entry(eq, &table->comp_eqs_list, list) {
+		if (eq->index == eq_ix) {
+			snprintf(eq->name, MLX5_MAX_EQ_NAME, "%s-%d",
+				 name, eq_ix);
+			err = 0;
+			break;
+		}
+	}
+	spin_unlock(&table->lock);
+
+	return err;
+}
+
 static void free_comp_eqs(struct mlx5_core_dev *dev)
 {
 	struct mlx5_eq_table *table = &dev->priv.eq_table;
