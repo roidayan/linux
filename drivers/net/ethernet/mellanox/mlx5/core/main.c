@@ -591,11 +591,11 @@ static void mlx5_irq_clear_affinity_hints(struct mlx5_core_dev *mdev)
 int mlx5_vector2eqn(struct mlx5_core_dev *dev, int vector, int *eqn, int *irqn)
 {
 	struct mlx5_eq_table *table = &dev->priv.eq_table;
-	struct mlx5_eq *eq, *n;
+	struct mlx5_eq *eq;
 	int err = -ENOENT;
 
 	spin_lock(&table->lock);
-	list_for_each_entry_safe(eq, n, &table->comp_eqs_list, list) {
+	list_for_each_entry(eq, &table->comp_eqs_list, list) {
 		if (eq->index == vector) {
 			*eqn = eq->eqn;
 			*irqn = eq->irqn;
@@ -608,6 +608,27 @@ int mlx5_vector2eqn(struct mlx5_core_dev *dev, int vector, int *eqn, int *irqn)
 	return err;
 }
 EXPORT_SYMBOL(mlx5_vector2eqn);
+
+int mlx5_rename_eq(struct mlx5_core_dev *dev, int eq_ix, char *name)
+{
+	struct mlx5_priv *priv = &dev->priv;
+	struct mlx5_eq_table *table = &priv->eq_table;
+	struct mlx5_eq *eq;
+	int err = -ENOENT;
+
+	spin_lock(&table->lock);
+	list_for_each_entry(eq, &table->comp_eqs_list, list) {
+		if (eq->index == eq_ix) {
+			snprintf(priv->irq_info[eq_ix].name, MLX5_MAX_IRQ_NAME,
+				 "%s-%d", name, eq_ix);
+			err = 0;
+			break;
+		}
+	}
+	spin_unlock(&table->lock);
+
+	return err;
+}
 
 static void free_comp_eqs(struct mlx5_core_dev *dev)
 {
