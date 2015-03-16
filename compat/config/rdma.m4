@@ -2126,6 +2126,23 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(no)
 	])
 
+	AC_MSG_CHECKING([if netdevice.h has netdev_has_upper_dev])
+	LB_LINUX_TRY_COMPILE([
+		#include <linux/netdevice.h>
+	],[
+		struct net_device *dev;
+		struct net_device *upper;
+		netdev_has_upper_dev(dev, upper);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_NETDEV_HAS_UPPER_DEV, 1,
+			  [netdev_has_upper_dev is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
 	AC_MSG_CHECKING([if netdevice.h has netdev_for_each_all_upper_dev_rcu])
 	LB_LINUX_TRY_COMPILE([
 		#include <linux/netdevice.h>
