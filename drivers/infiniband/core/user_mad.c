@@ -59,12 +59,19 @@ MODULE_AUTHOR("Roland Dreier");
 MODULE_DESCRIPTION("InfiniBand userspace MAD packet access");
 MODULE_LICENSE("Dual BSD/GPL");
 
+static int enable_rx_threshold;
+module_param(enable_rx_threshold, int, 0444);
+MODULE_PARM_DESC(enable_rx_threshold, "Enable threshold for receive queue if non-zero (default=0)");
+
 enum {
 	IB_UMAD_MAX_PORTS  = 64,
 	IB_UMAD_MAX_AGENTS = 32,
 
 	IB_UMAD_MAJOR      = 231,
-	IB_UMAD_MINOR_BASE = 0
+	IB_UMAD_MINOR_BASE = 0,
+
+	IB_UMAD_RX_THRESHOLD = 10000,
+	IB_UMAD_RX_MANAGER_THRESHOLD = 100000
 };
 
 /*
@@ -104,10 +111,16 @@ struct ib_umad_device {
 	struct ib_umad_port  port[0];
 };
 
+struct counted_list {
+	struct list_head	list;
+	int			count;
+	int			threshold;
+};
+
 struct ib_umad_file {
 	struct mutex		mutex;
 	struct ib_umad_port    *port;
-	struct list_head	recv_list;
+	struct counted_list	recv_list;
 	struct list_head	send_list;
 	struct list_head	port_list;
 	spinlock_t		send_lock;
@@ -172,7 +185,7 @@ static int queue_packet(struct ib_umad_file *file,
 	     packet->mad.hdr.id < IB_UMAD_MAX_AGENTS;
 	     packet->mad.hdr.id++)
 		if (agent == __get_agent(file, packet->mad.hdr.id)) {
-			list_add_tail(&packet->list, &file->recv_list);
+			list_add_tail(&packet->list, &file->recv_list.list);
 			wake_up_interruptible(&file->recv_wait);
 			ret = 0;
 			break;
@@ -210,13 +223,54 @@ static void send_handler(struct ib_mad_agent *agent,
 	kfree(packet);
 }
 
+static int get_mads_count(int packet_length, int hdr_len)
+{
+	int seg_len, data_len, mads_count;
+
+	data_len = packet_length - hdr_len;
+	seg_len = sizeof(struct ib_mad) - hdr_len;
+	mads_count = (data_len - 1) / seg_len + 1;
+
+	return mads_count;
+}
+
+static int is_mad_rmpp(struct ib_mad_recv_wc *mad_recv_wc)
+{
+	struct ib_rmpp_mad *rmpp_mad;
+
+	rmpp_mad = (struct ib_rmpp_mad *)mad_recv_wc->recv_buf.mad;
+	if (ib_is_mad_class_rmpp(rmpp_mad->mad_hdr.mgmt_class) &&
+	    (ib_get_rmpp_flags(&rmpp_mad->rmpp_hdr) & IB_MGMT_RMPP_FLAG_ACTIVE)) {
+		return 1;
+	}
+	return 0;
+}
+
 static void recv_handler(struct ib_mad_agent *agent,
 			 struct ib_mad_recv_wc *mad_recv_wc)
 {
 	struct ib_umad_file *file = agent->context;
 	struct ib_umad_packet *packet;
+	int mgmt_class;
+	int data_offset;
+	int drop = 0;
+	int mad_is_rmpp;
 
 	if (mad_recv_wc->wc->status != IB_WC_SUCCESS)
+		goto err1;
+
+	mad_is_rmpp = is_mad_rmpp(mad_recv_wc);
+	if (!agent->rmpp_version && mad_is_rmpp)
+		goto err1;
+
+	mutex_lock(&file->mutex);
+/*For now we accept all RMPPs packets, even though we crossed the threshold*/
+	if (enable_rx_threshold &&
+	    !mad_is_rmpp && file->recv_list.count >= file->recv_list.threshold)
+			drop = 1;
+	mutex_unlock(&file->mutex);
+
+	if (drop)
 		goto err1;
 
 	packet = kzalloc(sizeof *packet, GFP_KERNEL);
@@ -250,6 +304,13 @@ static void recv_handler(struct ib_mad_agent *agent,
 
 	if (queue_packet(file, agent, packet))
 		goto err2;
+
+	mgmt_class = mad_recv_wc->recv_buf.mad->mad_hdr.mgmt_class;
+	data_offset = ib_get_mad_data_offset(mgmt_class);
+	mutex_lock(&file->mutex);
+	file->recv_list.count += get_mads_count(packet->length, data_offset);
+	mutex_unlock(&file->mutex);
+
 	return;
 
 err2:
@@ -339,20 +400,20 @@ static ssize_t ib_umad_read(struct file *filp, char __user *buf,
 
 	mutex_lock(&file->mutex);
 
-	while (list_empty(&file->recv_list)) {
+	while (list_empty(&file->recv_list.list)) {
 		mutex_unlock(&file->mutex);
 
 		if (filp->f_flags & O_NONBLOCK)
 			return -EAGAIN;
 
 		if (wait_event_interruptible(file->recv_wait,
-					     !list_empty(&file->recv_list)))
+					     !list_empty(&file->recv_list.list)))
 			return -ERESTARTSYS;
 
 		mutex_lock(&file->mutex);
 	}
 
-	packet = list_entry(file->recv_list.next, struct ib_umad_packet, list);
+	packet = list_entry(file->recv_list.list.next, struct ib_umad_packet, list);
 	list_del(&packet->list);
 
 	mutex_unlock(&file->mutex);
@@ -365,11 +426,21 @@ static ssize_t ib_umad_read(struct file *filp, char __user *buf,
 	if (ret < 0) {
 		/* Requeue packet */
 		mutex_lock(&file->mutex);
-		list_add(&packet->list, &file->recv_list);
+		list_add(&packet->list, &file->recv_list.list);
 		mutex_unlock(&file->mutex);
 	} else {
-		if (packet->recv_wc)
+		if (packet->recv_wc) {
+			int mgmt_class;
+			int data_offset;
+
+			mgmt_class = packet->recv_wc->recv_buf.mad->mad_hdr.mgmt_class;
+			data_offset = ib_get_mad_data_offset(mgmt_class);
+			mutex_lock(&file->mutex);
+			file->recv_list.count -= get_mads_count(packet->length,
+								data_offset);
+			mutex_unlock(&file->mutex);
 			ib_free_recv_mad(packet->recv_wc);
+		}
 		kfree(packet);
 	}
 	return ret;
@@ -607,10 +678,27 @@ static unsigned int ib_umad_poll(struct file *filp, struct poll_table_struct *wa
 
 	poll_wait(filp, &file->recv_wait, wait);
 
-	if (!list_empty(&file->recv_list))
+	if (!list_empty(&file->recv_list.list))
 		mask |= POLLIN | POLLRDNORM;
 
 	return mask;
+}
+
+static void update_mgmt_threshold(struct ib_umad_file *file, struct ib_mad_reg_req req)
+{
+	int i;
+
+	/*Update managers' class rx threshold*/
+		for_each_set_bit(i, req.method_mask, IB_MGMT_MAX_METHODS) {
+			if (i == IB_MGMT_METHOD_GET ||
+			    i == IB_MGMT_METHOD_SET ||
+			    i == IB_MGMT_METHOD_REPORT ||
+			    i == IB_MGMT_METHOD_TRAP) {
+				file->recv_list.threshold =
+					IB_UMAD_RX_MANAGER_THRESHOLD;
+				break;
+			}
+		}
 }
 
 static int ib_umad_reg_agent(struct ib_umad_file *file, void __user *arg,
@@ -672,6 +760,8 @@ found:
 		} else
 			memcpy(req.method_mask, ureq.method_mask,
 			       sizeof req.method_mask);
+
+		update_mgmt_threshold(file, req);
 	}
 
 	agent = ib_register_mad_agent(file->port->ib_dev, file->port->port_num,
@@ -874,6 +964,33 @@ static long ib_umad_enable_pkey(struct ib_umad_file *file)
 	return ret;
 }
 
+static long ib_umad_update_threshold(struct ib_umad_file *file, void __user
+				     *arg)
+{
+	struct ib_user_mad_thresh_req ureq;
+	int ret = 0;
+
+	mutex_lock(&file->port->file_mutex);
+	mutex_lock(&file->mutex);
+
+	if (!file->port->ib_dev) {
+		ret = -EPIPE;
+		goto out;
+	}
+
+	if (copy_from_user(&ureq, arg, sizeof(ureq))) {
+		ret = -EFAULT;
+		goto out;
+	}
+
+	file->recv_list.threshold = ureq.threshold;
+out:
+	mutex_unlock(&file->mutex);
+	mutex_unlock(&file->port->file_mutex);
+
+	return ret;
+}
+
 static long ib_umad_ioctl(struct file *filp, unsigned int cmd,
 			  unsigned long arg)
 {
@@ -886,6 +1003,8 @@ static long ib_umad_ioctl(struct file *filp, unsigned int cmd,
 		return ib_umad_enable_pkey(filp->private_data);
 	case IB_USER_MAD_REGISTER_AGENT2:
 		return ib_umad_reg_agent2(filp->private_data, (void __user *) arg);
+	case IB_USER_MAD_UPDATE_THRESHOLD:
+		return ib_umad_update_threshold(filp->private_data, (void __user *)arg);
 	default:
 		return -ENOIOCTLCMD;
 	}
@@ -904,11 +1023,20 @@ static long ib_umad_compat_ioctl(struct file *filp, unsigned int cmd,
 		return ib_umad_enable_pkey(filp->private_data);
 	case IB_USER_MAD_REGISTER_AGENT2:
 		return ib_umad_reg_agent2(filp->private_data, compat_ptr(arg));
+	case IB_USER_MAD_UPDATE_THRESHOLD:
+		return ib_umad_update_threshold(filp->private_data, compat_ptr(arg));
 	default:
 		return -ENOIOCTLCMD;
 	}
 }
 #endif
+
+static void init_recv_list(struct counted_list *recv_list)
+{
+	INIT_LIST_HEAD(&recv_list->list);
+	recv_list->count = 0;
+	recv_list->threshold = IB_UMAD_RX_THRESHOLD;
+}
 
 /*
  * ib_umad_open() does not need the BKL:
@@ -939,7 +1067,7 @@ static int ib_umad_open(struct inode *inode, struct file *filp)
 
 	mutex_init(&file->mutex);
 	spin_lock_init(&file->send_lock);
-	INIT_LIST_HEAD(&file->recv_list);
+	init_recv_list(&file->recv_list);
 	INIT_LIST_HEAD(&file->send_list);
 	init_waitqueue_head(&file->recv_wait);
 
@@ -976,7 +1104,7 @@ static int ib_umad_close(struct inode *inode, struct file *filp)
 	already_dead = file->agents_dead;
 	file->agents_dead = 1;
 
-	list_for_each_entry_safe(packet, tmp, &file->recv_list, list) {
+	list_for_each_entry_safe(packet, tmp, &file->recv_list.list, list) {
 		if (packet->recv_wc)
 			ib_free_recv_mad(packet->recv_wc);
 		kfree(packet);
