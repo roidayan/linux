@@ -1450,6 +1450,10 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 			(1ull << IB_USER_VERBS_EXP_CMD_QUERY_DCT)	|
 			(1ull << IB_USER_VERBS_EXP_CMD_ARM_DCT);
 	}
+	dev->ib_dev.uverbs_exp_cmd_mask |= (1ull << IB_USER_VERBS_EXP_CMD_CREATE_MR);
+
+	dev->ib_dev.exp_create_qp = mlx5_ib_exp_create_qp;
+	dev->ib_dev.uverbs_exp_cmd_mask |= (1ull << IB_USER_VERBS_EXP_CMD_CREATE_QP);
 
 	dev->ib_dev.exp_query_device = mlx5_ib_exp_query_device;
 	dev->ib_dev.uverbs_exp_cmd_mask	|= (1 << IB_USER_VERBS_EXP_CMD_QUERY_DEVICE);

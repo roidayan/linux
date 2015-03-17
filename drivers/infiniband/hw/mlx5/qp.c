@@ -33,6 +33,7 @@
 #include <linux/module.h>
 #include <rdma/ib_umem.h>
 #include <linux/mlx5/mlx5_ifc.h>
+#include <rdma/ib_verbs_exp.h>
 #include "mlx5_ib.h"
 #include "user.h"
 
@@ -272,7 +273,9 @@ static int sq_overhead(enum ib_qp_type qp_type)
 	case IB_QPT_RC:
 		size += sizeof(struct mlx5_wqe_ctrl_seg) +
 			sizeof(struct mlx5_wqe_atomic_seg) +
-			sizeof(struct mlx5_wqe_raddr_seg);
+			sizeof(struct mlx5_wqe_raddr_seg) +
+			sizeof(struct mlx5_wqe_umr_ctrl_seg) +
+			sizeof(struct mlx5_mkey_seg);
 		break;
 
 	case IB_QPT_XRC_TGT:
@@ -305,7 +308,7 @@ static int sq_overhead(enum ib_qp_type qp_type)
 	return size;
 }
 
-static int calc_send_wqe(struct ib_qp_init_attr *attr)
+static int calc_send_wqe(struct ib_exp_qp_init_attr *attr)
 {
 	int inl_size = 0;
 	int size;
@@ -327,7 +330,36 @@ static int calc_send_wqe(struct ib_qp_init_attr *attr)
 		return ALIGN(max_t(int, inl_size, size), MLX5_SEND_WQE_BB);
 }
 
-static int calc_sq_size(struct mlx5_ib_dev *dev, struct ib_qp_init_attr *attr,
+static int get_send_sge(struct ib_exp_qp_init_attr *attr, int wqe_size)
+{
+	int max_sge;
+
+	if (attr->qp_type == IB_QPT_RC)
+		max_sge = (min_t(int, wqe_size, 512) -
+			   sizeof(struct mlx5_wqe_ctrl_seg) -
+			   sizeof(struct mlx5_wqe_raddr_seg)) /
+			sizeof(struct mlx5_wqe_data_seg);
+	else if (attr->qp_type == IB_EXP_QPT_DC_INI)
+		max_sge = (min_t(int, wqe_size, 512) -
+			   sizeof(struct mlx5_wqe_ctrl_seg) -
+			   sizeof(struct mlx5_wqe_datagram_seg) -
+			   sizeof(struct mlx5_wqe_raddr_seg)) /
+			sizeof(struct mlx5_wqe_data_seg);
+	else if (attr->qp_type == IB_QPT_XRC_INI)
+		max_sge = (min_t(int, wqe_size, 512) -
+			   sizeof(struct mlx5_wqe_ctrl_seg) -
+			   sizeof(struct mlx5_wqe_xrc_seg) -
+			   sizeof(struct mlx5_wqe_raddr_seg)) /
+			sizeof(struct mlx5_wqe_data_seg);
+	else
+		max_sge = (wqe_size - sq_overhead(attr->qp_type)) /
+			sizeof(struct mlx5_wqe_data_seg);
+
+	return min_t(int, max_sge, wqe_size - sq_overhead(attr->qp_type) /
+		     sizeof(struct mlx5_wqe_data_seg));
+}
+
+static int calc_sq_size(struct mlx5_ib_dev *dev, struct ib_exp_qp_init_attr *attr,
 			struct mlx5_ib_qp *qp)
 {
 	int wqe_size;
@@ -363,7 +395,11 @@ static int calc_sq_size(struct mlx5_ib_dev *dev, struct ib_qp_init_attr *attr,
 		return -ENOMEM;
 	}
 	qp->sq.wqe_shift = ilog2(MLX5_SEND_WQE_BB);
-	qp->sq.max_gs = attr->cap.max_send_sge;
+	qp->sq.max_gs = get_send_sge(attr, wqe_size);
+	if (qp->sq.max_gs < attr->cap.max_send_sge)
+		return -ENOMEM;
+
+	attr->cap.max_send_sge = qp->sq.max_gs;
 	qp->sq.max_post = wq_size / wqe_size;
 	attr->cap.max_send_wr = qp->sq.max_post;
 
@@ -403,7 +439,7 @@ static int set_user_buf_size(struct mlx5_ib_dev *dev,
 	return 0;
 }
 
-static int qp_has_rq(struct ib_qp_init_attr *attr)
+static int qp_has_rq(struct ib_exp_qp_init_attr *attr)
 {
 	if (attr->qp_type == IB_QPT_XRC_INI ||
 	    attr->qp_type == IB_QPT_XRC_TGT || attr->srq ||
@@ -599,6 +635,7 @@ static int uuarn_to_uar_index(struct mlx5_uuar_info *uuari, int uuarn)
 
 static int create_user_qp(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 			  struct mlx5_ib_qp *qp, struct ib_udata *udata,
+			  struct ib_exp_qp_init_attr *attr,
 			  struct mlx5_create_qp_mbox_in **in,
 			  struct mlx5_ib_create_qp_resp *resp, int *inlen)
 {
@@ -731,7 +768,7 @@ static void destroy_qp_user(struct ib_pd *pd, struct mlx5_ib_qp *qp)
 }
 
 static int create_kernel_qp(struct mlx5_ib_dev *dev,
-			    struct ib_qp_init_attr *init_attr,
+			    struct ib_exp_qp_init_attr *init_attr,
 			    struct mlx5_ib_qp *qp,
 			    struct mlx5_create_qp_mbox_in **in, int *inlen)
 {
@@ -841,7 +878,7 @@ static void destroy_qp_kernel(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp)
 	free_uuar(&dev->mdev->priv.uuari, qp->bf->uuarn);
 }
 
-static __be32 get_rx_type(struct mlx5_ib_qp *qp, struct ib_qp_init_attr *attr)
+static __be32 get_rx_type(struct mlx5_ib_qp *qp, struct ib_exp_qp_init_attr *attr)
 {
 	enum ib_qp_type qt = attr->qp_type;
 
@@ -863,7 +900,7 @@ static int is_connected(enum ib_qp_type qp_type)
 }
 
 static int create_qp_common(struct mlx5_ib_dev *dev, struct ib_pd *pd,
-			    struct ib_qp_init_attr *init_attr,
+			    struct ib_exp_qp_init_attr *init_attr,
 			    struct ib_udata *udata, struct mlx5_ib_qp *qp)
 {
 	struct mlx5_ib_resources *devr = &dev->devr;
@@ -927,7 +964,8 @@ static int create_qp_common(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 					    ucmd.sq_wqe_count, max_wqes);
 				return -EINVAL;
 			}
-			err = create_user_qp(dev, pd, qp, udata, &in, &resp, &inlen);
+			err = create_user_qp(dev, pd, qp, udata, init_attr, &in,
+					     &resp, &inlen);
 			if (err)
 				mlx5_ib_dbg(dev, "err %d\n", err);
 		} else {
@@ -1223,9 +1261,9 @@ static const char *ib_qp_type_str(enum ib_qp_type type)
 	}
 }
 
-struct ib_qp *mlx5_ib_create_qp(struct ib_pd *pd,
-				struct ib_qp_init_attr *init_attr,
-				struct ib_udata *udata)
+static struct ib_qp *__create_qp(struct ib_pd *pd,
+				 struct ib_exp_qp_init_attr *init_attr,
+				 struct ib_udata *udata)
 {
 	struct mlx5_ib_dev *dev;
 	struct mlx5_ib_qp *qp;
@@ -1264,6 +1302,7 @@ struct ib_qp *mlx5_ib_create_qp(struct ib_pd *pd,
 	case IB_QPT_UD:
 	case IB_QPT_SMI:
 	case IB_QPT_GSI:
+	case IB_EXP_QPT_DC_INI:
 	case MLX5_IB_QPT_REG_UMR:
 		qp = kzalloc(sizeof(*qp), GFP_KERNEL);
 		if (!qp)
@@ -1303,6 +1342,34 @@ struct ib_qp *mlx5_ib_create_qp(struct ib_pd *pd,
 	}
 
 	return &qp->ibqp;
+}
+
+struct ib_qp *mlx5_ib_create_qp(struct ib_pd *pd,
+				struct ib_qp_init_attr *init_attr,
+				struct ib_udata *udata)
+{
+	struct ib_exp_qp_init_attr *attrx;
+	struct ib_qp *qp;
+
+	attrx = kzalloc(sizeof(*attrx), GFP_KERNEL);
+	if (!attrx)
+		return ERR_PTR(-ENOMEM);
+
+	memcpy(attrx, init_attr, sizeof(*init_attr));
+
+	qp = __create_qp(pd, attrx, udata);
+	if (!IS_ERR(qp))
+		memcpy(init_attr, attrx, sizeof(*init_attr));
+
+	kfree(attrx);
+	return qp;
+}
+
+struct ib_qp *mlx5_ib_exp_create_qp(struct ib_pd *pd,
+				    struct ib_exp_qp_init_attr *init_attr,
+				    struct ib_udata *udata)
+{
+	return __create_qp(pd, init_attr, udata);
 }
 
 int mlx5_ib_destroy_qp(struct ib_qp *qp)
@@ -1960,7 +2027,8 @@ static void set_frwr_umr_segment(struct mlx5_wqe_umr_ctrl_seg *umr,
 	umr->mkey_mask = frwr_mkey_mask();
 }
 
-static __be64 get_umr_reg_mr_mask(void)
+
+static __be64 get_umr_reg_mr_mask(int atomic)
 {
 	u64 result;
 
@@ -1973,8 +2041,11 @@ static __be64 get_umr_reg_mr_mask(void)
 		 MLX5_MKEY_MASK_KEY		|
 		 MLX5_MKEY_MASK_RR		|
 		 MLX5_MKEY_MASK_RW		|
-		 MLX5_MKEY_MASK_A		|
 		 MLX5_MKEY_MASK_FREE;
+
+	if (atomic)
+		result |= MLX5_MKEY_MASK_A;
+
 
 	return cpu_to_be64(result);
 }
@@ -1998,7 +2069,7 @@ static __be64 get_umr_update_mtt_mask(void)
 }
 
 static void set_reg_umr_segment(struct mlx5_wqe_umr_ctrl_seg *umr,
-				struct ib_send_wr *wr)
+				struct ib_send_wr *wr, int atomic)
 {
 	struct mlx5_umr_wr *umrwr = (struct mlx5_umr_wr *)&wr->wr.fast_reg;
 
@@ -2016,7 +2087,7 @@ static void set_reg_umr_segment(struct mlx5_wqe_umr_ctrl_seg *umr,
 			umr->bsf_octowords = get_klm_octo(umrwr->target.offset);
 			umr->flags |= MLX5_UMR_TRANSLATION_OFFSET_EN;
 		} else {
-			umr->mkey_mask = get_umr_reg_mr_mask();
+			umr->mkey_mask = get_umr_reg_mr_mask(atomic);
 		}
 	} else {
 		umr->mkey_mask = get_umr_unreg_mr_mask();
@@ -2830,7 +2901,7 @@ int mlx5_ib_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 			}
 			qp->sq.wr_data[idx] = MLX5_IB_WR_UMR;
 			ctrl->imm = cpu_to_be32(wr->wr.fast_reg.rkey);
-			set_reg_umr_segment(seg, wr);
+			set_reg_umr_segment(seg, wr, !!(MLX5_CAP_GEN(mdev, atomic)));
 			seg += sizeof(struct mlx5_wqe_umr_ctrl_seg);
 			size += sizeof(struct mlx5_wqe_umr_ctrl_seg) / 16;
 			if (unlikely((seg == qend)))
