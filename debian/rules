@@ -60,7 +60,8 @@ override_dh_auto_install:
 	cd debian/$(pdkms)/usr/src/$(pname)-$(pversion); ln -s ofed_scripts/configure
 	cd debian/$(pdkms)/usr/src/$(pname)-$(pversion); ln -s ofed_scripts/makefile
 	cd debian/$(pdkms)/usr/src/$(pname)-$(pversion); ln -s ofed_scripts/Makefile
-	cd debian/$(pdkms)/usr/src; ln -s $(pname)-$(pversion) ofa_kernel
+	cd debian/$(pdkms)/usr/src; ln -snf $(pname)-$(pversion) ofa_kernel-$(pversion)
+	cd debian/$(pdkms)/usr/src; mkdir ofa_kernel; ln -snf /var/lib/dkms/$(pname)/$(pversion)/build ofa_kernel/default
 	# For utils
 	dh_installdirs -p$(putils)  etc/infiniband
 	dh_installdirs -p$(putils)  etc/modprobe.d
