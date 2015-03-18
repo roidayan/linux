@@ -118,6 +118,10 @@ enum {
 };
 
 enum {
+	MLX5_CQ_FLAGS_OI	= 2,
+};
+
+enum {
 	MLX5_STAT_RATE_OFFSET	= 5,
 };
 

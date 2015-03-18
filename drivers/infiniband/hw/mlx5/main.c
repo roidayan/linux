@@ -183,6 +183,10 @@ static int query_device(struct ib_device *ibdev,
 	if (MLX5_CAP_GEN(mdev, xrc))
 		props->device_cap_flags |= IB_DEVICE_XRC;
 	props->device_cap_flags |= IB_DEVICE_MEM_MGT_EXTENSIONS;
+	props->device_cap_flags |= IB_DEVICE_INDIR_REGISTRATION;
+	if (MLX5_CAP_GEN(mdev, cq_oi) &&
+	    MLX5_CAP_GEN(mdev, cd))
+		props->device_cap_flags |= IB_DEVICE_CROSS_CHANNEL;
 	if (MLX5_CAP_GEN(mdev, sho)) {
 		props->device_cap_flags |= IB_DEVICE_SIGNATURE_HANDOVER;
 		/* At this stage no support for signature handover */
@@ -525,6 +529,11 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 	resp.max_send_wqebb = 1 << MLX5_CAP_GEN(dev->mdev, log_max_qp_sz);
 	resp.max_recv_wr = 1 << MLX5_CAP_GEN(dev->mdev, log_max_qp_sz);
 	resp.max_srq_recv_wr = 1 << MLX5_CAP_GEN(dev->mdev, log_max_srq_sz);
+	if (offsetof(struct mlx5_ib_alloc_ucontext_resp, max_desc_sz_sq_dc) < udata->outlen)
+		resp.max_desc_sz_sq_dc = MLX5_CAP_GEN(dev->mdev, max_wqe_sz_sq_dc);
+
+	if (offsetof(struct mlx5_ib_alloc_ucontext_resp, atomic_arg_sizes_dc) < udata->outlen)
+		resp.atomic_arg_sizes_dc = MLX5_CAP_ATOMIC(dev->mdev, atomic_size_dc);
 
 	context = kzalloc(sizeof(*context), GFP_KERNEL);
 	if (!context)
@@ -570,7 +579,9 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 	context->ibucontext.invalidate_range = &mlx5_ib_invalidate_range;
 #endif
 
+	INIT_LIST_HEAD(&context->vma_private_list);
 	INIT_LIST_HEAD(&context->db_page_list);
+	spin_lock_init(&context->vma_private_lock);
 	mutex_init(&context->db_page_mutex);
 
 	resp.tot_uuars = req.total_num_uuars;
@@ -642,42 +653,216 @@ static int get_index(unsigned long offset)
 	return get_arg(offset);
 }
 
+static int get_pg_order(unsigned long offset)
+{
+	return get_arg(offset);
+}
+
+static void  mlx5_ib_vma_open(struct vm_area_struct *area)
+{
+	/* vma_open is called when a new VMA is created on top of our VMA.
+	 * This is done through either mremap flow or split_vma (usually due to mlock,
+	 * madvise, munmap, etc.)
+	 * We do not support a clone of the vma, as this VMA is strongly hardware related.
+	 * Therefore we set the vm_ops of the newly created/cloned VMA to NULL, to
+	 * prevent it from calling us again and trying to do incorrect actions.
+	 * We assume that the original vma size is exactly a single page, and therefore all
+	 * "splitting" operation will not happen to it.
+	 */
+	area->vm_ops = NULL;
+}
+
+static void  mlx5_ib_vma_close(struct vm_area_struct *area)
+{
+	struct mlx5_ib_vma_private_data *mlx5_ib_vma_priv_data;
+
+	/* It's guaranteed that all VMAs opened on a FD are closed before the file itself is closed, therefor no
+	  * sync is needed with the regular closing flow. (e.g. mlx5 ib_dealloc_ucontext)
+	  * However need a sync with accessing the vma as part of mlx5_ib_disassociate_ucontext.
+	  * The close operation is usually called under mm->mmap_sem except when process is exiting.
+	  * The exiting case is handled explicitly as part of mlx5_ib_disassociate_ucontext.
+	*/
+	mlx5_ib_vma_priv_data = (struct mlx5_ib_vma_private_data *)area->vm_private_data;
+
+	/* setting the vma context pointer to null in the mlx5_ib driver's private data,
+	 * to protect a race condition in mlx5_ib_dissassociate_ucontext().
+	 */
+	mlx5_ib_vma_priv_data->vma = NULL;
+	list_del(&mlx5_ib_vma_priv_data->list);
+	kfree(mlx5_ib_vma_priv_data);
+}
+
+static const struct vm_operations_struct mlx5_ib_vm_ops = {
+	.open = mlx5_ib_vma_open,
+	.close = mlx5_ib_vma_close
+};
+
+static int mlx5_ib_disassociate_ucontext(struct ib_ucontext *ibcontext)
+{
+	int ret;
+	struct vm_area_struct *vma;
+	struct mlx5_ib_vma_private_data *vma_private, *n;
+	struct mlx5_ib_ucontext *context = to_mucontext(ibcontext);
+	struct task_struct *owning_process  = NULL;
+	struct mm_struct   *owning_mm       = NULL;
+
+	owning_process = get_pid_task(ibcontext->tgid, PIDTYPE_PID);
+	if (!owning_process)
+		return 0;
+
+	owning_mm = get_task_mm(owning_process);
+	if (!owning_mm) {
+		pr_info("no mm, disassociate ucontext is pending task termination\n");
+		while (1) {
+			put_task_struct(owning_process);
+			msleep(1);
+			owning_process = get_pid_task(ibcontext->tgid, PIDTYPE_PID);
+			if (!owning_process || owning_process->state == TASK_DEAD) {
+				pr_info("disassociate ucontext done, task was terminated\n");
+				/* in case task was dead need to release the task struct */
+				if (owning_process)
+					put_task_struct(owning_process);
+				return 0;
+			}
+		}
+	}
+
+	/* need to protect from a race on closing the vma as part of mlx5_ib_vma_close */
+	down_read(&owning_mm->mmap_sem);
+	list_for_each_entry_safe(vma_private, n, &context->vma_private_list, list) {
+		vma = vma_private->vma;
+		ret = zap_vma_ptes(vma, vma->vm_start,
+				   PAGE_SIZE);
+
+		BUG_ON(ret);
+		/* need to turn off that flag to prevent double untracking VMA on RH 6.2 and some
+		  * other kernels.
+		*/
+		vma->vm_flags &= ~VM_PFNMAP;
+
+		/* context going to be destroyed, should not access ops any more */
+		vma->vm_ops = NULL;
+		list_del(&vma_private->list);
+		kfree(vma_private);
+	}
+	up_read(&owning_mm->mmap_sem);
+	mmput(owning_mm);
+	put_task_struct(owning_process);
+	return 0;
+}
+
+static int mlx5_ib_set_vma_data(struct vm_area_struct *vma,
+				struct mlx5_ib_ucontext *ctx)
+{
+	struct mlx5_ib_vma_private_data *vma_prv;
+	struct list_head *vma_head = &ctx->vma_private_list;
+
+	vma_prv = kzalloc(sizeof(*vma_prv), GFP_KERNEL);
+	if (!vma_prv)
+		return -ENOMEM;
+
+	vma_prv->vma = vma;
+	vma->vm_private_data = vma_prv;
+	vma->vm_ops =  &mlx5_ib_vm_ops;
+
+	list_add(&vma_prv->list, vma_head);
+
+	return 0;
+}
+
+static inline bool mlx5_writecombine_available(void)
+{
+	pgprot_t prot = __pgprot(0);
+
+	if (pgprot_val(pgprot_writecombine(prot)) == pgprot_val(pgprot_noncached(prot)))
+		return false;
+
+	return true;
+}
+
+static int uar_mmap(struct vm_area_struct *vma, pgprot_t prot, bool is_wc,
+		    struct mlx5_uuar_info *uuari, struct mlx5_ib_dev *dev,
+		    struct mlx5_ib_ucontext *context)
+{
+	unsigned long idx;
+	phys_addr_t pfn;
+	int err;
+
+	if (vma->vm_end - vma->vm_start != PAGE_SIZE)
+		return -EINVAL;
+
+	idx = get_index(vma->vm_pgoff);
+	pfn = uar_index2pfn(dev, uuari->uars[idx].index);
+	mlx5_ib_dbg(dev, "uar idx 0x%lx, pfn 0x%llx\n", idx,
+		    (unsigned long long)pfn);
+
+	if (idx >= uuari->num_uars)
+		return -EINVAL;
+
+	vma->vm_page_prot = prot;
+	if (io_remap_pfn_range(vma, vma->vm_start, pfn,
+			       PAGE_SIZE, vma->vm_page_prot))
+		return -EAGAIN;
+
+	err = mlx5_ib_set_vma_data(vma, context);
+	if (err)
+		return err;
+
+	mlx5_ib_dbg(dev, "mapped %s at 0x%lx, PA 0x%llx\n", is_wc ? "WC" : "NC",
+		    vma->vm_start, (unsigned long long)pfn << PAGE_SHIFT);
+
+	return 0;
+}
+
 static int mlx5_ib_mmap(struct ib_ucontext *ibcontext, struct vm_area_struct *vma)
 {
 	struct mlx5_ib_ucontext *context = to_mucontext(ibcontext);
 	struct mlx5_ib_dev *dev = to_mdev(ibcontext->device);
 	struct mlx5_uuar_info *uuari = &context->uuari;
 	unsigned long command;
-	unsigned long idx;
-	phys_addr_t pfn;
+	int err;
+	unsigned long total_size;
+	unsigned long order;
+	struct ib_cmem *ib_cmem;
 
 	command = get_command(vma->vm_pgoff);
 	switch (command) {
 	case MLX5_IB_MMAP_REGULAR_PAGE:
-		if (vma->vm_end - vma->vm_start != PAGE_SIZE)
-			return -EINVAL;
-
-		idx = get_index(vma->vm_pgoff);
-		if (idx >= uuari->num_uars)
-			return -EINVAL;
-
-		pfn = uar_index2pfn(dev, uuari->uars[idx].index);
-		mlx5_ib_dbg(dev, "uar idx 0x%lx, pfn 0x%llx\n", idx,
-			    (unsigned long long)pfn);
-
-		vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
-		if (io_remap_pfn_range(vma, vma->vm_start, pfn,
-				       PAGE_SIZE, vma->vm_page_prot))
-			return -EAGAIN;
-
-		mlx5_ib_dbg(dev, "mapped WC at 0x%lx, PA 0x%llx\n",
-			    vma->vm_start,
-			    (unsigned long long)pfn << PAGE_SHIFT);
+		return uar_mmap(vma, pgprot_writecombine(vma->vm_page_prot),
+				mlx5_writecombine_available(),
+				uuari, dev, context);
 
 		break;
 
 	case MLX5_IB_MMAP_GET_CONTIGUOUS_PAGES:
-		return -ENOSYS;
+		total_size = vma->vm_end - vma->vm_start;
+		order = get_pg_order(vma->vm_pgoff);
+
+		ib_cmem = ib_cmem_alloc_contiguous_pages(ibcontext, total_size,
+							 order);
+		if (IS_ERR(ib_cmem))
+			return PTR_ERR(ib_cmem);
+
+		err = ib_cmem_map_contiguous_pages_to_vma(ib_cmem, vma);
+		if (err) {
+			ib_cmem_release_contiguous_pages(ib_cmem);
+			return err;
+		}
+		break;
+
+	case MLX5_IB_MMAP_WC_PAGE:
+		if (!mlx5_writecombine_available())
+			return -EPERM;
+
+		return uar_mmap(vma, pgprot_writecombine(vma->vm_page_prot),
+				true, uuari, dev, context);
+		break;
+
+	case MLX5_IB_MMAP_NC_PAGE:
+		return uar_mmap(vma, pgprot_noncached(vma->vm_page_prot),
+				false, uuari, dev, context);
+		break;
+
 
 	default:
 		return -EINVAL;
@@ -685,6 +870,40 @@ static int mlx5_ib_mmap(struct ib_ucontext *ibcontext, struct vm_area_struct *vm
 
 	return 0;
 }
+
+static unsigned long mlx5_ib_get_unmapped_area(struct file *file,
+					       unsigned long addr,
+					       unsigned long len,
+					       unsigned long pgoff,
+					       unsigned long flags)
+{
+	struct mm_struct *mm;
+	unsigned long order;
+	unsigned long command;
+
+	mm = current->mm;
+	if (addr)
+		return current->mm->get_unmapped_area(file, addr, len,
+						      pgoff, flags);
+	command = get_command(pgoff);
+	if (command == MLX5_IB_MMAP_REGULAR_PAGE ||
+	    command == MLX5_IB_MMAP_WC_PAGE ||
+	    command == MLX5_IB_MMAP_NC_PAGE)
+		return current->mm->get_unmapped_area(file, addr, len,
+						      pgoff, flags);
+
+	if (command != MLX5_IB_MMAP_GET_CONTIGUOUS_PAGES)
+		return -EINVAL;
+
+	order = get_pg_order(pgoff);
+
+	/*
+	 * code is based on the huge-pages get_unmapped_area code
+	 */
+	return current->mm->get_unmapped_area(file, addr, len,
+					      pgoff, flags);
+}
+
 
 static int alloc_pa_mkey(struct mlx5_ib_dev *dev, u32 *key, u32 pdn)
 {
@@ -1394,6 +1613,7 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 	dev->ib_dev.alloc_ucontext	= mlx5_ib_alloc_ucontext;
 	dev->ib_dev.dealloc_ucontext	= mlx5_ib_dealloc_ucontext;
 	dev->ib_dev.mmap		= mlx5_ib_mmap;
+	dev->ib_dev.get_unmapped_area	= mlx5_ib_get_unmapped_area;
 	dev->ib_dev.alloc_pd		= mlx5_ib_alloc_pd;
 	dev->ib_dev.dealloc_pd		= mlx5_ib_dealloc_pd;
 	dev->ib_dev.create_ah		= mlx5_ib_create_ah;
@@ -1428,6 +1648,9 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 	dev->ib_dev.alloc_fast_reg_page_list = mlx5_ib_alloc_fast_reg_page_list;
 	dev->ib_dev.free_fast_reg_page_list  = mlx5_ib_free_fast_reg_page_list;
 	dev->ib_dev.check_mr_status	= mlx5_ib_check_mr_status;
+	dev->ib_dev.alloc_indir_reg_list = mlx5_ib_alloc_indir_reg_list;
+	dev->ib_dev.free_indir_reg_list  = mlx5_ib_free_indir_reg_list;
+	dev->ib_dev.disassociate_ucontext = mlx5_ib_disassociate_ucontext;
 
 	mlx5_ib_internal_fill_odp_caps(dev);
 
@@ -1457,6 +1680,8 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 
 	dev->ib_dev.exp_query_device = mlx5_ib_exp_query_device;
 	dev->ib_dev.uverbs_exp_cmd_mask	|= (1 << IB_USER_VERBS_EXP_CMD_QUERY_DEVICE);
+	dev->ib_dev.exp_query_mkey	= mlx5_ib_exp_query_mkey;
+	dev->ib_dev.uverbs_exp_cmd_mask	|= (1 << IB_USER_VERBS_EXP_CMD_QUERY_MKEY);
 
 	err = init_node_data(dev);
 	if (err)

@@ -67,6 +67,7 @@ static const u32 mlx5_ib_opcode[] = {
 	[IB_WR_SEND_WITH_INV]			= MLX5_OPCODE_SEND_INVAL,
 	[IB_WR_LOCAL_INV]			= MLX5_OPCODE_UMR,
 	[IB_WR_FAST_REG_MR]			= MLX5_OPCODE_UMR,
+	[IB_WR_REG_INDIR_MR]			= MLX5_OPCODE_UMR,
 	[IB_WR_MASKED_ATOMIC_CMP_AND_SWP]	= MLX5_OPCODE_ATOMIC_MASKED_CS,
 	[IB_WR_MASKED_ATOMIC_FETCH_AND_ADD]	= MLX5_OPCODE_ATOMIC_MASKED_FA,
 	[MLX5_IB_WR_UMR]			= MLX5_OPCODE_UMR,
@@ -659,7 +660,10 @@ static int create_user_qp(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 	/*
 	 * TBD: should come from the verbs when we have the API
 	 */
-	uuarn = alloc_uuar(&context->uuari, MLX5_IB_LATENCY_CLASS_HIGH);
+	if (attr->create_flags & IB_QP_CREATE_CROSS_CHANNEL)
+		uuarn = MLX5_CROSS_CHANNEL_UUAR;
+	else
+		uuarn = alloc_uuar(&context->uuari, MLX5_IB_LATENCY_CLASS_HIGH);
 	if (uuarn < 0) {
 		mlx5_ib_dbg(dev, "failed to allocate low latency UUAR\n");
 		mlx5_ib_dbg(dev, "reverting to medium latency\n");
@@ -721,6 +725,13 @@ static int create_user_qp(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 	(*in)->ctx.log_pg_sz_remote_qpn =
 		cpu_to_be32((page_shift - MLX5_ADAPTER_PAGE_SHIFT) << 24);
 	(*in)->ctx.params2 = cpu_to_be32(offset << 6);
+
+	(*in)->ctx.params2 |= (qp->flags & MLX5_IB_QP_CAP_CROSS_CHANNEL ?
+		cpu_to_be32(MLX5_QP_BIT_COLL_MASTER) : 0);
+	(*in)->ctx.params2 |= (qp->flags & MLX5_IB_QP_CAP_MANAGED_SEND ?
+		cpu_to_be32(MLX5_QP_BIT_COLL_SYNC_SQ) : 0);
+	(*in)->ctx.params2 |= (qp->flags & MLX5_IB_QP_CAP_MANAGED_RECV ?
+		cpu_to_be32(MLX5_QP_BIT_COLL_SYNC_RQ) : 0);
 
 	(*in)->ctx.qp_counter_set_usr_page = cpu_to_be32(uar_index);
 	resp->uuar_index = uuarn;
@@ -964,6 +975,25 @@ static int create_qp_common(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 					    ucmd.sq_wqe_count, max_wqes);
 				return -EINVAL;
 			}
+			if ((init_attr->create_flags &
+				(IB_QP_CREATE_CROSS_CHANNEL |
+				 IB_QP_CREATE_MANAGED_SEND |
+				 IB_QP_CREATE_MANAGED_RECV)) &&
+			     !MLX5_CAP_GEN(dev->mdev, cd)) {
+				mlx5_ib_dbg(dev, "%s does not support cross-channel operations\n",
+						dev->ib_dev.name);
+				return -EINVAL;
+			}
+
+			if (init_attr->create_flags & IB_QP_CREATE_CROSS_CHANNEL)
+				qp->flags |= MLX5_IB_QP_CAP_CROSS_CHANNEL;
+
+			if (init_attr->create_flags & IB_QP_CREATE_MANAGED_SEND)
+				qp->flags |= MLX5_IB_QP_CAP_MANAGED_SEND;
+
+			if (init_attr->create_flags & IB_QP_CREATE_MANAGED_RECV)
+				qp->flags |= MLX5_IB_QP_CAP_MANAGED_RECV;
+
 			err = create_user_qp(dev, pd, qp, udata, init_attr, &in,
 					     &resp, &inlen);
 			if (err)
@@ -1784,6 +1814,14 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 				cpu_to_be32(fls(attr->max_dest_rd_atomic - 1) << 21);
 	}
 
+	if ((attr_mask & IB_QP_ACCESS_FLAGS) &&
+	    (attr->qp_access_flags & IB_ACCESS_REMOTE_ATOMIC) &&
+	    !dev->enable_atomic_resp) {
+		mlx5_ib_warn(dev, "atomic responder is not supported\n");
+		err = -EINVAL;
+		goto out;
+	}
+
 	if (attr_mask & (IB_QP_ACCESS_FLAGS | IB_QP_MAX_DEST_RD_ATOMIC))
 		context->params2 |= to_mlx5_access_flags(qp, attr, attr_mask);
 
@@ -2584,6 +2622,96 @@ static int set_frwr_li_wr(void **seg, struct ib_send_wr *wr, int *size,
 	return 0;
 }
 
+static void set_indir_mkey_segment(struct mlx5_mkey_seg *seg,
+				   struct ib_send_wr *wr, u32 pdn)
+{
+	u32 list_len = wr->wr.indir_reg.indir_list_len;
+
+	memset(seg, 0, sizeof(*seg));
+
+	seg->flags = get_umr_flags(wr->wr.indir_reg.access_flags) |
+				   MLX5_ACCESS_MODE_KLM;
+	seg->qpn_mkey7_0 = cpu_to_be32(0xffffff00 |
+			   mlx5_mkey_variant(wr->wr.indir_reg.mkey));
+	seg->flags_pd = cpu_to_be32(MLX5_MKEY_REMOTE_INVAL | pdn);
+	seg->len = cpu_to_be64(wr->wr.indir_reg.length);
+	seg->start_addr = cpu_to_be64(wr->wr.indir_reg.iova_start);
+	seg->xlt_oct_size = cpu_to_be32(be16_to_cpu(get_klm_octo(list_len * 2)));
+}
+
+static void set_indir_data_seg(struct ib_send_wr *wr, struct mlx5_ib_qp *qp,
+			       u32 pa_key, void **seg, int *size)
+{
+	struct mlx5_wqe_data_seg *data = *seg;
+	struct mlx5_ib_indir_reg_list *mirl;
+	struct ib_sge *sg_list = wr->wr.indir_reg.indir_list->sg_list;
+	u32 list_len = wr->wr.indir_reg.indir_list_len;
+	int i;
+
+	mirl = to_mindir_list(wr->wr.indir_reg.indir_list);
+	for (i = 0; i < list_len; i++) {
+		mirl->klms[i].va = cpu_to_be64(sg_list[i].addr);
+		mirl->klms[i].key = cpu_to_be32(sg_list[i].lkey);
+		mirl->klms[i].bcount = cpu_to_be32(sg_list[i].length);
+	}
+
+	data->byte_count = cpu_to_be32(ALIGN(sizeof(struct mlx5_klm) *
+				       list_len, 64));
+	data->lkey = cpu_to_be32(pa_key);
+	data->addr = cpu_to_be64(mirl->map);
+	*seg += sizeof(*data);
+	*size += sizeof(*data) / 16;
+}
+
+static void set_indir_umr_segment(struct mlx5_wqe_umr_ctrl_seg *umr,
+				  struct ib_send_wr *wr)
+{
+	u64 mask;
+	u32 list_len = wr->wr.indir_reg.indir_list_len;
+
+	memset(umr, 0, sizeof(*umr));
+
+	umr->klm_octowords = get_klm_octo(list_len * 2);
+	mask = MLX5_MKEY_MASK_LEN		|
+		MLX5_MKEY_MASK_PAGE_SIZE	|
+		MLX5_MKEY_MASK_START_ADDR	|
+		MLX5_MKEY_MASK_EN_RINVAL	|
+		MLX5_MKEY_MASK_KEY		|
+		MLX5_MKEY_MASK_LR		|
+		MLX5_MKEY_MASK_LW		|
+		MLX5_MKEY_MASK_RR		|
+		MLX5_MKEY_MASK_RW		|
+		MLX5_MKEY_MASK_A		|
+		MLX5_MKEY_MASK_FREE;
+
+	umr->mkey_mask = cpu_to_be64(mask);
+}
+
+static int set_indir_reg_wr(struct ib_send_wr *wr, struct mlx5_ib_qp *qp,
+			    void **seg, int *size)
+{
+	struct mlx5_ib_pd *pd = get_pd(qp);
+
+	if (unlikely(wr->send_flags & IB_SEND_INLINE))
+		return -EINVAL;
+
+	set_indir_umr_segment(*seg, wr);
+	*seg += sizeof(struct mlx5_wqe_umr_ctrl_seg);
+	*size += sizeof(struct mlx5_wqe_umr_ctrl_seg) / 16;
+	if (unlikely(*seg == qp->sq.qend))
+		*seg = mlx5_get_send_wqe(qp, 0);
+
+	set_indir_mkey_segment(*seg, wr, pd->pdn);
+	*seg += sizeof(struct mlx5_mkey_seg);
+	*size += sizeof(struct mlx5_mkey_seg) / 16;
+	if (unlikely(*seg == qp->sq.qend))
+		*seg = mlx5_get_send_wqe(qp, 0);
+
+	set_indir_data_seg(wr, qp, pd->pa_lkey, seg, size);
+
+	return 0;
+}
+
 static void dump_wqe(struct mlx5_ib_qp *qp, int idx, int size_16)
 {
 	__be32 *p = NULL;
@@ -2790,6 +2918,19 @@ int mlx5_ib_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 				err = set_frwr_li_wr(&seg, wr, &size, mdev, to_mpd(ibqp->pd), qp);
 				if (err) {
 					mlx5_ib_warn(dev, "Failed to prepare FAST_REG_MR WQE\n");
+					*bad_wr = wr;
+					goto out;
+				}
+				num_sge = 0;
+				break;
+
+			case IB_WR_REG_INDIR_MR:
+				next_fence = MLX5_FENCE_MODE_INITIATOR_SMALL;
+				qp->sq.wr_data[idx] = IB_WR_REG_INDIR_MR;
+				ctrl->imm = cpu_to_be32(wr->wr.indir_reg.mkey);
+				err = set_indir_reg_wr(wr, qp, &seg, &size);
+				if (err) {
+					mlx5_ib_warn(dev, "Failed to prepare indir_reg wqe\n");
 					*bad_wr = wr;
 					goto out;
 				}
@@ -3229,6 +3370,15 @@ int mlx5_ib_query_qp(struct ib_qp *ibqp, struct ib_qp_attr *qp_attr, int qp_attr
 
 	qp_init_attr->sq_sig_type = qp->sq_signal_bits & MLX5_WQE_CTRL_CQ_UPDATE ?
 		IB_SIGNAL_ALL_WR : IB_SIGNAL_REQ_WR;
+
+	if (qp->flags & MLX5_IB_QP_CAP_CROSS_CHANNEL)
+		qp_init_attr->create_flags |= IB_QP_CREATE_CROSS_CHANNEL;
+
+	if (qp->flags & MLX5_IB_QP_CAP_MANAGED_SEND)
+		qp_init_attr->create_flags |= IB_QP_CREATE_MANAGED_SEND;
+
+	if (qp->flags & MLX5_IB_QP_CAP_MANAGED_RECV)
+		qp_init_attr->create_flags |= IB_QP_CREATE_MANAGED_RECV;
 
 out_free:
 	kfree(outb);

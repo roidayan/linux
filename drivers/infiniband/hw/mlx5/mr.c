@@ -1533,3 +1533,75 @@ int mlx5_ib_check_mr_status(struct ib_mr *ibmr, u32 check_mask,
 done:
 	return ret;
 }
+
+int mlx5_ib_exp_query_mkey(struct ib_mr *mr, u64 mkey_attr_mask,
+			   struct ib_mkey_attr *mkey_attr)
+{
+	struct mlx5_ib_mr *mmr = to_mmr(mr);
+
+	mkey_attr->max_reg_descriptors = mmr->max_reg_descriptors;
+
+	return 0;
+}
+struct ib_indir_reg_list *
+mlx5_ib_alloc_indir_reg_list(struct ib_device *device,
+			     unsigned int max_indir_list_len)
+{
+	struct device *ddev = device->dma_device;
+	struct mlx5_ib_indir_reg_list *mirl = NULL;
+	int dsize;
+	int err;
+
+	mirl = kzalloc(sizeof(*mirl), GFP_KERNEL);
+	if (!mirl)
+		return ERR_PTR(-ENOMEM);
+
+	mirl->ib_irl.sg_list = kcalloc(max_indir_list_len,
+				       sizeof(*mirl->ib_irl.sg_list),
+				       GFP_KERNEL);
+	if (!mirl->ib_irl.sg_list) {
+		err = -ENOMEM;
+		goto err_sg_list;
+	}
+
+	dsize = sizeof(*mirl->klms) * max_indir_list_len;
+	dsize += max_t(int, MLX5_UMR_ALIGN - ARCH_KMALLOC_MINALIGN, 0);
+	mirl->mapped_ilist = kzalloc(dsize, GFP_KERNEL);
+	if (!mirl->mapped_ilist) {
+		err = -ENOMEM;
+		goto err_mapped_list;
+	}
+
+	mirl->klms = (void *)ALIGN((unsigned long long)mirl->mapped_ilist,
+			      MLX5_UMR_ALIGN);
+	mirl->map = dma_map_single(ddev, mirl->klms,
+				   dsize, DMA_TO_DEVICE);
+	if (dma_mapping_error(ddev, mirl->map)) {
+		err = -ENOMEM;
+		goto err_dma_map;
+	}
+
+	return &mirl->ib_irl;
+err_dma_map:
+	kfree(mirl->mapped_ilist);
+err_mapped_list:
+	kfree(mirl->ib_irl.sg_list);
+err_sg_list:
+	kfree(mirl);
+
+	return ERR_PTR(err);
+}
+
+void
+mlx5_ib_free_indir_reg_list(struct ib_indir_reg_list *indir_list)
+{
+	struct mlx5_ib_indir_reg_list *mirl = to_mindir_list(indir_list);
+	struct device *ddev = indir_list->device->dma_device;
+	int dsize;
+
+	dsize = sizeof(*mirl->klms) * indir_list->max_indir_list_len;
+	dma_unmap_single(ddev, mirl->map, dsize, DMA_TO_DEVICE);
+	kfree(mirl->mapped_ilist);
+	kfree(mirl->ib_irl.sg_list);
+	kfree(mirl);
+}

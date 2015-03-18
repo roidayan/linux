@@ -62,7 +62,9 @@ enum {
 
 enum mlx5_ib_mmap_cmd {
 	MLX5_IB_MMAP_REGULAR_PAGE		= 0,
-	MLX5_IB_MMAP_GET_CONTIGUOUS_PAGES	= 1, /* always last */
+	MLX5_IB_MMAP_GET_CONTIGUOUS_PAGES	= 1,
+	MLX5_IB_MMAP_WC_PAGE			= 2,
+	MLX5_IB_MMAP_NC_PAGE			= 3,
 };
 
 enum {
@@ -89,14 +91,26 @@ enum mlx5_ib_mad_ifc_flags {
 	MLX5_MAD_IFC_NET_VIEW		= 4,
 };
 
+enum {
+	MLX5_CROSS_CHANNEL_UUAR		= 0,
+};
+
+struct mlx5_ib_vma_private_data {
+	struct list_head list;
+	struct vm_area_struct *vma;
+	int hw_bar_type;
+};
+
 struct mlx5_ib_ucontext {
 	struct ib_ucontext	ibucontext;
 	struct list_head	db_page_list;
 
-	/* protect doorbell record alloc/free
-	 */
+	/* protect doorbell record alloc/free */
 	struct mutex		db_page_mutex;
 	struct mlx5_uuar_info	uuari;
+	struct list_head			vma_private_list;
+	/* protect vma_private_list */
+	spinlock_t				vma_private_lock;
 };
 
 static inline struct mlx5_ib_ucontext *to_mucontext(struct ib_ucontext *ibucontext)
@@ -253,6 +267,9 @@ struct mlx5_ib_cq_buf {
 enum mlx5_ib_qp_flags {
 	MLX5_IB_QP_BLOCK_MULTICAST_LOOPBACK     = 1 << 0,
 	MLX5_IB_QP_SIGNATURE_HANDLING           = 1 << 1,
+	MLX5_IB_QP_CAP_CROSS_CHANNEL            = IB_QP_CREATE_CROSS_CHANNEL,
+	MLX5_IB_QP_CAP_MANAGED_SEND             = IB_QP_CREATE_MANAGED_SEND,
+	MLX5_IB_QP_CAP_MANAGED_RECV             = IB_QP_CREATE_MANAGED_RECV,
 };
 
 struct mlx5_umr_wr {
@@ -336,6 +353,7 @@ struct mlx5_ib_mr {
 	atomic_t      invalidated;
 	struct completion invalidation_comp;
 	struct mlx5_core_sig_ctx    *sig;
+	u32			max_reg_descriptors;
 	int			live;
 };
 
@@ -343,6 +361,13 @@ struct mlx5_ib_fast_reg_page_list {
 	struct ib_fast_reg_page_list	ibfrpl;
 	__be64			       *mapped_page_list;
 	dma_addr_t			map;
+};
+
+struct mlx5_ib_indir_reg_list {
+	struct ib_indir_reg_list        ib_irl;
+	void                           *mapped_ilist;
+	struct mlx5_klm                *klms;
+	dma_addr_t                      map;
 };
 
 struct mlx5_ib_umr_context {
@@ -530,6 +555,12 @@ static inline struct mlx5_ib_fast_reg_page_list *to_mfrpl(struct ib_fast_reg_pag
 	return container_of(ibfrpl, struct mlx5_ib_fast_reg_page_list, ibfrpl);
 }
 
+static inline struct mlx5_ib_indir_reg_list *
+to_mindir_list(struct ib_indir_reg_list *ib_irl)
+{
+	return container_of(ib_irl, struct mlx5_ib_indir_reg_list, ib_irl);
+}
+
 struct mlx5_ib_ah {
 	struct ib_ah		ibah;
 	struct mlx5_av		av;
@@ -588,7 +619,9 @@ struct ib_cq *mlx5_ib_create_cq(struct ib_device *ibdev,
 int mlx5_ib_destroy_cq(struct ib_cq *cq);
 int mlx5_ib_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *wc);
 int mlx5_ib_arm_cq(struct ib_cq *ibcq, enum ib_cq_notify_flags flags);
-int mlx5_ib_modify_cq(struct ib_cq *cq, u16 cq_count, u16 cq_period);
+int mlx5_ib_modify_cq(struct ib_cq *cq,
+		      struct ib_cq_attr *cq_attr,
+		      int cq_attr_mask);
 int mlx5_ib_resize_cq(struct ib_cq *ibcq, int entries, struct ib_udata *udata);
 struct ib_mr *mlx5_ib_get_dma_mr(struct ib_pd *pd, int acc);
 struct ib_mr *mlx5_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
@@ -605,6 +638,12 @@ struct ib_mr *mlx5_ib_alloc_fast_reg_mr(struct ib_pd *pd,
 struct ib_fast_reg_page_list *mlx5_ib_alloc_fast_reg_page_list(struct ib_device *ibdev,
 							       int page_list_len);
 void mlx5_ib_free_fast_reg_page_list(struct ib_fast_reg_page_list *page_list);
+
+struct ib_indir_reg_list *
+mlx5_ib_alloc_indir_reg_list(struct ib_device *device,
+			     unsigned int max_indir_list_len);
+void mlx5_ib_free_indir_reg_list(struct ib_indir_reg_list *indir_list);
+
 struct ib_fmr *mlx5_ib_fmr_alloc(struct ib_pd *pd, int acc,
 				 struct ib_fmr_attr *fmr_attr);
 int mlx5_ib_map_phys_fmr(struct ib_fmr *ibfmr, u64 *page_list,
@@ -645,6 +684,8 @@ int mlx5_ib_query_dct(struct ib_dct *dct, struct ib_dct_attr *attr);
 int mlx5_ib_arm_dct(struct ib_dct *dct, struct ib_udata *udata);
 int mlx5_ib_check_mr_status(struct ib_mr *ibmr, u32 check_mask,
 			    struct ib_mr_status *mr_status);
+int mlx5_ib_exp_query_mkey(struct ib_mr *mr, u64 mkey_attr_mask,
+			   struct ib_mkey_attr *mkey_attr);
 
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
 extern struct workqueue_struct *mlx5_ib_page_fault_wq;
