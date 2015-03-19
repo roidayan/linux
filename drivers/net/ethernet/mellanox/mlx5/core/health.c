@@ -58,6 +58,25 @@ static DEFINE_SPINLOCK(health_lock);
 static LIST_HEAD(health_list);
 static struct work_struct health_work;
 
+void mlx5_enter_error_state(struct mlx5_core_dev *dev)
+{
+	unsigned long flags, vector = 0;
+
+	if (dev->state == MLX5_DEVICE_STATE_INTERNAL_ERROR)
+		return;
+
+	mlx5_core_err(dev, "start\n");
+	if (pci_channel_offline(dev->pdev))
+		dev->state = MLX5_DEVICE_STATE_INTERNAL_ERROR;
+
+	mlx5_core_event(dev, MLX5_DEV_EVENT_SYS_ERROR, 0);
+	spin_lock_irqsave(&dev->cmd.alloc_lock, flags);
+	vector = ~dev->cmd.bitmask & ~vector & ((1 << dev->cmd.log_sz) - 1);
+	spin_unlock_irqrestore(&dev->cmd.alloc_lock, flags);
+	mlx5_cmd_comp_handler(dev, vector);
+	mlx5_core_err(dev, "end\n");
+}
+
 static void health_care(struct work_struct *work)
 {
 	struct mlx5_core_health *health, *n;
@@ -188,6 +207,8 @@ void mlx5_stop_health_poll(struct mlx5_core_dev *dev)
 	if (!list_empty(&health->list))
 		list_del_init(&health->list);
 	spin_unlock_irq(&health_lock);
+
+	flush_workqueue(mlx5_core_wq);
 }
 
 void mlx5_health_cleanup(void)

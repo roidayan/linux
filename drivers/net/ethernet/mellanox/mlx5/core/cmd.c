@@ -254,6 +254,69 @@ static void dump_buf(void *buf, int size, int data_only, int offset)
 		pr_debug("\n");
 }
 
+static int mlx5_internal_err_ret_value(struct mlx5_core_dev *dev, u16 op)
+{
+	switch (op) {
+	case MLX5_CMD_OP_DISABLE_HCA:
+	case MLX5_CMD_OP_DESTROY_MKEY:
+	case MLX5_CMD_OP_TEARDOWN_HCA:
+	case MLX5_CMD_OP_DESTROY_EQ:
+	case MLX5_CMD_OP_DESTROY_CQ:
+	case MLX5_CMD_OP_DESTROY_QP:
+	case MLX5_CMD_OP_DESTROY_PSV:
+	case MLX5_CMD_OP_DESTROY_SRQ:
+	case MLX5_CMD_OP_DESTROY_DCT:
+	case MLX5_CMD_OP_DEALLOC_PD:
+	case MLX5_CMD_OP_DEALLOC_UAR:
+	case MLX5_CMD_OP_DEALLOC_XRCD:
+	case MLX5_CMD_OP_MANAGE_PAGES:
+		return MLX5_CMD_STAT_OK;
+
+	case MLX5_CMD_OP_QUERY_HCA_CAP:
+	case MLX5_CMD_OP_QUERY_ADAPTER:
+	case MLX5_CMD_OP_INIT_HCA:
+	case MLX5_CMD_OP_ENABLE_HCA:
+	case MLX5_CMD_OP_QUERY_PAGES:
+	case MLX5_CMD_OP_SET_HCA_CAP:
+	case MLX5_CMD_OP_CREATE_MKEY:
+	case MLX5_CMD_OP_QUERY_MKEY:
+	case MLX5_CMD_OP_QUERY_SPECIAL_CONTEXTS:
+	case MLX5_CMD_OP_PAGE_FAULT_RESUME:
+	case MLX5_CMD_OP_CREATE_EQ:
+	case MLX5_CMD_OP_QUERY_EQ:
+	case MLX5_CMD_OP_CREATE_CQ:
+	case MLX5_CMD_OP_QUERY_CQ:
+	case MLX5_CMD_OP_MODIFY_CQ:
+	case MLX5_CMD_OP_CREATE_QP:
+	case MLX5_CMD_OP_RST2INIT_QP:
+	case MLX5_CMD_OP_INIT2RTR_QP:
+	case MLX5_CMD_OP_RTR2RTS_QP:
+	case MLX5_CMD_OP_RTS2RTS_QP:
+	case MLX5_CMD_OP_SQERR2RTS_QP:
+	case MLX5_CMD_OP_2ERR_QP:
+	case MLX5_CMD_OP_2RST_QP:
+	case MLX5_CMD_OP_QUERY_QP:
+	case MLX5_CMD_OP_MAD_IFC:
+	case MLX5_CMD_OP_INIT2INIT_QP:
+	case MLX5_CMD_OP_CREATE_PSV:
+	case MLX5_CMD_OP_CREATE_SRQ:
+	case MLX5_CMD_OP_QUERY_SRQ:
+	case MLX5_CMD_OP_ARM_RQ:
+	case MLX5_CMD_OP_CREATE_DCT:
+	case MLX5_CMD_OP_DRAIN_DCT:
+	case MLX5_CMD_OP_QUERY_DCT:
+	case MLX5_CMD_OP_ALLOC_PD:
+	case MLX5_CMD_OP_ALLOC_UAR:
+	case MLX5_CMD_OP_ATTACH_TO_MCG:
+	case MLX5_CMD_OP_ALLOC_XRCD:
+	case MLX5_CMD_OP_ACCESS_REG:
+		return -EIO;
+	default:
+		mlx5_core_err(dev, "Unknown FW command\n");
+		return -EINVAL;
+	}
+}
+
 const char *mlx5_command_str(int command)
 {
 	switch (command) {
@@ -614,6 +677,14 @@ static int mlx5_cmd_invoke(struct mlx5_core_dev *dev, struct mlx5_cmd_msg *in,
 	int err = 0;
 	s64 ds;
 	u16 op;
+
+	if (pci_channel_offline(dev->pdev) ||
+	    (dev->state == MLX5_DEVICE_STATE_INTERNAL_ERROR)) {
+		/* Device is going through error recovery
+		 * and cannot accept commands.
+		 */
+		return mlx5_internal_err_ret_value(dev, msg_to_opcode(in));
+	}
 
 	if (callback && page_queue)
 		return -EINVAL;
@@ -1198,6 +1269,11 @@ static struct mlx5_cmd_msg *alloc_msg(struct mlx5_core_dev *dev, int in_size,
 	return msg;
 }
 
+static u16 opcode_from_in(struct mlx5_inbox_hdr *in)
+{
+	return be16_to_cpu(in->opcode);
+}
+
 static int is_manage_pages(struct mlx5_inbox_hdr *in)
 {
 	return be16_to_cpu(in->opcode) == MLX5_CMD_OP_MANAGE_PAGES;
@@ -1212,6 +1288,10 @@ static int cmd_exec(struct mlx5_core_dev *dev, void *in, int in_size, void *out,
 	gfp_t gfp;
 	int err;
 	u8 status = 0;
+
+	if (pci_channel_offline(dev->pdev) ||
+	    dev->state == MLX5_DEVICE_STATE_INTERNAL_ERROR)
+		return mlx5_internal_err_ret_value(dev, opcode_from_in(in));
 
 	pages_queue = is_manage_pages(in);
 	gfp = callback ? GFP_ATOMIC : GFP_KERNEL;
