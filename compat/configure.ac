@@ -6,7 +6,7 @@ AC_CONFIG_MACRO_DIR([config])
 
 AC_CANONICAL_SYSTEM
 
-AM_INIT_AUTOMAKE([1.10 foreign tar-ustar silent-rules subdir-objects])
+AM_INIT_AUTOMAKE([foreign])
 AC_CONFIG_FILES([Makefile])
 
 AC_PROG_CC
