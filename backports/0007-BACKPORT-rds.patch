@@ -8,17 +8,20 @@ Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
  net/rds/ib.h         |    5 +++
  net/rds/ib_rdma.c    |    4 ++
  net/rds/ib_recv.c    |   80 +++++++++++++++++++++++++++++++++++++++++++
+ net/rds/ib_sysctl.c  |   22 ++++++++++++
  net/rds/info.c       |   12 ++++++
  net/rds/iw.h         |    5 +++
  net/rds/iw_recv.c    |   45 ++++++++++++++++++++++++-
+ net/rds/iw_sysctl.c  |   22 ++++++++++++
  net/rds/message.c    |   92 ++++++++++++++++++++++++++++++++++++++++++++++++++
  net/rds/rds.h        |   16 +++++++++
  net/rds/recv.c       |    9 +++++
  net/rds/send.c       |    4 ++
+ net/rds/sysctl.c     |   21 +++++++++++
  net/rds/tcp.h        |   13 +++++++
  net/rds/tcp_listen.c |   19 ++++++++++
  net/rds/tcp_recv.c   |   59 +++++++++++++++++++++++++++++++-
- 15 files changed, 399 insertions(+), 2 deletions(-)
+ 18 files changed, 464 insertions(+), 2 deletions(-)
 
 diff --git a/net/rds/bind.c b/net/rds/bind.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -354,6 +357,57 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  		copied += to_copy;
  
+diff --git a/net/rds/ib_sysctl.c b/net/rds/ib_sysctl.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/rds/ib_sysctl.c
++++ b/net/rds/ib_sysctl.c
+@@ -61,6 +61,7 @@ static unsigned long rds_ib_sysctl_max_unsig_wr_max = 64;
+  */
+ unsigned int rds_ib_sysctl_flow_control = 0;
+ 
++#ifndef CONFIG_SYSCTL_SYSCALL_CHECK
+ static struct ctl_table rds_ib_sysctl_table[] = {
+ 	{
+ 		.procname       = "max_send_wr",
+@@ -105,17 +106,38 @@ static struct ctl_table rds_ib_sysctl_table[] = {
+ 	},
+ 	{ }
+ };
++#if LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0)
++static struct ctl_path rds_ib_ctl_path[] = {
++	{ .procname = "net" },
++	{ .procname = "rds" },
++	{ .procname = "ib" },
++	{ }
++};
++#endif
++#endif
+ 
+ void rds_ib_sysctl_exit(void)
+ {
++#ifndef CONFIG_SYSCTL_SYSCALL_CHECK
+ 	if (rds_ib_sysctl_hdr)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
+ 		unregister_net_sysctl_table(rds_ib_sysctl_hdr);
++#else
++		unregister_sysctl_table(rds_ib_sysctl_hdr);
++#endif
++#endif
+ }
+ 
+ int rds_ib_sysctl_init(void)
+ {
++#ifndef CONFIG_SYSCTL_SYSCALL_CHECK
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
+ 	rds_ib_sysctl_hdr = register_net_sysctl(&init_net, "net/rds/ib", rds_ib_sysctl_table);
++#else
++	rds_ib_sysctl_hdr = register_sysctl_paths(rds_ib_ctl_path, rds_ib_sysctl_table);
++#endif
+ 	if (!rds_ib_sysctl_hdr)
+ 		return -ENOMEM;
++#endif
+ 	return 0;
+ }
 diff --git a/net/rds/info.c b/net/rds/info.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/rds/info.c
@@ -514,6 +568,56 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  		copied += to_copy;
  
+diff --git a/net/rds/iw_sysctl.c b/net/rds/iw_sysctl.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/rds/iw_sysctl.c
++++ b/net/rds/iw_sysctl.c
+@@ -55,6 +55,7 @@ static unsigned long rds_iw_sysctl_max_unsig_bytes_max = ~0UL;
+ 
+ unsigned int rds_iw_sysctl_flow_control = 1;
+ 
++#ifndef CONFIG_SYSCTL_SYSCALL_CHECK
+ static struct ctl_table rds_iw_sysctl_table[] = {
+ 	{
+ 		.procname       = "max_send_wr",
+@@ -108,16 +109,37 @@ static struct ctl_table rds_iw_sysctl_table[] = {
+ 	},
+ 	{ }
+ };
++#if LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0)
++static struct ctl_path rds_iw_ctl_path[] = {
++	{ .procname = "net" },
++	{ .procname = "rds" },
++	{ .procname = "iw" },
++	{ }
++};
++#endif
++#endif
+ 
+ void rds_iw_sysctl_exit(void)
+ {
++#ifndef CONFIG_SYSCTL_SYSCALL_CHECK
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
+ 	unregister_net_sysctl_table(rds_iw_sysctl_hdr);
++#else
++	unregister_sysctl_table(rds_iw_sysctl_hdr);
++#endif
++#endif
+ }
+ 
+ int rds_iw_sysctl_init(void)
+ {
++#ifndef CONFIG_SYSCTL_SYSCALL_CHECK
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
+ 	rds_iw_sysctl_hdr = register_net_sysctl(&init_net, "net/rds/iw", rds_iw_sysctl_table);
++#else
++	rds_iw_sysctl_hdr = register_sysctl_paths(rds_iw_ctl_path, rds_iw_sysctl_table);
++#endif
+ 	if (!rds_iw_sysctl_hdr)
+ 		return -ENOMEM;
++#endif
+ 	return 0;
+ }
 diff --git a/net/rds/message.c b/net/rds/message.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/rds/message.c
@@ -782,6 +886,58 @@ index xxxxxxx..xxxxxxx xxxxxx
  		if (ret)
  			goto out;
  	}
+diff --git a/net/rds/sysctl.c b/net/rds/sysctl.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/net/rds/sysctl.c
++++ b/net/rds/sysctl.c
+@@ -49,6 +49,7 @@ unsigned int  rds_sysctl_max_unacked_bytes = (16 << 20);
+ 
+ unsigned int rds_sysctl_ping_enable = 1;
+ 
++#ifndef CONFIG_SYSCTL_SYSCALL_CHECK
+ static struct ctl_table rds_sysctl_rds_table[] = {
+ 	{
+ 		.procname       = "reconnect_min_delay_ms",
+@@ -91,10 +92,24 @@ static struct ctl_table rds_sysctl_rds_table[] = {
+ 	},
+ 	{ }
+ };
++#if LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0)
++static struct ctl_path rds_ctl_path[] = {
++	{ .procname = "net" },
++	{ .procname = "rds" },
++	{ }
++};
++#endif
++#endif
+ 
+ void rds_sysctl_exit(void)
+ {
++#ifndef CONFIG_SYSCTL_SYSCALL_CHECK
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
+ 	unregister_net_sysctl_table(rds_sysctl_reg_table);
++#else
++	unregister_sysctl_table(rds_sysctl_reg_table);
++#endif
++#endif
+ }
+ 
+ int rds_sysctl_init(void)
+@@ -102,8 +117,14 @@ int rds_sysctl_init(void)
+ 	rds_sysctl_reconnect_min = msecs_to_jiffies(1);
+ 	rds_sysctl_reconnect_min_jiffies = rds_sysctl_reconnect_min;
+ 
++#ifndef CONFIG_SYSCTL_SYSCALL_CHECK
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
+ 	rds_sysctl_reg_table = register_net_sysctl(&init_net,"net/rds", rds_sysctl_rds_table);
++#else
++	rds_sysctl_reg_table = register_sysctl_paths(rds_ctl_path, rds_sysctl_rds_table);
++#endif
+ 	if (!rds_sysctl_reg_table)
+ 		return -ENOMEM;
++#endif
+ 	return 0;
+ }
 diff --git a/net/rds/tcp.h b/net/rds/tcp.h
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/net/rds/tcp.h
