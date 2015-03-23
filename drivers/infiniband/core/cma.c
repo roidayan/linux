@@ -995,11 +995,11 @@ static inline int cma_any_port(struct sockaddr *addr)
 	return !cma_port(addr);
 }
 
-static int cma_get_net_info(void *hdr, enum rdma_port_space ps,
+static int cma_get_net_info(void *hdr, struct rdma_cm_id *listen_id,
 			    u8 *ip_ver, __be16 *port,
 			    union cma_ip_addr **src, union cma_ip_addr **dst)
 {
-	switch (ps) {
+	switch (listen_id->ps) {
 	case RDMA_PS_SDP:
 		if (sdp_get_majv(((struct sdp_hh *) hdr)->sdp_version) !=
 		    SDP_MAJ_VERSION)
@@ -1020,6 +1020,9 @@ static int cma_get_net_info(void *hdr, enum rdma_port_space ps,
 		*dst	= &((struct cma_hdr *) hdr)->dst_addr;
 		break;
 	}
+
+	if (listen_id->route.addr.src_addr.ss_family == AF_IB)
+		return 0;
 
 	if (*ip_ver != 4 && *ip_ver != 6)
 		return -EINVAL;
@@ -1393,7 +1396,7 @@ static struct rdma_id_private *cma_new_conn_id(struct rdma_cm_id *listen_id,
 	u8 ip_ver;
 	int ret;
 
-	if (cma_get_net_info(ib_event->private_data, listen_id->ps,
+	if (cma_get_net_info(ib_event->private_data, listen_id,
 			     &ip_ver, &port, &src, &dst))
 		return NULL;
 
@@ -1451,7 +1454,7 @@ static struct rdma_id_private *cma_new_udp_id(struct rdma_cm_id *listen_id,
 	if (IS_ERR(id))
 		return NULL;
 
-	if (cma_get_net_info(ib_event->private_data, listen_id->ps,
+	if (cma_get_net_info(ib_event->private_data, listen_id,
 			     &ip_ver, &port, &src, &dst))
 		goto err;
 
