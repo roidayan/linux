@@ -26,7 +26,14 @@ fi
 
 ibdevs=$(ls /sys/class/infiniband/)
 
-devs=$(ls /sys/class/net/ | grep ^[ei])
+devs=
+for netpath in /sys/class/net/*
+do
+    if (grep 0x15b3 ${netpath}/device/vendor > /dev/null 2>&1); then
+        devs="$devs ${netpath##*/}"
+    fi
+done
+
 if [ "x$devs" == "x" ]; then
 	# no relevant devices - quit immediately
 	exit
