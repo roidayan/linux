@@ -3,25 +3,25 @@ Subject: [PATCH] BACKPORT: mlx4
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- drivers/infiniband/hw/mlx4/cm.c                   |   27 ++
- drivers/net/ethernet/mellanox/mlx4/cmd.c          |    8 +
- drivers/net/ethernet/mellanox/mlx4/en_clock.c     |   16 ++
- drivers/net/ethernet/mellanox/mlx4/en_cq.c        |   16 ++
- drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c    |   31 ++-
- drivers/net/ethernet/mellanox/mlx4/en_ethtool.c   |  139 ++++++++++-
- drivers/net/ethernet/mellanox/mlx4/en_main.c      |   13 +
- drivers/net/ethernet/mellanox/mlx4/en_netdev.c    |  283 ++++++++++++++++++++-
- drivers/net/ethernet/mellanox/mlx4/en_resources.c |    6 +
- drivers/net/ethernet/mellanox/mlx4/en_rx.c        |  127 +++++++++-
- drivers/net/ethernet/mellanox/mlx4/en_tx.c        |   81 ++++++
- drivers/net/ethernet/mellanox/mlx4/eq.c           |   16 ++
- drivers/net/ethernet/mellanox/mlx4/main.c         |   51 ++++
- drivers/net/ethernet/mellanox/mlx4/mlx4_en.h      |  157 +++++++++++-
- include/linux/mlx4/cmd.h                          |    2 +
- include/linux/mlx4/cq.h                           |    5 +
- include/linux/mlx4/device.h                       |    8 +
- include/linux/mlx4/qp.h                           |    8 +
- 18 files changed, 980 insertions(+), 14 deletions(-)
+ drivers/infiniband/hw/mlx4/cm.c                   |  27 ++
+ drivers/net/ethernet/mellanox/mlx4/cmd.c          |   8 +
+ drivers/net/ethernet/mellanox/mlx4/en_clock.c     |  16 ++
+ drivers/net/ethernet/mellanox/mlx4/en_cq.c        |  16 ++
+ drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c    |  31 ++-
+ drivers/net/ethernet/mellanox/mlx4/en_ethtool.c   | 139 ++++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_main.c      |  13 +
+ drivers/net/ethernet/mellanox/mlx4/en_netdev.c    | 284 +++++++++++++++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_resources.c |   6 +
+ drivers/net/ethernet/mellanox/mlx4/en_rx.c        | 127 +++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_tx.c        |  81 ++++++
+ drivers/net/ethernet/mellanox/mlx4/eq.c           |  16 ++
+ drivers/net/ethernet/mellanox/mlx4/main.c         |  51 ++++
+ drivers/net/ethernet/mellanox/mlx4/mlx4_en.h      | 157 +++++++++++-
+ include/linux/mlx4/cmd.h                          |   2 +
+ include/linux/mlx4/cq.h                           |   5 +
+ include/linux/mlx4/device.h                       |   8 +
+ include/linux/mlx4/qp.h                           |   8 +
+ 18 files changed, 981 insertions(+), 14 deletions(-)
 
 diff --git a/drivers/infiniband/hw/mlx4/cm.c b/drivers/infiniband/hw/mlx4/cm.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -1560,10 +1560,11 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	mdev->pndev[port] = dev;
  	mdev->upper[port] = NULL;
-@@ -2882,6 +3154,13 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
- 		queue_delayed_work(mdev->workqueue, &priv->service_task,
- 				   SERVICE_TASK_DELAY);
+@@ -2882,6 +3154,14 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+ 	}
  
+ 	priv->registered = 1;
++
 +#ifdef CONFIG_COMPAT_EN_SYSFS
 +	err = mlx4_en_sysfs_create(dev);
 +	if (err)
@@ -1574,7 +1575,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	return 0;
  
  out:
-@@ -2929,6 +3208,7 @@ int mlx4_en_reset_config(struct net_device *dev,
+@@ -2929,6 +3209,7 @@ int mlx4_en_reset_config(struct net_device *dev,
  			dev->features |= NETIF_F_HW_VLAN_CTAG_RX;
  		else
  			dev->features &= ~NETIF_F_HW_VLAN_CTAG_RX;
@@ -1582,7 +1583,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	} else if (ts_config.rx_filter == HWTSTAMP_FILTER_NONE) {
  		/* RX time-stamping is OFF, update the RX vlan offload
  		 * to the latest wanted state
-@@ -2937,6 +3217,7 @@ int mlx4_en_reset_config(struct net_device *dev,
+@@ -2937,6 +3218,7 @@ int mlx4_en_reset_config(struct net_device *dev,
  			dev->features |= NETIF_F_HW_VLAN_CTAG_RX;
  		else
  			dev->features &= ~NETIF_F_HW_VLAN_CTAG_RX;
