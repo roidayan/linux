@@ -3,25 +3,25 @@ Subject: [PATCH] BACKPORT: mlx4
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- drivers/infiniband/hw/mlx4/cm.c                   |  27 ++
- drivers/net/ethernet/mellanox/mlx4/cmd.c          |   8 +
- drivers/net/ethernet/mellanox/mlx4/en_clock.c     |  16 ++
- drivers/net/ethernet/mellanox/mlx4/en_cq.c        |  16 ++
- drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c    |  31 ++-
- drivers/net/ethernet/mellanox/mlx4/en_ethtool.c   | 139 ++++++++++-
- drivers/net/ethernet/mellanox/mlx4/en_main.c      |  13 +
- drivers/net/ethernet/mellanox/mlx4/en_netdev.c    | 284 +++++++++++++++++++++-
- drivers/net/ethernet/mellanox/mlx4/en_resources.c |   6 +
- drivers/net/ethernet/mellanox/mlx4/en_rx.c        | 127 +++++++++-
- drivers/net/ethernet/mellanox/mlx4/en_tx.c        |  81 ++++++
- drivers/net/ethernet/mellanox/mlx4/eq.c           |  16 ++
- drivers/net/ethernet/mellanox/mlx4/main.c         |  51 ++++
- drivers/net/ethernet/mellanox/mlx4/mlx4_en.h      | 157 +++++++++++-
- include/linux/mlx4/cmd.h                          |   2 +
- include/linux/mlx4/cq.h                           |   5 +
- include/linux/mlx4/device.h                       |   8 +
- include/linux/mlx4/qp.h                           |   8 +
- 18 files changed, 981 insertions(+), 14 deletions(-)
+ drivers/infiniband/hw/mlx4/cm.c                   |   27 ++
+ drivers/net/ethernet/mellanox/mlx4/cmd.c          |    8 +
+ drivers/net/ethernet/mellanox/mlx4/en_clock.c     |   16 +
+ drivers/net/ethernet/mellanox/mlx4/en_cq.c        |   16 +
+ drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c    |   31 ++-
+ drivers/net/ethernet/mellanox/mlx4/en_ethtool.c   |  264 +++++++++++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_main.c      |   13 +
+ drivers/net/ethernet/mellanox/mlx4/en_netdev.c    |  312 ++++++++++++++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_resources.c |    6 +
+ drivers/net/ethernet/mellanox/mlx4/en_rx.c        |  135 +++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_tx.c        |   81 ++++++
+ drivers/net/ethernet/mellanox/mlx4/eq.c           |   16 +
+ drivers/net/ethernet/mellanox/mlx4/main.c         |   51 ++++
+ drivers/net/ethernet/mellanox/mlx4/mlx4_en.h      |  164 +++++++++++-
+ include/linux/mlx4/cmd.h                          |    2 +
+ include/linux/mlx4/cq.h                           |    5 +
+ include/linux/mlx4/device.h                       |    8 +
+ include/linux/mlx4/qp.h                           |    8 +
+ 18 files changed, 1149 insertions(+), 14 deletions(-)
 
 diff --git a/drivers/infiniband/hw/mlx4/cm.c b/drivers/infiniband/hw/mlx4/cm.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -362,7 +362,80 @@ diff --git a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c b/drivers/net/ether
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
 +++ b/drivers/net/ethernet/mellanox/mlx4/en_ethtool.c
-@@ -713,7 +713,9 @@ static int ethtool_get_ptys_settings(struct net_device *dev,
+@@ -141,6 +141,72 @@ mlx4_en_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *drvinfo)
+ 	drvinfo->eedump_len = 0;
+ }
+ 
++#if (!defined(HAVE_NETDEV_HW_FEATURES) && !defined(HAVE_NET_DEVICE_OPS_EXT))
++static u32 mlx4_en_get_tso(struct net_device *dev)
++{
++       return (dev->features & NETIF_F_TSO) != 0;
++}
++
++static int mlx4_en_set_tso(struct net_device *dev, u32 data)
++{
++       struct mlx4_en_priv *priv = netdev_priv(dev);
++
++       if (data) {
++               if (!priv->mdev->LSO_support)
++                       return -EPERM;
++               dev->features |= (NETIF_F_TSO | NETIF_F_TSO6);
++#ifdef HAVE_NETDEV_VLAN_FEATURES
++               dev->vlan_features |= (NETIF_F_TSO | NETIF_F_TSO6);
++#else
++               if (priv->vlgrp) {
++                       int i;
++                       struct net_device *vdev;
++                       for (i = 0; i < VLAN_N_VID; i++) {
++                               vdev = vlan_group_get_device(priv->vlgrp, i);
++                               if (vdev) {
++                                       vdev->features |= (NETIF_F_TSO | NETIF_F_TSO6);
++                                       vlan_group_set_device(priv->vlgrp, i, vdev);
++                               }
++                       }
++               }
++#endif
++       } else {
++               dev->features &= ~(NETIF_F_TSO | NETIF_F_TSO6);
++#ifdef HAVE_NETDEV_VLAN_FEATURES
++               dev->vlan_features &= ~(NETIF_F_TSO | NETIF_F_TSO6);
++#else
++               if (priv->vlgrp) {
++                       int i;
++                       struct net_device *vdev;
++                       for (i = 0; i < VLAN_N_VID; i++) {
++                               vdev = vlan_group_get_device(priv->vlgrp, i);
++                               if (vdev) {
++                                       vdev->features &= ~(NETIF_F_TSO | NETIF_F_TSO6);
++                                       vlan_group_set_device(priv->vlgrp, i, vdev);
++                               }
++                       }
++               }
++#endif
++       }
++       return 0;
++}
++
++static u32 mlx4_en_get_rx_csum(struct net_device *dev)
++{
++       return dev->features & NETIF_F_RXCSUM;
++}
++
++static int mlx4_en_set_rx_csum(struct net_device *dev, u32 data)
++{
++       if (!data) {
++               dev->features &= ~NETIF_F_RXCSUM;
++               return 0;
++       }
++       dev->features |= NETIF_F_RXCSUM;
++       return 0;
++}
++#endif
++
+ static const char mlx4_en_priv_flags[][ETH_GSTRING_LEN] = {
+ 	"blueflame",
+ 	"mlx4_flow_steering_ethernet_l2",
+@@ -713,7 +779,9 @@ static int ethtool_get_ptys_settings(struct net_device *dev,
  	cmd->maxtxpkt = 0;
  	cmd->maxrxpkt = 0;
  	cmd->eth_tp_mdix = ETH_TP_MDI_INVALID;
@@ -372,7 +445,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	return ret;
  }
-@@ -1013,18 +1015,24 @@ static void mlx4_en_get_ringparam(struct net_device *dev,
+@@ -1013,18 +1081,24 @@ static void mlx4_en_get_ringparam(struct net_device *dev,
  	param->tx_pending = priv->tx_ring[0]->size;
  }
  
@@ -398,7 +471,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx4_en_check_rxfh_func(struct net_device *dev, u8 hfunc)
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
-@@ -1037,17 +1045,32 @@ static int mlx4_en_check_rxfh_func(struct net_device *dev, u8 hfunc)
+@@ -1037,17 +1111,32 @@ static int mlx4_en_check_rxfh_func(struct net_device *dev, u8 hfunc)
  		return -EINVAL;
  
  	priv->rss_hash_fn = hfunc;
@@ -431,7 +504,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	struct mlx4_en_rss_map *rss_map = &priv->rss_map;
-@@ -1064,15 +1087,33 @@ static int mlx4_en_get_rxfh(struct net_device *dev, u32 *ring_index, u8 *key,
+@@ -1064,15 +1153,33 @@ static int mlx4_en_get_rxfh(struct net_device *dev, u32 *ring_index, u8 *key,
  		ring_index[n] = rss_map->qps[n % rss_rings].qpn -
  			rss_map->base_qpn;
  	}
@@ -465,7 +538,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	struct mlx4_en_dev *mdev = priv->mdev;
-@@ -1101,11 +1142,13 @@ static int mlx4_en_set_rxfh(struct net_device *dev, const u32 *ring_index,
+@@ -1101,11 +1208,13 @@ static int mlx4_en_set_rxfh(struct net_device *dev, const u32 *ring_index,
  	if (!is_power_of_2(rss_rings))
  		return -EINVAL;
  
@@ -479,7 +552,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	mutex_lock(&mdev->state_lock);
  	if (priv->port_up) {
-@@ -1115,8 +1158,10 @@ static int mlx4_en_set_rxfh(struct net_device *dev, const u32 *ring_index,
+@@ -1115,8 +1224,10 @@ static int mlx4_en_set_rxfh(struct net_device *dev, const u32 *ring_index,
  
  	if (ring_index)
  		priv->prof->rss_rings = rss_rings;
@@ -490,7 +563,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	if (port_up) {
  		err = mlx4_en_start_port(dev);
-@@ -1141,11 +1186,13 @@ static int mlx4_en_validate_flow(struct net_device *dev,
+@@ -1141,11 +1252,13 @@ static int mlx4_en_validate_flow(struct net_device *dev,
  	if (cmd->fs.location >= MAX_NUM_OF_FS_RULES)
  		return -EINVAL;
  
@@ -504,7 +577,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	switch (cmd->fs.flow_type & ~(FLOW_EXT | FLOW_MAC_EXT)) {
  	case TCP_V4_FLOW:
-@@ -1237,9 +1284,11 @@ static int mlx4_en_ethtool_add_mac_rule_by_ipv4(struct mlx4_en_priv *priv,
+@@ -1237,9 +1350,11 @@ static int mlx4_en_ethtool_add_mac_rule_by_ipv4(struct mlx4_en_priv *priv,
  	unsigned char mac[ETH_ALEN];
  
  	if (!ipv4_is_multicast(ipv4_dst)) {
@@ -516,7 +589,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  			memcpy(&mac, priv->dev->dev_addr, ETH_ALEN);
  	} else {
  		ip_eth_mc_map(ipv4_dst, mac);
-@@ -1535,8 +1584,13 @@ static int mlx4_en_get_num_flows(struct mlx4_en_priv *priv)
+@@ -1535,8 +1650,13 @@ static int mlx4_en_get_num_flows(struct mlx4_en_priv *priv)
  
  }
  
@@ -530,7 +603,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	struct mlx4_en_dev *mdev = priv->mdev;
-@@ -1565,7 +1619,11 @@ static int mlx4_en_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *c,
+@@ -1565,7 +1685,11 @@ static int mlx4_en_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *c,
  		while ((!err || err == -ENOENT) && priority < cmd->rule_cnt) {
  			err = mlx4_en_get_flow(dev, cmd, i);
  			if (!err)
@@ -542,7 +615,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  			i++;
  		}
  		err = 0;
-@@ -1604,7 +1662,10 @@ static int mlx4_en_set_rxnfc(struct net_device *dev, struct ethtool_rxnfc *c)
+@@ -1604,7 +1728,10 @@ static int mlx4_en_set_rxnfc(struct net_device *dev, struct ethtool_rxnfc *c)
  	return err;
  }
  
@@ -554,7 +627,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  				 struct ethtool_channels *channel)
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
-@@ -1612,13 +1673,25 @@ static void mlx4_en_get_channels(struct net_device *dev,
+@@ -1612,13 +1739,25 @@ static void mlx4_en_get_channels(struct net_device *dev,
  	memset(channel, 0, sizeof(*channel));
  
  	channel->max_rx = MAX_RX_RINGS;
@@ -581,7 +654,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  				struct ethtool_channels *channel)
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
-@@ -1627,7 +1700,11 @@ static int mlx4_en_set_channels(struct net_device *dev,
+@@ -1627,7 +1766,11 @@ static int mlx4_en_set_channels(struct net_device *dev,
  	int err = 0;
  
  	if (channel->other_count || channel->combined_count ||
@@ -593,7 +666,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	    channel->rx_count > MAX_RX_RINGS ||
  	    !channel->tx_count || !channel->rx_count)
  		return -EINVAL;
-@@ -1641,7 +1718,12 @@ static int mlx4_en_set_channels(struct net_device *dev,
+@@ -1641,7 +1784,12 @@ static int mlx4_en_set_channels(struct net_device *dev,
  	mlx4_en_free_resources(priv);
  
  	priv->num_tx_rings_p_up = channel->tx_count;
@@ -606,7 +679,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	priv->rx_ring_num = channel->rx_count;
  
  	err = mlx4_en_alloc_resources(priv);
-@@ -1650,11 +1732,21 @@ static int mlx4_en_set_channels(struct net_device *dev,
+@@ -1650,11 +1798,21 @@ static int mlx4_en_set_channels(struct net_device *dev,
  		goto out;
  	}
  
@@ -629,7 +702,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	en_warn(priv, "Using %d TX rings\n", priv->tx_ring_num);
  	en_warn(priv, "Using %d RX rings\n", priv->rx_ring_num);
-@@ -1672,6 +1764,7 @@ out:
+@@ -1672,6 +1830,7 @@ out:
  	return err;
  }
  
@@ -637,7 +710,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx4_en_get_ts_info(struct net_device *dev,
  			       struct ethtool_ts_info *info)
  {
-@@ -1697,12 +1790,15 @@ static int mlx4_en_get_ts_info(struct net_device *dev,
+@@ -1697,12 +1856,58 @@ static int mlx4_en_get_ts_info(struct net_device *dev,
  			(1 << HWTSTAMP_FILTER_NONE) |
  			(1 << HWTSTAMP_FILTER_ALL);
  
@@ -650,10 +723,53 @@ index xxxxxxx..xxxxxxx xxxxxx
  	return ret;
  }
 +#endif
++
++#if (!defined(HAVE_NETDEV_HW_FEATURES) && !defined(HAVE_NET_DEVICE_OPS_EXT))
++int mlx4_en_set_flags(struct net_device *dev, u32 data)
++{
++	struct mlx4_en_priv *priv = netdev_priv(dev);
++
++	if (DEV_FEATURE_CHANGED(dev, data, NETIF_F_HW_VLAN_CTAG_RX)) {
++		en_info(priv, "Turn %s RX vlan strip offload\n",
++			(data & NETIF_F_HW_VLAN_CTAG_RX) ? "ON" : "OFF");
++
++		if (data & NETIF_F_HW_VLAN_CTAG_RX)
++			priv->hwtstamp_config.flags |= NETIF_F_HW_VLAN_CTAG_RX;
++		else
++			priv->hwtstamp_config.flags &= ~NETIF_F_HW_VLAN_CTAG_RX;
++
++		mlx4_en_reset_config(dev, priv->hwtstamp_config, data);
++	}
++
++	if (DEV_FEATURE_CHANGED(dev, data, NETIF_F_HW_VLAN_CTAG_TX)) {
++		en_info(priv, "Turn %s TX vlan strip offload\n",
++				(data & NETIF_F_HW_VLAN_CTAG_TX) ? "ON" : "OFF");
++
++		if (data & NETIF_F_HW_VLAN_CTAG_TX)
++			dev->features |= NETIF_F_HW_VLAN_CTAG_TX;
++		else
++			dev->features &= ~NETIF_F_HW_VLAN_CTAG_TX;
++	}
++
++	if (data & ETH_FLAG_LRO)
++		dev->features |= NETIF_F_LRO;
++	else
++		dev->features &= ~NETIF_F_LRO;
++
++	return 0;
++}
++
++u32 mlx4_en_get_flags(struct net_device *dev)
++{
++	return ethtool_op_get_flags(dev) |
++		(dev->features & NETIF_F_HW_VLAN_CTAG_RX) |
++		(dev->features & NETIF_F_HW_VLAN_CTAG_TX);
++}
++#endif
  
  static int mlx4_en_set_priv_flags(struct net_device *dev, u32 flags)
  {
-@@ -1719,6 +1815,7 @@ static int mlx4_en_set_priv_flags(struct net_device *dev, u32 flags)
+@@ -1719,6 +1924,7 @@ static int mlx4_en_set_priv_flags(struct net_device *dev, u32 flags)
  	     MLX4_EN_PRIV_FLAGS_FS_EN_UDP))
  		return -EINVAL;
  
@@ -661,7 +777,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  #ifdef CONFIG_MLX4_EN_DCB
  	if ((flags & MLX4_EN_PRIV_FLAGS_DISABLE_32_14_4_E) &&
  	    !(priv->pflags & MLX4_EN_PRIV_FLAGS_DISABLE_32_14_4_E)) {
-@@ -1737,6 +1834,7 @@ static int mlx4_en_set_priv_flags(struct net_device *dev, u32 flags)
+@@ -1737,6 +1943,7 @@ static int mlx4_en_set_priv_flags(struct net_device *dev, u32 flags)
  		}
  	}
  #endif
@@ -669,7 +785,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	if (bf_enabled_new == bf_enabled_old)
  		return 0; /* Nothing to do */
-@@ -1773,6 +1871,7 @@ static u32 mlx4_en_get_priv_flags(struct net_device *dev)
+@@ -1773,6 +1980,7 @@ static u32 mlx4_en_get_priv_flags(struct net_device *dev)
  	return priv->pflags;
  }
  
@@ -677,7 +793,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx4_en_get_tunable(struct net_device *dev,
  			       const struct ethtool_tunable *tuna,
  			       void *data)
-@@ -1814,7 +1913,9 @@ static int mlx4_en_set_tunable(struct net_device *dev,
+@@ -1814,7 +2022,9 @@ static int mlx4_en_set_tunable(struct net_device *dev,
  
  	return ret;
  }
@@ -687,7 +803,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx4_en_get_module_info(struct net_device *dev,
  				   struct ethtool_modinfo *modinfo)
  {
-@@ -1857,7 +1958,9 @@ static int mlx4_en_get_module_info(struct net_device *dev,
+@@ -1857,7 +2067,9 @@ static int mlx4_en_get_module_info(struct net_device *dev,
  
  	return 0;
  }
@@ -697,7 +813,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx4_en_get_module_eeprom(struct net_device *dev,
  				     struct ethtool_eeprom *ee,
  				     u8 *data)
-@@ -1895,6 +1998,7 @@ static int mlx4_en_get_module_eeprom(struct net_device *dev,
+@@ -1895,11 +2107,24 @@ static int mlx4_en_get_module_eeprom(struct net_device *dev,
  	}
  	return 0;
  }
@@ -705,8 +821,31 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  const struct ethtool_ops mlx4_en_ethtool_ops = {
  	.get_drvinfo = mlx4_en_get_drvinfo,
-@@ -1917,21 +2021,48 @@ const struct ethtool_ops mlx4_en_ethtool_ops = {
+ 	.get_settings = mlx4_en_get_settings,
+ 	.set_settings = mlx4_en_set_settings,
++#if (!defined(HAVE_NETDEV_HW_FEATURES) && !defined(HAVE_NET_DEVICE_OPS_EXT))
++#ifdef NETIF_F_TSO
++	.get_tso = mlx4_en_get_tso,
++	.set_tso = mlx4_en_set_tso,
++#endif
++	.get_sg = ethtool_op_get_sg,
++	.set_sg = ethtool_op_set_sg,
++	.get_rx_csum = mlx4_en_get_rx_csum,
++	.set_rx_csum = mlx4_en_set_rx_csum,
++	.get_tx_csum = ethtool_op_get_tx_csum,
++	.set_tx_csum = ethtool_op_set_tx_ipv6_csum,
++#endif
+ 	.get_link = ethtool_op_get_link,
+ 	.get_strings = mlx4_en_get_strings,
+ 	.get_sset_count = mlx4_en_get_sset_count,
+@@ -1915,23 +2140,54 @@ const struct ethtool_ops mlx4_en_ethtool_ops = {
+ 	.set_pauseparam = mlx4_en_set_pauseparam,
+ 	.get_ringparam = mlx4_en_get_ringparam,
  	.set_ringparam = mlx4_en_set_ringparam,
++#if (!defined(HAVE_NETDEV_HW_FEATURES) && !defined(HAVE_NET_DEVICE_OPS_EXT))
++	.get_flags = mlx4_en_get_flags,
++	.set_flags = mlx4_en_set_flags,
++#endif
  	.get_rxnfc = mlx4_en_get_rxnfc,
  	.set_rxnfc = mlx4_en_set_rxnfc,
 +#if defined(HAVE_GET_SET_RXFH) && !defined(HAVE_GET_SET_RXFH_INDIR_EXT)
@@ -888,10 +1027,21 @@ index xxxxxxx..xxxxxxx xxxxxx
  			     filter_hash_bucket(priv, src_ip, dst_ip,
  						src_port, dst_port),
  			     filter_chain) {
-@@ -407,9 +422,16 @@ static void mlx4_en_filter_rfs_expire(struct mlx4_en_priv *priv)
+@@ -407,9 +422,27 @@ static void mlx4_en_filter_rfs_expire(struct mlx4_en_priv *priv)
  		mlx4_en_filter_free(filter);
  }
  #endif
++#endif
++
++#ifndef HAVE_NETDEV_HW_FEATURES
++static void mlx4_en_vlan_rx_register(struct net_device *dev, struct vlan_group *grp)
++{
++        struct mlx4_en_priv *priv = netdev_priv(dev);
++
++        en_dbg(HW, priv, "Registering VLAN group:%p\n", grp);
++
++        priv->vlgrp = grp;
++}
 +#endif
  
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0))
@@ -905,7 +1055,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	struct mlx4_en_dev *mdev = priv->mdev;
-@@ -431,11 +453,19 @@ static int mlx4_en_vlan_rx_add_vid(struct net_device *dev,
+@@ -431,11 +464,19 @@ static int mlx4_en_vlan_rx_add_vid(struct net_device *dev,
  		en_dbg(HW, priv, "failed adding vlan %d\n", vid);
  	mutex_unlock(&mdev->state_lock);
  
@@ -925,7 +1075,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	struct mlx4_en_dev *mdev = priv->mdev;
-@@ -456,7 +486,9 @@ static int mlx4_en_vlan_rx_kill_vid(struct net_device *dev,
+@@ -456,7 +497,9 @@ static int mlx4_en_vlan_rx_kill_vid(struct net_device *dev,
  	}
  	mutex_unlock(&mdev->state_lock);
  
@@ -935,7 +1085,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  static void mlx4_en_u64_to_mac(unsigned char dst_mac[ETH_ALEN + 2], u64 src_mac)
-@@ -654,13 +686,21 @@ static void mlx4_en_put_qp(struct mlx4_en_priv *priv)
+@@ -654,13 +697,21 @@ static void mlx4_en_put_qp(struct mlx4_en_priv *priv)
  		mlx4_unregister_mac(dev, priv->port, mac);
  	} else {
  		struct mlx4_mac_entry *entry;
@@ -957,7 +1107,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  				mac = mlx4_mac_to_u64(entry->mac);
  				en_dbg(DRV, priv, "Registering MAC: %pM for deleting\n",
  				       entry->mac);
-@@ -697,11 +737,19 @@ static int mlx4_en_replace_mac(struct mlx4_en_priv *priv, int qpn,
+@@ -697,11 +748,19 @@ static int mlx4_en_replace_mac(struct mlx4_en_priv *priv, int qpn,
  		struct hlist_head *bucket;
  		unsigned int mac_hash;
  		struct mlx4_mac_entry *entry;
@@ -977,7 +1127,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  			if (ether_addr_equal_64bits(entry->mac, prev_mac)) {
  				mlx4_en_uc_steer_release(priv, entry->mac,
  							 qpn, entry->reg_id);
-@@ -790,17 +838,29 @@ static void mlx4_en_clear_list(struct net_device *dev)
+@@ -790,17 +849,29 @@ static void mlx4_en_clear_list(struct net_device *dev)
  static void mlx4_en_cache_mclist(struct net_device *dev)
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
@@ -1007,7 +1157,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		list_add_tail(&tmp->list, &priv->mc_list);
  	}
  }
-@@ -1108,7 +1168,11 @@ static void mlx4_en_do_uc_filter(struct mlx4_en_priv *priv,
+@@ -1108,7 +1179,11 @@ static void mlx4_en_do_uc_filter(struct mlx4_en_priv *priv,
  {
  	struct netdev_hw_addr *ha;
  	struct mlx4_mac_entry *entry;
@@ -1019,7 +1169,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	bool found;
  	u64 mac;
  	int err = 0;
-@@ -1124,7 +1188,11 @@ static void mlx4_en_do_uc_filter(struct mlx4_en_priv *priv,
+@@ -1124,7 +1199,11 @@ static void mlx4_en_do_uc_filter(struct mlx4_en_priv *priv,
  	/* find what to remove */
  	for (i = 0; i < MLX4_EN_MAC_HASH_SIZE; ++i) {
  		bucket = &priv->mac_hash[i];
@@ -1031,7 +1181,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  			found = false;
  			netdev_for_each_uc_addr(ha, dev) {
  				if (ether_addr_equal_64bits(entry->mac,
-@@ -1168,7 +1236,11 @@ static void mlx4_en_do_uc_filter(struct mlx4_en_priv *priv,
+@@ -1168,7 +1247,11 @@ static void mlx4_en_do_uc_filter(struct mlx4_en_priv *priv,
  	netdev_for_each_uc_addr(ha, dev) {
  		found = false;
  		bucket = &priv->mac_hash[ha->addr[MLX4_EN_MAC_HASH_IDX]];
@@ -1043,7 +1193,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  			if (ether_addr_equal_64bits(entry->mac, ha->addr)) {
  				found = true;
  				break;
-@@ -1250,7 +1322,11 @@ static void mlx4_en_do_set_rx_mode(struct work_struct *work)
+@@ -1250,7 +1333,11 @@ static void mlx4_en_do_set_rx_mode(struct work_struct *work)
  		}
  	}
  
@@ -1055,7 +1205,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		mlx4_en_do_uc_filter(priv, dev, mdev);
  
  	/* Promsicuous mode: disable all filters */
-@@ -1630,8 +1706,12 @@ int mlx4_en_start_port(struct net_device *dev)
+@@ -1630,8 +1717,12 @@ int mlx4_en_start_port(struct net_device *dev)
  
  		/* Configure ring */
  		tx_ring = priv->tx_ring[i];
@@ -1068,7 +1218,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		if (err) {
  			en_err(priv, "Failed allocating Tx ring\n");
  			mlx4_en_deactivate_cq(priv, cq);
-@@ -1952,10 +2032,12 @@ void mlx4_en_free_resources(struct mlx4_en_priv *priv)
+@@ -1952,10 +2043,12 @@ void mlx4_en_free_resources(struct mlx4_en_priv *priv)
  {
  	int i;
  
@@ -1081,7 +1231,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	for (i = 0; i < priv->tx_ring_num; i++) {
  		if (priv->tx_ring && priv->tx_ring[i])
-@@ -2010,6 +2092,7 @@ int mlx4_en_alloc_resources(struct mlx4_en_priv *priv)
+@@ -2010,6 +2103,7 @@ int mlx4_en_alloc_resources(struct mlx4_en_priv *priv)
  			goto err;
  	}
  
@@ -1089,7 +1239,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  #ifdef CONFIG_RFS_ACCEL
  	if (priv->mdev->dev->caps.comp_pool) {
  		priv->dev->rx_cpu_rmap = alloc_irq_cpu_rmap(priv->mdev->dev->caps.comp_pool);
-@@ -2017,6 +2100,7 @@ int mlx4_en_alloc_resources(struct mlx4_en_priv *priv)
+@@ -2017,6 +2111,7 @@ int mlx4_en_alloc_resources(struct mlx4_en_priv *priv)
  			goto err;
  	}
  #endif
@@ -1097,7 +1247,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	return 0;
  
-@@ -2047,6 +2131,11 @@ void mlx4_en_destroy_netdev(struct net_device *dev)
+@@ -2047,6 +2142,11 @@ void mlx4_en_destroy_netdev(struct net_device *dev)
  
  	en_dbg(DRV, priv, "Destroying netdev on port:%d\n", priv->port);
  
@@ -1109,7 +1259,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	/* Unregister device - this will close the port if it was up */
  	if (priv->registered)
  		unregister_netdev(dev);
-@@ -2108,7 +2197,11 @@ static int mlx4_en_change_mtu(struct net_device *dev, int new_mtu)
+@@ -2108,7 +2208,11 @@ static int mlx4_en_change_mtu(struct net_device *dev, int new_mtu)
  	return 0;
  }
  
@@ -1121,7 +1271,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	struct mlx4_en_dev *mdev = priv->mdev;
-@@ -2167,6 +2260,7 @@ static int mlx4_en_hwtstamp_set(struct net_device *dev, struct ifreq *ifr)
+@@ -2167,6 +2271,7 @@ static int mlx4_en_hwtstamp_set(struct net_device *dev, struct ifreq *ifr)
  			    sizeof(config)) ? -EFAULT : 0;
  }
  
@@ -1129,7 +1279,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx4_en_hwtstamp_get(struct net_device *dev, struct ifreq *ifr)
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
-@@ -2174,20 +2268,28 @@ static int mlx4_en_hwtstamp_get(struct net_device *dev, struct ifreq *ifr)
+@@ -2174,21 +2279,33 @@ static int mlx4_en_hwtstamp_get(struct net_device *dev, struct ifreq *ifr)
  	return copy_to_user(ifr->ifr_data, &priv->hwtstamp_config,
  			    sizeof(priv->hwtstamp_config)) ? -EFAULT : 0;
  }
@@ -1156,10 +1306,15 @@ index xxxxxxx..xxxxxxx xxxxxx
 +static
 +#endif
 +int mlx4_en_set_features(struct net_device *netdev,
++#ifdef HAVE_NET_DEVICE_OPS_EXT
++			 u32 features)
++#else
  		netdev_features_t features)
++#endif
  {
  	struct mlx4_en_priv *priv = netdev_priv(netdev);
-@@ -2220,6 +2322,7 @@ static int mlx4_en_set_features(struct net_device *netdev,
+ 	int ret = 0;
+@@ -2220,6 +2337,7 @@ static int mlx4_en_set_features(struct net_device *netdev,
  	return 0;
  }
  
@@ -1167,7 +1322,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx4_en_set_vf_mac(struct net_device *dev, int queue, u8 *mac)
  {
  	struct mlx4_en_priv *en_priv = netdev_priv(dev);
-@@ -2239,7 +2342,9 @@ static int mlx4_en_set_vf_vlan(struct net_device *dev, int vf, u16 vlan, u8 qos)
+@@ -2239,7 +2357,9 @@ static int mlx4_en_set_vf_vlan(struct net_device *dev, int vf, u16 vlan, u8 qos)
  
  	return mlx4_set_vf_vlan(mdev->dev, en_priv->port, vf, vlan, qos);
  }
@@ -1177,7 +1332,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx4_en_set_vf_spoofchk(struct net_device *dev, int vf, bool setting)
  {
  	struct mlx4_en_priv *en_priv = netdev_priv(dev);
-@@ -2247,7 +2352,9 @@ static int mlx4_en_set_vf_spoofchk(struct net_device *dev, int vf, bool setting)
+@@ -2247,7 +2367,9 @@ static int mlx4_en_set_vf_spoofchk(struct net_device *dev, int vf, bool setting)
  
  	return mlx4_set_vf_spoofchk(mdev->dev, en_priv->port, vf, setting);
  }
@@ -1187,7 +1342,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx4_en_get_vf_config(struct net_device *dev, int vf, struct ifla_vf_info *ivf)
  {
  	struct mlx4_en_priv *en_priv = netdev_priv(dev);
-@@ -2255,7 +2362,9 @@ static int mlx4_en_get_vf_config(struct net_device *dev, int vf, struct ifla_vf_
+@@ -2255,7 +2377,9 @@ static int mlx4_en_get_vf_config(struct net_device *dev, int vf, struct ifla_vf_
  
  	return mlx4_get_vf_config(mdev->dev, en_priv->port, vf, ivf);
  }
@@ -1197,7 +1352,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx4_en_set_vf_link_state(struct net_device *dev, int vf, int link_state)
  {
  	struct mlx4_en_priv *en_priv = netdev_priv(dev);
-@@ -2263,10 +2372,16 @@ static int mlx4_en_set_vf_link_state(struct net_device *dev, int vf, int link_st
+@@ -2263,10 +2387,16 @@ static int mlx4_en_set_vf_link_state(struct net_device *dev, int vf, int link_st
  
  	return mlx4_set_vf_link_state(mdev->dev, en_priv->port, vf, link_state);
  }
@@ -1214,7 +1369,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	struct mlx4_dev *mdev = priv->mdev->dev;
-@@ -2283,6 +2398,7 @@ static int mlx4_en_get_phys_port_id(struct net_device *dev,
+@@ -2283,6 +2413,7 @@ static int mlx4_en_get_phys_port_id(struct net_device *dev,
  	}
  	return 0;
  }
@@ -1222,7 +1377,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  #ifdef CONFIG_MLX4_EN_VXLAN
  static void mlx4_en_add_vxlan_offloads(struct work_struct *work)
-@@ -2304,9 +2420,13 @@ out:
+@@ -2304,9 +2435,15 @@ out:
  	}
  
  	/* set offloads */
@@ -1232,11 +1387,13 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#endif
 +#ifdef HAVE_NETDEV_HW_FEATURES
  	priv->dev->hw_features |= NETIF_F_GSO_UDP_TUNNEL;
++#elif defined(HAVE_NET_DEVICE_OPS_EXT)
++	netdev_extended(priv->dev)->hw_features |= NETIF_F_GSO_UDP_TUNNEL;
 +#endif
  	priv->dev->features    |= NETIF_F_GSO_UDP_TUNNEL;
  }
  
-@@ -2316,9 +2436,13 @@ static void mlx4_en_del_vxlan_offloads(struct work_struct *work)
+@@ -2316,9 +2453,15 @@ static void mlx4_en_del_vxlan_offloads(struct work_struct *work)
  	struct mlx4_en_priv *priv = container_of(work, struct mlx4_en_priv,
  						 vxlan_del_task);
  	/* unset offloads */
@@ -1246,11 +1403,13 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#endif
 +#ifdef HAVE_NETDEV_HW_FEATURES
  	priv->dev->hw_features &= ~NETIF_F_GSO_UDP_TUNNEL;
++#elif defined(HAVE_NET_DEVICE_OPS_EXT)
++	netdev_extended(priv->dev)->hw_features &= ~NETIF_F_GSO_UDP_TUNNEL;
 +#endif
  	priv->dev->features    &= ~NETIF_F_GSO_UDP_TUNNEL;
  
  	ret = mlx4_SET_PORT_VXLAN(priv->mdev->dev, priv->port,
-@@ -2373,12 +2497,21 @@ static void mlx4_en_del_vxlan_port(struct  net_device *dev,
+@@ -2373,12 +2516,21 @@ static void mlx4_en_del_vxlan_port(struct  net_device *dev,
  	queue_work(priv->mdev->workqueue, &priv->vxlan_del_task);
  }
  
@@ -1272,7 +1431,15 @@ index xxxxxxx..xxxxxxx xxxxxx
  #endif
  
  static const struct net_device_ops mlx4_netdev_ops = {
-@@ -2398,22 +2531,45 @@ static const struct net_device_ops mlx4_netdev_ops = {
+@@ -2393,24 +2545,43 @@ static const struct net_device_ops mlx4_netdev_ops = {
+ 	.ndo_change_mtu		= mlx4_en_change_mtu,
+ 	.ndo_do_ioctl		= mlx4_en_ioctl,
+ 	.ndo_tx_timeout		= mlx4_en_tx_timeout,
++#ifndef HAVE_NETDEV_HW_FEATURES
++	.ndo_vlan_rx_register   = mlx4_en_vlan_rx_register,
++#endif
+ 	.ndo_vlan_rx_add_vid	= mlx4_en_vlan_rx_add_vid,
+ 	.ndo_vlan_rx_kill_vid	= mlx4_en_vlan_rx_kill_vid,
  #ifdef CONFIG_NET_POLL_CONTROLLER
  	.ndo_poll_controller	= mlx4_en_netpoll,
  #endif
@@ -1308,28 +1475,23 @@ index xxxxxxx..xxxxxxx xxxxxx
  #endif
  };
  
-+#ifdef HAVE_NETDEV_EXT_NDO_GET_PHYS_PORT_ID
-+static const struct net_device_ops_ext mlx4_netdev_ops_ext = {
-+	.size                   = sizeof(struct net_device_ops_ext),
-+	.ndo_get_phys_port_id	= mlx4_en_get_phys_port_id,
-+};
-+#endif
-+
- static const struct net_device_ops mlx4_netdev_ops_master = {
- 	.ndo_open		= mlx4_en_open,
- 	.ndo_stop		= mlx4_en_close,
-@@ -2427,27 +2583,60 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
+@@ -2425,28 +2596,73 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
+ 	.ndo_validate_addr	= eth_validate_addr,
+ 	.ndo_change_mtu		= mlx4_en_change_mtu,
  	.ndo_tx_timeout		= mlx4_en_tx_timeout,
++#ifndef HAVE_NETDEV_HW_FEATURES
++	.ndo_vlan_rx_register   = mlx4_en_vlan_rx_register,
++#endif
  	.ndo_vlan_rx_add_vid	= mlx4_en_vlan_rx_add_vid,
  	.ndo_vlan_rx_kill_vid	= mlx4_en_vlan_rx_kill_vid,
 +#ifdef HAVE_NDO_SET_VF_MAC
  	.ndo_set_vf_mac		= mlx4_en_set_vf_mac,
  	.ndo_set_vf_vlan	= mlx4_en_set_vf_vlan,
 +#endif
-+#ifdef HAVE_NETDEV_OPS_NDO_SET_VF_SPOOFCHK
++#if (defined(HAVE_NETDEV_OPS_NDO_SET_VF_SPOOFCHK) && !defined(HAVE_NET_DEVICE_OPS_EXT))
  	.ndo_set_vf_spoofchk	= mlx4_en_set_vf_spoofchk,
 +#endif
-+#ifdef HAVE_NETDEV_OPS_NDO_SET_VF_LINK_STATE
++#if (defined(HAVE_NETDEV_OPS_NDO_SET_VF_LINK_STATE) && !defined(HAVE_NET_DEVICE_OPS_EXT))
  	.ndo_set_vf_link_state	= mlx4_en_set_vf_link_state,
 +#endif
 +#ifdef HAVE_NDO_SET_VF_MAC
@@ -1338,7 +1500,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  #ifdef CONFIG_NET_POLL_CONTROLLER
  	.ndo_poll_controller	= mlx4_en_netpoll,
  #endif
-+#ifdef HAVE_NDO_SET_FEATURES
++#if (defined(HAVE_NDO_SET_FEATURES) && !defined(HAVE_NET_DEVICE_OPS_EXT))
  	.ndo_set_features	= mlx4_en_set_features,
 +#endif
 +#ifdef HAVE_NDO_SETUP_TC
@@ -1359,9 +1521,17 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.ndo_features_check	= mlx4_en_features_check,
  #endif
 +#endif
- };
- 
++};
++
 +#ifdef HAVE_NET_DEVICE_OPS_EXT
++static const struct net_device_ops_ext mlx4_netdev_ops_ext = {
++	.size		  = sizeof(struct net_device_ops_ext),
++	.ndo_set_features = mlx4_en_set_features,
++#ifdef HAVE_NETDEV_EXT_NDO_GET_PHYS_PORT_ID
++	.ndo_get_phys_port_id	= mlx4_en_get_phys_port_id,
++#endif
++};
++
 +static const struct net_device_ops_ext mlx4_netdev_ops_master_ext = {
 +	.size                   = sizeof(struct net_device_ops_ext),
 +#ifdef HAVE_NETDEV_OPS_EXT_NDO_SET_VF_SPOOFCHK
@@ -1373,13 +1543,13 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#ifdef HAVE_NETDEV_EXT_NDO_GET_PHYS_PORT_ID
 +	.ndo_get_phys_port_id	= mlx4_en_get_phys_port_id,
 +#endif
-+};
++	.ndo_set_features	= mlx4_en_set_features,
+ };
 +#endif
-+
+ 
  struct mlx4_en_bond {
  	struct work_struct work;
- 	struct mlx4_en_priv *priv;
-@@ -2505,6 +2694,7 @@ static int mlx4_en_queue_bond_work(struct mlx4_en_priv *priv, int is_bonded,
+@@ -2505,6 +2721,7 @@ static int mlx4_en_queue_bond_work(struct mlx4_en_priv *priv, int is_bonded,
  	return 0;
  }
  
@@ -1387,7 +1557,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  int mlx4_en_netdev_event(struct notifier_block *this,
  			 unsigned long event, void *ptr)
  {
-@@ -2621,6 +2811,7 @@ int mlx4_en_netdev_event(struct notifier_block *this,
+@@ -2621,6 +2838,7 @@ int mlx4_en_netdev_event(struct notifier_block *this,
  
  	return NOTIFY_DONE;
  }
@@ -1395,7 +1565,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  			struct mlx4_en_port_profile *prof)
-@@ -2633,16 +2824,28 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2633,16 +2851,28 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  #ifdef CONFIG_MLX4_EN_DCB
  	u8 config = 0;
  #endif
@@ -1424,7 +1594,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	/*
  	 * Initialize driver private data
-@@ -2678,7 +2881,9 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2678,7 +2908,9 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	priv->num_tx_rings_p_up = mdev->profile.num_tx_rings_p_up;
  	priv->tx_ring_num = prof->tx_ring_num;
  	priv->tx_work_limit = MLX4_EN_DEFAULT_TX_WORK;
@@ -1434,7 +1604,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	priv->tx_ring = kzalloc(sizeof(struct mlx4_en_tx_ring *) * MAX_TX_RINGS,
  				GFP_KERNEL);
-@@ -2697,6 +2902,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2697,6 +2929,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	priv->cqe_size = mdev->dev->caps.cqe_size;
  	priv->mac_index = -1;
  	priv->msg_enable = MLX4_EN_MSG_LEVEL;
@@ -1442,7 +1612,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  #ifdef CONFIG_MLX4_EN_DCB
  	if (!mlx4_is_slave(priv->mdev->dev)) {
  		u8 prio;
-@@ -2724,6 +2930,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2724,6 +2957,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  		}
  	}
  #endif
@@ -1450,24 +1620,18 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	for (i = 0; i < MLX4_EN_MAC_HASH_SIZE; ++i)
  		INIT_HLIST_HEAD(&priv->mac_hash[i]);
-@@ -2777,26 +2984,56 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
- 	/*
- 	 * Initialize netdev entry points
- 	 */
-+#ifdef HAVE_NET_DEVICE_OPS_EXT
-+	if (mlx4_is_master(priv->mdev->dev)) {
-+		set_netdev_ops_ext(dev, &mlx4_netdev_ops_master_ext);
-+		dev->netdev_ops = &mlx4_netdev_ops_master;
-+	} else {
-+		set_netdev_ops_ext(dev, &mlx4_netdev_ops_ext);
-+		dev->netdev_ops = &mlx4_netdev_ops;
-+	}
-+#else
- 	if (mlx4_is_master(priv->mdev->dev))
+@@ -2781,22 +3015,50 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  		dev->netdev_ops = &mlx4_netdev_ops_master;
  	else
  		dev->netdev_ops = &mlx4_netdev_ops;
++
++#ifdef HAVE_NET_DEVICE_OPS_EXT
++	if (mlx4_is_master(priv->mdev->dev))
++		set_netdev_ops_ext(dev, &mlx4_netdev_ops_master_ext);
++	else
++		set_netdev_ops_ext(dev, &mlx4_netdev_ops_ext);
 +#endif
++
  	dev->watchdog_timeo = MLX4_EN_WATCHDOG_TIMEOUT;
 +#ifdef HAVE_NEW_TX_RING_SCHEME
  	netif_set_real_num_tx_queues(dev, priv->tx_ring_num);
@@ -1507,7 +1671,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	dev->features = dev->hw_features | NETIF_F_HIGHDMA |
  			NETIF_F_HW_VLAN_CTAG_TX | NETIF_F_HW_VLAN_CTAG_RX |
  			NETIF_F_HW_VLAN_CTAG_FILTER;
-@@ -2807,10 +3044,44 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2807,10 +3069,47 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	    MLX4_STEERING_MODE_DEVICE_MANAGED &&
  	    mdev->dev->caps.dmfs_high_steer_mode != MLX4_STEERING_DMFS_A0_STATIC)
  		dev->hw_features |= NETIF_F_NTUPLE;
@@ -1531,7 +1695,10 @@ index xxxxxxx..xxxxxxx xxxxxx
 +	dev->features = dev->features | NETIF_F_HIGHDMA |
 +			NETIF_F_HW_VLAN_CTAG_TX | NETIF_F_HW_VLAN_CTAG_RX |
 +			NETIF_F_HW_VLAN_CTAG_FILTER;
-+	dev->features |= NETIF_F_LOOPBACK;
++#ifdef HAVE_NETDEV_EXTENDED_HW_FEATURES
++	netdev_extended(dev)->hw_features |= NETIF_F_LOOPBACK;
++	netdev_extended(dev)->hw_features |= NETIF_F_HW_VLAN_CTAG_RX | NETIF_F_HW_VLAN_CTAG_TX;
++#endif
 +
 +	if (mdev->dev->caps.steering_mode ==
 +	    MLX4_STEERING_MODE_DEVICE_MANAGED)
@@ -1552,7 +1719,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	/* Setting a default hash function value */
  	if (mdev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_RSS_TOP) {
  		priv->rss_hash_fn = ETH_RSS_HASH_TOP;
-@@ -2821,6 +3092,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2821,6 +3120,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  			"No RSS hash capabilities exposed, using Toeplitz\n");
  		priv->rss_hash_fn = ETH_RSS_HASH_TOP;
  	}
@@ -1560,7 +1727,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	mdev->pndev[port] = dev;
  	mdev->upper[port] = NULL;
-@@ -2882,6 +3154,14 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -2882,6 +3182,14 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	}
  
  	priv->registered = 1;
@@ -1575,7 +1742,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	return 0;
  
  out:
-@@ -2929,6 +3209,7 @@ int mlx4_en_reset_config(struct net_device *dev,
+@@ -2929,6 +3237,7 @@ int mlx4_en_reset_config(struct net_device *dev,
  			dev->features |= NETIF_F_HW_VLAN_CTAG_RX;
  		else
  			dev->features &= ~NETIF_F_HW_VLAN_CTAG_RX;
@@ -1583,7 +1750,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	} else if (ts_config.rx_filter == HWTSTAMP_FILTER_NONE) {
  		/* RX time-stamping is OFF, update the RX vlan offload
  		 * to the latest wanted state
-@@ -2937,6 +3218,7 @@ int mlx4_en_reset_config(struct net_device *dev,
+@@ -2937,6 +3246,7 @@ int mlx4_en_reset_config(struct net_device *dev,
  			dev->features |= NETIF_F_HW_VLAN_CTAG_RX;
  		else
  			dev->features &= ~NETIF_F_HW_VLAN_CTAG_RX;
@@ -1781,7 +1948,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  			if (ring->hwtstamp_rx_filter == HWTSTAMP_FILTER_ALL) {
  				timestamp = mlx4_en_get_cqe_ts(cqe);
-@@ -945,18 +995,35 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+@@ -945,18 +995,43 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  		skb->protocol = eth_type_trans(skb, dev);
  		skb_record_rx_queue(skb, cq->ring);
  
@@ -1809,6 +1976,14 @@ index xxxxxxx..xxxxxxx xxxxxx
  		if ((be32_to_cpu(cqe->vlan_my_qpn) &
  		    MLX4_CQE_VLAN_PRESENT_MASK) &&
  		    (dev->features & NETIF_F_HW_VLAN_CTAG_RX))
++#ifndef HAVE_NETDEV_HW_FEATURES
++			if (priv->vlgrp) {
++				vlan_gro_receive(&cq->napi, priv->vlgrp,
++						 be16_to_cpu(cqe->sl_vid),
++						 skb);
++				goto next;
++			}
++#endif
 +#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0))
 +			__vlan_hwaccel_put_tag(skb, be16_to_cpu(cqe->sl_vid));
 +#else
@@ -1817,7 +1992,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  		if (ring->hwtstamp_rx_filter == HWTSTAMP_FILTER_ALL) {
  			timestamp = mlx4_en_get_cqe_ts(cqe);
-@@ -964,7 +1031,9 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+@@ -964,7 +1039,9 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  					       timestamp);
  		}
  
@@ -1827,7 +2002,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  		if (!mlx4_en_cq_busy_polling(cq))
  			napi_gro_receive(&cq->napi, skb);
-@@ -999,7 +1068,11 @@ void mlx4_en_rx_irq(struct mlx4_cq *mcq)
+@@ -999,7 +1076,11 @@ void mlx4_en_rx_irq(struct mlx4_cq *mcq)
  	struct mlx4_en_priv *priv = netdev_priv(cq->dev);
  
  	if (likely(priv->port_up))
@@ -1839,7 +2014,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	else
  		mlx4_en_arm_cq(priv, cq);
  }
-@@ -1012,20 +1085,30 @@ int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget)
+@@ -1012,20 +1093,30 @@ int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget)
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	int done;
  
@@ -1870,7 +2045,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		cpu_curr = smp_processor_id();
  		aff = irq_desc_get_irq_data(cq->irq_desc)->affinity;
  
-@@ -1037,9 +1120,22 @@ int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget)
+@@ -1037,9 +1128,22 @@ int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget)
  		 * poll, and restart it on the right CPU
  		 */
  		done = 0;
@@ -1893,7 +2068,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	mlx4_en_arm_cq(priv, cq);
  	return done;
  }
-@@ -1109,8 +1205,13 @@ static int mlx4_en_config_rss_qp(struct mlx4_en_priv *priv, int qpn,
+@@ -1109,8 +1213,13 @@ static int mlx4_en_config_rss_qp(struct mlx4_en_priv *priv, int qpn,
  	qp->event = mlx4_en_sqp_event;
  
  	memset(context, 0, sizeof *context);
@@ -1907,7 +2082,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	context->db_rec_addr = cpu_to_be64(ring->wqres.db.dma);
  
  	/* Cancel FCS removal if FW allows */
-@@ -1176,6 +1277,11 @@ int mlx4_en_config_rss_steer(struct mlx4_en_priv *priv)
+@@ -1176,6 +1285,11 @@ int mlx4_en_config_rss_steer(struct mlx4_en_priv *priv)
  	int i, qpn;
  	int err = 0;
  	int good_qps = 0;
@@ -1919,7 +2094,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	en_dbg(DRV, priv, "Configuring rss steering\n");
  	err = mlx4_qp_reserve_range(mdev->dev, priv->rx_ring_num,
-@@ -1204,8 +1310,13 @@ int mlx4_en_config_rss_steer(struct mlx4_en_priv *priv)
+@@ -1204,8 +1318,13 @@ int mlx4_en_config_rss_steer(struct mlx4_en_priv *priv)
  		goto rss_err;
  	}
  	rss_map->indir_qp.event = mlx4_en_sqp_event;
@@ -1933,7 +2108,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	if (!priv->prof->rss_rings || priv->prof->rss_rings > priv->rx_ring_num)
  		rss_rings = priv->rx_ring_num;
-@@ -1230,19 +1341,33 @@ int mlx4_en_config_rss_steer(struct mlx4_en_priv *priv)
+@@ -1230,19 +1349,33 @@ int mlx4_en_config_rss_steer(struct mlx4_en_priv *priv)
  
  	rss_context->flags = rss_mask;
  	rss_context->hash_fn = MLX4_RSS_HASH_TOP;
@@ -2472,7 +2647,17 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct notifier_block	nb;
  };
  
-@@ -615,11 +671,13 @@ struct mlx4_en_priv {
+@@ -531,6 +587,9 @@ struct mlx4_en_priv {
+ 	struct mlx4_en_dev *mdev;
+ 	struct mlx4_en_port_profile *prof;
+ 	struct net_device *dev;
++#ifndef HAVE_NETDEV_HW_FEATURES
++	struct vlan_group *vlgrp;
++#endif
+ 	unsigned long active_vlans[BITS_TO_LONGS(VLAN_N_VID)];
+ 	struct net_device_stats stats;
+ 	struct net_device_stats ret_stats;
+@@ -615,11 +674,13 @@ struct mlx4_en_priv {
  	struct hlist_head mac_hash[MLX4_EN_MAC_HASH_SIZE];
  	struct hwtstamp_config hwtstamp_config;
  
@@ -2486,7 +2671,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  #ifdef CONFIG_RFS_ACCEL
  	spinlock_t filters_lock;
  	int last_filter_id;
-@@ -628,10 +686,15 @@ struct mlx4_en_priv {
+@@ -628,10 +689,15 @@ struct mlx4_en_priv {
  #endif
  	u64 tunnel_reg_id;
  	__be16 vxlan_port;
@@ -2502,7 +2687,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  };
  
  enum mlx4_en_wol {
-@@ -790,8 +853,16 @@ int mlx4_en_set_cq_moder(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq);
+@@ -790,8 +856,16 @@ int mlx4_en_set_cq_moder(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq);
  int mlx4_en_arm_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq);
  
  void mlx4_en_tx_irq(struct mlx4_cq *mcq);
@@ -2519,7 +2704,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  netdev_tx_t mlx4_en_xmit(struct sk_buff *skb, struct net_device *dev);
  
  int mlx4_en_create_tx_ring(struct mlx4_en_priv *priv,
-@@ -802,7 +873,11 @@ void mlx4_en_destroy_tx_ring(struct mlx4_en_priv *priv,
+@@ -802,7 +876,11 @@ void mlx4_en_destroy_tx_ring(struct mlx4_en_priv *priv,
  			     struct mlx4_en_tx_ring **pring);
  int mlx4_en_activate_tx_ring(struct mlx4_en_priv *priv,
  			     struct mlx4_en_tx_ring *ring,
@@ -2531,7 +2716,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  void mlx4_en_deactivate_tx_ring(struct mlx4_en_priv *priv,
  				struct mlx4_en_tx_ring *ring);
  void mlx4_en_set_num_rx_rings(struct mlx4_en_dev *mdev);
-@@ -821,7 +896,11 @@ int mlx4_en_process_rx_cq(struct net_device *dev,
+@@ -821,7 +899,11 @@ int mlx4_en_process_rx_cq(struct net_device *dev,
  int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget);
  int mlx4_en_poll_tx_cq(struct napi_struct *napi, int budget);
  void mlx4_en_fill_qp_context(struct mlx4_en_priv *priv, int size, int stride,
@@ -2543,7 +2728,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		struct mlx4_qp_context *context);
  void mlx4_en_sqp_event(struct mlx4_qp *qp, enum mlx4_event event);
  int mlx4_en_map_buffer(struct mlx4_buf *buf);
-@@ -841,16 +920,62 @@ int mlx4_SET_VLAN_FLTR(struct mlx4_dev *dev, struct mlx4_en_priv *priv);
+@@ -841,16 +923,62 @@ int mlx4_SET_VLAN_FLTR(struct mlx4_dev *dev, struct mlx4_en_priv *priv);
  int mlx4_en_DUMP_ETH_STATS(struct mlx4_en_dev *mdev, u8 port, u8 reset);
  int mlx4_en_QUERY_PORT(struct mlx4_en_dev *mdev, u8 port);
  
@@ -2606,7 +2791,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  #define MLX4_EN_NUM_SELF_TEST	5
  void mlx4_en_ex_selftest(struct net_device *dev, u32 *flags, u64 *buf);
-@@ -874,21 +999,38 @@ void mlx4_en_fill_hwtstamps(struct mlx4_en_dev *mdev,
+@@ -874,21 +1002,38 @@ void mlx4_en_fill_hwtstamps(struct mlx4_en_dev *mdev,
  			    struct skb_shared_hwtstamps *hwts,
  			    u64 timestamp);
  void mlx4_en_init_timestamp(struct mlx4_en_dev *mdev);
@@ -2646,7 +2831,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  #define en_dbg(mlevel, priv, format, ...)				\
  do {									\
-@@ -912,4 +1054,13 @@ do {									\
+@@ -912,4 +1057,17 @@ do {									\
  	pr_warn(DRV_NAME " %s: " format,				\
  		dev_name(&(mdev)->pdev->dev), ##__VA_ARGS__)
  
@@ -2657,7 +2842,11 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#endif
 +#ifdef CONFIG_SYSFS_LOOPBACK
 +int mlx4_en_set_features(struct net_device *netdev,
++#ifdef HAVE_NET_DEVICE_OPS_EXT
++		u32 features);
++#else
 +		netdev_features_t features);
++#endif
 +#endif
  #endif
 diff --git a/include/linux/mlx4/cmd.h b/include/linux/mlx4/cmd.h
