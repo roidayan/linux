@@ -178,7 +178,7 @@ int ipoib_transport_dev_init(struct net_device *dev, struct ib_device *ca)
 	} else
 		goto out_free_wq;
 
-	priv->recv_cq = ib_create_cq(priv->ca, ipoib_ib_completion, NULL, dev, size, 0);
+	priv->recv_cq = ib_create_cq(priv->ca, ipoib_ib_rx_completion, NULL, dev, size, 0);
 	if (IS_ERR(priv->recv_cq)) {
 		printk(KERN_WARNING "%s: failed to create receive CQ\n", ca->name);
 		goto out_cm_dev_cleanup;
