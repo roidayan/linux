@@ -108,7 +108,7 @@ enum {
 	IPOIB_MCAST_FLAG_BUSY	  = 2,
 	IPOIB_MCAST_FLAG_ATTACHED = 3,
 
-	MAX_SEND_CQE		  = 16,
+	MAX_SEND_CQE		  = NAPI_POLL_WEIGHT,
 	IPOIB_CM_COPYBREAK	  = 256,
 
 	IPOIB_NON_CHILD		  = 0,
@@ -310,6 +310,7 @@ struct ipoib_dev_priv {
 	struct net_device *dev;
 
 	struct napi_struct napi_rx;
+	struct napi_struct napi_tx;
 
 	unsigned long flags;
 
@@ -386,7 +387,6 @@ struct ipoib_dev_priv {
 #endif
 	int	hca_caps;
 	struct ipoib_ethtool_st ethtool;
-	struct timer_list poll_timer;
 };
 
 struct ipoib_ah {
@@ -452,7 +452,7 @@ extern struct workqueue_struct *ipoib_workqueue;
 
 int ipoib_poll(struct napi_struct *napi, int budget);
 void ipoib_ib_rx_completion(struct ib_cq *cq, void *dev_ptr);
-void ipoib_send_comp_handler(struct ib_cq *cq, void *dev_ptr);
+void ipoib_ib_tx_completion(struct ib_cq *cq, void *dev_ptr);
 
 struct ipoib_ah *ipoib_create_ah(struct net_device *dev,
 				 struct ib_pd *pd, struct ib_ah_attr *attr);
