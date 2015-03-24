@@ -255,7 +255,7 @@ static void ipoib_ib_handle_rx_wc(struct net_device *dev, struct ib_wc *wc)
 			likely(wc->wc_flags & IB_WC_IP_CSUM_OK))
 		skb->ip_summed = CHECKSUM_UNNECESSARY;
 
-	napi_gro_receive(&priv->napi, skb);
+	napi_gro_receive(&priv->napi_rx, skb);
 
 repost:
 	if (unlikely(ipoib_ib_post_receive(dev, wr_id)))
@@ -375,9 +375,9 @@ static int poll_tx(struct ipoib_dev_priv *priv)
 	return n == MAX_SEND_CQE;
 }
 
-int ipoib_poll(struct napi_struct *napi, int budget)
+int ipoib_rx_poll(struct napi_struct *napi, int budget)
 {
-	struct ipoib_dev_priv *priv = container_of(napi, struct ipoib_dev_priv, napi);
+	struct ipoib_dev_priv *priv = container_of(napi, struct ipoib_dev_priv, napi_rx);
 	struct net_device *dev = priv->dev;
 	int done;
 	int t;
@@ -421,12 +421,12 @@ poll_more:
 	return done;
 }
 
-void ipoib_ib_completion(struct ib_cq *cq, void *dev_ptr)
+void ipoib_ib_rx_completion(struct ib_cq *cq, void *dev_ptr)
 {
 	struct net_device *dev = dev_ptr;
 	struct ipoib_dev_priv *priv = netdev_priv(dev);
 
-	napi_schedule(&priv->napi);
+	napi_schedule(&priv->napi_rx);
 }
 
 static void drain_tx_cq(struct net_device *dev)
@@ -668,12 +668,12 @@ int ipoib_ib_dev_open(struct net_device *dev)
 			   round_jiffies_relative(HZ));
 
 	if (!test_and_set_bit(IPOIB_FLAG_INITIALIZED, &priv->flags))
-		napi_enable(&priv->napi);
+		napi_enable(&priv->napi_rx);
 
 	return 0;
 dev_stop:
 	if (!test_and_set_bit(IPOIB_FLAG_INITIALIZED, &priv->flags))
-		napi_enable(&priv->napi);
+		napi_enable(&priv->napi_rx);
 	ipoib_ib_dev_stop(dev);
 	return -1;
 }
@@ -784,7 +784,7 @@ int ipoib_ib_dev_stop(struct net_device *dev)
 	int i;
 
 	if (test_and_clear_bit(IPOIB_FLAG_INITIALIZED, &priv->flags))
-		napi_disable(&priv->napi);
+		napi_disable(&priv->napi_rx);
 
 	ipoib_cm_dev_stop(dev);
 
