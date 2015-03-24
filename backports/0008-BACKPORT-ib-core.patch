@@ -4,7 +4,7 @@ Subject: [PATCH] BACKPORT: ib-core
 Change-Id: Ie209820349292d72897ef4a621c850ee575379c8
 Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
 ---
- drivers/infiniband/core/addr.c             |  124 ++++++++++++++++++++++++++++
+ drivers/infiniband/core/addr.c             |  125 ++++++++++++++++++++++++++++
  drivers/infiniband/core/cm.c               |   23 +++++
  drivers/infiniband/core/cma.c              |   64 ++++++++++++++
  drivers/infiniband/core/fmr_pool.c         |    7 ++
@@ -20,7 +20,7 @@ Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
  drivers/infiniband/core/umem.c             |   68 +++++++++++++++
  drivers/infiniband/core/user_mad.c         |   19 ++++
  drivers/infiniband/core/uverbs_cmd.c       |   53 ++++++++++++
- drivers/infiniband/core/uverbs_main.c      |   42 ++++++++++
+ drivers/infiniband/core/uverbs_main.c      |   42 +++++++++
  drivers/infiniband/hw/mlx4/main.c          |   21 ++++-
  drivers/infiniband/hw/mlx4/mr.c            |   18 ++++
  drivers/infiniband/hw/qib/qib_user_pages.c |    9 ++-
@@ -28,7 +28,7 @@ Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
  include/rdma/ib_umem.h                     |    2 +
  include/rdma/ib_umem_odp.h                 |    4 +
  include/rdma/ib_verbs.h                    |    5 +
- 24 files changed, 735 insertions(+), 8 deletions(-)
+ 24 files changed, 736 insertions(+), 8 deletions(-)
 
 diff --git a/drivers/infiniband/core/addr.c b/drivers/infiniband/core/addr.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -200,7 +200,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	memset(&fl6, 0, sizeof fl6);
  	fl6.daddr = dst_in->sin6_addr;
  	fl6.saddr = src_in->sin6_addr;
-@@ -296,6 +384,26 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
+@@ -296,6 +384,27 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
  		src_in->sin6_family = AF_INET6;
  		src_in->sin6_addr = fl6.saddr;
  	}
@@ -214,6 +214,7 @@ index xxxxxxx..xxxxxxx xxxxxx
 +	if ((ret = dst->error))
 +		goto put;
 +
++	rt = (struct rt6_info *)dst;
 +	if (ipv6_addr_any(&fl.fl6_src)) {
 +		ret = ipv6_dev_get_saddr(&init_net, ip6_dst_idev(dst)->dev,
 +					 &fl.fl6_dst, 0, &fl.fl6_src);
@@ -227,7 +228,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	if (dst->dev->flags & IFF_LOOPBACK) {
  		ret = rdma_translate_ip((struct sockaddr *)dst_in, addr, NULL);
-@@ -313,7 +421,23 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
+@@ -313,7 +422,23 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
  	if (rt->rt6i_flags & RTF_GATEWAY)
  		addr->network = RDMA_NETWORK_IPV6;
  
@@ -304,7 +305,7 @@ diff --git a/drivers/infiniband/core/cma.c b/drivers/infiniband/core/cma.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/cma.c
 +++ b/drivers/infiniband/core/cma.c
-@@ -2114,8 +2114,10 @@ static int cma_resolve_iw_route(struct rdma_id_private *id_priv, int timeout_ms)
+@@ -2117,8 +2117,10 @@ static int cma_resolve_iw_route(struct rdma_id_private *id_priv, int timeout_ms)
  	return 0;
  }
  
@@ -315,7 +316,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	int prio;
  	struct net_device *dev;
  
-@@ -2131,8 +2133,10 @@ static int iboe_tos_to_sl(struct net_device *ndev, int tos)
+@@ -2134,8 +2136,10 @@ static int iboe_tos_to_sl(struct net_device *ndev, int tos)
  		return (vlan_dev_get_egress_qos_mask(ndev, prio) &
  			VLAN_PRIO_MASK) >> VLAN_PRIO_SHIFT;
  #endif
@@ -326,7 +327,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
  {
-@@ -2185,7 +2189,16 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
+@@ -2188,7 +2192,16 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
  	route->path_rec->reversible = 1;
  	route->path_rec->pkey = cpu_to_be16(0xffff);
  	route->path_rec->mtu_selector = IB_SA_EQ;
@@ -343,7 +344,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	route->path_rec->mtu = iboe_get_mtu(ndev->mtu);
  	route->path_rec->rate_selector = IB_SA_EQ;
  	route->path_rec->rate = iboe_get_rate(ndev);
-@@ -2569,6 +2582,7 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
+@@ -2572,6 +2585,7 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
  			  unsigned short snum)
  {
  	struct rdma_bind_list *bind_list;
@@ -351,7 +352,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	int ret;
  
  	bind_list = kzalloc(sizeof *bind_list, GFP_KERNEL);
-@@ -2586,6 +2600,35 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
+@@ -2589,6 +2603,35 @@ static int cma_alloc_port(struct idr *ps, struct rdma_id_private *id_priv,
  err:
  	kfree(bind_list);
  	return ret == -ENOSPC ? -EADDRNOTAVAIL : ret;
@@ -387,7 +388,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  static int cma_alloc_any_port(struct idr *ps, struct rdma_id_private *id_priv)
-@@ -2594,7 +2637,11 @@ static int cma_alloc_any_port(struct idr *ps, struct rdma_id_private *id_priv)
+@@ -2597,7 +2640,11 @@ static int cma_alloc_any_port(struct idr *ps, struct rdma_id_private *id_priv)
  	int low, high, remaining;
  	unsigned int rover;
  
@@ -399,7 +400,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	remaining = (high - low) + 1;
  	rover = prandom_u32() % remaining + low;
  retry:
-@@ -2630,9 +2677,16 @@ static int cma_check_port(struct rdma_bind_list *bind_list,
+@@ -2633,9 +2680,16 @@ static int cma_check_port(struct rdma_bind_list *bind_list,
  {
  	struct rdma_id_private *cur_id;
  	struct sockaddr *addr, *cur_addr;
@@ -416,7 +417,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		if (id_priv == cur_id)
  			continue;
  
-@@ -3532,7 +3586,11 @@ static int cma_join_ib_multicast(struct rdma_id_private *id_priv,
+@@ -3535,7 +3589,11 @@ static int cma_join_ib_multicast(struct rdma_id_private *id_priv,
  						id_priv->id.port_num, &rec,
  						comp_mask, GFP_KERNEL,
  						cma_ib_mc_handler, mc);
@@ -428,7 +429,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  static void iboe_mcast_work_handler(struct work_struct *work)
-@@ -3779,9 +3837,15 @@ static int cma_netdev_change(struct net_device *ndev, struct rdma_id_private *id
+@@ -3782,9 +3840,15 @@ static int cma_netdev_change(struct net_device *ndev, struct rdma_id_private *id
  }
  
  static int cma_netdev_callback(struct notifier_block *self, unsigned long event,
