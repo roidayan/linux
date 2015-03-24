@@ -309,7 +309,7 @@ struct ipoib_dev_priv {
 
 	struct net_device *dev;
 
-	struct napi_struct napi;
+	struct napi_struct napi_rx;
 
 	unsigned long flags;
 
@@ -451,7 +451,7 @@ extern struct workqueue_struct *ipoib_workqueue;
 /* functions */
 
 int ipoib_poll(struct napi_struct *napi, int budget);
-void ipoib_ib_completion(struct ib_cq *cq, void *dev_ptr);
+void ipoib_ib_rx_completion(struct ib_cq *cq, void *dev_ptr);
 void ipoib_send_comp_handler(struct ib_cq *cq, void *dev_ptr);
 
 struct ipoib_ah *ipoib_create_ah(struct net_device *dev,
