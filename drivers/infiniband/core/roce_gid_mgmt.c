@@ -442,6 +442,15 @@ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
 		struct roce_netdev_list *upper_temp;
 		LIST_HEAD(upper_list);
 
+		struct roce_netdev_list *e = kmalloc(sizeof(*e), GFP_ATOMIC);
+
+		if (!e) {
+			pr_info("roce_gid_mgmt: couldn't allocate entry to delete ndev\n");
+		} else {
+			list_add_tail(&e->list, &upper_list);
+			e->ndev = idev;
+			dev_hold(idev);
+		}
 		rcu_read_lock();
 		netdev_for_each_all_upper_dev_rcu(idev, upper, iter) {
 			struct roce_netdev_list *entry = kmalloc(sizeof(*entry),
