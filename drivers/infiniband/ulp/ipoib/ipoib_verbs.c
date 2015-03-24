@@ -184,7 +184,7 @@ int ipoib_transport_dev_init(struct net_device *dev, struct ib_device *ca)
 		goto out_cm_dev_cleanup;
 	}
 
-	priv->send_cq = ib_create_cq(priv->ca, ipoib_send_comp_handler, NULL,
+	priv->send_cq = ib_create_cq(priv->ca, ipoib_ib_tx_completion, NULL,
 				     dev, ipoib_sendq_size, 0);
 	if (IS_ERR(priv->send_cq)) {
 		printk(KERN_WARNING "%s: failed to create send CQ\n", ca->name);
@@ -192,6 +192,9 @@ int ipoib_transport_dev_init(struct net_device *dev, struct ib_device *ca)
 	}
 
 	if (ib_req_notify_cq(priv->recv_cq, IB_CQ_NEXT_COMP))
+		goto out_free_send_cq;
+
+	if (ib_req_notify_cq(priv->send_cq, IB_CQ_NEXT_COMP))
 		goto out_free_send_cq;
 
 	init_attr.send_cq = priv->send_cq;
