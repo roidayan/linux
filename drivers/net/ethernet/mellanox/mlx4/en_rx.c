@@ -428,6 +428,7 @@ int mlx4_en_activate_rx_rings(struct mlx4_en_priv *priv)
 	int i;
 	int ring_ind;
 	int err;
+	u32 *send_wqe_location;
 	int stride = roundup_pow_of_two(sizeof(struct mlx4_en_rx_desc) +
 					DS_SIZE * priv->num_frags);
 
@@ -440,11 +441,21 @@ int mlx4_en_activate_rx_rings(struct mlx4_en_priv *priv)
 		ring->cqn = priv->rx_cq[ring_ind]->mcq.cqn;
 
 		ring->stride = stride;
-		if (ring->stride <= TXBB_SIZE)
+		ring->buf_size = ring->size * ring->stride;
+
+		if (ring->stride <= TXBB_SIZE) {
+			send_wqe_location = ring->buf;
 			ring->buf += TXBB_SIZE;
+		} else {
+			send_wqe_location = ring->buf + ring->buf_size;
+		}
 
 		ring->log_stride = ffs(ring->stride) - 1;
-		ring->buf_size = ring->size * ring->stride;
+
+		/* We must stamp the (unused) send wqe to SW ownership
+		 * Since FW may issue internal doorbell (update_qp)
+		 */
+		*send_wqe_location = 0xffffffff;
 
 		memset(ring->buf, 0, ring->buf_size);
 		mlx4_en_update_rx_prod_db(ring);
