@@ -3,16 +3,16 @@ Subject: [PATCH] BACKPORT: mlx5
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- drivers/net/ethernet/mellanox/mlx5/core/cmd.c  | 26 ++++++++++++++++++++++++++
- drivers/net/ethernet/mellanox/mlx5/core/main.c | 17 +++++++++++++++++
- include/linux/mlx5/driver.h                    |  5 +++++
- 3 files changed, 48 insertions(+)
+ drivers/net/ethernet/mellanox/mlx5/core/cmd.c  |   26 ++++++++++++++++++++++++
+ drivers/net/ethernet/mellanox/mlx5/core/main.c |   17 +++++++++++++++
+ include/linux/mlx5/driver.h                    |    5 ++++
+ 3 files changed, 48 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx5/core/cmd.c b/drivers/net/ethernet/mellanox/mlx5/core/cmd.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx5/core/cmd.c
 +++ b/drivers/net/ethernet/mellanox/mlx5/core/cmd.c
-@@ -512,7 +512,11 @@ static void cmd_work_handler(struct work_struct *work)
+@@ -520,7 +520,11 @@ static void cmd_work_handler(struct work_struct *work)
  	lay->status_own = CMD_OWNER_HW;
  	set_signature(ent, !cmd->checksum_disabled);
  	dump_command(dev, ent, 1);
@@ -23,8 +23,8 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#endif
  
  	/* ring doorbell after the descriptor is valid */
- 	wmb();
-@@ -602,6 +606,9 @@ static int mlx5_cmd_invoke(struct mlx5_core_dev *dev, struct mlx5_cmd_msg *in,
+ 	mlx5_core_dbg(dev, "writing 0x%x to command doorbell\n", 1 << ent->idx);
+@@ -611,6 +615,9 @@ static int mlx5_cmd_invoke(struct mlx5_core_dev *dev, struct mlx5_cmd_msg *in,
  	struct mlx5_cmd *cmd = &dev->cmd;
  	struct mlx5_cmd_work_ent *ent;
  	struct mlx5_cmd_stats *stats;
@@ -34,7 +34,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	int err = 0;
  	s64 ds;
  	u16 op;
-@@ -631,7 +638,14 @@ static int mlx5_cmd_invoke(struct mlx5_core_dev *dev, struct mlx5_cmd_msg *in,
+@@ -640,7 +647,14 @@ static int mlx5_cmd_invoke(struct mlx5_core_dev *dev, struct mlx5_cmd_msg *in,
  		if (err == -ETIMEDOUT)
  			goto out;
  
@@ -49,7 +49,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		op = be16_to_cpu(((struct mlx5_inbox_hdr *)in->first.data)->opcode);
  		if (op < ARRAY_SIZE(cmd->stats)) {
  			stats = &cmd->stats[op];
-@@ -1095,6 +1109,7 @@ void mlx5_cmd_comp_handler(struct mlx5_core_dev *dev, unsigned long vector)
+@@ -1104,6 +1118,7 @@ void mlx5_cmd_comp_handler(struct mlx5_core_dev *dev, unsigned long vector)
  	void *context;
  	int err;
  	int i;
@@ -57,7 +57,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	s64 ds;
  	struct mlx5_cmd_stats *stats;
  	unsigned long flags;
-@@ -1108,7 +1123,11 @@ void mlx5_cmd_comp_handler(struct mlx5_core_dev *dev, unsigned long vector)
+@@ -1117,7 +1132,11 @@ void mlx5_cmd_comp_handler(struct mlx5_core_dev *dev, unsigned long vector)
  				sem = &cmd->pages_sem;
  			else
  				sem = &cmd->sem;
@@ -69,7 +69,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  			memcpy(ent->out->first.data, ent->lay->out, sizeof(ent->lay->out));
  			dump_command(dev, ent, 0);
  			if (!ent->ret) {
-@@ -1122,7 +1141,14 @@ void mlx5_cmd_comp_handler(struct mlx5_core_dev *dev, unsigned long vector)
+@@ -1131,7 +1150,14 @@ void mlx5_cmd_comp_handler(struct mlx5_core_dev *dev, unsigned long vector)
  			}
  			free_ent(cmd, ent->idx);
  			if (ent->callback) {
@@ -88,17 +88,17 @@ diff --git a/drivers/net/ethernet/mellanox/mlx5/core/main.c b/drivers/net/ethern
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx5/core/main.c
 +++ b/drivers/net/ethernet/mellanox/mlx5/core/main.c
-@@ -211,6 +211,9 @@ static int mlx5_enable_msix(struct mlx5_core_dev *dev)
+@@ -212,6 +212,9 @@ static int mlx5_enable_msix(struct mlx5_core_dev *dev)
  	struct mlx5_eq_table *table = &dev->priv.eq_table;
- 	int num_eqs = 1 << dev->caps.gen.log_max_eq;
+ 	int num_eqs = 1 << MLX5_CAP_GEN(dev, log_max_eq);
  	int nvec;
 +#ifndef HAVE_PCI_ENABLE_MSIX_RANGE
 +	int err;
 +#endif
  	int i;
  
- 	nvec = dev->caps.gen.num_ports * num_online_cpus() + MLX5_EQ_VEC_COMP_BASE;
-@@ -225,12 +228,26 @@ static int mlx5_enable_msix(struct mlx5_core_dev *dev)
+ 	nvec = MLX5_CAP_GEN(dev, num_ports) * num_online_cpus() +
+@@ -227,12 +230,26 @@ static int mlx5_enable_msix(struct mlx5_core_dev *dev)
  	for (i = 0; i < nvec; i++)
  		table->msix_arr[i].entry = i;
  
@@ -129,7 +129,7 @@ diff --git a/include/linux/mlx5/driver.h b/include/linux/mlx5/driver.h
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/include/linux/mlx5/driver.h
 +++ b/include/linux/mlx5/driver.h
-@@ -571,8 +571,13 @@ struct mlx5_cmd_work_ent {
+@@ -576,8 +576,13 @@ struct mlx5_cmd_work_ent {
  	int			page_queue;
  	u8			status;
  	u8			token;
