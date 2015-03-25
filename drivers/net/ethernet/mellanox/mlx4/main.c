@@ -216,6 +216,11 @@ MODULE_PARM_DESC(log_num_mgm_entry_size, "log mgm size, that defines the num"
 					 " To activate device managed"
 					 " flow steering when available, set to -1");
 
+static int fast_drop;
+module_param_named(fast_drop, fast_drop, int, 0444);
+MODULE_PARM_DESC(fast_drop,
+		 "Enable fast packet drop when no recieve WQEs are posted");
+
 static bool enable_64b_cqe_eqe = true;
 module_param(enable_64b_cqe_eqe, bool, 0444);
 MODULE_PARM_DESC(enable_64b_cqe_eqe,
@@ -981,6 +986,10 @@ static int mlx4_dev_cap(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
 		dev->caps.log_num_macs  = log_num_mac;
 		dev->caps.log_num_vlans = MLX4_LOG_NUM_VLANS;
 	}
+
+	dev->caps.fast_drop	= fast_drop ?
+				  !!(dev->caps.flags & MLX4_DEV_CAP_FLAG_FAST_DROP) :
+				  0;
 
 	for (i = 1; i <= dev->caps.num_ports; ++i) {
 		dev->caps.port_type[i] = MLX4_PORT_TYPE_NONE;
