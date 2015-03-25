@@ -400,17 +400,12 @@ poll_more:
 
 		for (i = 0; i < n; i++) {
 			struct ib_wc *wc = priv->ibwc + i;
-
-			if (wc->wr_id & IPOIB_OP_RECV) {
-				++done;
-				if (wc->wr_id & IPOIB_OP_CM)
-					ipoib_cm_handle_rx_wc(dev, wc);
-				else
-					ipoib_ib_handle_rx_wc(dev, wc);
-			} else
-				ipoib_cm_handle_tx_wc(priv->dev, wc);
+			++done;
+			if (wc->wr_id & IPOIB_OP_CM)
+				ipoib_cm_handle_rx_wc(dev, wc);
+			else
+				ipoib_ib_handle_rx_wc(dev, wc);
 		}
-
 		if (n != t)
 			break;
 	}
@@ -443,7 +438,10 @@ poll_more:
 
 	for (i = 0; i < n; i++) {
 		wc = priv->send_wc + i;
-		ipoib_ib_handle_tx_wc(dev, wc);
+		if (wc->wr_id & IPOIB_OP_CM)
+			ipoib_cm_handle_tx_wc(dev, wc);
+		else
+			ipoib_ib_handle_tx_wc(dev, wc);
 	}
 
 	if (n < budget) {
