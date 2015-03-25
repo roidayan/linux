@@ -472,8 +472,7 @@ static int mlx5_core_set_issi(struct mlx5_core_dev *dev)
 			return 0;
 		}
 
-		pr_err("failed to query ISSI\n");
-		return err;
+		return 0;
 	}
 
 	sup_issi = MLX5_GET(query_issi_out, query_out, supported_issi_dw0);

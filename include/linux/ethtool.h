@@ -48,6 +48,31 @@
 #define ADVERTISED_56000baseLR4_Full	(1 << 30)
 #endif
 
+#define SPEED_25000 25000
+#define SPEED_50000 50000
+#define SPEED_100000 100000
+/*TODO Ethtool new SPEED API */
+#define SUPPORTED_100000baseCR4_Full 0
+#define ADVERTISED_100000baseCR4_Full 0
+#define SUPPORTED_100000baseSR4_Full 0
+#define ADVERTISED_100000baseSR4_Full 0
+#define SUPPORTED_100000baseKR4_Full 0
+#define ADVERTISED_100000baseKR4_Full 0
+#define SUPPORTED_1000000baseLR4_Full 0
+#define ADVERTISED_1000000baseLR4_Full 0
+#define SUPPORTED_100baseTX_Full 0
+#define ADVERTISED_100baseTX_Full 0
+#define SUPPORTED_25000baseCR_Full 0
+#define ADVERTISED_25000baseCR_Full 0
+#define SUPPORTED_25000baseKR_Full 0
+#define ADVERTISED_25000baseKR_Full 0
+#define SUPPORTED_25000baseSR_Full 0
+#define ADVERTISED_25000baseSR_Full 0
+#define SUPPORTED_50000baseCR2_Full 0
+#define ADVERTISED_50000baseCR2_Full 0
+#define SUPPORTED_50000baseKR2_Full 0
+#define ADVERTISED_50000baseKR2_Full 0
+
 #ifndef SPEED_UNKNOWN
 #define SPEED_UNKNOWN		-1
 #endif
