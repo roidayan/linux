@@ -1349,6 +1349,11 @@ stop()
             fi
         fi
 
+        # Unload memtrack
+        if is_module memtrack; then
+                unload memtrack
+        fi
+
         if  [ -x /sbin/sysctl_perf_tuning ] && [ "X${RUN_SYSCTL}" == "Xyes" ]; then
             /sbin/sysctl_perf_tuning unload
         fi
