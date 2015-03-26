@@ -39,6 +39,7 @@
 
 #include <rdma/ib_verbs.h>
 #include "mlx4.h"
+#include "mlx4_stats.h"
 
 #define MLX4_MAC_VALID		(1ull << 63)
 
