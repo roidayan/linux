@@ -350,8 +350,6 @@ struct mlx5_ib_mr {
 	int			npages;
 	struct mlx5_ib_dev     *dev;
 	struct mlx5_create_mkey_mbox_out out;
-	atomic_t      invalidated;
-	struct completion invalidation_comp;
 	struct mlx5_core_sig_ctx    *sig;
 	u32			max_reg_descriptors;
 	int			live;
