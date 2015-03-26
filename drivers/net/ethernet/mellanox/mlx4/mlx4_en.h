@@ -571,7 +571,7 @@ struct mlx4_en_priv {
 	struct mlx4_en_perf_stats pstats;
 	struct mlx4_en_pkt_stats pkstats;
 	struct mlx4_en_port_stats port_stats;
-	u64 stats_bitmap;
+	DECLARE_BITMAP(stats_bitmap, NUM_ALL_STATS);
 	struct list_head mc_list;
 	struct list_head curr_list;
 	u64 broadcast_id;
@@ -740,7 +740,8 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
 int mlx4_en_start_port(struct net_device *dev);
 void mlx4_en_stop_port(struct net_device *dev, int detach);
 
-void mlx4_en_set_stats_bitmap(struct mlx4_dev *dev, u64 *stats_bitmap);
+void mlx4_en_set_stats_bitmap(struct mlx4_dev *dev,
+			      unsigned long *stats_bitmap);
 
 #ifdef CONFIG_MLX4_EN_DCB
 int mlx4_disable_32_14_4_e_write(struct mlx4_dev *dev, u8 config, int port);
