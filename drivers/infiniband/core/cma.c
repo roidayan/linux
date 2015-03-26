@@ -1014,15 +1014,21 @@ static int cma_get_net_info(void *hdr, struct rdma_cm_id *listen_id,
 		if (((struct cma_hdr *) hdr)->cma_version != CMA_VERSION)
 			return -EINVAL;
 
-		*ip_ver	= cma_get_ip_ver(hdr);
-		*port	= ((struct cma_hdr *) hdr)->port;
-		*src	= &((struct cma_hdr *) hdr)->src_addr;
-		*dst	= &((struct cma_hdr *) hdr)->dst_addr;
+		if (listen_id->route.addr.src_addr.ss_family != AF_IB) {
+			*ip_ver	= cma_get_ip_ver(hdr);
+			*port	= ((struct cma_hdr *)hdr)->port;
+			*src	= &((struct cma_hdr *)hdr)->src_addr;
+			*dst	= &((struct cma_hdr *)hdr)->dst_addr;
+		} else {
+			memset(ip_ver, 0, sizeof(*ip_ver));
+			memset(port, 0, sizeof(*port));
+			memset(src, 0, sizeof(*src));
+			memset(dst, 0, sizeof(*dst));
+
+			return 0;
+		}
 		break;
 	}
-
-	if (listen_id->route.addr.src_addr.ss_family == AF_IB)
-		return 0;
 
 	if (*ip_ver != 4 && *ip_ver != 6)
 		return -EINVAL;
