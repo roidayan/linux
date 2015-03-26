@@ -19,14 +19,14 @@ import platform
 from optparse 					import OptionParser
 
 VERSION_MAJOR					= "0"
-VERSION_MINOR					= "12"
+VERSION_MINOR					= "21"
 
 INDENT						= 1
 
 MLX4_CORE					= "mlx4_core"
 MLX5_CORE					= "mlx5_core"
 
-FORMAT_1_ARG  					= '%s%-40s\n'
+FORMAT_1_ARG					= '%s%-40s\n'
 FORMAT_2ARGS 					= '%s%-40s %-6s\n'
 
 SERVICE_STATUS_CMD				= "yes | service --status-all"
@@ -50,9 +50,12 @@ XPS_AFFINITY_MASK_SET_CMD			= "echo %s > /sys/class/net/%s/queues/tx-%s/xps_cpus
 XPS_AFFINITY_MASK_CMD				= "cat /sys/class/net/%s/queues/tx-%s/xps_cpus"
 FIND_INTERFACES_FROM_PCI_BUS_CMD		= "ls /sys/bus/pci/devices/*%s/net/"
 INTERFACE_STATUS_CMD				= "cat /sys/class/net/%s/carrier 2>/dev/null"
+INTERFACE_MTU_CMD				= "cat /sys/class/net/%s/mtu 2>/dev/null"
 INTERFACE_PORT_CMD				= "cat /sys/class/net/%s/dev_id 2>/dev/null"
-GET_PORT_LINK_TYPE_CMD_CONNECTX			= "cat /sys/bus/pci/drivers/mlx4_core/0000\:%s\:%s/mlx4_port%s"
-GET_PORT_LINK_TYPE_CMD_CONNECTX_PPC		= "cat /sys/bus/pci/drivers/mlx4_core/%s\:%s\:%s/mlx4_port%s"
+GET_PORT_LINK_TYPE_CMD_MLX4			= "cat /sys/bus/pci/drivers/mlx4_core/0000\:%s\:%s/mlx4_port%s"
+GET_PORT_LINK_TYPE_CMD_MLX4_PPC			= "cat /sys/bus/pci/drivers/mlx4_core/%s\:%s\:%s/mlx4_port%s"
+IS_PORT_LINK_TYPE_ETH_CMD_MLX5			= "ls /sys/bus/pci/drivers/mlx5_core/0000\:%s\:%s/net/%s"
+IS_PORT_LINK_TYPE_ETH_CMD_MLX5_PPC		= "ls /sys/bus/pci/drivers/mlx5_core/%s\:%s\:%s/net/%s"
 
 NUMA_SUPPORT_CMD				= "cat /sys/bus/pci/devices/*%s/numa_node"
 NUMA_CORES_CMD			 		= "ls /sys/devices/system/node/node%s/"
@@ -136,6 +139,7 @@ class OS:
 	RH6_4		= "RH6.4"
 	RH6_5		= "RH6.5"
 	RH7_0		= "RH7.0"
+	RH7_1		= "RH7.1"
 	FEDORA		= "FEDORA"
 	SLES11_3	= "SLES11.3"
 	UBUNTU14_04	= "UBUNTU14.04"
@@ -147,7 +151,7 @@ class OS:
 	UEFI		= "UEFI"
 	DEBIAN		= "DEBIAN"
 	UNKNOWN		= "UNKNOWN"
-	SUPPORTED_OS    = [RH6_4, RH6_5, RH7_0, SLES11_3, UBUNTU14_04, UBUNTU14_10]
+	SUPPORTED_OS	= [RH6_4, RH6_5, RH7_0, RH7_1, SLES11_3, UBUNTU14_04, UBUNTU14_10]
 
 	def get_os(self):
 		""" Return local OS Type (one of the list OS_ALL)
@@ -176,6 +180,8 @@ class OS:
 					return OS.RH6_5
 				if os_version == '7.0':
 					return OS.RH7_0
+				if os_version == '7.1':
+					return OS.RH7_1
 			if linux_dist == 'fedora':
 				return OS.FEDORA
 			if linux_dist == 'suse':
@@ -210,11 +216,46 @@ class OS:
 			return True
 		return False
 
-class DevId:
-	ConnectX2	= "26428"
-	ConnectX3	= "4099"
-	ConnectX3Pro	= "4103"
-	ConnectIB	= "4113"
+class DeviceType:
+	""" A class describing A Mellanox device
+	"""
+
+	def __init__(self, id, name = ""):
+		self.id = id
+		if name:
+			self.name = name
+		else:
+			matching_devices = filter(lambda type: type.id == id, Devices.SUPPORTED_CONSUMERS)
+			if any(matching_devices):
+				self.name = matching_devices[0].name
+
+	def __eq__(self, other):
+		""" Decides whether or not two instances of DeviceType class are the same
+		"""
+		return self.id == other.id
+
+class Devices:
+	""" A class describing supported Mellanox devices
+	"""
+	ConnectX2		= DeviceType("26428", "ConnectX-2")
+	ConnectX3		= DeviceType("4099", "ConnectX-3")
+	ConnectX3Pro		= DeviceType("4103", "ConnectX-3Pro")
+	ConnectIB		= DeviceType("4113", "Connect-IB")
+	ConnectX4		= DeviceType("4115", "ConnectX-4")
+	UNDEFINED		= DeviceType("N/A", "N/A")
+	MLX4_CONSUMERS		= [ConnectX2, ConnectX3, ConnectX3Pro]
+	MLX5_CONSUMERS		= [ConnectX4, ConnectIB]
+	SUPPORTED_CONSUMERS	= MLX4_CONSUMERS + MLX5_CONSUMERS
+
+	def supported_ids(self):
+		""" Returns a list of all supported device ids
+		"""
+		return list(map((lambda type: type.id), Devices.SUPPORTED_CONSUMERS))
+
+	def supported_names(self):
+		""" Returns a list of all supported device names
+		"""
+		return list(map((lambda type: type.name), Devices.SUPPORTED_CONSUMERS))
 
 # Information tree structure and classes
 class NodeInfo:
@@ -226,67 +267,79 @@ class NodeInfo:
 		self.irq_balancer	= IrqBalancer()
 		self.firewall		= Firewall()
 		self.ip_forwarding	= IpForwarding()
-		self.hypert_threading	= HyperThreading(self)
+		self.hyper_threading	= HyperThreading(self)
 		self.iommu		= Iommu()
 		self.driver		= Driver()
 		self.pci_devices	= mlnx_pci_devices_status(self)
 
 	def __str__ (self):
 		global INDENT
-		attrs   = vars(self)
-		string  = '\t'*INDENT + "System info:\n"
-		string += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "System info:\n"
 
-		string += '\n' + '\t'*(INDENT+1) + 'OS:\n'
-		INDENT += 2
-		string += str(self.os) + '\n'
-		INDENT -= 2
+		INDENT	+= 2
+		string	+= str(self.os) + '\n'
+		INDENT	-= 2
 
-		string += '\n' + '\t'*(INDENT+1) + 'CPU:\n'
-		INDENT += 2
-		string += str(self.cpu) + '\n'
-		INDENT -= 2
+		INDENT	+= 2
+		string	+= str(self.cpu) + '\n'
+		INDENT	-= 2
 
-		string += '\n' + '\t'*(INDENT+1) + 'IRQ Balancer:\n'
-		INDENT += 2
-		string += str(self.irq_balancer) + '\n'
-		INDENT -= 2
+		INDENT	+= 2
+		string	+= str(self.irq_balancer) + '\n'
+		INDENT	-= 2
 
-		string += '\n' + '\t'*(INDENT+1) + 'Firewall:\n'
-		INDENT += 2
-		string += str(self.firewall) + '\n'
-		INDENT -= 2
+		INDENT	+= 2
+		string	+= str(self.firewall) + '\n'
+		INDENT	-= 2
 
-		string += '\n' + '\t'*(INDENT+1) + 'IP Forwarding:\n'
-		INDENT += 2
-		string += str(self.ip_forwarding) + '\n'
-		INDENT -= 2
+		INDENT	+= 2
+		string	+= str(self.ip_forwarding) + '\n'
+		INDENT	-= 2
 
-		string += '\n' + '\t'*(INDENT+1) + 'Hyper Threading:\n'
-		INDENT += 2
-		string += str(self.hypert_threading) + '\n'
-		INDENT -= 2
+		INDENT	+= 2
+		string	+= str(self.hyper_threading) + '\n'
+		INDENT	-= 2
 
-		string += '\n' + '\t'*(INDENT+1) + 'IOMMU:\n'
-		INDENT += 2
-		string += str(self.iommu) + '\n'
-		INDENT -= 2
+		INDENT	+= 2
+		string	+= str(self.iommu) + '\n'
+		INDENT	-= 2
 
-		string += '\n' + '\t'*(INDENT+1) + 'Driver:\n'
-		INDENT += 2
-		string += str(self.driver) + '\n'
-		INDENT -= 2
+		INDENT	+= 2
+		string 	+= str(self.driver) + '\n'
+		INDENT	-= 2
 
-		string += '\n' + '\t'*(INDENT+1) + 'Devices:\n'
 		for device in self.pci_devices:
 			INDENT += 2
 			string += str(device) + '\n'
 			INDENT -= 2
 
+		string	+= '\n'
+
 		return string
 
 	def __repr__ (self):
 		return str(self)
+
+	def report_status(self):
+		""" Report the system status to the user
+		"""
+		print ""
+		print "Mellanox Technologies - System Report"
+		print ""
+		self.os.report_status()
+		print ""
+		self.cpu.report_status()
+		print ""
+		self.hyper_threading.report_status()
+		print ""
+		self.irq_balancer.report_status()
+		print ""
+		self.driver.report_status()
+		print ""
+		for device in self.pci_devices:
+			device.report_status()
+			print ""
 
 class OsInfo:
 	""" Describes the system's operation system
@@ -297,13 +350,20 @@ class OsInfo:
 
 	def __str__ (self):
 		global INDENT
-		attrs   = vars(self)
-		string  = '\t'*INDENT + "OS:\n"
-		string += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "OS:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
 		return string
 
 	def __repr__ (self):
 		return str(self)
+
+	def report_status(self):
+		""" Report the operation system status to the user
+		"""
+		print "Operation System Status"
+		print "%s"%(self.name)
+		print "%s"%(self.kernel)
 
 class Cpu:
 	""" Describes the system's CPU
@@ -313,13 +373,27 @@ class Cpu:
 
 	def __str__ (self):
 		global INDENT
-		attrs   = vars(self)
-		string  = '\t'*INDENT + "CPU:\n"
-		string += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "CPU:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
 		return string
 
 	def __repr__ (self):
 		return str(self)
+
+	def report_status(self):
+		""" Report the CPU status to the user
+		"""
+		print "CPU Status"
+		print "%s %s %s"%(self.vendor, self.model, self.architecture)
+		if self.max_freq:
+			freq_ok = (int(self.actual_freq) >= int(self.max_freq.split(" ")[0]) - 100)
+			freq_status = (status_ok_string(), status_ok_string())[freq_ok]
+		else:
+			freq_ok = True
+			freq_status = status_ok_string()
+		freq_suggestion = (" >>> CPU frequency is below maximum. Install cpupowerutils and run x86_energy_perf_policy performance.", "")[freq_ok]
+		print "%s: Frequency %sMHz"%(freq_status, self.actual_freq) + freq_suggestion
 
 	def collect_info(self, node_info):
 		""" Collects CPU information from the system and updates the class fields
@@ -456,13 +530,19 @@ class IrqBalancer:
 
 	def __str__ (self):
 		global INDENT
-		attrs   = vars(self)
-		string  = '\t'*INDENT + "IRQ Balancer:\n"
-		string += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "IRQ Balancer:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
 		return string
 
 	def __repr__ (self):
 		return str(self)
+
+	def report_status(self):
+		""" Report the IRQ balancer status to the user
+		"""
+		print "IRQ Balancer Status"
+		print "%s"%self.status
 
 	def read_status(self):
 		""" Reads current IRQ balancer status from the system and update the class status field
@@ -513,9 +593,9 @@ class Firewall:
 
 	def __str__ (self):
 		global INDENT
-		attrs   = vars(self)
-		string  = '\t'*INDENT + "Firewall:\n"
-		string += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "Firewall:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
 		return string
 
 	def __repr__ (self):
@@ -573,9 +653,9 @@ class IpForwarding:
 
 	def __str__ (self):
 		global INDENT
-		attrs   = vars(self)
-		string  = '\t'*INDENT + "IP forwarding:\n"
-		string += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "IP forwarding:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
 		return string
 
 	def __repr__ (self):
@@ -626,13 +706,19 @@ class HyperThreading:
 
 	def __str__ (self):
 		global INDENT
-		attrs   = vars(self)
-		string  = '\t'*INDENT + "Hyper Threading:\n"
-		string += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "Hyper Threading:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
 		return string
 
 	def __repr__ (self):
 		return str(self)
+
+	def report_status(self):
+		""" Report the hyper threading status to the user
+		"""
+		print "Hyper Threading Status"
+		print "%s"%self.status
 
 	def read_status(self, node_info):
 		""" Reads current Hyper Threading status from the system and update the class status field
@@ -651,9 +737,9 @@ class Iommu:
 
 	def __str__ (self):
 		global INDENT
-		attrs   = vars(self)
-		string  = '\t'*INDENT + "IOMMU:\n"
-		string += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "IOMMU:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
 		return string
 
 	def __repr__ (self):
@@ -682,13 +768,24 @@ class Driver:
 
 	def __str__ (self):
 		global INDENT
-		attrs   = vars(self)
-		string  = '\t'*INDENT + "Driver:\n"
-		string += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "Driver:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
 		return string
 
 	def __repr__ (self):
 		return str(self)
+
+	def report_status(self):
+		""" Report the driver status to the user
+		"""
+		print "Driver Status"
+		driver_status = status_ok_string()
+		driver_suggestion = ""
+		if not self.installed:
+			driver_status = status_warning_string()
+			driver_suggestion = " >>> MLNX_OFED is not installed."
+		print "%s: %s"%(driver_status, self.version) + driver_suggestion
 
 	def collect_info(self):
 		""" Collects CPU information from the system and updates the class fields
@@ -707,16 +804,16 @@ class Driver:
 
 class IrqInfo:
 	def __init__ (self, number):
-		self.number             = number
-		self.smp_affinity_mask  = "N/A"
-		self.affinity_hint_mask = "N/A"
-		self.wanted_mask        = "N/A"
+		self.number		= number
+		self.smp_affinity_mask	= "N/A"
+		self.affinity_hint_mask	= "N/A"
+		self.wanted_mask	= "N/A"
 
 	def __str__ (self):
 		global INDENT
-		attrs   = vars(self)
-		string  = '\t'*INDENT + "IRQ info:\n"
-		string += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "IRQ info:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
 		return string
 
 	def __repr__ (self):
@@ -759,10 +856,10 @@ class RingInfo:
 
 	def __str__ (self):
 		global INDENT
-		attrs   = vars(self)
-		string  = '\t'*INDENT + "Ring info:\n"
-		string += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
-		string += '\n' + '\t'*(INDENT+1) + 'IRQs:\n'
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "Ring info:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		string	+= '\n' + '\t'*(INDENT+1) + 'IRQs:\n'
 		for irq in self.irqs:
 			INDENT += 2
 			string += str(irq) + '\n'
@@ -803,9 +900,9 @@ class RingInfo:
 					('%s%s%s'%(interface_name, '-', str(ring_number)) in line) and \
 					(line.split(interface_name + '-')[1] == str(ring_number)):
 
-				irq                    = IrqInfo(line.split()[0].split(":")[0].strip())
-				irq.smp_affinity_mask  = irq.get_affinity_mask()
-				irq.affinity_hint_mask = irq.get_affinity_hint_mask()
+				irq			= IrqInfo(line.split()[0].split(":")[0].strip())
+				irq.smp_affinity_mask	= irq.get_affinity_mask()
+				irq.affinity_hint_mask	= irq.get_affinity_hint_mask()
 				irqs.append(irq)
 		return irqs
 
@@ -837,18 +934,19 @@ class RingInfo:
 
 class InterfaceInfo( object ):
 	def __init__ (self, interface_name):
-		self.name               = interface_name
-		self.status             = "N/A"
-		self.port_number        = "N/A"
-		self.rings              = "N/A"
-		self.link_type          = "N/A"
+		self.name		= interface_name
+		self.status		= "N/A"
+		self.port_number	= "N/A"
+		self.rings		= "N/A"
+		self.link_type		= "N/A"
+		self.mtu		= "N/A"
 
 	def __str__ (self):
 		global INDENT
-		attrs   = vars(self)
-		string  = '\t'*INDENT + self.link_type + " Interface info:\n"
-		string += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
-		string += '\n' + '\t'*(INDENT+1) + 'Rings:\n'
+		attrs	= vars(self)
+		string	= '\t'*INDENT + self.link_type + " Interface info:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		string	+= '\n' + '\t'*(INDENT+1) + 'Rings:\n'
 
 		for ring in self.rings:
 			INDENT += 2
@@ -856,6 +954,17 @@ class InterfaceInfo( object ):
 			INDENT -= 2
 
 		return string
+
+	def report_status(self):
+		""" Report the interface status to the user
+		"""
+		print "%s (Port %s) Status"%(self.name, self.port_number)
+		print "Link Type %s"%self.link_type
+		link_ok = (self.status == 'Up')
+		link_status = (status_warning_string(), status_ok_string())[link_ok]
+		link_suggestion = (" >>> Check your port configuration (Physical connection, SM, IP).", "")[link_ok]
+		print "%s: Link status %s"%(link_status, self.status) + link_suggestion
+		print "MTU %s"%self.mtu
 
 	def set_status(self):
 		""" Set interface status. Up/Down.
@@ -868,6 +977,16 @@ class InterfaceInfo( object ):
 			self.status = 'Up'
 		else:
 			self.status = 'Down'
+
+	def set_mtu(self):
+		""" Set interface MTU size.
+		"""
+		cmd = INTERFACE_MTU_CMD%(self.name)
+		( rc, output ) = commands.getstatusoutput(cmd)
+		if rc or (not output):
+			logging.warning("Failed to get MTU size for interface '%s'"%self.name)
+			return
+		self.mtu = int(output.strip())
 
 	def set_port_number(self):
 		""" Set interface port number. 1/2.
@@ -889,7 +1008,7 @@ class InterfaceInfo( object ):
 		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
 		for line in output.split('\n'):
 			if ("rx-" in line ):
-				rx_ring      = RingInfo(line.split('rx-')[1])
+				rx_ring = RingInfo(line.split('rx-')[1])
 				rx_ring.set_rps_mask(self.name)
 				rx_ring.set_xps_mask(self.name)
 				rx_ring.irqs = rx_ring.get_irqs(self.name, rx_ring.number)
@@ -963,6 +1082,8 @@ class InterfaceInfo( object ):
 	def apply_and_set_irq_affinity_wanted_mask(self):
 		""" set irq affinity wanted mask
 		"""
+		if self.status.lower() != "up":
+			return
 		active_rings = [ring for ring in self.rings if ring.active]
 		for ring in active_rings:
 			ring.apply_and_set_irq_affinity_wanted_mask()
@@ -984,20 +1105,20 @@ class InterfaceInfo( object ):
 class EthInterfaceInfo(InterfaceInfo):
 	def __init__ (self, interface_name):
 		super(EthInterfaceInfo, self).__init__(interface_name)
-		self.link_type            = "eth"
-		self.flow_control_rx      = "N/A"
-		self.flow_control_tx      = "N/A"
-		self.adaptive_moderation  = "N/A"
-		self.gro_offload          = "N/A"
-		self.moderation_tx_frames = "N/A"
-		self.moderation_rx_frames = "N/A"
+		self.link_type			= "eth"
+		self.flow_control_rx		= "N/A"
+		self.flow_control_tx		= "N/A"
+		self.adaptive_moderation	= "N/A"
+		self.gro_offload		= "N/A"
+		self.moderation_tx_frames	= "N/A"
+		self.moderation_rx_frames	= "N/A"
 
 	def set_adaptive_moderation_parameters(self):
 		""" Set adaptive moderation parameters.
 		"""
-		self.adaptive_moderation       = self.get_network_parameter_value('c', 'adaptive rx')
-		self.moderation_tx_frames      = self.get_network_parameter_value('c', 'tx-frames')
-		self.moderation_rx_frames      = self.get_network_parameter_value('c', 'rx-frames')
+		self.adaptive_moderation	= self.get_network_parameter_value('c', 'adaptive rx')
+		self.moderation_tx_frames	= self.get_network_parameter_value('c', 'tx-frames')
+		self.moderation_rx_frames	= self.get_network_parameter_value('c', 'rx-frames')
 
 	def set_flow_control_parameters(self):
 		""" Set rx and tx flow control parameters.
@@ -1061,32 +1182,37 @@ class EthInterfaceInfo(InterfaceInfo):
 class IbInterfaceInfo(InterfaceInfo):
 	def __init__ (self, interface_name):
 		super(IbInterfaceInfo, self).__init__(interface_name)
-		self.link_type            = "ib"
-		self.mtu                  = "N/A"
+		self.link_type	= "ib"
+		self.mtu	= "N/A"
 
 class PciDeviceInfo:
 	def __init__ (self, pci_string):
-		self.pci_string           = pci_string
-		self.pci_slot             = pci_string.split(" ")[0]
-		self.pci_width            = "N/A"
-		self.pci_speed            = "N/A"
-		self.core_driver          = "N/A"
-		self.numa                 = "N/A"
-		self.mst_device           = "N/A"
-		self.firmware_version     = "N/A"
-		self.dev_id               = "N/A"
-		self.psid                 = "N/A"
-		self.interfaces           = "N/A"
-		self.irqs                 = "N/A"
-		self.numa_aware_core_list = "N/A"
+		self.pci_string			= pci_string
+		self.pci_slot			= pci_string.split(" ")[0]
+		self.actual_pci_width		= "N/A"
+		self.pci_width_capabilities	= "N/A"
+		self.actual_pci_speed		= "N/A"
+		self.pci_speed_capabilities	= "N/A"
+		self.core_driver		= "N/A"
+		self.numa			= "N/A"
+		self.mst_device			= "N/A"
+		self.firmware_version		= "N/A"
+		self.type			= Devices.UNDEFINED
+		self.psid			= "N/A"
+		self.interfaces			= "N/A"
+		self.irqs			= "N/A"
+		self.closest_core_list		= "N/A"
+		self.numa_aware_core_list	= "N/A"
+		self.pci_max_payload		= "N/A"
+		self.pci_max_read_request	= "N/A"
 
 	def __str__ (self):
 		global INDENT
-		attrs   = vars(self)
-		string  = '\t'*INDENT + "Device info:\n"
-		string += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
-		string += '\n' + '\t'*(INDENT+1) + "numa_aware_core_list: %s"%(self.numa_aware_core_list)
-		string += '\n' + '\t'*(INDENT+1) + 'Irqs:\n'
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "Device info:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		string	+= '\n' + '\t'*(INDENT+1) + "numa_aware_core_list: %s"%(self.numa_aware_core_list)
+		string	+= '\n' + '\t'*(INDENT+1) + 'Irqs:\n'
 		for irq in self.irqs:
 			INDENT += 2
 			string += str(irq) + '\n'
@@ -1103,6 +1229,26 @@ class PciDeviceInfo:
 	def __repr__ (self):
 		return str(self)
 
+	def report_status(self):
+		""" Report the device status to the user
+		"""
+		print "%s Device Status on PCI %s"%(self.type.name, self.pci_slot)
+		print "FW version %s"%self.firmware_version
+		actual_pci_width_ok = self.actual_pci_width == self.pci_width_capabilities
+		actual_pci_width_status = (status_warning_string(), status_ok_string())[actual_pci_width_ok]
+		pci_width_suggestion = (" >>> PCI width status is below PCI capabilities. Check PCI configuration in BIOS.", "")[actual_pci_width_ok]
+		print "%s: PCI Width x%s"%(actual_pci_width_status, self.actual_pci_width) + pci_width_suggestion
+		actual_pci_speed_ok = self.actual_pci_speed == self.pci_speed_capabilities
+		actual_pci_speed_status = (status_warning_string(), status_ok_string())[actual_pci_speed_ok]
+		pci_speed_suggestion = (" >>> PCI width status is below PCI capabilities. Check PCI configuration in BIOS.", "")[actual_pci_speed_ok]
+		print "%s: PCI Speed %sGT/s"%(actual_pci_speed_status, self.actual_pci_speed) + pci_speed_suggestion
+		print "PCI Max Payload Size %s"%self.pci_max_payload
+		print "PCI Max Read Request %s"%self.pci_max_read_request
+		print "Local CPUs list %s"%self.closest_core_list
+		for interface in self.interfaces:
+			print ""
+			interface.report_status()
+
 	def set_core_driver(self):
 		""" set device core driver
 		"""
@@ -1117,23 +1263,53 @@ class PciDeviceInfo:
 		cmd = "%s -vvv -s %s"%(LSPCI, self.pci_slot)
 		( rc, pci_device_parameters) = commands.getstatusoutput(cmd)
 		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
+		pci_width_pattern		= re.compile("Width x\d+")
+		pci_speed_pattern		= re.compile("Speed \d+")
+		pci_max_payload_pattern		= re.compile("MaxPayload \d+")
+		pci_max_read_request_pattern	= re.compile("MaxReadReq \d+")
 		for parameter in pci_device_parameters.split('\n'):
 			if "LnkSta:" in parameter:
-				self.pci_width = parameter.split(',')[1].strip().split()[1]
-				self.pci_speed = parameter.split(',')[0].strip().split()[2]
+				match = pci_width_pattern.search(parameter)
+				if match:
+					self.actual_pci_width = int(match.group(0).split("x")[1])
+				match = pci_speed_pattern.search(parameter)
+				if match:
+					self.actual_pci_speed = int(match.group(0).split(" ")[1])
+			if "LnkCap:" in parameter:
+				match = pci_width_pattern.search(parameter)
+				if match:
+					self.pci_width_capabilities = int(match.group(0).split("x")[1])
+				match = pci_speed_pattern.search(parameter)
+				if match:
+					self.pci_speed_capabilities = int(match.group(0).split(" ")[1])
+			if "MaxPayload" in parameter:
+				match = pci_max_payload_pattern.search(parameter)
+				if match:
+					self.pci_max_payload = int(match.group(0).split(" ")[1])
+			if "MaxReadReq" in parameter:
+				match = pci_max_read_request_pattern.search(parameter)
+				if match:
+					self.pci_max_read_request = int(match.group(0).split(" ")[1])
 
 	def set_mst_info(self):
 		""" set device mst information
 		"""
 		( rc, output ) = commands.getstatusoutput(MST_STATUS)
 		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(MST_STATUS)
+		mst_dev_found = False
 		for line in output.split('\n'):
 			if self.pci_slot in line:
 				self.mst_device = last_line.split()[0]
-				self.dev_id = last_line.split("/dev/mst/mt")[1].split('_')[0]
+				dev_id = last_line.split("/dev/mst/mt")[1].split('_')[0]
+				if dev_id in Devices().supported_ids():
+					mst_dev_found = True
+					self.type = DeviceType(dev_id)
+				else:
+					logging.error("Unrecognized device ID: %s"%dev_id)
+					mst_dev_found = False
 				break
 			last_line = line
-
+		return mst_dev_found
 
 	def set_fw_version_and_psid(self):
 		""" set device fw version , device id and psid
@@ -1162,7 +1338,7 @@ class PciDeviceInfo:
 	def get_interface_link_type(self, interface_name, node_info):
 		""" get interface link type ib/eth
 		"""
-		if self.dev_id == DevId.ConnectIB:
+		if self.type == Devices.ConnectIB:
 			return 'ib'
 
 		cmd = INTERFACE_PORT_CMD%(interface_name)
@@ -1173,18 +1349,31 @@ class PciDeviceInfo:
 			port = 2
 		else:
 			port = 1
-		# PPC support - Need to work above OS/ARCH access modules in order to get a 'smoother' flow.
-		if node_info.cpu.vendor == CPUVendor.IBM:
-			cmd = GET_PORT_LINK_TYPE_CMD_CONNECTX_PPC%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], self.pci_slot.split(':')[2] ,port)
-		else:
-			cmd = GET_PORT_LINK_TYPE_CMD_CONNECTX%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], port)
-		( rc, output ) = run_command_warn_when_fail(cmd,"Failed to find interface type. interface: %s"%interface_name)
-		if rc:
-			assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
-		elif 'ib' in output.strip().lower():
-			return 'ib'
-		else:
-			return 'eth'
+
+		if self.type in Devices.MLX4_CONSUMERS:
+			# PPC support - Need to work above OS/ARCH access modules in order to get a 'smoother' flow.
+			if node_info.cpu.vendor == CPUVendor.IBM:
+				cmd = GET_PORT_LINK_TYPE_CMD_MLX4_PPC%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], self.pci_slot.split(':')[2] ,port)
+			else:
+				cmd = GET_PORT_LINK_TYPE_CMD_MLX4%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], port)
+			( rc, output ) = run_command_warn_when_fail(cmd,"Failed to find interface type. interface: %s"%interface_name)
+			if rc:
+				assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
+			elif 'ib' in output.strip().lower():
+				return 'ib'
+			else:
+				return 'eth'
+		elif self.type in Devices.MLX5_CONSUMERS:
+			# PPC support - Need to work above OS/ARCH access modules in order to get a 'smoother' flow.
+			if node_info.cpu.vendor == CPUVendor.IBM:
+				cmd = IS_PORT_LINK_TYPE_ETH_CMD_MLX5_PPC%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], self.pci_slot.split(':')[2] ,port)
+			else:
+				cmd = IS_PORT_LINK_TYPE_ETH_CMD_MLX5%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], port)
+			( rc, output ) = commands.getstatusoutput(cmd)
+			if rc:
+				return 'ib'
+			else:
+				return 'eth'
 
 	def get_interfaces(self, node_info):
 		""" get device interfaces objects
@@ -1204,6 +1393,7 @@ class PciDeviceInfo:
 				interface = IbInterfaceInfo(interface_name)
 			interface.set_status()
 			interface.set_port_number()
+			interface.set_mtu()
 			if interface.link_type == 'eth':
 				interface.set_adaptive_moderation_parameters()
 				interface.set_flow_control_parameters()
@@ -1239,8 +1429,8 @@ class PciDeviceInfo:
 				if rc:
 					continue
 				irq = IrqInfo(irq_number)
-				irq.smp_affinity_mask  = irq.get_affinity_mask()
-				irq.affinity_hint_mask = irq.get_affinity_hint_mask()
+				irq.smp_affinity_mask	= irq.get_affinity_mask()
+				irq.affinity_hint_mask	= irq.get_affinity_hint_mask()
 				irqs.append(irq)
 		return irqs
 
@@ -1259,6 +1449,8 @@ class PciDeviceInfo:
 		numa_physical_cores = total_numa_cores / threads_per_core
 		total_device_rings = 0
 		for interface in self.interfaces:
+			if not interface.status.lower() == "up":
+				continue
 			total_device_rings += len(interface.rings)
 		threads_to_take_from_each_core = int(total_device_rings / numa_physical_cores)
 		residue_threads = total_device_rings % numa_physical_cores
@@ -1287,7 +1479,8 @@ class PciDeviceInfo:
 				non_numa_cores = non_numa_cores + node_info.cpu.sockets_cores[numa]
 		numa_aware_cores = []
 		if self.numa != -1:
-			numa_aware_cores = node_info.cpu.sockets_cores[self.numa]
+			self.closest_core_list = node_info.cpu.sockets_cores[self.numa]
+			numa_aware_cores = self.closest_core_list[:]
 
 		if node_info.cpu.vendor != CPUVendor.IBM:
 			numa_aware_cores += non_numa_cores
@@ -1475,11 +1668,13 @@ def run_command_exit_when_fail(cmd, error_message=False, prnt=False):
 def add_options (parser):
 	""" Add options to parser
 	"""
-	parser.add_option("-d","--dump_status",    help = "dump system status without setting a profile", action="store_true", default = False)
-	parser.add_option("-p","--profile",        help = "Set profile and run it. choose %s [default %s]"%(Profile.ALLOWED_PROFILES, Profile.DEFAULT), default = Profile.DEFAULT)
-	parser.add_option("-q","--verbosity",      help = "print debug information to the screen [default %default]", action="store_true", default = False)
-	parser.add_option("-v","--version",        help = "print tool version and exit [default %default]", action="store_true", default = False)
-	parser.add_option("-i","--info_file_path", help = "info_file path. [default %s]", default ="/tmp/mlnx_tune_%s.log"%(datetime.datetime.now().strftime("%y%m%d_%H%M%S")))
+	parser.add_option("-d","--debug_info",		help = "dump system debug information without setting a profile", action="store_true", default = False)
+	parser.add_option("-r","--report",		help = "Report HW/SW status and issues without setting a profile", action="store_true", default = False)
+	parser.add_option("-c","--colored",		help = "Switch using colored/monochromed status reports. Only applicable with --report", action="store_true", default = False)
+	parser.add_option("-p","--profile",		help = "Set profile and run it. choose %s [default %s]"%(Profile.ALLOWED_PROFILES, Profile.DEFAULT), default = Profile.DEFAULT)
+	parser.add_option("-q","--verbosity",		help = "print debug information to the screen [default %default]", action="store_true", default = False)
+	parser.add_option("-v","--version",		help = "print tool version and exit [default %default]", action="store_true", default = False)
+	parser.add_option("-i","--info_file_path",	help = "info_file path. [default %s]", default ="/tmp/mlnx_tune_%s.log"%(datetime.datetime.now().strftime("%y%m%d_%H%M%S")))
 
 def force_dependencies(options):
 	""" Force dependencies between input arguments
@@ -1541,11 +1736,14 @@ def mlnx_pci_devices_status(node_info):
 	assert (not rc), "Unexpected error - cmd: %s bad exit status."%(LSPCI)
 
 	for line in pci_devices.split('\n'):
-		if "Mellanox" in line:
+		if "Mellanox" in line and "Virtual Function" not in line:
 			device = PciDeviceInfo(line.strip())
 			device.set_core_driver()
 			device.set_pci_width_and_speed()
-			device.set_mst_info()
+			if not device.set_mst_info():
+				# Abort creating a device for current PCI
+				logging.warning("Failed to create device for the following PCI entry: '%s'"%line)
+				continue
 			device.set_fw_version_and_psid()
 			device.set_closest_numa()
 			device.set_numa_aware_core_list(node_info)
@@ -1568,9 +1766,9 @@ def hex_mask_builder(mask_format , indexes):
 	""" Build mask according mask format and given indexes.
 	    indexes can be array of integers or one integer.
 	"""
-	comma_indexes = [i for i in range(len(mask_format)) if mask_format.startswith(',', i)]
-	mask_format = mask_format.replace(',','')
-	zero_mask_hex   = ''
+	comma_indexes	= [i for i in range(len(mask_format)) if mask_format.startswith(',', i)]
+	mask_format	= mask_format.replace(',','')
+	zero_mask_hex	= ''
 	for i in range(len(mask_format)):
 		zero_mask_hex += '0'
 	zero_mask_bin = bin(int(zero_mask_hex,16))
@@ -1592,7 +1790,7 @@ def hex_mask_builder(mask_format , indexes):
 	for i in range(len(mask_format) - len(mask_hex)):
 		mask_hex = '0' + mask_hex
 	for comma in comma_indexes:
-		mask_hex = mask_hex[0:comma] + ',' +  mask_hex[comma:]
+		mask_hex = mask_hex[0:comma] + ',' + mask_hex[comma:]
 
 	return mask_hex
 
@@ -1664,8 +1862,8 @@ def set_ip_forwarding_profile_single_stream(node_info, force_single = False):
 		for interface in device.interfaces:
 			if interface.status == 'Up' and interface.link_type == 'eth':
 				number_of_active_ethernet_interfaces += 1
-				interface.apply_qdisc_tx_len0()  #TODO - add parameters per eth interface
-				interface.apply_network_parameter_value('A', 'off', 'tx')  #TODO - collect info after change
+				interface.apply_qdisc_tx_len0() #TODO - add parameters per eth interface
+				interface.apply_network_parameter_value('A', 'off', 'tx') #TODO - collect info after change
 				interface.apply_network_parameter_value('A', 'off', 'rx')
 				interface.apply_network_parameter_value('C', 'off', 'adaptive-rx', 'adaptive rx')
 				interface.apply_network_parameter_value('K', 'off', 'gro', 'generic-receive-offload')
@@ -1700,6 +1898,27 @@ def set_profile (options, node_info):
 	else:
 		assert (False), "Unexpected error - Unsupported profile."
 
+def status_ok_string_colored():
+	""" Returns a colored 'OK' string for status report.
+	"""
+	return "\033[92m" + "OK" + "\033[0m"
+
+def status_ok_string_monochromed():
+	""" Returns a monochromed 'OK' string for status report.
+	"""
+	return "OK"
+
+def status_warning_string_colored():
+	""" Returns a colored 'Warning' string for status report.
+	"""
+	return "\033[93m" + "Warning" + "\033[0m"
+
+def status_warning_string_monochromed():
+	""" Returns a monochromed 'OK' string for status report.
+	"""
+	return "Warning"
+
+
 if __name__ == '__main__':
 	parser = OptionParser()
 	add_options(parser)
@@ -1714,8 +1933,13 @@ if __name__ == '__main__':
 
 	# Create the system's information tree. The information is automatically collected on creation.
 	node_info = NodeInfo()
-	if (options.dump_status):
+	if (options.debug_info):
 		print str(node_info)
+		exit(0)
+	if (options.report):
+		status_ok_string = (status_ok_string_monochromed, status_ok_string_colored)[options.colored]
+		status_warning_string = (status_warning_string_monochromed, status_warning_string_colored)[options.colored]
+		node_info.report_status()
 		exit(0)
 
 	set_profile(options, node_info)
