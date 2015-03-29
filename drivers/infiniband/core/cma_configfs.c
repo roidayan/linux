@@ -30,6 +30,7 @@
  * SOFTWARE.
  */
 
+#include <linux/module.h>
 #include <linux/configfs.h>
 #include <rdma/ib_verbs.h>
 #include "core_priv.h"
