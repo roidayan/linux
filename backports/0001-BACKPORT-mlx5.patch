@@ -3,16 +3,22 @@ Subject: [PATCH] BACKPORT: mlx5
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- drivers/net/ethernet/mellanox/mlx5/core/cmd.c  |   26 ++++++++++++++++++++++++
- drivers/net/ethernet/mellanox/mlx5/core/main.c |   17 +++++++++++++++
- include/linux/mlx5/driver.h                    |    5 ++++
- 3 files changed, 48 insertions(+), 0 deletions(-)
+ drivers/net/ethernet/mellanox/mlx5/core/cmd.c      |   26 ++++++++++++++++++++
+ drivers/net/ethernet/mellanox/mlx5/core/en.h       |    9 +++++++
+ .../ethernet/mellanox/mlx5/core/en_flow_table.c    |   21 ++++++++++++++++
+ drivers/net/ethernet/mellanox/mlx5/core/en_main.c  |   17 +++++++++++++
+ drivers/net/ethernet/mellanox/mlx5/core/en_rx.c    |    8 ++++++
+ drivers/net/ethernet/mellanox/mlx5/core/en_tx.c    |   22 ++++++++++++++++
+ drivers/net/ethernet/mellanox/mlx5/core/main.c     |   17 +++++++++++++
+ include/linux/compat-3.5.h                         |   14 ++++++++++
+ include/linux/mlx5/driver.h                        |    5 ++++
+ 9 files changed, 139 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx5/core/cmd.c b/drivers/net/ethernet/mellanox/mlx5/core/cmd.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx5/core/cmd.c
 +++ b/drivers/net/ethernet/mellanox/mlx5/core/cmd.c
-@@ -520,7 +520,11 @@ static void cmd_work_handler(struct work_struct *work)
+@@ -583,7 +583,11 @@ static void cmd_work_handler(struct work_struct *work)
  	lay->status_own = CMD_OWNER_HW;
  	set_signature(ent, !cmd->checksum_disabled);
  	dump_command(dev, ent, 1);
@@ -24,7 +30,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	/* ring doorbell after the descriptor is valid */
  	mlx5_core_dbg(dev, "writing 0x%x to command doorbell\n", 1 << ent->idx);
-@@ -611,6 +615,9 @@ static int mlx5_cmd_invoke(struct mlx5_core_dev *dev, struct mlx5_cmd_msg *in,
+@@ -674,6 +678,9 @@ static int mlx5_cmd_invoke(struct mlx5_core_dev *dev, struct mlx5_cmd_msg *in,
  	struct mlx5_cmd *cmd = &dev->cmd;
  	struct mlx5_cmd_work_ent *ent;
  	struct mlx5_cmd_stats *stats;
@@ -34,7 +40,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	int err = 0;
  	s64 ds;
  	u16 op;
-@@ -640,7 +647,14 @@ static int mlx5_cmd_invoke(struct mlx5_core_dev *dev, struct mlx5_cmd_msg *in,
+@@ -711,7 +718,14 @@ static int mlx5_cmd_invoke(struct mlx5_core_dev *dev, struct mlx5_cmd_msg *in,
  		if (err == -ETIMEDOUT)
  			goto out;
  
@@ -49,7 +55,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		op = be16_to_cpu(((struct mlx5_inbox_hdr *)in->first.data)->opcode);
  		if (op < ARRAY_SIZE(cmd->stats)) {
  			stats = &cmd->stats[op];
-@@ -1104,6 +1118,7 @@ void mlx5_cmd_comp_handler(struct mlx5_core_dev *dev, unsigned long vector)
+@@ -1175,6 +1189,7 @@ void mlx5_cmd_comp_handler(struct mlx5_core_dev *dev, unsigned long vector)
  	void *context;
  	int err;
  	int i;
@@ -57,7 +63,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	s64 ds;
  	struct mlx5_cmd_stats *stats;
  	unsigned long flags;
-@@ -1117,7 +1132,11 @@ void mlx5_cmd_comp_handler(struct mlx5_core_dev *dev, unsigned long vector)
+@@ -1188,7 +1203,11 @@ void mlx5_cmd_comp_handler(struct mlx5_core_dev *dev, unsigned long vector)
  				sem = &cmd->pages_sem;
  			else
  				sem = &cmd->sem;
@@ -69,7 +75,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  			memcpy(ent->out->first.data, ent->lay->out, sizeof(ent->lay->out));
  			dump_command(dev, ent, 0);
  			if (!ent->ret) {
-@@ -1131,7 +1150,14 @@ void mlx5_cmd_comp_handler(struct mlx5_core_dev *dev, unsigned long vector)
+@@ -1202,7 +1221,14 @@ void mlx5_cmd_comp_handler(struct mlx5_core_dev *dev, unsigned long vector)
  			}
  			free_ent(cmd, ent->idx);
  			if (ent->callback) {
@@ -84,11 +90,224 @@ index xxxxxxx..xxxxxxx xxxxxx
  				if (ent->op < ARRAY_SIZE(cmd->stats)) {
  					stats = &cmd->stats[ent->op];
  					spin_lock_irqsave(&stats->lock, flags);
+diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en.h b/drivers/net/ethernet/mellanox/mlx5/core/en.h
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx5/core/en.h
++++ b/drivers/net/ethernet/mellanox/mlx5/core/en.h
+@@ -450,8 +450,17 @@ enum mlx5e_link_mode {
+ 
+ #define MLX5E_PROT_MASK(link_mode) (1 << link_mode)
+ 
++#if defined(NDO_SELECT_QUEUE_HAS_ACCEL_PRIV) || defined(HAVE_SELECT_QUEUE_FALLBACK_T)
+ u16 mlx5e_select_queue(struct net_device *dev, struct sk_buff *skb,
++#ifdef HAVE_SELECT_QUEUE_FALLBACK_T
+ 		       void *accel_priv, select_queue_fallback_t fallback);
++#else
++		       select_queue void *accel_priv);
++#endif
++#else /* NDO_SELECT_QUEUE_HAS_ACCEL_PRIV || HAVE_SELECT_QUEUE_FALLBACK_T */
++u16 mlx5e_select_queue(struct net_device *dev, struct sk_buff *skb);
++#endif
++
+ netdev_tx_t mlx5e_xmit(struct sk_buff *skb, struct net_device *dev);
+ netdev_tx_t mlx5e_xmit_multi_tc(struct sk_buff *skb, struct net_device *dev);
+ 
+diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en_flow_table.c b/drivers/net/ethernet/mellanox/mlx5/core/en_flow_table.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx5/core/en_flow_table.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/en_flow_table.c
+@@ -72,8 +72,15 @@ static void mlx5e_add_eth_addr_to_hash(struct hlist_head *hash, u8 *addr)
+ 	struct mlx5e_eth_addr_hash_node *hn;
+ 	int ix = mlx5e_hash_eth_addr(addr);
+ 	int found = 0;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++	struct hlist_node *pos;
++#endif
+ 
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++	hlist_for_each_entry(hn, pos, &hash[ix], hlist)
++#else
+ 	hlist_for_each_entry(hn, &hash[ix], hlist)
++#endif
+ 		if (ether_addr_equal_64bits(hn->ai.addr, addr)) {
+ 			found = 1;
+ 			break;
+@@ -593,9 +600,15 @@ void mlx5e_del_all_vlan_rules(struct mlx5e_priv *priv)
+ 		mlx5e_del_vlan_rule(priv, MLX5E_VLAN_RULE_TYPE_MATCH_VID, vid);
+ }
+ 
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++#define mlx5e_for_each_hash_node(hn, tmp, hash, i) \
++	for (i = 0; i < MLX5E_ETH_ADDR_HASH_SIZE; i++) \
++		hlist_for_each_entry_safe(hn, n, tmp, &hash[i], hlist)
++#else
+ #define mlx5e_for_each_hash_node(hn, tmp, hash, i) \
+ 	for (i = 0; i < MLX5E_ETH_ADDR_HASH_SIZE; i++) \
+ 		hlist_for_each_entry_safe(hn, tmp, &hash[i], hlist)
++#endif
+ 
+ static void mlx5e_execute_action(struct mlx5e_priv *priv,
+ 				 struct mlx5e_eth_addr_hash_node *hn)
+@@ -635,7 +648,11 @@ static void mlx5e_sync_netdev_addr(struct mlx5e_priv *priv)
+ static void mlx5e_apply_netdev_addr(struct mlx5e_priv *priv)
+ {
+ 	struct mlx5e_eth_addr_hash_node *hn;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++	struct hlist_node *n, *tmp;
++#else
+ 	struct hlist_node *tmp;
++#endif
+ 	int i;
+ 
+ 	mlx5e_for_each_hash_node(hn, tmp, priv->eth_addr.netdev_uc, i)
+@@ -648,7 +665,11 @@ static void mlx5e_apply_netdev_addr(struct mlx5e_priv *priv)
+ static void mlx5e_handle_netdev_addr(struct mlx5e_priv *priv)
+ {
+ 	struct mlx5e_eth_addr_hash_node *hn;
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
++	struct hlist_node *n, *tmp;
++#else
+ 	struct hlist_node *tmp;
++#endif
+ 	int i;
+ 
+ 	mlx5e_for_each_hash_node(hn, tmp, priv->eth_addr.netdev_uc, i)
+diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en_main.c b/drivers/net/ethernet/mellanox/mlx5/core/en_main.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx5/core/en_main.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/en_main.c
+@@ -1233,6 +1233,9 @@ static void mlx5e_close_rqt(struct mlx5e_priv *priv)
+ static void mlx5e_build_tir_ctx(struct mlx5e_priv *priv, u32 *tirc, int tt)
+ {
+ 	void *hfso = MLX5_ADDR_OF(tirc, tirc, rx_hash_field_selector_outer);
++#ifndef HAVE_NETDEV_RSS_KEY_FILL
++	__be32 *hkey;
++#endif
+ 
+ #define ROUGH_MAX_L2_L3_HDR_SZ 256
+ 
+@@ -1272,10 +1275,24 @@ static void mlx5e_build_tir_ctx(struct mlx5e_priv *priv, u32 *tirc, int tt)
+ 		MLX5_SET(tirc, tirc, rx_hash_fn,
+ 			 MLX5_TIRC_RX_HASH_FN_HASH_TOEPLITZ);
+ 		MLX5_SET(tirc, tirc, rx_hash_symmetric, 1);
++#ifdef HAVE_NETDEV_RSS_KEY_FILL
+ 		netdev_rss_key_fill(MLX5_ADDR_OF(tirc, tirc,
+ 						 rx_hash_toeplitz_key),
+ 				    MLX5_FLD_SZ_BYTES(tirc,
+ 						      rx_hash_toeplitz_key));
++#else
++		hkey = (__be32 *)MLX5_ADDR_OF(tirc, tirc, rx_hash_toeplitz_key);
++		hkey[0] = cpu_to_be32(0xD181C62C);
++		hkey[1] = cpu_to_be32(0xF7F4DB5B);
++		hkey[2] = cpu_to_be32(0x1983A2FC);
++		hkey[3] = cpu_to_be32(0x943E1ADB);
++		hkey[4] = cpu_to_be32(0xD9389E6B);
++		hkey[5] = cpu_to_be32(0xD1039C2C);
++		hkey[6] = cpu_to_be32(0xA74499AD);
++		hkey[7] = cpu_to_be32(0x593D56D9);
++		hkey[8] = cpu_to_be32(0xF3253C06);
++		hkey[9] = cpu_to_be32(0x2ADC1FFC);
++#endif
+ 		break;
+ 	}
+ 
+diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en_rx.c b/drivers/net/ethernet/mellanox/mlx5/core/en_rx.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx5/core/en_rx.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/en_rx.c
+@@ -147,11 +147,15 @@ static void mlx5e_lro_update_hdr(struct sk_buff *skb, struct mlx5_cqe64 *cqe)
+ static inline void mlx5e_skb_set_hash(struct mlx5_cqe64 *cqe,
+ 				      struct sk_buff *skb)
+ {
++#ifdef HAVE_SKB_SET_HASH
+ 	u8 cht = cqe->rss_hash_type;
+ 	int ht = (cht & CQE_RSS_HTYPE_L4) ? PKT_HASH_TYPE_L4 :
+ 		 (cht & CQE_RSS_HTYPE_IP) ? PKT_HASH_TYPE_L3 :
+ 					    PKT_HASH_TYPE_NONE;
+ 	skb_set_hash(skb, be32_to_cpu(cqe->rss_hash_result), ht);
++#else
++	skb->rxhash = be32_to_cpu(cqe->rss_hash_result);
++#endif
+ }
+ 
+ static inline void mlx5e_build_rx_skb(struct mlx5_cqe64 *cqe,
+@@ -190,8 +194,12 @@ static inline void mlx5e_build_rx_skb(struct mlx5_cqe64 *cqe,
+ 		mlx5e_skb_set_hash(cqe, skb);
+ 
+ 	if (cqe_has_vlan(cqe))
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0))
++		__vlan_hwaccel_put_tag(skb, be16_to_cpu(cqe->vlan_info));
++#else
+ 		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q),
+ 				       be16_to_cpu(cqe->vlan_info));
++#endif
+ }
+ 
+ bool mlx5e_poll_rx_cq(struct mlx5e_cq *cq, int budget)
+diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en_tx.c b/drivers/net/ethernet/mellanox/mlx5/core/en_tx.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx5/core/en_tx.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/en_tx.c
+@@ -69,8 +69,20 @@ static inline void mlx5e_dma_get(struct mlx5e_sq *sq, u32 i, dma_addr_t *addr,
+ 	*size = sq->dma_fifo[i & sq->dma_fifo_mask].size;
+ }
+ 
++#ifndef HAVE_SELECT_QUEUE_FALLBACK_T
++#define fallback(dev, skb) __netdev_pick_tx(dev, skb)
++#endif
++
++#if defined(NDO_SELECT_QUEUE_HAS_ACCEL_PRIV) || defined(HAVE_SELECT_QUEUE_FALLBACK_T)
+ u16 mlx5e_select_queue(struct net_device *dev, struct sk_buff *skb,
++#ifdef HAVE_SELECT_QUEUE_FALLBACK_T
+ 		       void *accel_priv, select_queue_fallback_t fallback)
++#else
++		       select_queue void *accel_priv)
++#endif
++#else /* NDO_SELECT_QUEUE_HAS_ACCEL_PRIV || HAVE_SELECT_QUEUE_FALLBACK_T */
++u16 mlx5e_select_queue(struct net_device *dev, struct sk_buff *skb)
++#endif
+ {
+ 	struct mlx5e_priv *priv = netdev_priv(dev);
+ 	int channel_ix = fallback(dev, skb);
+@@ -91,7 +103,11 @@ static inline u16 mlx5e_get_inline_hdr_size(struct mlx5e_sq *sq,
+ 
+ 	/* inline improves latency but hearts message rate */
+ 	/* TODO: review if !skb->sk is ok indication for packet forwarding */
++#ifdef HAVE_SK_BUFF_XMIT_MORE
+ 	if ((sq->cc != sq->pc) || skb->xmit_more || !skb->sk/*fwd pkt*/)
++#else
++	if ((sq->cc != sq->pc) || !skb->sk/*fwd pkt*/)
++#endif
+ 		return MLX5E_MIN_INLINE;
+ 
+ 	if (!skb_shinfo(skb)->nr_frags && (skb_headlen(skb) < MLX5E_MAX_INLINE))
+@@ -108,7 +124,11 @@ static inline void mlx5e_insert_vlan(void *start, struct sk_buff *skb, u16 ihs)
+ 
+ 	skb_copy_from_linear_data(skb, vhdr, cpy1_sz);
+ 	skb_pull_inline(skb, cpy1_sz);
++#ifdef HAVE_SK_BUFF_VLAN_PROTO
+ 	vhdr->h_vlan_proto = skb->vlan_proto;
++#else
++	vhdr->h_vlan_proto = htons(ETH_P_8021Q);
++#endif
+ 	vhdr->h_vlan_TCI = cpu_to_be16(skb_vlan_tag_get(skb));
+ 	skb_copy_from_linear_data(skb, &vhdr->h_vlan_encapsulated_proto,
+ 				  cpy2_sz);
+@@ -231,7 +251,9 @@ static netdev_tx_t mlx5e_sq_xmit(struct mlx5e_sq *sq, struct sk_buff *skb)
+ 		sq->stats.stopped++;
+ 	}
+ 
++#ifdef HAVE_SK_BUFF_XMIT_MORE
+ 	if (!skb->xmit_more || netif_xmit_stopped(sq->txq))
++#endif
+ 		mlx5e_tx_notify_hw(sq, wqe);
+ 
+ 	sq->stats.packets++;
 diff --git a/drivers/net/ethernet/mellanox/mlx5/core/main.c b/drivers/net/ethernet/mellanox/mlx5/core/main.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx5/core/main.c
 +++ b/drivers/net/ethernet/mellanox/mlx5/core/main.c
-@@ -212,6 +212,9 @@ static int mlx5_enable_msix(struct mlx5_core_dev *dev)
+@@ -236,6 +236,9 @@ static int mlx5_enable_msix(struct mlx5_core_dev *dev)
  	struct mlx5_eq_table *table = &dev->priv.eq_table;
  	int num_eqs = 1 << MLX5_CAP_GEN(dev, log_max_eq);
  	int nvec;
@@ -98,7 +317,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	int i;
  
  	nvec = MLX5_CAP_GEN(dev, num_ports) * num_online_cpus() +
-@@ -227,12 +230,26 @@ static int mlx5_enable_msix(struct mlx5_core_dev *dev)
+@@ -251,12 +254,26 @@ static int mlx5_enable_msix(struct mlx5_core_dev *dev)
  	for (i = 0; i < nvec; i++)
  		table->msix_arr[i].entry = i;
  
@@ -125,11 +344,36 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	return 0;
  }
+diff --git a/include/linux/compat-3.5.h b/include/linux/compat-3.5.h
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/include/linux/compat-3.5.h
++++ b/include/linux/compat-3.5.h
+@@ -217,6 +217,20 @@ static inline bool ether_addr_equal(const u8 *addr1, const u8 *addr2)
+ 	return !compare_ether_addr(addr1, addr2);
+ }
+ 
++#include <linux/skbuff.h>
++
++#define skb_end_offset LINUX_BACKPORT(skb_end_offset)
++#ifdef NET_SKBUFF_DATA_USES_OFFSET
++static inline unsigned int skb_end_offset(const struct sk_buff *skb)
++{
++	return skb->end;
++}
++#else
++static inline unsigned int skb_end_offset(const struct sk_buff *skb)
++{
++	return skb->end - skb->head;
++}
++#endif
+ #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0)) */
+ 
+ #endif /* LINUX_3_5_COMPAT_H */
 diff --git a/include/linux/mlx5/driver.h b/include/linux/mlx5/driver.h
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/include/linux/mlx5/driver.h
 +++ b/include/linux/mlx5/driver.h
-@@ -576,8 +576,13 @@ struct mlx5_cmd_work_ent {
+@@ -596,8 +596,13 @@ struct mlx5_cmd_work_ent {
  	int			page_queue;
  	u8			status;
  	u8			token;
