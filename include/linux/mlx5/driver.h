@@ -761,8 +761,6 @@ int mlx5_start_eqs(struct mlx5_core_dev *dev);
 int mlx5_stop_eqs(struct mlx5_core_dev *dev);
 int mlx5_vector2comp_eqn(struct mlx5_core_dev *dev, int index,
 			 int *eqn, int *irqn);
-int mlx5_get_comp_eq_affinity(struct mlx5_core_dev *dev, int index,
-			      cpumask_var_t *mask);
 int mlx5_core_attach_mcg(struct mlx5_core_dev *dev, union ib_gid *mgid, u32 qpn);
 int mlx5_core_detach_mcg(struct mlx5_core_dev *dev, union ib_gid *mgid, u32 qpn);
 

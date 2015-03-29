@@ -581,27 +581,6 @@ static void mlx5_clear_comp_eqs_affinity(struct mlx5_core_dev *dev)
 	}
 }
 
-int mlx5_get_comp_eq_affinity(struct mlx5_core_dev *dev, int index,
-			      cpumask_var_t *mask)
-{
-	struct mlx5_priv *priv = &dev->priv;
-	struct mlx5_eq_table *table = &priv->eq_table;
-	struct mlx5_eq *eq, *n;
-	int err = -ENOENT;
-
-	spin_lock(&table->lock);
-	list_for_each_entry_safe(eq, n, &table->comp_eqs_list, list) {
-		if (eq->index == index) {
-			*mask = eq->affinity_mask;
-			err = 0;
-		}
-	}
-	spin_unlock(&table->lock);
-
-	return err;
-}
-
-
 int mlx5_vector2comp_eqn(struct mlx5_core_dev *dev, int index,
 			 int *eqn, int *irqn)
 {
