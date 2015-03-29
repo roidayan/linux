@@ -1395,6 +1395,8 @@ void ipoib_setup(struct net_device *dev)
 	INIT_WORK(&priv->restart_task, ipoib_mcast_restart_task);
 	INIT_DELAYED_WORK(&priv->ah_reap_task, ipoib_reap_ah);
 	INIT_DELAYED_WORK(&priv->neigh_reap_task, ipoib_reap_neigh);
+
+	atomic_set(&priv->tx_outstanding, 0);
 }
 
 struct ipoib_dev_priv *ipoib_intf_alloc(const char *name)
