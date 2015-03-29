@@ -2785,6 +2785,21 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 	],[
 		AC_MSG_RESULT(no)
 	])
+
+	AC_MSG_CHECKING([if timekeeping.h has ktime_get_real_ns])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/timekeeping.h>
+	],[
+		ktime_get_real_ns();
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_KTIME_GET_REAL_NS, 1,
+			  [ktime_get_real_ns is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
 ])
 #
 # COMPAT_CONFIG_HEADERS
