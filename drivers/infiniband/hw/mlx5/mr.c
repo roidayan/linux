@@ -1444,24 +1444,15 @@ int mlx5_ib_dereg_mr(struct ib_mr *ibmr)
 	return 0;
 }
 
-struct ib_mr *mlx5_ib_create_mr(struct ib_pd *pd,
-				struct ib_mr_init_attr *mr_init_attr)
+static int create_mr_sig(struct ib_pd *pd,
+			 struct ib_mr_init_attr *mr_init_attr,
+			 struct mlx5_create_mkey_mbox_in *in,
+			 struct mlx5_ib_mr *mr)
 {
 	struct mlx5_ib_dev *dev = to_mdev(pd->device);
-	struct mlx5_create_mkey_mbox_in *in;
-	struct mlx5_ib_mr *mr;
 	int access_mode, err;
 	int ndescs = roundup(mr_init_attr->max_reg_descriptors, 4);
 
-	mr = kzalloc(sizeof(*mr), GFP_KERNEL);
-	if (!mr)
-		return ERR_PTR(-ENOMEM);
-
-	in = kzalloc(sizeof(*in), GFP_KERNEL);
-	if (!in) {
-		err = -ENOMEM;
-		goto err_free;
-	}
 
 	in->seg.status = MLX5_MKEY_STATUS_FREE;
 	in->seg.xlt_oct_size = cpu_to_be32(ndescs);
@@ -1476,10 +1467,8 @@ struct ib_mr *mlx5_ib_create_mr(struct ib_pd *pd,
 							   MLX5_MKEY_BSF_EN);
 		in->seg.bsfs_octo_size = cpu_to_be32(MLX5_MKEY_BSF_OCTO_SIZE);
 		mr->sig = kzalloc(sizeof(*mr->sig), GFP_KERNEL);
-		if (!mr->sig) {
-			err = -ENOMEM;
-			goto err_free_in;
-		}
+		if (!mr->sig)
+			return -ENOMEM;
 
 		/* create mem & wire PSVs */
 		err = mlx5_core_create_psv(dev->mdev, to_mpd(pd)->pdn,
@@ -1506,9 +1495,8 @@ struct ib_mr *mlx5_ib_create_mr(struct ib_pd *pd,
 	mr->ibmr.lkey = mr->mmr.key;
 	mr->ibmr.rkey = mr->mmr.key;
 	mr->umem = NULL;
-	kfree(in);
 
-	return &mr->ibmr;
+	return 0;
 
 err_destroy_psv:
 	if (mr->sig) {
@@ -1523,8 +1511,66 @@ err_destroy_psv:
 	}
 err_free_sig:
 	kfree(mr->sig);
-err_free_in:
+	return err;
+}
+
+static int create_mr_noncontig(struct ib_pd *pd,
+			       struct ib_mr_init_attr *attr,
+			       struct mlx5_create_mkey_mbox_in *in,
+			       struct mlx5_ib_mr *mr)
+{
+	struct mlx5_ib_dev *dev = to_mdev(pd->device);
+	int err;
+
+	mr->dev = dev;
+	in->seg.status = 1 << 6; /* free */;
+	in->seg.flags = MLX5_ACCESS_MODE_KLM | MLX5_PERM_UMR_EN;
+	in->seg.qpn_mkey7_0 = cpu_to_be32(0xffffff << 8);
+	in->seg.flags_pd = cpu_to_be32(to_mpd(pd)->pdn);
+	in->seg.xlt_oct_size = cpu_to_be32(ALIGN(attr->max_reg_descriptors + 1, 4));
+	err = mlx5_core_create_mkey(dev->mdev, &mr->mmr, in, sizeof(*in),
+				    NULL, NULL, NULL);
+	if (!err) {
+		mr->ibmr.lkey = mr->mmr.key;
+		mr->ibmr.rkey = mr->mmr.key;
+		mr->max_reg_descriptors = ALIGN(attr->max_reg_descriptors, 4);
+	}
+
+	return err;
+}
+
+struct ib_mr *mlx5_ib_create_mr(struct ib_pd *pd,
+				struct ib_mr_init_attr *mr_init_attr)
+{
+	struct mlx5_create_mkey_mbox_in *in;
+	struct mlx5_ib_mr *mr;
+	int err;
+
+	if (!(mr_init_attr->flags &
+	      (IB_MR_SIGNATURE_EN | IB_MR_INDIRECT_REG)))
+		return ERR_PTR(-EINVAL);
+
+	mr = kzalloc(sizeof(*mr), GFP_KERNEL);
+	if (!mr)
+		return ERR_PTR(-ENOMEM);
+
+	in = kzalloc(sizeof(*in), GFP_KERNEL);
+	if (!in) {
+		err = -ENOMEM;
+		goto err_free;
+	}
+
+	if (mr_init_attr->flags & IB_MR_SIGNATURE_EN)
+		err = create_mr_sig(pd, mr_init_attr, in, mr);
+	else
+		err = create_mr_noncontig(pd, mr_init_attr, in, mr);
+
 	kfree(in);
+	if (err)
+		goto err_free;
+
+	return &mr->ibmr;
+
 err_free:
 	kfree(mr);
 	return ERR_PTR(err);
