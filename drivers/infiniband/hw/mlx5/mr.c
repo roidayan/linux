@@ -884,7 +884,8 @@ static int alloc_mrs(struct mlx5_ib_dev *dev, struct mlx5_ib_mr **lmr, int n,
 	int k;
 
 	for (i = 0, k = 0; i < n; i++) {
-again:		if (k++ > 3)
+again:
+		if (k++ > 3)
 			goto out;
 		lmr[i] = alloc_cached_mr(dev, order);
 		if (!lmr[i]) {
@@ -897,6 +898,7 @@ again:		if (k++ > 3)
 		}
 		lmr[i]->size = size;
 		lmr[i]->page_count = 1 << order;
+		k = 0;
 	}
 
 	if (nchild == n)
