@@ -31,6 +31,7 @@
  *
  */
 
+#include <linux/module.h>
 #include <linux/mlx4/device.h>
 #include <linux/clocksource.h>
 
