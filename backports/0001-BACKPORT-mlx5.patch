@@ -3,17 +3,44 @@ Subject: [PATCH] BACKPORT: mlx5
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
+ drivers/infiniband/hw/mlx5/mr.c                    |    7 +++++
  drivers/net/ethernet/mellanox/mlx5/core/cmd.c      |   26 ++++++++++++++++++++
  drivers/net/ethernet/mellanox/mlx5/core/en.h       |    9 +++++++
  .../ethernet/mellanox/mlx5/core/en_flow_table.c    |   21 ++++++++++++++++
  drivers/net/ethernet/mellanox/mlx5/core/en_main.c  |   17 +++++++++++++
  drivers/net/ethernet/mellanox/mlx5/core/en_rx.c    |    8 ++++++
  drivers/net/ethernet/mellanox/mlx5/core/en_tx.c    |   22 ++++++++++++++++
- drivers/net/ethernet/mellanox/mlx5/core/main.c     |   17 +++++++++++++
+ drivers/net/ethernet/mellanox/mlx5/core/main.c     |   23 +++++++++++++++++
  include/linux/compat-3.5.h                         |   14 ++++++++++
  include/linux/mlx5/driver.h                        |    5 ++++
- 9 files changed, 139 insertions(+), 0 deletions(-)
+ 10 files changed, 152 insertions(+), 0 deletions(-)
 
+diff --git a/drivers/infiniband/hw/mlx5/mr.c b/drivers/infiniband/hw/mlx5/mr.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/hw/mlx5/mr.c
++++ b/drivers/infiniband/hw/mlx5/mr.c
+@@ -38,6 +38,9 @@
+ #include <linux/delay.h>
+ #include <linux/device.h>
+ #include <linux/sysfs.h>
++#ifndef ARCH_KMALLOC_MINALIGN
++#include <linux/crypto.h>
++#endif
+ #include <rdma/ib_umem.h>
+ #include <rdma/ib_umem_odp.h>
+ #include <rdma/ib_verbs.h>
+@@ -1954,7 +1957,11 @@ mlx5_ib_alloc_indir_reg_list(struct ib_device *device,
+ 	}
+ 
+ 	dsize = sizeof(*mirl->klms) * max_indir_list_len;
++#ifdef ARCH_KMALLOC_MINALIGN
+ 	dsize += max_t(int, MLX5_UMR_ALIGN - ARCH_KMALLOC_MINALIGN, 0);
++#else
++	dsize += max_t(int, MLX5_UMR_ALIGN - CRYPTO_MINALIGN, 0);
++#endif
+ 	mirl->mapped_ilist = kzalloc(dsize, GFP_KERNEL);
+ 	if (!mirl->mapped_ilist) {
+ 		err = -ENOMEM;
 diff --git a/drivers/net/ethernet/mellanox/mlx5/core/cmd.c b/drivers/net/ethernet/mellanox/mlx5/core/cmd.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx5/core/cmd.c
@@ -344,6 +371,37 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	return 0;
  }
+@@ -550,7 +567,9 @@ static void mlx5_set_comp_eqs_affinity(struct mlx5_core_dev *dev)
+ 			mlx5_core_warn(dev,
+ 				       "zalloc_cpumask_var failed for comp eq: %d",
+ 				       eq->index);
++#ifdef CONFIG_CPUMASK_OFFSTACK
+ 			eq->affinity_mask = NULL;
++#endif
+ 			return;
+ 		}
+ 
+@@ -560,7 +579,9 @@ static void mlx5_set_comp_eqs_affinity(struct mlx5_core_dev *dev)
+ 					  eq->affinity_mask)) {
+ 			mlx5_core_warn(dev, "irq_set_affinity_hint failed");
+ 			free_cpumask_var(eq->affinity_mask);
++#ifdef CONFIG_CPUMASK_OFFSTACK
+ 			eq->affinity_mask = NULL;
++#endif
+ 			return;
+ 		}
+ 	}
+@@ -573,8 +594,10 @@ static void mlx5_clear_comp_eqs_affinity(struct mlx5_core_dev *dev)
+ 	struct mlx5_eq *eq, *n;
+ 
+ 	list_for_each_entry_safe(eq, n, &table->comp_eqs_list, list) {
++#ifdef CONFIG_CPUMASK_OFFSTACK
+ 		if (!eq->affinity_mask)
+ 			continue;
++#endif
+ 
+ 		free_cpumask_var(eq->affinity_mask);
+ 		irq_set_affinity_hint(table->msix_arr[eq->irqn].vector, NULL);
 diff --git a/include/linux/compat-3.5.h b/include/linux/compat-3.5.h
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/include/linux/compat-3.5.h
