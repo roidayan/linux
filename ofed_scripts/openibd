@@ -1510,6 +1510,11 @@ stop()
             fi
         fi
 
+        # Unload compat
+        if is_module compat; then
+                unload compat
+        fi
+
         # Unload memtrack
         if is_module memtrack; then
                 unload memtrack
