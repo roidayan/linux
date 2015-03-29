@@ -752,6 +752,22 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(no)
 	])
 
+	AC_MSG_CHECKING([if struct sk_buff has vlan_proto])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/skbuff.h>
+	],[
+		struct sk_buff *skb;
+		skb->vlan_proto = 0;
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_SK_BUFF_VLAN_PROTO, 1,
+			  [vlan_proto is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
 	AC_MSG_CHECKING([if struct sk_buff has encapsulation])
 	MLNX_BG_LB_LINUX_TRY_COMPILE([
 		#include <linux/skbuff.h>
@@ -2058,6 +2074,21 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(yes)
 		MLNX_AC_DEFINE(HAVE_BLK_MQ_UNIQUE_TAG, 1,
 			  [blk_mq_unique_tag is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if skbuff.h has enum pkt_hash_types])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/skbuff.h>
+	],[
+		enum pkt_hash_types x = PKT_HASH_TYPE_L4;
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_PKT_HASH_TYPES, 1,
+			  [pkt_hash_types is defined])
 	],[
 		AC_MSG_RESULT(no)
 	])
