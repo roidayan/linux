@@ -204,6 +204,7 @@ for flavor in %flavors_to_build; do
 	rm -rf obj/$flavor
 	cp -a source obj/$flavor
 	cd $PWD/obj/$flavor
+	find compat -type f -exec touch -t 200012201010 '{}' \; || true
 	./configure --prefix=%{_prefix} --kernel-version $KVERSION --kernel-sources $KSRC --modules-dir $LIB_MOD_DIR $CONF_OPTIONS %{?_smp_mflags}
 	make %{?_smp_mflags} kernel
 	make build_py_scripts

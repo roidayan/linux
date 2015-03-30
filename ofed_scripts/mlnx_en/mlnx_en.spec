@@ -211,6 +211,7 @@ for flavor in %{flavors_to_build}; do
 	%if "%{MEMTRACK}" == "1"
 		export MLNX_EN_PATCH_PARAMS="$MLNX_EN_PATCH_PARAMS --with-memtrack"
 	%endif
+	find compat -type f -exec touch -t 200012201010 '{}' \; || true
 	./scripts/mlnx_en_patch.sh $MLNX_EN_PATCH_PARAMS %{?_smp_mflags}
 	make KSRC=$KSRC V=0 %{?_smp_mflags}
 	cd -

@@ -10,6 +10,7 @@ make distclean
 
 NJOBS=`grep ^processor /proc/cpuinfo | wc -l`
 
+find compat -type f -exec touch -t 200012201010 '{}' \; || true
 ./configure --kernel-version=$kernelver --kernel-sources=$kernel_source_dir ${config_flag} --with-njobs=${NJOBS:-1}
 
 make -j${NJOBS:-1}
