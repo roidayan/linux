@@ -31,6 +31,7 @@
  */
 
 #include <linux/slab.h>
+#include <linux/export.h>
 #include <linux/netdevice.h>
 #include <linux/rtnetlink.h>
 #include <rdma/ib_cache.h>
