@@ -1,4 +1,5 @@
 #include <linux/kernel.h>
+#include <linux/export.h>
 #include <linux/crash_dump.h>
 
 #ifndef HAVE_ELFCOREHDR_ADDR_EXPORTED
