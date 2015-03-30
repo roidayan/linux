@@ -130,8 +130,8 @@ static void update_gid(enum gid_op_type gid_op, struct ib_device *ib_dev,
 }
 
 #define IS_NETDEV_BONDING_MASTER(ndev)	\
-	(((ndev)->priv_flags &		\
-	  (IFF_BONDING | IFF_MASTER)) == (IFF_BONDING | IFF_MASTER))
+	(((ndev)->priv_flags & IFF_BONDING) && \
+	 ((ndev)->flags & IFF_MASTER))
 
 enum bonding_slave_state {
 	BONDING_SLAVE_STATE_ACTIVE	= 1UL << 0,
