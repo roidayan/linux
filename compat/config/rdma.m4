@@ -480,7 +480,7 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 
 	AC_MSG_CHECKING([if skbuff.h has skb_set_hash])
 	MLNX_BG_LB_LINUX_TRY_COMPILE([
-		#include <linux/netdevice.h>
+		#include <linux/skbuff.h>
 	],[
 		skb_set_hash(NULL, 0, PKT_HASH_TYPE_L3);
 
@@ -488,6 +488,21 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 	],[
 		AC_MSG_RESULT(yes)
 		MLNX_AC_DEFINE(HAVE_SKB_SET_HASH, 1,
+			  [skb_set_hash is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if skbuff.h has memcpy_to_msg])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/skbuff.h>
+	],[
+		memcpy_to_msg(NULL, NULL, 0);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_MEMCPY_TO_MSG, 1,
 			  [skb_set_hash is defined])
 	],[
 		AC_MSG_RESULT(no)
@@ -549,6 +564,24 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(yes)
 		MLNX_AC_DEFINE(HAVE_INET_EHASHFN, 1,
 			  [__inet_ehashfn is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if inet_sock has inet_num])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <net/inet_sock.h>
+	],[
+
+		struct sock *sk;
+		if (inet_sk(sk)->inet_num)
+			return 0;
+
+		return 1;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_INET_SOCK_INET_NUM, 1,
+			  [inet_num is defined])
 	],[
 		AC_MSG_RESULT(no)
 	])
@@ -2421,6 +2454,21 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(no)
 	])
 
+	AC_MSG_CHECKING([if asm-generic/atomic-long.h has atomic_long_read param])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <asm-generic/atomic-long.h>
+	],[
+		atomic_long_read(NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_ATOMIC_LONG_READ, 1,
+			  [atomic_long_read exist])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
 	AC_MSG_CHECKING([if percpu.h has __this_cpu_read])
 	MLNX_BG_LB_LINUX_TRY_COMPILE([
 		#include <linux/percpu.h>
@@ -2431,7 +2479,28 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 	],[
 		AC_MSG_RESULT(yes)
 		MLNX_AC_DEFINE(HAVE_THIS_CPU_READ, 1,
-			  [__this_cpu_read has 1 parameter])
+			  [percpu.h has __this_cpu_read])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if percpu.h has __get_cpu_var])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/percpu.h>
+
+		DECLARE_PER_CPU(struct teststats, teststats);
+		struct teststats {
+			u64 count;
+		};
+		#define TESTSTATS_COUNTER_INC(stat) do { __get_cpu_var(teststats).stat++; } while (0)
+	],[
+		TESTSTATS_COUNTER_INC(count);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_GET_CPU_VAR, 1,
+			  [percpu.h has __get_cpu_var])
 	],[
 		AC_MSG_RESULT(no)
 	])
@@ -2454,6 +2523,66 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(yes)
 		MLNX_AC_DEFINE(HAVE_SK_DATA_READY_2_PARAMS, 1,
 			  [sk_data_ready has 2 params])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if sock.h has skb_do_copy_data_nocache])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <net/sock.h>
+	],[
+		skb_do_copy_data_nocache(NULL, NULL, NULL, NULL, 0, 0);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_SKB_DO_COPY_DATA_NOCACHE, 1,
+			  [sock.h has skb_do_copy_data_nocache])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if sk_rmem_schedule has 3 params])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <net/sock.h>
+	],[
+		sk_rmem_schedule(NULL, NULL, 0);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_SK_RMEM_SCHEDULE_3P, 1,
+			  [sk_rmem_schedule has 3 params])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if sock.h has skb_copy_to_page_nocache])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <net/sock.h>
+	],[
+		skb_copy_to_page_nocache(NULL, NULL, NULL, NULL, 0, 0);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_SKB_COPY_TO_PAGE_NOCACHE, 1,
+			  [sock.h has skb_copy_to_page_nocache])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if tcp.h has tcp_passive_fastopen])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/tcp.h>
+	],[
+		tcp_passive_fastopen(NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_TCP_PASSIVE_FASTOPEN, 1,
+			  [tcp.h has tcp_passive_fastopen])
 	],[
 		AC_MSG_RESULT(no)
 	])
@@ -2569,6 +2698,85 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(yes)
 		MLNX_AC_DEFINE(HAVE_PTP_CLOCK_REGISTER_2_PARAMS, 1,
 			  [ptp_clock_register has 2 params is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if this_cpu_ptr exist])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/percpu.h>
+	],[
+		this_cpu_ptr(NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_THIS_CPU_PTR, 1,
+			  [this_cpu_ptr is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if percpu_counter_init takes 3 arguments])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/percpu_counter.h>
+	],[
+		percpu_counter_init(NULL, 0, 0);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_PERCPU_COUNTER_INIT_3_ARGS, 1,
+			  [percpu_counter_init takes 3 arguments])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if sock.h has sk_v6_rcv_saddr])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <net/sock.h>
+	],[
+		struct sock *sk;
+
+		memset(&sk->sk_v6_rcv_saddr, 0, sizeof(sk->sk_v6_rcv_saddr));
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_SK_V6_RCV_SADDR, 1,
+			  [sock.h has sk_v6_rcv_saddr])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if socket.h  has msg_iter])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/socket.h>
+	],[
+		struct msghdr *msg;
+		msg->msg_iter.nr_segs = 0;
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_MSGHDR_MSG_ITER, 1,
+			  [socket.h has msg_iter])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if uio.h has struct iov_iter])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/uio.h>
+	],[
+		struct iov_iter *iov_iter;
+		iov_iter->iov = NULL;
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_UIO_IOV_ITER, 1,
+			  [uio.h has struct iov_iter])
 	],[
 		AC_MSG_RESULT(no)
 	])
@@ -2831,6 +3039,41 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 	],[
 		AC_MSG_RESULT(no)
 	])
+
+	AC_MSG_CHECKING([if netdev_features.h has NETIF_F_HW_CSUM])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/netdevice.h>
+	],[
+		struct net_device *dev;
+		dev->features = NETIF_F_HW_CSUM;
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_NETIF_F_HW_CSUM, 1,
+			  [netdev_features.h has NETIF_F_HW_CSUM])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if struct netns_ipv4 has sysctl_tcp_mem])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <net/sock.h>
+		#include <net/protocol.h>
+	],[
+		struct proto proto = {
+			.sysctl_mem = init_net.ipv4.sysctl_tcp_mem,
+		};
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_NETNS_IPV4_SYSCTL_TCP_MEM, 1,
+			  [struct netns_ipv4 has sysctl_tcp_mem])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
 ])
 #
 # COMPAT_CONFIG_HEADERS
