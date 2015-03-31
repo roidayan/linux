@@ -57,6 +57,11 @@ int mlx5_core_debug_mask;
 module_param_named(debug_mask, mlx5_core_debug_mask, int, 0644);
 MODULE_PARM_DESC(debug_mask, "debug mask: 1 = dump cmd data, 2 = dump cmd exec time, 3 = both. Default=0");
 
+#define MLX5_DEFAULT_ISSI	1
+static int issi = MLX5_DEFAULT_ISSI;
+module_param_named(issi, issi, int, 0444);
+MODULE_PARM_DESC(issi, "ISSI selector. Valid values 0 and 1. To work with IB set to 0. Default: 1");
+
 #define MLX5_DEFAULT_PROF	2
 static int prof_sel = MLX5_DEFAULT_PROF;
 module_param_named(prof_sel, prof_sel, int, 0444);
@@ -522,7 +527,7 @@ static int mlx5_core_set_issi(struct mlx5_core_dev *dev)
 		memset(set_out, 0, sizeof(set_out));
 
 		MLX5_SET(set_issi_in, set_in, opcode, MLX5_CMD_OP_SET_ISSI);
-		MLX5_SET(set_issi_in, set_in, current_issi, 1);
+		MLX5_SET(set_issi_in, set_in, current_issi, issi);
 
 		err = mlx5_cmd_exec_check_status(dev, set_in, sizeof(set_in),
 						 set_out, sizeof(set_out));
