@@ -1,5 +1,5 @@
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Subject: [PATCH] BACKPORT: ib_iser
+Subject: [PATCH] BACKPORT: iser
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 Signed-off-by: Sagi Grimberg <sagig@mellanox.com>
@@ -9,8 +9,8 @@ Signed-off-by: Roi Dayan <roid@mellanox.com>
  drivers/infiniband/ulp/iser/iscsi_iser.h     |   73 ++++++++++++++++++++++++
  drivers/infiniband/ulp/iser/iser_initiator.c |   60 ++++++++++++++++++++
  drivers/infiniband/ulp/iser/iser_memory.c    |   16 +++++-
- drivers/infiniband/ulp/iser/iser_verbs.c     |   55 ++++++++++++++++++
- 5 files changed, 279 insertions(+), 3 deletions(-)
+ drivers/infiniband/ulp/iser/iser_verbs.c     |   51 +++++++++++++++++
+ 5 files changed, 275 insertions(+), 3 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/iser/iscsi_iser.c b/drivers/infiniband/ulp/iser/iscsi_iser.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -582,7 +582,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  			if (ret == -ENOSYS)
  				iser_err("device does not support CQ moderation\n");
  			else if (ret)
-@@ -327,13 +335,18 @@ iser_free_reg_res(struct iser_reg_resources *rsc)
+@@ -328,6 +336,7 @@ iser_free_reg_res(struct iser_reg_resources *rsc)
  	ib_free_fast_reg_page_list(rsc->frpl);
  }
  
@@ -590,18 +590,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int
  iser_alloc_pi_ctx(struct ib_device *ib_device, struct ib_pd *pd,
  		  struct fast_reg_descriptor *desc)
- {
- 	struct iser_pi_context *pi_ctx = NULL;
- 	struct ib_mr_init_attr mr_init_attr = {.max_reg_descriptors = 2,
-+#if defined(LINUX_3_0_COMPAT_H) /* MLNX_OFED */
-+					       .create_flags = IB_MR_SIGNATURE_EN};
-+#else
- 					       .flags = IB_MR_SIGNATURE_EN};
-+#endif
- 	int ret;
- 
- 	desc->pi_ctx = kzalloc(sizeof(*desc->pi_ctx), GFP_KERNEL);
-@@ -373,6 +386,7 @@ iser_free_pi_ctx(struct iser_pi_context *pi_ctx)
+@@ -374,6 +383,7 @@ iser_free_pi_ctx(struct iser_pi_context *pi_ctx)
  	ib_destroy_mr(pi_ctx->sig_mr);
  	kfree(pi_ctx);
  }
@@ -609,7 +598,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  
  static int
-@@ -387,18 +401,22 @@ iser_create_fastreg_desc(struct ib_device *ib_device, struct ib_pd *pd,
+@@ -388,18 +398,22 @@ iser_create_fastreg_desc(struct ib_device *ib_device, struct ib_pd *pd,
  		return ret;
  	}
  
@@ -632,7 +621,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  /**
-@@ -458,8 +476,10 @@ void iser_free_fastreg_pool(struct ib_conn *ib_conn)
+@@ -459,8 +473,10 @@ void iser_free_fastreg_pool(struct ib_conn *ib_conn)
  	list_for_each_entry_safe(desc, tmp, &ib_conn->fastreg.pool, list) {
  		list_del(&desc->list);
  		iser_free_reg_res(&desc->rsc);
@@ -643,7 +632,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		kfree(desc);
  		++i;
  	}
-@@ -512,6 +532,7 @@ static int iser_create_ib_conn_res(struct ib_conn *ib_conn)
+@@ -513,6 +529,7 @@ static int iser_create_ib_conn_res(struct ib_conn *ib_conn)
  	init_attr.cap.max_recv_sge = 1;
  	init_attr.sq_sig_type	= IB_SIGNAL_REQ_WR;
  	init_attr.qp_type	= IB_QPT_RC;
@@ -651,7 +640,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (ib_conn->pi_support) {
  		init_attr.cap.max_send_wr = ISER_QP_SIG_MAX_REQ_DTOS + 1;
  		init_attr.create_flags |= IB_QP_CREATE_SIGNATURE_EN;
-@@ -531,6 +552,20 @@ static int iser_create_ib_conn_res(struct ib_conn *ib_conn)
+@@ -532,6 +549,20 @@ static int iser_create_ib_conn_res(struct ib_conn *ib_conn)
  		}
  	}
  
@@ -672,7 +661,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	ret = rdma_create_qp(ib_conn->cma_id, device->pd, &init_attr);
  	if (ret)
  		goto out_err;
-@@ -787,6 +822,7 @@ static void iser_addr_handler(struct rdma_cm_id *cma_id)
+@@ -788,6 +819,7 @@ static void iser_addr_handler(struct rdma_cm_id *cma_id)
  
  	ib_conn->device = device;
  
@@ -680,7 +669,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	/* connection T10-PI support */
  	if (iser_pi_enable) {
  		if (!(device->dev_attr.device_cap_flags &
-@@ -799,6 +835,9 @@ static void iser_addr_handler(struct rdma_cm_id *cma_id)
+@@ -800,6 +832,9 @@ static void iser_addr_handler(struct rdma_cm_id *cma_id)
  			ib_conn->pi_support = true;
  		}
  	}
@@ -690,7 +679,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	ret = rdma_resolve_route(cma_id, 1000);
  	if (ret) {
-@@ -982,7 +1021,21 @@ int iser_connect(struct iser_conn   *iser_conn,
+@@ -983,7 +1018,21 @@ int iser_connect(struct iser_conn   *iser_conn,
  
  	mutex_lock(&iser_conn->state_mutex);
  
@@ -712,7 +701,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	iser_info("connecting to: %s\n", iser_conn->name);
  
-@@ -1259,6 +1312,7 @@ static void iser_cq_callback(struct ib_cq *cq, void *cq_context)
+@@ -1261,6 +1310,7 @@ static void iser_cq_callback(struct ib_cq *cq, void *cq_context)
  	tasklet_schedule(&comp->tasklet);
  }
  
@@ -720,7 +709,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  u8 iser_check_task_pi_status(struct iscsi_iser_task *iser_task,
  			     enum iser_data_dir cmd_dir, sector_t *sector)
  {
-@@ -1306,3 +1360,4 @@ err:
+@@ -1308,3 +1358,4 @@ err:
  	/* Not alot we can do here, return ambiguous guard error */
  	return 0x1;
  }
