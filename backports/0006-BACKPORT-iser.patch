@@ -8,9 +8,9 @@ Signed-off-by: Roi Dayan <roid@mellanox.com>
  drivers/infiniband/ulp/iser/iscsi_iser.c     | 78 +++++++++++++++++++++++++++-
  drivers/infiniband/ulp/iser/iscsi_iser.h     | 73 ++++++++++++++++++++++++++
  drivers/infiniband/ulp/iser/iser_initiator.c | 60 +++++++++++++++++++++
- drivers/infiniband/ulp/iser/iser_memory.c    | 12 ++++-
+ drivers/infiniband/ulp/iser/iser_memory.c    | 45 +++++++++++-----
  drivers/infiniband/ulp/iser/iser_verbs.c     | 51 ++++++++++++++++++
- 5 files changed, 271 insertions(+), 3 deletions(-)
+ 5 files changed, 293 insertions(+), 14 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/iser/iscsi_iser.c b/drivers/infiniband/ulp/iser/iscsi_iser.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -489,7 +489,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  struct fast_reg_descriptor *
  iser_reg_desc_get(struct ib_conn *ib_conn)
-@@ -481,6 +485,7 @@ int iser_reg_rdma_mem_fmr(struct iscsi_iser_task *iser_task,
+@@ -481,13 +485,19 @@ int iser_reg_rdma_mem_fmr(struct iscsi_iser_task *iser_task,
  	return 0;
  }
  
@@ -497,15 +497,89 @@ index xxxxxxx..xxxxxxx xxxxxx
  static void
  iser_set_dif_domain(struct scsi_cmnd *sc, struct ib_sig_attrs *sig_attrs,
  		    struct ib_sig_domain *domain)
-@@ -564,6 +569,7 @@ iser_set_prot_checks(struct scsi_cmnd *sc, u8 *mask)
+ {
+ 	domain->sig_type = IB_SIG_TYPE_T10_DIF;
++#ifdef HAVE_SCSI_PROT_INTERVAL
+ 	domain->sig.dif.pi_interval = scsi_prot_interval(sc);
+ 	domain->sig.dif.ref_tag = scsi_prot_ref_tag(sc);
++#else
++	domain->sig.dif.pi_interval = sc->device->sector_size;
++	domain->sig.dif.ref_tag = scsi_get_lba(sc) & 0xffffffff;
++#endif
+ 	/*
+ 	 * At the moment we hard code those, but in the future
+ 	 * we will take them from sc.
+@@ -495,7 +505,12 @@ iser_set_dif_domain(struct scsi_cmnd *sc, struct ib_sig_attrs *sig_attrs,
+ 	domain->sig.dif.apptag_check_mask = 0xffff;
+ 	domain->sig.dif.app_escape = true;
+ 	domain->sig.dif.ref_escape = true;
++#ifdef HAVE_SCSI_PROT_INTERVAL
+ 	if (sc->prot_flags & SCSI_PROT_REF_INCREMENT)
++#else
++	if (scsi_get_prot_type(sc) == SCSI_PROT_DIF_TYPE1 ||
++	    scsi_get_prot_type(sc) == SCSI_PROT_DIF_TYPE2)
++#endif
+ 		domain->sig.dif.ref_remap = true;
+ };
  
- 	return 0;
+@@ -513,7 +528,11 @@ iser_set_sig_attrs(struct scsi_cmnd *sc, struct ib_sig_attrs *sig_attrs)
+ 	case SCSI_PROT_WRITE_STRIP:
+ 		sig_attrs->wire.sig_type = IB_SIG_TYPE_NONE;
+ 		iser_set_dif_domain(sc, sig_attrs, &sig_attrs->mem);
++#ifdef HAVE_SCSI_PROT_INTERVAL
+ 		sig_attrs->mem.sig.dif.bg_type = sc->prot_flags & SCSI_PROT_IP_CHECKSUM ?
++#else
++		sig_attrs->mem.sig.dif.bg_type = iser_pi_guard ?
++#endif
+ 						IB_T10DIF_CSUM : IB_T10DIF_CRC;
+ 		break;
+ 	case SCSI_PROT_READ_PASS:
+@@ -521,7 +540,11 @@ iser_set_sig_attrs(struct scsi_cmnd *sc, struct ib_sig_attrs *sig_attrs)
+ 		iser_set_dif_domain(sc, sig_attrs, &sig_attrs->wire);
+ 		sig_attrs->wire.sig.dif.bg_type = IB_T10DIF_CRC;
+ 		iser_set_dif_domain(sc, sig_attrs, &sig_attrs->mem);
++#ifdef HAVE_SCSI_PROT_INTERVAL
+ 		sig_attrs->mem.sig.dif.bg_type = sc->prot_flags & SCSI_PROT_IP_CHECKSUM ?
++#else
++		sig_attrs->mem.sig.dif.bg_type = iser_pi_guard ?
++#endif
+ 						IB_T10DIF_CSUM : IB_T10DIF_CRC;
+ 		break;
+ 	default:
+@@ -536,16 +559,13 @@ iser_set_sig_attrs(struct scsi_cmnd *sc, struct ib_sig_attrs *sig_attrs)
+ static inline void
+ iser_set_prot_checks(struct scsi_cmnd *sc, u8 *mask)
+ {
++#ifdef HAVE_SCSI_PROT_INTERVAL
+ 	*mask = 0;
+ 	if (sc->prot_flags & SCSI_PROT_REF_CHECK)
+ 		*mask |= ISER_CHECK_REFTAG;
+ 	if (sc->prot_flags & SCSI_PROT_GUARD_CHECK)
+ 		*mask |= ISER_CHECK_GUARD;
+-}
+-
+-static int
+-iser_set_prot_checks(struct scsi_cmnd *sc, u8 *mask)
+-{
++#else
+ 	switch (scsi_get_prot_type(sc)) {
+ 	case SCSI_PROT_DIF_TYPE0:
+ 		break;
+@@ -559,11 +579,10 @@ iser_set_prot_checks(struct scsi_cmnd *sc, u8 *mask)
+ 	default:
+ 		iser_err("Unsupported protection type %d\n",
+ 			 scsi_get_prot_type(sc));
+-		return -EINVAL;
+ 	}
+-
+-	return 0;
++#endif
  }
 +#endif /* CONFIG_COMPAT_SIGNATURE */
  
  static void
  iser_inv_rkey(struct ib_send_wr *inv_wr, struct ib_mr *mr)
-@@ -579,6 +585,7 @@ iser_inv_rkey(struct ib_send_wr *inv_wr, struct ib_mr *mr)
+@@ -579,6 +598,7 @@ iser_inv_rkey(struct ib_send_wr *inv_wr, struct ib_mr *mr)
  	ib_update_fast_reg_key(mr, rkey);
  }
  
@@ -513,7 +587,18 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int
  iser_reg_sig_mr(struct iscsi_iser_task *iser_task,
  		struct iser_pi_context *pi_ctx,
-@@ -642,6 +649,7 @@ iser_reg_sig_mr(struct iscsi_iser_task *iser_task,
+@@ -597,9 +617,7 @@ iser_reg_sig_mr(struct iscsi_iser_task *iser_task,
+ 	if (ret)
+ 		goto err;
+ 
+-	ret = iser_set_prot_checks(iser_task->sc, &sig_attrs.check_mask);
+-	if (ret)
+-		goto err;
++	iser_set_prot_checks(iser_task->sc, &sig_attrs.check_mask);
+ 
+ 	if (!pi_ctx->sig_mr_valid) {
+ 		iser_inv_rkey(&inv_wr, pi_ctx->sig_mr);
+@@ -642,6 +660,7 @@ iser_reg_sig_mr(struct iscsi_iser_task *iser_task,
  err:
  	return ret;
  }
@@ -521,7 +606,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static int iser_fast_reg_mr(struct iscsi_iser_task *iser_task,
  			    struct iser_data_buf *mem,
-@@ -744,6 +752,7 @@ int iser_reg_rdma_mem_fastreg(struct iscsi_iser_task *iser_task,
+@@ -744,6 +763,7 @@ int iser_reg_rdma_mem_fastreg(struct iscsi_iser_task *iser_task,
  	if (err)
  		goto err_reg;
  
@@ -529,7 +614,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (scsi_get_prot_op(iser_task->sc) != SCSI_PROT_NORMAL) {
  		struct iser_mem_reg prot_reg;
  
-@@ -774,6 +783,7 @@ int iser_reg_rdma_mem_fastreg(struct iscsi_iser_task *iser_task,
+@@ -774,6 +794,7 @@ int iser_reg_rdma_mem_fastreg(struct iscsi_iser_task *iser_task,
  		}
  		desc->pi_ctx->sig_protected = 1;
  	}
