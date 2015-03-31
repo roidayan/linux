@@ -1,27 +1,25 @@
-From: Alaa Hleihel <alaa@mellanox.com>
-Subject: [PATCH] BACKPORT: srp
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Subject: [PATCH] BACKPORT: ib_srp
 
-Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+Signed-off-by: Sagi Grimberg <sagig@mellanox.com>
 ---
- drivers/infiniband/ulp/srp/ib_srp.c | 86 ++++++++++++++++++++++++++++++++++++-
- drivers/scsi/scsi_transport_srp.c   | 25 +++++++++++
- 2 files changed, 110 insertions(+), 1 deletion(-)
+ drivers/infiniband/ulp/srp/ib_srp.c |   87 ++++++++++++++++++++++++++++++++++-
+ 1 files changed, 86 insertions(+), 1 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/srp/ib_srp.c b/drivers/infiniband/ulp/srp/ib_srp.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/srp/ib_srp.c
 +++ b/drivers/infiniband/ulp/srp/ib_srp.c
-@@ -30,6 +30,9 @@
-  * SOFTWARE.
-  */
- 
-+#ifdef pr_fmt
-+#undef pr_fmt
-+#endif
+@@ -35,6 +35,7 @@
+ #endif
  #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
  
++#include <linux/version.h>
  #include <linux/module.h>
-@@ -41,7 +44,11 @@
+ #include <linux/init.h>
+ #include <linux/slab.h>
+@@ -44,7 +45,11 @@
  #include <linux/random.h>
  #include <linux/jiffies.h>
  
@@ -33,7 +31,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  #include <scsi/scsi.h>
  #include <scsi/scsi_device.h>
-@@ -97,30 +104,58 @@ module_param(register_always, bool, 0444);
+@@ -101,23 +106,45 @@ module_param(register_always, bool, 0444);
  MODULE_PARM_DESC(register_always,
  		 "Use memory registration even for contiguous memory regions");
  
@@ -41,58 +39,57 @@ index xxxxxxx..xxxxxxx xxxxxx
  static struct kernel_param_ops srp_tmo_ops;
 +#endif
  
- static int srp_reconnect_delay = 10;
+ static int srp_reconnect_delay = 20;
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
- module_param_cb(reconnect_delay, &srp_tmo_ops, &srp_reconnect_delay,
- 		S_IRUGO | S_IWUSR);
+ module_param_cb(reconnect_delay, &srp_tmo_ops, &srp_reconnect_delay, S_IRUGO);
 +#else
-+module_param_named(reconnect_delay, srp_reconnect_delay, int,
-+		   S_IRUGO | S_IWUSR);
++module_param_named(reconnect_delay, srp_reconnect_delay, int, S_IRUGO);
 +#endif
 +
  MODULE_PARM_DESC(reconnect_delay, "Time between successive reconnect attempts");
  
  static int srp_fast_io_fail_tmo = 15;
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
- module_param_cb(fast_io_fail_tmo, &srp_tmo_ops, &srp_fast_io_fail_tmo,
- 		S_IRUGO | S_IWUSR);
+ module_param_cb(fast_io_fail_tmo, &srp_tmo_ops, &srp_fast_io_fail_tmo, S_IRUGO);
 +#else
-+module_param_named(fast_io_fail_tmo, srp_fast_io_fail_tmo, int,
-+		   S_IRUGO | S_IWUSR);
++module_param_named(fast_io_fail_tmo, srp_fast_io_fail_tmo, int, S_IRUGO);
 +#endif
 +
  MODULE_PARM_DESC(fast_io_fail_tmo,
  		 "Number of seconds between the observation of a transport"
+ 		 " layer error and failing all I/O.\n"
+ 		 "                             "
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
- 		 " layer error and failing all I/O. \"off\" means that this"
+ 		 "\"off\" means that this"
 +#else
-+		 " layer error and failing all I/O. (-1) means that this"
++                "(-1) means that this"
 +#endif
++
  		 " functionality is disabled.");
  
- static int srp_dev_loss_tmo = 600;
+ static int srp_dev_loss_tmo = -1;
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
- module_param_cb(dev_loss_tmo, &srp_tmo_ops, &srp_dev_loss_tmo,
- 		S_IRUGO | S_IWUSR);
+ module_param_cb(dev_loss_tmo, &srp_tmo_ops, &srp_dev_loss_tmo, S_IRUGO);
 +#else
-+module_param_named(dev_loss_tmo, srp_dev_loss_tmo, int,
-+		   S_IRUGO | S_IWUSR);
++module_param_named(dev_loss_tmo, srp_dev_loss_tmo, int, S_IRUGO);
 +#endif
 +
  MODULE_PARM_DESC(dev_loss_tmo,
  		 "Maximum number of seconds that the SRP transport should"
- 		 " insulate transport layer errors. After this time has been"
- 		 " exceeded the SCSI host is removed. Should be"
- 		 " between 1 and " __stringify(SCSI_DEVICE_BLOCK_MAX_TIMEOUT)
+ 		 " insulate transport layer errors.\n"
+@@ -127,7 +154,11 @@ MODULE_PARM_DESC(dev_loss_tmo,
+ 		 "Should be between 1 and " __stringify(SCSI_DEVICE_BLOCK_MAX_TIMEOUT)
+ 		 " if fast_io_fail_tmo has not been set.\n"
+ 		 "                             "
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
- 		 " if fast_io_fail_tmo has not been set. \"off\" means that"
+ 		 "\"off\" means that this functionality is disabled.");
 +#else
-+		 " if fast_io_fail_tmo has not been set. (-1) means that"
++		 "(-1) means that this functionality is disabled.");
 +#endif
- 		 " this functionality is disabled.");
  
- static unsigned ch_count;
-@@ -145,6 +180,7 @@ static struct ib_client srp_client = {
+ static void srp_add_one(struct ib_device *device);
+ static void srp_remove_one(struct ib_device *device);
+@@ -146,6 +177,7 @@ static struct ib_client srp_client = {
  
  static struct ib_sa_client srp_sa_client;
  
@@ -100,7 +97,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int srp_tmo_get(char *buffer, const struct kernel_param *kp)
  {
  	int tmo = *(int *)kp->arg;
-@@ -186,6 +222,7 @@ static struct kernel_param_ops srp_tmo_ops = {
+@@ -178,6 +210,7 @@ static struct kernel_param_ops srp_tmo_ops = {
  	.get = srp_tmo_get,
  	.set = srp_tmo_set,
  };
@@ -108,15 +105,15 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static inline struct srp_target_port *host_to_target(struct Scsi_Host *host)
  {
-@@ -1162,16 +1199,20 @@ static void srp_terminate_io(struct srp_rport *rport)
+@@ -1122,16 +1155,20 @@ static void srp_finish_req(struct srp_target_port *target,
+ static void srp_terminate_io(struct srp_rport *rport)
  {
  	struct srp_target_port *target = rport->lld_data;
- 	struct srp_rdma_ch *ch;
 +#ifdef HAVE_REQUEST_QUEUE_REQUEST_FN_ACTIVE
  	struct Scsi_Host *shost = target->scsi_host;
  	struct scsi_device *sdev;
 +#endif
- 	int i, j;
+ 	int i;
  
  	/*
  	 * Invoking srp_terminate_io() while srp_queuecommand() is running
@@ -127,9 +124,9 @@ index xxxxxxx..xxxxxxx xxxxxx
  		WARN_ON_ONCE(sdev->request_queue->request_fn_active);
 +#endif
  
- 	for (i = 0; i < target->ch_count; i++) {
- 		ch = &target->ch[i];
-@@ -1979,7 +2020,50 @@ static void srp_send_completion(struct ib_cq *cq, void *ch_ptr)
+ 	for (i = 0; i < target->req_ring_size; ++i) {
+ 		struct srp_request *req = &target->req_ring[i];
+@@ -1904,7 +1941,50 @@ static void srp_send_completion(struct ib_cq *cq, void *target_ptr)
  	}
  }
  
@@ -181,83 +178,24 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	struct srp_target_port *target = host_to_target(shost);
  	struct srp_rport *rport = target->rport;
-diff --git a/drivers/scsi/scsi_transport_srp.c b/drivers/scsi/scsi_transport_srp.c
-index xxxxxxx..xxxxxxx xxxxxx
---- a/drivers/scsi/scsi_transport_srp.c
-+++ b/drivers/scsi/scsi_transport_srp.c
-@@ -405,7 +405,11 @@ static void __rport_fail_io_fast(struct srp_rport *rport)
- 
- 	if (srp_rport_set_state(rport, SRP_RPORT_FAIL_FAST))
- 		return;
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0) || defined(CONFIG_COMPAT_SCSI_TARGET_UNBLOCK)
- 	scsi_target_unblock(rport->dev.parent, SDEV_TRANSPORT_OFFLINE);
-+#else
-+	scsi_target_unblock(rport->dev.parent);
+@@ -2385,8 +2465,10 @@ static int srp_abort(struct scsi_cmnd *scmnd)
+ 	if (srp_send_tsk_mgmt(target, req->index, scmnd->device->lun,
+ 			      SRP_TSK_ABORT_TASK) == 0)
+ 		ret = SUCCESS;
++#if defined(SRP_NO_FAST_IO_FAIL)
+ 	else if (target->rport->state == SRP_RPORT_LOST)
+ 		ret = FAST_IO_FAIL;
 +#endif
- 
- 	/* Involve the LLD if possible to terminate all I/O on the rport. */
- 	i = to_srp_internal(shost->transportt);
-@@ -448,7 +452,11 @@ static void rport_dev_loss_timedout(struct work_struct *work)
- 
- 	mutex_lock(&rport->mutex);
- 	WARN_ON(srp_rport_set_state(rport, SRP_RPORT_LOST) != 0);
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0) || defined(CONFIG_COMPAT_SCSI_TARGET_UNBLOCK)
- 	scsi_target_unblock(rport->dev.parent, SDEV_TRANSPORT_OFFLINE);
-+#else
-+	scsi_target_unblock(rport->dev.parent);
+ 	else
+ 		ret = FAILED;
+ 	srp_free_req(target, req, scmnd, 0);
+@@ -2606,6 +2688,9 @@ static struct scsi_host_template srp_template = {
+ 	.proc_name			= DRV_NAME,
+ 	.slave_configure		= srp_slave_configure,
+ 	.info				= srp_target_info,
++#if defined(RHEL_MAJOR) && RHEL_MAJOR -0 == 6 && RHEL_MINOR -0 >= 2 && defined(CONFIG_IS_SCSI_LOCKLESS)
++	.lockless			= true,
 +#endif
- 	mutex_unlock(&rport->mutex);
- 
- 	i->f->rport_delete(rport);
-@@ -509,6 +517,7 @@ EXPORT_SYMBOL(srp_start_tl_fail_timers);
-  */
- static int scsi_request_fn_active(struct Scsi_Host *shost)
- {
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
- 	struct scsi_device *sdev;
- 	struct request_queue *q;
- 	int request_fn_active = 0;
-@@ -522,6 +531,10 @@ static int scsi_request_fn_active(struct Scsi_Host *shost)
- 	}
- 
- 	return request_fn_active;
-+#else
-+	msleep(20);
-+	return 0;
-+#endif
- }
- 
- /**
-@@ -570,7 +583,11 @@ int srp_reconnect_rport(struct srp_rport *rport)
- 
- 		rport->failed_reconnects = 0;
- 		srp_rport_set_state(rport, SRP_RPORT_RUNNING);
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0) || defined(CONFIG_COMPAT_SCSI_TARGET_UNBLOCK)
- 		scsi_target_unblock(&shost->shost_gendev, SDEV_RUNNING);
-+#else
-+		scsi_target_unblock(&shost->shost_gendev);
-+#endif
- 		/*
- 		 * If the SCSI error handler has offlined one or more devices,
- 		 * invoking scsi_target_unblock() won't change the state of
-@@ -588,12 +605,20 @@ int srp_reconnect_rport(struct srp_rport *rport)
- 		 * failure timers if these had not yet been started.
- 		 */
- 		__rport_fail_io_fast(rport);
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0) || defined(CONFIG_COMPAT_SCSI_TARGET_UNBLOCK)
- 		scsi_target_unblock(&shost->shost_gendev,
- 				    SDEV_TRANSPORT_OFFLINE);
-+#else
-+		scsi_target_unblock(&shost->shost_gendev);
-+#endif
- 		__srp_start_tl_fail_timers(rport);
- 	} else if (rport->state != SRP_RPORT_BLOCKED) {
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0) || defined(CONFIG_COMPAT_SCSI_TARGET_UNBLOCK)
- 		scsi_target_unblock(&shost->shost_gendev,
- 				    SDEV_TRANSPORT_OFFLINE);
-+#else
-+		scsi_target_unblock(&shost->shost_gendev);
-+#endif
- 	}
- 	mutex_unlock(&rport->mutex);
- 
+ 	.queuecommand			= srp_queuecommand,
+ 	.eh_abort_handler		= srp_abort,
+ 	.eh_device_reset_handler	= srp_reset_device,

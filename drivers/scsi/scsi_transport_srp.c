@@ -67,15 +67,17 @@ static inline struct Scsi_Host *rport_to_shost(struct srp_rport *r)
  * @fast_io_fail_tmo: Fast I/O fail timeout in seconds.
  * @dev_loss_tmo: Device loss timeout in seconds.
  *
- * The combination of the timeout parameters must be such that SCSI commands
- * are finished in a reasonable time. Hence do not allow the fast I/O fail
- * timeout to exceed SCSI_DEVICE_BLOCK_MAX_TIMEOUT nor allow dev_loss_tmo to
- * exceed that limit if failing I/O fast has been disabled. Furthermore, these
- * parameters must be such that multipath can detect failed paths timely.
- * Hence do not allow all three parameters to be disabled simultaneously.
+ * The combination of the three timeout parameters must be such that SCSI
+ * commands are finished in a reasonable time. Hence do not allow the fast I/O
+ * fail timeout to exceed SCSI_DEVICE_BLOCK_MAX_TIMEOUT nor allow dev_loss_tmo
+ * to exceed that limit if failing I/O fast has been disabled. Furthermore,
+ * these parameters must be such that multipath can detect failed paths. Hence
+ * do not allow all three parameters to be disabled simultaneously.
  */
 int srp_tmo_valid(int reconnect_delay, int fast_io_fail_tmo, int dev_loss_tmo)
 {
+	if (reconnect_delay < -1 || fast_io_fail_tmo < -1 || dev_loss_tmo < -1)
+		return -EINVAL;
 	if (reconnect_delay < 0 && fast_io_fail_tmo < 0 && dev_loss_tmo < 0)
 		return -EINVAL;
 	if (reconnect_delay == 0)
@@ -356,10 +358,10 @@ static int srp_rport_set_state(struct srp_rport *rport,
 		break;
 	case SRP_RPORT_FAIL_FAST:
 		switch (old_state) {
-		case SRP_RPORT_LOST:
-			goto invalid;
-		default:
+		case SRP_RPORT_BLOCKED:
 			break;
+		default:
+			goto invalid;
 		}
 		break;
 	case SRP_RPORT_LOST:
@@ -427,8 +429,7 @@ static void rport_fast_io_fail_timedout(struct work_struct *work)
 		dev_name(&rport->dev), dev_name(&shost->shost_gendev));
 
 	mutex_lock(&rport->mutex);
-	if (rport->state == SRP_RPORT_BLOCKED)
-		__rport_fail_io_fast(rport);
+	__rport_fail_io_fast(rport);
 	mutex_unlock(&rport->mutex);
 }
 
@@ -457,7 +458,7 @@ static void rport_dev_loss_timedout(struct work_struct *work)
 static void __srp_start_tl_fail_timers(struct srp_rport *rport)
 {
 	struct Scsi_Host *shost = rport_to_shost(rport);
-	int delay, fast_io_fail_tmo, dev_loss_tmo;
+	int fast_io_fail_tmo, dev_loss_tmo, delay;
 
 	lockdep_assert_held(&rport->mutex);
 
@@ -729,7 +730,7 @@ struct srp_rport *srp_rport_add(struct Scsi_Host *shost,
 	INIT_DELAYED_WORK(&rport->reconnect_work, srp_reconnect_work);
 	rport->fast_io_fail_tmo = i->f->fast_io_fail_tmo ?
 		*i->f->fast_io_fail_tmo : 15;
-	rport->dev_loss_tmo = i->f->dev_loss_tmo ? *i->f->dev_loss_tmo : 60;
+	rport->dev_loss_tmo = i->f->dev_loss_tmo ? *i->f->dev_loss_tmo : 600;
 	INIT_DELAYED_WORK(&rport->fast_io_fail_work,
 			  rport_fast_io_fail_timedout);
 	INIT_DELAYED_WORK(&rport->dev_loss_work, rport_dev_loss_timedout);

@@ -1,0 +1,127 @@
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Subject: [PATCH] BACKPORT: scsi
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+Signed-off-by: Sagi Grimberg <sagig@mellanox.com>
+---
+ drivers/infiniband/ulp/srp/ib_srp.c |    3 ++-
+ drivers/scsi/scsi_transport_srp.c   |   27 +++++++++++++++++++++++++++
+ 2 files changed, 29 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/infiniband/ulp/srp/ib_srp.c b/drivers/infiniband/ulp/srp/ib_srp.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/ulp/srp/ib_srp.c
++++ b/drivers/infiniband/ulp/srp/ib_srp.c
+@@ -44,6 +44,7 @@
+ #include <linux/parser.h>
+ #include <linux/random.h>
+ #include <linux/jiffies.h>
++#include <linux/delay.h>
+ 
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37)
+ #include <linux/atomic.h>
+@@ -2410,7 +2411,7 @@ static int srp_send_tsk_mgmt(struct srp_target_port *target,
+ 	init_completion(&target->tsk_mgmt_done);
+ 
+ 	/*
+-	 * Lock the rport mutex to avoid that srp_create_target_ib() is 
++	 * Lock the rport mutex to avoid that srp_create_target_ib() is
+ 	 * invoked while a task management function is being sent.
+ 	 */
+ 	mutex_lock(&rport->mutex);
+diff --git a/drivers/scsi/scsi_transport_srp.c b/drivers/scsi/scsi_transport_srp.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/scsi/scsi_transport_srp.c
++++ b/drivers/scsi/scsi_transport_srp.c
+@@ -19,6 +19,7 @@
+  * 02110-1301 USA
+  */
+ #include <linux/init.h>
++#include <linux/version.h>
+ #include <linux/module.h>
+ #include <linux/jiffies.h>
+ #include <linux/err.h>
+@@ -412,7 +413,11 @@ static void __rport_fail_io_fast(struct srp_rport *rport)
+ 
+ 	if (srp_rport_set_state(rport, SRP_RPORT_FAIL_FAST))
+ 		return;
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0) || defined(CONFIG_COMPAT_SCSI_TARGET_UNBLOCK)
+ 	scsi_target_unblock(rport->dev.parent, SDEV_TRANSPORT_OFFLINE);
++#else
++	scsi_target_unblock(rport->dev.parent);
++#endif
+ 
+ 	/* Involve the LLD if possible to terminate all I/O on the rport. */
+ 	i = to_srp_internal(shost->transportt);
+@@ -454,7 +459,11 @@ static void rport_dev_loss_timedout(struct work_struct *work)
+ 
+ 	mutex_lock(&rport->mutex);
+ 	WARN_ON(srp_rport_set_state(rport, SRP_RPORT_LOST) != 0);
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0) || defined(CONFIG_COMPAT_SCSI_TARGET_UNBLOCK)
+ 	scsi_target_unblock(rport->dev.parent, SDEV_TRANSPORT_OFFLINE);
++#else
++	scsi_target_unblock(rport->dev.parent);
++#endif
+ 	mutex_unlock(&rport->mutex);
+ 
+ 	i->f->rport_delete(rport);
+@@ -515,6 +524,7 @@ EXPORT_SYMBOL(srp_start_tl_fail_timers);
+  */
+ static int scsi_request_fn_active(struct Scsi_Host *shost)
+ {
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
+ 	struct scsi_device *sdev;
+ 	struct request_queue *q;
+ 	int request_fn_active = 0;
+@@ -528,6 +538,10 @@ static int scsi_request_fn_active(struct Scsi_Host *shost)
+ 	}
+ 
+ 	return request_fn_active;
++#else
++	msleep(20);
++	return 0;
++#endif
+ }
+ 
+ /**
+@@ -576,7 +590,11 @@ int srp_reconnect_rport(struct srp_rport *rport)
+ 
+ 		rport->failed_reconnects = 0;
+ 		srp_rport_set_state(rport, SRP_RPORT_RUNNING);
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0) || defined(CONFIG_COMPAT_SCSI_TARGET_UNBLOCK)
+ 		scsi_target_unblock(&shost->shost_gendev, SDEV_RUNNING);
++#else
++		scsi_target_unblock(&shost->shost_gendev);
++#endif
+ 		/*
+ 		 * If the SCSI error handler has offlined one or more devices,
+ 		 * invoking scsi_target_unblock() won't change the state of
+@@ -594,12 +612,20 @@ int srp_reconnect_rport(struct srp_rport *rport)
+ 		 * failure timers if these had not yet been started.
+ 		 */
+ 		__rport_fail_io_fast(rport);
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0) || defined(CONFIG_COMPAT_SCSI_TARGET_UNBLOCK)
+ 		scsi_target_unblock(&shost->shost_gendev,
+ 				    SDEV_TRANSPORT_OFFLINE);
++#else
++		scsi_target_unblock(&shost->shost_gendev);
++#endif
+ 		__srp_start_tl_fail_timers(rport);
+ 	} else if (rport->state != SRP_RPORT_BLOCKED) {
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0) || defined(CONFIG_COMPAT_SCSI_TARGET_UNBLOCK)
+ 		scsi_target_unblock(&shost->shost_gendev,
+ 				    SDEV_TRANSPORT_OFFLINE);
++#else
++		scsi_target_unblock(&shost->shost_gendev);
++#endif
+ 	}
+ 	mutex_unlock(&rport->mutex);
+ 
+@@ -914,6 +940,7 @@ static __init int srp_transport_init(void)
+ 		goto unregister_host_class;
+ 
+ 	return 0;
++
+ unregister_host_class:
+ 	transport_class_unregister(&srp_host_class);
+ 	return ret;
