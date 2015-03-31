@@ -3039,7 +3039,7 @@ static ssize_t srp_create_target(struct device *dev,
 	if (ret)
 		goto err_free_mem;
 
-	ret = ib_query_gid(ibdev, host->port, 0, &target->path.sgid);
+	ret = ib_query_gid(ibdev, host->port, 0, &target->path.sgid, NULL);
 	if (ret)
 		goto err_free_mem;
 
