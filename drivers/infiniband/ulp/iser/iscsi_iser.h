@@ -48,6 +48,7 @@
 #include <scsi/scsi_transport_iscsi.h>
 #include <scsi/scsi_cmnd.h>
 #include <scsi/scsi_device.h>
+#include <scsi/scsi_eh.h>
 
 #include <linux/interrupt.h>
 #include <linux/wait.h>
@@ -218,21 +219,24 @@ enum iser_data_dir {
 /**
  * struct iser_data_buf - iSER data buffer
  *
- * @buf:          pointer to the sg list
+ * @sg:           pointer to the sg list
  * @size:         num entries of this sg
  * @data_len:     total beffer byte len
  * @dma_nents:    returned by dma_map_sg
  * @copy_buf:     allocated copy buf for SGs unaligned
  *                for rdma which are copied
+ * @orig_sg:      pointer to the original sg list (in case
+ *                we used a copy)
  * @sg_single:    SG-ified clone of a non SG SC or
  *                unaligned SG
  */
 struct iser_data_buf {
-	void               *buf;
+	struct scatterlist *sg;
 	unsigned int       size;
 	unsigned long      data_len;
 	unsigned int       dma_nents;
 	char               *copy_buf;
+	struct scatterlist *orig_sg;
 	struct scatterlist sg_single;
   };
 
@@ -244,35 +248,14 @@ struct iscsi_endpoint;
 /**
  * struct iser_mem_reg - iSER memory registration info
  *
- * @lkey:         MR local key
- * @rkey:         MR remote key
- * @va:           MR start address (buffer va)
- * @len:          MR length
+ * @sge:          memory region sg element
+ * @rkey:         memory region remote key
  * @mem_h:        pointer to registration context (FMR/Fastreg)
  */
 struct iser_mem_reg {
-	u32  lkey;
-	u32  rkey;
-	u64  va;
-	u64  len;
-	void *mem_h;
-};
-
-/**
- * struct iser_regd_buf - iSER buffer registration desc
- *
- * @reg:          memory registration info
- * @virt_addr:    virtual address of buffer
- * @device:       reference to iser device
- * @direction:    dma direction (for dma_unmap)
- * @data_size:    data buffer size in bytes
- */
-struct iser_regd_buf {
-	struct iser_mem_reg     reg;
-	void                    *virt_addr;
-	struct iser_device      *device;
-	enum dma_data_direction direction;
-	unsigned int            data_size;
+	struct ib_sge	 sge;
+	u32		 rkey;
+	void		*mem_h;
 };
 
 enum iser_desc_type {
@@ -387,41 +370,45 @@ struct iser_device {
 #define ISER_CHECK_REFTAG	0x0f
 #define ISER_CHECK_APPTAG	0x30
 
-enum iser_reg_indicator {
-	ISER_DATA_KEY_VALID	= 1 << 0,
-	ISER_PROT_KEY_VALID	= 1 << 1,
-	ISER_SIG_KEY_VALID	= 1 << 2,
-	ISER_FASTREG_PROTECTED	= 1 << 3,
+/**
+ * struct iser_reg_resources - Fast registration recources
+ *
+ * @mr:         memory region
+ * @frpl:       fast reg page list
+ * @mr_valid:   is mr valid indicator
+ */
+struct iser_reg_resources {
+	struct ib_mr                     *mr;
+	struct ib_fast_reg_page_list     *frpl;
+	u8                                mr_valid:1;
 };
 
 /**
  * struct iser_pi_context - Protection information context
  *
- * @prot_mr:        protection memory region
- * @prot_frpl:      protection fastreg page list
- * @sig_mr:         signature feature enabled memory region
+ * @rsc:             protection buffer registration resources
+ * @sig_mr:          signature enable memory region
+ * @sig_mr_valid:    is sig_mr valid indicator
+ * @sig_protected:   is region protected indicator
  */
 struct iser_pi_context {
-	struct ib_mr                   *prot_mr;
-	struct ib_fast_reg_page_list   *prot_frpl;
+	struct iser_reg_resources       rsc;
 	struct ib_mr                   *sig_mr;
+	u8                              sig_mr_valid:1;
+	u8                              sig_protected:1;
 };
 
 /**
  * struct fast_reg_descriptor - Fast registration descriptor
  *
  * @list:           entry in connection fastreg pool
- * @data_mr:        data memory region
- * @data_frpl:      data fastreg page list
+ * @rsc:            data buffer registration resources
  * @pi_ctx:         protection information context
- * @reg_indicators: fast registration indicators
  */
 struct fast_reg_descriptor {
 	struct list_head		  list;
-	struct ib_mr			 *data_mr;
-	struct ib_fast_reg_page_list     *data_frpl;
+	struct iser_reg_resources	  rsc;
 	struct iser_pi_context		 *pi_ctx;
-	u8				  reg_indicators;
 };
 
 /**
@@ -534,11 +521,9 @@ struct iser_conn {
  * @sc:               link to scsi command
  * @command_sent:     indicate if command was sent
  * @dir:              iser data direction
- * @rdma_regd:        task rdma registration desc
+ * @rdma_reg:         task rdma registration desc
  * @data:             iser data buffer desc
- * @data_copy:        iser data copy buffer desc (bounce buffer)
  * @prot:             iser protection buffer desc
- * @prot_copy:        iser protection copy buffer desc (bounce buffer)
  */
 struct iscsi_iser_task {
 	struct iser_tx_desc          desc;
@@ -547,11 +532,9 @@ struct iscsi_iser_task {
 	struct scsi_cmnd	     *sc;
 	int                          command_sent;
 	int                          dir[ISER_DIRS_NUM];
-	struct iser_regd_buf         rdma_regd[ISER_DIRS_NUM];
+	struct iser_mem_reg          rdma_reg[ISER_DIRS_NUM];
 	struct iser_data_buf         data[ISER_DIRS_NUM];
-	struct iser_data_buf         data_copy[ISER_DIRS_NUM];
 	struct iser_data_buf         prot[ISER_DIRS_NUM];
-	struct iser_data_buf         prot_copy[ISER_DIRS_NUM];
 };
 
 struct iser_page_vec {
@@ -582,6 +565,8 @@ extern struct iser_global ig;
 extern int iser_debug_level;
 extern bool iser_pi_enable;
 extern int iser_pi_guard;
+extern int iser_cq_completions;
+extern int iser_cq_timeout;
 
 int iser_send_control(struct iscsi_conn *conn,
 		      struct iscsi_task *task);
@@ -621,7 +606,6 @@ void iser_free_rx_descriptors(struct iser_conn *iser_conn);
 
 void iser_finalize_rdma_unaligned_sg(struct iscsi_iser_task *iser_task,
 				     struct iser_data_buf *mem,
-				     struct iser_data_buf *mem_copy,
 				     enum iser_data_dir cmd_dir);
 
 int  iser_reg_rdma_mem_fmr(struct iscsi_iser_task *task,
@@ -633,10 +617,6 @@ int  iser_connect(struct iser_conn *iser_conn,
 		  struct sockaddr *src_addr,
 		  struct sockaddr *dst_addr,
 		  int non_blocking);
-
-int  iser_reg_page_vec(struct ib_conn *ib_conn,
-		       struct iser_page_vec *page_vec,
-		       struct iser_mem_reg *mem_reg);
 
 void iser_unreg_mem_fmr(struct iscsi_iser_task *iser_task,
 			enum iser_data_dir cmd_dir);
@@ -654,7 +634,9 @@ int iser_dma_map_task_data(struct iscsi_iser_task *iser_task,
 			   enum dma_data_direction dma_dir);
 
 void iser_dma_unmap_task_data(struct iscsi_iser_task *iser_task,
-			      struct iser_data_buf *data);
+			      struct iser_data_buf *data,
+			      enum dma_data_direction dir);
+
 int  iser_initialize_task_headers(struct iscsi_task *task,
 			struct iser_tx_desc *tx_desc);
 int iser_alloc_rx_descriptors(struct iser_conn *iser_conn,
@@ -665,4 +647,9 @@ int iser_create_fastreg_pool(struct ib_conn *ib_conn, unsigned cmds_max);
 void iser_free_fastreg_pool(struct ib_conn *ib_conn);
 u8 iser_check_task_pi_status(struct iscsi_iser_task *iser_task,
 			     enum iser_data_dir cmd_dir, sector_t *sector);
+struct fast_reg_descriptor *
+iser_reg_desc_get(struct ib_conn *ib_conn);
+void
+iser_reg_desc_put(struct ib_conn *ib_conn,
+		  struct fast_reg_descriptor *desc);
 #endif
