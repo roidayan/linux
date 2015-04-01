@@ -265,14 +265,11 @@ void mlx4_ib_notify_slaves_on_guid_change(struct mlx4_ib_dev *dev,
 							       port_num, MLX4_PORT_CHANGE_SUBTYPE_ACTIVE);
 			}
 		} else { /* request to invalidate GUID */
-			prev_state = mlx4_get_slave_port_state(dev->dev,
-							       slave_id,
-							       port_num);
-			new_state = set_and_calc_slave_port_state(dev->dev,
-								  slave_id,
-								  port_num,
-								  MLX4_PORT_STATE_IB_EVENT_GID_INVALID,
-								  &gen_event);
+			set_and_calc_slave_port_state(dev->dev,
+						  slave_id,
+						  port_num,
+						  MLX4_PORT_STATE_IB_EVENT_GID_INVALID,
+						  &gen_event);
 			if (gen_event == SLAVE_PORT_GEN_EVENT_DOWN) {
 				pr_debug("sending PORT DOWN event to slave: %d, port: %d\n",
 					 slave_id, port_num);
