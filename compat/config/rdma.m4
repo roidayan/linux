@@ -508,6 +508,22 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(no)
 	])
 
+	AC_MSG_CHECKING([if skbuff.h has skb_pull_inline])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/skbuff.h>
+	],[
+		struct sk_buff skb;
+		skb_pull_inline(&skb, 0);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_SKB_PULL_INLINE, 1,
+			  [skb_pull_inline is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
 	AC_MSG_CHECKING([if sockios.h has SIOCGHWTSTAMP])
 	MLNX_BG_LB_LINUX_TRY_COMPILE([
 		#include <linux/sockios.h>
@@ -1044,6 +1060,28 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(yes)
 		MLNX_AC_DEFINE(HAVE_SET_VF_RATE, 1,
 			  [ndo_set_vf_rate is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if struct net_device_ops has *ndo_get_stats64])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/netdevice.h>
+
+		struct rtnl_link_stats64* mlx_ndo_get_stats64 (struct net_device *dev,
+			struct rtnl_link_stats64 *storage)
+		{
+			return 0;
+		}
+	],[
+		struct net_device_ops netdev_ops;
+
+		netdev_ops.ndo_get_stats64 = mlx_ndo_get_stats64;
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_NDO_GET_STATS64, 1,
+			  [ndo_get_stats64 is defined])
 	],[
 		AC_MSG_RESULT(no)
 	])
