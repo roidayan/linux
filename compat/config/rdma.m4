@@ -3112,6 +3112,22 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(no)
 	])
 
+	AC_MSG_CHECKING([if ib_signature_type is defined])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <rdma/ib_verbs.h>
+	],[
+		struct ib_sig_domain sig = {
+			.sig_type = IB_SIG_TYPE_T10_DIF,
+		};
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_IB_SIGNATURE, 1,
+			  [ib_signature_type is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
 ])
 #
 # COMPAT_CONFIG_HEADERS

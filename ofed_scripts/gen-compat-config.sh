@@ -143,10 +143,6 @@ if [ -e /etc/debian_version ]; then
 	fi
 fi
 
-if ! [[ $KVERSION =~ 2.6.16 ]]; then
-	set_config CONFIG_COMPAT_SIGNATURE y
-fi
-
 if [[ ${CONFIG_COMPAT_KERNEL_2_6_38} = "y" ]]; then
 	if [[ ! ${CONFIG_COMPAT_RHEL_6_3} = "y" ]]; then
 		set_config CONFIG_COMPAT_NO_PRINTK_NEEDED y

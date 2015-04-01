@@ -20,7 +20,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  module_param_named(max_lun, iscsi_max_lun, uint, S_IRUGO);
  MODULE_PARM_DESC(max_lun, "Max LUNs to allow per session (default:512");
  
-+#if defined(CONFIG_COMPAT_SIGNATURE)
++#if defined(HAVE_IB_SIGNATURE)
  bool iser_pi_enable = false;
  module_param_named(pi_enable, iser_pi_enable, bool, S_IRUGO);
  MODULE_PARM_DESC(pi_enable, "Enable T10-PI offload support (default:disabled)");
@@ -67,7 +67,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	iscsi_host_free(shost);
  }
  
-+#if defined(CONFIG_COMPAT_SIGNATURE)
++#if defined(HAVE_IB_SIGNATURE)
  static inline unsigned int
  iser_dif_prot_caps(int prot_caps)
  {
@@ -83,7 +83,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		}
  
  		ib_conn = &iser_conn->ib_conn;
-+#if defined(CONFIG_COMPAT_SIGNATURE)
++#if defined(HAVE_IB_SIGNATURE)
  		if (ib_conn->pi_support) {
  			u32 sig_caps = ib_conn->device->dev_attr.sig_prot_cap;
  
@@ -236,7 +236,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		return -EINVAL;
  	}
  
-+#if defined(CONFIG_COMPAT_SIGNATURE)
++#if defined(HAVE_IB_SIGNATURE)
  	if (iser_pi_guard < 0 || iser_pi_guard > 1) {
  		iser_err("Invalid pi_guard value of %d\n", iser_pi_guard);
  		return -EINVAL;
@@ -265,24 +265,24 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,15,0))
 +/* kernel supports check_protection */
 +#define CONFIG_COMPAT_ISCSI_CHECK_PROTECTION
-+#ifndef CONFIG_COMPAT_SIGNATURE
++#ifndef HAVE_IB_SIGNATURE
 +/* kernel supports signature */
-+#define CONFIG_COMPAT_SIGNATURE
++#define HAVE_IB_SIGNATURE
 +#endif
 +#else
 +#ifdef SLES12
 +/* SLES12 supports check_protection */
 +#define CONFIG_COMPAT_ISCSI_CHECK_PROTECTION
-+#ifndef CONFIG_COMPAT_SIGNATURE
++#ifndef HAVE_IB_SIGNATURE
 +/* SLES12 supports signature */
-+#define CONFIG_COMPAT_SIGNATURE
++#define HAVE_IB_SIGNATURE
 +#endif
 +#endif
 +#endif
 +#endif
 +
 +#ifndef CONFIG_COMPAT_ISCSI_CHECK_PROTECTION
-+#ifdef CONFIG_COMPAT_SIGNATURE
++#ifdef HAVE_IB_SIGNATURE
 +#define CONFIG_COMPAT_ISER_CHECK_PROTECTION
 +#endif
 +#endif
@@ -318,9 +318,9 @@ index xxxxxxx..xxxxxxx xxxxxx
  struct fast_reg_descriptor {
  	struct list_head		  list;
  	struct iser_reg_resources	  rsc;
-+#if defined(CONFIG_COMPAT_SIGNATURE)
++#if defined(HAVE_IB_SIGNATURE)
  	struct iser_pi_context		 *pi_ctx;
-+#endif /* CONFIG_COMPAT_SIGNATURE */
++#endif /* HAVE_IB_SIGNATURE */
  };
  
  /**
@@ -353,10 +353,10 @@ index xxxxxxx..xxxxxxx xxxxxx
  void iser_free_fmr_pool(struct ib_conn *ib_conn);
  int iser_create_fastreg_pool(struct ib_conn *ib_conn, unsigned cmds_max);
  void iser_free_fastreg_pool(struct ib_conn *ib_conn);
-+#ifdef CONFIG_COMPAT_SIGNATURE
++#ifdef HAVE_IB_SIGNATURE
  u8 iser_check_task_pi_status(struct iscsi_iser_task *iser_task,
  			     enum iser_data_dir cmd_dir, sector_t *sector);
-+#endif /* CONFIG_COMPAT_SIGNATURE */
++#endif /* HAVE_IB_SIGNATURE */
  struct fast_reg_descriptor *
  iser_reg_desc_get(struct ib_conn *ib_conn);
  void
@@ -493,7 +493,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	return 0;
  }
  
-+#if defined(CONFIG_COMPAT_SIGNATURE)
++#if defined(HAVE_IB_SIGNATURE)
  static void
  iser_set_dif_domain(struct scsi_cmnd *sc, struct ib_sig_attrs *sig_attrs,
  		    struct ib_sig_domain *domain)
@@ -575,7 +575,7 @@ index xxxxxxx..xxxxxxx xxxxxx
 -	return 0;
 +#endif
  }
-+#endif /* CONFIG_COMPAT_SIGNATURE */
++#endif /* HAVE_IB_SIGNATURE */
  
  static void
  iser_inv_rkey(struct ib_send_wr *inv_wr, struct ib_mr *mr)
@@ -583,7 +583,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	ib_update_fast_reg_key(mr, rkey);
  }
  
-+#if defined(CONFIG_COMPAT_SIGNATURE)
++#if defined(HAVE_IB_SIGNATURE)
  static int
  iser_reg_sig_mr(struct iscsi_iser_task *iser_task,
  		struct iser_pi_context *pi_ctx,
@@ -602,7 +602,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  err:
  	return ret;
  }
-+#endif /* CONFIG_COMPAT_SIGNATURE */
++#endif /* HAVE_IB_SIGNATURE */
  
  static int iser_fast_reg_mr(struct iscsi_iser_task *iser_task,
  			    struct iser_data_buf *mem,
@@ -610,7 +610,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (err)
  		goto err_reg;
  
-+#if defined(CONFIG_COMPAT_SIGNATURE)
++#if defined(HAVE_IB_SIGNATURE)
  	if (scsi_get_prot_op(iser_task->sc) != SCSI_PROT_NORMAL) {
  		struct iser_mem_reg prot_reg;
  
@@ -654,7 +654,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	ib_free_fast_reg_page_list(rsc->frpl);
  }
  
-+#if defined(CONFIG_COMPAT_SIGNATURE)
++#if defined(HAVE_IB_SIGNATURE)
  static int
  iser_alloc_pi_ctx(struct ib_device *ib_device, struct ib_pd *pd,
  		  struct fast_reg_descriptor *desc)
@@ -662,7 +662,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	ib_destroy_mr(pi_ctx->sig_mr);
  	kfree(pi_ctx);
  }
-+#endif /* CONFIG_COMPAT_SIGNATURE */
++#endif /* HAVE_IB_SIGNATURE */
  
  
  static int
@@ -670,22 +670,22 @@ index xxxxxxx..xxxxxxx xxxxxx
  		return ret;
  	}
  
-+#if defined(CONFIG_COMPAT_SIGNATURE)
++#if defined(HAVE_IB_SIGNATURE)
  	if (pi_enable) {
  		ret = iser_alloc_pi_ctx(ib_device, pd, desc);
  		if (ret)
  			goto pi_ctx_alloc_failure;
  	}
-+#endif /* CONFIG_COMPAT_SIGNATURE */
++#endif /* HAVE_IB_SIGNATURE */
  
  	return 0;
  
-+#if defined(CONFIG_COMPAT_SIGNATURE)
++#if defined(HAVE_IB_SIGNATURE)
  pi_ctx_alloc_failure:
  	iser_free_reg_res(&desc->rsc);
  
  	return ret;
-+#endif /* CONFIG_COMPAT_SIGNATURE */
++#endif /* HAVE_IB_SIGNATURE */
  }
  
  /**
@@ -693,10 +693,10 @@ index xxxxxxx..xxxxxxx xxxxxx
  	list_for_each_entry_safe(desc, tmp, &ib_conn->fastreg.pool, list) {
  		list_del(&desc->list);
  		iser_free_reg_res(&desc->rsc);
-+#if defined(CONFIG_COMPAT_SIGNATURE)
++#if defined(HAVE_IB_SIGNATURE)
  		if (desc->pi_ctx)
  			iser_free_pi_ctx(desc->pi_ctx);
-+#endif /* CONFIG_COMPAT_SIGNATURE */
++#endif /* HAVE_IB_SIGNATURE */
  		kfree(desc);
  		++i;
  	}
@@ -704,7 +704,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	init_attr.cap.max_recv_sge = 1;
  	init_attr.sq_sig_type	= IB_SIGNAL_REQ_WR;
  	init_attr.qp_type	= IB_QPT_RC;
-+#if defined(CONFIG_COMPAT_SIGNATURE)
++#if defined(HAVE_IB_SIGNATURE)
  	if (ib_conn->pi_support) {
  		init_attr.cap.max_send_wr = ISER_QP_SIG_MAX_REQ_DTOS + 1;
  		init_attr.create_flags |= IB_QP_CREATE_SIGNATURE_EN;
@@ -733,7 +733,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	ib_conn->device = device;
  
-+#if defined(CONFIG_COMPAT_SIGNATURE)
++#if defined(HAVE_IB_SIGNATURE)
  	/* connection T10-PI support */
  	if (iser_pi_enable) {
  		if (!(device->dev_attr.device_cap_flags &
@@ -743,7 +743,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	}
 +#else
 +	ib_conn->pi_support = false;
-+#endif /* ! CONFIG_COMPAT_SIGNATURE */
++#endif /* ! HAVE_IB_SIGNATURE */
  
  	ret = rdma_resolve_route(cma_id, 1000);
  	if (ret) {
@@ -773,7 +773,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	tasklet_schedule(&comp->tasklet);
  }
  
-+#ifdef CONFIG_COMPAT_SIGNATURE
++#ifdef HAVE_IB_SIGNATURE
  u8 iser_check_task_pi_status(struct iscsi_iser_task *iser_task,
  			     enum iser_data_dir cmd_dir, sector_t *sector)
  {
@@ -781,4 +781,4 @@ index xxxxxxx..xxxxxxx xxxxxx
  	/* Not alot we can do here, return ambiguous guard error */
  	return 0x1;
  }
-+#endif /* CONFIG_COMPAT_SIGNATURE */
++#endif /* HAVE_IB_SIGNATURE */
