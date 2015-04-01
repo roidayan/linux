@@ -179,10 +179,6 @@ if (grep -Eq "mode_t.*attr_is_visible" ${KLIB_BUILD}/include/scsi/scsi_transport
 	set_config CONFIG_COMPAT_ISER_ATTR_IS_VISIBLE y
 fi
 
-if (grep -qw get_ep_param ${KLIB_BUILD}/include/scsi/scsi_transport_iscsi.h > /dev/null 2>&1 || grep -qw get_ep_param /lib/modules/${KVERSION}/source/include/scsi/scsi_transport_iscsi.h > /dev/null 2>&1); then
-	set_config CONFIG_COMPAT_ISCSI_ISER_GET_EP_PARAM y
-fi
-
 if (grep -qw iscsi_scsi_req ${KLIB_BUILD}/include/scsi/iscsi_proto.h > /dev/null 2>&1 || grep -qw iscsi_scsi_req /lib/modules/${KVERSION}/source/include/scsi/iscsi_proto.h > /dev/null 2>&1); then
 	set_config CONFIG_COMPAT_IF_ISCSI_SCSI_REQ y
 fi

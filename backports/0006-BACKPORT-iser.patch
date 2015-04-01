@@ -5,11 +5,11 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 Signed-off-by: Sagi Grimberg <sagig@mellanox.com>
 Signed-off-by: Roi Dayan <roid@mellanox.com>
 ---
- drivers/infiniband/ulp/iser/iscsi_iser.c     | 78 +++++++++++++++++++++++++++-
- drivers/infiniband/ulp/iser/iscsi_iser.h     | 73 ++++++++++++++++++++++++++
- drivers/infiniband/ulp/iser/iser_initiator.c | 60 +++++++++++++++++++++
- drivers/infiniband/ulp/iser/iser_memory.c    | 45 +++++++++++-----
- drivers/infiniband/ulp/iser/iser_verbs.c     | 51 ++++++++++++++++++
+ drivers/infiniband/ulp/iser/iscsi_iser.c     |   78 +++++++++++++++++++++++++-
+ drivers/infiniband/ulp/iser/iscsi_iser.h     |   73 ++++++++++++++++++++++++
+ drivers/infiniband/ulp/iser/iser_initiator.c |   60 ++++++++++++++++++++
+ drivers/infiniband/ulp/iser/iser_memory.c    |   45 +++++++++++----
+ drivers/infiniband/ulp/iser/iser_verbs.c     |   51 +++++++++++++++++
  5 files changed, 293 insertions(+), 14 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/iser/iscsi_iser.c b/drivers/infiniband/ulp/iser/iscsi_iser.c
@@ -99,7 +99,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	stats->custom[3].value = conn->fmr_unalign_cnt;
  }
  
-+#ifdef CONFIG_COMPAT_ISCSI_ISER_GET_EP_PARAM
++#ifdef HAVE_ISCSI_GET_EP_PARAM
  static int iscsi_iser_get_ep_param(struct iscsi_endpoint *ep,
  				   enum iscsi_param param, char *buf)
  {
@@ -216,7 +216,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.set_param              = iscsi_iser_set_param,
  	.get_conn_param		= iscsi_conn_get_param,
 -	.get_ep_param		= iscsi_iser_get_ep_param,
-+#ifdef CONFIG_COMPAT_ISCSI_ISER_GET_EP_PARAM
++#ifdef HAVE_ISCSI_GET_EP_PARAM
 + 	.get_ep_param		= iscsi_iser_get_ep_param,
 +#endif
  	.get_session_param	= iscsi_session_get_param,
@@ -293,9 +293,9 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#endif
 +#endif
 +
-+#if !defined(CONFIG_COMPAT_ISCSI_ISER_GET_EP_PARAM)
++#if !defined(HAVE_ISCSI_GET_EP_PARAM)
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)
-+#define CONFIG_COMPAT_ISCSI_ISER_GET_EP_PARAM
++#define HAVE_ISCSI_GET_EP_PARAM
 +#endif
 +#endif
 +
