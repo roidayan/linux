@@ -81,7 +81,7 @@ static void mlx5e_update_carrier_work(struct work_struct *work)
 	mutex_unlock(&priv->state_lock);
 }
 
-static void __mlx5e_update_stats(struct mlx5e_priv *priv)
+void mlx5e_update_stats(struct mlx5e_priv *priv)
 {
 	struct mlx5_core_dev *mdev = priv->mdev;
 	struct mlx5e_vport_stats *s = &priv->stats.vport;
@@ -205,11 +205,18 @@ free_out:
 	kvfree(out);
 }
 
-void mlx5e_update_stats(struct mlx5e_priv *priv)
+static void mlx5e_update_stats_work(struct work_struct *work)
 {
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct mlx5e_priv *priv = container_of(dwork, struct mlx5e_priv,
+					       update_stats_work);
 	mutex_lock(&priv->state_lock);
-	if (test_bit(MLX5E_STATE_OPENED, &priv->state))
-		__mlx5e_update_stats(priv);
+	if (test_bit(MLX5E_STATE_OPENED, &priv->state)) {
+		mlx5e_update_stats(priv);
+		schedule_delayed_work(dwork,
+				      msecs_to_jiffies(
+					      MLX5E_UPDATE_STATS_INTERVAL));
+	}
 	mutex_unlock(&priv->state_lock);
 }
 
@@ -1450,6 +1457,7 @@ int mlx5e_open_locked(struct net_device *netdev)
 	mlx5e_update_carrier(priv);
 	mlx5e_set_rx_mode_core(priv);
 
+	schedule_delayed_work(&priv->update_stats_work, 0);
 	return 0;
 
 err_close_flow_table:
@@ -1517,8 +1525,6 @@ mlx5e_get_stats(struct net_device *dev, struct rtnl_link_stats64 *stats)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
 	struct mlx5e_vport_stats *vstats = &priv->stats.vport;
-
-	mlx5e_update_stats(priv);
 
 	stats->rx_packets = vstats->rx_packets;
 	stats->rx_bytes   = vstats->rx_bytes;
@@ -1659,6 +1665,7 @@ static void mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 
 	INIT_WORK(&priv->update_carrier_work, mlx5e_update_carrier_work);
 	INIT_WORK(&priv->set_rx_mode_work, mlx5e_set_rx_mode_work);
+	INIT_DELAYED_WORK(&priv->update_stats_work, mlx5e_update_stats_work);
 }
 
 static void mlx5e_set_netdev_dev_addr(struct net_device *netdev)

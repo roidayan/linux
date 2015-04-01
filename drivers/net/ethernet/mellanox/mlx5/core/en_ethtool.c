@@ -247,7 +247,10 @@ static void mlx5e_get_ethtool_stats(struct net_device *dev,
 	if (!data)
 		return;
 
-	mlx5e_update_stats(priv);
+	mutex_lock(&priv->state_lock);
+	if (test_bit(MLX5E_STATE_OPENED, &priv->state))
+		mlx5e_update_stats(priv);
+	mutex_unlock(&priv->state_lock);
 
 	for (i = 0; i < NUM_VPORT_COUNTERS; i++)
 		data[idx++] = ((u64 *)&priv->stats.vport)[i];

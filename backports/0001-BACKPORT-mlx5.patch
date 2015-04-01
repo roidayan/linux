@@ -122,7 +122,7 @@ diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en.h b/drivers/net/ethernet
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx5/core/en.h
 +++ b/drivers/net/ethernet/mellanox/mlx5/core/en.h
-@@ -404,6 +404,9 @@ struct mlx5e_priv {
+@@ -406,6 +406,9 @@ struct mlx5e_priv {
  	struct mlx5_core_dev      *mdev;
  	struct net_device         *netdev;
  	struct mlx5e_stats         stats;
@@ -132,7 +132,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  };
  
  #define MLX5E_NET_IP_ALIGN 2
-@@ -450,8 +453,17 @@ enum mlx5e_link_mode {
+@@ -452,8 +455,17 @@ enum mlx5e_link_mode {
  
  #define MLX5E_PROT_MASK(link_mode) (1 << link_mode)
  
@@ -150,7 +150,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  netdev_tx_t mlx5e_xmit(struct sk_buff *skb, struct net_device *dev);
  netdev_tx_t mlx5e_xmit_multi_tc(struct sk_buff *skb, struct net_device *dev);
  
-@@ -471,10 +483,22 @@ void mlx5e_init_eth_addr(struct mlx5e_priv *priv);
+@@ -473,10 +485,22 @@ void mlx5e_init_eth_addr(struct mlx5e_priv *priv);
  void mlx5e_set_rx_mode_core(struct mlx5e_priv *priv);
  void mlx5e_set_rx_mode_work(struct work_struct *work);
  
@@ -177,7 +177,7 @@ diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en_ethtool.c b/drivers/net/
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx5/core/en_ethtool.c
 +++ b/drivers/net/ethernet/mellanox/mlx5/core/en_ethtool.c
-@@ -737,8 +737,10 @@ const struct ethtool_ops mlx5e_ethtool_ops = {
+@@ -740,8 +740,10 @@ const struct ethtool_ops mlx5e_ethtool_ops = {
  	.get_ethtool_stats = mlx5e_get_ethtool_stats,
  	.get_ringparam     = mlx5e_get_ringparam,
  	.set_ringparam     = mlx5e_set_ringparam,
@@ -319,7 +319,7 @@ diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en_main.c b/drivers/net/eth
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx5/core/en_main.c
 +++ b/drivers/net/ethernet/mellanox/mlx5/core/en_main.c
-@@ -1233,6 +1233,9 @@ static void mlx5e_close_rqt(struct mlx5e_priv *priv)
+@@ -1240,6 +1240,9 @@ static void mlx5e_close_rqt(struct mlx5e_priv *priv)
  static void mlx5e_build_tir_ctx(struct mlx5e_priv *priv, u32 *tirc, int tt)
  {
  	void *hfso = MLX5_ADDR_OF(tirc, tirc, rx_hash_field_selector_outer);
@@ -329,7 +329,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  #define ROUGH_MAX_L2_L3_HDR_SZ 256
  
-@@ -1272,10 +1275,24 @@ static void mlx5e_build_tir_ctx(struct mlx5e_priv *priv, u32 *tirc, int tt)
+@@ -1279,10 +1282,24 @@ static void mlx5e_build_tir_ctx(struct mlx5e_priv *priv, u32 *tirc, int tt)
  		MLX5_SET(tirc, tirc, rx_hash_fn,
  			 MLX5_TIRC_RX_HASH_FN_HASH_TOEPLITZ);
  		MLX5_SET(tirc, tirc, rx_hash_symmetric, 1);
@@ -354,7 +354,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		break;
  	}
  
-@@ -1512,12 +1529,20 @@ static int mlx5e_close(struct net_device *netdev)
+@@ -1520,12 +1537,20 @@ static int mlx5e_close(struct net_device *netdev)
  	return err;
  }
  
@@ -372,10 +372,10 @@ index xxxxxxx..xxxxxxx xxxxxx
 +	struct net_device_stats *stats = &priv->netdev_stats;
 +#endif
 +
- 	mlx5e_update_stats(priv);
- 
  	stats->rx_packets = vstats->rx_packets;
-@@ -1580,12 +1605,19 @@ static struct net_device_ops mlx5e_netdev_ops = {
+ 	stats->rx_bytes   = vstats->rx_bytes;
+ 	stats->tx_packets = vstats->tx_packets;
+@@ -1586,12 +1611,19 @@ static struct net_device_ops mlx5e_netdev_ops = {
  	.ndo_open                = mlx5e_open,
  	.ndo_stop                = mlx5e_close,
  	.ndo_start_xmit          = mlx5e_xmit,
@@ -395,7 +395,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  };
  
  static int mlx5e_check_required_hca_cap(struct mlx5_core_dev *mdev)
-@@ -1698,15 +1730,20 @@ static void mlx5e_build_netdev(struct net_device *netdev)
+@@ -1705,15 +1737,20 @@ static void mlx5e_build_netdev(struct net_device *netdev)
  	if (!!MLX5_CAP_ETH(mdev, lro_cap))
  		netdev->vlan_features    |= NETIF_F_LRO;
  

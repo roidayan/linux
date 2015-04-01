@@ -59,6 +59,7 @@
 #define MLX5E_PARAMS_DEFAULT_RX_HASH_LOG_TBL_SZ         0x7
 
 #define MLX5E_TX_CQ_POLL_BUDGET        128
+#define MLX5E_UPDATE_STATS_INTERVAL    200 /* msecs */
 
 static const char vport_strings[][ETH_GSTRING_LEN] = {
 	/* vport statistics */
@@ -400,6 +401,7 @@ struct mlx5e_priv {
 	spinlock_t                 async_events_spinlock; /* sync hw events */
 	struct work_struct         update_carrier_work;
 	struct work_struct         set_rx_mode_work;
+	struct delayed_work        update_stats_work;
 
 	struct mlx5_core_dev      *mdev;
 	struct net_device         *netdev;
