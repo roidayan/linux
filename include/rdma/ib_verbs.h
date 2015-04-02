@@ -804,6 +804,7 @@ enum ib_wc_opcode {
 	IB_WC_FAST_REG_MR,
 	IB_WC_MASKED_COMP_SWAP,
 	IB_WC_MASKED_FETCH_ADD,
+	IB_WC_REG_INDIR_MR,
 /*
  * Set value of IB_WC_RECV so consumers can test if a completion is a
  * receive by testing (opcode & IB_WC_RECV).
