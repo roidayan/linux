@@ -210,6 +210,31 @@ static const char main_strings[][ETH_GSTRING_LEN] = {
 	/* flow control statistics tx */
 	"tx_pause", "tx_pause_duration", "tx_pause_transition",
 
+	/* VF statistics */
+	"rx_multicast_packets",
+	"rx_broadcast_packets",
+	"rx_filtered",
+	"tx_multicast_packets",
+	"tx_broadcast_packets",
+	"tx_dropped",
+
+	/* VPort statistics */
+	"vport_rx_unicast_packets",
+	"vport_rx_unicast_bytes",
+	"vport_rx_multicast_packets",
+	"vport_rx_multicast_bytes",
+	"vport_rx_broadcast_packets",
+	"vport_rx_broadcast_bytes",
+	"vport_rx_dropped",
+	"vport_rx_filtered",
+	"vport_tx_unicast_packets",
+	"vport_tx_unicast_bytes",
+	"vport_tx_multicast_packets",
+	"vport_tx_multicast_bytes",
+	"vport_tx_broadcast_packets",
+	"vport_tx_broadcast_bytes",
+	"vport_tx_dropped",
+
 	/* packet statistics */
 	"rx_multicast_packets",
 	"rx_broadcast_packets",
@@ -437,6 +462,16 @@ static void mlx4_en_get_ethtool_stats(struct net_device *dev,
 		if (bitmap_iterator_test(&it))
 			data[index++] = ((u64 *)&priv->tx_flowstats)[i];
 
+	for (i = 0; i < NUM_VF_STATS; i++,
+			bitmap_iterator_inc(&it))
+		if (bitmap_iterator_test(&it))
+			data[index++] = ((unsigned long *)&priv->vf_stats)[i];
+
+	for (i = 0; i < NUM_VPORT_STATS; i++,
+			bitmap_iterator_inc(&it))
+		if (bitmap_iterator_test(&it))
+			data[index++] = ((unsigned long *)&priv->vport_stats)[i];
+
 	for (i = 0; i < NUM_PKT_STATS; i++, bitmap_iterator_inc(&it))
 		if (bitmap_iterator_test(&it))
 			data[index++] = ((unsigned long *)&priv->pkstats)[i];
@@ -498,6 +533,18 @@ static void mlx4_en_get_strings(struct net_device *dev,
 				       main_strings[strings]);
 
 		for (i = 0; i < NUM_FLOW_STATS; i++, strings++,
+		     bitmap_iterator_inc(&it))
+			if (bitmap_iterator_test(&it))
+				strcpy(data + (index++) * ETH_GSTRING_LEN,
+				       main_strings[strings]);
+
+		for (i = 0; i < NUM_VF_STATS; i++, strings++,
+		     bitmap_iterator_inc(&it))
+			if (bitmap_iterator_test(&it))
+				strcpy(data + (index++) * ETH_GSTRING_LEN,
+				       main_strings[strings]);
+
+		for (i = 0; i < NUM_VPORT_STATS; i++, strings++,
 		     bitmap_iterator_inc(&it))
 			if (bitmap_iterator_test(&it))
 				strcpy(data + (index++) * ETH_GSTRING_LEN,

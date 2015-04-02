@@ -49,6 +49,7 @@
 #include "mlx4.h"
 #include "fw.h"
 #include "icm.h"
+#include "mlx4_stats.h"
 
 MODULE_AUTHOR("Roland Dreier");
 MODULE_DESCRIPTION("Mellanox ConnectX HCA low-level driver");
@@ -3334,6 +3335,75 @@ u8 mlx4_get_default_counter_index(struct mlx4_dev *dev, int slave, int port)
 
 	return (u8)new_counter_index->index;
 }
+
+int mlx4_get_vport_ethtool_stats(struct mlx4_dev *dev, int port,
+			 struct mlx4_en_vport_stats *vport_stats,
+			 int reset, int *read_counters)
+{
+	struct mlx4_priv *priv = mlx4_priv(dev);
+	struct mlx4_cmd_mailbox *if_stat_mailbox = NULL;
+	union  mlx4_counter *counter;
+	int err = 0;
+	u32 if_stat_in_mod;
+	struct counter_index *vport, *tmp_vport;
+
+	if (!vport_stats)
+		return -EINVAL;
+
+	if_stat_mailbox = mlx4_alloc_cmd_mailbox(dev);
+	if (IS_ERR(if_stat_mailbox)) {
+		err = PTR_ERR(if_stat_mailbox);
+		return err;
+	}
+
+	mutex_lock(&priv->counters_table.mutex);
+	list_for_each_entry_safe(vport, tmp_vport,
+				 &priv->counters_table.global_port_list[port - 1],
+				 list) {
+		if (vport->index == MLX4_SINK_COUNTER_INDEX)
+			continue;
+
+		memset(if_stat_mailbox->buf, 0, sizeof(union  mlx4_counter));
+		if_stat_in_mod = (vport->index & 0xff) | ((reset & 1) << 31);
+		err = mlx4_cmd_box(dev, 0, if_stat_mailbox->dma,
+				   if_stat_in_mod, 0,
+				   MLX4_CMD_QUERY_IF_STAT,
+				   MLX4_CMD_TIME_CLASS_C,
+				   MLX4_CMD_NATIVE);
+		if (err) {
+			mlx4_dbg(dev, "%s: failed to read statistics for counter index %d\n",
+				 __func__, vport->index);
+			goto if_stat_out;
+		}
+		counter = (union mlx4_counter *)if_stat_mailbox->buf;
+		if ((counter->control.cnt_mode & 0xf) == 1) {
+			vport_stats->rx_broadcast_packets += be64_to_cpu(counter->ext.counters[0].IfRxBroadcastFrames);
+			vport_stats->rx_unicast_packets += be64_to_cpu(counter->ext.counters[0].IfRxUnicastFrames);
+			vport_stats->rx_multicast_packets += be64_to_cpu(counter->ext.counters[0].IfRxMulticastFrames);
+			vport_stats->tx_broadcast_packets += be64_to_cpu(counter->ext.counters[0].IfTxBroadcastFrames);
+			vport_stats->tx_unicast_packets += be64_to_cpu(counter->ext.counters[0].IfTxUnicastFrames);
+			vport_stats->tx_multicast_packets += be64_to_cpu(counter->ext.counters[0].IfTxMulticastFrames);
+			vport_stats->rx_broadcast_bytes += be64_to_cpu(counter->ext.counters[0].IfRxBroadcastOctets);
+			vport_stats->rx_unicast_bytes += be64_to_cpu(counter->ext.counters[0].IfRxUnicastOctets);
+			vport_stats->rx_multicast_bytes += be64_to_cpu(counter->ext.counters[0].IfRxMulticastOctets);
+			vport_stats->tx_broadcast_bytes += be64_to_cpu(counter->ext.counters[0].IfTxBroadcastOctets);
+			vport_stats->tx_unicast_bytes += be64_to_cpu(counter->ext.counters[0].IfTxUnicastOctets);
+			vport_stats->tx_multicast_bytes += be64_to_cpu(counter->ext.counters[0].IfTxMulticastOctets);
+			vport_stats->rx_filtered += be64_to_cpu(counter->ext.counters[0].IfRxErrorFrames);
+			vport_stats->rx_dropped += be64_to_cpu(counter->ext.counters[0].IfRxNoBufferFrames);
+			vport_stats->tx_dropped += be64_to_cpu(counter->ext.counters[0].IfTxDroppedFrames);
+			if (read_counters)
+				(*read_counters)++;
+		}
+	}
+
+if_stat_out:
+	mutex_unlock(&priv->counters_table.mutex);
+	mlx4_free_cmd_mailbox(dev, if_stat_mailbox);
+
+	return err;
+}
+EXPORT_SYMBOL_GPL(mlx4_get_vport_ethtool_stats);
 
 void mlx4_set_admin_guid(struct mlx4_dev *dev, __be64 guid, int entry, int port)
 {

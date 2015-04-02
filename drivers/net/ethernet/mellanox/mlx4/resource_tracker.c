@@ -4230,16 +4230,7 @@ int mlx4_QUERY_IF_STAT_wrapper(struct mlx4_dev *dev, int slave,
 			       struct mlx4_cmd_mailbox *outbox,
 			       struct mlx4_cmd_info *cmd)
 {
-	int err;
-	int index = vhcr->in_modifier & 0xffff;
-
-	err = get_res(dev, slave, index, RES_COUNTER, NULL);
-	if (err)
-		return err;
-
-	err = mlx4_DMA_wrapper(dev, slave, vhcr, inbox, outbox, cmd);
-	put_res(dev, slave, index, RES_COUNTER);
-	return err;
+	return mlx4_DMA_wrapper(dev, slave, vhcr, inbox, outbox, cmd);
 }
 
 static void detach_qp(struct mlx4_dev *dev, int slave, struct res_qp *rqp)

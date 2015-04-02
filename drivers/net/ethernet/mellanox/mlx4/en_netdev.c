@@ -1436,7 +1436,10 @@ static void mlx4_en_do_get_stats(struct work_struct *work)
 	mutex_lock(&mdev->state_lock);
 	if (mdev->device_up) {
 		if (priv->port_up) {
-			err = mlx4_en_DUMP_ETH_STATS(mdev, priv->port, 0);
+			if (mlx4_is_slave(mdev->dev))
+				err = mlx4_en_get_vport_stats(mdev, priv->port);
+			else
+				err = mlx4_en_DUMP_ETH_STATS(mdev, priv->port, 0);
 			if (err)
 				en_dbg(HW, priv, "Could not update stats\n");
 
@@ -2704,6 +2707,14 @@ void mlx4_en_set_stats_bitmap(struct mlx4_dev *dev,
 					rx_ppp, rx_pause,
 					tx_ppp, tx_pause);
 	last_i += NUM_FLOW_STATS;
+
+	if (mlx4_is_slave(dev))
+		bitmap_set(stats_bitmap->bitmap, last_i, NUM_VF_STATS);
+	last_i += NUM_VF_STATS;
+
+	if (mlx4_is_master(dev))
+		bitmap_set(stats_bitmap->bitmap, last_i, NUM_VPORT_STATS);
+	last_i += NUM_VPORT_STATS;
 
 	if (!mlx4_is_slave(dev))
 		bitmap_set(stats_bitmap->bitmap, last_i, NUM_PKT_STATS);
