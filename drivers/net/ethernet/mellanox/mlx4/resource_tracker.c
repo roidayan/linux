@@ -705,6 +705,29 @@ static void update_gid(struct mlx4_dev *dev, struct mlx4_cmd_mailbox *inbox,
 	}
 }
 
+static int check_counter_index_validity(struct mlx4_dev *dev, int slave, int port, int idx)
+{
+	struct mlx4_priv *priv = mlx4_priv(dev);
+	struct counter_index *counter, *tmp_counter;
+
+	if (slave == 0) {
+		list_for_each_entry_safe(counter, tmp_counter,
+					 &priv->counters_table.global_port_list[port - 1],
+					 list) {
+			if (counter->index == idx)
+				return 0;
+		}
+	} else {
+		list_for_each_entry_safe(counter, tmp_counter,
+					 &priv->counters_table.vf_list[slave - 1][port - 1],
+					 list) {
+			if (counter->index == idx)
+				return 0;
+		}
+	}
+	return -EINVAL;
+}
+
 static int update_vport_qp_param(struct mlx4_dev *dev,
 				 struct mlx4_cmd_mailbox *inbox,
 				 u8 slave, u32 qpn)
@@ -719,6 +742,13 @@ static int update_vport_qp_param(struct mlx4_dev *dev,
 	priv = mlx4_priv(dev);
 	vp_oper = &priv->mfunc.master.vf_oper[slave].vport[port];
 	qp_type	= (be32_to_cpu(qpc->flags) >> 16) & 0xff;
+
+	if (dev->caps.port_type[port] == MLX4_PORT_TYPE_ETH &&
+	    qpc->pri_path.counter_index != MLX4_SINK_COUNTER_INDEX) {
+		if (check_counter_index_validity(dev, slave, port,
+						 qpc->pri_path.counter_index))
+			return -EINVAL;
+	}
 
 	if (MLX4_VGT != vp_oper->state.default_vlan) {
 		/* the reserved QPs (special, proxy, tunnel)
@@ -2323,20 +2353,15 @@ static int counter_free_res(struct mlx4_dev *dev, int slave, int op, int cmd,
 			    u64 in_param, u64 *out_param, int port)
 {
 	int index;
-	int err;
 
 	if (op != RES_OP_RESERVE)
 		return -EINVAL;
 
 	index = get_param_l(&in_param);
-	err = rem_res_range(dev, slave, index, 1, RES_COUNTER, 0);
-	if (err)
-		return err;
 
 	__mlx4_counter_free(dev, slave, port, index);
-	mlx4_release_resource(dev, slave, RES_COUNTER, 1, 0);
 
-	return err;
+	return 0;
 }
 
 static int xrcdn_free_res(struct mlx4_dev *dev, int slave, int op, int cmd,
