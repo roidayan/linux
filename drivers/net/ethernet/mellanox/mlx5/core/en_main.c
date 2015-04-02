@@ -851,9 +851,12 @@ static void mlx5e_close_cq(struct mlx5e_cq *cq)
 
 static int mlx5e_get_cpu(struct mlx5e_priv *priv, int ix)
 {
-	int numa_node = priv->mdev->pdev->dev.numa_node;
+	int numa_node = dev_to_node(&priv->mdev->pdev->dev);
 	cpumask_var_t mask;
 	int ret;
+
+	if (numa_node == -1)
+		numa_node = first_online_node;
 
 	if (!zalloc_cpumask_var(&mask, GFP_KERNEL)) {
 		return -1;
@@ -1018,7 +1021,9 @@ static void mlx5e_build_rq_param(struct mlx5e_priv *priv,
 	MLX5_SET(wq, wq, log_wq_sz,        priv->params.log_rq_size);
 	MLX5_SET(wq, wq, pd,               priv->pdn);
 
-	param->wq.numa   = priv->mdev->pdev->dev.numa_node;
+	param->wq.numa   = dev_to_node(&priv->mdev->pdev->dev);
+	if (param->wq.numa == -1)
+		param->wq.numa = first_online_node;
 	param->wq.linear = 1;
 }
 
@@ -1032,7 +1037,9 @@ static void mlx5e_build_sq_param(struct mlx5e_priv *priv,
 	MLX5_SET(wq, wq, log_wq_stride, ilog2(MLX5_SEND_WQE_BB));
 	MLX5_SET(wq, wq, pd,            priv->pdn);
 
-	param->wq.numa = priv->mdev->pdev->dev.numa_node;
+	param->wq.numa = dev_to_node(&priv->mdev->pdev->dev);
+	if (param->wq.numa == -1)
+		param->wq.numa = first_online_node;
 }
 
 static void mlx5e_build_common_cq_param(struct mlx5e_priv *priv,
