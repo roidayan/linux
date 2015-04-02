@@ -1600,6 +1600,13 @@ int mlx4_en_start_port(struct net_device *dev)
 	}
 	mdev->mac_removed[priv->port] = 0;
 
+	/* gets default allocated counter index from func cap */
+	/* or sink counter index if no resources */
+	priv->counter_index = mdev->dev->caps.def_counter_index[priv->port - 1];
+
+	en_dbg(DRV, priv, "%s: default counter index %d for port %d\n",
+	       __func__, priv->counter_index, priv->port);
+
 	err = mlx4_en_config_rss_steer(priv);
 	if (err) {
 		en_err(priv, "Failed configuring rss steering\n");
@@ -2730,6 +2737,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
 
 	priv = netdev_priv(dev);
 	memset(priv, 0, sizeof(struct mlx4_en_priv));
+	priv->counter_index = 0xff;
 	spin_lock_init(&priv->stats_lock);
 	INIT_WORK(&priv->rx_mode_task, mlx4_en_do_set_rx_mode);
 	INIT_WORK(&priv->watchdog_task, mlx4_en_restart);
