@@ -967,6 +967,7 @@ static int create_qp_common(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 	unsigned long flags;
 	int inlen = sizeof(*in);
 	int err;
+	int st;
 
 	mlx5_ib_odp_create_qp(qp);
 
@@ -1066,8 +1067,13 @@ static int create_qp_common(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 	if (is_sqp(init_attr->qp_type))
 		qp->port = init_attr->port_num;
 
-	in->ctx.flags = cpu_to_be32(to_mlx5_st(init_attr->qp_type) << 16 |
-				    MLX5_QP_PM_MIGRATED << 11);
+	st = to_mlx5_st(init_attr->qp_type);
+	if (st < 0) {
+		mlx5_ib_warn(dev, "invalid service type\n");
+		err = st;
+		goto err_create;
+	}
+	in->ctx.flags |= cpu_to_be32(st << 16 | MLX5_QP_PM_MIGRATED << 11);
 
 	if (init_attr->qp_type != MLX5_IB_QPT_REG_UMR)
 		in->ctx.flags_pd = cpu_to_be32(to_mpd(pd ? pd : devr->p0)->pdn);
