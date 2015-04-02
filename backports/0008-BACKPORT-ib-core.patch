@@ -13,7 +13,7 @@ Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
  drivers/infiniband/core/mad.c              |    3 +
  drivers/infiniband/core/netlink.c          |   23 +++++
  drivers/infiniband/core/roce_gid_cache.c   |    4 +
- drivers/infiniband/core/roce_gid_mgmt.c    |   72 +++++++++++++++-
+ drivers/infiniband/core/roce_gid_mgmt.c    |   75 ++++++++++++++++-
  drivers/infiniband/core/sa_query.c         |   19 ++++
  drivers/infiniband/core/ucm.c              |   38 +++++++++
  drivers/infiniband/core/ucma.c             |   76 +++++++++++++++++
@@ -28,7 +28,7 @@ Signed-off-by: Alaa Hleihel <alaa@mellanox.com>
  include/rdma/ib_umem.h                     |    2 +
  include/rdma/ib_umem_odp.h                 |    4 +
  include/rdma/ib_verbs.h                    |    5 +
- 24 files changed, 749 insertions(+), 9 deletions(-)
+ 24 files changed, 752 insertions(+), 9 deletions(-)
 
 diff --git a/drivers/infiniband/core/addr.c b/drivers/infiniband/core/addr.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -747,29 +747,35 @@ index xxxxxxx..xxxxxxx xxxxxx
  	}
  
  	return BONDING_SLAVE_STATE_NA;
-@@ -159,16 +164,37 @@ static enum bonding_slave_state is_eth_active_slave_of_bonding(struct net_device
+@@ -159,6 +164,8 @@ static enum bonding_slave_state is_eth_active_slave_of_bonding(struct net_device
  static bool is_upper_dev_rcu(struct net_device *dev, struct net_device *upper)
  {
  	struct net_device *_upper = NULL;
 +	bool ret;
 +#ifdef HAVE_NETDEV_FOR_EACH_ALL_UPPER_DEV_RCU
  	struct list_head *iter;
-+#endif
  
-+#if defined(HAVE_NETDEV_FOR_EACH_ALL_UPPER_DEV_RCU) || defined(HAVE_NETDEV_MASTER_UPPER_DEV_GET_RCU)
  	rcu_read_lock();
-+#ifdef HAVE_NETDEV_FOR_EACH_ALL_UPPER_DEV_RCU
- 	netdev_for_each_all_upper_dev_rcu(dev, _upper, iter) {
+@@ -166,9 +173,31 @@ static bool is_upper_dev_rcu(struct net_device *dev, struct net_device *upper)
  		if (_upper == upper)
  			break;
  	}
 +	ret = (_upper == upper);
++	rcu_read_unlock();
 +#else
 +	{
 +		struct net_device *rdev_upper = rdma_vlan_dev_real_dev(upper);
 +		struct net_device *rdev_dev = rdma_vlan_dev_real_dev(dev);
-+		struct net_device *master = netdev_master_upper_dev_get_rcu(dev);
-+
++		struct net_device *master;
+ 
++#ifdef HAVE_NETDEV_MASTER_UPPER_DEV_GET_RCU
++	rcu_read_lock();
++#endif
++	master = netdev_master_upper_dev_get_rcu(dev);
++#ifdef HAVE_NETDEV_MASTER_UPPER_DEV_GET_RCU
+ 	rcu_read_unlock();
+-	return _upper == upper;
++#endif
 +		if (!upper || !dev)
 +			ret = false;
 +		else
@@ -777,16 +783,13 @@ index xxxxxxx..xxxxxxx xxxxxx
 +			      (rdev_upper && (rdev_upper == master)) ||
 +			      (rdev_upper == dev);
 +	}
-+#endif
- 
- 	rcu_read_unlock();
--	return _upper == upper;
++
 +#endif
 +	return ret;
  }
  
  static int _is_eth_port_of_netdev(struct ib_device *ib_dev, u8 port,
-@@ -212,11 +238,15 @@ static int is_eth_port_inactive_slave(struct ib_device *ib_dev, u8 port,
+@@ -212,11 +241,15 @@ static int is_eth_port_inactive_slave(struct ib_device *ib_dev, u8 port,
  	if (!idev)
  		return 0;
  
@@ -802,7 +805,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	return res;
  }
-@@ -379,7 +409,11 @@ static void enum_netdev_ipv6_ips(struct ib_device *ib_dev,
+@@ -379,7 +412,11 @@ static void enum_netdev_ipv6_ips(struct ib_device *ib_dev,
  		return;
  
  	read_lock_bh(&in6_dev->lock);
@@ -814,7 +817,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		struct sin6_list *entry = kzalloc(sizeof(*entry), GFP_ATOMIC);
  
  		if (!entry) {
-@@ -426,9 +460,11 @@ static void del_netdev_ips(struct ib_device *ib_dev, u8 port,
+@@ -426,9 +463,11 @@ static void del_netdev_ips(struct ib_device *ib_dev, u8 port,
  	roce_del_all_netdev_gids(ib_dev, port, ndev);
  }
  
@@ -826,7 +829,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct net_device *ndev = (struct net_device *)cookie;
  	struct net_device *rdev = rdma_vlan_dev_real_dev(ndev);
  
-@@ -436,7 +472,7 @@ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
+@@ -436,7 +475,7 @@ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
  		rdev = ndev;
  
  	if (idev == rdev) {
@@ -835,7 +838,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		struct list_head *iter;
  		struct roce_netdev_list *upper_iter;
  		struct roce_netdev_list *upper_temp;
-@@ -451,6 +487,7 @@ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
+@@ -451,6 +490,7 @@ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
  			e->ndev = idev;
  			dev_hold(idev);
  		}
@@ -843,7 +846,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		rcu_read_lock();
  		netdev_for_each_all_upper_dev_rcu(idev, upper, iter) {
  			struct roce_netdev_list *entry = kmalloc(sizeof(*entry),
-@@ -466,7 +503,26 @@ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
+@@ -466,7 +506,26 @@ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
  			entry->ndev = upper;
  		}
  		rcu_read_unlock();
@@ -871,7 +874,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		roce_sync_all_netdev_gids(ib_dev, port, &upper_list);
  
  		list_for_each_entry_safe(upper_iter, upper_temp, &upper_list,
-@@ -476,7 +532,9 @@ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
+@@ -476,7 +535,9 @@ static void del_netdev_upper_ips(struct ib_device *ib_dev, u8 port,
  			kfree(upper_iter);
  		}
  	}
@@ -881,7 +884,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static void del_netdev_default_ips(struct ib_device *ib_dev, u8 port,
  				   struct net_device *idev, void *cookie)
-@@ -497,8 +555,10 @@ static int netdevice_event(struct notifier_block *this, unsigned long event,
+@@ -497,8 +558,10 @@ static int netdevice_event(struct notifier_block *this, unsigned long event,
  		.cb = del_netdev_default_ips, .filter = is_eth_port_inactive_slave};
  	static const struct netdev_event_work_cmd bonding_event_ips_del_cmd = {
  		.cb = del_netdev_ips, .filter = bonding_slaves_filter};
@@ -892,7 +895,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct net_device *ndev = netdev_notifier_info_to_dev(ptr);
  	struct netdev_event_work *ndev_work;
  	struct netdev_event_work_cmd cmds[ROCE_NETDEV_CALLBACK_SZ] = { {NULL} };
-@@ -526,10 +586,12 @@ static int netdevice_event(struct notifier_block *this, unsigned long event,
+@@ -526,10 +589,12 @@ static int netdevice_event(struct notifier_block *this, unsigned long event,
  		cmds[1] = add_cmd;
  		break;
  
@@ -905,7 +908,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	case NETDEV_BONDING_FAILOVER:
  		cmds[0] = bonding_event_ips_del_cmd;
-@@ -756,6 +818,10 @@ void __exit roce_gid_mgmt_cleanup(void)
+@@ -756,6 +821,10 @@ void __exit roce_gid_mgmt_cleanup(void)
  	 * so no issue with remaining hardware contexts.
  	 */
  	synchronize_rcu();
