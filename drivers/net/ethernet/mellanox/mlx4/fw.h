@@ -156,6 +156,7 @@ struct mlx4_func_cap {
 	u8	port_flags;
 	u8	flags1;
 	u64	phys_port_id;
+	u8	def_counter_index;
 	u32	extra_flags;
 };
 

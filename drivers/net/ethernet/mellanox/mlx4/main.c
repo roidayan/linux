@@ -1141,6 +1141,8 @@ static int mlx4_dev_cap(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
 		dev->caps.function_caps |= MLX4_FUNC_CAP_64B_EQE_CQE;
 
 	if (!mlx4_is_slave(dev)) {
+		for (i = 0; i < dev->caps.num_ports; ++i)
+			dev->caps.def_counter_index[i] = i << 1;
 		mlx4_enable_cqe_eqe_stride(dev);
 		dev->caps.alloc_res_qp_mask =
 			(dev->caps.bf_reg_size ? MLX4_RESERVE_ETH_BF_QP : 0) |
@@ -1453,6 +1455,7 @@ static int mlx4_slave_cap(struct mlx4_dev *dev)
 		dev->caps.qp0_proxy[i - 1] = func_cap.qp0_proxy_qpn;
 		dev->caps.qp1_tunnel[i - 1] = func_cap.qp1_tunnel_qpn;
 		dev->caps.qp1_proxy[i - 1] = func_cap.qp1_proxy_qpn;
+		dev->caps.def_counter_index[i - 1] = func_cap.def_counter_index;
 		dev->caps.port_mask[i] = dev->caps.port_type[i];
 		dev->caps.phys_port_id[i] = func_cap.phys_port_id;
 		if (mlx4_get_slave_pkey_gid_tbl_len(dev, i,
@@ -3307,6 +3310,29 @@ int __mlx4_clear_if_stat(struct mlx4_dev *dev,
 
 	mlx4_free_cmd_mailbox(dev, if_stat_mailbox);
 	return err;
+}
+
+u8 mlx4_get_default_counter_index(struct mlx4_dev *dev, int slave, int port)
+{
+	struct mlx4_priv *priv = mlx4_priv(dev);
+	struct counter_index *new_counter_index;
+
+	mutex_lock(&priv->counters_table.mutex);
+	if (slave == 0) {
+		new_counter_index = list_entry(priv->counters_table.global_port_list[port - 1].next,
+					       struct counter_index,
+					       list);
+	} else {
+		new_counter_index = list_entry(priv->counters_table.vf_list[slave - 1][port - 1].next,
+					       struct counter_index,
+					       list);
+	}
+	mutex_unlock(&priv->counters_table.mutex);
+
+	mlx4_dbg(dev, "%s: return counter index %d for slave %d port %d\n",
+		 __func__, new_counter_index->index, slave, port);
+
+	return (u8)new_counter_index->index;
 }
 
 void mlx4_set_admin_guid(struct mlx4_dev *dev, __be64 guid, int entry, int port)

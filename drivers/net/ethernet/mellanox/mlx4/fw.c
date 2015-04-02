@@ -287,6 +287,7 @@ int mlx4_QUERY_FUNC_CAP_wrapper(struct mlx4_dev *dev, int slave,
 #define QUERY_FUNC_CAP_PRIV_VF_QKEY_OFFSET	0x4
 #define QUERY_FUNC_CAP_FLAGS0_OFFSET		0x8
 #define QUERY_FUNC_CAP_FLAGS1_OFFSET		0xc
+#define QUERY_FUNC_CAP_COUNTER_INDEX_OFFSET	0xd
 
 #define QUERY_FUNC_CAP_QP0_TUNNEL		0x10
 #define QUERY_FUNC_CAP_QP0_PROXY		0x14
@@ -297,6 +298,7 @@ int mlx4_QUERY_FUNC_CAP_wrapper(struct mlx4_dev *dev, int slave,
 #define QUERY_FUNC_CAP_FLAGS1_FORCE_MAC		0x40
 #define QUERY_FUNC_CAP_FLAGS1_FORCE_VLAN	0x80
 #define QUERY_FUNC_CAP_FLAGS1_NIC_INFO			0x10
+#define QUERY_FUNC_CAP_PROPS_DEF_COUNTER	0x20
 #define QUERY_FUNC_CAP_VF_ENABLE_QP0		0x08
 
 #define QUERY_FUNC_CAP_FLAGS0_FORCE_PHY_WQE_GID 0x80
@@ -322,6 +324,7 @@ int mlx4_QUERY_FUNC_CAP_wrapper(struct mlx4_dev *dev, int slave,
 
 		/* Set nic_info bit to mark new fields support */
 		field  = QUERY_FUNC_CAP_FLAGS1_NIC_INFO;
+		field |= QUERY_FUNC_CAP_PROPS_DEF_COUNTER; /* def counter */
 
 		if (mlx4_vf_smi_enabled(dev, slave, port) &&
 		    !mlx4_get_parav_qkey(dev, proxy_qp, &qkey)) {
@@ -330,6 +333,10 @@ int mlx4_QUERY_FUNC_CAP_wrapper(struct mlx4_dev *dev, int slave,
 				 QUERY_FUNC_CAP_PRIV_VF_QKEY_OFFSET);
 		}
 		MLX4_PUT(outbox->buf, field, QUERY_FUNC_CAP_FLAGS1_OFFSET);
+
+		/* There is always default counter legal or sink counter */
+		field = mlx4_get_default_counter_index(dev, slave, vhcr->in_modifier);
+		MLX4_PUT(outbox->buf, field, QUERY_FUNC_CAP_COUNTER_INDEX_OFFSET);
 
 		/* size is now the QP number */
 		size = dev->phys_caps.base_tunnel_sqpn + 8 * slave + port - 1;
@@ -432,7 +439,7 @@ int mlx4_QUERY_FUNC_CAP(struct mlx4_dev *dev, u8 gen_or_port,
 {
 	struct mlx4_cmd_mailbox *mailbox;
 	u32			*outbox;
-	u8			field, op_modifier;
+	u8			field, field1, op_modifier;
 	u32			size, qkey;
 	int			err = 0, quotas = 0;
 	u32                     in_modifier;
@@ -569,6 +576,14 @@ int mlx4_QUERY_FUNC_CAP(struct mlx4_dev *dev, u8 gen_or_port,
 	if (func_cap->physical_port != gen_or_port) {
 		err = -ENOSYS;
 		goto out;
+	}
+
+	MLX4_GET(field, outbox, QUERY_FUNC_CAP_FLAGS1_OFFSET);
+	if (field & QUERY_FUNC_CAP_PROPS_DEF_COUNTER) {
+		MLX4_GET(field1, outbox, QUERY_FUNC_CAP_COUNTER_INDEX_OFFSET);
+		func_cap->def_counter_index = field1;
+	} else {
+		func_cap->def_counter_index = MLX4_SINK_COUNTER_INDEX;
 	}
 
 	if (func_cap->flags1 & QUERY_FUNC_CAP_VF_ENABLE_QP0) {
