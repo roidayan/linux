@@ -3,19 +3,72 @@ Subject: [PATCH] BACKPORT: mlx5
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
+ drivers/infiniband/hw/mlx5/main.c                  |    8 +++
  drivers/infiniband/hw/mlx5/mr.c                    |    7 +++
  drivers/net/ethernet/mellanox/mlx5/core/cmd.c      |   26 +++++++++++
  drivers/net/ethernet/mellanox/mlx5/core/en.h       |   24 ++++++++++
  .../net/ethernet/mellanox/mlx5/core/en_ethtool.c   |    4 ++
  .../ethernet/mellanox/mlx5/core/en_flow_table.c    |   44 ++++++++++++++++++
  drivers/net/ethernet/mellanox/mlx5/core/en_main.c  |   48 ++++++++++++++++++++
- drivers/net/ethernet/mellanox/mlx5/core/en_rx.c    |   10 ++++
- drivers/net/ethernet/mellanox/mlx5/core/en_tx.c    |   22 +++++++++
+ drivers/net/ethernet/mellanox/mlx5/core/en_rx.c    |   12 +++++
+ drivers/net/ethernet/mellanox/mlx5/core/en_tx.c    |   27 +++++++++++
  drivers/net/ethernet/mellanox/mlx5/core/main.c     |   23 +++++++++
  include/linux/compat-3.5.h                         |   14 ++++++
  include/linux/mlx5/driver.h                        |    5 ++
- 11 files changed, 227 insertions(+), 0 deletions(-)
+ 12 files changed, 242 insertions(+), 0 deletions(-)
 
+diff --git a/drivers/infiniband/hw/mlx5/main.c b/drivers/infiniband/hw/mlx5/main.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/hw/mlx5/main.c
++++ b/drivers/infiniband/hw/mlx5/main.c
+@@ -658,6 +658,7 @@ static int get_pg_order(unsigned long offset)
+ 	return get_arg(offset);
+ }
+ 
++#if defined(HAVE_PUT_TASK_STRUCT_EXPORTED) && defined (HAVE_GET_TASK_PID_EXPORTED) && defined(HAVE_GET_PID_TASK_EXPORTED)
+ static void  mlx5_ib_vma_open(struct vm_area_struct *area)
+ {
+ 	/* vma_open is called when a new VMA is created on top of our VMA.
+@@ -769,6 +770,7 @@ static int mlx5_ib_set_vma_data(struct vm_area_struct *vma,
+ 
+ 	return 0;
+ }
++#endif /* defined(HAVE_PUT_TASK_STRUCT_EXPORTED) && defined (HAVE_GET_TASK_PID_EXPORTED) && defined(HAVE_GET_PID_TASK_EXPORTED) */
+ 
+ static inline bool mlx5_writecombine_available(void)
+ {
+@@ -786,7 +788,9 @@ static int uar_mmap(struct vm_area_struct *vma, pgprot_t prot, bool is_wc,
+ {
+ 	unsigned long idx;
+ 	phys_addr_t pfn;
++#if defined(HAVE_PUT_TASK_STRUCT_EXPORTED) && defined (HAVE_GET_TASK_PID_EXPORTED) && defined(HAVE_GET_PID_TASK_EXPORTED)
+ 	int err;
++#endif
+ 
+ 	if (vma->vm_end - vma->vm_start != PAGE_SIZE)
+ 		return -EINVAL;
+@@ -804,9 +808,11 @@ static int uar_mmap(struct vm_area_struct *vma, pgprot_t prot, bool is_wc,
+ 			       PAGE_SIZE, vma->vm_page_prot))
+ 		return -EAGAIN;
+ 
++#if defined(HAVE_PUT_TASK_STRUCT_EXPORTED) && defined (HAVE_GET_TASK_PID_EXPORTED) && defined(HAVE_GET_PID_TASK_EXPORTED)
+ 	err = mlx5_ib_set_vma_data(vma, context);
+ 	if (err)
+ 		return err;
++#endif
+ 
+ 	mlx5_ib_dbg(dev, "mapped %s at 0x%lx, PA 0x%llx\n", is_wc ? "WC" : "NC",
+ 		    vma->vm_start, (unsigned long long)pfn << PAGE_SHIFT);
+@@ -1715,7 +1721,9 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
+ 	dev->ib_dev.check_mr_status	= mlx5_ib_check_mr_status;
+ 	dev->ib_dev.alloc_indir_reg_list = mlx5_ib_alloc_indir_reg_list;
+ 	dev->ib_dev.free_indir_reg_list  = mlx5_ib_free_indir_reg_list;
++#if defined(HAVE_PUT_TASK_STRUCT_EXPORTED) && defined (HAVE_GET_TASK_PID_EXPORTED) && defined(HAVE_GET_PID_TASK_EXPORTED)
+ 	dev->ib_dev.disassociate_ucontext = mlx5_ib_disassociate_ucontext;
++#endif
+ 
+ 	mlx5_ib_internal_fill_odp_caps(dev);
+ 
 diff --git a/drivers/infiniband/hw/mlx5/mr.c b/drivers/infiniband/hw/mlx5/mr.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/hw/mlx5/mr.c
@@ -470,7 +523,11 @@ diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en_rx.c b/drivers/net/ether
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx5/core/en_rx.c
 +++ b/drivers/net/ethernet/mellanox/mlx5/core/en_rx.c
-@@ -147,11 +147,15 @@ static void mlx5e_lro_update_hdr(struct sk_buff *skb, struct mlx5_cqe64 *cqe)
+@@ -144,15 +144,21 @@ static void mlx5e_lro_update_hdr(struct sk_buff *skb, struct mlx5_cqe64 *cqe)
+ 	/* TODO: handle tcp checksum */
+ }
+ 
++#ifdef HAVE_NETIF_F_RXHASH
  static inline void mlx5e_skb_set_hash(struct mlx5_cqe64 *cqe,
  				      struct sk_buff *skb)
  {
@@ -484,9 +541,11 @@ index xxxxxxx..xxxxxxx xxxxxx
 +	skb->rxhash = be32_to_cpu(cqe->rss_hash_result);
 +#endif
  }
++#endif
  
  static inline void mlx5e_build_rx_skb(struct mlx5_cqe64 *cqe,
-@@ -186,12 +190,18 @@ static inline void mlx5e_build_rx_skb(struct mlx5_cqe64 *cqe,
+ 				      struct mlx5e_rq *rq,
+@@ -186,12 +192,18 @@ static inline void mlx5e_build_rx_skb(struct mlx5_cqe64 *cqe,
  
  	skb_record_rx_queue(skb, rq->ix);
  
@@ -509,7 +568,7 @@ diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en_tx.c b/drivers/net/ether
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx5/core/en_tx.c
 +++ b/drivers/net/ethernet/mellanox/mlx5/core/en_tx.c
-@@ -69,8 +69,20 @@ static inline void mlx5e_dma_get(struct mlx5e_sq *sq, u32 i, dma_addr_t *addr,
+@@ -69,15 +69,32 @@ static inline void mlx5e_dma_get(struct mlx5e_sq *sq, u32 i, dma_addr_t *addr,
  	*size = sq->dma_fifo[i & sq->dma_fifo_mask].size;
  }
  
@@ -530,7 +589,19 @@ index xxxxxxx..xxxxxxx xxxxxx
  {
  	struct mlx5e_priv *priv = netdev_priv(dev);
  	int channel_ix = fallback(dev, skb);
-@@ -91,7 +103,11 @@ static inline u16 mlx5e_get_inline_hdr_size(struct mlx5e_sq *sq,
++#ifdef HAVE_NETDEV_GET_PRIO_TC_MAP
+ 	int up = skb_vlan_tag_present(skb)        ?
+ 		 skb->vlan_tci >> VLAN_PRIO_SHIFT :
+ 		 priv->default_vlan_prio;
+ 	int tc = netdev_get_prio_tc_map(dev, up);
++#else
++	/* TODO: QoS and traffic class is not fully implemented */
++	int tc = 1;
++#endif
+ 
+ 	return (tc << priv->order_base_2_num_channels) | channel_ix;
+ }
+@@ -91,7 +108,11 @@ static inline u16 mlx5e_get_inline_hdr_size(struct mlx5e_sq *sq,
  
  	/* inline improves latency but hearts message rate */
  	/* TODO: review if !skb->sk is ok indication for packet forwarding */
@@ -542,7 +613,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		return MLX5E_MIN_INLINE;
  
  	if (!skb_shinfo(skb)->nr_frags && (skb_headlen(skb) < MLX5E_MAX_INLINE))
-@@ -108,7 +124,11 @@ static inline void mlx5e_insert_vlan(void *start, struct sk_buff *skb, u16 ihs)
+@@ -108,7 +129,11 @@ static inline void mlx5e_insert_vlan(void *start, struct sk_buff *skb, u16 ihs)
  
  	skb_copy_from_linear_data(skb, vhdr, cpy1_sz);
  	skb_pull_inline(skb, cpy1_sz);
@@ -554,7 +625,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	vhdr->h_vlan_TCI = cpu_to_be16(skb_vlan_tag_get(skb));
  	skb_copy_from_linear_data(skb, &vhdr->h_vlan_encapsulated_proto,
  				  cpy2_sz);
-@@ -231,7 +251,9 @@ static netdev_tx_t mlx5e_sq_xmit(struct mlx5e_sq *sq, struct sk_buff *skb)
+@@ -231,7 +256,9 @@ static netdev_tx_t mlx5e_sq_xmit(struct mlx5e_sq *sq, struct sk_buff *skb)
  		sq->stats.stopped++;
  	}
  
