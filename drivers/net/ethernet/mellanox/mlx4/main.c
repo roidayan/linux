@@ -96,6 +96,13 @@ int ingress_parser_mode = MLX4_INGRESS_PARSER_MODE_STANDARD;
 module_param(ingress_parser_mode, int, 0444);
 MODULE_PARM_DESC(ingress_parser_mode, "Mode of ingress parser for ConnectX3-Pro. 0 - standard. 1 - checksum for non TCP/UDP. (default: standard)");
 
+char roce_mode_str[MLX4_DBDF2VAL_STR_SIZE];
+module_param_string(roce_mode, roce_mode_str,
+		    sizeof(roce_mode_str), 0444);
+MODULE_PARM_DESC(roce_mode,
+		 "A single value (e.g. 1) to define uniform RoCE_mode value for all devices\n"
+		 "\t\tor a string to map device function numbers to their RoCE mode value (e.g. '0000:04:00.0-0,002b:1c:0b.a-1').\n"
+		 "\t\tAllowed values are 0 for RoCEv1 (default), 1 for RoCEv1.5 and 2 for RoCEv2");
 enum {
 	DEFAULT_DOMAIN	= 0,
 	BDF_STR_SIZE	= 8, /* bb:dd.f- */
@@ -2537,6 +2544,10 @@ static void choose_roce_mode(struct mlx4_dev *dev,
 		MLX4_ROCE_NOT_SUPPORTED;
 	enum mlx4_set_roce_mode
 		supported_roce_mode[2]; /* supported modes for ud_gid_type */
+
+	if (strlen(roce_mode_str))
+		pr_warn("mlx4_core: The module parameter roce_mode is deprecated and will be ignored\n"
+			"Please use roce_backward_compatibility_mode to set RoCE protocol version support for a device\n");
 
 	mlx4_get_val(roce_backward_compatibility_mode.dbdf2val.tbl, pci_physfn(dev->persist->pdev), 0, &pref_v1);
 
