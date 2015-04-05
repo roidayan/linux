@@ -2590,7 +2590,7 @@ static void choose_roce_mode(struct mlx4_dev *dev,
 	 */
 	if (set_roce_mode != supported_roce_mode[0] &&
 	    set_roce_mode != supported_roce_mode[1])
-		pr_warn("mlx4_core: gid_type %d for UD QPs is not suppoted by the device\n", gid_type);
+		pr_warn("mlx4_core: gid_type %d for UD QPs is not supported by the device\n", gid_type);
 	dev->caps.ud_gid_type = gid_type;
 	dev->caps.rr_proto = mlx4_roce_proto_config;
 }
