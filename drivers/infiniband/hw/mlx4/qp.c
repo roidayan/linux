@@ -2830,11 +2830,13 @@ static int build_mlx_header(struct mlx4_ib_sqp *sqp, struct ib_send_wr *wr,
 				err = -ENOENT;
 			if (!err) {
 				is_udp = (gid_attr.gid_type == IB_GID_TYPE_ROCE_V2) ? true : false;
-				if (ipv6_addr_v4mapped((struct in6_addr *)&sgid))
-					ip_version = 4;
-				else
-					ip_version = 6;
-				is_grh = false;
+				if (gid_attr.gid_type != IB_GID_TYPE_IB) {
+					is_grh = false;
+					if (ipv6_addr_v4mapped((struct in6_addr *)&sgid))
+						ip_version = 4;
+					else
+						ip_version = 6;
+				}
 			} else {
 				return err;
 			}
@@ -2867,7 +2869,8 @@ static int build_mlx_header(struct mlx4_ib_sqp *sqp, struct ib_send_wr *wr,
 		sqp->ud_header.grh.hop_limit = ip_version ? IPV6_DEFAULT_HOPLIMIT : 1;
 		if (is_eth) {
 			memcpy(sqp->ud_header.grh.source_gid.raw, sgid.raw, 16);
-			sqp->ud_header.grh.next_header     = is_udp ? IPPROTO_UDP : mibdev->dev->caps.rr_proto;
+			sqp->ud_header.grh.next_header     = is_grh ?
+								0x1b : (is_udp ? IPPROTO_UDP : mibdev->dev->caps.rr_proto);
 		} else {
 			sqp->ud_header.grh.next_header     = 0x1b;
 			if (mlx4_is_mfunc(to_mdev(ib_dev)->dev)) {
