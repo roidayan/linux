@@ -1044,10 +1044,12 @@ static inline int mlx4_is_eth(struct mlx4_dev *dev, int port)
 
 int mlx4_buf_alloc(struct mlx4_dev *dev, int size, int max_direct,
 		   struct mlx4_buf *buf, gfp_t gfp);
+int mlx4_buf_direct_alloc(struct mlx4_dev *dev, int size,
+			  struct mlx4_buf *buf, gfp_t gfp);
 void mlx4_buf_free(struct mlx4_dev *dev, int size, struct mlx4_buf *buf);
 static inline void *mlx4_buf_offset(struct mlx4_buf *buf, int offset)
 {
-	if (BITS_PER_LONG == 64 || buf->nbufs == 1)
+	if (buf->nbufs == 1)
 		return buf->direct.buf + offset;
 	else
 		return buf->page_list[offset >> PAGE_SHIFT].buf +
@@ -1087,7 +1089,7 @@ int mlx4_db_alloc(struct mlx4_dev *dev, struct mlx4_db *db, int order,
 void mlx4_db_free(struct mlx4_dev *dev, struct mlx4_db *db);
 
 int mlx4_alloc_hwq_res(struct mlx4_dev *dev, struct mlx4_hwq_resources *wqres,
-		       int size, int max_direct);
+		       int size);
 void mlx4_free_hwq_res(struct mlx4_dev *mdev, struct mlx4_hwq_resources *wqres,
 		       int size);
 
