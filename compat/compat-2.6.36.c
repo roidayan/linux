@@ -50,13 +50,7 @@ EXPORT_SYMBOL_GPL(schedule_delayed_work_on);
 
 void flush_scheduled_work(void)
 {
-	/*
-	 * It is debatable which one we should prioritize first, lets
-	 * go with the old kernel's one first for now (keventd_wq) and
-	 * if think its reasonable later we can flip this around.
-	 */
 	flush_workqueue(system_wq);
-	flush_scheduled_work();
 }
 EXPORT_SYMBOL_GPL(flush_scheduled_work);
 
