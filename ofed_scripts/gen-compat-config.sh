@@ -16,8 +16,9 @@ fi
 
 KERNEL_VERSION=$(${MAKE} -C ${KLIB_BUILD} kernelversion | sed -n 's/^\([0-9]\)\..*/\1/p')
 
-# 3.0 kernel stuff
-COMPAT_LATEST_VERSION="19"
+# 4.0/3.0 kernel stuff
+COMPAT_LATEST_3_VERSION="19"
+COMPAT_LATEST_4_VERSION="0"
 KERNEL_SUBLEVEL="-1"
 
 function set_config {
@@ -53,6 +54,8 @@ function is_kernel_symbol_exported {
 
 if [[ ${KERNEL_VERSION} -eq "3" ]]; then
 	KERNEL_SUBLEVEL=$(${MAKE} -C ${KLIB_BUILD} kernelversion | sed -n 's/^3\.\([0-9]\+\).*/\1/p')
+elif [[ ${KERNEL_VERSION} -eq "4" ]]; then
+	KERNEL_SUBLEVEL=$(${MAKE} -C ${KLIB_BUILD} kernelversion | sed -n 's/^4\.\([0-9]\+\).*/\1/p')
 else
 	COMPAT_26LATEST_VERSION="39"
 	KERNEL_26SUBLEVEL=$(${MAKE} -C ${KLIB_BUILD} kernelversion | sed -n 's/^2\.6\.\([0-9]\+\).*/\1/p')
@@ -64,8 +67,13 @@ else
 fi
 
 let KERNEL_SUBLEVEL=${KERNEL_SUBLEVEL}+1
-for i in $(seq ${KERNEL_SUBLEVEL} ${COMPAT_LATEST_VERSION}); do
-	set_config CONFIG_COMPAT_KERNEL_3_${i} y
+if [[ ${KERNEL_VERSION} -ne "4" ]]; then
+	for i in $(seq ${KERNEL_SUBLEVEL} ${COMPAT_LATEST_3_VERSION}); do
+		set_config CONFIG_COMPAT_KERNEL_3_${i} y
+	done
+fi
+for i in $(seq ${KERNEL_SUBLEVEL} ${COMPAT_LATEST_4_VERSION}); do
+	set_config CONFIG_COMPAT_KERNEL_4_${i} y
 done
 
 # The purpose of these seem to be the inverse of the above other varibales.

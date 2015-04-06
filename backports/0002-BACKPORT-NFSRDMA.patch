@@ -3,13 +3,13 @@ Subject: [PATCH] BACKPORT: NFSRDMA
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- net/sunrpc/xprtrdma/rpc_rdma.c           |   20 +++++++++++++++-
- net/sunrpc/xprtrdma/svc_rdma_recvfrom.c  |   10 ++++++++
- net/sunrpc/xprtrdma/svc_rdma_sendto.c    |    8 ++++++
- net/sunrpc/xprtrdma/svc_rdma_transport.c |   12 ++++++++++
- net/sunrpc/xprtrdma/transport.c          |   36 ++++++++++++++++++++++++++---
- net/sunrpc/xprtrdma/verbs.c              |    8 +++---
- 6 files changed, 84 insertions(+), 10 deletions(-)
+ net/sunrpc/xprtrdma/rpc_rdma.c           |   20 ++++++++-
+ net/sunrpc/xprtrdma/svc_rdma_recvfrom.c  |   70 +++++++++++++++++++++++++++++-
+ net/sunrpc/xprtrdma/svc_rdma_sendto.c    |    8 +++
+ net/sunrpc/xprtrdma/svc_rdma_transport.c |   18 ++++++++
+ net/sunrpc/xprtrdma/transport.c          |   36 ++++++++++++++--
+ net/sunrpc/xprtrdma/verbs.c              |    8 ++--
+ 6 files changed, 148 insertions(+), 12 deletions(-)
 
 diff --git a/net/sunrpc/xprtrdma/rpc_rdma.c b/net/sunrpc/xprtrdma/rpc_rdma.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -82,7 +82,31 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	/* We should never run out of SGE because the limit is defined to
  	 * support the max allowed RPC data length
-@@ -168,7 +172,9 @@ static int rdma_read_chunk_lcl(struct svcxprt_rdma *xprt,
+@@ -136,7 +140,10 @@ typedef int (*rdma_reader_fn)(struct svcxprt_rdma *xprt,
+ 			      int last);
+ 
+ /* Issue an RDMA_READ using the local lkey to map the data sink */
+-static int rdma_read_chunk_lcl(struct svcxprt_rdma *xprt,
++#ifndef HAVE_SVCXPRT_RDMA_SC_READER
++static
++#endif
++int rdma_read_chunk_lcl(struct svcxprt_rdma *xprt,
+ 			       struct svc_rqst *rqstp,
+ 			       struct svc_rdma_op_ctxt *head,
+ 			       int *page_no,
+@@ -144,7 +151,11 @@ static int rdma_read_chunk_lcl(struct svcxprt_rdma *xprt,
+ 			       u32 rs_handle,
+ 			       u32 rs_length,
+ 			       u64 rs_offset,
++#ifndef HAVE_SVCXPRT_RDMA_SC_READER
+ 			       int last)
++#else
++			       bool last)
++#endif
+ {
+ 	struct ib_send_wr read_wr;
+ 	int pages_needed = PAGE_ALIGN(*page_offset + rs_length) >> PAGE_SHIFT;
+@@ -168,7 +179,9 @@ static int rdma_read_chunk_lcl(struct svcxprt_rdma *xprt,
  		if (!pg_off)
  			head->count++;
  		rqstp->rq_respages = &rqstp->rq_arg.pages[pg_no+1];
@@ -92,7 +116,31 @@ index xxxxxxx..xxxxxxx xxxxxx
  		ctxt->sge[pno].addr =
  			ib_dma_map_page(xprt->sc_cm_id->device,
  					head->arg.pages[pg_no], pg_off,
-@@ -273,7 +279,9 @@ static int rdma_read_chunk_frmr(struct svcxprt_rdma *xprt,
+@@ -229,7 +242,10 @@ static int rdma_read_chunk_lcl(struct svcxprt_rdma *xprt,
+ }
+ 
+ /* Issue an RDMA_READ using an FRMR to map the data sink */
+-static int rdma_read_chunk_frmr(struct svcxprt_rdma *xprt,
++#ifndef HAVE_SVCXPRT_RDMA_SC_READER
++static
++#endif
++int rdma_read_chunk_frmr(struct svcxprt_rdma *xprt,
+ 				struct svc_rqst *rqstp,
+ 				struct svc_rdma_op_ctxt *head,
+ 				int *page_no,
+@@ -237,7 +253,11 @@ static int rdma_read_chunk_frmr(struct svcxprt_rdma *xprt,
+ 				u32 rs_handle,
+ 				u32 rs_length,
+ 				u64 rs_offset,
++#ifndef HAVE_SVCXPRT_RDMA_SC_READER
+ 				int last)
++#else
++				bool last)
++#endif
+ {
+ 	struct ib_send_wr read_wr;
+ 	struct ib_send_wr inv_wr;
+@@ -273,7 +293,9 @@ static int rdma_read_chunk_frmr(struct svcxprt_rdma *xprt,
  		if (!pg_off)
  			head->count++;
  		rqstp->rq_respages = &rqstp->rq_arg.pages[pg_no+1];
@@ -102,7 +150,102 @@ index xxxxxxx..xxxxxxx xxxxxx
  		frmr->page_list->page_list[pno] =
  			ib_dma_map_page(xprt->sc_cm_id->device,
  					head->arg.pages[pg_no], 0,
-@@ -483,7 +491,9 @@ static int rdma_read_complete(struct svc_rqst *rqstp,
+@@ -365,24 +387,50 @@ static int rdma_read_chunk_frmr(struct svcxprt_rdma *xprt,
+ 	return ret;
+ }
+ 
++#ifndef HAVE_SVC_RDMA_RCL_CHUNK_COUNTS
++static unsigned int
++rdma_rcl_chunk_count(struct rpcrdma_read_chunk *ch)
++{
++	unsigned int count;
++
++	for (count = 0; ch->rc_discrim != xdr_zero; ch++)
++		count++;
++	return count;
++}
++#endif
++
+ static int rdma_read_chunks(struct svcxprt_rdma *xprt,
+ 			    struct rpcrdma_msg *rmsgp,
+ 			    struct svc_rqst *rqstp,
+ 			    struct svc_rdma_op_ctxt *head)
+ {
++#ifdef HAVE_SVC_RDMA_RCL_CHUNK_COUNTS
+ 	int page_no, ch_count, ret;
++#else
++	int page_no, ret;
++#endif
+ 	struct rpcrdma_read_chunk *ch;
++#ifndef HAVE_SVCXPRT_RDMA_SC_READER
+ 	u32 page_offset, byte_count;
+ 	u64 rs_offset;
+ 	rdma_reader_fn reader;
++#else
++	u32 handle, page_offset, byte_count;
++	u64 rs_offset;
++	bool last;
++#endif
+ 
+ 	/* If no read list is present, return 0 */
+ 	ch = svc_rdma_get_read_chunk(rmsgp);
+ 	if (!ch)
+ 		return 0;
+ 
++#ifdef HAVE_SVC_RDMA_RCL_CHUNK_COUNTS
+ 	svc_rdma_rcl_chunk_counts(ch, &ch_count, &byte_count);
+ 	if (ch_count > RPCSVC_MAXPAGES)
++#else
++	if (rdma_rcl_chunk_count(ch) > RPCSVC_MAXPAGES)
++#endif
+ 		return -EINVAL;
+ 
+ 	/* The request is completed when the RDMA_READs complete. The
+@@ -398,27 +446,43 @@ static int rdma_read_chunks(struct svcxprt_rdma *xprt,
+ 	head->arg.len = rqstp->rq_arg.len;
+ 	head->arg.buflen = rqstp->rq_arg.buflen;
+ 
++#ifndef HAVE_SVCXPRT_RDMA_SC_READER
+ 	/* Use FRMR if supported */
+ 	if (xprt->sc_dev_caps & SVCRDMA_DEVCAP_FAST_REG)
+ 		reader = rdma_read_chunk_frmr;
+ 	else
+ 		reader = rdma_read_chunk_lcl;
++#endif
+ 
+ 	page_no = 0; page_offset = 0;
+ 	for (ch = (struct rpcrdma_read_chunk *)&rmsgp->rm_body.rm_chunks[0];
+ 	     ch->rc_discrim != 0; ch++) {
+ 
++#ifdef HAVE_SVCXPRT_RDMA_SC_READER
++		handle = be32_to_cpu(ch->rc_target.rs_handle);
++		byte_count = be32_to_cpu(ch->rc_target.rs_length);
++#endif
+ 		xdr_decode_hyper((__be32 *)&ch->rc_target.rs_offset,
+ 				 &rs_offset);
++#ifndef HAVE_SVCXPRT_RDMA_SC_READER
+ 		byte_count = ntohl(ch->rc_target.rs_length);
++#endif
+ 
+ 		while (byte_count > 0) {
++#ifndef HAVE_SVCXPRT_RDMA_SC_READER
+ 			ret = reader(xprt, rqstp, head,
+ 				     &page_no, &page_offset,
+ 				     ntohl(ch->rc_target.rs_handle),
+ 				     byte_count, rs_offset,
+ 				     ((ch+1)->rc_discrim == 0) /* last */
+ 				     );
++#else
++			last = (ch + 1)->rc_discrim == xdr_zero;
++			ret = xprt->sc_reader(xprt, rqstp, head,
++					      &page_no, &page_offset,
++					      handle, byte_count,
++					      rs_offset, last);
++#endif
+ 			if (ret < 0)
+ 				goto err;
+ 			byte_count -= ret;
+@@ -483,7 +547,9 @@ static int rdma_read_complete(struct svc_rqst *rqstp,
  
  	/* rq_respages starts after the last arg page */
  	rqstp->rq_respages = &rqstp->rq_arg.pages[page_no];
@@ -195,7 +338,24 @@ index xxxxxxx..xxxxxxx xxxxxx
  	INIT_LIST_HEAD(&cma_xprt->sc_accept_q);
  	INIT_LIST_HEAD(&cma_xprt->sc_dto_q);
  	INIT_LIST_HEAD(&cma_xprt->sc_rq_dto_q);
-@@ -1205,10 +1215,12 @@ static int svc_rdma_has_wspace(struct svc_xprt *xprt)
+@@ -970,10 +980,16 @@ static struct svc_xprt *svc_rdma_accept(struct svc_xprt *xprt)
+ 	 * NB:	iWARP requires remote write access for the data sink
+ 	 *	of an RDMA_READ. IB does not.
+ 	 */
++#ifdef HAVE_SVCXPRT_RDMA_SC_READER
++	newxprt->sc_reader = rdma_read_chunk_lcl;
++#endif
+ 	if (devattr.device_cap_flags & IB_DEVICE_MEM_MGT_EXTENSIONS) {
+ 		newxprt->sc_frmr_pg_list_len =
+ 			devattr.max_fast_reg_page_list_len;
+ 		newxprt->sc_dev_caps |= SVCRDMA_DEVCAP_FAST_REG;
++#ifdef HAVE_SVCXPRT_RDMA_SC_READER
++		newxprt->sc_reader = rdma_read_chunk_frmr;
++#endif
+ 	}
+ 
+ 	/*
+@@ -1205,10 +1221,12 @@ static int svc_rdma_has_wspace(struct svc_xprt *xprt)
  	return 1;
  }
  

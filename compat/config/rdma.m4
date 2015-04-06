@@ -172,6 +172,38 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(no)
 	])
 
+	AC_MSG_CHECKING([if svcxprt_rdma has sc_reader])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/sunrpc/svc_rdma.h>
+	],[
+		struct svcxprt_rdma x = {
+			.sc_reader = NULL,
+		};
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_SVCXPRT_RDMA_SC_READER, 1,
+			  [sc_reader defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if svc_rdma.h has svc_rdma_rcl_chunk_counts])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/sunrpc/svc_rdma.h>
+	],[
+		svc_rdma_rcl_chunk_counts(NULL, NULL, NULL);
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_SVC_RDMA_RCL_CHUNK_COUNTS, 1,
+			  [svc_rdma_rcl_chunk_counts defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
 	AC_MSG_CHECKING([if struct ifla_vf_info has max_tx_rate])
 	MLNX_BG_LB_LINUX_TRY_COMPILE([
 		#include <linux/if_link.h>
@@ -3125,6 +3157,23 @@ AC_DEFUN([LINUX_CONFIG_COMPAT],
 		AC_MSG_RESULT(yes)
 		MLNX_AC_DEFINE(HAVE_IB_SIGNATURE, 1,
 			  [ib_signature_type is defined])
+	],[
+		AC_MSG_RESULT(no)
+	])
+
+	AC_MSG_CHECKING([if string.h has strnicmp])
+	MLNX_BG_LB_LINUX_TRY_COMPILE([
+		#include <linux/string.h>
+	],[
+		char a[10] = "aaa";
+		char b[10] = "bbb";
+		strnicmp(a, b, sizeof(a));
+
+		return 0;
+	],[
+		AC_MSG_RESULT(yes)
+		MLNX_AC_DEFINE(HAVE_STRNICMP, 1,
+			  [strnicmp is defined])
 	],[
 		AC_MSG_RESULT(no)
 	])
