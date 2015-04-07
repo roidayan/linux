@@ -399,8 +399,12 @@ main()
 	                        NJOBS=`expr "x$1" : 'x[^=]*=\(.*\)'`
                         ;;
                         -j |--with-njobs)
-				shift
-	                        NJOBS=$1
+				if [[ $2 =~ ^[0-9]+ ]]; then
+					shift
+		                        NJOBS=$1
+				else
+		                        NJOBS=
+				fi
                         ;;
                         --force-autogen)
                         FORCE_AUTOGEN=1
