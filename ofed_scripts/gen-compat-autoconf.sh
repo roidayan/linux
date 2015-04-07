@@ -14,7 +14,7 @@
 
 # This indicates which is the oldest kernel we support
 # Update this if you are adding support for older kernels.
-OLDEST_KERNEL_SUPPORTED="2.6.24"
+OLDEST_KERNEL_SUPPORTED="2.6.18"
 
 if [ $# -ne 1 ]; then
 	echo "Usage $0 config-file"

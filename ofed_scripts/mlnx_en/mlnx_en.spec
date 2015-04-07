@@ -30,6 +30,8 @@
 %{!?KMP: %global KMP 0}
 
 %{!?MEMTRACK: %global MEMTRACK 0}
+%{!?MLX4: %global MLX4 1}
+%{!?MLX5: %global MLX5 1}
 
 %{!?KVERSION: %global KVERSION %(uname -r)}
 %global kernel_version %{KVERSION}
@@ -210,6 +212,12 @@ for flavor in %{flavors_to_build}; do
 	export MLNX_EN_PATCH_PARAMS="--kernel $KVERSION --kernel-sources $KSRC"
 	%if "%{MEMTRACK}" == "1"
 		export MLNX_EN_PATCH_PARAMS="$MLNX_EN_PATCH_PARAMS --with-memtrack"
+	%endif
+	%if "%{MLX4}" == "0"
+		export MLNX_EN_PATCH_PARAMS="$MLNX_EN_PATCH_PARAMS --without-mlx4"
+	%endif
+	%if "%{MLX5}" == "0"
+		export MLNX_EN_PATCH_PARAMS="$MLNX_EN_PATCH_PARAMS --without-mlx5"
 	%endif
 	find compat -type f -exec touch -t 200012201010 '{}' \; || true
 	./scripts/mlnx_en_patch.sh $MLNX_EN_PATCH_PARAMS %{?_smp_mflags}

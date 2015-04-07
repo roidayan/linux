@@ -78,6 +78,16 @@ parseparams() {
 				shift
 	                        NJOBS=$1
                         ;;
+			--without-mlx4)
+				CONFIG_MLX4_CORE=""
+				CONFIG_MLX4_EN=""
+				DEFINE_MLX4_CORE='#undef CONFIG_MLX4_CORE'
+				DEFINE_MLX4_EN='#undef CONFIG_MLX4_EN'
+			;;
+			--without-mlx5)
+				CONFIG_MLX5_CORE=""
+				DEFINE_MLX5_CORE='#undef CONFIG_MLX5_CORE'
+			;;
 			*)
 				echo "Bad input parameter: $1"
 				usage
@@ -104,6 +114,13 @@ WITH_PATCH=${WITH_PATCH:-"yes"}
 EXTRA_FLAGS=""
 CONFIG_MEMTRACK=""
 CONFIG_MLX4_EN_DCB=""
+CONFIG_MLX4_CORE="m"
+CONFIG_MLX4_EN="m"
+CONFIG_MLX5_CORE="m"
+DEFINE_MLX4_EN_DCB='#undef CONFIG_MLX4_EN_DCB'
+DEFINE_MLX4_CORE='#undef CONFIG_MLX4_CORE\n#define CONFIG_MLX4_CORE 1'
+DEFINE_MLX4_EN='#undef CONFIG_MLX4_EN\n#define CONFIG_MLX4_EN 1'
+DEFINE_MLX5_CORE='#undef CONFIG_MLX5_CORE\n#define CONFIG_MLX5_CORE 1'
 
 parseparams $@
 
@@ -115,18 +132,35 @@ CWD=$(pwd)
 CONFIG="config.mk"
 PATCH_DIR=${PATCH_DIR:-""}
 
-DEFINE_MLX4_EN_DCB='#undef CONFIG_MLX4_EN_DCB'
-check_autofconf CONFIG_DCB
-if [ X${CONFIG_DCB} == "X1" ]; then
-	CONFIG_MLX4_EN_DCB=y
-	DEFINE_MLX4_EN_DCB="#undef CONFIG_MLX4_EN_DCB\n#define CONFIG_MLX4_EN_DCB 1"
+if [ "X$CONFIG_MLX4_CORE" != "X" ]; then
+	check_autofconf CONFIG_DCB
+	if [ X${CONFIG_DCB} == "X1" ]; then
+		CONFIG_MLX4_EN_DCB=y
+		DEFINE_MLX4_EN_DCB="#undef CONFIG_MLX4_EN_DCB\n#define CONFIG_MLX4_EN_DCB 1"
+	fi
 fi
 
-
+case $KVERSION in
+	2.6.18*)
+	BACKPORT_INCLUDES="-I$CWD/backport_includes/2.6.18-EL5.2/include"
+	CONFIG_COMPAT_VERSION="-2.6.18"
+	CONFIG_COMPAT_KOBJECT_BACKPORT=y
+	if [ ! -e backports_applied-2.6.18 ]; then
+		echo "backports_applied-2.6.18 does not exist. running ofed_patch.sh"
+		ex ${CWD}/ofed_scripts/ofed_patch.sh --with-patchdir=backports${CONFIG_COMPAT_VERSION}
+		touch backports_applied-2.6.18
+	fi
+	;;
+	*)
+	;;
+esac
         # Create config.mk
         /bin/rm -f ${CWD}/${CONFIG}
         cat >> ${CWD}/${CONFIG} << EOFCONFIG
 KVERSION=${KVERSION}
+CONFIG_COMPAT_VERSION=${CONFIG_COMPAT_VERSION}
+CONFIG_COMPAT_KOBJECT_BACKPORT=${CONFIG_COMPAT_KOBJECT_BACKPORT}
+BACKPORT_INCLUDES=${BACKPORT_INCLUDES}
 ARCH=`uname -m`
 MODULES_DIR:=/lib/modules/${KVERSION}/updates
 KSRC:=${KSRC}
@@ -135,6 +169,9 @@ CWD=${CWD}
 MLNX_EN_EXTRA_CFLAGS:=${EXTRA_FLAGS}
 CONFIG_MEMTRACK:=${CONFIG_MEMTRACK}
 CONFIG_MLX4_EN_DCB:=${CONFIG_MLX4_EN_DCB}
+CONFIG_MLX4_CORE:=${CONFIG_MLX4_CORE}
+CONFIG_MLX4_EN:=${CONFIG_MLX4_EN}
+CONFIG_MLX5_CORE:=${CONFIG_MLX5_CORE}
 EOFCONFIG
 
 echo "Created ${CONFIG}:"
@@ -150,10 +187,21 @@ else
     mkdir -p ${CWD}/include/linux
 fi
 
+if [ ! -z "${CONFIG_COMPAT_VERSION}" ]; then
+	DEFINE_COMPAT_OLD_VERSION="#define CONFIG_COMPAT_VERSION ${CONFIG_COMPAT_VERSION}"
+fi
+
+if [ "X${CONFIG_COMPAT_KOBJECT_BACKPORT}" == "Xy" ]; then
+	DEFINE_COMPAT_KOBJECT_BACKPORT="#define CONFIG_COMPAT_KOBJECT_BACKPORT ${CONFIG_COMPAT_KOBJECT_BACKPORT}"
+fi
+
 cat >> ${AUTOCONF_H}<< EOFAUTO
-#define CONFIG_MLX4_CORE 1
-#define CONFIG_MLX4_EN 1
+$(echo -e "${DEFINE_MLX4_CORE}")
+$(echo -e "${DEFINE_MLX4_EN}")
 $(echo -e "${DEFINE_MLX4_EN_DCB}")
+$(echo -e "${DEFINE_MLX5_CORE}")
+$(echo -e "${DEFINE_COMPAT_OLD_VERSION}")
+$(echo -e "${DEFINE_COMPAT_KOBJECT_BACKPORT}")
 EOFAUTO
 
 echo "Running configure..."

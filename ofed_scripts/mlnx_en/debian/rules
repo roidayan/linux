@@ -15,6 +15,9 @@
 # Uncomment this to turn on verbose mode.
 #export DH_VERBOSE=1
 
+MLX4 ?= 1
+MLX5 ?= 1
+
 pname:=mlnx-en
 psource:=$(pname)
 pdkms:=$(pname)-dkms
@@ -52,7 +55,7 @@ override_dh_auto_install:
 	cp -a Makefile		debian/$(pdkms)/usr/src/$(pname)-$(pversion)
 	cp -a backports		debian/$(pdkms)/usr/src/$(pname)-$(pversion)
 	cp -a compat*		debian/$(pdkms)/usr/src/$(pname)-$(pversion)
-	cp -a dkms.conf		debian/$(pdkms)/usr/src/$(pname)-$(pversion)
+	with_mlx4=$(MLX4) with_mlx5=$(MLX5) $(CURDIR)/ofed_scripts/generate_mlnx_en_dkms_conf.sh > debian/$(pdkms)/usr/src/$(pname)-$(pversion)/dkms.conf
 	cp -a drivers		debian/$(pdkms)/usr/src/$(pname)-$(pversion)
 	cp -a include		debian/$(pdkms)/usr/src/$(pname)-$(pversion)
 	cp -a ofed_scripts	debian/$(pdkms)/usr/src/$(pname)-$(pversion)

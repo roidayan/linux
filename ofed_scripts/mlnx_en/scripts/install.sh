@@ -23,6 +23,8 @@ firmware_update_only=0
 fw_update_flags=
 config="/etc/mlnx-en.conf"
 skip_dist_check=0
+with_mlx4=1
+with_mlx5=1
 TMPDIR="/tmp"
 
 usage()
@@ -44,6 +46,8 @@ cat << EOF
 			                              - Note: Enable/Disable of SRIOV in a non-volatile configuration through uEFI
 			                                      and/or tool will override this flag.
 			 [--without-depcheck]         Skip Distro's libraries check
+			 [--without-mlx4]             Don't build/install mlx4 EN modules
+			 [--without-mlx5]             Don't build/install mlx5 EN modules
 EOF
 }
 
@@ -105,6 +109,11 @@ while [ ! -z "$1" ]; do
 			shift
 			TMPDIR=$1
 		;;
+		--without-mlx4)
+			with_mlx4=0
+		;;
+		--without-mlx5)
+			with_mlx5=0
 		*)
 			echo "Bad input parameter: $1"
 			usage
@@ -121,7 +130,7 @@ package_dir=`pwd`
 KVERSION=${KVERSION:-$KER_UNAME_R}
 KSRC=${KSRC:-"/lib/modules/${KVERSION}/build"}
 
-LOGFILE=$TMPDIR/install-mlx4_en.log.$$
+LOGFILE=$TMPDIR/install-mlx_en.log.$$
 
 ### Local functions
 
@@ -285,9 +294,9 @@ is_installed_deb()
 
 # Check that a previous version is loaded
 check_loaded_modules() {
-	if ( `/sbin/lsmod | grep mlx4 > /dev/null 2>&1`); then
+	if ( `/sbin/lsmod | grep mlx > /dev/null 2>&1`); then
 		if [ "$batch" == "no" ]; then
-			echo; echo "   In order for newly installed mlx4 modules to load, "
+			echo; echo "   In order for newly installed mlx modules to load, "
 			echo "   previous modules must first be unloaded."
 			echo -n "   Do you wish to reload the driver now? (y/n) [y] "
 			read force
@@ -297,11 +306,11 @@ check_loaded_modules() {
 		check_input $force
 		RC=$?
 		if [ $RC == 1 ]; then
-			echo "Reloading mlx4 modules"
+			echo "Reloading mlx modules"
 			/etc/init.d/mlnx-en.d restart
 		else
 			echo "WARNING: Loading the new installed modules could cause symbol confilcts"
-			echo "		 Please unload all prevoius versions of mlx4 modules"
+			echo "		 Please unload all prevoius versions of mlx modules"
 			echo
 		fi
 	fi
@@ -638,7 +647,7 @@ if [ "$dist_rpm" == "ubuntu" ] || [ "$dist_rpm" == "debian" ]; then
 			cd ${package}*
 			ENV_VARS=
 			if [ "X$package" == "Xmlnx-en" ]; then
-				ENV_VARS=""
+				ENV_VARS="MLX4=$with_mlx4 MLX5=$with_mlx5"
 			elif [ "X$package" == "Xmstflint" ]; then
 				ENV_VARS="DEB_CONFIGURE_EXTRA_FLAGS='--disable-inband'"
 			fi
@@ -654,7 +663,14 @@ if [ "$dist_rpm" == "ubuntu" ] || [ "$dist_rpm" == "debian" ]; then
 	# verify that the compilation passed successfully
 	if [ $build_only -eq 0 ]; then
 		/sbin/depmod >/dev/null 2>&1
-		for mod in mlx4_en mlx4_ib
+		mods=
+		if [ $with_mlx4 -eq 1 ]; then
+			mods="$mods mlx4_en mlx4_ib"
+		fi
+		if [ $with_mlx5 -eq 1 ]; then
+			mods="$mods mlx5_core"
+		fi
+		for mod in $mods
 		do
 			file=$(/sbin/modinfo $mod 2>/dev/null | grep filename | cut -d ":" -f 2 | sed -s 's/\s//g')
 			origin=
@@ -722,6 +738,8 @@ else # not ubuntu/debian
 	cmd="rpmbuild --rebuild \
 		 --define '_dist .${dist_rpm}' --define '_target_cpu $target_cpu' \
 		 --define 'KVERSION $KVERSION' --define 'KSRC $KSRC' \
+		 --define '_topdir $TOPDIR' --define 'MLX4 $with_mlx4' \
+		 --define '_topdir $TOPDIR' --define 'MLX5 $with_mlx5' \
 		 --define '_topdir $TOPDIR' --define 'MEMTRACK $with_memtrack'"
 
 	SRPM=`ls -1 ${package_dir}/SRPMS/mlnx-en*`
@@ -800,6 +818,14 @@ fi
 
 if [ $with_mlnx_tune -eq 1 ]; then
 	sed -i 's/RUN_MLNX_TUNE=no/RUN_MLNX_TUNE=yes/' $config
+fi
+
+if [ $with_mlx4 -eq 0 ]; then
+	sed -i 's/MLX4_LOAD=yes/MLX4_LOAD=no/' $config
+fi
+
+if [ $with_mlx5 -eq 0 ]; then
+	sed -i 's/MLX5_LOAD=yes/MLX5_LOAD=no/' $config
 fi
 
 if [ $update_firmware -eq 1 ]; then
