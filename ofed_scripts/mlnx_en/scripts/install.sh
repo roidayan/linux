@@ -114,6 +114,7 @@ while [ ! -z "$1" ]; do
 		;;
 		--without-mlx5)
 			with_mlx5=0
+		;;
 		*)
 			echo "Bad input parameter: $1"
 			usage
