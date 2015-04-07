@@ -255,6 +255,22 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 {
 	return query_device(ibdev, props, 0);
 }
+
+static enum rdma_link_layer
+mlx5_ib_port_link_layer(struct ib_device *device, u8 port_num)
+{
+	struct mlx5_ib_dev *dev = to_mdev(device);
+
+	switch (MLX5_CAP_GEN(dev->mdev, port_type)) {
+	case MLX5_CAP_PORT_TYPE_IB:
+		return IB_LINK_LAYER_INFINIBAND;
+	case MLX5_CAP_PORT_TYPE_ETH:
+		return IB_LINK_LAYER_ETHERNET;
+	default:
+		return IB_LINK_LAYER_UNSPECIFIED;
+	}
+}
+
 int mlx5_ib_query_port(struct ib_device *ibdev, u8 port,
 		       struct ib_port_attr *props)
 {
@@ -1671,6 +1687,7 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 
 	dev->ib_dev.query_device	= mlx5_ib_query_device;
 	dev->ib_dev.query_port		= mlx5_ib_query_port;
+	dev->ib_dev.get_link_layer	= mlx5_ib_port_link_layer;
 	dev->ib_dev.query_gid		= mlx5_ib_query_gid;
 	dev->ib_dev.query_pkey		= mlx5_ib_query_pkey;
 	dev->ib_dev.modify_device	= mlx5_ib_modify_device;
