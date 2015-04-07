@@ -3,19 +3,19 @@ Subject: [PATCH] BACKPORT: mlx5
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- drivers/infiniband/hw/mlx5/main.c                  |    8 +++
- drivers/infiniband/hw/mlx5/mr.c                    |    7 +++
- drivers/net/ethernet/mellanox/mlx5/core/cmd.c      |   26 +++++++++++
- drivers/net/ethernet/mellanox/mlx5/core/en.h       |   24 ++++++++++
- .../net/ethernet/mellanox/mlx5/core/en_ethtool.c   |    4 ++
- .../ethernet/mellanox/mlx5/core/en_flow_table.c    |   44 ++++++++++++++++++
- drivers/net/ethernet/mellanox/mlx5/core/en_main.c  |   48 ++++++++++++++++++++
- drivers/net/ethernet/mellanox/mlx5/core/en_rx.c    |   12 +++++
- drivers/net/ethernet/mellanox/mlx5/core/en_tx.c    |   27 +++++++++++
- drivers/net/ethernet/mellanox/mlx5/core/main.c     |   23 +++++++++
- include/linux/compat-3.5.h                         |   14 ++++++
+ drivers/infiniband/hw/mlx5/main.c                  |    8 ++
+ drivers/infiniband/hw/mlx5/mr.c                    |    7 ++
+ drivers/net/ethernet/mellanox/mlx5/core/cmd.c      |   26 +++++++
+ drivers/net/ethernet/mellanox/mlx5/core/en.h       |   24 +++++++
+ .../net/ethernet/mellanox/mlx5/core/en_ethtool.c   |    4 +
+ .../ethernet/mellanox/mlx5/core/en_flow_table.c    |   44 ++++++++++++
+ drivers/net/ethernet/mellanox/mlx5/core/en_main.c  |   70 ++++++++++++++++++++
+ drivers/net/ethernet/mellanox/mlx5/core/en_rx.c    |   12 ++++
+ drivers/net/ethernet/mellanox/mlx5/core/en_tx.c    |   27 ++++++++
+ drivers/net/ethernet/mellanox/mlx5/core/main.c     |   23 +++++++
+ include/linux/compat-3.5.h                         |   14 ++++
  include/linux/mlx5/driver.h                        |    5 ++
- 12 files changed, 242 insertions(+), 0 deletions(-)
+ 12 files changed, 264 insertions(+), 0 deletions(-)
 
 diff --git a/drivers/infiniband/hw/mlx5/main.c b/drivers/infiniband/hw/mlx5/main.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -456,7 +456,19 @@ index xxxxxxx..xxxxxxx xxxxxx
  	stats->rx_packets = vstats->rx_packets;
  	stats->rx_bytes   = vstats->rx_bytes;
  	stats->tx_packets = vstats->tx_packets;
-@@ -1593,12 +1622,19 @@ static struct net_device_ops mlx5e_netdev_ops = {
+@@ -1574,7 +1603,11 @@ static int mlx5e_set_mac(struct net_device *netdev, void *addr)
+ }
+ 
+ static int mlx5e_set_features(struct net_device *netdev,
++#ifdef HAVE_NET_DEVICE_OPS_EXT
++			      u32 features)
++#else
+ 			      netdev_features_t features)
++#endif
+ {
+ 	struct mlx5e_priv *priv = netdev_priv(netdev);
+ 	netdev_features_t changes = features ^ netdev->features;
+@@ -1593,13 +1626,26 @@ static struct net_device_ops mlx5e_netdev_ops = {
  	.ndo_open                = mlx5e_open,
  	.ndo_stop                = mlx5e_close,
  	.ndo_start_xmit          = mlx5e_xmit,
@@ -469,14 +481,21 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.ndo_set_mac_address     = mlx5e_set_mac,
  	.ndo_vlan_rx_add_vid	 = mlx5e_vlan_rx_add_vid,
  	.ndo_vlan_rx_kill_vid	 = mlx5e_vlan_rx_kill_vid,
-+#ifdef HAVE_NDO_SET_FEATURES
++#if (defined(HAVE_NDO_SET_FEATURES) && !defined(HAVE_NET_DEVICE_OPS_EXT))
  	.ndo_set_features        = mlx5e_set_features,
-+//TODO: use RH ext ops struct if available like mlx4 do
 +#endif
++};
++
++#ifdef HAVE_NET_DEVICE_OPS_EXT
++static const struct net_device_ops_ext mlx5_netdev_ops_ext = {
++	.size             = sizeof(struct net_device_ops_ext),
++	.ndo_set_features = mlx5e_set_features,
  };
++#endif
  
  static int mlx5e_check_required_hca_cap(struct mlx5_core_dev *mdev)
-@@ -1707,20 +1743,27 @@ static void mlx5e_build_netdev(struct net_device *netdev)
+ {
+@@ -1707,20 +1753,39 @@ static void mlx5e_build_netdev(struct net_device *netdev)
  	netdev->vlan_features    |= NETIF_F_TSO;
  	netdev->vlan_features    |= NETIF_F_TSO6;
  	netdev->vlan_features    |= NETIF_F_RXCSUM;
@@ -494,17 +513,29 @@ index xxxxxxx..xxxxxxx xxxxxx
  	netdev->hw_features      |= NETIF_F_HW_VLAN_CTAG_FILTER;
  
  	netdev->features          = netdev->hw_features & ~NETIF_F_LRO;
-+// TODO: else
++#else /* HAVE_NETDEV_HW_FEATURES */
++	netdev->features       = netdev->vlan_features;
++	netdev->features      |= NETIF_F_HW_VLAN_CTAG_TX;
++	netdev->features      |= NETIF_F_HW_VLAN_CTAG_RX;
++	netdev->features      |= NETIF_F_HW_VLAN_CTAG_FILTER;
++#ifdef HAVE_SET_NETDEV_HW_FEATURES
++        set_netdev_hw_features(netdev, netdev->features);
 +#endif
++	netdev->features         &= ~NETIF_F_LRO;
++#endif /* HAVE_NETDEV_HW_FEATURES */
  	netdev->features         |= NETIF_F_HIGHDMA;
  
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0))
  	netdev->priv_flags       |= IFF_UNICAST_FLT;
 +#endif
++
++#ifdef HAVE_NET_DEVICE_OPS_EXT
++	set_netdev_ops_ext(netdev, &mlx5_netdev_ops_ext);
++#endif
  
  	mlx5e_set_netdev_dev_addr(netdev);
  }
-@@ -1760,9 +1803,14 @@ static void *mlx5e_create_netdev(struct mlx5_core_dev *mdev)
+@@ -1760,9 +1825,14 @@ static void *mlx5e_create_netdev(struct mlx5_core_dev *mdev)
  	if (mlx5e_check_required_hca_cap(mdev))
  		return NULL;
  
