@@ -56,7 +56,7 @@
 
 #define DRV_NAME	"ib_srp"
 #define PFX		DRV_NAME ": "
-#define DRV_VERSION	"1.4"
+#define DRV_VERSION	"1.5.5"
 #define DRV_RELDATE	"July 1, 2013"
 
 MODULE_AUTHOR("Roland Dreier");

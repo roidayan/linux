@@ -70,7 +70,7 @@
 
 #define DRV_NAME	"iser"
 #define PFX		DRV_NAME ": "
-#define DRV_VER		"1.5"
+#define DRV_VER		"1.6.5"
 
 #define iser_dbg(fmt, arg...)				 \
 	do {						 \

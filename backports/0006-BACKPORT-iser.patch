@@ -259,7 +259,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  #include <linux/printk.h>
 @@ -72,6 +73,56 @@
  #define PFX		DRV_NAME ": "
- #define DRV_VER		"1.5"
+ #define DRV_VER		"1.6.5"
  
 +#ifndef CONFIG_COMPAT_ISCSI_CHECK_PROTECTION
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,15,0))

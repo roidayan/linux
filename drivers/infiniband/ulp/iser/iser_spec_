@@ -27,7 +27,7 @@
 #
 
 %{!?_name: %define _name iser}
-%{!?_version: %define _version 1.5}
+%{!?_version: %define _version 1.6.5}
 %{!?_release: %define _release 0}
 
 # KMP is disabled by default
