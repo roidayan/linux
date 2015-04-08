@@ -48,10 +48,6 @@
 #include <linux/mlx5/mlx5_ifc.h>
 #include "mlx5_core.h"
 
-#define DRIVER_NAME "mlx5_core"
-#define DRIVER_VERSION "3.0"
-#define DRIVER_RELDATE  "January 2015"
-
 MODULE_AUTHOR("Eli Cohen <eli@mellanox.com>");
 MODULE_DESCRIPTION("Mellanox Connect-IB, ConnectX-4 core driver");
 MODULE_LICENSE("Dual BSD/GPL");
@@ -1105,6 +1101,8 @@ static int __init init(void)
 	if (err)
 		goto err_health;
 
+	mlx5e_init();
+
 	return 0;
 
 err_health:
@@ -1117,6 +1115,7 @@ err_debug:
 
 static void __exit cleanup(void)
 {
+	mlx5e_cleanup();
 	pci_unregister_driver(&mlx5_core_driver);
 	mlx5_health_cleanup();
 	destroy_workqueue(mlx5_core_wq);
