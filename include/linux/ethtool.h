@@ -60,8 +60,8 @@ enum ethtool_phys_id_state {
 };
 
 enum {
-	ETH_RSS_HASH_TOP_BIT, /* Configurable RSS hash function - Toeplitz */
-	ETH_RSS_HASH_XOR_BIT, /* Configurable RSS hash function - Xor */
+	ETH_RSS_HASH_TOP = 1, /* Configurable RSS hash function - Toeplitz */
+	ETH_RSS_HASH_XOR = 2, /* Configurable RSS hash function - Xor */
 
 	/*
 	 * Add your fresh new hash function bits above and remember to update
@@ -70,11 +70,6 @@ enum {
 	ETH_RSS_HASH_FUNCS_COUNT
 };
 
-#define __ETH_RSS_HASH_BIT(bit)	((u32)1 << (bit))
-#define __ETH_RSS_HASH(name)	__ETH_RSS_HASH_BIT(ETH_RSS_HASH_##name##_BIT)
-
-#define ETH_RSS_HASH_TOP	__ETH_RSS_HASH(TOP)
-#define ETH_RSS_HASH_XOR	__ETH_RSS_HASH(XOR)
 
 #define ETH_RSS_HASH_UNKNOWN	0
 #define ETH_RSS_HASH_NO_CHANGE	0

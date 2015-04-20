@@ -103,8 +103,8 @@ static const char netdev_features_strings[NETDEV_FEATURE_COUNT][ETH_GSTRING_LEN]
 
 static const char
 rss_hash_func_strings[ETH_RSS_HASH_FUNCS_COUNT][ETH_GSTRING_LEN] = {
-	[ETH_RSS_HASH_TOP_BIT] =	"toeplitz",
-	[ETH_RSS_HASH_XOR_BIT] =	"xor",
+	[ETH_RSS_HASH_TOP] =		"toeplitz",
+	[ETH_RSS_HASH_XOR] =		"xor",
 };
 
 static int ethtool_get_features(struct net_device *dev, void __user *useraddr)
