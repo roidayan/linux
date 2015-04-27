@@ -744,186 +744,56 @@ static void slave_adjust_steering_mode(struct mlx4_dev *dev,
 		 mlx4_steering_mode_str(dev->caps.steering_mode));
 }
 
-static int mlx4_slave_cap(struct mlx4_dev *dev)
+static int mlx4_slave_special_qp_cap(struct mlx4_dev *dev)
 {
-	int			   err;
-	u32			   page_size;
-	struct mlx4_dev_cap	   dev_cap;
-	struct mlx4_func_cap	   func_cap;
-	struct mlx4_init_hca_param hca_param;
-	u8			   i;
+	struct mlx4_func_cap *func_cap = NULL;
+	int i, err;
 
-	memset(&hca_param, 0, sizeof(hca_param));
-	err = mlx4_QUERY_HCA(dev, &hca_param);
-	if (err) {
-		mlx4_err(dev, "QUERY_HCA command failed, aborting\n");
-		return err;
-	}
-
-	/* fail if the hca has an unknown global capability
-	 * at this time global_caps should be always zeroed
-	 */
-	if (hca_param.global_caps) {
-		mlx4_err(dev, "Unknown hca global capabilities\n");
-		return -ENOSYS;
-	}
-
-	mlx4_log_num_mgm_entry_size = hca_param.log_mc_entry_sz;
-
-	dev->caps.hca_core_clock = hca_param.hca_core_clock;
-
-	memset(&dev_cap, 0, sizeof(dev_cap));
-	dev->caps.max_qp_dest_rdma = 1 << hca_param.log_rd_per_qp;
-	err = mlx4_dev_cap(dev, &dev_cap);
-	if (err) {
-		mlx4_err(dev, "QUERY_DEV_CAP command failed, aborting\n");
-		return err;
-	}
-
-	err = mlx4_QUERY_FW(dev);
-	if (err)
-		mlx4_err(dev, "QUERY_FW command failed: could not get FW version\n");
-
-	page_size = ~dev->caps.page_size_cap + 1;
-	mlx4_warn(dev, "HCA minimum page size:%d\n", page_size);
-	if (page_size > PAGE_SIZE) {
-		mlx4_err(dev, "HCA minimum page size of %d bigger than kernel PAGE_SIZE of %ld, aborting\n",
-			 page_size, PAGE_SIZE);
-		return -ENODEV;
-	}
-
-	/* slave gets uar page size from QUERY_HCA fw command */
-	dev->caps.uar_page_size = 1 << (hca_param.uar_page_sz + 12);
-
-	/* TODO: relax this assumption */
-	if (dev->caps.uar_page_size != PAGE_SIZE) {
-		mlx4_err(dev, "UAR size:%d != kernel PAGE_SIZE of %ld\n",
-			 dev->caps.uar_page_size, PAGE_SIZE);
-		return -ENODEV;
-	}
-
-	memset(&func_cap, 0, sizeof(func_cap));
-	err = mlx4_QUERY_FUNC_CAP(dev, 0, &func_cap);
-	if (err) {
-		mlx4_err(dev, "QUERY_FUNC_CAP general command failed, aborting (%d)\n",
-			 err);
-		return err;
-	}
-
-	if ((func_cap.pf_context_behaviour | PF_CONTEXT_BEHAVIOUR_MASK) !=
-	    PF_CONTEXT_BEHAVIOUR_MASK) {
-		mlx4_err(dev, "Unknown pf context behaviour %x known flags %x\n",
-			 func_cap.pf_context_behaviour, PF_CONTEXT_BEHAVIOUR_MASK);
-		return -ENOSYS;
-	}
-
-	dev->caps.num_ports		= func_cap.num_ports;
-	dev->quotas.qp			= func_cap.qp_quota;
-	dev->quotas.srq			= func_cap.srq_quota;
-	dev->quotas.cq			= func_cap.cq_quota;
-	dev->quotas.mpt			= func_cap.mpt_quota;
-	dev->quotas.mtt			= func_cap.mtt_quota;
-	dev->caps.num_qps		= 1 << hca_param.log_num_qps;
-	dev->caps.num_srqs		= 1 << hca_param.log_num_srqs;
-	dev->caps.num_cqs		= 1 << hca_param.log_num_cqs;
-	dev->caps.num_mpts		= 1 << hca_param.log_mpt_sz;
-	dev->caps.num_eqs		= func_cap.max_eq;
-	dev->caps.reserved_eqs		= func_cap.reserved_eq;
-	dev->caps.reserved_lkey		= func_cap.reserved_lkey;
-	dev->caps.num_pds               = MLX4_NUM_PDS;
-	dev->caps.num_mgms              = 0;
-	dev->caps.num_amgms             = 0;
-
-	if (dev->caps.num_ports > MLX4_MAX_PORTS) {
-		mlx4_err(dev, "HCA has %d ports, but we only support %d, aborting\n",
-			 dev->caps.num_ports, MLX4_MAX_PORTS);
-		return -ENODEV;
-	}
-
-	dev->caps.qp0_qkey = kcalloc(dev->caps.num_ports, sizeof(u32), GFP_KERNEL);
-	dev->caps.qp0_tunnel = kcalloc(dev->caps.num_ports, sizeof (u32), GFP_KERNEL);
-	dev->caps.qp0_proxy = kcalloc(dev->caps.num_ports, sizeof (u32), GFP_KERNEL);
-	dev->caps.qp1_tunnel = kcalloc(dev->caps.num_ports, sizeof (u32), GFP_KERNEL);
-	dev->caps.qp1_proxy = kcalloc(dev->caps.num_ports, sizeof (u32), GFP_KERNEL);
+	func_cap = kzalloc(sizeof(*func_cap), GFP_KERNEL);
+	dev->caps.qp0_qkey = kcalloc(dev->caps.num_ports,
+				     sizeof(u32), GFP_KERNEL);
+	dev->caps.qp0_tunnel = kcalloc(dev->caps.num_ports,
+				       sizeof(u32), GFP_KERNEL);
+	dev->caps.qp0_proxy = kcalloc(dev->caps.num_ports,
+				      sizeof(u32), GFP_KERNEL);
+	dev->caps.qp1_tunnel = kcalloc(dev->caps.num_ports,
+				       sizeof(u32), GFP_KERNEL);
+	dev->caps.qp1_proxy = kcalloc(dev->caps.num_ports,
+				      sizeof(u32), GFP_KERNEL);
 
 	if (!dev->caps.qp0_tunnel || !dev->caps.qp0_proxy ||
 	    !dev->caps.qp1_tunnel || !dev->caps.qp1_proxy ||
-	    !dev->caps.qp0_qkey) {
+	    !dev->caps.qp0_qkey || !func_cap) {
+		mlx4_err(dev, "Failed to allocate memory for special qps cap\n");
 		err = -ENOMEM;
 		goto err_mem;
 	}
 
 	for (i = 1; i <= dev->caps.num_ports; ++i) {
-		err = mlx4_QUERY_FUNC_CAP(dev, i, &func_cap);
+		err = mlx4_QUERY_FUNC_CAP(dev, i, func_cap);
 		if (err) {
 			mlx4_err(dev, "QUERY_FUNC_CAP port command failed for port %d, aborting (%d)\n",
 				 i, err);
 			goto err_mem;
 		}
-		dev->caps.qp0_qkey[i - 1] = func_cap.qp0_qkey;
-		dev->caps.qp0_tunnel[i - 1] = func_cap.qp0_tunnel_qpn;
-		dev->caps.qp0_proxy[i - 1] = func_cap.qp0_proxy_qpn;
-		dev->caps.qp1_tunnel[i - 1] = func_cap.qp1_tunnel_qpn;
-		dev->caps.qp1_proxy[i - 1] = func_cap.qp1_proxy_qpn;
+		dev->caps.qp0_qkey[i - 1] = func_cap->qp0_qkey;
+		dev->caps.qp0_tunnel[i - 1] = func_cap->qp0_tunnel_qpn;
+		dev->caps.qp0_proxy[i - 1] = func_cap->qp0_proxy_qpn;
+		dev->caps.qp1_tunnel[i - 1] = func_cap->qp1_tunnel_qpn;
+		dev->caps.qp1_proxy[i - 1] = func_cap->qp1_proxy_qpn;
 		dev->caps.port_mask[i] = dev->caps.port_type[i];
-		dev->caps.phys_port_id[i] = func_cap.phys_port_id;
-		if (mlx4_get_slave_pkey_gid_tbl_len(dev, i,
-						    &dev->caps.gid_table_len[i],
-						    &dev->caps.pkey_table_len[i]))
+		dev->caps.phys_port_id[i] = func_cap->phys_port_id;
+		err = mlx4_get_slave_pkey_gid_tbl_len(dev, i,
+				    &dev->caps.gid_table_len[i],
+				    &dev->caps.pkey_table_len[i]);
+		if (err) {
+			mlx4_err(dev, "QUERY_PORT command failed for port %d, aborting (%d)\n",
+				 i, err);
 			goto err_mem;
+		}
 	}
 
-	if (dev->caps.uar_page_size * (dev->caps.num_uars -
-				       dev->caps.reserved_uars) >
-				       pci_resource_len(dev->persist->pdev,
-							2)) {
-		mlx4_err(dev, "HCA reported UAR region size of 0x%x bigger than PCI resource 2 size of 0x%llx, aborting\n",
-			 dev->caps.uar_page_size * dev->caps.num_uars,
-			 (unsigned long long)
-			 pci_resource_len(dev->persist->pdev, 2));
-		goto err_mem;
-	}
-
-	if (hca_param.dev_cap_enabled & MLX4_DEV_CAP_64B_EQE_ENABLED) {
-		dev->caps.eqe_size   = 64;
-		dev->caps.eqe_factor = 1;
-	} else {
-		dev->caps.eqe_size   = 32;
-		dev->caps.eqe_factor = 0;
-	}
-
-	if (hca_param.dev_cap_enabled & MLX4_DEV_CAP_64B_CQE_ENABLED) {
-		dev->caps.cqe_size   = 64;
-		dev->caps.userspace_caps |= MLX4_USER_DEV_CAP_LARGE_CQE;
-	} else {
-		dev->caps.cqe_size   = 32;
-	}
-
-	if (hca_param.dev_cap_enabled & MLX4_DEV_CAP_EQE_STRIDE_ENABLED) {
-		dev->caps.eqe_size = hca_param.eqe_size;
-		dev->caps.eqe_factor = 0;
-	}
-
-	if (hca_param.dev_cap_enabled & MLX4_DEV_CAP_CQE_STRIDE_ENABLED) {
-		dev->caps.cqe_size = hca_param.cqe_size;
-		/* User still need to know when CQE > 32B */
-		dev->caps.userspace_caps |= MLX4_USER_DEV_CAP_LARGE_CQE;
-	}
-
-	dev->caps.flags2 &= ~MLX4_DEV_CAP_FLAG2_TS;
-	mlx4_warn(dev, "Timestamping is not supported in slave mode\n");
-
-	slave_adjust_steering_mode(dev, &dev_cap, &hca_param);
-	mlx4_dbg(dev, "RSS support for IP fragments is %s\n",
-		 hca_param.rss_ip_frags ? "on" : "off");
-
-	if (func_cap.extra_flags & MLX4_QUERY_FUNC_FLAGS_BF_RES_QP &&
-	    dev->caps.bf_reg_size)
-		dev->caps.alloc_res_qp_mask |= MLX4_RESERVE_ETH_BF_QP;
-
-	if (func_cap.extra_flags & MLX4_QUERY_FUNC_FLAGS_A0_RES_QP)
-		dev->caps.alloc_res_qp_mask |= MLX4_RESERVE_A0_QP;
-
+	kfree(func_cap);
 	return 0;
 
 err_mem:
@@ -937,7 +807,179 @@ err_mem:
 	dev->caps.qp0_proxy = NULL;
 	dev->caps.qp1_tunnel = NULL;
 	dev->caps.qp1_proxy = NULL;
+	kfree(func_cap);
 
+	return err;
+}
+
+static int mlx4_slave_cap(struct mlx4_dev *dev)
+{
+	int			   err;
+	u32			   page_size;
+	struct mlx4_dev_cap	   *dev_cap = NULL;
+	struct mlx4_func_cap	   *func_cap = NULL;
+	struct mlx4_init_hca_param *hca_param = NULL;
+
+	hca_param = kzalloc(sizeof(*hca_param), GFP_KERNEL);
+	func_cap = kzalloc(sizeof(*func_cap), GFP_KERNEL);
+	dev_cap = kzalloc(sizeof(*dev_cap), GFP_KERNEL);
+	if (!hca_param || !func_cap || !dev_cap) {
+		mlx4_err(dev, "Failed to allocate memory for slave_cap\n");
+		err = -ENOMEM;
+		goto free_mem;
+	}
+
+	err = mlx4_QUERY_HCA(dev, hca_param);
+	if (err) {
+		mlx4_err(dev, "QUERY_HCA command failed, aborting\n");
+		goto free_mem;
+	}
+
+	/* fail if the hca has an unknown global capability
+	 * at this time global_caps should be always zeroed
+	 */
+	if (hca_param->global_caps) {
+		mlx4_err(dev, "Unknown hca global capabilities\n");
+		err = -ENOSYS;
+		goto free_mem;
+	}
+
+	mlx4_log_num_mgm_entry_size = hca_param->log_mc_entry_sz;
+
+	dev->caps.hca_core_clock = hca_param->hca_core_clock;
+
+	dev->caps.max_qp_dest_rdma = 1 << hca_param->log_rd_per_qp;
+	err = mlx4_dev_cap(dev, dev_cap);
+	if (err) {
+		mlx4_err(dev, "QUERY_DEV_CAP command failed, aborting\n");
+		goto free_mem;
+	}
+
+	err = mlx4_QUERY_FW(dev);
+	if (err)
+		mlx4_err(dev, "QUERY_FW command failed: could not get FW version\n");
+
+	page_size = ~dev->caps.page_size_cap + 1;
+	mlx4_warn(dev, "HCA minimum page size:%d\n", page_size);
+	if (page_size > PAGE_SIZE) {
+		mlx4_err(dev, "HCA minimum page size of %d bigger than kernel PAGE_SIZE of %ld, aborting\n",
+			 page_size, PAGE_SIZE);
+		err = -ENODEV;
+		goto free_mem;
+	}
+
+	/* slave gets uar page size from QUERY_HCA fw command */
+	dev->caps.uar_page_size = 1 << (hca_param->uar_page_sz + 12);
+
+	/* TODO: relax this assumption */
+	if (dev->caps.uar_page_size != PAGE_SIZE) {
+		mlx4_err(dev, "UAR size:%d != kernel PAGE_SIZE of %ld\n",
+			 dev->caps.uar_page_size, PAGE_SIZE);
+		err = -ENODEV;
+		goto free_mem;
+	}
+
+	err = mlx4_QUERY_FUNC_CAP(dev, 0, func_cap);
+	if (err) {
+		mlx4_err(dev, "QUERY_FUNC_CAP general command failed, aborting (%d)\n",
+			 err);
+		goto free_mem;
+	}
+
+	if ((func_cap->pf_context_behaviour | PF_CONTEXT_BEHAVIOUR_MASK) !=
+	    PF_CONTEXT_BEHAVIOUR_MASK) {
+		mlx4_err(dev, "Unknown pf context behaviour %x known flags %x\n",
+			 func_cap->pf_context_behaviour,
+			 PF_CONTEXT_BEHAVIOUR_MASK);
+		err = -ENOSYS;
+		goto free_mem;
+	}
+
+	dev->caps.num_ports		= func_cap->num_ports;
+	dev->quotas.qp			= func_cap->qp_quota;
+	dev->quotas.srq			= func_cap->srq_quota;
+	dev->quotas.cq			= func_cap->cq_quota;
+	dev->quotas.mpt			= func_cap->mpt_quota;
+	dev->quotas.mtt			= func_cap->mtt_quota;
+	dev->caps.num_qps		= 1 << hca_param->log_num_qps;
+	dev->caps.num_srqs		= 1 << hca_param->log_num_srqs;
+	dev->caps.num_cqs		= 1 << hca_param->log_num_cqs;
+	dev->caps.num_mpts		= 1 << hca_param->log_mpt_sz;
+	dev->caps.num_eqs		= func_cap->max_eq;
+	dev->caps.reserved_eqs		= func_cap->reserved_eq;
+	dev->caps.reserved_lkey		= func_cap->reserved_lkey;
+	dev->caps.num_pds               = MLX4_NUM_PDS;
+	dev->caps.num_mgms              = 0;
+	dev->caps.num_amgms             = 0;
+
+	if (dev->caps.num_ports > MLX4_MAX_PORTS) {
+		mlx4_err(dev, "HCA has %d ports, but we only support %d, aborting\n",
+			 dev->caps.num_ports, MLX4_MAX_PORTS);
+		err = -ENODEV;
+		goto free_mem;
+	}
+
+	err = mlx4_slave_special_qp_cap(dev);
+	if (err) {
+		mlx4_err(dev, "Set special QP caps failed. aborting\n");
+		goto free_mem;
+	}
+
+	if (dev->caps.uar_page_size * (dev->caps.num_uars -
+				       dev->caps.reserved_uars) >
+				       pci_resource_len(dev->persist->pdev,
+							2)) {
+		mlx4_err(dev, "HCA reported UAR region size of 0x%x bigger than PCI resource 2 size of 0x%llx, aborting\n",
+			 dev->caps.uar_page_size * dev->caps.num_uars,
+			 (unsigned long long)
+			 pci_resource_len(dev->persist->pdev, 2));
+		goto free_mem;
+	}
+
+	if (hca_param->dev_cap_enabled & MLX4_DEV_CAP_64B_EQE_ENABLED) {
+		dev->caps.eqe_size   = 64;
+		dev->caps.eqe_factor = 1;
+	} else {
+		dev->caps.eqe_size   = 32;
+		dev->caps.eqe_factor = 0;
+	}
+
+	if (hca_param->dev_cap_enabled & MLX4_DEV_CAP_64B_CQE_ENABLED) {
+		dev->caps.cqe_size   = 64;
+		dev->caps.userspace_caps |= MLX4_USER_DEV_CAP_LARGE_CQE;
+	} else {
+		dev->caps.cqe_size   = 32;
+	}
+
+	if (hca_param->dev_cap_enabled & MLX4_DEV_CAP_EQE_STRIDE_ENABLED) {
+		dev->caps.eqe_size = hca_param->eqe_size;
+		dev->caps.eqe_factor = 0;
+	}
+
+	if (hca_param->dev_cap_enabled & MLX4_DEV_CAP_CQE_STRIDE_ENABLED) {
+		dev->caps.cqe_size = hca_param->cqe_size;
+		/* User still need to know when CQE > 32B */
+		dev->caps.userspace_caps |= MLX4_USER_DEV_CAP_LARGE_CQE;
+	}
+
+	dev->caps.flags2 &= ~MLX4_DEV_CAP_FLAG2_TS;
+	mlx4_warn(dev, "Timestamping is not supported in slave mode\n");
+
+	slave_adjust_steering_mode(dev, dev_cap, hca_param);
+	mlx4_dbg(dev, "RSS support for IP fragments is %s\n",
+		 hca_param->rss_ip_frags ? "on" : "off");
+
+	if (func_cap->extra_flags & MLX4_QUERY_FUNC_FLAGS_BF_RES_QP &&
+	    dev->caps.bf_reg_size)
+		dev->caps.alloc_res_qp_mask |= MLX4_RESERVE_ETH_BF_QP;
+
+	if (func_cap->extra_flags & MLX4_QUERY_FUNC_FLAGS_A0_RES_QP)
+		dev->caps.alloc_res_qp_mask |= MLX4_RESERVE_A0_QP;
+
+free_mem:
+	kfree(hca_param);
+	kfree(func_cap);
+	kfree(dev_cap);
 	return err;
 }
 
