@@ -58,12 +58,11 @@ EXPORT_SYMBOL_GPL(ib_wq);
 static LIST_HEAD(device_list);
 static LIST_HEAD(client_list);
 
+/* device_srcu protects access to both device_list and client_list. */
+static struct srcu_struct device_srcu;
+
 /*
- * device_mutex protects access to both device_list and client_list.
- * There's no real point to using multiple locks or something fancier
- * like an rwsem: we always access both lists, and we're always
- * modifying one list or the other list.  In any case this is not a
- * hot path so there's no point in trying to optimize.
+ * device_mutex protects writer access to both device_list and client_list.
  */
 static DEFINE_MUTEX(device_mutex);
 
@@ -275,6 +274,7 @@ int ib_register_device(struct ib_device *device,
 					    u8, struct kobject *))
 {
 	int ret;
+	int id;
 
 	mutex_lock(&device_mutex);
 
@@ -314,13 +314,19 @@ int ib_register_device(struct ib_device *device,
 
 	device->reg_state = IB_DEV_REGISTERED;
 
+	mutex_unlock(&device_mutex);
+
+	id = srcu_read_lock(&device_srcu);
 	{
 		struct ib_client *client;
 
-		list_for_each_entry(client, &client_list, list)
+		list_for_each_entry_rcu(client, &client_list, list)
 			if (client->add && !add_client_context(device, client))
 				client->add(device);
 	}
+	srcu_read_unlock(&device_srcu, id);
+
+	return 0;
 
  out:
 	mutex_unlock(&device_mutex);
@@ -337,6 +343,7 @@ EXPORT_SYMBOL(ib_register_device);
 void ib_unregister_device(struct ib_device *device)
 {
 	struct ib_client *client;
+	LIST_HEAD(contexts);
 	struct ib_client_data *context, *tmp;
 	unsigned long flags;
 
@@ -346,21 +353,26 @@ void ib_unregister_device(struct ib_device *device)
 		if (client->remove)
 			client->remove(device);
 
-	list_del(&device->core_list);
+	list_del_rcu(&device->core_list);
+
+	mutex_unlock(&device_mutex);
+
+	synchronize_srcu(&device_srcu);
 
 	kfree(device->gid_tbl_len);
 	kfree(device->pkey_tbl_len);
 
-	mutex_unlock(&device_mutex);
-
 	ib_device_unregister_sysfs(device);
 
 	spin_lock_irqsave(&device->client_data_lock, flags);
-	list_for_each_entry_safe(context, tmp, &device->client_data_list, list)
-		kfree(context);
+	list_cut_position(&contexts, &device->client_data_list,
+			  device->client_data_list.prev);
 	spin_unlock_irqrestore(&device->client_data_lock, flags);
 
 	device->reg_state = IB_DEV_UNREGISTERED;
+
+	list_for_each_entry_safe(context, tmp, &contexts, list)
+		kfree(context);
 }
 EXPORT_SYMBOL(ib_unregister_device);
 
@@ -380,15 +392,19 @@ EXPORT_SYMBOL(ib_unregister_device);
 int ib_register_client(struct ib_client *client)
 {
 	struct ib_device *device;
+	int id;
 
 	mutex_lock(&device_mutex);
+	list_add_tail_rcu(&client->list, &client_list);
+	mutex_unlock(&device_mutex);
 
-	list_add_tail(&client->list, &client_list);
-	list_for_each_entry(device, &device_list, core_list)
+	id = srcu_read_lock(&device_srcu);
+
+	list_for_each_entry_rcu(device, &device_list, core_list)
 		if (client->add && !add_client_context(device, client))
 			client->add(device);
 
-	mutex_unlock(&device_mutex);
+	srcu_read_unlock(&device_srcu, id);
 
 	return 0;
 }
@@ -406,11 +422,13 @@ void ib_unregister_client(struct ib_client *client)
 {
 	struct ib_client_data *context, *tmp;
 	struct ib_device *device;
+	LIST_HEAD(contexts);
 	unsigned long flags;
+	int id;
 
-	mutex_lock(&device_mutex);
+	id = srcu_read_lock(&device_srcu);
 
-	list_for_each_entry(device, &device_list, core_list) {
+	list_for_each_entry_rcu(device, &device_list, core_list) {
 		if (client->remove)
 			client->remove(device);
 
@@ -418,13 +436,21 @@ void ib_unregister_client(struct ib_client *client)
 		list_for_each_entry_safe(context, tmp, &device->client_data_list, list)
 			if (context->client == client) {
 				list_del(&context->list);
-				kfree(context);
+				list_add(&context->list, &contexts);
 			}
 		spin_unlock_irqrestore(&device->client_data_lock, flags);
 	}
-	list_del(&client->list);
 
+	srcu_read_unlock(&device_srcu, id);
+
+	mutex_lock(&device_mutex);
+	list_del_rcu(&client->list);
 	mutex_unlock(&device_mutex);
+
+	synchronize_srcu(&device_srcu);
+
+	list_for_each_entry_safe(context, tmp, &contexts, list)
+		kfree(context);
 }
 EXPORT_SYMBOL(ib_unregister_client);
 
@@ -737,9 +763,15 @@ static int __init ib_core_init(void)
 {
 	int ret;
 
+	ret = init_srcu_struct(&device_srcu);
+	if (ret) {
+		pr_warn("Couldn't initialize SRCU\n");
+		return ret;
+	}
+
 	ib_wq = alloc_workqueue("infiniband", 0, 0);
 	if (!ib_wq)
-		return -ENOMEM;
+		goto err_srcu;
 
 	ret = ib_sysfs_setup();
 	if (ret) {
@@ -769,6 +801,9 @@ err_sysfs:
 
 err:
 	destroy_workqueue(ib_wq);
+err_srcu:
+	cleanup_srcu_struct(&device_srcu);
+
 	return ret;
 }
 
@@ -779,6 +814,8 @@ static void __exit ib_core_cleanup(void)
 	ib_sysfs_cleanup();
 	/* Make sure that any pending umem accounting work is done. */
 	destroy_workqueue(ib_wq);
+	srcu_barrier(&device_srcu);
+	cleanup_srcu_struct(&device_srcu);
 }
 
 module_init(ib_core_init);
