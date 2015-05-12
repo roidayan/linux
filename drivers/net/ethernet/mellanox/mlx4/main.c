@@ -2993,7 +2993,7 @@ slave_start:
 		mlx4_foreach_port(i, dev, MLX4_PORT_TYPE_IB)
 			ib_ports++;
 
-		if (ib_ports &&
+		if (0 && ib_ports &&
 		    (num_vfs_argc > 1 || probe_vfs_argc > 1)) {
 			mlx4_err(dev,
 				 "Invalid syntax of num_vfs/probe_vfs with IB port - single port VFs syntax is only supported when all ports are configured as ethernet\n");
