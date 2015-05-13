@@ -48,8 +48,8 @@
 #include "mlx5_core.h"
 
 #define DRIVER_NAME "mlx5_core"
-#define DRIVER_VERSION "3.0"
-#define DRIVER_RELDATE  "January 2015"
+#define DRIVER_VERSION "3.0-1"
+#define DRIVER_RELDATE  "May 2015"
 
 MODULE_AUTHOR("Eli Cohen <eli@mellanox.com>");
 MODULE_DESCRIPTION("Mellanox Connect-IB, ConnectX-4 core driver");
