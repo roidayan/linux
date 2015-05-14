@@ -59,13 +59,27 @@ static LIST_HEAD(device_list);
 static LIST_HEAD(client_list);
 
 /*
- * device_mutex protects access to both device_list and client_list.
- * There's no real point to using multiple locks or something fancier
- * like an rwsem: we always access both lists, and we're always
- * modifying one list or the other list.  In any case this is not a
- * hot path so there's no point in trying to optimize.
+ * modify_mutex protects adding/removing devices and clients.
+ * Adding a client and a device simultaneously might cause calling
+ * client->add twice for the same device. Removing a client could
+ * cause calling client->remove twice. modify_mutex synchronizes
+ * those actions.
  */
-static DEFINE_MUTEX(device_mutex);
+static DEFINE_MUTEX(modify_mutex);
+
+/*
+ * lists_rwsem protects the client and device lists from
+ * read-while-write scenario. Adding/removing a device/client
+ * is protected by modify_mutex. However, other contexts of
+ * clients might want to iterate the device list. Client should
+ * cease all actions after client->remove returns. For that purpose,
+ * clients need to wait for their contexts which might need to
+ * iterate that list. Summing all that up, we have to use RCU/rwsem
+ * as either the iteration over client->remove could deadlock with
+ * the clients' works. We don't expect adding/removing of devices/clients
+ * to be done frequently, thus rwsem is favored here.
+ */
+static DECLARE_RWSEM(lists_rwsem);
 
 static int ib_device_check_mandatory(struct ib_device *device)
 {
@@ -276,7 +290,7 @@ int ib_register_device(struct ib_device *device,
 {
 	int ret;
 
-	mutex_lock(&device_mutex);
+	mutex_lock(&modify_mutex);
 
 	if (strchr(device->name, '%')) {
 		ret = alloc_name(device->name);
@@ -310,20 +324,24 @@ int ib_register_device(struct ib_device *device,
 		goto out;
 	}
 
+	down_write(&lists_rwsem);
 	list_add_tail(&device->core_list, &device_list);
+	up_write(&lists_rwsem);
+
 
 	device->reg_state = IB_DEV_REGISTERED;
 
 	{
 		struct ib_client *client;
 
+		/* down_read(&lists_rwsem) is implied by modify_mutex */
 		list_for_each_entry(client, &client_list, list)
 			if (client->add && !add_client_context(device, client))
 				client->add(device);
 	}
 
  out:
-	mutex_unlock(&device_mutex);
+	mutex_unlock(&modify_mutex);
 	return ret;
 }
 EXPORT_SYMBOL(ib_register_device);
@@ -340,18 +358,21 @@ void ib_unregister_device(struct ib_device *device)
 	struct ib_client_data *context, *tmp;
 	unsigned long flags;
 
-	mutex_lock(&device_mutex);
+	mutex_lock(&modify_mutex);
 
+	/* down_read(&lists_rwsem) is implied by modify_mutex */
 	list_for_each_entry_reverse(client, &client_list, list)
 		if (client->remove)
 			client->remove(device);
 
+	down_write(&lists_rwsem);
 	list_del(&device->core_list);
+	up_write(&lists_rwsem);
 
 	kfree(device->gid_tbl_len);
 	kfree(device->pkey_tbl_len);
 
-	mutex_unlock(&device_mutex);
+	mutex_unlock(&modify_mutex);
 
 	ib_device_unregister_sysfs(device);
 
@@ -381,14 +402,17 @@ int ib_register_client(struct ib_client *client)
 {
 	struct ib_device *device;
 
-	mutex_lock(&device_mutex);
+	mutex_lock(&modify_mutex);
 
+	down_write(&lists_rwsem);
 	list_add_tail(&client->list, &client_list);
+	up_write(&lists_rwsem);
+	/* down_read(&lists_rwsem) is implied by modify_mutex */
 	list_for_each_entry(device, &device_list, core_list)
 		if (client->add && !add_client_context(device, client))
 			client->add(device);
 
-	mutex_unlock(&device_mutex);
+	mutex_unlock(&modify_mutex);
 
 	return 0;
 }
@@ -408,8 +432,9 @@ void ib_unregister_client(struct ib_client *client)
 	struct ib_device *device;
 	unsigned long flags;
 
-	mutex_lock(&device_mutex);
+	mutex_lock(&modify_mutex);
 
+	/* down_read(&lists_rwsem) is implied by modify_mutex */
 	list_for_each_entry(device, &device_list, core_list) {
 		if (client->remove)
 			client->remove(device);
@@ -422,9 +447,11 @@ void ib_unregister_client(struct ib_client *client)
 			}
 		spin_unlock_irqrestore(&device->client_data_lock, flags);
 	}
+	down_write(&lists_rwsem);
 	list_del(&client->list);
+	up_write(&lists_rwsem);
 
-	mutex_unlock(&device_mutex);
+	mutex_unlock(&modify_mutex);
 }
 EXPORT_SYMBOL(ib_unregister_client);
 
