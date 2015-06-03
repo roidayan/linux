@@ -362,11 +362,18 @@ static int cm_init_av_by_path(struct ib_sa_path_rec *path, struct cm_av *av)
 
 	read_lock_irqsave(&cm.device_lock, flags);
 	list_for_each_entry(cm_dev, &cm.device_list, list) {
+		struct net_device *ndev = path->net ?
+			dev_get_by_index(path->net, path->ifindex) : NULL;
+
 		if (!ib_find_cached_gid(cm_dev->ib_device, &path->sgid,
-					&p, NULL)) {
+					ndev, &p, NULL)) {
 			port = cm_dev->port[p-1];
+			if (ndev)
+				dev_put(ndev);
 			break;
 		}
+		if (ndev)
+			dev_put(ndev);
 	}
 	read_unlock_irqrestore(&cm.device_lock, flags);
 
@@ -382,7 +389,6 @@ static int cm_init_av_by_path(struct ib_sa_path_rec *path, struct cm_av *av)
 	ib_init_ah_from_path(cm_dev->ib_device, port->port_num, path,
 			     &av->ah_attr);
 	av->timeout = path->packet_life_time + 1;
-	memcpy(av->smac, path->smac, sizeof(av->smac));
 
 	av->valid = 1;
 	return 0;
@@ -1579,7 +1585,8 @@ static int cm_req_handler(struct cm_work *work)
 	ret = cm_init_av_by_path(&work->path[0], &cm_id_priv->av);
 	if (ret) {
 		ib_get_cached_gid(work->port->cm_dev->ib_device,
-				  work->port->port_num, 0, &work->path[0].sgid);
+				  work->port->port_num, 0, &work->path[0].sgid,
+				  NULL);
 		ib_send_cm_rej(cm_id, IB_CM_REJ_INVALID_GID,
 			       &work->path[0].sgid, sizeof work->path[0].sgid,
 			       NULL, 0);
