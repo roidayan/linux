@@ -244,7 +244,7 @@ static int mlx4_en_prepare_rx_desc(struct mlx4_en_priv *priv,
 	return mlx4_en_alloc_frags(priv, rx_desc, frags, ring->page_alloc, gfp);
 }
 
-static inline bool mlx4_en_is_ring_empty(struct mlx4_en_rx_ring *ring)
+static inline bool mlx4_en_is_rx_ring_empty(struct mlx4_en_rx_ring *ring)
 {
 	BUG_ON((u32)(ring->prod - ring->cons) > ring->actual_size);
 	return ring->prod == ring->cons;
@@ -321,7 +321,7 @@ static void mlx4_en_free_rx_buf(struct mlx4_en_priv *priv,
 	       ring->cons, ring->prod);
 
 	/* Unmap and free Rx buffers */
-	while (!mlx4_en_is_ring_empty(ring)) {
+	while (!mlx4_en_is_rx_ring_empty(ring)) {
 		index = ring->cons & ring->size_mask;
 		en_dbg(DRV, priv, "Processing descriptor:%d\n", index);
 		mlx4_en_free_rx_desc(priv, ring, index);
@@ -503,7 +503,7 @@ void mlx4_en_recover_from_oom(struct mlx4_en_priv *priv)
 		return;
 
 	for (ring = 0; ring < priv->rx_ring_num; ring++) {
-		if (mlx4_en_is_ring_empty(priv->rx_ring[ring]))
+		if (mlx4_en_is_rx_ring_empty(priv->rx_ring[ring]))
 			napi_reschedule(&priv->rx_cq[ring]->napi);
 	}
 }
