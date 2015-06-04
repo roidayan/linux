@@ -405,10 +405,9 @@ static int ib_uverbs_event_close(struct inode *inode, struct file *filp)
 	}
 	spin_unlock_irq(&file->lock);
 
-	if (file->is_async) {
+	if (file->is_async)
 		ib_unregister_event_handler(&file->uverbs_file->event_handler);
-		kref_put(&file->uverbs_file->ref, ib_uverbs_release_file);
-	}
+	kref_put(&file->uverbs_file->ref, ib_uverbs_release_file);
 	kref_put(&file->ref, ib_uverbs_release_event_file);
 
 	return 0;
@@ -545,6 +544,7 @@ struct file *ib_uverbs_alloc_event_file(struct ib_uverbs_file *uverbs_file,
 {
 	struct ib_uverbs_event_file *ev_file;
 	struct file *filp;
+	int ret;
 
 	ev_file = kmalloc(sizeof *ev_file, GFP_KERNEL);
 	if (!ev_file)
@@ -562,8 +562,26 @@ struct file *ib_uverbs_alloc_event_file(struct ib_uverbs_file *uverbs_file,
 	filp = anon_inode_getfile("[infinibandevent]", &uverbs_event_fops,
 				  ev_file, O_RDONLY);
 	if (IS_ERR(filp))
-		kfree(ev_file);
+		goto err;
 
+	if (is_async) {
+		uverbs_file->async_file = ev_file;
+		INIT_IB_EVENT_HANDLER(&uverbs_file->event_handler,
+				      uverbs_file->device->ib_dev,
+				      ib_uverbs_event_handler);
+		ret = ib_register_event_handler(&uverbs_file->event_handler);
+		if (ret)
+			goto put_file;
+	}
+
+	kref_get(&uverbs_file->ref);
+	return filp;
+
+put_file:
+	fput(filp);
+	filp = ERR_PTR(ret);
+err:
+	kfree(ev_file);
 	return filp;
 }
 
