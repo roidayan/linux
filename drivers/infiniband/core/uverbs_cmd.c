@@ -367,16 +367,7 @@ ssize_t ib_uverbs_get_context(struct ib_uverbs_file *file,
 		goto err_file;
 	}
 
-	file->async_file = filp->private_data;
-
-	INIT_IB_EVENT_HANDLER(&file->event_handler, file->device->ib_dev,
-			      ib_uverbs_event_handler);
-	ret = ib_register_event_handler(&file->event_handler);
-	if (ret)
-		goto err_file;
-
 	kref_get(&file->async_file->ref);
-	kref_get(&file->ref);
 	file->ucontext = ucontext;
 
 	fd_install(resp.async_fd, filp);
