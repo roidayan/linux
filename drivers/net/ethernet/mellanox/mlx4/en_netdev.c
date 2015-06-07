@@ -3079,8 +3079,9 @@ int mlx4_en_reset_config(struct net_device *dev,
 
 	mlx4_en_free_resources(priv);
 
-	en_warn(priv, "Changing device configuration rx filter(%x) rx vlan(%x)\n",
-		ts_config.rx_filter, !!(features & NETIF_F_HW_VLAN_CTAG_RX));
+	en_dbg(DRV, priv,
+	       "Changing device configuration rx filter(%x) rx vlan(%x)\n",
+	       ts_config.rx_filter, !!(features & NETIF_F_HW_VLAN_CTAG_RX));
 
 	priv->hwtstamp_config.tx_type = ts_config.tx_type;
 	priv->hwtstamp_config.rx_filter = ts_config.rx_filter;
