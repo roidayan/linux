@@ -694,26 +694,46 @@ static void get_fixed_ipv4_csum(__wsum hw_checksum, struct sk_buff *skb,
 }
 
 #if IS_ENABLED(CONFIG_IPV6)
-/* In IPv6 packets, besides subtracting the pseudo header checksum,
- * we also compute/add the IP header checksum which
- * is not added by the HW.
- */
+static __wsum csum_ipv6_magic_nofold(const struct in6_addr *saddr,
+				     const struct in6_addr *daddr,
+				     __u32 len, unsigned short proto)
+{
+	__wsum res = 0;
+
+	res = csum_add(res, saddr->in6_u.u6_addr32[0]);
+	res = csum_add(res, saddr->in6_u.u6_addr32[1]);
+	res = csum_add(res, saddr->in6_u.u6_addr32[2]);
+	res = csum_add(res, saddr->in6_u.u6_addr32[3]);
+	res = csum_add(res, daddr->in6_u.u6_addr32[0]);
+	res = csum_add(res, daddr->in6_u.u6_addr32[1]);
+	res = csum_add(res, daddr->in6_u.u6_addr32[2]);
+	res = csum_add(res, daddr->in6_u.u6_addr32[3]);
+	res = csum_add(res, len);
+	res = csum_add(res, htonl(proto));
+
+	return res;
+}
+
 static int get_fixed_ipv6_csum(__wsum hw_checksum, struct sk_buff *skb,
 			       struct ipv6hdr *ipv6h)
 {
-	__wsum csum_pseudo_hdr = 0;
+	__wsum csum_pseudo_header = 0;
 
-	if (ipv6h->nexthdr == IPPROTO_FRAGMENT || ipv6h->nexthdr == IPPROTO_HOPOPTS)
+	if (ipv6h->nexthdr == IPPROTO_FRAGMENT ||
+	    ipv6h->nexthdr == IPPROTO_HOPOPTS)
+		return 0;
+
+	hw_checksum = csum_add(hw_checksum, cpu_to_be16(ipv6h->nexthdr));
+	csum_pseudo_header = csum_ipv6_magic_nofold(&ipv6h->saddr,
+						    &ipv6h->daddr,
+						    ipv6h->payload_len,
+						    ipv6h->nexthdr);
+	hw_checksum = csum_sub(hw_checksum, csum_pseudo_header);
+	hw_checksum = csum_partial(ipv6h, sizeof(struct ipv6hdr), hw_checksum);
+	if (!hw_checksum)
 		return -1;
-	hw_checksum = csum_add(hw_checksum, (__force __wsum)(ipv6h->nexthdr << 8));
 
-	csum_pseudo_hdr = csum_partial(&ipv6h->saddr,
-				       sizeof(ipv6h->saddr) + sizeof(ipv6h->daddr), 0);
-	csum_pseudo_hdr = csum_add(csum_pseudo_hdr, (__force __wsum)ipv6h->payload_len);
-	csum_pseudo_hdr = csum_add(csum_pseudo_hdr, (__force __wsum)ntohs(ipv6h->nexthdr));
-
-	skb->csum = csum_sub(hw_checksum, csum_pseudo_hdr);
-	skb->csum = csum_add(skb->csum, csum_partial(ipv6h, sizeof(struct ipv6hdr), 0));
+	skb->csum = hw_checksum;
 	return 0;
 }
 #endif
