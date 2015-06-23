@@ -1708,13 +1708,15 @@ static int mlx5e_change_mtu(struct net_device *netdev, int new_mtu)
 	}
 
 	mutex_lock(&priv->state_lock);
-	netdev->mtu = new_mtu;
 
 	was_opened = test_bit(MLX5E_STATE_OPENED, &priv->state);
-	if (was_opened) {
+	if (was_opened)
 		mlx5e_close_locked(priv->netdev);
+
+	netdev->mtu = new_mtu;
+
+	if (was_opened)
 		err = mlx5e_open_locked(priv->netdev);
-	}
 
 	mutex_unlock(&priv->state_lock);
 
