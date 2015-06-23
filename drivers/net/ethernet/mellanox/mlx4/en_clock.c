@@ -259,7 +259,7 @@ void mlx4_en_init_timestamp(struct mlx4_en_dev *mdev)
 	 * register, the biggest shift when calculating using u64, is 14
 	 * (max_cycles * multiplier < 2^64)
 	 */
-	mdev->cycles.shift = 14;
+	mdev->cycles.shift = MLX4_EN_TS_CYCLES_SHIFT;
 	mdev->cycles.mult =
 		clocksource_khz2mult(1000 * dev->caps.hca_core_clock, mdev->cycles.shift);
 	mdev->nominal_c_mult = mdev->cycles.mult;
