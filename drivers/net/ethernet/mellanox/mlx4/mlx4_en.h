@@ -168,6 +168,7 @@ enum {
 
 #define MLX4_EN_LOOPBACK_RETRIES	5
 #define MLX4_EN_LOOPBACK_TIMEOUT	100
+#define MLX4_EN_TS_CYCLES_SHIFT 	29
 
 #ifdef MLX4_EN_PERF_STAT
 /* Number of samples to 'average' */
