@@ -787,6 +787,9 @@ struct mlx4_set_port_general_context {
 	u8 pprx;
 	u8 pfcrx;
 	u16 reserved4;
+	u32 reserved5;
+	u8 phv_en;
+	u8 reserved6[3];
 };
 
 struct mlx4_set_port_rqp_calc_context {
@@ -902,6 +905,7 @@ struct mlx4_priv {
 
 	atomic_t		opreq_count;
 	struct work_struct	opreq_task;
+	int			phv_bit[MLX4_MAX_PORTS + 1];
 };
 
 static inline struct mlx4_priv *mlx4_priv(struct mlx4_dev *dev)
