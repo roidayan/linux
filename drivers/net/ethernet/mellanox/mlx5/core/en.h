@@ -41,6 +41,7 @@
 #include "mlx5_core.h"
 
 #define MLX5E_MAX_NUM_TC	8
+#define MLX5E_MAX_NUM_PRIO	8
 
 #define MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE                0x7
 #define MLX5E_PARAMS_DEFAULT_LOG_SQ_SIZE                0xa
@@ -464,7 +465,6 @@ struct mlx5e_flow_table {
 
 struct mlx5e_priv {
 	/* priv data path fields - start */
-	int                        num_tc;
 	int                        default_vlan_prio;
 	struct mlx5e_sq            **txq_to_sq_map;
 	/* priv data path fields - end */
