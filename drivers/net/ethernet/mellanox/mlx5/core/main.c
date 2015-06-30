@@ -730,16 +730,11 @@ static int mlx5_core_set_issi(struct mlx5_core_dev *dev)
 
 	err = mlx5_cmd_exec_check_status(dev, query_in, sizeof(query_in),
 					 query_out, sizeof(query_out));
-	if (err) {
-		if (((struct mlx5_outbox_hdr *)query_out)->status ==
-		    MLX5_CMD_STAT_BAD_OP_ERR) {
-			pr_debug("Only ISSI 0 is supported\n");
-			return 0;
-		}
-
-		pr_err("failed to query ISSI\n");
-		return err;
-	}
+	if (err)
+		/* Return success and work with ISSI 0 to cope with older
+		 * firmwares which behave wrong and don't return BAD_OPCODE
+		 */
+		return 0;
 
 	sup_issi = MLX5_GET(query_issi_out, query_out, supported_issi_dw0);
 
@@ -1025,6 +1020,7 @@ static int mlx5_load_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv)
 		dev_err(&pdev->dev, "failed to set issi\n");
 		goto err_disable_hca;
 	}
+	dev_info(&pdev->dev, "Working with ISSI: %d\n", dev->issi);
 
 	err = mlx5_satisfy_startup_pages(dev, 1);
 	if (err) {
