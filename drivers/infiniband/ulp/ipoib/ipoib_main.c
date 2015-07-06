@@ -1590,6 +1590,115 @@ void ipoib_dev_cleanup(struct net_device *dev)
 	priv->tx_ring = NULL;
 }
 
+static int ipoib_set_vf_link_state(struct net_device *dev, int vf, int link_state)
+{
+	struct ipoib_dev_priv *priv = netdev_priv(dev);
+
+	return ib_set_vf_link_state(priv->ca, vf, priv->port, link_state);
+}
+
+static int ipoib_get_vf_config(struct net_device *dev, int vf,
+			       struct ifla_vf_info *ivf)
+{
+	struct ipoib_dev_priv *priv = netdev_priv(dev);
+	struct ib_port_attr *port_attr;
+	struct ib_vf_info info;
+	int err;
+
+	err = ib_get_vf_config(priv->ca, vf, priv->port, &info);
+	if (err)
+		return err;
+
+	port_attr = kmalloc(sizeof(*port_attr), GFP_KERNEL);
+	if (!port_attr)
+		return -ENOMEM;
+
+	err = ib_query_port(priv->ca, priv->port, port_attr);
+	if (err)
+		goto out;
+
+	memset(ivf, 0, sizeof(*ivf));
+	ivf->vf = vf;
+	ivf->linkstate = ib_to_net_link_state(info.state);
+	ivf->min_tx_rate = ib_speed_to_int(port_attr->active_speed) *
+			   ib_width_enum_to_int(port_attr->active_width) * 100;
+	ivf->max_tx_rate = ivf->min_tx_rate;
+
+out:
+	kfree(port_attr);
+	return err;
+}
+
+static int set_vf_port_guid(struct net_device *dev, int vf, u64 guid)
+{
+	struct ipoib_dev_priv *priv = netdev_priv(dev);
+
+	return ib_set_vf_port_guid(priv->ca, vf, priv->port, guid);
+}
+
+static int set_vf_node_guid(struct net_device *dev, int vf, u64 guid)
+{
+	struct ipoib_dev_priv *priv = netdev_priv(dev);
+
+	return ib_set_vf_node_guid(priv->ca, vf, guid);
+}
+
+static u32 get_infiniband_type(u8 *addr)
+{
+	/* we use the last 4 bytes of the address to encode the type.
+	 * These bytes are not used for infiniband
+	 */
+	u32 *ptr = (u32 *)(addr + MAX_ADDR_LEN - 4);
+
+	return *ptr;
+}
+
+static u64 mac_to_guid(u8 *mac)
+{
+	__be64 *guid = (__be64 *)mac;
+
+	return be64_to_cpu(*guid);
+}
+
+static int ipoib_set_vf_guid(struct net_device *dev, int queue, u8 *mac)
+{
+	u32 type;
+	u64 guid;
+
+	type = get_infiniband_type(mac);
+	guid = mac_to_guid(mac);
+
+	switch (type) {
+	case IFLA_VF_IB_NODE_GUID:
+		return set_vf_node_guid(dev, queue, guid);
+	case IFLA_VF_IB_PORT_GUID:
+		return set_vf_port_guid(dev, queue, guid);
+	default:
+		return -EINVAL;
+	}
+}
+
+static int ipoib_get_vf_stats(struct net_device *dev, int vf,
+			      struct ifla_vf_stats *vf_stats)
+{
+	struct ipoib_dev_priv *priv = netdev_priv(dev);
+	struct ib_vf_stats stats;
+	int err;
+
+	err = ib_get_vf_stats(priv->ca, vf, priv->port, &stats);
+	if (err)
+		return err;
+
+	vf_stats->rx_packets = stats.rx_frames;
+	vf_stats->tx_packets = stats.tx_frames;
+	vf_stats->rx_bytes = stats.rx_bytes;
+	vf_stats->tx_bytes = stats.tx_bytes;
+	vf_stats->broadcast = 0;
+	vf_stats->multicast = stats.rx_mcast;
+
+	return 0;
+}
+
 static const struct header_ops ipoib_header_ops = {
 	.create	= ipoib_hard_header,
 };
@@ -1604,6 +1713,10 @@ static const struct net_device_ops ipoib_netdev_ops = {
 	.ndo_tx_timeout		 = ipoib_timeout,
 	.ndo_set_rx_mode	 = ipoib_set_mcast_list,
 	.ndo_get_iflink		 = ipoib_get_iflink,
+	.ndo_set_vf_link_state	 = ipoib_set_vf_link_state,
+	.ndo_get_vf_config	 = ipoib_get_vf_config,
+	.ndo_get_vf_stats	 = ipoib_get_vf_stats,
+	.ndo_set_vf_mac		 = ipoib_set_vf_guid,
 };
 
 void ipoib_setup(struct net_device *dev)
