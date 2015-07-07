@@ -228,6 +228,19 @@ static void handle_responder(struct ib_wc *wc, struct mlx5_cqe64 *cqe,
 	g = (be32_to_cpu(cqe->flags_rqpn) >> 28) & 3;
 	wc->wc_flags |= g ? IB_WC_GRH : 0;
 	wc->pkey_index     = be32_to_cpu(cqe->imm_inval_pkey) & 0xffff;
+
+	switch (wc->sl & 0x3) {
+	case CQE_ROCE_L3_HEADER_TYPE_GRH:
+		wc->network_hdr_type = RDMA_NETWORK_IB;
+		break;
+	case CQE_ROCE_L3_HEADER_TYPE_IPV6:
+		wc->network_hdr_type = RDMA_NETWORK_IPV6;
+		break;
+	case CQE_ROCE_L3_HEADER_TYPE_IPV4:
+		wc->network_hdr_type = RDMA_NETWORK_IPV4;
+		break;
+	}
+	wc->wc_flags |= IB_WC_WITH_NETWORK_HDR_TYPE;
 }
 
 static void dump_cqe(struct mlx5_ib_dev *dev, struct mlx5_err_cqe *cqe)
