@@ -32,6 +32,7 @@
 
 #include <linux/module.h>
 #include <rdma/ib_umem.h>
+#include <rdma/ib_cache.h>
 #include "mlx5_ib.h"
 #include "user.h"
 
@@ -1369,29 +1370,47 @@ static int ib_rate_to_mlx5(struct mlx5_ib_dev *dev, u8 rate)
 
 static int mlx5_set_path(struct mlx5_ib_dev *dev, const struct ib_ah_attr *ah,
 			 struct mlx5_qp_path *path, u8 port, int attr_mask,
-			 u32 path_flags, const struct ib_qp_attr *attr)
+			 u32 path_flags, const struct ib_qp_attr *attr,
+			 int alt)
 {
+	enum rdma_link_layer ll = dev->ib_dev.get_link_layer(&dev->ib_dev,
+							     port);
 	int err;
 
-	path->fl_free_ar = (path_flags & MLX5_PATH_FLAG_FL) ? 0x80 : 0;
-	path->fl_free_ar |= (path_flags & MLX5_PATH_FLAG_FREE_AR) ? 0x40 : 0;
+	if ((ll == IB_LINK_LAYER_ETHERNET) || (ah->ah_flags & IB_AH_GRH)) {
+		int len = dev->mdev->port_caps[port - 1].gid_table_len;
 
-	if (attr_mask & IB_QP_PKEY_INDEX)
-		path->pkey_index = cpu_to_be16(alt ? attr->alt_pkey_index :
-					             attr->pkey_index);
-
-	path->grh_mlid	= ah->src_path_bits & 0x7f;
-	path->rlid	= cpu_to_be16(ah->dlid);
-
-	if (ah->ah_flags & IB_AH_GRH) {
-		if (ah->grh.sgid_index >=
-		    dev->mdev->port_caps[port - 1].gid_table_len) {
+		if (ah->grh.sgid_index >= len) {
 			pr_err("sgid_index (%u) too large. max is %d\n",
-			       ah->grh.sgid_index,
-			       dev->mdev->port_caps[port - 1].gid_table_len);
+			       ah->grh.sgid_index, len - 1);
 			return -EINVAL;
 		}
-		path->grh_mlid |= 1 << 7;
+	}
+
+	if (ll == IB_LINK_LAYER_ETHERNET) {
+		if (!(ah->ah_flags & IB_AH_GRH))
+			return -EINVAL;
+		memcpy(path->rmac, ah->dmac, sizeof(ah->dmac));
+		path->udp_sport = mlx5_get_roce_udp_sport(dev, port,
+							  ah->grh.sgid_index);
+		path->dci_cfi_prio_sl = (ah->sl & 0xf) << 4;
+	} else {
+		path->fl_free_ar = (path_flags & MLX5_PATH_FLAG_FL) ? 0x80 : 0;
+		path->grh_mlid	= ah->src_path_bits & 0x7f;
+		path->rlid	= cpu_to_be16(ah->dlid);
+		if (ah->ah_flags & IB_AH_GRH)
+			path->grh_mlid	|= 1 << 7;
+		if (attr_mask & IB_QP_PKEY_INDEX)
+			path->pkey_index = cpu_to_be16(alt ?
+						       attr->alt_pkey_index :
+						       attr->pkey_index);
+
+		path->dci_cfi_prio_sl = ah->sl & 0xf;
+	}
+
+	path->fl_free_ar |= (path_flags & MLX5_PATH_FLAG_FREE_AR) ? 0x40 : 0;
+
+	if (ah->ah_flags & IB_AH_GRH) {
 		path->mgid_index = ah->grh.sgid_index;
 		path->hop_limit  = ah->grh.hop_limit;
 		path->tclass_flowlabel =
@@ -1407,9 +1426,7 @@ static int mlx5_set_path(struct mlx5_ib_dev *dev, const struct ib_ah_attr *ah,
 	path->port = port;
 
 	if (attr_mask & IB_QP_TIMEOUT)
-		path->ackto_lt = attr->timeout << 3;
-
-	path->sl = ah->sl & 0xf;
+		path->ackto_lt = alt ? attr->alt_timeout << 3 : attr->timeout << 3;
 
 	return 0;
 }
@@ -1633,7 +1650,7 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 	if (attr_mask & IB_QP_AV) {
 		err = mlx5_set_path(dev, &attr->ah_attr, &context->pri_path,
 				    attr_mask & IB_QP_PORT ? attr->port_num : qp->port,
-				    attr_mask, 0, attr);
+				    attr_mask, 0, attr, 0);
 		if (err)
 			goto out;
 	}
@@ -1643,7 +1660,7 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 
 	if (attr_mask & IB_QP_ALT_PATH) {
 		err = mlx5_set_path(dev, &attr->alt_ah_attr, &context->alt_path,
-				    attr->alt_port_num, attr_mask, 0, attr);
+				    attr->alt_port_num, attr_mask, 0, attr, 1);
 		if (err)
 			goto out;
 	}
@@ -1773,15 +1790,21 @@ int mlx5_ib_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 	enum ib_qp_state cur_state, new_state;
 	int err = -EINVAL;
 	int port;
+	enum rdma_link_layer ll = IB_LINK_LAYER_UNSPECIFIED;
 
 	mutex_lock(&qp->mutex);
 
 	cur_state = attr_mask & IB_QP_CUR_STATE ? attr->cur_qp_state : qp->state;
 	new_state = attr_mask & IB_QP_STATE ? attr->qp_state : cur_state;
 
+	if (!(cur_state == new_state && cur_state == IB_QPS_RESET)) {
+		port = attr_mask & IB_QP_PORT ? attr->port_num : qp->port;
+		ll = dev->ib_dev.get_link_layer(&dev->ib_dev, port);
+	}
+
 	if (ibqp->qp_type != MLX5_IB_QPT_REG_UMR &&
 	    !ib_modify_qp_is_ok(cur_state, new_state, ibqp->qp_type, attr_mask,
-				IB_LINK_LAYER_UNSPECIFIED))
+				ll))
 		goto out;
 
 	if ((attr_mask & IB_QP_PORT) &&
@@ -3008,7 +3031,7 @@ static void to_ib_ah_attr(struct mlx5_ib_dev *ibdev, struct ib_ah_attr *ib_ah_at
 	    ib_ah_attr->port_num > MLX5_CAP_GEN(dev, num_ports))
 		return;
 
-	ib_ah_attr->sl = path->sl & 0xf;
+	ib_ah_attr->sl = path->dci_cfi_prio_sl & 0xf;
 
 	ib_ah_attr->dlid	  = be16_to_cpu(path->rlid);
 	ib_ah_attr->src_path_bits = path->grh_mlid & 0x7f;
