@@ -42,6 +42,7 @@
 #include <linux/mlx5/qp.h>
 #include <linux/mlx5/srq.h>
 #include <linux/types.h>
+#include <linux/mlx5/transobj.h>
 
 #define mlx5_ib_dbg(dev, format, arg...)				\
 pr_debug("%s:%s:%d:(pid %d): " format, (dev)->ib_dev.name, __func__,	\
@@ -96,6 +97,8 @@ struct mlx5_ib_ucontext {
 	 */
 	struct mutex		db_page_mutex;
 	struct mlx5_uuar_info	uuari;
+	/* Transport Domain number */
+	u32			tdn;
 };
 
 static inline struct mlx5_ib_ucontext *to_mucontext(struct ib_ucontext *ibucontext)
@@ -177,6 +180,10 @@ struct mlx5_ib_pfault {
 struct mlx5_ib_qp {
 	struct ib_qp		ibqp;
 	struct mlx5_core_qp	mqp;
+	struct mlx5_core_qp	mrq;
+	struct mlx5_core_qp	msq;
+	u32			tisn;
+	u32			tirn;
 	struct mlx5_buf		buf;
 
 	struct mlx5_db		db;
@@ -191,6 +198,12 @@ struct mlx5_ib_qp {
 
 	struct ib_umem	       *umem;
 	int			buf_size;
+	/* Raw Ethernet QP's SQ is allocated seperately
+	 * from the RQ's buffer in user-space.
+	 */
+	struct ib_umem	       *sq_umem;
+	int			sq_buf_size;
+	u64			sq_buf_addr;
 
 	/* serialize qp state modifications
 	 */
@@ -202,6 +215,9 @@ struct mlx5_ib_qp {
 	u8			atomic_rd_en;
 	u8			resp_depth;
 	u8			state;
+	/* Raw Ethernet QP's SQ and RQ states */
+	u8			rq_state;
+	u8			sq_state;
 	int			mlx_type;
 	int			wq_sig;
 	int			scat_cqe;
@@ -497,6 +513,16 @@ static inline struct mlx5_ib_cq *to_mcq(struct ib_cq *ibcq)
 static inline struct mlx5_ib_qp *to_mibqp(struct mlx5_core_qp *mqp)
 {
 	return container_of(mqp, struct mlx5_ib_qp, mqp);
+}
+
+static inline struct mlx5_ib_qp *sq_to_mibqp(struct mlx5_core_qp *msq)
+{
+	return container_of(msq, struct mlx5_ib_qp, msq);
+}
+
+static inline struct mlx5_ib_qp *rq_to_mibqp(struct mlx5_core_qp *mrq)
+{
+	return container_of(mrq, struct mlx5_ib_qp, mrq);
 }
 
 static inline struct mlx5_ib_mr *to_mibmr(struct mlx5_core_mr *mmr)
