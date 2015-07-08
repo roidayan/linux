@@ -939,6 +939,14 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 	uuari->num_low_latency_uuars = req.num_low_latency_uuars;
 	uuari->uars = uars;
 	uuari->num_uars = num_uars;
+
+	if (mlx5_ib_port_link_layer(&dev->ib_dev, 1) ==
+	    IB_LINK_LAYER_ETHERNET) {
+		err = mlx5_alloc_transport_domain(dev->mdev, &context->tdn);
+		if (err)
+			goto out_uars;
+	}
+
 	return &context->ibucontext;
 
 out_uars:
@@ -964,6 +972,10 @@ static int mlx5_ib_dealloc_ucontext(struct ib_ucontext *ibcontext)
 	struct mlx5_ib_dev *dev = to_mdev(ibcontext->device);
 	struct mlx5_uuar_info *uuari = &context->uuari;
 	int i;
+
+	if (mlx5_ib_port_link_layer(&dev->ib_dev, 1) ==
+	    IB_LINK_LAYER_ETHERNET)
+		mlx5_dealloc_transport_domain(dev->mdev, context->tdn);
 
 	for (i = 0; i < uuari->num_uars; i++) {
 		if (mlx5_cmd_free_uar(dev->mdev, uuari->uars[i].index))
