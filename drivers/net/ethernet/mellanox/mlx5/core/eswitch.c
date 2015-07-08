@@ -597,30 +597,45 @@ out:
 static int esw_create_fdb_table(struct mlx5_eswitch *esw, int nvports)
 {
 	struct mlx5_core_dev *dev = esw->dev;
-	struct mlx5_flow_table_group g;
+	struct mlx5_flow_table_group *g;
 	struct mlx5_flow_table *fdb;
 	u8 *dmac;
+	int num_fdb_groups;
 
 	esw_debug(dev, "Create FDB log_max_size(%d)\n",
 		  MLX5_CAP_ESW_FLOWTABLE_FDB(dev, log_max_ft_size));
 
-	memset(&g, 0, sizeof(g));
+	if (!mlx5_vf_fdb_rules)
+		num_fdb_groups = 2;
+	else
+		num_fdb_groups = 1;
+
+	g = kcalloc(num_fdb_groups, sizeof(*g), GFP_KERNEL);
+	if (!g)
+		return -ENOMEM;
+
 	/* UC MC Full match rules*/
-	g.log_sz = MLX5_CAP_ESW_FLOWTABLE_FDB(dev, log_max_ft_size);
-	g.match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
-	dmac = MLX5_ADDR_OF(fte_match_param, g.match_criteria,
+	g[0].log_sz = MLX5_CAP_ESW_FLOWTABLE_FDB(dev, log_max_ft_size);
+	g[0].match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
+	dmac = MLX5_ADDR_OF(fte_match_param, g[0].match_criteria,
 			    outer_headers.dmac_47_16);
 	/* Match criteria mask */
 	memset(dmac, 0xff, 6);
 
+	if (!mlx5_vf_fdb_rules) {
+		g[1].log_sz = 0;
+		g[1].match_criteria_enable = 0;
+	}
+
 	fdb = mlx5_create_flow_table(dev, 0,
 				     MLX5_FLOW_TABLE_TYPE_ESWITCH,
-				     1, &g);
+				     num_fdb_groups, g);
 	if (fdb)
 		esw_debug(dev, "ESW: FDB Table created fdb->id %d\n", mlx5_get_flow_table_id(fdb));
 	else
 		esw_warn(dev, "ESW: Failed to create FDB Table\n");
 
+	kfree(g);
 	esw->fdb_table.fdb = fdb;
 	return fdb ? 0 : -ENOMEM;
 }

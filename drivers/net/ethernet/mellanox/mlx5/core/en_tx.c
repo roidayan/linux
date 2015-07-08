@@ -312,6 +312,11 @@ netdev_tx_t mlx5e_xmit(struct sk_buff *skb, struct net_device *dev)
 	return mlx5e_sq_xmit(sq, skb);
 }
 
+netdev_tx_t mlx5e_xmit_from_rep_sq(struct sk_buff *skb, struct mlx5e_sq *rep_sq)
+{
+	return mlx5e_sq_xmit(rep_sq, skb);
+}
+
 bool mlx5e_poll_tx_cq(struct mlx5e_cq *cq)
 {
 	struct mlx5e_sq *sq;

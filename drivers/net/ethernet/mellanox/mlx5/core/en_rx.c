@@ -219,6 +219,7 @@ bool mlx5e_poll_rx_cq(struct mlx5e_cq *cq, int budget)
 {
 	struct mlx5e_rq *rq = container_of(cq, struct mlx5e_rq, cq);
 	int i;
+	u32 flow_tag, vport;
 
 	/* avoid accessing cq (dma coherent memory) if not needed */
 	if (!test_and_clear_bit(MLX5E_CQ_HAS_CQES, &cq->flags))
@@ -256,7 +257,19 @@ bool mlx5e_poll_rx_cq(struct mlx5e_cq *cq, int budget)
 		}
 
 		mlx5e_build_rx_skb(cqe, rq, skb);
-		rq->stats.packets++;
+
+		vport = FDB_UPLINK_VPORT;
+		flow_tag = be32_to_cpu(cqe->sop_drop_qpn) & 0x00ffffff;
+
+		if (net_ratelimit())
+			netdev_warn(rq->netdev, "%s flow_tag %x\n",__func__, flow_tag);
+
+		if (flow_tag & FDB_TAG)
+			vport = handle_fdb_flow_tag(rq->netdev, skb, flow_tag);
+
+		if (vport == FDB_UPLINK_VPORT)
+			rq->stats.packets++;
+
 		napi_gro_receive(cq->napi, skb);
 
 wq_ll_pop:

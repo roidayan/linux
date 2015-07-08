@@ -40,6 +40,17 @@
 #include "transobj.h"
 #include "mlx5_core.h"
 
+#define FDB_TAG (1 << 23)
+#define FDB_UPLINK_VPORT 0xffffff
+
+int mlx5_set_flow_group_entry_index(void *flow_table, u32 group_ix,
+				    u32 flow_index, void *flow_context);
+
+void mlx5_del_flow_group_entry(void *flow_table, u32 flow_index);
+
+u32 handle_fdb_flow_tag(struct net_device *pf_dev, struct sk_buff *skb, u32 flow_tag);
+
+
 #define MLX5E_MAX_NUM_TC	8
 
 #define MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE                0x6
@@ -510,6 +521,10 @@ struct mlx5e_priv {
 	struct mlx5_core_dev      *mdev;
 	struct net_device         *netdev;
 	struct mlx5e_stats         stats;
+
+	struct mlx5e_vf_rep	  **vf_reps;
+	struct work_struct	  vf_reps_work;
+	struct mlx5e_channel     **rep_channel;
 };
 
 #define MLX5E_NET_IP_ALIGN 2
@@ -560,6 +575,7 @@ void mlx5e_send_nop(struct mlx5e_sq *sq, bool notify_hw);
 u16 mlx5e_select_queue(struct net_device *dev, struct sk_buff *skb,
 		       void *accel_priv, select_queue_fallback_t fallback);
 netdev_tx_t mlx5e_xmit(struct sk_buff *skb, struct net_device *dev);
+netdev_tx_t mlx5e_xmit_from_rep_sq(struct sk_buff *skb, struct mlx5e_sq *rep_sq);
 
 void mlx5e_completion_event(struct mlx5_core_cq *mcq);
 void mlx5e_cq_error_event(struct mlx5_core_cq *mcq, enum mlx5_event event);
@@ -632,3 +648,6 @@ static inline int mlx5e_get_max_num_channels(struct mlx5_core_dev *mdev)
 
 extern const struct ethtool_ops mlx5e_ethtool_ops;
 u16 mlx5e_get_max_inline_cap(struct mlx5_core_dev *mdev);
+
+int  mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev);
+void mlx5e_stop_flow_offloads(struct mlx5e_priv *pf_dev);

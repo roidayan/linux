@@ -342,6 +342,23 @@ void mlx5_del_flow_table_entry(void *flow_table, u32 flow_index)
 }
 EXPORT_SYMBOL(mlx5_del_flow_table_entry);
 
+int mlx5_set_flow_group_entry(void *flow_table, u32 group_ix,
+			      u32 *flow_index,
+			      void *flow_context)
+{
+	struct mlx5_flow_table *ft = flow_table;
+	int err;
+
+	err = alloc_flow_index(ft, group_ix, flow_index);
+	if (err) {
+		mlx5_core_warn(ft->dev, "alloc_flow_index failed err %d\n", err);
+		return err;
+	}
+
+	return mlx5_set_flow_entry_cmd(ft, group_ix, *flow_index, flow_context);
+}
+EXPORT_SYMBOL(mlx5_set_flow_group_entry);
+
 void *mlx5_create_flow_table(struct mlx5_core_dev *dev, u8 level, u8 table_type,
 			     u16 num_groups,
 			     struct mlx5_flow_table_group *group)
@@ -420,3 +437,19 @@ u32 mlx5_get_flow_table_id(void *flow_table)
 	return ft->id;
 }
 EXPORT_SYMBOL(mlx5_get_flow_table_id);
+
+int mlx5_set_flow_group_entry_index(void *flow_table, u32 group_ix,
+			      u32 flow_index,
+			      void *flow_context)
+{
+	struct mlx5_flow_table *ft = flow_table;
+
+	return mlx5_set_flow_entry_cmd(ft, group_ix, flow_index, flow_context);
+}
+
+void mlx5_del_flow_group_entry(void *flow_table, u32 flow_index)
+{
+	struct mlx5_flow_table *ft = flow_table;
+
+	return mlx5_del_flow_entry_cmd(ft, flow_index);
+}

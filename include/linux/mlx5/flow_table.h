@@ -57,6 +57,9 @@ void mlx5_destroy_flow_table(void *flow_table);
 int mlx5_add_flow_table_entry(void *flow_table, u8 match_criteria_enable,
 			      void *match_criteria, void *flow_context,
 			      u32 *flow_index);
+int mlx5_set_flow_group_entry(void *ft, u32 group_ix,
+			      u32 *flow_index,
+			      void *flow_context);
 void mlx5_del_flow_table_entry(void *flow_table, u32 flow_index);
 u32 mlx5_get_flow_table_id(void *flow_table);
 

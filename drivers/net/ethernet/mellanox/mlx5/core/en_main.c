@@ -1938,6 +1938,23 @@ static int mlx5e_change_mtu(struct net_device *netdev, int new_mtu)
 	return err;
 }
 
+static int flow_offloads_on = 0;
+
+void mlx5e_set_vf_reps(struct work_struct *work)
+{
+	int err;
+	struct mlx5e_priv *priv = container_of(work, struct mlx5e_priv,
+					       vf_reps_work);
+
+	printk(KERN_ERR "%s flow_offloads_on %d\n", __func__, flow_offloads_on);
+	if (!flow_offloads_on)
+		err = mlx5e_start_flow_offloads(priv);
+	else
+		mlx5e_stop_flow_offloads(priv);
+
+	flow_offloads_on = !flow_offloads_on;
+}
+
 static int mlx5e_set_vf_mac(struct net_device *dev, int vf, u8 *mac)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
@@ -2107,6 +2124,7 @@ static void mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 	INIT_WORK(&priv->update_carrier_work, mlx5e_update_carrier_work);
 	INIT_WORK(&priv->set_rx_mode_work, mlx5e_set_rx_mode_work);
 	INIT_DELAYED_WORK(&priv->update_stats_work, mlx5e_update_stats_work);
+	INIT_WORK(&priv->vf_reps_work, mlx5e_set_vf_reps);
 }
 
 static void mlx5e_set_netdev_dev_addr(struct net_device *netdev)
@@ -2363,4 +2381,83 @@ void mlx5e_init(void)
 void mlx5e_cleanup(void)
 {
 	mlx5_unregister_interface(&mlx5e_interface);
+}
+
+int mlx5e_open_rep_channels(struct mlx5e_priv *priv)
+{
+	struct mlx5e_channel_param cparam;
+	int nch;
+	int err = -ENOMEM;
+	int i;
+	int j;
+	struct mlx5_core_sriov *sriov = &priv->mdev->priv.sriov;
+	struct mlx5e_params rep_param;
+
+	memset(&rep_param, 0, sizeof (struct mlx5e_params));
+
+	rep_param.log_sq_size = priv->params.log_sq_size;
+	rep_param.num_channels = sriov->num_vfs; /* one channel per representor */
+	rep_param.num_tc = 1; /* one SQ per channel  */
+	rep_param.tx_cq_moderation_usec = priv->params.tx_cq_moderation_usec;
+	rep_param.tx_cq_moderation_pkts = priv->params.tx_cq_moderation_pkts;
+	rep_param.min_rx_wqes   = 1;
+	rep_param.tx_max_inline = 0; /* no inline */
+
+	nch = rep_param.num_channels;
+
+	priv->rep_channel = kcalloc(nch, sizeof(struct mlx5e_channel *),
+				    GFP_KERNEL);
+
+	if (!priv->rep_channel || !priv->txq_to_sq_map)
+		goto err_free_txq_to_sq_map;
+
+	printk(KERN_INFO "%s creating %d channels for vf reps xmit\n", __func__, nch);
+
+	/* FIXME: the shared code uses priv->txq_to_sq_map, does netdev_get_tx_queue calls etc */
+	mlx5e_build_channel_param(priv, &rep_param, &cparam);
+	for (i = 0; i < nch; i++) {
+		err = mlx5e_open_channel(priv, i, &priv->params, &cparam, &priv->rep_channel[i]);
+		if (err) {
+			printk(KERN_INFO "%s mlx5e_open_channel failed for vf %d err %d\n", __func__, i, err);
+			goto err_close_channels;
+		}
+	}
+
+#ifdef DO_REP_RX
+	for (j = 0; j < nch; j++) {
+		err = mlx5e_wait_for_min_rx_wqes(&priv->rep_channel[j]->rq, &rep_param);
+		if (err) {
+			printk(KERN_INFO "%s mlx5e_wait_for_min_rx_wqes failed for vf %d err %d\n", __func__, j, err);
+			goto err_close_channels;
+		}
+	}
+#endif
+	return 0;
+
+err_close_channels:
+	for (i--; i >= 0; i--)
+		mlx5e_close_channel(priv->rep_channel[i]);
+
+err_free_txq_to_sq_map:
+	kfree(priv->rep_channel);
+	priv->rep_channel = NULL;
+
+	return err;
+}
+
+void mlx5e_close_rep_channels(struct mlx5e_priv *priv)
+{
+	int i;
+	struct mlx5_core_sriov *sriov = &priv->mdev->priv.sriov;
+
+	if (!priv->rep_channel) {
+		printk(KERN_INFO "%s no vf reps channels, bailing out\n", __func__);
+		return;
+	}
+
+	for (i = 0; i < sriov->num_vfs; i++)
+		mlx5e_close_channel(priv->rep_channel[i]);
+
+	kfree(priv->rep_channel);
+	priv->rep_channel = NULL;
 }
