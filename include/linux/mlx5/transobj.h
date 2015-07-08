@@ -33,16 +33,21 @@
 #ifndef __TRANSOBJ_H__
 #define __TRANSOBJ_H__
 
+#include <linux/mlx5/device.h>
+#include <linux/mlx5/driver.h>
+
 int mlx5_alloc_transport_domain(struct mlx5_core_dev *dev, u32 *tdn);
 void mlx5_dealloc_transport_domain(struct mlx5_core_dev *dev, u32 tdn);
 int mlx5_core_create_rq(struct mlx5_core_dev *dev, u32 *in, int inlen,
 			u32 *rqn);
 int mlx5_core_modify_rq(struct mlx5_core_dev *dev, u32 rqn, u32 *in, int inlen);
 void mlx5_core_destroy_rq(struct mlx5_core_dev *dev, u32 rqn);
+int mlx5_core_query_rq(struct mlx5_core_dev *dev, u32 rqn, u32 *out);
 int mlx5_core_create_sq(struct mlx5_core_dev *dev, u32 *in, int inlen,
 			u32 *sqn);
 int mlx5_core_modify_sq(struct mlx5_core_dev *dev, u32 sqn, u32 *in, int inlen);
 void mlx5_core_destroy_sq(struct mlx5_core_dev *dev, u32 sqn);
+int mlx5_core_query_sq(struct mlx5_core_dev *dev, u32 sqn, u32 *out);
 int mlx5_core_create_tir(struct mlx5_core_dev *dev, u32 *in, int inlen,
 			 u32 *tirn);
 int mlx5_core_modify_tir(struct mlx5_core_dev *dev, u32 tirn, u32 *in,
