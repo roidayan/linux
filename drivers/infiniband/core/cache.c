@@ -244,7 +244,7 @@ static int find_gid(struct ib_gid_table *table, const union ib_gid *gid,
 
 		if (mask & GID_ATTR_FIND_MASK_GID_TYPE &&
 		    attr->gid_type != val->gid_type)
-			continue;
+			goto next;
 
 		if (mask & GID_ATTR_FIND_MASK_GID &&
 		    memcmp(gid, &table->data_vec[i].gid, sizeof(*gid)))
