@@ -1363,6 +1363,28 @@ static int mlx5e_set_dev_port_mtu(struct net_device *netdev)
 	return 0;
 }
 
+static void mlx5e_netdev_set_tcs(struct net_device *netdev)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+	int nch = priv->params.num_channels;
+	int ntc = priv->params.num_tc;
+	int prio;
+	int tc;
+
+	netdev_reset_tc(netdev);
+
+	if (ntc == 1)
+		return;
+
+	netdev_set_num_tc(netdev, ntc);
+
+	for (tc = 0; tc < ntc; tc++)
+		netdev_set_tc_queue(netdev, tc, nch, tc * nch);
+
+	for (prio = 0; prio < MLX5E_MAX_NUM_PRIO; prio++)
+		netdev_set_prio_tc_map(netdev, prio, prio % ntc);
+}
+
 int mlx5e_open_locked(struct net_device *netdev)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
@@ -1370,6 +1392,8 @@ int mlx5e_open_locked(struct net_device *netdev)
 	int err;
 
 	set_bit(MLX5E_STATE_OPENED, &priv->state);
+
+	mlx5e_netdev_set_tcs(netdev);
 
 	num_txqs = priv->params.num_channels * priv->params.num_tc;
 	netif_set_real_num_tx_queues(netdev, num_txqs);
@@ -1776,6 +1800,31 @@ static void mlx5e_destroy_tirs(struct mlx5e_priv *priv)
 		mlx5e_destroy_tir(priv, i);
 }
 
+static int mlx5e_setup_tc(struct net_device *netdev, u8 tc)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+	bool was_opened;
+	int err = 0;
+
+	if (tc > MLX5E_MAX_NUM_TC)
+		return -EINVAL;
+
+	mutex_lock(&priv->state_lock);
+
+	was_opened = test_bit(MLX5E_STATE_OPENED, &priv->state);
+	if (was_opened)
+		mlx5e_close_locked(priv->netdev);
+
+	priv->params.num_tc = tc ? tc : 1;
+
+	if (was_opened)
+		err = mlx5e_open_locked(priv->netdev);
+
+	mutex_unlock(&priv->state_lock);
+
+	return err;
+}
+
 static struct rtnl_link_stats64 *
 mlx5e_get_stats(struct net_device *dev, struct rtnl_link_stats64 *stats)
 {
@@ -1891,6 +1940,8 @@ static struct net_device_ops mlx5e_netdev_ops = {
 	.ndo_open                = mlx5e_open,
 	.ndo_stop                = mlx5e_close,
 	.ndo_start_xmit          = mlx5e_xmit,
+	.ndo_setup_tc            = mlx5e_setup_tc,
+	.ndo_select_queue        = mlx5e_select_queue,
 	.ndo_get_stats64         = mlx5e_get_stats,
 	.ndo_set_rx_mode         = mlx5e_set_rx_mode,
 	.ndo_set_mac_address     = mlx5e_set_mac,
@@ -1998,10 +2049,6 @@ static void mlx5e_build_netdev(struct net_device *netdev)
 
 	SET_NETDEV_DEV(netdev, &mdev->pdev->dev);
 
-	if (priv->params.num_tc > 1) {
-		mlx5e_netdev_ops.ndo_select_queue = mlx5e_select_queue;
-	}
-
 	netdev->netdev_ops        = &mlx5e_netdev_ops;
 	netdev->watchdog_timeo    = 15 * HZ;
 
@@ -2070,7 +2117,9 @@ static void *mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 	if (mlx5e_check_required_hca_cap(mdev))
 		return NULL;
 
-	netdev = alloc_etherdev_mqs(sizeof(struct mlx5e_priv), nch, nch);
+	netdev = alloc_etherdev_mqs(sizeof(struct mlx5e_priv),
+				    nch * MLX5E_MAX_NUM_TC,
+				    nch);
 	if (!netdev) {
 		mlx5_core_err(mdev, "alloc_etherdev_mqs() failed\n");
 		return NULL;
