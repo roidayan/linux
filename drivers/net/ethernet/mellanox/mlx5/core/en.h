@@ -96,6 +96,7 @@ static const char vport_strings[][ETH_GSTRING_LEN] = {
 	"lro_bytes",
 	"rx_csum_good",
 	"rx_csum_none",
+	"rx_csum_sw",
 	"tx_csum_offload",
 	"tx_queue_stopped",
 	"tx_queue_wake",
@@ -133,13 +134,14 @@ struct mlx5e_vport_stats {
 	u64 lro_bytes;
 	u64 rx_csum_good;
 	u64 rx_csum_none;
+	u64 rx_csum_sw;
 	u64 tx_csum_offload;
 	u64 tx_queue_stopped;
 	u64 tx_queue_wake;
 	u64 tx_queue_dropped;
 	u64 rx_wqe_err;
 
-#define NUM_VPORT_COUNTERS     31
+#define NUM_VPORT_COUNTERS     32
 };
 
 static const char pport_strings[][ETH_GSTRING_LEN] = {
@@ -219,6 +221,7 @@ struct mlx5e_pport_stats {
 static const char rq_stats_strings[][ETH_GSTRING_LEN] = {
 	"packets",
 	"csum_none",
+	"csum_sw",
 	"lro_packets",
 	"lro_bytes",
 	"wqe_err"
@@ -227,10 +230,11 @@ static const char rq_stats_strings[][ETH_GSTRING_LEN] = {
 struct mlx5e_rq_stats {
 	u64 packets;
 	u64 csum_none;
+	u64 csum_sw;
 	u64 lro_packets;
 	u64 lro_bytes;
 	u64 wqe_err;
-#define NUM_RQ_STATS 5
+#define NUM_RQ_STATS 6
 };
 
 static const char sq_stats_strings[][ETH_GSTRING_LEN] = {
