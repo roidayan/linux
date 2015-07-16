@@ -573,7 +573,8 @@ struct mlx5_err_cqe {
 };
 
 struct mlx5_cqe64 {
-	u8		rsvd0[4];
+	u8		outer_tunneled;
+	u8		rsvd0[3];
 	u8		lro_tcppsh_abort_dupack;
 	u8		lro_min_ttl;
 	__be16		lro_tcp_win;
@@ -612,6 +613,12 @@ static inline u8 get_cqe_l4_hdr_type(struct mlx5_cqe64 *cqe)
 static inline int cqe_has_vlan(struct mlx5_cqe64 *cqe)
 {
 	return !!(cqe->l4_hdr_type_etc & 0x1);
+}
+
+/* TODO: ret bool */
+static inline int is_tunneled(struct mlx5_cqe64 *cqe)
+{
+	return !!(cqe->outer_tunneled & 0x1);
 }
 
 enum {
