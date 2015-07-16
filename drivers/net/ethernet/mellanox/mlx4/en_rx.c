@@ -907,7 +907,7 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
 				gro_skb->csum_level = 1;
 
 			if ((cqe->vlan_my_qpn &
-			    cpu_to_be32(MLX4_CQE_VLAN_PRESENT_MASK)) &&
+			    cpu_to_be32(MLX4_CQE_CVLAN_PRESENT_MASK)) &&
 			    (dev->features & NETIF_F_HW_VLAN_CTAG_RX)) {
 				u16 vid = be16_to_cpu(cqe->sl_vid);
 
@@ -970,7 +970,7 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
 					PKT_HASH_TYPE_L3);
 
 		if ((be32_to_cpu(cqe->vlan_my_qpn) &
-		    MLX4_CQE_VLAN_PRESENT_MASK) &&
+		    MLX4_CQE_CVLAN_PRESENT_MASK) &&
 		    (dev->features & NETIF_F_HW_VLAN_CTAG_RX))
 			__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), be16_to_cpu(cqe->sl_vid));
 
