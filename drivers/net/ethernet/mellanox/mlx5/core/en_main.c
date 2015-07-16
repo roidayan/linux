@@ -157,6 +157,7 @@ void mlx5e_update_stats(struct mlx5e_priv *priv)
 		s->lro_packets	+= rq_stats->lro_packets;
 		s->lro_bytes	+= rq_stats->lro_bytes;
 		s->rx_csum_none	+= rq_stats->csum_none;
+		s->rx_csum_sw	+= rq_stats->csum_sw;
 		s->rx_wqe_err   += rq_stats->wqe_err;
 
 		for (j = 0; j < priv->params.num_tc; j++) {
@@ -242,7 +243,8 @@ void mlx5e_update_stats(struct mlx5e_priv *priv)
 
 	/* Update calculated offload counters */
 	s->tx_csum_offload = s->tx_packets - tx_offload_none;
-	s->rx_csum_good    = s->rx_packets - s->rx_csum_none;
+	s->rx_csum_good    = s->rx_packets - s->rx_csum_none -
+			       s->rx_csum_sw;
 
 	mlx5e_update_pport_counters(priv);
 free_out:
