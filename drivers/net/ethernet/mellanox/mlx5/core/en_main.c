@@ -48,6 +48,7 @@ struct mlx5e_cq_param {
 	u32                        cqc[MLX5_ST_SZ_DW(cqc)];
 	struct mlx5_wq_param       wq;
 	u16                        eq_ix;
+	u8                         cq_period_mode;
 };
 
 struct mlx5e_channel_param {
@@ -816,6 +817,7 @@ static int mlx5e_enable_cq(struct mlx5e_cq *cq, struct mlx5e_cq_param *param)
 
 	mlx5_vector2eqn(mdev, param->eq_ix, &eqn, &irqn_not_used);
 
+	MLX5_SET(cqc,   cqc, cq_period_mode, param->cq_period_mode);
 	MLX5_SET(cqc,   cqc, c_eqn,         eqn);
 	MLX5_SET(cqc,   cqc, uar_page,      mcq->uar->index);
 	MLX5_SET(cqc,   cqc, log_page_size, cq->wq_ctrl.buf.page_shift -
@@ -1079,6 +1081,8 @@ static void mlx5e_build_rx_cq_param(struct mlx5e_priv *priv,
 	MLX5_SET(cqc, cqc, log_cq_size,  priv->params.log_rq_size);
 
 	mlx5e_build_common_cq_param(priv, param);
+
+	param->cq_period_mode = priv->params.rx_cq_period_mode;
 }
 
 static void mlx5e_build_tx_cq_param(struct mlx5e_priv *priv,
@@ -1089,6 +1093,8 @@ static void mlx5e_build_tx_cq_param(struct mlx5e_priv *priv,
 	MLX5_SET(cqc, cqc, log_cq_size,  priv->params.log_sq_size);
 
 	mlx5e_build_common_cq_param(priv, param);
+
+	param->cq_period_mode = MLX5_CQ_PERIOD_MODE_START_FROM_EQE;
 }
 
 static void mlx5e_build_channel_param(struct mlx5e_priv *priv,
@@ -1921,7 +1927,13 @@ static void mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 		MLX5E_PARAMS_DEFAULT_LOG_SQ_SIZE;
 	priv->params.log_rq_size           =
 		MLX5E_PARAMS_DEFAULT_LOG_RQ_SIZE;
+	priv->params.rx_cq_period_mode =
+		MLX5_CAP_GEN(mdev, cq_period_start_from_cqe) ?
+		MLX5_CQ_PERIOD_MODE_START_FROM_CQE :
+		MLX5_CQ_PERIOD_MODE_START_FROM_EQE;
 	priv->params.rx_cq_moderation_usec =
+		MLX5_CAP_GEN(mdev, cq_period_start_from_cqe) ?
+		MLX5E_PARAMS_DEFAULT_RX_CQ_MODERATION_USEC_FROM_CQE :
 		MLX5E_PARAMS_DEFAULT_RX_CQ_MODERATION_USEC;
 	priv->params.rx_cq_moderation_pkts =
 		MLX5E_PARAMS_DEFAULT_RX_CQ_MODERATION_PKTS;
