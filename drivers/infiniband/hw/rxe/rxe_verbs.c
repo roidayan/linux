@@ -258,8 +258,7 @@ static struct ib_ah *rxe_create_ah(struct ib_pd *ibpd, struct ib_ah_attr *attr)
 	if (err)
 		goto err2;
 
-	ah->av.network_type = ib_gid_to_network_type(sgid_attr.gid_type, &sgid);
-	err = rxe_av_fill_ip_info(rxe, &ah->av, attr, &sgid);
+	err = rxe_av_fill_ip_info(rxe, &ah->av, attr, &sgid, &sgid_attr);
 	if (err)
 		goto err2;
 
@@ -299,8 +298,7 @@ static int rxe_modify_ah(struct ib_ah *ibah, struct ib_ah_attr *attr)
 	if (err)
 		goto err1;
 
-	ah->av.network_type = ib_gid_to_network_type(sgid_attr.gid_type, &sgid);
-	err = rxe_av_fill_ip_info(rxe, &ah->av, attr, &sgid);
+	err = rxe_av_fill_ip_info(rxe, &ah->av, attr, &sgid, &sgid_attr);
 err1:
 	return err;
 }
