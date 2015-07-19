@@ -2062,7 +2062,9 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
 		    &route->path_rec->dgid);
 
 	/* Use the hint from IP Stack to select GID Type */
-	network_gid_type = ib_network_to_gid_type(addr->dev_addr.network);
+	network_gid_type = ib_network_to_gid_type(id_priv->id.device,
+						  id_priv->id.port_num,
+						  addr->dev_addr.network);
 	if (addr->dev_addr.network != RDMA_NETWORK_IB) {
 		route->path_rec->gid_type = network_gid_type;
 		route->path_rec->hop_limit = IPV6_DEFAULT_HOPLIMIT;
@@ -3435,7 +3437,8 @@ static int cma_iboe_join_multicast(struct rdma_id_private *id_priv,
 	if (addr->sa_family == AF_INET) {
 		mc->multicast.ib->rec.gid_type =
 			id_priv->cma_dev->default_gid_type;
-		if (mc->multicast.ib->rec.gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP)
+		if (mc->multicast.ib->rec.gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP ||
+		    mc->multicast.ib->rec.gid_type == IB_GID_TYPE_ROCE_IP_ENCAP)
 			err = cma_igmp_send(ndev, &mc->multicast.ib->rec.mgid,
 					    true);
 		if (!err) {
