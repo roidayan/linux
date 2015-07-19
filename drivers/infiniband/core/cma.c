@@ -2464,13 +2464,13 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
 
 		route->path_rec->net = &init_net;
 		route->path_rec->ifindex = ndev->ifindex;
-		route->path_rec->gid_type = id_priv->gid_type;
 	}
 	if (!ndev) {
 		ret = -ENODEV;
 		goto err2;
 	}
 
+	route->path_rec->gid_type = id_priv->gid_type;
 	memcpy(route->path_rec->dmac, addr->dev_addr.dst_dev_addr, ETH_ALEN);
 
 	rdma_ip2gid((struct sockaddr *)&id_priv->id.route.addr.src_addr,
@@ -2479,13 +2479,21 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
 		    &route->path_rec->dgid);
 
 	/* Use the hint from IP Stack to select GID Type */
-	if (route->path_rec->gid_type < ib_network_to_gid_type(addr->dev_addr.network))
-		route->path_rec->gid_type = ib_network_to_gid_type(addr->dev_addr.network);
-	if (((struct sockaddr *)&id_priv->id.route.addr.dst_addr)->sa_family != AF_IB)
+	if (route->path_rec->gid_type < ib_network_to_gid_type(id_priv->id.device,
+							       id_priv->id.port_num,
+							       addr->dev_addr.network,
+							       NULL))
+		route->path_rec->gid_type = ib_network_to_gid_type(id_priv->id.device,
+							       id_priv->id.port_num,
+							       addr->dev_addr.network,
+							       NULL);
+	if (((struct sockaddr *)&id_priv->id.route.addr.dst_addr)->sa_family != AF_IB) {
 		/* TODO: get the hoplimit from the inet/inet6 device */
 		route->path_rec->hop_limit = addr->dev_addr.hoplimit;
-	else
+	} else {
+		route->path_rec->gid_type = IB_GID_TYPE_IB;
 		route->path_rec->hop_limit = 1;
+	}
 	route->path_rec->reversible = 1;
 	route->path_rec->pkey = cpu_to_be16(0xffff);
 	route->path_rec->mtu_selector = IB_SA_EQ;
@@ -3869,7 +3877,9 @@ static int cma_iboe_join_multicast(struct rdma_id_private *id_priv,
 	gid_type = id_priv->cma_dev->default_gid_type[id_priv->id.port_num -
 		   rdma_start_port(id_priv->cma_dev->device)];
 	if (addr->sa_family == AF_INET) {
-		if (gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP)
+		if (gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP ||
+		    gid_type == IB_GID_TYPE_ROCE_IP_ENCAP )
+
 			err = cma_igmp_send(ndev, &mc->multicast.ib->rec.mgid,
 					    true);
 		if (!err) {
