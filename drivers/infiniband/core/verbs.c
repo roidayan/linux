@@ -444,7 +444,8 @@ int ib_init_ah_from_wc(struct ib_device *device, u8 port_num,
 			net_type = wc->network_hdr_type;
 		else
 			net_type = ib_get_net_type_by_grh(device, port_num, grh);
-		gid_type = ib_network_to_gid_type(net_type);
+		gid_type = ib_network_to_gid_type(device, port_num, net_type,
+						  (union rdma_network_hdr *)grh);
 	}
 	ret = get_gids_from_rdma_hdr((union rdma_network_hdr *)grh, net_type,
 				     &sgid, &dgid);
@@ -1151,6 +1152,7 @@ int ib_resolve_eth_dmac(struct ib_qp *qp,
 					ret = -ENXIO;
 				goto out;
 			}
+
 
 			ifindex = sgid_attr.ndev->ifindex;
 
