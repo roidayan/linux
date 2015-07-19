@@ -674,6 +674,8 @@ void ib_cache_gid_set_default_gid(struct ib_device *ib_dev, u8 port,
 		    mode == IB_CACHE_GID_DEFAULT_MODE_SET &&
 		    !memcmp(&gid, &current_gid, sizeof(gid)) &&
 		    !memcmp(&gid_attr, &current_gid_attr, sizeof(gid_attr))) {
+			if (current_gid_attr.ndev)
+				dev_put(current_gid_attr.ndev);
 			mutex_unlock(&table->lock);
 			continue;
 		}
