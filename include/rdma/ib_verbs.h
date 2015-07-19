@@ -73,6 +73,7 @@ enum ib_gid_type {
 	IB_GID_TYPE_IB        = 0,
 	IB_GID_TYPE_ROCE      = 0,
 	IB_GID_TYPE_ROCE_UDP_ENCAP = 1,
+	IB_GID_TYPE_ROCE_IP_ENCAP = 2,
 	IB_GID_TYPE_SIZE
 };
 
@@ -115,15 +116,6 @@ enum rdma_network_type {
 	RDMA_NETWORK_IPV4,
 	RDMA_NETWORK_IPV6
 };
-
-static inline enum ib_gid_type ib_network_to_gid_type(enum rdma_network_type network_type)
-{
-	if (network_type == RDMA_NETWORK_IPV4 ||
-	    network_type == RDMA_NETWORK_IPV6)
-		return IB_GID_TYPE_ROCE_UDP_ENCAP;
-
-	return IB_GID_TYPE_IB;
-}
 
 static inline enum rdma_network_type ib_gid_to_network_type(enum ib_gid_type gid_type,
 							    union ib_gid *gid)
@@ -431,6 +423,7 @@ union rdma_protocol_stats {
 #define RDMA_CORE_CAP_PROT_ROCE         0x00200000
 #define RDMA_CORE_CAP_PROT_IWARP        0x00400000
 #define RDMA_CORE_CAP_PROT_ROCE_UDP_ENCAP 0x00800000
+#define RDMA_CORE_CAP_PROT_ROCE_IP_ENCAP 0x01000000
 
 #define RDMA_CORE_PORT_IBA_IB          (RDMA_CORE_CAP_PROT_IB  \
 					| RDMA_CORE_CAP_IB_MAD \
@@ -445,6 +438,12 @@ union rdma_protocol_stats {
 					| RDMA_CORE_CAP_ETH_AH)
 #define RDMA_CORE_PORT_IBA_ROCE_UDP_ENCAP			\
 					(RDMA_CORE_CAP_PROT_ROCE_UDP_ENCAP \
+					| RDMA_CORE_CAP_IB_MAD  \
+					| RDMA_CORE_CAP_IB_CM   \
+					| RDMA_CORE_CAP_AF_IB   \
+					| RDMA_CORE_CAP_ETH_AH)
+#define RDMA_CORE_PORT_IBA_ROCE_IP_ENCAP			\
+					(RDMA_CORE_CAP_PROT_ROCE_IP_ENCAP \
 					| RDMA_CORE_CAP_IB_MAD  \
 					| RDMA_CORE_CAP_IB_CM   \
 					| RDMA_CORE_CAP_AF_IB   \
@@ -1968,12 +1967,18 @@ static inline bool rdma_protocol_ib(const struct ib_device *device, u8 port_num)
 static inline bool rdma_protocol_roce(const struct ib_device *device, u8 port_num)
 {
 	return device->port_immutable[port_num].core_cap_flags &
-		(RDMA_CORE_CAP_PROT_ROCE | RDMA_CORE_CAP_PROT_ROCE_UDP_ENCAP);
+		(RDMA_CORE_CAP_PROT_ROCE | RDMA_CORE_CAP_PROT_ROCE_UDP_ENCAP |
+		 RDMA_CORE_CAP_PROT_ROCE_IP_ENCAP);
 }
 
 static inline bool rdma_protocol_roce_udp_encap(const struct ib_device *device, u8 port_num)
 {
 	return device->port_immutable[port_num].core_cap_flags & RDMA_CORE_CAP_PROT_ROCE_UDP_ENCAP;
+}
+
+static inline bool rdma_protocol_roce_ip_encap(const struct ib_device *device, u8 port_num)
+{
+	return device->port_immutable[port_num].core_cap_flags & RDMA_CORE_CAP_PROT_ROCE_IP_ENCAP;
 }
 
 static inline bool rdma_protocol_roce_eth_encap(const struct ib_device *device, u8 port_num)
@@ -1990,6 +1995,19 @@ static inline bool rdma_ib_or_roce(const struct ib_device *device, u8 port_num)
 {
 	return rdma_protocol_ib(device, port_num) ||
 		rdma_protocol_roce(device, port_num);
+}
+
+static inline enum ib_gid_type ib_network_to_gid_type(const struct ib_device *device,
+						      u8 port_num,
+						      enum rdma_network_type network_type)
+{
+	if (network_type == RDMA_NETWORK_IPV4 ||
+	    network_type == RDMA_NETWORK_IPV6)
+		return rdma_protocol_roce_udp_encap(device, port_num) ?
+			IB_GID_TYPE_ROCE_UDP_ENCAP :
+			IB_GID_TYPE_ROCE_IP_ENCAP;
+
+	return IB_GID_TYPE_IB;
 }
 
 /**
