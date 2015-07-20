@@ -131,6 +131,9 @@ static void ib_gid_to_mlx5_roce_addr(const union ib_gid *gid,
 	case IB_GID_TYPE_IB:
 		MLX5_SET_RA(mlx5_addr, roce_version, MLX5_ROCE_VERSION_1);
 		break;
+	case IB_GID_TYPE_ROCE_IP_ENCAP:
+		MLX5_SET_RA(mlx5_addr, roce_version, MLX5_ROCE_VERSION_1_5);
+		break;
 	case IB_GID_TYPE_ROCE_UDP_ENCAP:
 		MLX5_SET_RA(mlx5_addr, roce_version, MLX5_ROCE_VERSION_2);
 		break;
@@ -1599,6 +1602,9 @@ static u32 get_core_cap_flags(struct ib_device *ibdev)
 
 	if (roce_version_cap & MLX5_ROCE_VERSION_2_CAP)
 		ret |= RDMA_CORE_PORT_IBA_ROCE_UDP_ENCAP;
+
+	if (roce_version_cap & MLX5_ROCE_VERSION_1_5_CAP)
+		ret |= RDMA_CORE_PORT_IBA_ROCE_IP_ENCAP;
 
 	return ret;
 }
