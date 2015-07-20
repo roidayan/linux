@@ -1003,6 +1003,9 @@ static int mlx5e_open_channel(struct mlx5e_priv *priv, int ix,
 		goto err_close_sqs;
 
 	netif_set_xps_queue(netdev, get_cpu_mask(c->cpu), ix);
+
+	mlx5e_create_channel_debugfs(c);
+
 	*cp = c;
 
 	return 0;
@@ -1026,6 +1029,7 @@ err_napi_del:
 
 static void mlx5e_close_channel(struct mlx5e_channel *c)
 {
+	mlx5e_destroy_channel_debugfs(c);
 	mlx5e_close_rq(&c->rq);
 	mlx5e_close_sqs(c);
 	napi_disable(&c->napi);
@@ -1372,11 +1376,13 @@ int mlx5e_open_locked(struct net_device *netdev)
 	if (err)
 		return err;
 
+	mlx5e_create_debugfs(priv);
+
 	err = mlx5e_open_channels(priv);
 	if (err) {
 		netdev_err(netdev, "%s: mlx5e_open_channels failed, %d\n",
 			   __func__, err);
-		return err;
+		goto err_destroy_debugfs;
 	}
 
 	mlx5e_update_carrier(priv);
@@ -1387,6 +1393,11 @@ int mlx5e_open_locked(struct net_device *netdev)
 	schedule_delayed_work(&priv->update_stats_work, 0);
 
 	return 0;
+
+err_destroy_debugfs:
+	mlx5e_destroy_debugfs(priv);
+
+	return err;
 }
 
 static int mlx5e_open(struct net_device *netdev)
@@ -1410,6 +1421,7 @@ int mlx5e_close_locked(struct net_device *netdev)
 	mlx5e_redirect_rqts(priv);
 	netif_carrier_off(priv->netdev);
 	mlx5e_close_channels(priv);
+	mlx5e_destroy_debugfs(priv);
 
 	return 0;
 }
