@@ -684,10 +684,30 @@ out:
 	return err;
 }
 
+static u32 mlx5e_get_rxfh_key_size(struct net_device *netdev)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+
+	return sizeof(priv->params.toeplitz_hash_key);
+}
+
+static u32 mlx5e_get_rxfh_indir_size(struct net_device *netdev)
+{
+	return MLX5E_INDIR_RQT_SIZE;
+}
+
 static int mlx5e_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key,
 			  u8 *hfunc)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
+
+	if (indir)
+		memcpy(indir, priv->params.indirection_rqt,
+		       sizeof(priv->params.indirection_rqt));
+
+	if (key)
+		memcpy(key, priv->params.toeplitz_hash_key,
+		       sizeof(priv->params.toeplitz_hash_key));
 
 	if (hfunc)
 		*hfunc = priv->params.rss_hfunc;
@@ -701,19 +721,31 @@ static int mlx5e_set_rxfh(struct net_device *netdev, const u32 *indir,
 	struct mlx5e_priv *priv = netdev_priv(netdev);
 	int err = 0;
 
-	if (hfunc == ETH_RSS_HASH_NO_CHANGE)
-		return 0;
-
-	if ((hfunc != ETH_RSS_HASH_XOR) &&
+	if ((hfunc != ETH_RSS_HASH_NO_CHANGE) &&
+	    (hfunc != ETH_RSS_HASH_XOR) &&
 	    (hfunc != ETH_RSS_HASH_TOP))
 		return -EINVAL;
 
 	mutex_lock(&priv->state_lock);
 
-	priv->params.rss_hfunc = hfunc;
-	if (test_bit(MLX5E_STATE_OPENED, &priv->state)) {
-		mlx5e_close_locked(priv->netdev);
-		err = mlx5e_open_locked(priv->netdev);
+	if (indir) {
+		memcpy(priv->params.indirection_rqt, indir,
+		       sizeof(priv->params.indirection_rqt));
+		mlx5e_redirect_rqt(priv, MLX5E_INDIRECTION_RQT);
+	}
+
+	if (key)
+		memcpy(priv->params.toeplitz_hash_key, key,
+		       sizeof(priv->params.toeplitz_hash_key));
+
+	if (hfunc != ETH_RSS_HASH_NO_CHANGE)
+		priv->params.rss_hfunc = hfunc;
+
+	if (key || (hfunc != ETH_RSS_HASH_NO_CHANGE)) {
+		if (test_bit(MLX5E_STATE_OPENED, &priv->state)) {
+			mlx5e_close_locked(priv->netdev);
+			err = mlx5e_open_locked(priv->netdev);
+		}
 	}
 
 	mutex_unlock(&priv->state_lock);
@@ -793,6 +825,8 @@ const struct ethtool_ops mlx5e_ethtool_ops = {
 	.set_coalesce      = mlx5e_set_coalesce,
 	.get_settings      = mlx5e_get_settings,
 	.set_settings      = mlx5e_set_settings,
+	.get_rxfh_key_size   = mlx5e_get_rxfh_key_size,
+	.get_rxfh_indir_size = mlx5e_get_rxfh_indir_size,
 	.get_rxfh          = mlx5e_get_rxfh,
 	.set_rxfh          = mlx5e_set_rxfh,
 	.get_tunable       = mlx5e_get_tunable,
