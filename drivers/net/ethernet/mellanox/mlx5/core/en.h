@@ -410,6 +410,8 @@ struct mlx5e_channel {
 	struct mlx5e_priv         *priv;
 	int                        ix;
 	int                        cpu;
+
+	struct dentry             *dfs_root;
 };
 
 enum mlx5e_traffic_types {
@@ -503,6 +505,8 @@ struct mlx5e_priv {
 	struct mlx5_core_dev      *mdev;
 	struct net_device         *netdev;
 	struct mlx5e_stats         stats;
+
+	struct dentry *dfs_root;
 };
 
 #define MLX5E_NET_IP_ALIGN 2
@@ -580,6 +584,11 @@ int mlx5e_redirect_rqt(struct mlx5e_priv *priv, enum mlx5e_rqt_ix rqt_ix);
 
 int mlx5e_open_locked(struct net_device *netdev);
 int mlx5e_close_locked(struct net_device *netdev);
+
+void mlx5e_create_debugfs(struct mlx5e_priv *priv);
+void mlx5e_destroy_debugfs(struct mlx5e_priv *priv);
+void mlx5e_create_channel_debugfs(struct mlx5e_channel *c);
+void mlx5e_destroy_channel_debugfs(struct mlx5e_channel *c);
 
 static inline void mlx5e_tx_notify_hw(struct mlx5e_sq *sq,
 				      struct mlx5e_tx_wqe *wqe, int bf_sz)
