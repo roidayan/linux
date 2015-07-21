@@ -196,7 +196,7 @@ static inline void mlx5e_build_rx_skb(struct mlx5_cqe64 *cqe,
 	lro_num_seg = be32_to_cpu(cqe->srqn) >> 24;
 	if (lro_num_seg > 1) {
 		mlx5e_lro_update_hdr(skb, cqe);
-		skb_shinfo(skb)->gso_size = MLX5E_PARAMS_DEFAULT_LRO_WQE_SZ;
+		skb_shinfo(skb)->gso_size = 1;
 		rq->stats.lro_packets++;
 		rq->stats.lro_bytes += cqe_bcnt;
 	}

@@ -1955,7 +1955,7 @@ static void mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 	for (i = 0; i < MLX5E_INDIR_RQT_SIZE; i++)
 		priv->params.indirection_rqt[i] = i % num_channels;
 
-	priv->params.lro_en = false && !!MLX5_CAP_ETH(priv->mdev, lro_cap);
+	priv->params.lro_en = !!MLX5_CAP_ETH(mdev, lro_cap);
 	priv->params.lro_wqe_sz            =
 		MLX5E_PARAMS_DEFAULT_LRO_WQE_SZ;
 
