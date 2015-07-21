@@ -1374,26 +1374,14 @@ int mlx5e_open_locked(struct net_device *netdev)
 		return err;
 	}
 
-	err = mlx5e_add_all_vlan_rules(priv);
-	if (err) {
-		netdev_err(netdev, "%s: mlx5e_add_all_vlan_rules failed, %d\n",
-			   __func__, err);
-		goto err_close_channels;
-	}
-
 	mlx5e_update_carrier(priv);
 	mlx5e_redirect_rqts(priv);
 	mlx5e_modify_tir_lro(priv, MLX5E_TT_IPV4_TCP);
 	mlx5e_modify_tir_lro(priv, MLX5E_TT_IPV6_TCP);
-	mlx5e_set_rx_mode_core(priv);
 
 	schedule_delayed_work(&priv->update_stats_work, 0);
+
 	return 0;
-
-err_close_channels:
-	mlx5e_close_channels(priv);
-
-	return err;
 }
 
 static int mlx5e_open(struct net_device *netdev)
@@ -1415,8 +1403,6 @@ int mlx5e_close_locked(struct net_device *netdev)
 	clear_bit(MLX5E_STATE_OPENED, &priv->state);
 
 	mlx5e_redirect_rqts(priv);
-	mlx5e_set_rx_mode_core(priv);
-	mlx5e_del_all_vlan_rules(priv);
 	netif_carrier_off(priv->netdev);
 	mlx5e_close_channels(priv);
 
@@ -1836,14 +1822,14 @@ static int mlx5e_set_features(struct net_device *netdev,
 			err = mlx5e_open_locked(priv->netdev);
 	}
 
+	mutex_unlock(&priv->state_lock);
+
 	if (changes & NETIF_F_HW_VLAN_CTAG_FILTER) {
 		if (features & NETIF_F_HW_VLAN_CTAG_FILTER)
 			mlx5e_enable_vlan_filter(priv);
 		else
 			mlx5e_disable_vlan_filter(priv);
 	}
-
-	mutex_unlock(&priv->state_lock);
 
 	return 0;
 }
@@ -2137,6 +2123,7 @@ static void *mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 	}
 
 	mlx5e_enable_async_events(priv);
+	schedule_work(&priv->set_rx_mode_work);
 
 	return priv;
 
@@ -2181,6 +2168,9 @@ static void mlx5e_destroy_netdev(struct mlx5_core_dev *mdev, void *vpriv)
 	struct mlx5e_priv *priv = vpriv;
 	struct net_device *netdev = priv->netdev;
 
+	set_bit(MLX5E_STATE_DESTROYING, &priv->state);
+
+	schedule_work(&priv->set_rx_mode_work);
 	mlx5e_disable_async_events(priv);
 	flush_scheduled_work();
 	unregister_netdev(netdev);
