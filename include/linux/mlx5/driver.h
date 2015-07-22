@@ -152,8 +152,8 @@ enum mlx5_dev_event {
 };
 
 enum mlx5_port_status {
-	MLX5_PORT_UP        = 1 << 1,
-	MLX5_PORT_DOWN      = 1 << 2,
+	MLX5_PORT_UP        = 1,
+	MLX5_PORT_DOWN      = 2,
 };
 
 struct mlx5_uuar_info {

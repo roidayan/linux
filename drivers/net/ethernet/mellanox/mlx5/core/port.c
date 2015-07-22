@@ -224,6 +224,7 @@ int mlx5_set_port_status(struct mlx5_core_dev *dev,
 
 	memset(in, 0, sizeof(in));
 
+	MLX5_SET(paos_reg, in, local_port, 1);
 	MLX5_SET(paos_reg, in, admin_status, status);
 	MLX5_SET(paos_reg, in, ase, 1);
 
@@ -238,6 +239,8 @@ int mlx5_query_port_status(struct mlx5_core_dev *dev, u8 *status)
 	int err;
 
 	memset(in, 0, sizeof(in));
+
+	MLX5_SET(paos_reg, in, local_port, 1);
 
 	err = mlx5_core_access_reg(dev, in, sizeof(in), out,
 				   sizeof(out), MLX5_REG_PAOS, 0, 0);
