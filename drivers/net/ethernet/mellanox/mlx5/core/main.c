@@ -641,7 +641,6 @@ clean:
 	return err;
 }
 
-#ifdef CONFIG_MLX5_CORE_EN
 static int mlx5_core_set_issi(struct mlx5_core_dev *dev)
 {
 	u32 query_in[MLX5_ST_SZ_DW(query_issi_in)];
@@ -694,7 +693,6 @@ static int mlx5_core_set_issi(struct mlx5_core_dev *dev)
 
 	return -ENOTSUPP;
 }
-#endif
 
 /* TODO: Calling to io_mapping_create_wc spoils the IB user BF mapping as WC
  *       Fix this before enabling this function.
@@ -781,13 +779,11 @@ static int mlx5_dev_init(struct mlx5_core_dev *dev, struct pci_dev *pdev)
 		goto err_pagealloc_cleanup;
 	}
 
-#ifdef CONFIG_MLX5_CORE_EN
 	err = mlx5_core_set_issi(dev);
 	if (err) {
 		dev_err(&pdev->dev, "failed to set issi\n");
 		goto err_disable_hca;
 	}
-#endif
 
 	err = mlx5_satisfy_startup_pages(dev, 1);
 	if (err) {
