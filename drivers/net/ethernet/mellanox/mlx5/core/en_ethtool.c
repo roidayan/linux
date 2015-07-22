@@ -662,24 +662,10 @@ static int mlx5e_set_settings(struct net_device *netdev,
 	if (link_modes == eth_proto_admin)
 		goto out;
 
-	err = mlx5_set_port_proto(mdev, link_modes, MLX5_PTYS_EN);
-	if (err) {
-		netdev_err(netdev, "%s: set port eth proto admin failed: %d\n",
-			   __func__, err);
-		goto out;
-	}
+	mlx5_set_port_status(mdev, MLX5_PORT_DOWN);
+	mlx5_set_port_proto(mdev, link_modes, MLX5_PTYS_EN);
+	mlx5_set_port_status(mdev, MLX5_PORT_UP);
 
-	err = mlx5_query_port_status(mdev, &port_status);
-	if (err)
-		goto out;
-
-	if (port_status == MLX5_PORT_DOWN)
-		return 0;
-
-	err = mlx5_set_port_status(mdev, MLX5_PORT_DOWN);
-	if (err)
-		goto out;
-	err = mlx5_set_port_status(mdev, MLX5_PORT_UP);
 out:
 	return err;
 }
