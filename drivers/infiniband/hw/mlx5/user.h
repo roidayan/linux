@@ -111,6 +111,8 @@ struct mlx5_ib_create_srq {
 	__u64	db_addr;
 	__u32	flags;
 	__u32	reserved; /* explicit padding (optional on i386) */
+	__u32	uidx;
+	__u32	reserved1;
 };
 
 struct mlx5_ib_create_srq_resp {
@@ -125,6 +127,8 @@ struct mlx5_ib_create_qp {
 	__u32	rq_wqe_count;
 	__u32	rq_wqe_shift;
 	__u32	flags;
+	__u32	uidx;
+	__u32	reserved;
 };
 
 struct mlx5_ib_create_qp_resp {

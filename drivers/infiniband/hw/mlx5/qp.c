@@ -32,6 +32,7 @@
 
 #include <linux/module.h>
 #include <rdma/ib_umem.h>
+#include <rdma/ib_user_verbs.h>
 #include "mlx5_ib.h"
 #include "user.h"
 
@@ -869,6 +870,8 @@ static int create_qp_common(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 	struct mlx5_ib_create_qp ucmd;
 	int inlen = sizeof(*in);
 	int err;
+	u32 uidx;
+	void *qpc;
 
 	mlx5_ib_odp_create_qp(qp);
 
@@ -894,10 +897,16 @@ static int create_qp_common(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 			return -EFAULT;
 		}
 
+		if (udata->inlen > offsetof(struct mlx5_ib_create_qp, uidx))
+			uidx = ucmd.uidx;
+		else
+			uidx = 0xffffff;
+
 		qp->wq_sig = !!(ucmd.flags & MLX5_QP_FLAG_SIGNATURE);
 		qp->scat_cqe = !!(ucmd.flags & MLX5_QP_FLAG_SCATTER_CQE);
 	} else {
 		qp->wq_sig = !!wq_signature;
+		uidx = 0xffffff;
 	}
 
 	qp->has_rq = qp_has_rq(init_attr);
@@ -1024,6 +1033,12 @@ static int create_qp_common(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 		in->ctx.cqn_recv = cpu_to_be32(to_mcq(init_attr->recv_cq)->mcq.cqn);
 
 	in->ctx.db_rec_addr = cpu_to_be64(qp->db.dma);
+
+	if (MLX5_CAP_GEN(mdev, cqe_version)) {
+		qpc = MLX5_ADDR_OF(create_qp_in, in, qpc);
+		/* 0xffffff means we ask to work with cqe version 0 */
+		MLX5_SET(qpc, qpc, user_index, uidx);
+	}
 
 	err = mlx5_core_create_qp(dev->mdev, &qp->mqp, in, inlen);
 	if (err) {
