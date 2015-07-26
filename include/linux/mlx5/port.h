@@ -76,4 +76,7 @@ int mlx5_set_port_prio_tc(struct mlx5_core_dev *mdev, u8 *prio_tc);
 int mlx5_set_port_tc_group(struct mlx5_core_dev *mdev, u8 *tc_group);
 int mlx5_set_port_tc_bw_alloc(struct mlx5_core_dev *mdev, u8 *tc_bw);
 
+int mlx5_set_port_wol(struct mlx5_core_dev *mdev, u8 wol_mode);
+int mlx5_query_port_wol(struct mlx5_core_dev *mdev, u8 *wol_mode);
+
 #endif /* __MLX5_PORT_H__ */
