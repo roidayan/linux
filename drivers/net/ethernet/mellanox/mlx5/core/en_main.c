@@ -1083,6 +1083,11 @@ static void mlx5e_build_rx_cq_param(struct mlx5e_priv *priv,
 
 	MLX5_SET(cqc, cqc, log_cq_size,  priv->params.log_rq_size);
 
+	if (MLX5_CAP_GEN(priv->mdev, cqe_compression)) {
+		MLX5_SET(cqc, cqc, mini_cqe_res_format, MLX5_CQE_FORMAT_CSUM);
+		MLX5_SET(cqc, cqc, cqe_comp_en, 1);
+	}
+
 	mlx5e_build_common_cq_param(priv, param);
 
 	param->cq_period_mode = priv->params.rx_cq_period_mode;
