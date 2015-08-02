@@ -165,6 +165,7 @@ static void ib_device_release(struct device *device)
 {
 	struct ib_device *dev = dev_get_drvdata(device);
 
+	ib_cache_release_one(dev);
 	kfree(dev->port_immutable);
 	kfree(dev);
 }
@@ -335,22 +336,21 @@ int ib_register_device(struct ib_device *device,
 		goto out;
 	}
 
+	ret = ib_cache_setup_one(device);
+	if (ret) {
+		printk(KERN_WARNING "Couldn't set up InfiniBand P_Key/GID cache\n");
+		goto out;
+	}
+
 	ret = ib_device_register_sysfs(device, port_callback);
 	if (ret) {
+		ib_cache_cleanup_one(device);
 		printk(KERN_WARNING "Couldn't register device %s with driver model\n",
 		       device->name);
 		goto out;
 	}
 
 	device->reg_state = IB_DEV_REGISTERED;
-
-	ret = ib_cache_setup_one(device);
-	if (ret) {
-		printk(KERN_WARNING "Couldn't set up InfiniBand P_Key/GID cache\n");
-		ib_device_unregister_sysfs(device);
-		kfree(device->port_immutable);
-		goto out;
-	}
 
 	{
 		struct ib_client *client;
@@ -395,6 +395,7 @@ void ib_unregister_device(struct ib_device *device)
 	mutex_unlock(&device_mutex);
 
 	ib_device_unregister_sysfs(device);
+	ib_cache_cleanup_one(device);
 
 	spin_lock_irqsave(&device->client_data_lock, flags);
 	list_for_each_entry_safe(context, tmp, &device->client_data_list, list)
