@@ -308,6 +308,7 @@ static void mlx5e_disable_async_events(struct mlx5e_priv *priv)
 #define MLX5E_SW2HW_MTU(swmtu) (swmtu + (ETH_HLEN + VLAN_HLEN + ETH_FCS_LEN))
 
 static int mlx5e_create_rq(struct mlx5e_channel *c,
+			   struct mlx5e_params *params,
 			   struct mlx5e_rq_param *param,
 			   struct mlx5e_rq *rq)
 {
@@ -336,8 +337,8 @@ static int mlx5e_create_rq(struct mlx5e_channel *c,
 		goto err_rq_wq_destroy;
 	}
 
-	rq->wqe_sz = (priv->params.lro_en) ? priv->params.lro_wqe_sz :
-					     MLX5E_SW2HW_MTU(priv->netdev->mtu);
+	rq->wqe_sz = (params->lro_en) ? params->lro_wqe_sz :
+				        MLX5E_SW2HW_MTU(priv->netdev->mtu);
 	rq->wqe_sz = SKB_DATA_ALIGN(rq->wqe_sz + MLX5E_NET_IP_ALIGN);
 
 	for (i = 0; i < wq_sz; i++) {
@@ -441,15 +442,14 @@ static void mlx5e_disable_rq(struct mlx5e_rq *rq)
 	mlx5_core_destroy_rq(rq->priv->mdev, rq->rqn);
 }
 
-static int mlx5e_wait_for_min_rx_wqes(struct mlx5e_rq *rq)
+static int mlx5e_wait_for_min_rx_wqes(struct mlx5e_rq *rq,
+			              struct mlx5e_params *params)
 {
 	unsigned long exp_time = jiffies + msecs_to_jiffies(20000);
-	struct mlx5e_channel *c = rq->channel;
-	struct mlx5e_priv *priv = c->priv;
 	struct mlx5_wq_ll *wq = &rq->wq;
 
 	while (time_before(jiffies, exp_time)) {
-		if (wq->cur_sz >= priv->params.min_rx_wqes)
+		if (wq->cur_sz >= params->min_rx_wqes)
 			return 0;
 
 		msleep(20);
@@ -459,12 +459,13 @@ static int mlx5e_wait_for_min_rx_wqes(struct mlx5e_rq *rq)
 }
 
 static int mlx5e_open_rq(struct mlx5e_channel *c,
+			 struct mlx5e_params *params,
 			 struct mlx5e_rq_param *param,
 			 struct mlx5e_rq *rq)
 {
 	int err;
 
-	err = mlx5e_create_rq(c, param, rq);
+	err = mlx5e_create_rq(c, params, param, rq);
 	if (err)
 		return err;
 
@@ -531,6 +532,7 @@ static int mlx5e_alloc_sq_db(struct mlx5e_sq *sq, int numa)
 }
 
 static int mlx5e_create_sq(struct mlx5e_channel *c,
+			   struct mlx5e_params *params,
 			   int tc,
 			   struct mlx5e_sq_param *param,
 			   struct mlx5e_sq *sq)
@@ -564,7 +566,7 @@ static int mlx5e_create_sq(struct mlx5e_channel *c,
 	if (err)
 		goto err_sq_wq_destroy;
 
-	txq_ix = c->ix + tc * priv->params.num_channels;
+	txq_ix = c->ix + tc * params->num_channels;
 	sq->txq = netdev_get_tx_queue(priv->netdev, txq_ix);
 
 	sq->pdev      = c->pdev;
@@ -679,13 +681,14 @@ static void mlx5e_disable_sq(struct mlx5e_sq *sq)
 }
 
 static int mlx5e_open_sq(struct mlx5e_channel *c,
+			 struct mlx5e_params *params,
 			 int tc,
 			 struct mlx5e_sq_param *param,
 			 struct mlx5e_sq *sq)
 {
 	int err;
 
-	err = mlx5e_create_sq(c, tc, param, sq);
+	err = mlx5e_create_sq(c, params, tc, param, sq);
 	if (err)
 		return err;
 
@@ -922,13 +925,14 @@ static void mlx5e_close_tx_cqs(struct mlx5e_channel *c)
 }
 
 static int mlx5e_open_sqs(struct mlx5e_channel *c,
+			  struct mlx5e_params *params,
 			  struct mlx5e_channel_param *cparam)
 {
 	int err;
 	int tc;
 
 	for (tc = 0; tc < c->num_tc; tc++) {
-		err = mlx5e_open_sq(c, tc, &cparam->sq, &c->sq[tc]);
+		err = mlx5e_open_sq(c, params, tc, &cparam->sq, &c->sq[tc]);
 		if (err)
 			goto err_close_sqs;
 	}
@@ -950,16 +954,18 @@ static void mlx5e_close_sqs(struct mlx5e_channel *c)
 		mlx5e_close_sq(&c->sq[tc]);
 }
 
-static void mlx5e_build_channeltc_to_txq_map(struct mlx5e_priv *priv, int ix)
+static void mlx5e_build_channeltc_to_txq_map(struct mlx5e_priv *priv,
+					     int num_channels, int ix)
 {
 	int i;
 
 	for (i = 0; i < MLX5E_MAX_NUM_TC; i++)
 		priv->channeltc_to_txq_map[ix][i] =
-			ix + i * priv->params.num_channels;
+			ix + i * num_channels;
 }
 
 static int mlx5e_open_channel(struct mlx5e_priv *priv, int ix,
+			      struct mlx5e_params *params,
 			      struct mlx5e_channel_param *cparam,
 			      struct mlx5e_channel **cp)
 {
@@ -978,9 +984,9 @@ static int mlx5e_open_channel(struct mlx5e_priv *priv, int ix,
 	c->pdev     = &priv->mdev->pdev->dev;
 	c->netdev   = priv->netdev;
 	c->mkey_be  = cpu_to_be32(priv->mr.key);
-	c->num_tc   = priv->params.num_tc;
+	c->num_tc   = params->num_tc;
 
-	mlx5e_build_channeltc_to_txq_map(priv, ix);
+	mlx5e_build_channeltc_to_txq_map(priv, params->num_channels, ix);
 
 	netif_napi_add(netdev, &c->napi, mlx5e_napi_poll, 64);
 
@@ -989,18 +995,18 @@ static int mlx5e_open_channel(struct mlx5e_priv *priv, int ix,
 		goto err_napi_del;
 
 	err = mlx5e_open_cq(c, &cparam->rx_cq, &c->rq.cq,
-			    priv->params.rx_cq_moderation_usec,
-			    priv->params.rx_cq_moderation_pkts);
+			    params->rx_cq_moderation_usec,
+			    params->rx_cq_moderation_pkts);
 	if (err)
 		goto err_close_tx_cqs;
 
 	napi_enable(&c->napi);
 
-	err = mlx5e_open_sqs(c, cparam);
+	err = mlx5e_open_sqs(c, params, cparam);
 	if (err)
 		goto err_disable_napi;
 
-	err = mlx5e_open_rq(c, &cparam->rq, &c->rq);
+	err = mlx5e_open_rq(c, params, &cparam->rq, &c->rq);
 	if (err)
 		goto err_close_sqs;
 
@@ -1038,6 +1044,7 @@ static void mlx5e_close_channel(struct mlx5e_channel *c)
 }
 
 static void mlx5e_build_rq_param(struct mlx5e_priv *priv,
+			         struct mlx5e_params *params,
 				 struct mlx5e_rq_param *param)
 {
 	void *rqc = param->rqc;
@@ -1046,7 +1053,7 @@ static void mlx5e_build_rq_param(struct mlx5e_priv *priv,
 	MLX5_SET(wq, wq, wq_type,          MLX5_WQ_TYPE_LINKED_LIST);
 	MLX5_SET(wq, wq, end_padding_mode, MLX5_WQ_END_PAD_MODE_ALIGN);
 	MLX5_SET(wq, wq, log_wq_stride,    ilog2(sizeof(struct mlx5e_rx_wqe)));
-	MLX5_SET(wq, wq, log_wq_sz,        priv->params.log_rq_size);
+	MLX5_SET(wq, wq, log_wq_sz,        params->log_rq_size);
 	MLX5_SET(wq, wq, pd,               priv->pdn);
 
 	param->wq.buf_numa_node = dev_to_node(&priv->mdev->pdev->dev);
@@ -1054,12 +1061,13 @@ static void mlx5e_build_rq_param(struct mlx5e_priv *priv,
 }
 
 static void mlx5e_build_sq_param(struct mlx5e_priv *priv,
+			         struct mlx5e_params *params,
 				 struct mlx5e_sq_param *param)
 {
 	void *sqc = param->sqc;
 	void *wq = MLX5_ADDR_OF(sqc, sqc, wq);
 
-	MLX5_SET(wq, wq, log_wq_sz,     priv->params.log_sq_size);
+	MLX5_SET(wq, wq, log_wq_sz,     params->log_sq_size);
 	MLX5_SET(wq, wq, log_wq_stride, ilog2(MLX5_SEND_WQE_BB));
 	MLX5_SET(wq, wq, pd,            priv->pdn);
 
@@ -1076,34 +1084,37 @@ static void mlx5e_build_common_cq_param(struct mlx5e_priv *priv,
 }
 
 static void mlx5e_build_rx_cq_param(struct mlx5e_priv *priv,
+			            struct mlx5e_params *params,
 				    struct mlx5e_cq_param *param)
 {
 	void *cqc = param->cqc;
 
-	MLX5_SET(cqc, cqc, log_cq_size,  priv->params.log_rq_size);
+	MLX5_SET(cqc, cqc, log_cq_size,  params->log_rq_size);
 
 	mlx5e_build_common_cq_param(priv, param);
 }
 
 static void mlx5e_build_tx_cq_param(struct mlx5e_priv *priv,
+			            struct mlx5e_params *params,
 				    struct mlx5e_cq_param *param)
 {
 	void *cqc = param->cqc;
 
-	MLX5_SET(cqc, cqc, log_cq_size,  priv->params.log_sq_size);
+	MLX5_SET(cqc, cqc, log_cq_size,  params->log_sq_size);
 
 	mlx5e_build_common_cq_param(priv, param);
 }
 
 static void mlx5e_build_channel_param(struct mlx5e_priv *priv,
+			              struct mlx5e_params *params,
 				      struct mlx5e_channel_param *cparam)
 {
 	memset(cparam, 0, sizeof(*cparam));
 
-	mlx5e_build_rq_param(priv, &cparam->rq);
-	mlx5e_build_sq_param(priv, &cparam->sq);
-	mlx5e_build_rx_cq_param(priv, &cparam->rx_cq);
-	mlx5e_build_tx_cq_param(priv, &cparam->tx_cq);
+	mlx5e_build_rq_param(priv, params, &cparam->rq);
+	mlx5e_build_sq_param(priv, params, &cparam->sq);
+	mlx5e_build_rx_cq_param(priv, params, &cparam->rx_cq);
+	mlx5e_build_tx_cq_param(priv, params, &cparam->tx_cq);
 }
 
 static int mlx5e_open_channels(struct mlx5e_priv *priv)
@@ -1123,15 +1134,15 @@ static int mlx5e_open_channels(struct mlx5e_priv *priv)
 	if (!priv->channel || !priv->txq_to_sq_map)
 		goto err_free_txq_to_sq_map;
 
-	mlx5e_build_channel_param(priv, &cparam);
+	mlx5e_build_channel_param(priv, &priv->params, &cparam);
 	for (i = 0; i < nch; i++) {
-		err = mlx5e_open_channel(priv, i, &cparam, &priv->channel[i]);
+		err = mlx5e_open_channel(priv, i, &priv->params, &cparam, &priv->channel[i]);
 		if (err)
 			goto err_close_channels;
 	}
 
 	for (j = 0; j < nch; j++) {
-		err = mlx5e_wait_for_min_rx_wqes(&priv->channel[j]->rq);
+		err = mlx5e_wait_for_min_rx_wqes(&priv->channel[j]->rq, &priv->params);
 		if (err)
 			goto err_close_channels;
 	}
@@ -1541,8 +1552,8 @@ static int mlx5e_open_drop_rq(struct mlx5e_priv *priv)
 
 	memset(&cq_param, 0, sizeof(cq_param));
 	memset(&rq_param, 0, sizeof(rq_param));
-	mlx5e_build_rx_cq_param(priv, &cq_param);
-	mlx5e_build_rq_param(priv, &rq_param);
+	mlx5e_build_rx_cq_param(priv, &priv->params, &cq_param);
+	mlx5e_build_rq_param(priv, &priv->params, &rq_param);
 
 	err = mlx5e_create_drop_cq(priv, cq, &cq_param);
 	if (err)
