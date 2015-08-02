@@ -465,8 +465,16 @@ err_free_table:
 	return NULL;
 }
 
-static void free_gid_table(struct ib_device *ib_dev, u8 port,
-			   struct ib_gid_table *table)
+static void release_gid_table(struct ib_gid_table *table)
+{
+	if (table) {
+		kfree(table->data_vec);
+		kfree(table);
+	}
+}
+
+static void cleanup_gid_table_port(struct ib_device *ib_dev, u8 port,
+				   struct ib_gid_table *table)
 {
 	int i;
 
@@ -480,8 +488,6 @@ static void free_gid_table(struct ib_device *ib_dev, u8 port,
 				table->data_vec[i].props &
 				GID_ATTR_FIND_MASK_DEFAULT);
 	}
-	kfree(table->data_vec);
-	kfree(table);
 }
 
 void ib_cache_gid_set_default_gid(struct ib_device *ib_dev, u8 port,
@@ -583,12 +589,29 @@ static int _gid_table_setup_one(struct ib_device *ib_dev)
 	return 0;
 
 rollback_table_setup:
-	for (port = 0; port < ib_dev->phys_port_cnt; port++)
-		free_gid_table(ib_dev, port + rdma_start_port(ib_dev),
-			       table[port]);
+	for (port = 0; port < ib_dev->phys_port_cnt; port++) {
+		cleanup_gid_table_port(ib_dev, port + rdma_start_port(ib_dev),
+				       table[port]);
+		release_gid_table(table[port]);
+	}
 
 	kfree(table);
 	return err;
+}
+
+static void gid_table_release_one(struct ib_device *ib_dev)
+{
+	struct ib_gid_table **table = ib_dev->cache.gid_cache;
+	u8 port;
+
+	if (!table)
+		return;
+
+	for (port = 0; port < ib_dev->phys_port_cnt; port++)
+		release_gid_table(table[port]);
+
+	kfree(table);
+	ib_dev->cache.gid_cache = NULL;
 }
 
 static void gid_table_cleanup_one(struct ib_device *ib_dev)
@@ -600,10 +623,8 @@ static void gid_table_cleanup_one(struct ib_device *ib_dev)
 		return;
 
 	for (port = 0; port < ib_dev->phys_port_cnt; port++)
-		free_gid_table(ib_dev, port + rdma_start_port(ib_dev),
-			       table[port]);
-
-	kfree(table);
+		cleanup_gid_table_port(ib_dev, port + rdma_start_port(ib_dev),
+				       table[port]);
 }
 
 static int gid_table_setup_one(struct ib_device *ib_dev)
@@ -903,20 +924,28 @@ int ib_cache_setup_one(struct ib_device *device)
 					  (rdma_end_port(device) -
 					   rdma_start_port(device) + 1),
 					  GFP_KERNEL);
-	err = gid_table_setup_one(device);
-
-	if (!device->cache.pkey_cache || !device->cache.gid_cache ||
+	if (!device->cache.pkey_cache ||
 	    !device->cache.lmc_cache) {
 		printk(KERN_WARNING "Couldn't allocate cache "
 		       "for %s\n", device->name);
-		err = -ENOMEM;
-		goto err;
+		/* pkey_cache is freed here because we later access it's
+		 * elements.
+		 */
+		kfree(device->cache.pkey_cache);
+		device->cache.pkey_cache = NULL;
+		return -ENOMEM;
 	}
 
-	for (p = 0; p <= rdma_end_port(device) - rdma_start_port(device); ++p) {
+	for (p = 0; p <= rdma_end_port(device) - rdma_start_port(device); ++p)
 		device->cache.pkey_cache[p] = NULL;
+
+	err = gid_table_setup_one(device);
+	if (err)
+		/* Allocated memory will be cleaned in the release funciton */
+		return err;
+
+	for (p = 0; p <= rdma_end_port(device) - rdma_start_port(device); ++p)
 		ib_cache_update(device, p + rdma_start_port(device));
-	}
 
 	INIT_IB_EVENT_HANDLER(&device->cache.event_handler,
 			      device, ib_cache_event);
@@ -927,30 +956,42 @@ int ib_cache_setup_one(struct ib_device *device)
 	return 0;
 
 err_cache:
-	for (p = 0; p <= rdma_end_port(device) - rdma_start_port(device); ++p)
-		kfree(device->cache.pkey_cache[p]);
-
-err:
-	kfree(device->cache.pkey_cache);
 	gid_table_cleanup_one(device);
-	kfree(device->cache.lmc_cache);
 
 	return err;
 }
 
-void ib_cache_cleanup_one(struct ib_device *device)
+void ib_cache_release_one(struct ib_device *device)
 {
 	int p;
 
+	/* The release function frees all the cache elements.
+	 * This function should be called as part of freeing
+	 * all the device's resources when the cache could no
+	 * longer be accessed.
+	 */
+	if (device->cache.pkey_cache) {
+		for (p = 0; p <= rdma_end_port(device) - rdma_start_port(device); ++p)
+			kfree(device->cache.pkey_cache[p]);
+	}
+
+	gid_table_release_one(device);
+	kfree(device->cache.pkey_cache);
+	kfree(device->cache.lmc_cache);
+}
+
+void ib_cache_cleanup_one(struct ib_device *device)
+{
+	/* The cleanup function unregisters the event handler,
+	 * waits for all in-progress workqueue elements and cleans
+	 * up the GID cache. This function should be called after
+	 * the device was removed from the devices list and all
+	 * clients were removed, so the cache exists but is
+	 * non-functional and shouldn't be updated anymore.
+	 */
 	ib_unregister_event_handler(&device->cache.event_handler);
 	flush_workqueue(ib_wq);
-
-	for (p = 0; p <= rdma_end_port(device) - rdma_start_port(device); ++p)
-		kfree(device->cache.pkey_cache[p]);
-
-	kfree(device->cache.pkey_cache);
 	gid_table_cleanup_one(device);
-	kfree(device->cache.lmc_cache);
 }
 
 void __init ib_cache_setup(void)

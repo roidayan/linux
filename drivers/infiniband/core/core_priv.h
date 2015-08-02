@@ -95,5 +95,6 @@ int roce_rescan_device(struct ib_device *ib_dev);
 
 int ib_cache_setup_one(struct ib_device *device);
 void ib_cache_cleanup_one(struct ib_device *device);
+void ib_cache_release_one(struct ib_device *device);
 
 #endif /* _CORE_PRIV_H */
