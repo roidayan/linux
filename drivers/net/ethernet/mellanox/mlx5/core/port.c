@@ -367,9 +367,11 @@ int mlx5_query_port_pfc(struct mlx5_core_dev *dev, u8 *pfc_en_tx, u8 *pfc_en_rx)
 }
 EXPORT_SYMBOL_GPL(mlx5_query_port_pfc);
 
-static inline int mlx5_max_tc(struct mlx5_core_dev *mdev)
+int mlx5_max_tc(struct mlx5_core_dev *mdev)
 {
-	return 3; /* TODO: take from queried dev cap */
+	u8 num_tc = MLX5_CAP_GEN(mdev, max_tc) ? : 8;
+
+	return num_tc - 1;
 }
 
 static int mlx5_set_port_qtct_reg(struct mlx5_core_dev *mdev, u32 *in,
@@ -460,7 +462,7 @@ int mlx5_set_port_tc_group(struct mlx5_core_dev *mdev, u8 *tc_group)
 
 	memset(in, 0, sizeof(in));
 
-	for (i = 0; i < mlx5_max_tc(mdev); i++) {
+	for (i = 0; i <= mlx5_max_tc(mdev); i++) {
 		MLX5_SET(qetc_reg, in, tc_conf[i].g, 1);
 		MLX5_SET(qetc_reg, in, tc_conf[i].group, tc_group[i]);
 	}
@@ -480,7 +482,7 @@ int mlx5_query_port_tc_group(struct mlx5_core_dev *mdev, u8 *tc_group)
 	if (err)
 		return err;
 
-	for (i = 0; i < mlx5_max_tc(mdev); i++)
+	for (i = 0; i <= mlx5_max_tc(mdev); i++)
 		tc_group[i] = MLX5_GET(qetc_reg, out, tc_conf[i].group);
 
 	return 0;
@@ -494,7 +496,7 @@ int mlx5_set_port_tc_bw_alloc(struct mlx5_core_dev *mdev, u8 *tc_bw)
 
 	memset(in, 0, sizeof(in));
 
-	for (i = 0; i < mlx5_max_tc(mdev); i++) {
+	for (i = 0; i <= mlx5_max_tc(mdev); i++) {
 		MLX5_SET(qetc_reg, in, tc_conf[i].b, 1);
 		MLX5_SET(qetc_reg, in, tc_conf[i].bw_allocation, tc_bw[i]);
 	}
@@ -514,7 +516,7 @@ int mlx5_query_port_tc_bw_alloc(struct mlx5_core_dev *mdev, u8 *tc_bw)
 	if (err)
 		return err;
 
-	for (i = 0; i < mlx5_max_tc(mdev); i++)
+	for (i = 0; i <= mlx5_max_tc(mdev); i++)
 		tc_bw[i] = MLX5_GET(qetc_reg, out, tc_conf[i].bw_allocation);
 
 	return 0;
