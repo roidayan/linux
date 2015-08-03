@@ -619,4 +619,6 @@ static inline void mlx5e_cq_arm(struct mlx5e_cq *cq)
 }
 
 extern const struct ethtool_ops mlx5e_ethtool_ops;
+extern const struct dcbnl_rtnl_ops mlx5e_dcbnl_ops;
+
 u16 mlx5e_get_max_inline_cap(struct mlx5_core_dev *mdev);

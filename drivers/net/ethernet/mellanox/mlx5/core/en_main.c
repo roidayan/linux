@@ -2029,6 +2029,7 @@ static int mlx5e_build_netdev(struct net_device *netdev)
 	netdev->watchdog_timeo    = 15 * HZ;
 
 	netdev->ethtool_ops	  = &mlx5e_ethtool_ops;
+	netdev->dcbnl_ops	  = &mlx5e_dcbnl_ops;
 
 	netdev->vlan_features    |= NETIF_F_SG;
 	netdev->vlan_features    |= NETIF_F_IP_CSUM;
