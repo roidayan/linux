@@ -367,7 +367,7 @@ int mlx5_query_port_pfc(struct mlx5_core_dev *dev, u8 *pfc_en_tx, u8 *pfc_en_rx)
 }
 EXPORT_SYMBOL_GPL(mlx5_query_port_pfc);
 
-static inline int mlx5_max_tc(struct mlx5_core_dev *mdev)
+int mlx5_max_tc(struct mlx5_core_dev *mdev)
 {
 	return 3; /* TODO: take from queried dev cap */
 }
