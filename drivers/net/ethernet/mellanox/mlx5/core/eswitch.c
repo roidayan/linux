@@ -38,6 +38,10 @@
 #include "mlx5_core.h"
 #include "eswitch.h"
 
+int mlx5_vf_fdb_rules = 1;
+module_param_named(vf_fdb_rules, mlx5_vf_fdb_rules, int, 0644);
+MODULE_PARM_DESC(vf_fdb_rules, "vf_fdb_rules: 1 = add FDB rules for VF MACs, 0 = don't add Default=1");
+
 #define UPLINK_VPORT 0xFFFF
 
 #define MLX5_DEBUG_ESWITCH_MASK BIT(3)
@@ -893,12 +897,19 @@ static void esw_vport_change_handler(struct work_struct *work)
 	esw_debug(dev, "vport[%d] Context Changed: perm mac: %pM\n",
 		  vport->vport, mac);
 
+	if (!mlx5_vf_fdb_rules && (vport->enabled_events & UC_ADDR_CHANGE)) {
+		mlx5_core_warn(dev, "%s skipping unicast event for vport=%d \n", vport->vport);
+		goto skip_unicast;
+	}
+
 	if (vport->enabled_events & UC_ADDR_CHANGE) {
 		esw_update_vport_addr_list(esw, vport->vport,
 					   MLX5_NVPRT_LIST_TYPE_UC);
 		esw_apply_vport_addr_list(esw, vport->vport,
 					  MLX5_NVPRT_LIST_TYPE_UC);
 	}
+
+skip_unicast:
 
 	if (vport->enabled_events & MC_ADDR_CHANGE) {
 		esw_update_vport_addr_list(esw, vport->vport,
