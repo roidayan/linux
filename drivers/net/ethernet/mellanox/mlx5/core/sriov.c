@@ -33,6 +33,9 @@
 #include <linux/pci.h>
 #include <linux/mlx5/driver.h>
 #include "mlx5_core.h"
+#ifdef CONFIG_MLX5_CORE_EN
+#include "eswitch.h"
+#endif
 
 static void enable_vfs(struct mlx5_core_dev *dev, int num_vfs)
 {
@@ -151,6 +154,9 @@ int mlx5_core_sriov_configure(struct pci_dev *pdev, int num_vfs)
 		else
 			pr_info("unloading PF driver while leaving orphan VFs\n");
 
+#ifdef CONFIG_MLX5_CORE_EN
+		mlx5_eswitch_disable_sriov(dev->priv.eswitch);
+#endif
 		return 0;
 	}
 
@@ -161,6 +167,9 @@ int mlx5_core_sriov_configure(struct pci_dev *pdev, int num_vfs)
 	}
 
 	mlx5_core_init_vfs(dev, num_vfs);
+#ifdef CONFIG_MLX5_CORE_EN
+	mlx5_eswitch_enable_sriov(dev->priv.eswitch, num_vfs);
+#endif
 
 	return num_vfs;
 }
@@ -199,6 +208,10 @@ int mlx5_sriov_init(struct mlx5_core_dev *dev)
 	sriov->enabled_vfs = cur_vfs;
 
 	mlx5_core_init_vfs(dev, cur_vfs);
+#ifdef CONFIG_MLX5_CORE_EN
+	if (cur_vfs)
+		mlx5_eswitch_enable_sriov(dev->priv.eswitch, cur_vfs);
+#endif
 
 	enable_vfs(dev, cur_vfs);
 

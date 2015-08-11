@@ -832,6 +832,12 @@ enum {
 	MLX5_DEST_FORMAT_STRUCT_DESTINATION_TYPE_TIR          = 0x2,
 };
 
+enum mlx5_flow_destination_type {
+	MLX5_FLOW_DESTINATION_TYPE_VPORT	= 0x0,
+	MLX5_FLOW_DESTINATION_TYPE_FLOW_TABLE	= 0x1,
+	MLX5_FLOW_DESTINATION_TYPE_TIR          = 0x2,
+};
+
 struct mlx5_ifc_dest_format_struct_bits {
 	u8         destination_type[0x8];
 	u8         destination_id[0x18];
