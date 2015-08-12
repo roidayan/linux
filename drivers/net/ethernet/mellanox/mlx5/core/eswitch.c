@@ -1044,3 +1044,67 @@ void mlx5_eswitch_vport_event(struct mlx5_eswitch *esw, struct mlx5_eqe *eqe)
 		queue_work(esw->work_queue, &vport->vport_change_handler);
 	spin_unlock(&vport->lock);
 }
+
+/* Vport Administration */
+
+int mlx5_eswitch_set_vport_mac(struct mlx5_eswitch *esw,
+			       int vport, u8 mac[ETH_ALEN])
+{
+	int err = 0;
+
+	if (!esw || !MLX5_CAP_GEN(esw->dev, vport_group_manager) ||
+	    !mlx5_core_is_pf(esw->dev))
+		return -EPERM;
+
+	if (vport < 0 || vport >= esw->total_vports)
+		return -EINVAL;
+
+	err = mlx5_modify_nic_vport_mac_address(esw->dev, vport, mac);
+	if (err) {
+		mlx5_core_warn(esw->dev,
+			       "Failed to mlx5_modify_nic_vport_mac vport(%d) err=(%d)\n",
+			       vport, err);
+		return err;
+	}
+
+	return err;
+}
+
+int mlx5_eswitch_set_vport_state(struct mlx5_eswitch *esw,
+				 int vport, int link_state)
+{
+	if (!esw || !MLX5_CAP_GEN(esw->dev, vport_group_manager) ||
+	    !mlx5_core_is_pf(esw->dev))
+		return -EPERM;
+
+	if (vport < 0 || vport >= esw->total_vports)
+		return -EINVAL;
+
+	return mlx5_modify_vport_admin_state(esw->dev,
+					     MLX5_QUERY_VPORT_STATE_IN_OP_MOD_ESW_VPORT,
+					     vport, link_state);
+}
+
+int mlx5_eswitch_get_vport_config(struct mlx5_eswitch *esw,
+				  int vport, struct ifla_vf_info *ivi)
+{
+	if (!esw || !MLX5_CAP_GEN(esw->dev, vport_group_manager) ||
+	    !mlx5_core_is_pf(esw->dev))
+		return -EPERM;
+
+	if (vport < 0 || vport >= esw->total_vports)
+		return -EINVAL;
+
+	memset(ivi, 0, sizeof(*ivi));
+	ivi->vf = vport - 1;
+
+	mlx5_query_nic_vport_mac_address(esw->dev, vport, ivi->mac);
+	ivi->linkstate = mlx5_query_vport_admin_state(esw->dev,
+						      MLX5_QUERY_VPORT_STATE_IN_OP_MOD_ESW_VPORT,
+						      vport);
+	ivi->vlan = 0;
+	ivi->qos = 0;
+	ivi->spoofchk = 0;
+
+	return 0;
+}
