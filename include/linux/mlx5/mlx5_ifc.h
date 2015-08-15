@@ -2148,24 +2148,38 @@ struct mlx5_ifc_nic_vport_context_bits {
 	u8         reserved_0[0x1f];
 	u8         roce_en[0x1];
 
-	u8         reserved_1[0x120];
+	u8         arm_change_event[0x1];
+	u8         reserved_1[0x1a];
+	u8         event_on_mtu[0x1];
+	u8         event_on_promisc_change[0x1];
+	u8         event_on_vlan_change[0x1];
+	u8         event_on_mc_address_change[0x1];
+	u8         event_on_uc_address_change[0x1];
+
+	u8         reserved_2[0xe0];
+
+	u8         reserved_3[0x10];
+	u8         mtu[0x10];
 
 	u8         system_image_guid[0x40];
 	u8         port_guid[0x40];
 	u8         node_guid[0x40];
 
-	u8         reserved_5[0x140];
+	u8         reserved_4[0x140];
 	u8         qkey_violation_counter[0x10];
-	u8         reserved_6[0x430];
+	u8         reserved_5[0x430];
 
-	u8         reserved_2[0x5];
+	u8         promisc_uc[0x1];
+	u8         promisc_mc[0x1];
+	u8         promisc_all[0x1];
+	u8         reserved_6[0x2];
 	u8         allowed_list_type[0x3];
-	u8         reserved_3[0xc];
+	u8         reserved_7[0xc];
 	u8         allowed_list_size[0xc];
 
 	struct mlx5_ifc_mac_address_layout_bits permanent_address;
 
-	u8         reserved_4[0x20];
+	u8         reserved_8[0x20];
 
 	u8         current_uc_mac_address[0][0x40];
 };
@@ -4244,7 +4258,10 @@ struct mlx5_ifc_modify_nic_vport_context_out_bits {
 };
 
 struct mlx5_ifc_modify_nic_vport_field_select_bits {
-	u8         reserved_0[0x1c];
+	u8         reserved_0[0x19];
+	u8         mtu[0x1];
+	u8         change_event[0x1];
+	u8         promisc[0x1];
 	u8         permanent_address[0x1];
 	u8         addresses_list[0x1];
 	u8         roce_en[0x1];
