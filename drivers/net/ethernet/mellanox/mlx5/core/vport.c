@@ -81,7 +81,7 @@ static int mlx5_modify_nic_vport_context(struct mlx5_core_dev *mdev, void *in,
 	return mlx5_cmd_exec_check_status(mdev, in, inlen, out, sizeof(out));
 }
 
-void mlx5_query_nic_vport_mac_address(struct mlx5_core_dev *mdev, u8 *addr)
+int mlx5_query_nic_vport_mac_address(struct mlx5_core_dev *mdev, u8 *addr)
 {
 	u32 *out;
 	int outlen = MLX5_ST_SZ_BYTES(query_nic_vport_context_out);
@@ -90,7 +90,7 @@ void mlx5_query_nic_vport_mac_address(struct mlx5_core_dev *mdev, u8 *addr)
 
 	out = mlx5_vzalloc(outlen);
 	if (!out)
-		return;
+		return -ENOMEM;
 
 	out_addr = MLX5_ADDR_OF(query_nic_vport_context_out, out,
 				nic_vport_context.permanent_address);
@@ -100,6 +100,8 @@ void mlx5_query_nic_vport_mac_address(struct mlx5_core_dev *mdev, u8 *addr)
 		ether_addr_copy(addr, &out_addr[2]);
 
 	kvfree(out);
+
+	return err;
 }
 EXPORT_SYMBOL(mlx5_query_nic_vport_mac_address);
 
