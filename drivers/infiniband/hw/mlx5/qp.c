@@ -1363,13 +1363,15 @@ static int ib_rate_to_mlx5(struct mlx5_ib_dev *dev, u8 rate)
 
 static int mlx5_set_path(struct mlx5_ib_dev *dev, const struct ib_ah_attr *ah,
 			 struct mlx5_qp_path *path, u8 port, int attr_mask,
-			 u32 path_flags, const struct ib_qp_attr *attr)
+			 u32 path_flags, const struct ib_qp_attr *attr,
+			 bool alt)
 {
 	enum rdma_link_layer ll = rdma_port_get_link_layer(&dev->ib_dev, port);
 	int err;
 
 	if (attr_mask & IB_QP_PKEY_INDEX)
-		path->pkey_index = cpu_to_be16(attr->pkey_index);
+		path->pkey_index = cpu_to_be16(alt ? attr->alt_pkey_index :
+						     attr->pkey_index);
 
 	if (ah->ah_flags & IB_AH_GRH) {
 		if (ah->grh.sgid_index >=
@@ -1640,7 +1642,7 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 	if (attr_mask & IB_QP_AV) {
 		err = mlx5_set_path(dev, &attr->ah_attr, &context->pri_path,
 				    attr_mask & IB_QP_PORT ? attr->port_num : qp->port,
-				    attr_mask, 0, attr);
+				    attr_mask, 0, attr, false);
 		if (err)
 			goto out;
 	}
@@ -1650,7 +1652,8 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 
 	if (attr_mask & IB_QP_ALT_PATH) {
 		err = mlx5_set_path(dev, &attr->alt_ah_attr, &context->alt_path,
-				    attr->alt_port_num, attr_mask, 0, attr);
+				    attr->alt_port_num, attr_mask, 0, attr,
+				    true);
 		if (err)
 			goto out;
 	}
