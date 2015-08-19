@@ -2585,19 +2585,10 @@ static void mlx5e_destroy_netdev(struct mlx5_core_dev *mdev, void *vpriv)
 	free_netdev(netdev);
 }
 
-static void *mlx5e_get_netdev(void *vpriv)
-{
-	struct mlx5e_priv *priv = vpriv;
-
-	return priv->netdev;
-}
-
 static struct mlx5_interface mlx5e_interface = {
 	.add       = mlx5e_create_netdev,
 	.remove    = mlx5e_destroy_netdev,
 	.event     = mlx5e_async_event,
-	.protocol  = MLX5_INTERFACE_PROTOCOL_ETH,
-	.get_dev   = mlx5e_get_netdev,
 };
 
 void mlx5e_init(void)
