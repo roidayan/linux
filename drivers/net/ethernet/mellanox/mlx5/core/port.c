@@ -35,47 +35,6 @@
 #include <linux/mlx5/cmd.h>
 #include "mlx5_core.h"
 
-int mlx5_core_access_reg(struct mlx5_core_dev *dev, void *data_in,
-			 int size_in, void *data_out, int size_out,
-			 u16 reg_num, int arg, int write)
-{
-	struct mlx5_access_reg_mbox_in *in = NULL;
-	struct mlx5_access_reg_mbox_out *out = NULL;
-	int err = -ENOMEM;
-
-	in = mlx5_vzalloc(sizeof(*in) + size_in);
-	if (!in)
-		return -ENOMEM;
-
-	out = mlx5_vzalloc(sizeof(*out) + size_out);
-	if (!out)
-		goto ex1;
-
-	memcpy(in->data, data_in, size_in);
-	in->hdr.opcode = cpu_to_be16(MLX5_CMD_OP_ACCESS_REG);
-	in->hdr.opmod = cpu_to_be16(!write);
-	in->arg = cpu_to_be32(arg);
-	in->register_id = cpu_to_be16(reg_num);
-	err = mlx5_cmd_exec(dev, in, sizeof(*in) + size_in, out,
-			    sizeof(*out) + size_out);
-	if (err)
-		goto ex2;
-
-	if (out->hdr.status)
-		err = mlx5_cmd_status_to_err(&out->hdr);
-
-	if (!err)
-		memcpy(data_out, out->data, size_out);
-
-ex2:
-	kvfree(out);
-ex1:
-	kvfree(in);
-	return err;
-}
-EXPORT_SYMBOL_GPL(mlx5_core_access_reg);
-
-
 struct mlx5_reg_pcap {
 	u8			rsvd0;
 	u8			port_num;
