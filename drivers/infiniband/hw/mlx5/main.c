@@ -882,6 +882,13 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 	resp.cqe_version = MLX5_CAP_GEN(dev->mdev, cqe_version);
 	resp.reserved = 0;
 
+	if (MLX5_CAP_GEN(dev->mdev, roce)) {
+		resp.rroce_udp_sport_min = MLX5_CAP_ROCE(dev->mdev,
+							 r_roce_min_src_udp_port);
+		resp.rroce_udp_sport_max = MLX5_CAP_ROCE(dev->mdev,
+							 r_roce_max_src_udp_port);
+	}
+
 	context = kzalloc(sizeof(*context), GFP_KERNEL);
 	if (!context)
 		return ERR_PTR(-ENOMEM);
