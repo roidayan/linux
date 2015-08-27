@@ -82,6 +82,9 @@ struct mlx5_ib_alloc_ucontext_resp {
 	__u16	num_ports;
 	__u8	cqe_version;
 	__u8	reserved;
+	__u16	rroce_udp_sport_min;
+	__u16	rroce_udp_sport_max;
+	__u32	reserved1;
 };
 
 struct mlx5_ib_alloc_pd_resp {
