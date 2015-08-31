@@ -268,7 +268,6 @@ struct mlx5e_params {
 	u8  log_sq_size;
 	u8  log_rq_size;
 	u16 num_channels;
-	u8  default_vlan_prio;
 	u8  num_tc;
 	u16 rx_cq_moderation_usec;
 	u16 rx_cq_moderation_pkts;
@@ -281,6 +280,7 @@ struct mlx5e_params {
 	u8  rss_hfunc;
 	u8  toeplitz_hash_key[40];
 	u32 indirection_rqt[MLX5E_INDIR_RQT_SIZE];
+	struct ieee_ets ets;
 };
 
 enum {
@@ -476,7 +476,6 @@ struct mlx5e_flow_table {
 
 struct mlx5e_priv {
 	/* priv data path fields - start */
-	int                        default_vlan_prio;
 	struct mlx5e_sq            **txq_to_sq_map;
 	int channeltc_to_txq_map[MLX5E_MAX_NUM_CHANNELS][MLX5E_MAX_NUM_TC];
 	/* priv data path fields - end */
@@ -628,4 +627,7 @@ static inline int mlx5e_get_max_num_channels(struct mlx5_core_dev *mdev)
 }
 
 extern const struct ethtool_ops mlx5e_ethtool_ops;
+extern const struct dcbnl_rtnl_ops mlx5e_dcbnl_ops;
+int mlx5e_dcbnl_ieee_setets_core(struct mlx5e_priv *priv, struct ieee_ets *ets);
+
 u16 mlx5e_get_max_inline_cap(struct mlx5_core_dev *mdev);
