@@ -2010,6 +2010,10 @@ static void mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 	priv->params.num_channels          = num_channels;
 	priv->default_vlan_prio            = priv->params.default_vlan_prio;
 
+	priv->params.ets.ets_cap           = mlx5_max_tc(mdev) + 1;
+	for (i = 0; i < priv->params.ets.ets_cap; i++)
+		priv->params.ets.tc_tx_bw[i] = 100;
+
 	spin_lock_init(&priv->async_events_spinlock);
 	mutex_init(&priv->state_lock);
 
@@ -2029,6 +2033,7 @@ static int mlx5e_build_netdev(struct net_device *netdev)
 	netdev->watchdog_timeo    = 15 * HZ;
 
 	netdev->ethtool_ops	  = &mlx5e_ethtool_ops;
+	netdev->dcbnl_ops	  = &mlx5e_dcbnl_ops;
 
 	netdev->vlan_features    |= NETIF_F_SG;
 	netdev->vlan_features    |= NETIF_F_IP_CSUM;
@@ -2109,6 +2114,10 @@ static void *mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 	netif_carrier_off(netdev);
 
 	priv = netdev_priv(netdev);
+
+	err = mlx5e_dcbnl_ieee_setets_core(priv, &priv->params.ets);
+	if (err)
+		goto err_free_netdev;
 
 	err = mlx5_alloc_map_uar(mdev, &priv->cq_uar);
 	if (err) {

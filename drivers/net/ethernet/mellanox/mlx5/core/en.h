@@ -281,6 +281,7 @@ struct mlx5e_params {
 	u8  rss_hfunc;
 	u8  toeplitz_hash_key[40];
 	u32 indirection_rqt[MLX5E_INDIR_RQT_SIZE];
+	struct ieee_ets ets;
 };
 
 enum {
@@ -619,4 +620,7 @@ static inline void mlx5e_cq_arm(struct mlx5e_cq *cq)
 }
 
 extern const struct ethtool_ops mlx5e_ethtool_ops;
+extern const struct dcbnl_rtnl_ops mlx5e_dcbnl_ops;
+int mlx5e_dcbnl_ieee_setets_core(struct mlx5e_priv *priv, struct ieee_ets *ets);
+
 u16 mlx5e_get_max_inline_cap(struct mlx5_core_dev *mdev);
