@@ -881,75 +881,98 @@ static int mlx5e_create_main_flow_table(struct mlx5e_priv *priv)
 {
 	struct mlx5_flow_table_group *g;
 	u8 *dmac;
+	int nic_groups, g_ix = 0;
 
-	g = kcalloc(9, sizeof(*g), GFP_KERNEL);
+	if (mlx5_core_is_pf(priv->mdev))
+		nic_groups = 10;
+	else
+		nic_groups = 9;
+
+	g = kcalloc(nic_groups, sizeof(*g), GFP_KERNEL);
 	if (!g)
 		return -ENOMEM;
 
-	g[0].log_sz = 3;
-	g[0].match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
-	MLX5_SET_TO_ONES(fte_match_param, g[0].match_criteria,
+	if (mlx5_core_is_pf(priv->mdev)) {
+		g[g_ix].log_sz = 8;
+		g[g_ix].match_criteria_enable = MLX5_MATCH_MISC_PARAMETERS;
+		MLX5_SET(fte_match_param, g[g_ix].match_criteria, misc_parameters.source_port, 0xffff);
+		g_ix++;
+	}
+
+	g[g_ix].log_sz = 3;
+	g[g_ix].match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
+	MLX5_SET_TO_ONES(fte_match_param, g[g_ix].match_criteria,
 			 outer_headers.ethertype);
-	MLX5_SET_TO_ONES(fte_match_param, g[0].match_criteria,
+	MLX5_SET_TO_ONES(fte_match_param, g[g_ix].match_criteria,
 			 outer_headers.ip_protocol);
+	g_ix++;
 
-	g[1].log_sz = 1;
-	g[1].match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
-	MLX5_SET_TO_ONES(fte_match_param, g[1].match_criteria,
+	g[g_ix].log_sz = 1;
+	g[g_ix].match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
+	MLX5_SET_TO_ONES(fte_match_param, g[g_ix].match_criteria,
 			 outer_headers.ethertype);
+	g_ix++;
 
-	g[2].log_sz = 0;
+	g[g_ix].log_sz = 0;
+	g_ix++;
 
-	g[3].log_sz = 14;
-	g[3].match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
-	dmac = MLX5_ADDR_OF(fte_match_param, g[3].match_criteria,
+	g[g_ix].log_sz = 14;
+	g[g_ix].match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
+	dmac = MLX5_ADDR_OF(fte_match_param, g[g_ix].match_criteria,
 			    outer_headers.dmac_47_16);
 	memset(dmac, 0xff, ETH_ALEN);
-	MLX5_SET_TO_ONES(fte_match_param, g[3].match_criteria,
+	MLX5_SET_TO_ONES(fte_match_param, g[g_ix].match_criteria,
 			 outer_headers.ethertype);
-	MLX5_SET_TO_ONES(fte_match_param, g[3].match_criteria,
+	MLX5_SET_TO_ONES(fte_match_param, g[g_ix].match_criteria,
 			 outer_headers.ip_protocol);
+	g_ix++;
 
-	g[4].log_sz = 13;
-	g[4].match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
-	dmac = MLX5_ADDR_OF(fte_match_param, g[4].match_criteria,
+	g[g_ix].log_sz = 13;
+	g[g_ix].match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
+	dmac = MLX5_ADDR_OF(fte_match_param, g[g_ix].match_criteria,
 			    outer_headers.dmac_47_16);
 	memset(dmac, 0xff, ETH_ALEN);
-	MLX5_SET_TO_ONES(fte_match_param, g[4].match_criteria,
+	MLX5_SET_TO_ONES(fte_match_param, g[g_ix].match_criteria,
 			 outer_headers.ethertype);
+	g_ix++;
 
-	g[5].log_sz = 11;
-	g[5].match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
-	dmac = MLX5_ADDR_OF(fte_match_param, g[5].match_criteria,
+	g[g_ix].log_sz = 11;
+	g[g_ix].match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
+	dmac = MLX5_ADDR_OF(fte_match_param, g[g_ix].match_criteria,
 			    outer_headers.dmac_47_16);
 	memset(dmac, 0xff, ETH_ALEN);
+	g_ix++;
 
-	g[6].log_sz = 2;
-	g[6].match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
-	dmac = MLX5_ADDR_OF(fte_match_param, g[6].match_criteria,
+	g[g_ix].log_sz = 2;
+	g[g_ix].match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
+	dmac = MLX5_ADDR_OF(fte_match_param, g[g_ix].match_criteria,
 			    outer_headers.dmac_47_16);
 	dmac[0] = 0x01;
-	MLX5_SET_TO_ONES(fte_match_param, g[6].match_criteria,
+	MLX5_SET_TO_ONES(fte_match_param, g[g_ix].match_criteria,
 			 outer_headers.ethertype);
-	MLX5_SET_TO_ONES(fte_match_param, g[6].match_criteria,
+	MLX5_SET_TO_ONES(fte_match_param, g[g_ix].match_criteria,
 			 outer_headers.ip_protocol);
+	g_ix++;
 
-	g[7].log_sz = 1;
-	g[7].match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
-	dmac = MLX5_ADDR_OF(fte_match_param, g[7].match_criteria,
+	g[g_ix].log_sz = 1;
+	g[g_ix].match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
+	dmac = MLX5_ADDR_OF(fte_match_param, g[g_ix].match_criteria,
 			    outer_headers.dmac_47_16);
 	dmac[0] = 0x01;
-	MLX5_SET_TO_ONES(fte_match_param, g[7].match_criteria,
+	MLX5_SET_TO_ONES(fte_match_param, g[g_ix].match_criteria,
 			 outer_headers.ethertype);
+	g_ix++;
 
-	g[8].log_sz = 0;
-	g[8].match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
-	dmac = MLX5_ADDR_OF(fte_match_param, g[8].match_criteria,
+	g[g_ix].log_sz = 0;
+	g[g_ix].match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
+	dmac = MLX5_ADDR_OF(fte_match_param, g[g_ix].match_criteria,
 			    outer_headers.dmac_47_16);
 	dmac[0] = 0x01;
+
+
 	priv->ft.main = mlx5_create_flow_table(priv->mdev, 1,
 					       MLX5_FLOW_TABLE_TYPE_NIC_RCV,
-					       9, g);
+					       nic_groups, g);
 	kfree(g);
 
 	return priv->ft.main ? 0 : -ENOMEM;
