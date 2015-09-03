@@ -331,8 +331,6 @@ int mlx5_set_port_pfc(struct mlx5_core_dev *dev, u8 pfc_en_tx, u8 pfc_en_rx)
 
 	memset(in, 0, sizeof(in));
 	MLX5_SET(pfcc_reg, in, local_port, 1);
-	MLX5_SET(pfcc_reg, in, pptx, !!pfc_en_tx);
-	MLX5_SET(pfcc_reg, in, pprx, !!pfc_en_rx);
 	MLX5_SET(pfcc_reg, in, pfctx, pfc_en_tx);
 	MLX5_SET(pfcc_reg, in, pfcrx, pfc_en_rx);
 	MLX5_SET_TO_ONES(pfcc_reg, in, prio_mask_tx);
