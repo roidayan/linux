@@ -315,6 +315,7 @@ static int mlx5e_create_rq(struct mlx5e_channel *c,
 	struct mlx5_core_dev *mdev = priv->mdev;
 	void *rqc = param->rqc;
 	void *rqc_wq = MLX5_ADDR_OF(rqc, rqc, wq);
+	u32 byte_count;
 	int wq_sz;
 	int err;
 	int i;
@@ -329,28 +330,48 @@ static int mlx5e_create_rq(struct mlx5e_channel *c,
 	rq->wq.db = &rq->wq.db[MLX5_RCV_DBR];
 
 	wq_sz = mlx5_wq_ll_get_size(&rq->wq);
-	rq->skb = kzalloc_node(wq_sz * sizeof(*rq->skb), GFP_KERNEL,
-			       cpu_to_node(c->cpu));
-	if (!rq->skb) {
-		err = -ENOMEM;
-		goto err_rq_wq_destroy;
-	}
 
-	rq->wqe_sz = (priv->params.lro_en) ? priv->params.lro_wqe_sz :
-					     MLX5E_SW2HW_MTU(priv->netdev->mtu);
-	rq->wqe_sz = SKB_DATA_ALIGN(rq->wqe_sz + MLX5E_NET_IP_ALIGN);
+	switch (priv->params.rq_wq_type) {
+	case MLX5_WQ_TYPE_LINKED_LIST:
+		rq->skb = kzalloc_node(wq_sz * sizeof(*rq->skb), GFP_KERNEL,
+				       cpu_to_node(c->cpu));
+		if (!rq->skb) {
+			err = -ENOMEM;
+			goto err_rq_wq_destroy;
+		}
+		rq->handle_rx_cqe = mlx5e_handle_rx_cqe;
+		rq->alloc_wqe = mlx5e_alloc_rx_wqe;
+
+		rq->wqe_sz = priv->params.lro_en ?
+			     priv->params.lro_wqe_sz :
+			     MLX5E_SW2HW_MTU(priv->netdev->mtu);
+		byte_count = rq->wqe_sz | MLX5_HW_START_PADDING;
+		rq->wqe_sz = SKB_DATA_ALIGN(rq->wqe_sz + MLX5E_NET_IP_ALIGN);
+		break;
+	case MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ:
+		rq->wqe_info = kzalloc_node(wq_sz * sizeof(*rq->wqe_info),
+					    GFP_KERNEL, cpu_to_node(c->cpu));
+		if (!rq->wqe_info) {
+			err = -ENOMEM;
+			goto err_rq_wq_destroy;
+		}
+		rq->handle_rx_cqe = mlx5e_handle_rx_cqe_mpwrq;
+		rq->alloc_wqe = mlx5e_alloc_rx_mpwqe;
+
+		rq->wqe_sz = MLX5_MPWRQ_NUM_STRIDES * MLX5_MPWRQ_STRIDE_SIZE;
+		byte_count = rq->wqe_sz;
+		break;
+	default:
+		BUG_ON(true);
+	}
 
 	for (i = 0; i < wq_sz; i++) {
 		struct mlx5e_rx_wqe *wqe = mlx5_wq_ll_get_wqe(&rq->wq, i);
-		u32 byte_count = rq->wqe_sz - MLX5E_NET_IP_ALIGN;
 
 		wqe->data.lkey       = c->mkey_be;
-		wqe->data.byte_count =
-			cpu_to_be32(byte_count | MLX5_HW_START_PADDING);
+		wqe->data.byte_count = cpu_to_be32(byte_count);
 	}
 
-	rq->handle_rx_cqe = mlx5e_handle_rx_cqe;
-	rq->alloc_wqe = mlx5e_alloc_rx_wqe;
 	rq->pdev    = c->pdev;
 	rq->netdev  = c->netdev;
 	rq->channel = c;
@@ -367,7 +388,17 @@ err_rq_wq_destroy:
 
 static void mlx5e_destroy_rq(struct mlx5e_rq *rq)
 {
-	kfree(rq->skb);
+	switch (rq->priv->params.rq_wq_type) {
+	case MLX5_WQ_TYPE_LINKED_LIST:
+		kfree(rq->skb);
+		break;
+	case MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ:
+		kfree(rq->wqe_info);
+		break;
+	default:
+		BUG_ON(true);
+	}
+
 	mlx5_wq_destroy(&rq->wq_ctrl);
 }
 
@@ -783,6 +814,17 @@ static int mlx5e_create_cq(struct mlx5e_channel *c,
 		cqe->op_own = 0xf1;
 	}
 
+	switch (priv->params.rq_wq_type) {
+	case MLX5_WQ_TYPE_LINKED_LIST:
+		cq->decompress_cqe = mlx5e_decompress_cqe;
+		break;
+	case MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ:
+		cq->decompress_cqe = mlx5e_decompress_cqe_mpw;
+		break;
+	default:
+		BUG_ON(true);
+	}
+
 	cq->channel = c;
 	cq->priv = priv;
 
@@ -1046,7 +1088,22 @@ static void mlx5e_build_rq_param(struct mlx5e_priv *priv,
 	void *rqc = param->rqc;
 	void *wq = MLX5_ADDR_OF(rqc, rqc, wq);
 
-	MLX5_SET(wq, wq, wq_type,          MLX5_WQ_TYPE_LINKED_LIST);
+	switch (priv->params.rq_wq_type) {
+	case MLX5_WQ_TYPE_LINKED_LIST:
+		MLX5_SET(wq, wq, wq_type, MLX5_WQ_TYPE_LINKED_LIST);
+		break;
+	case MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ:
+		MLX5_SET(wq, wq, log_wqe_num_of_strides,
+			 MLX5_MPWRQ_LOG_NUM_STRIDES - 9);
+		MLX5_SET(wq, wq, log_wqe_stride_size,
+			 MLX5_MPWRQ_LOG_STRIDE_SIZE - 6);
+		MLX5_SET(wq, wq, two_byte_shift_en, 1);
+		MLX5_SET(wq, wq, wq_type, MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ);
+		break;
+	default:
+		BUG_ON(true);
+	}
+
 	MLX5_SET(wq, wq, end_padding_mode, MLX5_WQ_END_PAD_MODE_ALIGN);
 	MLX5_SET(wq, wq, log_wq_stride,    ilog2(sizeof(struct mlx5e_rx_wqe)));
 	MLX5_SET(wq, wq, log_wq_sz,        priv->params.log_rq_size);
@@ -1083,7 +1140,17 @@ static void mlx5e_build_rx_cq_param(struct mlx5e_priv *priv,
 {
 	void *cqc = param->cqc;
 
-	MLX5_SET(cqc, cqc, log_cq_size,  priv->params.log_rq_size);
+	switch (priv->params.rq_wq_type) {
+	case MLX5_WQ_TYPE_LINKED_LIST:
+		MLX5_SET(cqc, cqc, log_cq_size,  priv->params.log_rq_size);
+		break;
+	case MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ:
+		MLX5_SET(cqc, cqc, log_cq_size,  priv->params.log_rq_size +
+						 MLX5_MPWRQ_LOG_NUM_STRIDES);
+		break;
+	default:
+		BUG_ON(true);
+	}
 
 	if (MLX5_CAP_GEN(priv->mdev, cqe_compression)) {
 		MLX5_SET(cqc, cqc, mini_cqe_res_format, MLX5_CQE_FORMAT_CSUM);
@@ -1992,8 +2059,24 @@ static void mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 
 	priv->params.log_sq_size           =
 		MLX5E_PARAMS_DEFAULT_LOG_SQ_SIZE;
-	priv->params.log_rq_size           =
-		MLX5E_PARAMS_DEFAULT_LOG_RQ_SIZE;
+	priv->params.rq_wq_type = MLX5_CAP_GEN(mdev, striding_rq) ?
+		MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ :
+		MLX5_WQ_TYPE_LINKED_LIST;
+
+	switch (priv->params.rq_wq_type) {
+	case MLX5_WQ_TYPE_LINKED_LIST:
+		priv->params.log_rq_size = MLX5E_PARAMS_DEFAULT_LOG_RQ_SIZE;
+		priv->params.min_rx_wqes = MLX5E_PARAMS_DEFAULT_MIN_RX_WQES;
+		break;
+	case MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ:
+		priv->params.log_rq_size = MLX5E_PARAMS_DEFAULT_LOG_RQ_SIZE_MPW;
+		priv->params.min_rx_wqes = MLX5E_PARAMS_DEFAULT_MIN_RX_WQES_MPW;
+		priv->params.lro_en = true;
+		break;
+	default:
+		BUG_ON(true);
+	}
+
 	priv->params.rx_cq_period_mode =
 		MLX5_CAP_GEN(mdev, cq_period_start_from_cqe) ?
 		MLX5_CQ_PERIOD_MODE_START_FROM_CQE :
@@ -2009,8 +2092,6 @@ static void mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 	priv->params.tx_cq_moderation_pkts =
 		MLX5E_PARAMS_DEFAULT_TX_CQ_MODERATION_PKTS;
 	priv->params.tx_max_inline         = mlx5e_get_max_inline_cap(mdev);
-	priv->params.min_rx_wqes           =
-		MLX5E_PARAMS_DEFAULT_MIN_RX_WQES;
 	priv->params.num_tc                = 1;
 	priv->params.default_vlan_prio     = 0;
 	priv->params.rss_hfunc             = ETH_RSS_HASH_XOR;
