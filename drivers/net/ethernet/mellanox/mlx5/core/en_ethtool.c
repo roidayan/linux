@@ -261,8 +261,9 @@ static void mlx5e_get_ringparam(struct net_device *dev,
 				struct ethtool_ringparam *param)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
+	int rq_wq_type = priv->params.rq_wq_type;
 
-	param->rx_max_pending = 1 << MLX5E_PARAMS_MAXIMUM_LOG_RQ_SIZE;
+	param->rx_max_pending = 1 << mlx5_max_log_rq_size(rq_wq_type);
 	param->tx_max_pending = 1 << MLX5E_PARAMS_MAXIMUM_LOG_SQ_SIZE;
 	param->rx_pending     = 1 << priv->params.log_rq_size;
 	param->tx_pending     = 1 << priv->params.log_sq_size;
@@ -272,6 +273,7 @@ static int mlx5e_set_ringparam(struct net_device *dev,
 			       struct ethtool_ringparam *param)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
+	int rq_wq_type = priv->params.rq_wq_type;
 	bool was_opened;
 	u16 min_rx_wqes;
 	u8 log_rq_size;
@@ -288,16 +290,16 @@ static int mlx5e_set_ringparam(struct net_device *dev,
 			    __func__);
 		return -EINVAL;
 	}
-	if (param->rx_pending < (1 << MLX5E_PARAMS_MINIMUM_LOG_RQ_SIZE)) {
+	if (param->rx_pending < (1 << mlx5_min_log_rq_size(rq_wq_type))) {
 		netdev_info(dev, "%s: rx_pending (%d) < min (%d)\n",
 			    __func__, param->rx_pending,
-			    1 << MLX5E_PARAMS_MINIMUM_LOG_RQ_SIZE);
+			    1 << mlx5_min_log_rq_size(rq_wq_type));
 		return -EINVAL;
 	}
-	if (param->rx_pending > (1 << MLX5E_PARAMS_MAXIMUM_LOG_RQ_SIZE)) {
+	if (param->rx_pending > (1 << mlx5_max_log_rq_size(rq_wq_type))) {
 		netdev_info(dev, "%s: rx_pending (%d) > max (%d)\n",
 			    __func__, param->rx_pending,
-			    1 << MLX5E_PARAMS_MAXIMUM_LOG_RQ_SIZE);
+			    1 << mlx5_max_log_rq_size(rq_wq_type));
 		return -EINVAL;
 	}
 	if (param->tx_pending < (1 << MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE)) {
