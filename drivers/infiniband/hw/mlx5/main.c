@@ -278,6 +278,21 @@ __be16 mlx5_get_roce_udp_sport(struct mlx5_ib_dev *dev, u8 port_num,
 	return cpu_to_be16(MLX5_CAP_ROCE(dev->mdev, r_roce_min_src_udp_port));
 }
 
+int mlx5_get_roce_gid_type(struct mlx5_ib_dev *dev, u8 port,
+			   int index, int *gid_type)
+{
+	struct ib_gid_attr attr;
+	union ib_gid gid;
+	int ret;
+
+	ret = ib_get_cached_gid(&dev->ib_dev, port, index, &gid, &attr);
+
+	if (!ret)
+		*gid_type = attr.gid_type;
+
+	return ret;
+}
+
 static int mlx5_use_mad_ifc(struct mlx5_ib_dev *dev)
 {
 	return !dev->mdev->issi;
