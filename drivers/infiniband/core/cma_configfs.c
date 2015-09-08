@@ -238,7 +238,7 @@ static void release_cma_dev(struct config_item  *item)
 						  cg_item);
 	struct cma_dev_group *cma_dev_group = container_of(group,
 							   struct cma_dev_group,
-							   ports_group);
+							   device_group);
 
 	kfree(cma_dev_group);
 };
@@ -249,7 +249,7 @@ static void release_cma_ports_group(struct config_item  *item)
 						  cg_item);
 	struct cma_dev_group *cma_dev_group = container_of(group,
 							   struct cma_dev_group,
-							   device_group);
+							   ports_group);
 
 	kfree(cma_dev_group->ports);
 	kfree(cma_dev_group->default_ports_group);
