@@ -1746,6 +1746,7 @@ static int mlx5_set_path(struct mlx5_ib_dev *dev, const struct ib_ah_attr *ah,
 {
 	enum rdma_link_layer ll = rdma_port_get_link_layer(&dev->ib_dev, port);
 	int err;
+	int gid_type;
 
 	if (attr_mask & IB_QP_PKEY_INDEX)
 		path->pkey_index = cpu_to_be16(alt ? attr->alt_pkey_index :
@@ -1764,6 +1765,11 @@ static int mlx5_set_path(struct mlx5_ib_dev *dev, const struct ib_ah_attr *ah,
 	if (ll == IB_LINK_LAYER_ETHERNET) {
 		if (!(ah->ah_flags & IB_AH_GRH))
 			return -EINVAL;
+
+		err = mlx5_get_roce_gid_type(dev, port, ah->grh.sgid_index,
+					     &gid_type);
+		if (err)
+			return err;
 		memcpy(path->rmac, ah->dmac, sizeof(ah->dmac));
 		path->udp_sport = mlx5_get_roce_udp_sport(dev, port,
 							  ah->grh.sgid_index);
@@ -1782,7 +1788,12 @@ static int mlx5_set_path(struct mlx5_ib_dev *dev, const struct ib_ah_attr *ah,
 
 	if (ah->ah_flags & IB_AH_GRH) {
 		path->mgid_index = ah->grh.sgid_index;
-		path->hop_limit  = ah->grh.hop_limit;
+		if ((ll == IB_LINK_LAYER_ETHERNET) &&
+		    (gid_type != IB_GID_TYPE_IB) &&
+		    (ah->grh.hop_limit < 2))
+			path->hop_limit  = IPV6_DEFAULT_HOPLIMIT;
+		else
+			path->hop_limit  = ah->grh.hop_limit;
 		path->tclass_flowlabel =
 			cpu_to_be32((ah->grh.traffic_class << 20) |
 				    (ah->grh.flow_label));
