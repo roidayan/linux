@@ -37,6 +37,9 @@ static struct ib_ah *create_ib_ah(struct mlx5_ib_dev *dev,
 				  struct ib_ah_attr *ah_attr,
 				  enum rdma_link_layer ll)
 {
+	int err;
+	int gid_type;
+
 	if (ah_attr->ah_flags & IB_AH_GRH) {
 		memcpy(ah->av.rgid, &ah_attr->grh.dgid, 16);
 		ah->av.grh_gid_fl = cpu_to_be32(ah_attr->grh.flow_label |
@@ -49,12 +52,22 @@ static struct ib_ah *create_ib_ah(struct mlx5_ib_dev *dev,
 	ah->av.stat_rate_sl = (ah_attr->static_rate << 4);
 
 	if (ll == IB_LINK_LAYER_ETHERNET) {
+		err = mlx5_get_roce_gid_type(dev, ah_attr->port_num,
+					     ah_attr->grh.sgid_index,
+					     &gid_type);
+		if (err)
+			return ERR_PTR(err);
 		memcpy(ah->av.rmac, ah_attr->dmac, sizeof(ah_attr->dmac));
 		ah->av.udp_sport =
 			mlx5_get_roce_udp_sport(dev,
 						ah_attr->port_num,
 						ah_attr->grh.sgid_index);
 		ah->av.stat_rate_sl |= (ah_attr->sl & 0x7) << 1;
+		if ((gid_type != IB_GID_TYPE_IB) &&
+		    (ah_attr->grh.hop_limit < 2))
+			ah->av.hop_limit = IPV6_DEFAULT_HOPLIMIT;
+		else
+			ah->av.hop_limit  = ah_attr->grh.hop_limit;
 	} else {
 		ah->av.rlid = cpu_to_be16(ah_attr->dlid);
 		ah->av.fl_mlid = ah_attr->src_path_bits & 0x7f;
