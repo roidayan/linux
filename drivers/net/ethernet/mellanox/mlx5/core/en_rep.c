@@ -43,6 +43,8 @@ int  mlx5_pf_nic_add_vport_miss_rule(struct mlx5e_priv *pf_dev, u32 vport, u32 *
 
 int  mlx5_add_fdb_miss_rule(struct mlx5_core_dev *mdev);
 
+int  mlx5e_rep_add_l2_fdb_rule(struct mlx5e_vf_rep *vf_rep, const char *addr);
+
 /* this is wrong, the miss rules must be in the 1st group of the PF NIC */
 //#define NIC_MISS_GROUP_INDEX 10
 //#define NIC_MISS_GROUP_START 0x6811
@@ -67,6 +69,8 @@ struct mlx5e_vf_rep {
 	u8  hw_id[MLX5_REP_HW_ID_LEN];
 	u8  vf;
 	u32 miss_flow_index;
+
+	u32 vf_mac_flow_index; /* FIXME - support multiple MACs --> flow indexes */
 };
 
 static const char mlx5e_rep_driver_name[] = "mlx5e_rep";
@@ -149,8 +153,73 @@ static int mlx5e_rep_attr_get(struct net_device *dev, struct switchdev_attr *att
 	return 0;
 }
 
+static int mlx5e_rep_fdb_add(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj_fdb *fdb)
+{
+	/* add FDB rule addr VF MAC --> VF vport */
+	return mlx5e_rep_add_l2_fdb_rule(vf_rep, fdb->addr);
+}
+
+static int mlx5e_rep_fdb_del(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj_fdb *fdb)
+{
+	struct mlx5_eswitch *eswitch = &vf_rep->pf_dev->mdev->priv.sriov.eswitch;
+	struct mlx5_flow_table *ft = eswitch->ft_fdb;
+
+	/* remove FDB vf mac rule */
+	mlx5_del_flow_table_entry(ft, vf_rep->vf_mac_flow_index);
+	return 0;
+}
+
+
+static int mlx5e_rep_obj_add(struct net_device *dev,
+			     struct switchdev_obj *obj)
+{
+	struct mlx5e_vf_rep *vf_rep = netdev_priv(dev);
+	int err = 0;
+
+	switch (obj->trans) {
+	case SWITCHDEV_TRANS_PREPARE:
+		if (obj->id != SWITCHDEV_OBJ_PORT_FDB)
+			return -EOPNOTSUPP;
+		else
+			return 0;
+	default:
+		break;
+	}
+
+	switch (obj->id) {
+	case SWITCHDEV_OBJ_PORT_FDB:
+		err = mlx5e_rep_fdb_add(vf_rep, &obj->u.fdb);
+		break;
+	default:
+		err = -EOPNOTSUPP;
+		break;
+	}
+
+	return err;
+}
+
+static int mlx5e_rep_obj_del(struct net_device *dev,
+			     struct switchdev_obj *obj)
+{
+	struct mlx5e_vf_rep *vf_rep = netdev_priv(dev);
+	int err = 0;
+
+	switch (obj->id) {
+	case SWITCHDEV_OBJ_PORT_FDB:
+		err = mlx5e_rep_fdb_del(vf_rep, &obj->u.fdb);
+		break;
+	default:
+		err = -EOPNOTSUPP;
+		break;
+	}
+
+	return err;
+}
+
 static const struct switchdev_ops mlx5e_rep_switchdev_ops = {
 	.switchdev_port_attr_get	= mlx5e_rep_attr_get,
+	.switchdev_port_obj_add		= mlx5e_rep_obj_add,
+	.switchdev_port_obj_del		= mlx5e_rep_obj_del,
 };
 
 static int mlx5e_rep_open(struct net_device *dev)
@@ -203,6 +272,8 @@ static struct net_device_ops mlx5e_rep_netdev_ops = {
 	.ndo_open	= mlx5e_rep_open,
 	.ndo_stop	= mlx5e_rep_close,
 	.ndo_start_xmit	= mlx5e_rep_xmit,
+	.ndo_fdb_add	= switchdev_port_fdb_add,
+	.ndo_fdb_del	= switchdev_port_fdb_del,
 };
 
 int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u8 vf)
@@ -482,6 +553,54 @@ out:
 	kvfree(flow_context);
 	return err;
 }
+
+int mlx5e_rep_add_l2_fdb_rule(struct mlx5e_vf_rep *vf_rep, const char *addr)
+{
+	struct mlx5_core_dev *mdev   = vf_rep->pf_dev->mdev;
+	struct mlx5_eswitch *eswitch = &mdev->priv.sriov.eswitch;
+	struct mlx5_flow_table *ft   = eswitch->ft_fdb;
+	u32 *flow_context;
+	void *match_value, *dest;
+	u8   *dmac;
+	int  err, vport = vf_rep->vf+1;
+
+
+	flow_context   = mlx5_vzalloc(MLX5_ST_SZ_BYTES(flow_context) +
+				      MLX5_ST_SZ_BYTES(dest_format_struct));
+	if (!flow_context) {
+		mlx5_core_warn(mdev, "%s: alloc failed\n", __func__);
+		err = -ENOMEM;
+		goto out;
+	}
+
+	match_value = MLX5_ADDR_OF(flow_context, flow_context, match_value);
+	dmac = MLX5_ADDR_OF(fte_match_param, match_value,
+			    outer_headers.dmac_47_16);
+	dest = MLX5_ADDR_OF(flow_context, flow_context, destination);
+
+	MLX5_SET(flow_context, flow_context, action,
+		 MLX5_FLOW_CONTEXT_ACTION_FWD_DEST);
+
+	MLX5_SET(dest_format_struct, dest, destination_type,
+		 MLX5_FLOW_CONTEXT_DEST_TYPE_VPORT);
+
+	MLX5_SET(flow_context, flow_context, destination_list_size, 1);
+	MLX5_SET(dest_format_struct, dest, destination_id, vport);
+
+	ether_addr_copy(dmac, addr);
+
+	err = mlx5_set_flow_group_entry(ft, 0, &vf_rep->vf_mac_flow_index, flow_context);
+	if (err)
+		mlx5_core_warn(mdev, "failed to set flow table entry for mac %pM to vport %d\n",
+			       addr, vport);
+
+	mlx5_core_warn(mdev, "ADD flow table entry for mac %pM to vport %d flow index=%d\n",
+		       addr, vport, vf_rep->vf_mac_flow_index);
+out:
+	kvfree(flow_context);
+	return err;
+}
+
 
 u32 handle_fdb_flow_tag(struct net_device *dev, struct sk_buff *skb, u32 flow_tag)
 {
