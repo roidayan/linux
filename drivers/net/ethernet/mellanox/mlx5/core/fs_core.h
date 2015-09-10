@@ -54,7 +54,14 @@ enum fs_ft_type {
 /* Should always be the first variable in the struct */
 struct fs_base {
 	struct list_head		list;
+	struct fs_base			*parent;
 	enum fs_type			type;
+	struct kref			refcount;
+	/* lock the node for writing and traversing */
+	struct mutex			lock;
+	struct completion		complete;
+	atomic_t			users_refcount;
+	const char			*name;
 };
 
 struct mlx5_flow_rule {
