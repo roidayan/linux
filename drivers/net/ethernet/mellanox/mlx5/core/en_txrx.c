@@ -30,6 +30,7 @@
  * SOFTWARE.
  */
 
+#include <linux/irq.h>
 #include "en.h"
 
 struct mlx5_cqe64 *mlx5e_get_cqe(struct mlx5e_cq *cq)
@@ -49,6 +50,14 @@ struct mlx5_cqe64 *mlx5e_get_cqe(struct mlx5e_cq *cq)
 	return cqe;
 }
 
+static inline bool mlx5e_no_channel_affinity_change(struct mlx5e_channel *c)
+{
+	int current_cpu = smp_processor_id();
+	struct cpumask *aff = irq_desc_get_irq_data(c->irq_desc)->affinity;
+
+	return cpumask_test_cpu(current_cpu, aff);
+}
+
 int mlx5e_napi_poll(struct napi_struct *napi, int budget)
 {
 	struct mlx5e_channel *c = container_of(napi, struct mlx5e_channel,
@@ -65,7 +74,7 @@ int mlx5e_napi_poll(struct napi_struct *napi, int budget)
 
 	busy |= mlx5e_post_rx_wqes(&c->rq);
 
-	if (busy)
+	if (busy && likely(mlx5e_no_channel_affinity_change(c)))
 		return budget;
 
 	napi_complete(napi);
