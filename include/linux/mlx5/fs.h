@@ -41,6 +41,10 @@
 
 #define MLX5_FS_DEFAULT_FLOW_TAG 0XFFFFFF
 
+enum mlx5_flow_namespace_type {
+	MLX5_FLOW_NAMESPACE_KERNEL,
+};
+
 struct mlx5_flow_destination {
 	enum mlx5_flow_destination_type	type;
 	union {
