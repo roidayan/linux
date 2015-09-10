@@ -39,6 +39,8 @@
 #include <linux/mlx5/device.h>
 #include <linux/mlx5/driver.h>
 
+#define MLX5_FS_DEFAULT_FLOW_TAG 0XFFFFFF
+
 struct mlx5_flow_destination {
 	enum mlx5_flow_destination_type	type;
 	union {
