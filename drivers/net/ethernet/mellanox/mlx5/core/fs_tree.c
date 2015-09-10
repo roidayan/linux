@@ -918,10 +918,10 @@ static void destroy_star_rules(struct mlx5_flow_table *ft, struct fs_prio *prio)
 	ft->star_rules.fg = NULL;
 }
 
-static struct mlx5_flow_table *mlx5_create_flow_table(struct mlx5_flow_namespace *ns,
-						      int prio,
-						      const char *name,
-						      int max_fte)
+struct mlx5_flow_table *mlx5_create_flow_table(struct mlx5_flow_namespace *ns,
+					       int prio,
+					       const char *name,
+					       int max_fte)
 {
 	struct mlx5_flow_table *ft;
 	int err;
@@ -982,8 +982,8 @@ free_ft:
 	return ERR_PTR(err);
 }
 
-static struct mlx5_flow_group *mlx5_create_flow_group(struct mlx5_flow_table *ft,
-						      u32 *fg_in)
+struct mlx5_flow_group *mlx5_create_flow_group(struct mlx5_flow_table *ft,
+					       u32 *fg_in)
 {
 	struct mlx5_flow_group *fg;
 	struct mlx5_core_dev *dev = fs_get_dev(&ft->base);
@@ -1234,7 +1234,7 @@ unlock_fg:
 	return dst;
 }
 
-static struct mlx5_flow_rule *
+struct mlx5_flow_rule *
 mlx5_add_flow_rule(struct mlx5_flow_table *ft,
 		   u8 match_criteria_enable,
 		   u32 *match_criteria,
@@ -1265,14 +1265,16 @@ put:
 	return dst;
 
 }
+EXPORT_SYMBOL(mlx5_add_flow_rule);
 
-static void mlx5_del_flow_rule(struct mlx5_flow_rule *dst)
+void mlx5_del_flow_rule(struct mlx5_flow_rule *dst)
 {
 	fs_remove_node(&dst->base);
 }
+EXPORT_SYMBOL(mlx5_del_flow_rule);
 
 /*Objects in the same prio are destroyed in the reverse order they were createrd*/
-static int mlx5_destroy_flow_table(struct mlx5_flow_table *ft)
+int mlx5_destroy_flow_table(struct mlx5_flow_table *ft)
 {
 	int err = 0;
 	struct fs_prio *prio;
@@ -1310,6 +1312,7 @@ unlock_ft:
 
 	return err;
 }
+EXPORT_SYMBOL(mlx5_destroy_flow_table);
 
 /*Group is destoyed when all the rules in the group were removed*/
 static void fs_del_fg(struct mlx5_flow_group *fg)
@@ -1326,10 +1329,11 @@ static void fs_del_fg(struct mlx5_flow_group *fg)
 		pr_warn("flow steering can't destroy fg\n");
 }
 
-static void mlx5_destroy_flow_group(struct mlx5_flow_group *fg)
+void mlx5_destroy_flow_group(struct mlx5_flow_group *fg)
 {
 	fs_remove_node(&fg->base);
 }
+EXPORT_SYMBOL(mlx5_destroy_flow_group);
 
 struct mlx5_flow_namespace *mlx5_get_flow_namespace(struct mlx5_core_dev *dev,
 						    enum mlx5_flow_namespace_type type)
