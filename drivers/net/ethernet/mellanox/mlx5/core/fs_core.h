@@ -133,6 +133,9 @@ struct mlx5_flow_root_namespace {
 	struct mutex			fs_chain_lock;
 };
 
+int mlx5_init_fs(struct mlx5_core_dev *dev);
+void mlx5_cleanup_fs(struct mlx5_core_dev *dev);
+
 #define fs_get_obj(v, _base)  {v = container_of((_base), typeof(*v), base); }
 #define fs_get_parent(v, child)  {v = (child)->base.parent ?		     \
 				  container_of((child)->base.parent,	     \

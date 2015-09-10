@@ -47,6 +47,7 @@
 #include <linux/kmod.h>
 #include <linux/mlx5/mlx5_ifc.h>
 #include "mlx5_core.h"
+#include "fs_core.h"
 
 MODULE_AUTHOR("Eli Cohen <eli@mellanox.com>");
 MODULE_DESCRIPTION("Mellanox Connect-IB, ConnectX-4 core driver");
@@ -884,7 +885,19 @@ static int mlx5_dev_init(struct mlx5_core_dev *dev, struct pci_dev *pdev)
 	mlx5_init_srq_table(dev);
 	mlx5_init_mr_table(dev);
 
+	err = mlx5_init_fs(dev);
+	if (err) {
+		dev_err(&pdev->dev, "Failed to init flow steering\n");
+		goto err_fs;
+	}
+
 	return 0;
+
+err_fs:
+	mlx5_cleanup_mr_table(dev);
+	mlx5_cleanup_srq_table(dev);
+	mlx5_cleanup_qp_table(dev);
+	mlx5_cleanup_cq_table(dev);
 
 err_unmap_bf_area:
 	unmap_bf_area(dev);
@@ -942,6 +955,7 @@ static void mlx5_dev_cleanup(struct mlx5_core_dev *dev)
 {
 	struct mlx5_priv *priv = &dev->priv;
 
+	mlx5_cleanup_fs(dev);
 	mlx5_cleanup_srq_table(dev);
 	mlx5_cleanup_qp_table(dev);
 	mlx5_cleanup_cq_table(dev);
