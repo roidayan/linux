@@ -1671,6 +1671,8 @@ static int mlx5e_open(struct net_device *netdev)
 	err = mlx5e_open_locked(netdev);
 	mutex_unlock(&priv->state_lock);
 
+	mlx5_set_port_admin_status(priv->mdev, MLX5_PORT_UP);
+
 	return err;
 }
 
@@ -1698,6 +1700,8 @@ static int mlx5e_close(struct net_device *netdev)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
 	int err;
+
+	mlx5_set_port_admin_status(priv->mdev, MLX5_PORT_DOWN);
 
 	mutex_lock(&priv->state_lock);
 	err = mlx5e_close_locked(netdev);
