@@ -13,6 +13,7 @@
 
 #include <linux/netdevice.h>
 #include <linux/notifier.h>
+#include <net/sw_flow.h>
 
 #define SWITCHDEV_F_NO_RECURSE		BIT(0)
 
@@ -48,6 +49,7 @@ enum switchdev_obj_id {
 	SWITCHDEV_OBJ_PORT_VLAN,
 	SWITCHDEV_OBJ_IPV4_FIB,
 	SWITCHDEV_OBJ_PORT_FDB,
+	SWITCHDEV_OBJ_FLOW,
 };
 
 struct switchdev_obj {
@@ -73,6 +75,8 @@ struct switchdev_obj {
 			const unsigned char *addr;
 			u16 vid;
 		} fdb;
+
+		struct sw_flow *flow;
 	} u;
 };
 
@@ -157,6 +161,9 @@ int switchdev_port_fdb_del(struct ndmsg *ndm, struct nlattr *tb[],
 int switchdev_port_fdb_dump(struct sk_buff *skb, struct netlink_callback *cb,
 			    struct net_device *dev,
 			    struct net_device *filter_dev, int idx);
+
+int switchdev_port_flow_add(struct net_device *dev, struct sw_flow *flow);
+int switchdev_port_flow_del(struct net_device *dev, struct sw_flow *flow);
 
 #else
 
@@ -271,6 +278,16 @@ static inline int switchdev_port_fdb_dump(struct sk_buff *skb,
 	return -EOPNOTSUPP;
 }
 
+static inline int switchdev_port_flow_add(struct net_device *dev, struct sw_flow *flow)
+{
+	return -EOPNOTSUPP;
+}
+
+
+static inline int switchdev_port_flow_del(struct net_device *dev, struct sw_flow *flow);
+{
+	return -EOPNOTSUPP;
+}
 #endif
 
 #endif /* _LINUX_SWITCHDEV_H_ */

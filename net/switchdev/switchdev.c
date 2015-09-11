@@ -1043,3 +1043,29 @@ void switchdev_fib_ipv4_abort(struct fib_info *fi)
 	fi->fib_net->ipv4.fib_offload_disabled = true;
 }
 EXPORT_SYMBOL_GPL(switchdev_fib_ipv4_abort);
+
+int switchdev_port_flow_add(struct net_device *dev, struct sw_flow *flow)
+{
+	struct switchdev_obj obj = {
+		.id = SWITCHDEV_OBJ_FLOW,
+		//.u.flow = { flow },
+	};
+
+	obj.u.flow = flow;
+
+	return switchdev_port_obj_add(dev, &obj);
+}
+EXPORT_SYMBOL_GPL(switchdev_port_flow_add);
+
+int switchdev_port_flow_del(struct net_device *dev, struct sw_flow *flow)
+{
+	struct switchdev_obj obj = {
+		.id = SWITCHDEV_OBJ_FLOW,
+		//.u.flow = flow,
+	};
+
+	obj.u.flow = flow;
+
+	return switchdev_port_obj_del(dev, &obj);
+}
+EXPORT_SYMBOL_GPL(switchdev_port_flow_del);
