@@ -1034,6 +1034,27 @@ static int mlx5_ib_mmap(struct ib_ucontext *ibcontext, struct vm_area_struct *vm
 	case MLX5_IB_MMAP_GET_CONTIGUOUS_PAGES:
 		return -ENOSYS;
 
+	case MLX5_IB_MMAP_CORE_CLOCK:
+	{
+		phys_addr_t pfn;
+
+		if (vma->vm_end - vma->vm_start != PAGE_SIZE)
+			return -EINVAL;
+
+		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+		pfn = (dev->mdev->iseg_base +
+		       offsetof(struct mlx5_init_seg, internal_timer_h)) >>
+			PAGE_SHIFT;
+		if (io_remap_pfn_range(vma, vma->vm_start, pfn,
+				       PAGE_SIZE, vma->vm_page_prot))
+			return -EAGAIN;
+
+		mlx5_ib_dbg(dev, "mapped internal timer at 0x%lx, PA 0x%llx\n",
+			    vma->vm_start,
+			    (unsigned long long)pfn << PAGE_SHIFT);
+		break;
+	}
+
 	default:
 		return -EINVAL;
 	}
