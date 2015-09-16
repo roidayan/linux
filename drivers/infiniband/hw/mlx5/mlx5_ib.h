@@ -454,6 +454,21 @@ struct mlx5_ib_dev {
 #endif
 };
 
+struct mlx5_uverbs_ex_query_device {
+	__u32 comp_mask;
+	__u32 reserved;
+};
+
+enum query_device_resp_mask {
+	QUERY_DEVICE_RESP_MASK_TIMESTAMP = 1UL << 0,
+};
+
+struct mlx5_uverbs_ex_query_device_resp {
+	__u32 comp_mask;
+	__u32 response_length;
+	__u64 hca_core_clock_offset;
+};
+
 static inline struct mlx5_ib_cq *to_mibcq(struct mlx5_core_cq *mcq)
 {
 	return container_of(mcq, struct mlx5_ib_cq, mcq);
