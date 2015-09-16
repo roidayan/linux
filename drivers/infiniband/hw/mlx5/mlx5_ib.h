@@ -62,7 +62,8 @@ enum {
 
 enum mlx5_ib_mmap_cmd {
 	MLX5_IB_MMAP_REGULAR_PAGE		= 0,
-	MLX5_IB_MMAP_GET_CONTIGUOUS_PAGES	= 1, /* always last */
+	MLX5_IB_MMAP_GET_CONTIGUOUS_PAGES	= 1,
+	MLX5_IB_MMAP_CORE_CLOCK			= 5,
 };
 
 enum {
