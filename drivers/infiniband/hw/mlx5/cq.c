@@ -752,6 +752,7 @@ static void destroy_cq_kernel(struct mlx5_ib_dev *dev, struct mlx5_ib_cq *cq)
 	mlx5_db_free(dev->mdev, &cq->db);
 }
 
+#define CQ_CREATE_FLAGS_SUPPORTED IB_CQ_FLAGS_TIMESTAMP_COMPLETION
 struct ib_cq *mlx5_ib_create_cq(struct ib_device *ibdev,
 				const struct ib_cq_init_attr *attr,
 				struct ib_ucontext *context,
@@ -773,6 +774,9 @@ struct ib_cq *mlx5_ib_create_cq(struct ib_device *ibdev,
 		return ERR_PTR(-EINVAL);
 
 	if (entries < 0)
+		return ERR_PTR(-EINVAL);
+
+	if (attr->flags & ~CQ_CREATE_FLAGS_SUPPORTED)
 		return ERR_PTR(-EINVAL);
 
 	entries = roundup_pow_of_two(entries + 1);
