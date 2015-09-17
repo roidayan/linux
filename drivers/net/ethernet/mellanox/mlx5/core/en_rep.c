@@ -33,6 +33,8 @@
 #include <net/switchdev.h>
 #include <generated/utsrelease.h>
 #include <linux/mlx5/flow_table.h>
+#include <net/sw_flow.h>
+#include <uapi/linux/openvswitch.h>
 #include "en.h"
 #include "eswitch.h"
 
