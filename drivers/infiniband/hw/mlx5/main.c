@@ -1738,9 +1738,15 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 
 	dev->mdev = mdev;
 
+	if (ll == IB_LINK_LAYER_ETHERNET) {
+		err = mlx5_enable_roce(dev);
+		if (err)
+			goto err_dealloc;
+	}
+
 	err = get_port_caps(dev);
 	if (err)
-		goto err_dealloc;
+		goto err_disable_roce;
 
 	if (mlx5_use_mad_ifc(dev))
 		get_ext_port_caps(dev);
@@ -1848,15 +1854,9 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 
 	err = init_node_data(dev);
 	if (err)
-		goto err_dealloc;
+		goto err_disable_roce;
 
 	mutex_init(&dev->cap_mask_mutex);
-
-	if (ll == IB_LINK_LAYER_ETHERNET) {
-		err = mlx5_enable_roce(dev);
-		if (err)
-			goto err_dealloc;
-	}
 
 	err = create_dev_resources(&dev->devr);
 	if (err)
