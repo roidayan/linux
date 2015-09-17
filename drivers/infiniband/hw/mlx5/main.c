@@ -720,8 +720,8 @@ out:
 	return err;
 }
 
-int mlx5_ib_query_port(struct ib_device *ibdev, u8 port,
-		       struct ib_port_attr *props)
+static int mlx5_ib_query_port(struct ib_device *ibdev, u8 port,
+			      struct ib_port_attr *props)
 {
 	switch (mlx5_get_vport_access_method(ibdev)) {
 	case MLX5_VPORT_ACCESS_METHOD_MAD:
