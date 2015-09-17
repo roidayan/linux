@@ -1562,6 +1562,9 @@ static struct ib_flow *mlx5_ib_create_flow(struct ib_qp *qp,
 	    flow_attr->flags)
 		return ERR_PTR(-EINVAL);
 
+	if (flow_attr->flags & IB_FLOW_ATTR_FLAGS_DONT_TRAP)
+		return ERR_PTR(-EOPNOTSUPP);
+
 	dst = kzalloc(sizeof(*dst), GFP_KERNEL);
 	if (!dst)
 		return ERR_PTR(-ENOMEM);
