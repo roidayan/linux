@@ -1577,6 +1577,11 @@ enum ib_flow_domain {
 	IB_FLOW_DOMAIN_NUM /* Must be last */
 };
 
+enum ib_flow_flags {
+	IB_FLOW_ATTR_FLAGS_DONT_TRAP = 1UL << 1, /*continue match, no steal*/
+	IB_FLOW_ATTR_FLAGS_RESERVED = 1UL << 2 /*Must be last*/
+};
+
 struct ib_flow_eth_filter {
 	u8	dst_mac[6];
 	u8	src_mac[6];
