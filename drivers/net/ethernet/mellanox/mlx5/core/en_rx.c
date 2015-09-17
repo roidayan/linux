@@ -324,11 +324,22 @@ static inline void mlx5e_build_rx_skb(struct mlx5_cqe64 *cqe,
 				       be16_to_cpu(cqe->vlan_info));
 }
 
+static inline bool mlx5e_loopbacked_pkt(struct sk_buff *skb)
+{
+	struct ethhdr *ethh = (struct ethhdr *)skb_mac_header(skb);
+
+	return ether_addr_equal_64bits(ethh->h_source, skb->dev->dev_addr);
+}
+
 static inline void mlx5e_complete_rx_cqe(struct mlx5e_rq *rq,
 					 struct mlx5_cqe64 *cqe,
 					 struct sk_buff *skb)
 {
 	mlx5e_build_rx_skb(cqe, rq, skb);
+
+	if (unlikely(mlx5e_loopbacked_pkt(skb)))
+		return;
+
 	rq->stats.packets++;
 	napi_gro_receive(rq->cq.napi, skb);
 }
