@@ -684,8 +684,6 @@ int mlx5_query_mad_ifc_gids(struct ib_device *ibdev, u8 port, int index,
 			    union ib_gid *gid);
 int mlx5_query_mad_ifc_port(struct ib_device *ibdev, u8 port,
 			    struct ib_port_attr *props);
-int mlx5_ib_query_port(struct ib_device *ibdev, u8 port,
-		       struct ib_port_attr *props);
 int mlx5_ib_init_fmr(struct mlx5_ib_dev *dev);
 void mlx5_ib_cleanup_fmr(struct mlx5_ib_dev *dev);
 void mlx5_ib_cont_pages(struct ib_umem *umem, u64 addr, int *count, int *shift,
