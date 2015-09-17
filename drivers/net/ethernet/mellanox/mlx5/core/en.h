@@ -577,10 +577,6 @@ struct mlx5e_priv {
 	struct mlx5_core_dev      *mdev;
 	struct net_device         *netdev;
 	struct mlx5e_stats         stats;
-
-	struct kobject *ecn_root_kobj;
-	struct mlx5_ecn_ctx ecn_ctx[MLX5_CONG_PROTOCOL_NUM];
-	struct mlx5_ecn_enable_ctx ecn_enable_ctx[MLX5_CONG_PROTOCOL_NUM][8];
 };
 
 enum mlx5e_link_mode {
@@ -660,8 +656,6 @@ int mlx5e_redirect_rqt(struct mlx5e_priv *priv, enum mlx5e_rqt_ix rqt_ix);
 
 int mlx5e_open_locked(struct net_device *netdev);
 int mlx5e_close_locked(struct net_device *netdev);
-int mlx5e_sysfs_create(struct net_device *dev);
-void mlx5e_sysfs_remove(struct net_device *dev);
 
 static inline void mlx5e_tx_notify_hw(struct mlx5e_sq *sq,
 				      struct mlx5e_tx_wqe *wqe, int bf_sz)

@@ -1481,14 +1481,8 @@ int mlx5e_open_locked(struct net_device *netdev)
 	mlx5e_redirect_rqts(priv);
 
 	schedule_delayed_work(&priv->update_stats_work, 0);
-	err = mlx5e_sysfs_create(netdev);
-	if (err)
-		goto err_close_channels;
 
 	return 0;
-
-err_close_channels:
-	mlx5e_close_channels(priv);
 
 err_clear_state_opened_flag:
 	clear_bit(MLX5E_STATE_OPENED, &priv->state);
@@ -1512,8 +1506,6 @@ static int mlx5e_open(struct net_device *netdev)
 int mlx5e_close_locked(struct net_device *netdev)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
-
-	mlx5e_sysfs_remove(netdev);
 
 	/* May already be CLOSED in case a previous configuration operation
 	 * (e.g RX/TX queue size change) that involves close&open failed at the
