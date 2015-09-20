@@ -33,8 +33,6 @@
 #include <net/switchdev.h>
 #include <generated/utsrelease.h>
 #include <linux/mlx5/flow_table.h>
-#include <net/sw_flow.h>
-#include <uapi/linux/openvswitch.h>
 #include "en.h"
 #include "eswitch.h"
 
@@ -171,6 +169,24 @@ static int mlx5e_rep_fdb_del(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj_f
 	return 0;
 }
 
+static int mlx5e_rep_flow_add(struct mlx5e_vf_rep *vf_rep, struct sw_flow *flow)
+{
+	/* 1. use flow->key.misc.in_port_ifindex to find the in port, and
+	 * flow->actions->actions[i].out_port_ifindex to find the outport.
+	 * Use switchdev ID attribute to make sure that they are both on our same PF
+	 * eSwitch and if not don't offload the flow
+
+	* 2. call parse_flow_attr to translate the flow Linux --> PRM
+	* 3. find the group that this flow belongs too, create if doesn't exist
+	* 4. add the flow there
+	*/
+	return 0;
+}
+
+static int mlx5e_rep_flow_del(struct mlx5e_vf_rep *vf_rep, struct sw_flow *flow)
+{
+	return 0;
+}
 
 static int mlx5e_rep_obj_add(struct net_device *dev,
 			     struct switchdev_obj *obj)
@@ -180,7 +196,8 @@ static int mlx5e_rep_obj_add(struct net_device *dev,
 
 	switch (obj->trans) {
 	case SWITCHDEV_TRANS_PREPARE:
-		if (obj->id != SWITCHDEV_OBJ_PORT_FDB)
+		if (obj->id != SWITCHDEV_OBJ_PORT_FDB &&
+		    obj->id != SWITCHDEV_OBJ_FLOW)
 			return -EOPNOTSUPP;
 		else
 			return 0;
@@ -191,6 +208,9 @@ static int mlx5e_rep_obj_add(struct net_device *dev,
 	switch (obj->id) {
 	case SWITCHDEV_OBJ_PORT_FDB:
 		err = mlx5e_rep_fdb_add(vf_rep, &obj->u.fdb);
+		break;
+	case SWITCHDEV_OBJ_FLOW:
+		err = mlx5e_rep_flow_add(vf_rep, obj->u.flow);
 		break;
 	default:
 		err = -EOPNOTSUPP;
@@ -209,6 +229,9 @@ static int mlx5e_rep_obj_del(struct net_device *dev,
 	switch (obj->id) {
 	case SWITCHDEV_OBJ_PORT_FDB:
 		err = mlx5e_rep_fdb_del(vf_rep, &obj->u.fdb);
+		break;
+	case SWITCHDEV_OBJ_FLOW:
+		err = mlx5e_rep_flow_del(vf_rep, obj->u.flow);
 		break;
 	default:
 		err = -EOPNOTSUPP;
