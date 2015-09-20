@@ -644,6 +644,7 @@ void ib_cache_gid_set_default_gid(struct ib_device *ib_dev, u8 port,
 
 		gid_attr.gid_type = gid_type;
 
+		mutex_lock(&table->lock);
 		ix = find_gid(table, &gid, &gid_attr, true,
 			      GID_ATTR_FIND_MASK_GID_TYPE |
 			      GID_ATTR_FIND_MASK_DEFAULT);
@@ -653,7 +654,6 @@ void ib_cache_gid_set_default_gid(struct ib_device *ib_dev, u8 port,
 
 		zattr_type.gid_type = gid_type;
 
-		mutex_lock(&table->lock);
 		if (!__ib_cache_gid_get(ib_dev, port, ix,
 					&current_gid, &current_gid_attr) &&
 		    mode == IB_CACHE_GID_DEFAULT_MODE_SET &&
