@@ -155,9 +155,27 @@ static int mlx5e_dcbnl_ieee_setpfc(struct net_device *dev,
 	return mlx5_set_port_pfc(mdev, pfc->pfc_en, pfc->pfc_en);
 }
 
+static u8 mlx5e_dcbnl_getdcbx(struct net_device *dev)
+{
+	return DCB_CAP_DCBX_HOST | DCB_CAP_DCBX_VER_IEEE;
+}
+
+static u8 mlx5e_dcbnl_setdcbx(struct net_device *dev, u8 mode)
+{
+	if ((mode & DCB_CAP_DCBX_LLD_MANAGED) ||
+	    (mode & DCB_CAP_DCBX_VER_CEE) ||
+	    !(mode & DCB_CAP_DCBX_VER_IEEE) ||
+	    !(mode & DCB_CAP_DCBX_HOST))
+		return 1;
+
+	return 0;
+}
+
 const struct dcbnl_rtnl_ops mlx5e_dcbnl_ops = {
 	.ieee_getets	= mlx5e_dcbnl_ieee_getets,
 	.ieee_setets	= mlx5e_dcbnl_ieee_setets,
 	.ieee_getpfc	= mlx5e_dcbnl_ieee_getpfc,
 	.ieee_setpfc	= mlx5e_dcbnl_ieee_setpfc,
+	.getdcbx	= mlx5e_dcbnl_getdcbx,
+	.setdcbx	= mlx5e_dcbnl_setdcbx,
 };
