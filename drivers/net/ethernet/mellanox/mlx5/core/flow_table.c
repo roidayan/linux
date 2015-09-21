@@ -177,6 +177,22 @@ static int mlx5_create_flow_group_cmd(struct mlx5_flow_table *ft, int i)
 	return __mlx5_create_flow_group_cmd(ft, &ft->group[i]);
 }
 
+int mlx5_create_flow_group(void *ft, struct mlx5_flow_table_group *g,
+			   u32 start_ix, u32 *id)
+{
+	struct mlx5_ftg ftg;
+	int err;
+
+	memcpy(&ftg.g, g, sizeof(*g));
+	ftg.start_ix = start_ix;
+
+	err = __mlx5_create_flow_group_cmd((struct mlx5_flow_table *)ft, &ftg);
+
+	if (!err)
+		*id = ftg.id;
+
+	return err;
+}
 
 static void mlx5_destroy_flow_table_groups(struct mlx5_flow_table *ft)
 {

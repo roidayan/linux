@@ -42,14 +42,22 @@ static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v)
 	struct sw_flow_key *key  = &flow->key;
 	struct sw_flow_key *mask = &flow->mask->key;
 
-	void *outer_headers_c = MLX5_ADDR_OF(fte_match_param, match_c,
-					     outer_headers);
-	void *outer_headers_v = MLX5_ADDR_OF(fte_match_param, match_v,
-					     outer_headers);
+	void *outer_headers_c = MLX5_ADDR_OF(fte_match_param, match_c, outer_headers);
+	void *outer_headers_v = MLX5_ADDR_OF(fte_match_param, match_v, outer_headers);
+
+	void *misc_c = MLX5_ADDR_OF(fte_match_param, match_c, misc_parameters);
+	void *misc_v = MLX5_ADDR_OF(fte_match_param, match_c, misc_parameters);
 
 	u8 zero_mac[ETH_ALEN];
+	int vport = 0;
 
 	eth_zero_addr(zero_mac);
+
+	/* set source vport for the flow */
+	misc_v = MLX5_ADDR_OF(fte_match_param, match_v, misc_parameters);
+	MLX5_SET(fte_match_set_misc, misc_c, source_port, 0xffff);
+	/* TODO: translate flow->key.misc.in_port_ifindex to FDB vport */
+	MLX5_SET(fte_match_set_misc, misc_v, source_port, vport);
 
 	if (memcmp(&mask->eth.src, zero_mac, ETH_ALEN)) {
 		memcpy(MLX5_ADDR_OF(fte_match_set_lyr_2_4, outer_headers_c, smac_47_16),
@@ -161,4 +169,159 @@ static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v)
 out_err:
 
 	return -EINVAL;
+}
+
+//struct list_head mlx5_flow_groups;
+static LIST_HEAD(mlx5_flow_groups);
+
+#define MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG 10 /* 1K flows in group */
+#define MATCH_PARAMS_SIZE MLX5_ST_SZ_DW(fte_match_param)
+
+int mlx5_create_flow_group(void *ft, struct mlx5_flow_table_group *g,
+			   u32 start_ix, u32 *id);
+
+struct mlx5_flow_group {
+	u32 match_c[MATCH_PARAMS_SIZE];
+	u32 group_id;
+	u32 start_ix;
+	struct mlx5_flow_table_group g;
+
+	struct list_head groups_list; /* list of groups */
+	struct list_head flows_list;  /* flows for this group */
+};
+
+struct mlx5_flow {
+	u32 match_v[MATCH_PARAMS_SIZE];
+	u32 flow_index;
+
+	struct list_head group_list; /* flows of the mother group */
+};
+
+int mlx5e_flow_add(struct mlx5e_priv *pf_dev,
+		   struct sw_flow *sw_flow, struct mlx5_flow_group *group, u32 *match_v)
+{
+	void *flow_context, *match_value, *dest;
+	struct mlx5_flow *flow;
+	int err;
+	struct mlx5_eswitch *eswitch = &pf_dev->mdev->priv.sriov.eswitch;
+	u16 out_vport = 0; /* TODO ..->actions[i].out_port_ifindex --> vport */
+
+	flow = kzalloc(sizeof (*flow), GFP_KERNEL);
+	if (!flow)
+		goto flow_alloc_failed;
+	memcpy(flow->match_v, match_v, MATCH_PARAMS_SIZE);
+
+	/* TODO: handle flows with fwding to > 1 output ports (multiple dests) */
+	flow_context = mlx5_vzalloc(MLX5_ST_SZ_BYTES(flow_context) +
+				    MLX5_ST_SZ_BYTES(dest_format_struct));
+	if (!flow_context)
+		goto flow_context_alloc_failed;
+
+	match_value = MLX5_ADDR_OF(flow_context, flow_context, match_value);
+	memcpy(match_value, match_v, MATCH_PARAMS_SIZE);
+
+	MLX5_SET(flow_context, flow_context, destination_list_size, 1);
+	MLX5_SET(flow_context, flow_context, action,
+		 MLX5_FLOW_CONTEXT_ACTION_FWD_DEST);
+
+	dest = MLX5_ADDR_OF(flow_context, flow_context, destination);
+	MLX5_SET(dest_format_struct, dest, destination_type,
+		 MLX5_FLOW_CONTEXT_DEST_TYPE_VPORT);
+	MLX5_SET(dest_format_struct, dest, destination_id, out_vport);
+
+	err = mlx5_set_flow_group_entry(eswitch->ft_fdb, group->group_id,
+					&flow->flow_index, flow_context);
+
+	list_add_tail(&flow->group_list, &group->flows_list);
+
+	kfree(flow_context);
+	return 0;
+
+flow_context_alloc_failed:
+	kfree(flow);
+
+flow_alloc_failed:
+	pr_warn("flow allocation failed\n");
+	return -ENOMEM;
+}
+
+int mlx5e_flow_del(struct mlx5e_priv *pf_dev, struct mlx5_flow_group *group, u32 *match_v)
+{
+	struct mlx5_flow *flow = NULL;
+	struct mlx5_eswitch *eswitch = &pf_dev->mdev->priv.sriov.eswitch;
+
+	/* find the group that this flow belongs to */
+	list_for_each_entry(flow, &group->flows_list, group_list) {
+		if (!memcmp(flow->match_v, match_v, MATCH_PARAMS_SIZE))
+			break;
+		flow = NULL;
+	}
+
+	if (!flow) {
+		pr_err("flow doesn't exist in group, can't remove it\n");
+		return -EINVAL;
+	}
+
+	mlx5_del_flow_table_entry(eswitch->ft_fdb, flow->flow_index);
+	list_del(&flow->group_list);
+	kfree(flow);
+
+	/* TODO: if the groups gets to be empty - remove it?! */
+	return 0;
+}
+
+int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags)
+{
+	struct mlx5_flow_group *group = NULL;
+	struct mlx5_flow_table_group *g;
+	struct mlx5_eswitch *eswitch = &pf_dev->mdev->priv.sriov.eswitch;
+	int err;
+
+	u32 match_c[MATCH_PARAMS_SIZE];
+	u32 match_v[MATCH_PARAMS_SIZE];
+
+	memset(match_c, 0, sizeof(match_c));
+	memset(match_v, 0, sizeof(match_v));
+
+	/* translate the flow from SW to PRM */
+	parse_flow_attr(sw_flow, match_c, match_v);
+
+	/* find the group that this flow belongs to */
+	list_for_each_entry(group, &mlx5_flow_groups, groups_list) {
+		if (!memcmp(group->match_c, match_c, MATCH_PARAMS_SIZE))
+			break;
+		group = NULL;
+	}
+
+	if (!group && (flags & FLOW_DEL)) {
+		pr_err("flow group doesn't exist, can't remove flow\n");
+		return -EINVAL;
+	}
+
+	if (!group) {
+		group = kzalloc(sizeof (*group), GFP_KERNEL);
+		if (!group) {
+			pr_err("can't allocate flow group\n");
+			return -ENOMEM;
+		}
+		INIT_LIST_HEAD(&group->flows_list);
+		memcpy(group->match_c, match_c, MATCH_PARAMS_SIZE);
+
+		g = &group->g;
+		g->log_sz = MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG;
+		g->match_criteria_enable = MLX5_MATCH_OUTER_HEADERS | MLX5_MATCH_MISC_PARAMETERS;
+		memcpy(g->match_criteria, match_c, MATCH_PARAMS_SIZE);
+		group->start_ix = 0; /* TODO: set the group start index */
+		err = mlx5_create_flow_group(eswitch->ft_fdb, g, group->start_ix, &group->group_id);
+		if (!err)
+			list_add_tail(&group->groups_list, &mlx5_flow_groups);
+
+	}
+
+	if (flags & FLOW_ADD)
+		return mlx5e_flow_add(pf_dev, sw_flow, group, match_c);
+	else if (flags & FLOW_DEL)
+		return mlx5e_flow_del(pf_dev, group, match_c);
+	else
+		return -EINVAL;
 }

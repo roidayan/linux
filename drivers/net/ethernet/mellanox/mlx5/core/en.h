@@ -51,6 +51,7 @@ void mlx5_del_flow_group_entry(void *flow_table, u32 flow_index);
 u32 handle_fdb_flow_tag(struct net_device *pf_dev, struct sk_buff *skb, u32 flow_tag);
 
 
+
 #define MLX5E_MAX_NUM_TC	8
 
 #define MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE                0x6
@@ -651,3 +652,9 @@ u16 mlx5e_get_max_inline_cap(struct mlx5_core_dev *mdev);
 
 int  mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev);
 void mlx5e_stop_flow_offloads(struct mlx5e_priv *pf_dev);
+
+#define FLOW_ADD (1 << 0)
+#define FLOW_DEL (1 << 1)
+struct sw_flow;
+
+int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags);

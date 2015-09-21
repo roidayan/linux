@@ -33,6 +33,8 @@
 #include <net/switchdev.h>
 #include <generated/utsrelease.h>
 #include <linux/mlx5/flow_table.h>
+#include <linux/list.h>
+#include <net/sw_flow.h>
 #include "en.h"
 #include "eswitch.h"
 
@@ -58,6 +60,7 @@ int  mlx5e_rep_add_l2_fdb_rule(struct mlx5e_vf_rep *vf_rep, const char *addr);
 
 u32 uplink_miss_flow_index = 0; /* FIXME - add this to the PF somewhere */
 u32 fdb_miss_flow_index    = 0; /* FIXME - same */
+
 
 #define MLX5_REP_HW_ID_LEN 6
 
@@ -169,22 +172,64 @@ static int mlx5e_rep_fdb_del(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj_f
 	return 0;
 }
 
-static int mlx5e_rep_flow_add(struct mlx5e_vf_rep *vf_rep, struct sw_flow *flow)
+static int mlx5e_rep_flow_del(struct mlx5e_vf_rep *vf_rep, struct sw_flow *sw_flow)
 {
-	/* 1. use flow->key.misc.in_port_ifindex to find the in port, and
+	return mlx5e_flow_act(vf_rep->pf_dev, sw_flow, FLOW_DEL);
+}
+
+static int mlx5e_rep_flow_add(struct mlx5e_vf_rep *vf_rep, struct sw_flow *sw_flow)
+{
+	struct net *net;
+	struct net_device *in, *out;
+	struct sw_flow_action *action;
+	struct switchdev_attr in_attr,out_attr;
+	struct mlx5e_vf_rep *in_rep, *out_rep;
+	int err1, err2;
+
+	/* use flow->key.misc.in_port_ifindex to find the in port, and
 	 * flow->actions->actions[i].out_port_ifindex to find the outport.
 	 * Use switchdev ID attribute to make sure that they are both on our same PF
 	 * eSwitch and if not don't offload the flow
+	 */
 
-	* 2. call parse_flow_attr to translate the flow Linux --> PRM
-	* 3. find the group that this flow belongs too, create if doesn't exist
-	* 4. add the flow there
-	*/
-	return 0;
-}
+	action = &sw_flow->actions->actions[0];
+	/* FIXME: check for > 1 actions and handle vlan push */
+	if(action->type != SW_FLOW_ACTION_TYPE_OUTPUT) {
+		printk(KERN_ERR "%s flow action %d, not fwd, can't\n", __func__, action->type);
+		return -EOPNOTSUPP;
+	}
 
-static int mlx5e_rep_flow_del(struct mlx5e_vf_rep *vf_rep, struct sw_flow *flow)
-{
+	net = dev_net(vf_rep->dev);
+	if (!net) {
+		printk(KERN_ERR "%s flow action %d, not fwd, can't\n", __func__, action->type);
+		return -EINVAL;
+	}
+	in = dev_get_by_index_rcu(net, sw_flow->key.misc.in_port_ifindex);
+	out = dev_get_by_index_rcu(net, action->out_port_ifindex);
+
+	in_attr.id = out_attr.id = SWITCHDEV_ATTR_PORT_PARENT_ID;
+	in_attr.flags = out_attr.flags = SWITCHDEV_F_NO_RECURSE;
+
+	err1 = err2 = 0;
+
+	if (netdev_priv(in) != vf_rep->pf_dev) {
+		in_rep = netdev_priv(in);
+		err1 = switchdev_port_attr_get(in, &in_attr);
+	}
+
+	if (netdev_priv(out) != vf_rep->pf_dev) {
+		out_rep = netdev_priv(out);
+		err2 = switchdev_port_attr_get(out, &out_attr);
+	}
+
+	if (err1 || err2)
+		return -EOPNOTSUPP;
+
+	if (!netdev_phys_item_ids_match(&in_attr.u.ppid, &out_attr.u.ppid))
+		return -EOPNOTSUPP;
+
+	return mlx5e_flow_act(vf_rep->pf_dev, sw_flow, FLOW_ADD);
+
 	return 0;
 }
 
