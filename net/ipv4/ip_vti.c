@@ -57,6 +57,10 @@ static int vti_input(struct sk_buff *skb, int nexthdr, __be32 spi,
 	struct net *net = dev_net(skb->dev);
 	struct ip_tunnel_net *itn = net_generic(net, vti_net_id);
 
+	/* encap_type < -1 indicates a GRO call, we don't support this. */
+	if (encap_type < -1)
+		return -EOPNOTSUPP;
+
 	tunnel = ip_tunnel_lookup(itn, skb->dev->ifindex, TUNNEL_NO_KEY,
 				  iph->saddr, iph->daddr, 0);
 	if (tunnel) {
