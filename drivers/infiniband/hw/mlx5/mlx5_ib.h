@@ -104,7 +104,6 @@ static inline struct mlx5_ib_ucontext *to_mucontext(struct ib_ucontext *ibuconte
 struct mlx5_ib_pd {
 	struct ib_pd		ibpd;
 	u32			pdn;
-	u32			pa_lkey;
 };
 
 /* Use macros here so that don't have to duplicate
@@ -214,7 +213,6 @@ struct mlx5_ib_qp {
 	int			uuarn;
 
 	int			create_type;
-	u32			pa_lkey;
 
 	/* Store signature errors */
 	bool			signature_en;
