@@ -108,7 +108,7 @@ static void mlx5_del_flow_entry_cmd(struct mlx5_flow_table *ft, u32 flow_index)
 	mlx5_cmd_exec_check_status(ft->dev, in, sizeof(in), out, sizeof(out));
 }
 
-static void mlx5_destroy_flow_group_cmd(struct mlx5_flow_table *ft, int i)
+static void __mlx5_destroy_flow_group_cmd(struct mlx5_flow_table *ft, u32 id)
 {
 	u32 in[MLX5_ST_SZ_DW(destroy_flow_group_in)];
 	u32 out[MLX5_ST_SZ_DW(destroy_flow_group_out)];
@@ -120,18 +120,18 @@ static void mlx5_destroy_flow_group_cmd(struct mlx5_flow_table *ft, int i)
 	MLX5_SET_DFGI(in, table_type, ft->type);
 	MLX5_SET_DFGI(in, table_id,   ft->id);
 	MLX5_SET_DFGI(in, opcode, MLX5_CMD_OP_DESTROY_FLOW_GROUP);
-	MLX5_SET_DFGI(in, group_id, ft->group[i].id);
+	MLX5_SET_DFGI(in, group_id, id);
 	mlx5_cmd_exec_check_status(ft->dev, in, sizeof(in), out, sizeof(out));
 }
 
-static int mlx5_create_flow_group_cmd(struct mlx5_flow_table *ft, int i)
+static int __mlx5_create_flow_group_cmd(struct mlx5_flow_table *ft, struct mlx5_ftg *ftg)
 {
 	u32 out[MLX5_ST_SZ_DW(create_flow_group_out)];
 	u32 *in;
 	void *in_match_criteria;
 	int inlen = MLX5_ST_SZ_BYTES(create_flow_group_in);
-	struct mlx5_flow_table_group *g = &ft->group[i].g;
-	u32 start_ix = ft->group[i].start_ix;
+	struct mlx5_flow_table_group *g = &ftg->g;
+	u32 start_ix = ftg->start_ix;
 	u32 end_ix = start_ix + (1 << g->log_sz) - 1;
 	int err;
 
@@ -159,13 +159,24 @@ static int mlx5_create_flow_group_cmd(struct mlx5_flow_table *ft, int i)
 	err = mlx5_cmd_exec_check_status(ft->dev, in, inlen, out,
 					 sizeof(out));
 	if (!err)
-		ft->group[i].id = MLX5_GET(create_flow_group_out, out,
-					   group_id);
+		ftg->id = MLX5_GET(create_flow_group_out, out,
+				   group_id);
 
 	kvfree(in);
 
 	return err;
 }
+
+static void mlx5_destroy_flow_group_cmd(struct mlx5_flow_table *ft, int i)
+{
+	__mlx5_destroy_flow_group_cmd(ft, ft->group[i].id);
+}
+
+static int mlx5_create_flow_group_cmd(struct mlx5_flow_table *ft, int i)
+{
+	return __mlx5_create_flow_group_cmd(ft, &ft->group[i]);
+}
+
 
 static void mlx5_destroy_flow_table_groups(struct mlx5_flow_table *ft)
 {
