@@ -70,7 +70,8 @@ struct mlx5e_vf_rep {
 	struct mlx5e_sq *reinject_sq;
 
 	u8  hw_id[MLX5_REP_HW_ID_LEN];
-	u8  vf;
+	// u8  vf;
+	u32 vport;
 	u32 miss_flow_index;
 
 	u32 vf_mac_flow_index; /* FIXME - support multiple MACs --> flow indexes */
@@ -375,7 +376,7 @@ static int mlx5e_rep_open(struct net_device *dev)
 	netif_start_queue(dev);
 	netif_carrier_on(dev);
 
-	printk(KERN_INFO "opened rep device for VF %d\n", priv->vf);
+	printk(KERN_INFO "opened rep device for vport %d\n", priv->vport);
 	return 0;
 }
 
@@ -383,7 +384,7 @@ static int mlx5e_rep_close(struct net_device *dev)
 {
 	struct mlx5e_vf_rep *priv = netdev_priv(dev);
 
-	printk(KERN_INFO "closing rep device for VF %d\n", priv->vf);
+	printk(KERN_INFO "closing rep device for vport %d\n", priv->vport);
 
 	netif_carrier_off(dev);
 	netif_stop_queue(dev);
@@ -422,11 +423,11 @@ static struct net_device_ops mlx5e_rep_netdev_ops = {
 	.ndo_fdb_del	= switchdev_port_fdb_del,
 };
 
-int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u8 vf)
+int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u32 vport)
 {
 	struct net_device *dev;
 	struct mlx5e_vf_rep *priv;
-	int err, vport;
+	int err, vf;
 
 	dev = alloc_etherdev(sizeof(struct mlx5e_vf_rep));
 	if (!dev)
@@ -436,16 +437,22 @@ int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u8 vf)
 
 	memcpy(priv->hw_id, pf_dev->netdev->dev_addr, ETH_ALEN);
 	priv->pf_dev = pf_dev;
-	priv->vf     = vf;
+	priv->vport  = vport;
 	priv->dev    = dev;
 
-	printk(KERN_INFO "%s vf %d dev %p priv %p\n",__func__, vf, dev, priv);
+	printk(KERN_INFO "%s vport %x dev %p priv %p\n",__func__, vport, dev, priv);
 
 	dev->netdev_ops	= &mlx5e_rep_netdev_ops;
 	dev->ethtool_ops = &mlx5e_rep_ethtool_ops;
 	dev->switchdev_ops = &mlx5e_rep_switchdev_ops;
 
-	vport = vf + 1; /* PF vport = 0 --> VF vport is vf+1 */
+	/* vport = vf + 1;  PF vport = 0 --> VF vport is vf+1 */
+
+	if (vport == FDB_UPLINK_VPORT) {
+		vf = pf_dev->mdev->priv.sriov.num_vfs;
+		goto out;
+	} else
+		vf = vport - 1;
 
 	ether_addr_copy(dev->dev_addr, pf_dev->netdev->dev_addr);
 	dev->dev_addr[ETH_ALEN - 1] += vport;
@@ -460,7 +467,7 @@ int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u8 vf)
 	err = register_netdev(dev);
 	if (err)
 		goto err_free_netdev;
-
+out:
 	pf_dev->vf_reps[vf] = priv;
 
 	return 0;
@@ -479,40 +486,48 @@ void mlx5e_rep_destroy_netdev(struct net_device *dev)
 	if (priv->miss_flow_index)
 		mlx5_del_flow_table_entry(ft, priv->miss_flow_index);
 
-	unregister_netdev(dev); /* this will call ndo_stop */
+	if (priv->vport != FDB_UPLINK_VPORT)
+		unregister_netdev(dev); /* this will call ndo_stop */
+
 	free_netdev(dev);
 }
 
 int mlx5e_vf_reps_create(struct mlx5e_priv *pf_dev)
 {
-	int vf, err, size, nvf = 0;
 	struct mlx5_core_sriov *sriov = &pf_dev->mdev->priv.sriov;
+	int vf, err, size, nvf, nvports;
 
 	nvf = sriov->num_vfs;
-	printk(KERN_INFO "%s creating %d mlx5 vf reps sriov %p sriov->num_vfs %d\n",
-		__func__, nvf, sriov, sriov->num_vfs);
+	nvports = nvf + 1;
+	printk(KERN_INFO "%s creating %d mlx5 vport reps sriov %p sriov->num_vfs %d\n",
+		__func__, nvports, sriov, sriov->num_vfs);
 
-	size = sizeof(struct mlx5e_vf_rep *) * nvf;
+	size = sizeof(struct mlx5e_vf_rep *) * nvports;
 	pf_dev->vf_reps = kzalloc(size, GFP_KERNEL);
 	if (!pf_dev->vf_reps)
 		return -ENOMEM;
 
 	for (vf = 0; vf < nvf; vf++) {
-		err = mlx5e_rep_create_netdev(pf_dev, vf);
+		err = mlx5e_rep_create_netdev(pf_dev, vf+1);
 		if (err)
-			goto err_vf_rep_create;
+			goto err_vport_rep_create;
+	}
+	err = mlx5e_rep_create_netdev(pf_dev, FDB_UPLINK_VPORT);
+	if (err) {
+		vf++;
+		goto err_vport_rep_create;
 	}
 
 	err = mlx5e_open_rep_channels(pf_dev);
 	if (err) {
 		printk(KERN_INFO "failed to open rep channels, err %d\n", err);
-		goto err_vf_rep_channel_open;
+		goto err_vport_rep_channel_open;
 	}
 
 	return 0;
 
-err_vf_rep_channel_open:
-err_vf_rep_create:
+err_vport_rep_channel_open:
+err_vport_rep_create:
 	for (vf--; vf >= 0; vf--)
 		mlx5e_rep_destroy_netdev(pf_dev->vf_reps[vf]->dev);
 
@@ -523,18 +538,19 @@ err_vf_rep_create:
 
 void mlx5e_reps_remove(struct mlx5e_priv *pf_dev)
 {
-	int vf, nvf = 0;
 	struct mlx5_core_sriov *sriov = &pf_dev->mdev->priv.sriov;
+	int vf, nvports;
 
-	nvf = sriov->num_vfs;
-	printk(KERN_INFO "%s removing %d mlx5 vf reps\n", __func__, nvf);
+	nvports = sriov->num_vfs + 1;
+	printk(KERN_INFO "%s removing %d mlx5 vport reps\n", __func__, nvports);
 
 	if (!pf_dev->vf_reps) {
 		printk(KERN_INFO "%s no vf reps, bailing out\n", __func__);
 		return;
 	}
 
-	for (vf = 0; vf < nvf; vf++)
+	/* we have vport per VF + one for the uplink */
+	for (vf = 0; vf < nvports; vf++)
 		mlx5e_rep_destroy_netdev(pf_dev->vf_reps[vf]->dev);
 
 	mlx5e_close_rep_channels(pf_dev);
@@ -708,7 +724,7 @@ int mlx5e_rep_add_l2_fdb_rule(struct mlx5e_vf_rep *vf_rep, const char *addr)
 	u32 *flow_context;
 	void *match_value, *dest;
 	u8   *dmac;
-	int  err, vport = vf_rep->vf+1;
+	int  err, vport = vf_rep->vport;
 
 
 	flow_context   = mlx5_vzalloc(MLX5_ST_SZ_BYTES(flow_context) +
