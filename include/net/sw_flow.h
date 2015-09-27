@@ -99,6 +99,7 @@ enum sw_flow_action_type {
 	SW_FLOW_ACTION_TYPE_OUTPUT,
 	SW_FLOW_ACTION_TYPE_VLAN_PUSH,
 	SW_FLOW_ACTION_TYPE_VLAN_POP,
+	SW_FLOW_ACTION_TYPE_DROP,
 };
 
 struct sw_flow_action {
