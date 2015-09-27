@@ -156,13 +156,6 @@ static int __mlx5e_rep_attr_get(struct mlx5e_vf_rep *vf_rep, struct switchdev_at
 	return 0;
 }
 
-static int mlx5e_rep_attr_get(struct net_device *dev, struct switchdev_attr *attr)
-{
-	struct mlx5e_vf_rep *vf_rep = netdev_priv(dev);
-
-	return __mlx5e_rep_attr_get(vf_rep, attr);
-}
-
 static int mlx5e_rep_fdb_add(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj_fdb *fdb)
 {
 	/* add FDB rule addr VF MAC --> VF vport */
@@ -240,10 +233,8 @@ static int mlx5e_rep_flow_add(struct mlx5e_vf_rep *vf_rep, struct sw_flow *sw_fl
 	return 0;
 }
 
-static int mlx5e_rep_obj_add(struct net_device *dev,
-			     struct switchdev_obj *obj)
+static int __mlx5e_rep_obj_add(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj *obj)
 {
-	struct mlx5e_vf_rep *vf_rep = netdev_priv(dev);
 	int err = 0;
 
 	switch (obj->trans) {
@@ -272,10 +263,8 @@ static int mlx5e_rep_obj_add(struct net_device *dev,
 	return err;
 }
 
-static int mlx5e_rep_obj_del(struct net_device *dev,
-			     struct switchdev_obj *obj)
+static int __mlx5e_rep_obj_del(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj *obj)
 {
-	struct mlx5e_vf_rep *vf_rep = netdev_priv(dev);
 	int err = 0;
 
 	switch (obj->id) {
@@ -291,6 +280,29 @@ static int mlx5e_rep_obj_del(struct net_device *dev,
 	}
 
 	return err;
+}
+
+static int mlx5e_rep_attr_get(struct net_device *dev, struct switchdev_attr *attr)
+{
+	struct mlx5e_vf_rep *vf_rep = netdev_priv(dev);
+
+	return __mlx5e_rep_attr_get(vf_rep, attr);
+}
+
+
+static int mlx5e_rep_obj_add(struct net_device *dev, struct switchdev_obj *obj)
+{
+	struct mlx5e_vf_rep *vf_rep = netdev_priv(dev);
+
+	return __mlx5e_rep_obj_add(vf_rep, obj);
+}
+
+static int mlx5e_rep_obj_del(struct net_device *dev,
+			     struct switchdev_obj *obj)
+{
+	struct mlx5e_vf_rep *vf_rep = netdev_priv(dev);
+
+	return __mlx5e_rep_obj_del(vf_rep, obj);
 }
 
 static const struct switchdev_ops mlx5e_rep_switchdev_ops = {
@@ -299,11 +311,11 @@ static const struct switchdev_ops mlx5e_rep_switchdev_ops = {
 	.switchdev_port_obj_del		= mlx5e_rep_obj_del,
 };
 
-
 static int mlx5e_pf_attr_get(struct net_device *dev, struct switchdev_attr *attr)
 {
 	struct mlx5e_priv *pf_dev = netdev_priv(dev);
-	struct mlx5e_vf_rep *vf_rep = NULL; /* pf_dev->uplink_rep */
+	int uplink_rep = pf_dev->mdev->priv.sriov.num_vfs;
+	struct mlx5e_vf_rep *vf_rep = pf_dev->vf_reps[uplink_rep];
 
 	return __mlx5e_rep_attr_get(vf_rep, attr);
 }
@@ -312,55 +324,20 @@ static int mlx5e_pf_obj_add(struct net_device *dev,
 			    struct switchdev_obj *obj)
 {
 	struct mlx5e_priv *pf_dev = netdev_priv(dev);
-	struct mlx5e_vf_rep *vf_rep = NULL; /* pf_dev->uplink_rep */
-	int err = 0;
+	int uplink_rep = pf_dev->mdev->priv.sriov.num_vfs;
+	struct mlx5e_vf_rep *vf_rep = pf_dev->vf_reps[uplink_rep];
 
-	switch (obj->trans) {
-	case SWITCHDEV_TRANS_PREPARE:
-		if (obj->id != SWITCHDEV_OBJ_PORT_FDB &&
-		    obj->id != SWITCHDEV_OBJ_FLOW)
-			return -EOPNOTSUPP;
-		else
-			return 0;
-	default:
-		break;
-	}
-
-	switch (obj->id) {
-	case SWITCHDEV_OBJ_PORT_FDB:
-		err = mlx5e_rep_fdb_add(vf_rep, &obj->u.fdb);
-		break;
-	case SWITCHDEV_OBJ_FLOW:
-		err = mlx5e_rep_flow_add(vf_rep, obj->u.flow);
-		break;
-	default:
-		err = -EOPNOTSUPP;
-		break;
-	}
-
-	return err;
+	return __mlx5e_rep_obj_add(vf_rep, obj);
 }
 
 static int mlx5e_pf_obj_del(struct net_device *dev,
 			    struct switchdev_obj *obj)
 {
 	struct mlx5e_priv *pf_dev = netdev_priv(dev);
-	struct mlx5e_vf_rep *vf_rep = NULL; /* pf_dev->uplink_rep */
-	int err = 0;
+	int uplink_rep = pf_dev->mdev->priv.sriov.num_vfs;
+	struct mlx5e_vf_rep *vf_rep = pf_dev->vf_reps[uplink_rep];
 
-	switch (obj->id) {
-	case SWITCHDEV_OBJ_PORT_FDB:
-		err = mlx5e_rep_fdb_del(vf_rep, &obj->u.fdb);
-		break;
-	case SWITCHDEV_OBJ_FLOW:
-		err = mlx5e_rep_flow_del(vf_rep, obj->u.flow);
-		break;
-	default:
-		err = -EOPNOTSUPP;
-		break;
-	}
-
-	return err;
+	return __mlx5e_rep_obj_del(vf_rep, obj);
 }
 
 static const struct switchdev_ops mlx5e_pf_switchdev_ops = {
