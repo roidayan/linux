@@ -37,6 +37,7 @@
 #include <uapi/linux/openvswitch.h>
 #include "en.h"
 #include "eswitch.h"
+#include "en_rep.h"
 
 static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v)
 {
@@ -50,15 +51,13 @@ static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v)
 	void *misc_v = MLX5_ADDR_OF(fte_match_param, match_c, misc_parameters);
 
 	u8 zero_mac[ETH_ALEN];
-	int vport = 0;
 
 	eth_zero_addr(zero_mac);
 
 	/* set source vport for the flow */
 	misc_v = MLX5_ADDR_OF(fte_match_param, match_v, misc_parameters);
 	MLX5_SET(fte_match_set_misc, misc_c, source_port, 0xffff);
-	/* TODO: translate flow->key.misc.in_port_ifindex to FDB vport */
-	MLX5_SET(fte_match_set_misc, misc_v, source_port, vport);
+	/* we translate key->misc.in_port_ifindex to vport in mlx5e_flow_set */
 
 	if (memcmp(&mask->eth.src, zero_mac, ETH_ALEN)) {
 		memcpy(MLX5_ADDR_OF(fte_match_set_lyr_2_4, outer_headers_c, smac_47_16),
@@ -172,8 +171,12 @@ out_err:
 	return -EINVAL;
 }
 
-//struct list_head mlx5_flow_groups;
-static LIST_HEAD(mlx5_flow_groups);
+enum mlx5_flow_action_type {
+	MLX5_FLOW_ACTION_TYPE_OUTPUT    = 1 << SW_FLOW_ACTION_TYPE_OUTPUT,
+	MLX5_FLOW_ACTION_TYPE_VLAN_PUSH = 1 << SW_FLOW_ACTION_TYPE_VLAN_PUSH,
+	MLX5_FLOW_ACTION_TYPE_VLAN_POP  = 1 << SW_FLOW_ACTION_TYPE_VLAN_POP,
+	MLX5_FLOW_ACTION_TYPE_DROP	= 1 << SW_FLOW_ACTION_TYPE_DROP
+};
 
 #define MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG 10 /* 1K flows in group */
 #define MATCH_PARAMS_SIZE MLX5_ST_SZ_DW(fte_match_param)
@@ -198,10 +201,11 @@ struct mlx5_flow {
 	struct list_head group_list; /* flows of the mother group */
 };
 
-int mlx5e_flow_add(struct mlx5e_priv *pf_dev,
+int mlx5e_flow_set(struct mlx5e_priv *pf_dev, int mlx5_action,
+		   struct mlx5e_vf_rep *in, struct mlx5e_vf_rep *out,
 		   struct sw_flow *sw_flow, struct mlx5_flow_group *group, u32 *match_v)
 {
-	void *flow_context, *match_value, *dest;
+	void *flow_context, *match_value, *dest, *misc;
 	struct mlx5_flow *flow;
 	int err;
 	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
@@ -221,15 +225,29 @@ int mlx5e_flow_add(struct mlx5e_priv *pf_dev,
 	match_value = MLX5_ADDR_OF(flow_context, flow_context, match_value);
 	memcpy(match_value, match_v, MATCH_PARAMS_SIZE);
 
-	MLX5_SET(flow_context, flow_context, destination_list_size, 1);
+	/* TODO: move this settings to be done with the linux -> mlx5 parsing, so we'll
+	 * be able to support few rules with same 12-tuple but different source vport
+	 */
+	misc = MLX5_ADDR_OF(fte_match_param, match_value, misc_parameters);
+	MLX5_SET(fte_match_set_misc, misc, source_port, in->vport);
+
+	if (mlx5_action & MLX5_FLOW_ACTION_TYPE_DROP) {
+		MLX5_SET(flow_context, flow_context, action,
+			 MLX5_FLOW_CONTEXT_ACTION_DROP);
+		goto flow_set;
+	}
+
 	MLX5_SET(flow_context, flow_context, action,
 		 MLX5_FLOW_CONTEXT_ACTION_FWD_DEST);
+
+	MLX5_SET(flow_context, flow_context, destination_list_size, 1);
 
 	dest = MLX5_ADDR_OF(flow_context, flow_context, destination);
 	MLX5_SET(dest_format_struct, dest, destination_type,
 		 MLX5_FLOW_CONTEXT_DEST_TYPE_VPORT);
-	MLX5_SET(dest_format_struct, dest, destination_id, out_vport);
+	MLX5_SET(dest_format_struct, dest, destination_id, out->vport);
 
+flow_set:
 	err = mlx5_set_flow_group_entry(eswitch->fdb_table.fdb, group->group_id,
 					&flow->flow_index, flow_context);
 
@@ -244,6 +262,110 @@ flow_context_alloc_failed:
 flow_alloc_failed:
 	pr_warn("flow allocation failed\n");
 	return -ENOMEM;
+}
+
+int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
+		      int *mlx5_action,
+		      struct mlx5e_vf_rep **in_rep, struct mlx5e_vf_rep **out_rep)
+{
+	struct net *net;
+	struct net_device *in_dev, *out_dev;
+	struct switchdev_attr in_attr,out_attr;
+	int in_ifindex, out_ifindex = -1 ;
+	struct sw_flow_action *action;
+	int act, err1, err2, __mlx5_action;
+
+	__mlx5_action = 0;
+	for (act = 0; act < sw_flow->actions->count; act++) {
+		action = &sw_flow->actions->actions[act];
+		if (action->type == SW_FLOW_ACTION_TYPE_OUTPUT) {
+			if (out_ifindex != -1) {
+				printk(KERN_ERR "%s not offloading floods\n", __func__);
+				goto out_err;
+			}
+			out_ifindex = action->out_port_ifindex;
+			__mlx5_action |= MLX5_FLOW_ACTION_TYPE_OUTPUT;
+		} else if (action->type == SW_FLOW_ACTION_TYPE_VLAN_PUSH)
+			__mlx5_action |= MLX5_FLOW_ACTION_TYPE_VLAN_PUSH;
+		else if (action->type == SW_FLOW_ACTION_TYPE_VLAN_POP)
+			__mlx5_action |= MLX5_FLOW_ACTION_TYPE_VLAN_POP;
+		else if (action->type == SW_FLOW_ACTION_TYPE_DROP)
+			__mlx5_action |= MLX5_FLOW_ACTION_TYPE_DROP;
+		else {
+			printk(KERN_ERR "%s can't offload flow action %d\n", __func__, action->type);
+			goto out_err;
+		}
+	}
+
+	net = dev_net(pf_dev->netdev);
+	if (!net) {
+		pr_err("can't get net name space from dev %s for ifindex conversion\n",
+		       pf_dev->netdev->name);
+		goto out_err;
+	}
+
+	in_ifindex = sw_flow->key.misc.in_port_ifindex;
+	in_dev  = dev_get_by_index_rcu(net, in_ifindex);
+
+	/* DROP action doesn't involve output port!! */
+	if (__mlx5_action & MLX5_FLOW_ACTION_TYPE_DROP)
+		goto skip_id_check;
+
+	out_dev = dev_get_by_index_rcu(net, out_ifindex);
+
+	/* use flow->key.misc.in_port_ifindex to find the in port, and
+	 * flow->actions->actions[i].out_port_ifindex to find the outport.
+	 * Use switchdev ID attribute to make sure that they are both on our same PF
+	 * eSwitch and if not don't offload the flow - FIXME: belongs to OVS
+	 */
+	in_attr.id = out_attr.id = SWITCHDEV_ATTR_PORT_PARENT_ID;
+	in_attr.flags = out_attr.flags = SWITCHDEV_F_NO_RECURSE;
+
+	err1 = switchdev_port_attr_get(in_dev, &in_attr);
+	err2 = switchdev_port_attr_get(out_dev, &out_attr);
+
+	if (err1 || err2)
+		return -EOPNOTSUPP;
+
+	if (!netdev_phys_item_ids_match(&in_attr.u.ppid, &out_attr.u.ppid)) {
+		pr_err("devices in:%s out:%s not on same eSwitch, can't offload\n",
+		       in_dev->name, out_dev->name);
+		goto out_err;
+	}
+
+	if (out_ifindex == pf_dev->netdev->ifindex)
+		*out_rep = pf_dev->vf_reps[pf_dev->mdev->priv.sriov.num_vfs];
+	else
+		*out_rep = netdev_priv(out_dev);
+
+skip_id_check:
+
+	if (in_ifindex == pf_dev->netdev->ifindex)
+		*in_rep = pf_dev->vf_reps[pf_dev->mdev->priv.sriov.num_vfs];
+	else
+		*in_rep = netdev_priv(in_dev);
+
+	*mlx5_action = __mlx5_action;
+
+	return 0;
+
+out_err:
+	return -EOPNOTSUPP;
+}
+
+int mlx5e_flow_add(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
+		   struct mlx5_flow_group *group, u32 *match_v)
+{
+	struct mlx5e_vf_rep *in_rep, *out_rep;
+	int mlx5_action, err;
+
+	err = mlx5e_flow_adjust(pf_dev, sw_flow, &mlx5_action, &in_rep, &out_rep);
+	if (err)
+		goto out;
+
+	err = mlx5e_flow_set(pf_dev, mlx5_action, in_rep, out_rep, sw_flow, group, match_v);
+out:
+	return err;
 }
 
 int mlx5e_flow_del(struct mlx5e_priv *pf_dev, struct mlx5_flow_group *group, u32 *match_v)
@@ -288,7 +410,7 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 	parse_flow_attr(sw_flow, match_c, match_v);
 
 	/* find the group that this flow belongs to */
-	list_for_each_entry(group, &mlx5_flow_groups, groups_list) {
+	list_for_each_entry(group, &pf_dev->mlx5_flow_groups, groups_list) {
 		if (!memcmp(group->match_c, match_c, MATCH_PARAMS_SIZE))
 			break;
 		group = NULL;
@@ -312,17 +434,17 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 		g->log_sz = MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG;
 		g->match_criteria_enable = MLX5_MATCH_OUTER_HEADERS | MLX5_MATCH_MISC_PARAMETERS;
 		memcpy(g->match_criteria, match_c, MATCH_PARAMS_SIZE);
-		group->start_ix = 0; /* TODO: set the group start index */
+		group->start_ix = 0; /* TODO: allocate group in the FDB!! */
 		err = mlx5_create_flow_group(eswitch->fdb_table.fdb, g, group->start_ix, &group->group_id);
 		if (!err)
-			list_add_tail(&group->groups_list, &mlx5_flow_groups);
+			list_add_tail(&group->groups_list, &pf_dev->mlx5_flow_groups);
 
 	}
 
 	if (flags & FLOW_ADD)
-		return mlx5e_flow_add(pf_dev, sw_flow, group, match_c);
+		return mlx5e_flow_add(pf_dev, sw_flow, group, match_v);
 	else if (flags & FLOW_DEL)
-		return mlx5e_flow_del(pf_dev, group, match_c);
+		return mlx5e_flow_del(pf_dev, group, match_v);
 	else
 		return -EINVAL;
 }

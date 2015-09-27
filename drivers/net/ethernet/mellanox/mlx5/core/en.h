@@ -526,6 +526,7 @@ struct mlx5e_priv {
 	struct mlx5e_vf_rep	  **vf_reps;
 	struct work_struct	  vf_reps_work;
 	struct mlx5e_channel     **rep_channel;
+	struct list_head	 mlx5_flow_groups;
 };
 
 #define MLX5E_NET_IP_ALIGN 2
