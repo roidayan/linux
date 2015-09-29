@@ -285,17 +285,12 @@ static int cm_alloc_msg(struct cm_id_private *cm_id_priv,
 	return 0;
 }
 
-static int cm_alloc_response_msg(struct cm_port *port,
-				 struct ib_mad_recv_wc *mad_recv_wc,
-				 struct ib_mad_send_buf **msg)
+static int _cm_alloc_response_msg(struct cm_port *port,
+				  struct ib_mad_recv_wc *mad_recv_wc,
+				  struct ib_ah *ah,
+				  struct ib_mad_send_buf **msg)
 {
 	struct ib_mad_send_buf *m;
-	struct ib_ah *ah;
-
-	ah = ib_create_ah_from_wc(port->mad_agent->qp->pd, mad_recv_wc->wc,
-				  mad_recv_wc->recv_buf.grh, port->port_num);
-	if (IS_ERR(ah))
-		return PTR_ERR(ah);
 
 	m = ib_create_send_mad(port->mad_agent, 1, mad_recv_wc->wc->pkey_index,
 			       0, IB_MGMT_MAD_HDR, IB_MGMT_MAD_DATA,
@@ -308,6 +303,20 @@ static int cm_alloc_response_msg(struct cm_port *port,
 	m->ah = ah;
 	*msg = m;
 	return 0;
+}
+
+static int cm_alloc_response_msg(struct cm_port *port,
+				 struct ib_mad_recv_wc *mad_recv_wc,
+				 struct ib_mad_send_buf **msg)
+{
+	struct ib_ah *ah;
+
+	ah = ib_create_ah_from_wc(port->mad_agent->qp->pd, mad_recv_wc->wc,
+				  mad_recv_wc->recv_buf.grh, port->port_num);
+	if (IS_ERR(ah))
+		return PTR_ERR(ah);
+
+	return _cm_alloc_response_msg(port, mad_recv_wc, ah, msg);
 }
 
 static void cm_free_msg(struct ib_mad_send_buf *msg)
@@ -2231,6 +2240,7 @@ static int cm_dreq_handler(struct cm_work *work)
 	struct cm_id_private *cm_id_priv;
 	struct cm_dreq_msg *dreq_msg;
 	struct ib_mad_send_buf *msg = NULL;
+	struct ib_ah *ah;
 	int ret;
 
 	dreq_msg = (struct cm_dreq_msg *)work->mad_recv_wc->recv_buf.mad;
@@ -2242,6 +2252,11 @@ static int cm_dreq_handler(struct cm_work *work)
 		cm_issue_drep(work->port, work->mad_recv_wc);
 		return -EINVAL;
 	}
+
+	ah = ib_create_ah_from_wc(work->port->mad_agent->qp->pd,
+				  work->mad_recv_wc->wc,
+				  work->mad_recv_wc->recv_buf.grh,
+				  work->port->port_num);
 
 	work->cm_event.private_data = &dreq_msg->private_data;
 
@@ -2264,9 +2279,13 @@ static int cm_dreq_handler(struct cm_work *work)
 	case IB_CM_TIMEWAIT:
 		atomic_long_inc(&work->port->counter_group[CM_RECV_DUPLICATES].
 				counter[CM_DREQ_COUNTER]);
-		if (cm_alloc_response_msg(work->port, work->mad_recv_wc, &msg))
+		if (IS_ERR(ah))
+			goto unlock;
+		if (_cm_alloc_response_msg(work->port, work->mad_recv_wc, ah,
+					   &msg))
 			goto unlock;
 
+		ah = NULL;
 		cm_format_drep((struct cm_drep_msg *) msg->mad, cm_id_priv,
 			       cm_id_priv->private_data,
 			       cm_id_priv->private_data_len);
@@ -2289,6 +2308,8 @@ static int cm_dreq_handler(struct cm_work *work)
 		list_add_tail(&work->list, &cm_id_priv->work_list);
 	spin_unlock_irq(&cm_id_priv->lock);
 
+	if (!IS_ERR_OR_NULL(ah))
+		ib_destroy_ah(ah);
 	if (ret)
 		cm_process_work(cm_id_priv, work);
 	else
@@ -2296,6 +2317,8 @@ static int cm_dreq_handler(struct cm_work *work)
 	return 0;
 
 unlock:	spin_unlock_irq(&cm_id_priv->lock);
+	if (!IS_ERR_OR_NULL(ah))
+		ib_destroy_ah(ah);
 deref:	cm_deref_id(cm_id_priv);
 	return -EINVAL;
 }
@@ -2791,6 +2814,7 @@ static int cm_lap_handler(struct cm_work *work)
 	struct cm_lap_msg *lap_msg;
 	struct ib_cm_lap_event_param *param;
 	struct ib_mad_send_buf *msg = NULL;
+	struct ib_ah *ah;
 	int ret;
 
 	/* todo: verify LAP request and send reject APR if invalid. */
@@ -2799,6 +2823,12 @@ static int cm_lap_handler(struct cm_work *work)
 				   lap_msg->local_comm_id);
 	if (!cm_id_priv)
 		return -EINVAL;
+
+
+	ah = ib_create_ah_from_wc(work->port->mad_agent->qp->pd,
+				  work->mad_recv_wc->wc,
+				  work->mad_recv_wc->recv_buf.grh,
+				  work->port->port_num);
 
 	param = &work->cm_event.param.lap_rcvd;
 	param->alternate_path = &work->path[0];
@@ -2816,9 +2846,13 @@ static int cm_lap_handler(struct cm_work *work)
 	case IB_CM_MRA_LAP_SENT:
 		atomic_long_inc(&work->port->counter_group[CM_RECV_DUPLICATES].
 				counter[CM_LAP_COUNTER]);
-		if (cm_alloc_response_msg(work->port, work->mad_recv_wc, &msg))
+		if (IS_ERR(ah))
+			goto unlock;
+		if (_cm_alloc_response_msg(work->port, work->mad_recv_wc, ah,
+					   &msg))
 			goto unlock;
 
+		ah = NULL;
 		cm_format_mra((struct cm_mra_msg *) msg->mad, cm_id_priv,
 			      CM_MSG_RESPONSE_OTHER,
 			      cm_id_priv->service_timeout,
@@ -2848,6 +2882,8 @@ static int cm_lap_handler(struct cm_work *work)
 		list_add_tail(&work->list, &cm_id_priv->work_list);
 	spin_unlock_irq(&cm_id_priv->lock);
 
+	if (!IS_ERR_OR_NULL(ah))
+		ib_destroy_ah(ah);
 	if (ret)
 		cm_process_work(cm_id_priv, work);
 	else
@@ -2855,6 +2891,8 @@ static int cm_lap_handler(struct cm_work *work)
 	return 0;
 
 unlock:	spin_unlock_irq(&cm_id_priv->lock);
+	if (!IS_ERR_OR_NULL(ah))
+		ib_destroy_ah(ah);
 deref:	cm_deref_id(cm_id_priv);
 	return -EINVAL;
 }
