@@ -127,9 +127,9 @@ static void dispatch_gid_change_event(struct ib_device *ib_dev, u8 port)
 }
 
 static const char * const gid_type_str[] = {
-	[IB_GID_TYPE_IB]	= "IB/RoCE v1",
-	[IB_GID_TYPE_ROCE_IP_ENCAP]	= "RoCE v1.5",
-	[IB_GID_TYPE_ROCE_UDP_ENCAP]	= "RoCE v2",
+	[IB_GID_TYPE_IB]	= "IB/RoCE V1",
+	[IB_GID_TYPE_ROCE_IP_ENCAP]	= "RoCE V1.5",
+	[IB_GID_TYPE_ROCE_UDP_ENCAP]	= "RoCE V2",
 };
 
 const char *ib_cache_gid_type_str(enum ib_gid_type gid_type)
