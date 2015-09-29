@@ -61,39 +61,74 @@ void mlx5e_send_nop(struct mlx5e_sq *sq, bool notify_hw)
 	}
 }
 
-static void mlx5e_dma_pop_last_pushed(struct mlx5e_sq *sq, dma_addr_t *addr,
-				      u32 *size)
+enum mlx5e_dma_map_type {
+	MLX5E_DMA_MAP_SINGLE,
+	MLX5E_DMA_MAP_PAGE,
+};
+
+static inline void mlx5e_tx_dma_unmap(struct device *pdev,
+				      dma_addr_t addr,
+				      u32 size,
+				      enum mlx5e_dma_map_type dma_map_type)
+{
+	switch (dma_map_type) {
+	case MLX5E_DMA_MAP_SINGLE:
+		dma_unmap_single(pdev, addr, size, DMA_TO_DEVICE);
+		break;
+	case MLX5E_DMA_MAP_PAGE:
+		dma_unmap_page(pdev, addr, size, DMA_TO_DEVICE);
+		break;
+	default:
+		BUG_ON(true);
+	}
+}
+
+static void mlx5e_dma_pop_last_pushed(struct mlx5e_sq *sq,
+				      dma_addr_t *addr,
+				      u32 *size,
+				      enum mlx5e_dma_map_type *map_type)
 {
 	sq->dma_fifo_pc--;
 	*addr = sq->dma_fifo[sq->dma_fifo_pc & sq->dma_fifo_mask].addr;
 	*size = sq->dma_fifo[sq->dma_fifo_pc & sq->dma_fifo_mask].size;
+	*map_type = 1 & (*size >> 31);
+	*size &= ~(1 << 31);
 }
 
 static void mlx5e_dma_unmap_wqe_err(struct mlx5e_sq *sq, struct sk_buff *skb)
 {
+	enum mlx5e_dma_map_type map_type;
 	dma_addr_t addr;
 	u32 size;
 	int i;
 
 	for (i = 0; i < MLX5E_TX_SKB_CB(skb)->num_dma; i++) {
-		mlx5e_dma_pop_last_pushed(sq, &addr, &size);
-		dma_unmap_single(sq->pdev, addr, size, DMA_TO_DEVICE);
+		mlx5e_dma_pop_last_pushed(sq, &addr, &size, &map_type);
+		mlx5e_tx_dma_unmap(sq->pdev, addr, size, map_type);
 	}
 }
 
-static inline void mlx5e_dma_push(struct mlx5e_sq *sq, dma_addr_t addr,
-				  u32 size)
+static inline void mlx5e_dma_push(struct mlx5e_sq *sq,
+				  dma_addr_t addr,
+				  u32 size,
+				  enum mlx5e_dma_map_type map_type)
 {
 	sq->dma_fifo[sq->dma_fifo_pc & sq->dma_fifo_mask].addr = addr;
-	sq->dma_fifo[sq->dma_fifo_pc & sq->dma_fifo_mask].size = size;
+	sq->dma_fifo[sq->dma_fifo_pc & sq->dma_fifo_mask].size = size |
+							(map_type << 31);
 	sq->dma_fifo_pc++;
 }
 
-static inline void mlx5e_dma_get(struct mlx5e_sq *sq, u32 i, dma_addr_t *addr,
-				 u32 *size)
+static inline void mlx5e_dma_get(struct mlx5e_sq *sq,
+				 u32 i,
+				 dma_addr_t *addr,
+				 u32 *size,
+				 enum mlx5e_dma_map_type *map_type)
 {
 	*addr = sq->dma_fifo[i & sq->dma_fifo_mask].addr;
 	*size = sq->dma_fifo[i & sq->dma_fifo_mask].size;
+	*map_type = 1 & (*size >> 31);
+	*size &= ~(1 << 31);
 }
 
 u16 mlx5e_select_queue(struct net_device *dev, struct sk_buff *skb,
@@ -198,7 +233,7 @@ static netdev_tx_t mlx5e_sq_xmit(struct mlx5e_sq *sq, struct sk_buff *skb)
 		dseg->lkey       = sq->mkey_be;
 		dseg->byte_count = cpu_to_be32(headlen);
 
-		mlx5e_dma_push(sq, dma_addr, headlen);
+		mlx5e_dma_push(sq, dma_addr, headlen, MLX5E_DMA_MAP_SINGLE);
 		MLX5E_TX_SKB_CB(skb)->num_dma++;
 
 		dseg++;
@@ -217,7 +252,7 @@ static netdev_tx_t mlx5e_sq_xmit(struct mlx5e_sq *sq, struct sk_buff *skb)
 		dseg->lkey       = sq->mkey_be;
 		dseg->byte_count = cpu_to_be32(fsz);
 
-		mlx5e_dma_push(sq, dma_addr, fsz);
+		mlx5e_dma_push(sq, dma_addr, fsz, MLX5E_DMA_MAP_PAGE);
 		MLX5E_TX_SKB_CB(skb)->num_dma++;
 
 		dseg++;
@@ -333,13 +368,14 @@ bool mlx5e_poll_tx_cq(struct mlx5e_cq *cq)
 			}
 
 			for (j = 0; j < MLX5E_TX_SKB_CB(skb)->num_dma; j++) {
+				enum mlx5e_dma_map_type t;
 				dma_addr_t addr;
 				u32 size;
 
-				mlx5e_dma_get(sq, dma_fifo_cc, &addr, &size);
+				mlx5e_dma_get(sq, dma_fifo_cc, &addr, &size,
+					      &t);
 				dma_fifo_cc++;
-				dma_unmap_single(sq->pdev, addr, size,
-						 DMA_TO_DEVICE);
+				mlx5e_tx_dma_unmap(sq->pdev, addr, size, t);
 			}
 
 			npkts++;
