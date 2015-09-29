@@ -343,8 +343,16 @@ int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u32 vport)
 	struct net_device *dev;
 	struct mlx5e_vf_rep *priv;
 	int err, vf;
+	char *rep_name;
 
-	dev = alloc_etherdev(sizeof(struct mlx5e_vf_rep));
+	rep_name = kzalloc(256, GFP_KERNEL);
+	if (!rep_name)
+		return -ENOMEM;
+	sprintf(rep_name, "%s_%d", pf_dev->netdev->name, vport - 1);
+
+	dev = alloc_netdev_mqs(sizeof(struct mlx5e_vf_rep), rep_name,
+			       NET_NAME_UNKNOWN, ether_setup, 1, 1);
+	kfree(rep_name);
 	if (!dev)
 		return -ENOMEM;
 
