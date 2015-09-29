@@ -289,13 +289,24 @@ static int mlx5e_rep_close(struct net_device *dev)
 static netdev_tx_t mlx5e_rep_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	netdev_tx_t tx_t;
-#define D0_REINJECT
-#ifdef DO_REINJECT
+
+#if 1
 	struct mlx5e_vf_rep *priv = netdev_priv(dev);
-	struct mlx5e_sq *sq = &priv->pf_dev->rep_channel[priv->vf]->sq[0];
+	struct mlx5e_sq *sq;
+	int vport_index;
+
+	if (priv->vport != FDB_UPLINK_VPORT)
+		vport_index = priv->vport - 1;
+	else  { /* NOTE: PF rep, should never get here */
+		pr_err("attempt to xmit on PF rep, why?!\n");
+		dev_kfree_skb_any(skb);
+		return NETDEV_TX_OK;
+	}
+
+	sq = &priv->pf_dev->rep_channel[vport_index]->sq[0];
 
 	/* re-inject packet using per vf SQ to the vport */
-	tx_t = mlx5e_xmit_from_rep_sq(skb, &priv->pf_dev->rep_channel[priv->vf]->sq[0]);
+	tx_t = mlx5e_xmit_from_rep_sq(skb, sq);
 #else
 	/* just drop, following packets will match the rules added as of the miss */
 	dev_kfree_skb_any(skb);
