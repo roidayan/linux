@@ -46,6 +46,12 @@ int  mlx5_pf_nic_add_vport_miss_rule(struct mlx5e_priv *pf_dev, u32 vport, u32 *
 
 int  mlx5_add_fdb_miss_rule(struct mlx5_core_dev *mdev);
 
+int mlx5_add_fdb_send_to_vport_rule(struct mlx5_core_dev *mdev,
+				    u32 group_ix,
+				    int vport,
+				    u32 sqn,
+				    u32 *flow_index);
+
 int  mlx5e_rep_add_l2_fdb_rule(struct mlx5e_vf_rep *vf_rep, const char *addr);
 
 /* this is wrong, the miss rules must be in the 1st group of the PF NIC */
@@ -400,7 +406,8 @@ void mlx5e_rep_destroy_netdev(struct net_device *dev)
 int mlx5e_vf_reps_create(struct mlx5e_priv *pf_dev)
 {
 	struct mlx5_core_sriov *sriov = &pf_dev->mdev->priv.sriov;
-	int vf, err, size, nvf, nvports;
+	int vf, err, size, nvf, nvports, vport;
+	struct mlx5e_sq *sq;
 
 	nvf = sriov->num_vfs;
 	nvports = nvf + 1;
@@ -427,6 +434,17 @@ int mlx5e_vf_reps_create(struct mlx5e_priv *pf_dev)
 	if (err) {
 		printk(KERN_INFO "failed to open rep channels, err %d\n", err);
 		goto err_vport_rep_channel_open;
+	}
+
+	for (vf = 0; vf < nvf; vf++) {
+		sq = &pf_dev->rep_channel[vf]->sq[0];
+		vport = vf + 1; /* PF vport = 0 --> VF vport is vf+1 */
+
+		/* Set FDB sent to Vport rule, 1 ==  send to vport flow table group */
+		err = mlx5_add_fdb_send_to_vport_rule(pf_dev->mdev, 1, vport, sq->sqn,
+						      &pf_dev->vf_reps[vf]->tx_to_vport_flow_index);
+		if (err) /* Hadar - handle error flow */
+			printk(KERN_INFO "failed to mlx5_add_fdb_send_to_vport_rule, err %d\n", err);
 	}
 
 	return 0;
@@ -591,6 +609,52 @@ out:
 	kvfree(flow_context);
 	return err;
 }
+
+
+//miss rule: ANY --> send to vport 0
+//sent-to-vport rule: <source vport = 0, SQN = X> --> send to vport N
+
+int mlx5_add_fdb_send_to_vport_rule(struct mlx5_core_dev *mdev,
+				    u32 group_ix,
+				    int vport,
+				    u32 sqn,
+				    u32 *flow_index)
+{
+	u32 *flow_context;
+	void *dest, *match_value, *misc;
+	int  err;
+	struct mlx5_flow_table *ft  = mdev->priv.eswitch->fdb_table.fdb;
+
+	flow_context   = mlx5_vzalloc(MLX5_ST_SZ_BYTES(flow_context) +
+				      MLX5_ST_SZ_BYTES(dest_format_struct));
+	if (!flow_context) {
+		mlx5_core_warn(mdev, "%s: alloc failed\n", __func__);
+		err = -ENOMEM;
+		goto out;
+	}
+
+	MLX5_SET(flow_context, flow_context, action,
+		 MLX5_FLOW_CONTEXT_ACTION_FWD_DEST);
+	MLX5_SET(flow_context, flow_context, destination_list_size, 1);
+
+	dest = MLX5_ADDR_OF(flow_context, flow_context, destination);
+	MLX5_SET(dest_format_struct, dest, destination_type,
+		 MLX5_FLOW_CONTEXT_DEST_TYPE_VPORT);
+	MLX5_SET(dest_format_struct, dest, destination_id, vport); /* send to vport */
+
+	match_value = MLX5_ADDR_OF(flow_context, flow_context, match_value);
+	misc = MLX5_ADDR_OF(fte_match_param, match_value, misc_parameters);
+	MLX5_SET(fte_match_set_misc, misc, source_sqn, sqn);
+
+	err = mlx5_set_flow_group_entry(ft, group_ix, flow_index, flow_context);
+	mlx5_core_warn(mdev, "Add FDB entry for send to vport %d flow index=%d\n",
+		       vport,*flow_index);
+
+out:
+	kvfree(flow_context);
+	return err;
+}
+
 
 int mlx5_add_fdb_miss_rule(struct mlx5_core_dev *mdev)
 {

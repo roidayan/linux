@@ -40,7 +40,8 @@ struct mlx5e_vf_rep {
 	u8  hw_id[MLX5_REP_HW_ID_LEN];
 	// u8  vf;
 	u32 vport;
-	u32 miss_flow_index;
+	u32 miss_flow_index; //pf nic flow table
+	u32 tx_to_vport_flow_index; // FDB ft
 
 	u32 vf_mac_flow_index; /* FIXME - support multiple MACs --> flow indexes */
 };

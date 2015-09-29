@@ -606,7 +606,7 @@ static int esw_create_fdb_table(struct mlx5_eswitch *esw, int nvports)
 	struct mlx5_core_dev *dev = esw->dev;
 	struct mlx5_flow_table_group *g;
 	struct mlx5_flow_table *fdb;
-	u8 *dmac;
+	u8 *dmac, *source_sqn;
 	int num_fdb_groups, i;
 
 	esw_debug(dev, "Create FDB log_max_size(%d)\n",
@@ -635,7 +635,13 @@ static int esw_create_fdb_table(struct mlx5_eswitch *esw, int nvports)
 	}
 
 	g[MLX5_TX2VPORT_GROUP].log_sz = 8;
-	g[MLX5_TX2VPORT_GROUP].match_criteria_enable = 0; /* FIXME - put vport/SQN mask */
+	g[MLX5_TX2VPORT_GROUP].match_criteria_enable = MLX5_MATCH_MISC_PARAMETERS;
+
+	/* Hadar - source vport == 0 also can be set to this rule */
+	source_sqn = MLX5_ADDR_OF(fte_match_param, g[MLX5_TX2VPORT_GROUP].match_criteria,
+				  misc_parameters.source_sqn);
+
+	memset(source_sqn, 0xff, 3);
 
 	for (i = 2; i < MLX5_MISS_GROUP; i++) {
 		g[i].log_sz = MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG;

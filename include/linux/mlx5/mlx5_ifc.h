@@ -327,7 +327,8 @@ struct mlx5_ifc_fte_match_set_lyr_2_4_bits {
 };
 
 struct mlx5_ifc_fte_match_set_misc_bits {
-	u8         reserved_0[0x20];
+	u8         reserved_0[0x8];
+	u8         source_sqn[0x18];
 
 	u8         reserved_1[0x10];
 	u8         source_port[0x10];
