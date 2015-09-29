@@ -406,6 +406,17 @@ static int mlx5_set_port_qetcr_reg(struct mlx5_core_dev *mdev, u32 *in,
 				    MLX5_REG_QETCR, 0, 1);
 }
 
+static int mlx5_query_port_qetcr_reg(struct mlx5_core_dev *mdev, u32 *out,
+				     int outlen)
+{
+	u32 in[MLX5_ST_SZ_DW(qtct_reg)];
+
+	memset(in, 0, sizeof(in));
+
+	return mlx5_core_access_reg(mdev, in, sizeof(in), out, outlen,
+				    MLX5_REG_QETCR, 0, 0);
+}
+
 int mlx5_set_port_tc_group(struct mlx5_core_dev *mdev, u8 *tc_group)
 {
 	u32 in[MLX5_ST_SZ_DW(qetc_reg)];
@@ -437,3 +448,55 @@ int mlx5_set_port_tc_bw_alloc(struct mlx5_core_dev *mdev, u8 *tc_bw)
 	return mlx5_set_port_qetcr_reg(mdev, in, sizeof(in));
 }
 EXPORT_SYMBOL_GPL(mlx5_set_port_tc_bw_alloc);
+
+int mlx5_modify_port_ets_rate_limit(struct mlx5_core_dev *mdev,
+				    u8 *max_bw_value,
+				    u8 *max_bw_unit)
+{
+	u32 in[MLX5_ST_SZ_DW(qetc_reg)];
+	void *ets_tcn_conf;
+	int i;
+
+	memset(in, 0, sizeof(in));
+
+	MLX5_SET(qetc_reg, in, port_number, 1);
+
+	for (i = 0; i <= mlx5_max_tc(mdev); i++) {
+		ets_tcn_conf = MLX5_ADDR_OF(qetc_reg, in, tc_conf[i]);
+
+		MLX5_SET(ets_tcn_conf, ets_tcn_conf, r, 1);
+		MLX5_SET(ets_tcn_conf, ets_tcn_conf, max_bw_unit,
+			 max_bw_unit[i]);
+		MLX5_SET(ets_tcn_conf, ets_tcn_conf, max_bw_value,
+			 max_bw_value[i]);
+	}
+
+	return mlx5_set_port_qetcr_reg(mdev, in, sizeof(in));
+}
+EXPORT_SYMBOL_GPL(mlx5_modify_port_ets_rate_limit);
+
+int mlx5_query_port_ets_rate_limit(struct mlx5_core_dev *mdev,
+				   u8 *max_bw_value,
+				   u8 *max_bw_unit)
+{
+	u32 out[MLX5_ST_SZ_DW(qetc_reg)];
+	void *ets_tcn_conf;
+	int err;
+	int i;
+
+	err = mlx5_query_port_qetcr_reg(mdev, out, sizeof(out));
+	if (err)
+		return err;
+
+	for (i = 0; i <= mlx5_max_tc(mdev); i++) {
+		ets_tcn_conf = MLX5_ADDR_OF(qetc_reg, out, tc_conf[i]);
+
+		max_bw_value[i] = MLX5_GET(ets_tcn_conf, ets_tcn_conf,
+					   max_bw_value);
+		max_bw_unit[i] = MLX5_GET(ets_tcn_conf, ets_tcn_conf,
+					  max_bw_unit);
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(mlx5_query_port_ets_rate_limit);
