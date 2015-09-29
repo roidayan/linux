@@ -86,4 +86,10 @@ int mlx5_query_port_cong_params(struct mlx5_core_dev *mdev, int protocol,
 				void *out, int out_size);
 int mlx5_modify_port_cong_params(struct mlx5_core_dev *mdev,
 				 void *in, int in_size);
+int mlx5_modify_port_ets_rate_limit(struct mlx5_core_dev *mdev,
+				    u8 *max_bw_value,
+				    u8 *max_bw_unit);
+int mlx5_query_port_ets_rate_limit(struct mlx5_core_dev *mdev,
+				   u8 *max_bw_value,
+				   u8 *max_bw_unit);
 #endif /* __MLX5_PORT_H__ */
