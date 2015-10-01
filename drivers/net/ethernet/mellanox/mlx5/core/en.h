@@ -43,6 +43,7 @@
 
 #define FDB_TAG (1 << 23)
 #define FDB_UPLINK_VPORT 0xffffff
+#define MLX5e_PRIV_FLAGS_REPRESENTORS	0x1
 
 int mlx5_set_flow_group_entry_index(void *flow_table, u32 group_ix,
 				    u32 flow_index, void *flow_context);
@@ -538,6 +539,7 @@ struct mlx5e_priv {
 	struct mlx5e_vf_rep	  **vf_reps;
 	struct work_struct	  vf_reps_work;
 	struct mlx5e_channel     **rep_channel;
+	u32			  pflags;
 	struct list_head	 mlx5_flow_groups;
 	spinlock_t               flows_lock; /* protects mlx5_flow_groups list */
 };

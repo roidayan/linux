@@ -48,6 +48,10 @@ static void mlx5e_get_drvinfo(struct net_device *dev,
 		sizeof(drvinfo->bus_info));
 }
 
+static const char mlx5e_priv_flags[][ETH_GSTRING_LEN] = {
+	"vfs_representors",
+};
+
 static const struct {
 	u32 supported;
 	u32 advertised;
@@ -175,6 +179,8 @@ static int mlx5e_get_sset_count(struct net_device *dev, int sset)
 		       priv->params.num_channels * NUM_RQ_STATS +
 		       priv->params.num_channels * priv->params.num_tc *
 						   NUM_SQ_STATS;
+	case ETH_SS_PRIV_FLAGS:
+		return ARRAY_SIZE(mlx5e_priv_flags);
 	/* fallthrough */
 	default:
 		return -EOPNOTSUPP;
@@ -189,6 +195,9 @@ static void mlx5e_get_strings(struct net_device *dev,
 
 	switch (stringset) {
 	case ETH_SS_PRIV_FLAGS:
+		for (i = 0; i < ARRAY_SIZE(mlx5e_priv_flags); i++)
+			strcpy(data + i * ETH_GSTRING_LEN,
+			       mlx5e_priv_flags[i]);
 		break;
 
 	case ETH_SS_TEST:
@@ -855,6 +864,33 @@ static int mlx5e_set_pauseparam(struct net_device *netdev,
 	return err;
 }
 
+static int mlx5e_set_priv_flags(struct net_device *netdev, u32 flags)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+	bool vfs_rep_new = !!(flags & MLX5e_PRIV_FLAGS_REPRESENTORS);
+	bool vfs_rep_old = !!(priv->pflags & MLX5e_PRIV_FLAGS_REPRESENTORS);
+
+	if (vfs_rep_new != vfs_rep_old) {
+		schedule_work(&priv->vf_reps_work);
+
+		if (vfs_rep_new)
+			priv->pflags |= MLX5e_PRIV_FLAGS_REPRESENTORS;
+		else
+			priv->pflags &= ~MLX5e_PRIV_FLAGS_REPRESENTORS;
+
+		netdev_info(netdev, "VFs representors %s\n", vfs_rep_new ?  "Enabled"
+			    : "Disabled");
+	}
+	return 0;
+}
+
+static u32 mlx5e_get_priv_flags(struct net_device *dev)
+{
+	struct mlx5e_priv *priv = netdev_priv(dev);
+
+	return priv->pflags;
+}
+
 const struct ethtool_ops mlx5e_ethtool_ops = {
 	.get_drvinfo       = mlx5e_get_drvinfo,
 	.get_link          = ethtool_op_get_link,
@@ -878,4 +914,6 @@ const struct ethtool_ops mlx5e_ethtool_ops = {
 	.set_tunable       = mlx5e_set_tunable,
 	.get_pauseparam    = mlx5e_get_pauseparam,
 	.set_pauseparam    = mlx5e_set_pauseparam,
+	.set_priv_flags	   = mlx5e_set_priv_flags,
+	.get_priv_flags	   = mlx5e_get_priv_flags,
 };
