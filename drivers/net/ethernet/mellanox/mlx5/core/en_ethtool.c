@@ -872,12 +872,6 @@ static int mlx5e_set_priv_flags(struct net_device *netdev, u32 flags)
 
 	if (vfs_rep_new != vfs_rep_old) {
 		schedule_work(&priv->vf_reps_work);
-
-		if (vfs_rep_new)
-			priv->pflags |= MLX5e_PRIV_FLAGS_REPRESENTORS;
-		else
-			priv->pflags &= ~MLX5e_PRIV_FLAGS_REPRESENTORS;
-
 		netdev_info(netdev, "VFs representors %s\n", vfs_rep_new ?  "Enabled"
 			    : "Disabled");
 	}

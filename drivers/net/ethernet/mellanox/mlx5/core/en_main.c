@@ -1945,21 +1945,19 @@ static int mlx5e_change_mtu(struct net_device *netdev, int new_mtu)
 	return err;
 }
 
-static int flow_offloads_on = 0;
-
 void mlx5e_set_vf_reps(struct work_struct *work)
 {
 	int err;
 	struct mlx5e_priv *priv = container_of(work, struct mlx5e_priv,
 					       vf_reps_work);
 
-	printk(KERN_ERR "%s flow_offloads_on %d\n", __func__, flow_offloads_on);
-	if (!flow_offloads_on)
+	if (!(priv->pflags & MLX5e_PRIV_FLAGS_REPRESENTORS)) {
 		err = mlx5e_start_flow_offloads(priv);
-	else
+		priv->pflags |= MLX5e_PRIV_FLAGS_REPRESENTORS;
+	} else {
 		mlx5e_stop_flow_offloads(priv);
-
-	flow_offloads_on = !flow_offloads_on;
+		priv->pflags &= ~MLX5e_PRIV_FLAGS_REPRESENTORS;
+	}
 }
 
 static int mlx5e_set_vf_mac(struct net_device *dev, int vf, u8 *mac)
