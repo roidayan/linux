@@ -594,19 +594,25 @@ out:
 	return flow_rule;
 }
 
+/* 0 - legacy, 1 - tx2vport  [.. offloaded ovs groups ..] last - miss */
+#define MLX5_OFFLOAD_GROUPS 16
+
+#define MLX5_TX2VPORT_GROUP 1
+#define MLX5_MISS_GROUP (MLX5_OFFLOAD_GROUPS - 1)
+
 static int esw_create_fdb_table(struct mlx5_eswitch *esw, int nvports)
 {
 	struct mlx5_core_dev *dev = esw->dev;
 	struct mlx5_flow_table_group *g;
 	struct mlx5_flow_table *fdb;
 	u8 *dmac;
-	int num_fdb_groups;
+	int num_fdb_groups, i;
 
 	esw_debug(dev, "Create FDB log_max_size(%d)\n",
 		  MLX5_CAP_ESW_FLOWTABLE_FDB(dev, log_max_ft_size));
 
 	if (!mlx5_vf_fdb_rules)
-		num_fdb_groups = 2;
+		num_fdb_groups = MLX5_OFFLOAD_GROUPS;
 	else
 		num_fdb_groups = 1;
 
@@ -626,6 +632,17 @@ static int esw_create_fdb_table(struct mlx5_eswitch *esw, int nvports)
 		g[1].log_sz = 0;
 		g[1].match_criteria_enable = 0;
 	}
+
+	g[MLX5_TX2VPORT_GROUP].log_sz = 8;
+	g[MLX5_TX2VPORT_GROUP].match_criteria_enable = 0; /* FIXME - put vport/SQN mask */
+
+	for (i = 2; i < MLX5_MISS_GROUP; i++) {
+		g[i].log_sz = 8;
+		g[i].match_criteria_enable = 0; /* just place holder hack */
+	}
+
+	g[MLX5_MISS_GROUP].log_sz = 0;
+	g[MLX5_MISS_GROUP].match_criteria_enable = 0;
 
 	fdb = mlx5_create_flow_table(dev, 0,
 				     MLX5_FLOW_TABLE_TYPE_ESWITCH,

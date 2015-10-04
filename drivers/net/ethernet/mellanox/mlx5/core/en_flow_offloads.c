@@ -186,9 +186,9 @@ int mlx5_create_flow_group(void *ft, struct mlx5_flow_table_group *g,
 
 struct mlx5_flow_group {
 	u32 match_c[MATCH_PARAMS_SIZE];
-	u32 group_id;
-	u32 start_ix;
+	u32 group_ix;
 	struct mlx5_flow_table_group g;
+	int refcount;
 
 	struct list_head groups_list; /* list of groups */
 	struct list_head flows_list;  /* flows for this group */
@@ -248,9 +248,10 @@ int mlx5e_flow_set(struct mlx5e_priv *pf_dev, int mlx5_action,
 	MLX5_SET(dest_format_struct, dest, destination_id, out->vport);
 
 flow_set:
-	err = mlx5_set_flow_group_entry(eswitch->fdb_table.fdb, group->group_id,
+	err = mlx5_set_flow_group_entry(eswitch->fdb_table.fdb, group->group_ix,
 					&flow->flow_index, flow_context);
 
+	group->refcount++;
 	list_add_tail(&flow->group_list, &group->flows_list);
 
 	kfree(flow_context);
@@ -389,7 +390,7 @@ int mlx5e_flow_del(struct mlx5e_priv *pf_dev, struct mlx5_flow_group *group, u32
 	list_del(&flow->group_list);
 	kfree(flow);
 
-	/* TODO: if the groups gets to be empty - remove it?! */
+	group->refcount--;
 	return 0;
 }
 
@@ -398,7 +399,7 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 	struct mlx5_flow_group *group = NULL;
 	struct mlx5_flow_table_group *g;
 	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
-	int err;
+	int g_index, err;
 
 	u32 match_c[MATCH_PARAMS_SIZE];
 	u32 match_v[MATCH_PARAMS_SIZE];
@@ -434,17 +435,36 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 		g->log_sz = MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG;
 		g->match_criteria_enable = MLX5_MATCH_OUTER_HEADERS | MLX5_MATCH_MISC_PARAMETERS;
 		memcpy(g->match_criteria, match_c, MATCH_PARAMS_SIZE);
-		group->start_ix = 0; /* TODO: allocate group in the FDB!! */
-		err = mlx5_create_flow_group(eswitch->fdb_table.fdb, g, group->start_ix, &group->group_id);
-		if (!err)
-			list_add_tail(&group->groups_list, &pf_dev->mlx5_flow_groups);
 
+		g_index = mlx5_get_free_flow_group(eswitch->fdb_table.fdb, 2, MLX5_OFFLOAD_GROUPS-1);
+		if (g_index == -1) {
+			pr_err("can't find free flow group, can't add flow\n");
+			return -ENOMEM;
+		}
+
+		err = mlx5_recreate_flow_group(eswitch->fdb_table.fdb, g_index, g);
+		if (!err) {
+			group->group_ix = g_index;
+			list_add_tail(&group->groups_list, &pf_dev->mlx5_flow_groups);
+		} else {
+			pr_err("can't allocate new flow group, can't add flow\n");
+			return -ENOMEM;
+		}
 	}
 
+	err = -EINVAL;
+
 	if (flags & FLOW_ADD)
-		return mlx5e_flow_add(pf_dev, sw_flow, group, match_v);
-	else if (flags & FLOW_DEL)
-		return mlx5e_flow_del(pf_dev, group, match_v);
-	else
-		return -EINVAL;
+		err = mlx5e_flow_add(pf_dev, sw_flow, group, match_v);
+	else if (flags & FLOW_DEL) {
+		err = mlx5e_flow_del(pf_dev, group, match_v);
+		/* if the group gets to be empty - mark it as free */
+		if (!err && !group->refcount) {
+			mlx5_set_free_flow_group(eswitch->fdb_table.fdb, group->group_ix);
+			list_del(&group->groups_list);
+			kfree(group);
+		}
+	}
+
+	return err;
 }

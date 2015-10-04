@@ -641,7 +641,7 @@ int mlx5_add_fdb_miss_rule(struct mlx5_core_dev *mdev)
 	MLX5_SET(flow_context, flow_context, destination_list_size, 1);
 	MLX5_SET(dest_format_struct, dest, destination_id, 0); /* send to PF vport */
 
-	err = mlx5_set_flow_group_entry(ft, 1, &fdb_miss_flow_index, flow_context);
+	err = mlx5_set_flow_group_entry(ft, MLX5_MISS_GROUP, &fdb_miss_flow_index, flow_context);
 	mlx5_core_warn(mdev, "ADD FDB entry for miss flow index=%d\n", fdb_miss_flow_index);
 
 out:

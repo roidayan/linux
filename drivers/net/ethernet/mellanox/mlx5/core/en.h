@@ -50,7 +50,10 @@ void mlx5_del_flow_group_entry(void *flow_table, u32 flow_index);
 
 u32 handle_fdb_flow_tag(struct net_device *pf_dev, struct sk_buff *skb, u32 flow_tag);
 
+/* 0 - legacy, 1 - tx2vport  [.. offloaded ovs groups ..] last - miss */
+#define MLX5_OFFLOAD_GROUPS 16
 
+#define MLX5_MISS_GROUP (MLX5_OFFLOAD_GROUPS - 1)
 
 #define MLX5E_MAX_NUM_TC	8
 
