@@ -31,6 +31,7 @@
  */
 
 #include <linux/mlx5/flow_table.h>
+#include <net/switchdev.h>
 #include "en.h"
 #include "eswitch.h"
 
@@ -2046,6 +2047,56 @@ static struct net_device_ops mlx5e_netdev_ops = {
 	.ndo_get_vf_stats        = mlx5e_get_vf_stats,
 };
 
+static int mlx5e_pf_attr_get(struct net_device *dev, struct switchdev_attr *attr)
+{
+	struct mlx5e_priv *pf_dev = netdev_priv(dev);
+	int uplink_rep = pf_dev->mdev->priv.sriov.num_vfs;
+	struct mlx5e_vf_rep *vf_rep;
+
+	if (!pf_dev->mdev->priv.sriov.num_vfs || !pf_dev->vf_reps)
+		return -EOPNOTSUPP;
+
+	vf_rep = pf_dev->vf_reps[uplink_rep];
+
+	return __mlx5e_rep_attr_get(vf_rep, attr);
+}
+
+static int mlx5e_pf_obj_add(struct net_device *dev,
+			    struct switchdev_obj *obj)
+{
+	struct mlx5e_priv *pf_dev = netdev_priv(dev);
+	int uplink_rep = pf_dev->mdev->priv.sriov.num_vfs;
+	struct mlx5e_vf_rep *vf_rep;
+
+	if (!pf_dev->mdev->priv.sriov.num_vfs || !pf_dev->vf_reps)
+		return -EINVAL;
+
+	vf_rep = pf_dev->vf_reps[uplink_rep];
+
+	return __mlx5e_rep_obj_add(vf_rep, obj);
+}
+
+static int mlx5e_pf_obj_del(struct net_device *dev,
+			    struct switchdev_obj *obj)
+{
+	struct mlx5e_priv *pf_dev = netdev_priv(dev);
+	int uplink_rep = pf_dev->mdev->priv.sriov.num_vfs;
+	struct mlx5e_vf_rep *vf_rep;
+
+	if (!pf_dev->mdev->priv.sriov.num_vfs || !pf_dev->vf_reps)
+		return -EINVAL;
+
+	vf_rep = pf_dev->vf_reps[uplink_rep];
+
+	return __mlx5e_rep_obj_del(vf_rep, obj);
+}
+
+static const struct switchdev_ops mlx5e_pf_switchdev_ops = {
+	.switchdev_port_attr_get	= mlx5e_pf_attr_get,
+	.switchdev_port_obj_add		= mlx5e_pf_obj_add,
+	.switchdev_port_obj_del		= mlx5e_pf_obj_del,
+};
+
 static int mlx5e_check_required_hca_cap(struct mlx5_core_dev *mdev)
 {
 	if (MLX5_CAP_GEN(mdev, port_type) != MLX5_CAP_PORT_TYPE_ETH)
@@ -2149,6 +2200,10 @@ static void mlx5e_build_netdev(struct net_device *netdev)
 
 	netdev->ethtool_ops	  = &mlx5e_ethtool_ops;
 
+	if (mlx5_core_is_pf(mdev)) {
+		printk(KERN_ERR "adding switchdev ops for mlx5 PF device\n");
+		netdev->switchdev_ops  = &mlx5e_pf_switchdev_ops;
+	}
 	netdev->vlan_features    |= NETIF_F_SG;
 	netdev->vlan_features    |= NETIF_F_IP_CSUM;
 	netdev->vlan_features    |= NETIF_F_IPV6_CSUM;

@@ -143,8 +143,10 @@ static const struct ethtool_ops mlx5e_rep_ethtool_ops = {
 	.get_ethtool_stats = mlx5e_rep_get_ethtool_stats,
 };
 
-static int __mlx5e_rep_attr_get(struct mlx5e_vf_rep *vf_rep, struct switchdev_attr *attr)
+int __mlx5e_rep_attr_get(struct mlx5e_vf_rep *vf_rep, struct switchdev_attr *attr)
 {
+
+	printk(KERN_ERR "%s vport %d id len %d\n", __func__, vf_rep->vport, sizeof(vf_rep->hw_id));
 
 	switch (attr->id) {
 	case SWITCHDEV_ATTR_PORT_PARENT_ID:
@@ -184,7 +186,7 @@ static int mlx5e_rep_flow_del(struct mlx5e_vf_rep *vf_rep, struct sw_flow *sw_fl
 	return mlx5e_flow_act(vf_rep->pf_dev, sw_flow, FLOW_DEL);
 }
 
-static int __mlx5e_rep_obj_add(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj *obj)
+int __mlx5e_rep_obj_add(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj *obj)
 {
 	int err = 0;
 
@@ -214,7 +216,7 @@ static int __mlx5e_rep_obj_add(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj
 	return err;
 }
 
-static int __mlx5e_rep_obj_del(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj *obj)
+int __mlx5e_rep_obj_del(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj *obj)
 {
 	int err = 0;
 
@@ -260,41 +262,6 @@ static const struct switchdev_ops mlx5e_rep_switchdev_ops = {
 	.switchdev_port_attr_get	= mlx5e_rep_attr_get,
 	.switchdev_port_obj_add		= mlx5e_rep_obj_add,
 	.switchdev_port_obj_del		= mlx5e_rep_obj_del,
-};
-
-static int mlx5e_pf_attr_get(struct net_device *dev, struct switchdev_attr *attr)
-{
-	struct mlx5e_priv *pf_dev = netdev_priv(dev);
-	int uplink_rep = pf_dev->mdev->priv.sriov.num_vfs;
-	struct mlx5e_vf_rep *vf_rep = pf_dev->vf_reps[uplink_rep];
-
-	return __mlx5e_rep_attr_get(vf_rep, attr);
-}
-
-static int mlx5e_pf_obj_add(struct net_device *dev,
-			    struct switchdev_obj *obj)
-{
-	struct mlx5e_priv *pf_dev = netdev_priv(dev);
-	int uplink_rep = pf_dev->mdev->priv.sriov.num_vfs;
-	struct mlx5e_vf_rep *vf_rep = pf_dev->vf_reps[uplink_rep];
-
-	return __mlx5e_rep_obj_add(vf_rep, obj);
-}
-
-static int mlx5e_pf_obj_del(struct net_device *dev,
-			    struct switchdev_obj *obj)
-{
-	struct mlx5e_priv *pf_dev = netdev_priv(dev);
-	int uplink_rep = pf_dev->mdev->priv.sriov.num_vfs;
-	struct mlx5e_vf_rep *vf_rep = pf_dev->vf_reps[uplink_rep];
-
-	return __mlx5e_rep_obj_del(vf_rep, obj);
-}
-
-static const struct switchdev_ops mlx5e_pf_switchdev_ops = {
-	.switchdev_port_attr_get	= mlx5e_pf_attr_get,
-	.switchdev_port_obj_add		= mlx5e_pf_obj_add,
-	.switchdev_port_obj_del		= mlx5e_pf_obj_del,
 };
 
 static int mlx5e_rep_open(struct net_device *dev)

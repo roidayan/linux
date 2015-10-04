@@ -32,6 +32,7 @@
 
 #include <linux/if_vlan.h>
 #include <linux/etherdevice.h>
+#include <net/switchdev.h>
 #include <linux/mlx5/driver.h>
 #include <linux/mlx5/qp.h>
 #include <linux/mlx5/cq.h>
@@ -49,6 +50,12 @@ int mlx5_set_flow_group_entry_index(void *flow_table, u32 group_ix,
 void mlx5_del_flow_group_entry(void *flow_table, u32 flow_index);
 
 u32 handle_fdb_flow_tag(struct net_device *pf_dev, struct sk_buff *skb, u32 flow_tag);
+
+struct mlx5e_vf_rep;
+
+int __mlx5e_rep_attr_get(struct mlx5e_vf_rep *vf_rep, struct switchdev_attr *attr);
+int __mlx5e_rep_obj_add(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj *obj);
+int __mlx5e_rep_obj_del(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj *obj);
 
 /* 0 - legacy, 1 - tx2vport  [.. offloaded ovs groups ..] last - miss */
 #define MLX5_OFFLOAD_GROUPS 16
