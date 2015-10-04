@@ -63,4 +63,8 @@ int mlx5_set_flow_group_entry(void *ft, u32 group_ix,
 void mlx5_del_flow_table_entry(void *flow_table, u32 flow_index);
 u32 mlx5_get_flow_table_id(void *flow_table);
 
+void mlx5_set_free_flow_group(void *flow_table, int g_index);
+int  mlx5_get_free_flow_group(void *flow_table, int start, int end);
+int  mlx5_recreate_flow_group(void *flow_table, int g_index, struct mlx5_flow_table_group *g);
+
 #endif /* MLX5_FLOW_TABLE_H */

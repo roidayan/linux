@@ -480,3 +480,56 @@ void mlx5_del_flow_group_entry(void *flow_table, u32 flow_index)
 
 	return mlx5_del_flow_entry_cmd(ft, flow_index);
 }
+
+
+void mlx5_set_free_flow_group(void *flow_table, int g_index)
+{
+	struct mlx5_flow_table *ft = flow_table;
+	struct mlx5_flow_table_group *g = &ft->group[g_index].g;
+
+	g->match_criteria_enable = 0;
+}
+
+int mlx5_get_free_flow_group(void *flow_table, int start, int end)
+{
+	int i;
+	struct mlx5_flow_table *ft = flow_table;
+	struct mlx5_flow_table_group *g;
+
+	if (ft->type != MLX5_FLOW_TABLE_TYPE_ESWITCH) {
+		pr_err("dynamic group changes only supported for FDB\n");
+		return -1;
+	}
+
+	for (i = start; i < end; i++) {
+		g = &ft->group[i].g;
+
+		if(g->match_criteria_enable == 0)
+			return i;
+	}
+
+	return -1;
+}
+
+int mlx5_recreate_flow_group(void *flow_table, int g_index, struct mlx5_flow_table_group *g)
+{
+	struct mlx5_flow_table *ft = flow_table;
+	struct mlx5_ftg *ftg;
+	int err;
+
+	if (ft->type != MLX5_FLOW_TABLE_TYPE_ESWITCH) {
+		pr_err("dynamic group changes only supported for FDB\n");
+		return -1;
+	}
+
+	ftg = &ft->group[g_index];
+
+	/* destory the group in its previous form */
+	__mlx5_destroy_flow_group_cmd(ft, ftg->id);
+
+	memcpy(&ftg->g, g, sizeof(*g));
+
+	err = __mlx5_create_flow_group_cmd(ft, ftg);
+
+	return err;
+}
