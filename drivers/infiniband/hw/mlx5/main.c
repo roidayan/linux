@@ -2290,7 +2290,11 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 			(1ull << IB_USER_VERBS_EX_CMD_DESTROY_FLOW)|
 			(1ull << IB_USER_VERBS_EX_CMD_CREATE_WQ)   |
 			(1ull << IB_USER_VERBS_EX_CMD_MODIFY_WQ)   |
-			(1ull << IB_USER_VERBS_EX_CMD_DESTROY_WQ);
+			(1ull << IB_USER_VERBS_EX_CMD_DESTROY_WQ)  |
+			(1ull << IB_USER_VERBS_EX_CMD_CREATE_RWQ_IND_TBL) |
+			(1ull << IB_USER_VERBS_EX_CMD_DESTROY_RWQ_IND_TBL);
+		dev->ib_dev.create_rwq_ind_table = mlx5_ib_create_rwq_ind_table;
+		dev->ib_dev.destroy_rwq_ind_table = mlx5_ib_destroy_rwq_ind_table;
 	}
 	err = init_node_data(dev);
 	if (err)
