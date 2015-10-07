@@ -1009,7 +1009,7 @@ static int ovs_flow_cmd_new(struct sk_buff *skb, struct genl_info *info)
 		}
 		error = ovs_hw_flow_remove(dp, flow);
 		if (error)
-			pr_warn("failed to remove flow from hw\n");
+			pr_warn("%s %d failed to remove flow from hw\n", __func__, __LINE__);
 
 		/* Update actions. */
 		old_acts = ovsl_dereference(flow->sf_acts);
@@ -1139,7 +1139,7 @@ static int ovs_flow_cmd_set(struct sk_buff *skb, struct genl_info *info)
 	if (likely(acts)) {
 		error = ovs_hw_flow_remove(dp, flow);
 		if (error)
-			pr_warn("failed to remove flow from hw\n");
+			pr_warn("%s %d failed to remove flow from hw\n", __func__, __LINE__);
 
 		old_acts = ovsl_dereference(flow->sf_acts);
 		rcu_assign_pointer(flow->sf_acts, acts);
@@ -1299,7 +1299,7 @@ static int ovs_flow_cmd_del(struct sk_buff *skb, struct genl_info *info)
 	ovs_flow_tbl_remove(&dp->table, flow);
 	err = ovs_hw_flow_remove(dp, flow);
 	if (err)
-		pr_warn("failed to remove flow from hw\n");
+		pr_warn("%s %d failed to remove flow from hw\n", __func__, __LINE__);
 	ovs_unlock();
 
 	reply = ovs_flow_cmd_alloc_info((const struct ovs_flow_actions __force *) flow->sf_acts,

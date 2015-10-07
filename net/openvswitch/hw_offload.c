@@ -99,50 +99,77 @@ errout:
 	return err;
 }
 
-void ovs_hw_flow_adjust(struct datapath *dp, struct ovs_flow *flow)
+struct net_device *ovs_hw_flow_adjust(struct datapath *dp, struct ovs_flow *flow)
 {
-	struct vport *vport;
+	struct vport *vport = NULL;
+	struct net_device *dev = NULL;
 
 	flow->flow.key.misc.in_port_ifindex = 0;
 	flow->flow.mask->key.misc.in_port_ifindex = 0;
 	vport = ovs_vport_ovsl(dp, flow->flow.key.phy.in_port);
-	if (vport && vport->ops->type == OVS_VPORT_TYPE_NETDEV) {
-		struct net_device *dev;
 
+	printk("%s in_port %d vport %p type %d\n", __func__,
+		flow->flow.key.phy.in_port, vport, vport? vport->ops->type: -1);
+
+	if (vport && vport->ops->type == OVS_VPORT_TYPE_NETDEV) {
 		dev = vport->ops->get_netdev(vport);
 		if (dev) {
 			flow->flow.key.misc.in_port_ifindex = dev->ifindex;
 			flow->flow.mask->key.misc.in_port_ifindex = 0xFFFFFFFF;
-		}
+		} else
+			printk("%s couldn't get netdev for vport\n", __func__);
 	}
+
+	return dev;
 }
 
 int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 {
 	struct sw_flow_actions *actions;
+#ifdef OVS_USE_HW_REPS
 	struct vport *vport;
+#endif
 	struct net_device *dev;
-	int err;
+	int err, did_rtnl_lock;
 
 	ASSERT_OVSL();
 	BUG_ON(flow->flow.actions);
 
-	ovs_hw_flow_adjust(dp, flow);
+	dev = ovs_hw_flow_adjust(dp, flow);
 
 	err = sw_flow_action_create(dp, &actions, flow->sf_acts);
 	if (err)
 		return err;
 	flow->flow.actions = actions;
 
+#ifdef OVS_USE_HW_REPS
 	list_for_each_entry(vport, &dp->swdev_rep_list, swdev_rep_list) {
 		dev = vport->ops->get_netdev(vport);
 		BUG_ON(!dev);
+
+		did_rtnl_lock = 0;
+		if (rtnl_trylock())
+			did_rtnl_lock = 1;
 		err = switchdev_port_flow_add(dev, &flow->flow);
+		if (did_rtnl_lock)
+			rtnl_unlock();
+
 		if (err == -ENODEV) /* out device is not in this switch */
 			continue;
 		if (err)
 			break;
 	}
+#else
+	if (!dev || !dev->switchdev_ops)
+		printk(KERN_ERR "%s can't offload flow add: in_dev %s\n", __func__, dev? dev->name: "no dev");
+	else {
+		if (rtnl_trylock())
+			did_rtnl_lock = 1;
+		err = switchdev_port_flow_add(dev, &flow->flow);
+		if (did_rtnl_lock)
+			rtnl_unlock();
+	}
+#endif
 
 	if (err) {
 		kfree(actions);
@@ -154,13 +181,15 @@ int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 int ovs_hw_flow_remove(struct datapath *dp, struct ovs_flow *flow)
 {
 	struct sw_flow_actions *actions;
+#ifdef OVS_USE_HW_REPS
 	struct vport *vport;
+#endif
 	struct net_device *dev;
 	int err = 0;
 
 	ASSERT_OVSL();
 
-	ovs_hw_flow_adjust(dp, flow);
+	dev = ovs_hw_flow_adjust(dp, flow);
 
 	if (!flow->flow.actions) {
 		err = sw_flow_action_create(dp, &actions, flow->sf_acts);
@@ -169,6 +198,7 @@ int ovs_hw_flow_remove(struct datapath *dp, struct ovs_flow *flow)
 		flow->flow.actions = actions;
 	}
 
+#ifdef OVS_USE_HW_REPS
 	list_for_each_entry(vport, &dp->swdev_rep_list, swdev_rep_list) {
 		dev = vport->ops->get_netdev(vport);
 		BUG_ON(!dev);
@@ -178,6 +208,12 @@ int ovs_hw_flow_remove(struct datapath *dp, struct ovs_flow *flow)
 		if (err)
 			break;
 	}
+#else
+	if (!dev || !dev->switchdev_ops)
+		printk(KERN_ERR "%s can't offload flow del: in_dev %s\n", __func__, dev? dev->name: "no dev");
+	else
+		err = switchdev_port_flow_del(dev, &flow->flow);
+#endif
 	kfree(flow->flow.actions);
 	flow->flow.actions = NULL;
 	return err;
