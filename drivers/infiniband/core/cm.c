@@ -2275,6 +2275,7 @@ static int cm_dreq_handler(struct cm_work *work)
 					   &msg))
 			goto unlock;
 
+		ah = NULL;
 		cm_format_drep((struct cm_drep_msg *) msg->mad, cm_id_priv,
 			       cm_id_priv->private_data,
 			       cm_id_priv->private_data_len);
@@ -2297,6 +2298,8 @@ static int cm_dreq_handler(struct cm_work *work)
 		list_add_tail(&work->list, &cm_id_priv->work_list);
 	spin_unlock_irq(&cm_id_priv->lock);
 
+	if (!IS_ERR_OR_NULL(ah))
+		ib_destroy_ah(ah);
 	if (ret)
 		cm_process_work(cm_id_priv, work);
 	else
@@ -2304,6 +2307,8 @@ static int cm_dreq_handler(struct cm_work *work)
 	return 0;
 
 unlock:	spin_unlock_irq(&cm_id_priv->lock);
+	if (!IS_ERR_OR_NULL(ah))
+		ib_destroy_ah(ah);
 deref:	cm_deref_id(cm_id_priv);
 	return -EINVAL;
 }
@@ -2837,6 +2842,7 @@ static int cm_lap_handler(struct cm_work *work)
 					   &msg))
 			goto unlock;
 
+		ah = NULL;
 		cm_format_mra((struct cm_mra_msg *) msg->mad, cm_id_priv,
 			      CM_MSG_RESPONSE_OTHER,
 			      cm_id_priv->service_timeout,
@@ -2866,6 +2872,8 @@ static int cm_lap_handler(struct cm_work *work)
 		list_add_tail(&work->list, &cm_id_priv->work_list);
 	spin_unlock_irq(&cm_id_priv->lock);
 
+	if (!IS_ERR_OR_NULL(ah))
+		ib_destroy_ah(ah);
 	if (ret)
 		cm_process_work(cm_id_priv, work);
 	else
@@ -2873,6 +2881,8 @@ static int cm_lap_handler(struct cm_work *work)
 	return 0;
 
 unlock:	spin_unlock_irq(&cm_id_priv->lock);
+	if (!IS_ERR_OR_NULL(ah))
+		ib_destroy_ah(ah);
 deref:	cm_deref_id(cm_id_priv);
 	return -EINVAL;
 }
