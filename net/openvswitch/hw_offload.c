@@ -28,10 +28,18 @@ static int sw_flow_action_create(struct datapath *dp,
 	struct sw_flow_actions *actions;
 	struct sw_flow_action *cur;
 	size_t count = 0;
-	int err;
+	int err, drop_only = 0;
 
 	for (a = attr, rem = len; rem > 0; a = nla_next(a, &rem))
 		count++;
+
+	/* Open-Flow's drop action is pipeline termination --> no OVS action
+	 * for HW offloading we need to set explicit HW drop action.
+	 */
+	if (count == 0) {
+		drop_only = 1;
+		count = 1;
+	}
 
 	actions = kzalloc(sizeof(struct sw_flow_actions) +
 			  sizeof(struct sw_flow_action) * count,
@@ -41,6 +49,12 @@ static int sw_flow_action_create(struct datapath *dp,
 	actions->count = count;
 
 	cur = actions->actions;
+
+	if (drop_only) {
+		cur->type = SW_FLOW_ACTION_TYPE_DROP;
+		goto out;
+	}
+
 	for (a = attr, rem = len; rem > 0; a = nla_next(a, &rem)) {
 		switch (nla_type(a)) {
 		case OVS_ACTION_ATTR_OUTPUT:
@@ -75,6 +89,8 @@ static int sw_flow_action_create(struct datapath *dp,
 		}
 		cur++;
 	}
+
+out:
 	*p_actions = actions;
 	return 0;
 
