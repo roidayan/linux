@@ -261,8 +261,8 @@ bool mlx5e_poll_rx_cq(struct mlx5e_cq *cq, int budget)
 		vport = FDB_UPLINK_VPORT;
 		flow_tag = be32_to_cpu(cqe->sop_drop_qpn) & 0x00ffffff;
 
-		if (net_ratelimit())
-			netdev_warn(rq->netdev, "%s flow_tag %x\n",__func__, flow_tag);
+		//if (net_ratelimit())
+		//	netdev_warn(rq->netdev, "%s flow_tag %x\n",__func__, flow_tag);
 
 		if (flow_tag & FDB_TAG)
 			vport = handle_fdb_flow_tag(rq->netdev, skb, flow_tag);

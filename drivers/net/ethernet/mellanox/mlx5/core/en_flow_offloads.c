@@ -75,18 +75,21 @@ static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v)
 
 	/* NOTE - vlan push/pop actions to be implemented by VST!! */
 	if (mask->eth.tci) {
+		printk(KERN_ERR "skipping VLAN settings tci mask %x key %x\n", mask->eth.tci, key->eth.tci);
+#if 0
 		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, vlan_tag, 1);
 		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, vlan_tag, 1);
 
 		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, first_vid,
 			 ntohs(mask->eth.tci) & ~VLAN_TAG_PRESENT);
 		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, first_vid,
-			 ntohs(mask->eth.tci) & ~VLAN_TAG_PRESENT);
+			 ntohs(key->eth.tci) & ~VLAN_TAG_PRESENT);
+#endif
 	}
 
 	if (mask->eth.type) {
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, ethertype, mask->eth.type);
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, ethertype, key->eth.type);
+		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, ethertype, ntohs(mask->eth.type));
+		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, ethertype, ntohs(key->eth.type));
 	}
 
 	if (mask->ip.proto) {
@@ -253,6 +256,7 @@ flow_set:
 	group->refcount++;
 	list_add_tail(&flow->group_list, &group->flows_list);
 
+	printk(KERN_ERR "%s added sw_flow %p flow index %x \n", __func__, sw_flow, flow->flow_index);
 	kfree(flow_context);
 	return 0;
 
@@ -378,18 +382,22 @@ int mlx5e_flow_del(struct mlx5e_priv *pf_dev, struct mlx5_flow_group *group, u32
 {
 	struct mlx5_flow *flow = NULL;
 	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
+	int flow_found = 0;
 
 	/* find the group that this flow belongs to */
 	list_for_each_entry(flow, &group->flows_list, group_list) {
-		if (!memcmp(flow->match_v, match_v, MATCH_PARAMS_SIZE))
+		if (!memcmp(flow->match_v, match_v, MATCH_PARAMS_SIZE)) {
+			flow_found = 1;
 			break;
-		flow = NULL;
+		}
 	}
 
-	if (!flow) {
+	if (!flow_found) {
 		pr_err("flow doesn't exist in group, can't remove it\n");
 		return -EINVAL;
 	}
+
+	printk(KERN_ERR "%s deleting flow index %x \n", __func__, flow->flow_index);
 
 	mlx5_del_flow_table_entry(eswitch->fdb_table.fdb, flow->flow_index);
 	list_del(&flow->group_list);
