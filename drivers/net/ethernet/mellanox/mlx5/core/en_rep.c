@@ -344,6 +344,7 @@ int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u32 vport)
 	struct mlx5e_vf_rep *priv;
 	int err, vf;
 	char *rep_name;
+	u8 mac[ETH_ALEN];
 
 	rep_name = kzalloc(256, GFP_KERNEL);
 	if (!rep_name)
@@ -375,8 +376,15 @@ int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u32 vport)
 	} else
 		vf = vport - 1;
 
-	ether_addr_copy(dev->dev_addr, pf_dev->netdev->dev_addr);
-	dev->dev_addr[ETH_ALEN - 1] += vport;
+	memset(mac, 0, ETH_ALEN);
+	mlx5_query_nic_vport_mac_address(pf_dev->mdev, vport, mac);
+
+	if (is_zero_ether_addr(mac)) {
+		ether_addr_copy(dev->dev_addr, pf_dev->netdev->dev_addr);
+		dev->dev_addr[ETH_ALEN - 1] += vport;
+	} else {
+		ether_addr_copy(dev->dev_addr, mac);
+	}
 
 	/* set PF NIC miss rule mapping source vport --> flow_tag */
 	err = mlx5_pf_nic_add_vport_miss_rule(pf_dev, vport, &priv->miss_flow_index);
