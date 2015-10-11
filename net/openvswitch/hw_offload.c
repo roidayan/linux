@@ -160,9 +160,10 @@ int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 			break;
 	}
 #else
-	if (!dev || !dev->switchdev_ops)
+	if (!dev || !dev->switchdev_ops) {
 		printk(KERN_ERR "%s can't offload flow add: in_dev %s\n", __func__, dev? dev->name: "no dev");
-	else {
+		err = -ENODEV;
+	} else {
 		if (rtnl_trylock())
 			did_rtnl_lock = 1;
 		err = switchdev_port_flow_add(dev, &flow->flow);
@@ -174,7 +175,15 @@ int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 	if (err) {
 		kfree(actions);
 		flow->flow.actions = NULL;
+		flow->hw_offloaded = 0;
+	} else {
+		printk(KERN_ERR "%s ovs flow %p sw_flow %p offloaded -- added \n", __func__, flow, &flow->flow);
+		if (ovs_identifier_is_ufid(&flow->id))
+			printk(KERN_ERR "%s ovs flow %p sw_flow %p ID %.8x %.8x %.8x %.8x\n", __func__,
+				flow, &flow->flow, flow->id.ufid[0], flow->id.ufid[1], flow->id.ufid[2], flow->id.ufid[3]);
+		flow->hw_offloaded = 1;
 	}
+
 	return err;
 }
 
@@ -188,6 +197,15 @@ int ovs_hw_flow_remove(struct datapath *dp, struct ovs_flow *flow)
 	int err = 0;
 
 	ASSERT_OVSL();
+
+	if (!flow->hw_offloaded)
+		return 0;
+	else {
+		printk(KERN_ERR "%s ovs flow %p sw_flow %p offloaded -- deleted\n", __func__, flow, &flow->flow);
+		if (ovs_identifier_is_ufid(&flow->id))
+			printk(KERN_ERR "%s ovs flow %p sw_flow %p ID %.8x %.8x %.8x %.8x\n", __func__,
+				flow, &flow->flow, flow->id.ufid[0], flow->id.ufid[1], flow->id.ufid[2], flow->id.ufid[3]);
+	}
 
 	dev = ovs_hw_flow_adjust(dp, flow);
 
@@ -209,9 +227,10 @@ int ovs_hw_flow_remove(struct datapath *dp, struct ovs_flow *flow)
 			break;
 	}
 #else
-	if (!dev || !dev->switchdev_ops)
+	if (!dev || !dev->switchdev_ops) {
 		printk(KERN_ERR "%s can't offload flow del: in_dev %s\n", __func__, dev? dev->name: "no dev");
-	else
+		err = -ENODEV;
+	} else
 		err = switchdev_port_flow_del(dev, &flow->flow);
 #endif
 	kfree(flow->flow.actions);

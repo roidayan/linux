@@ -157,6 +157,7 @@ struct ovs_flow {
 					 */
 	struct sw_flow flow;
 	struct sw_flow_id id;
+	int    hw_offloaded;
 	struct ovs_flow_actions __rcu *sf_acts;
 	struct flow_stats __rcu *stats[]; /* One for each NUMA node.  First one
 					   * is allocated at flow creation time,
