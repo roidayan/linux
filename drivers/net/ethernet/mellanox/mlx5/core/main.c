@@ -802,6 +802,8 @@ static int mlx5_core_set_issi(struct mlx5_core_dev *dev)
 	return -ENOTSUPP;
 }
 
+/* TODO: Calling to io_mapping_create_wc spoils the IB user BF mapping as WC
+ *       Fix this before enabling this function.
 static int map_bf_area(struct mlx5_core_dev *dev)
 {
 	resource_size_t bf_start = pci_resource_start(dev->pdev, 0);
@@ -811,6 +813,7 @@ static int map_bf_area(struct mlx5_core_dev *dev)
 
 	return dev->priv.bf_mapping ? 0 : -ENOMEM;
 }
+*/
 
 static void unmap_bf_area(struct mlx5_core_dev *dev)
 {
@@ -1141,8 +1144,11 @@ static int mlx5_load_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv)
 		goto err_stop_eqs;
 	}
 
-	if (map_bf_area(dev))
-		dev_err(&pdev->dev, "Failed to map blue flame area\n");
+	/*
+	 * if (map_bf_area(dev))
+	 *	dev_err(&pdev->dev, "Failed to map blue flame area\n");
+	 * TODO: Open this mapping when map_bf_area is fixed
+	 */
 
 	err = mlx5_irq_set_affinity_hints(dev);
 	if (err) {
