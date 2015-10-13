@@ -54,6 +54,9 @@ int mlx5_add_fdb_send_to_vport_rule(struct mlx5_core_dev *mdev,
 
 int  mlx5e_rep_add_l2_fdb_rule(struct mlx5e_vf_rep *vf_rep, const char *addr);
 
+void mlx5_delete_fdb_send_to_vport_rule(struct mlx5_core_dev *mdev,
+					u32 flow_index);
+
 /* this is wrong, the miss rules must be in the 1st group of the PF NIC */
 //#define NIC_MISS_GROUP_INDEX 10
 //#define NIC_MISS_GROUP_START 0x6811
@@ -443,15 +446,22 @@ int mlx5e_vf_reps_create(struct mlx5e_priv *pf_dev)
 		/* Set FDB sent to Vport rule, 1 ==  send to vport flow table group */
 		err = mlx5_add_fdb_send_to_vport_rule(pf_dev->mdev, 1, vport, sq->sqn,
 						      &pf_dev->vf_reps[vf]->tx_to_vport_flow_index);
-		if (err) /* Hadar - handle error flow */
-			printk(KERN_INFO "failed to mlx5_add_fdb_send_to_vport_rule, err %d\n", err);
+		if (err) {
+			printk(KERN_INFO "failed to add fdb send to vport rule, err %d\n", err);
+			goto err_add_fdb_rule;
+		}
 	}
 
 	return 0;
 
+err_add_fdb_rule:
+	for (vf--; vf >= 0; vf--)
+		mlx5_delete_fdb_send_to_vport_rule(pf_dev->mdev,
+						   pf_dev->vf_reps[vf]->tx_to_vport_flow_index);
+
 err_vport_rep_channel_open:
 err_vport_rep_create:
-	for (vf--; vf >= 0; vf--)
+	for (vf = nvports-1; vf >= 0; vf--)
 		mlx5e_rep_destroy_netdev(pf_dev->vf_reps[vf]->dev);
 
 	kfree(pf_dev->vf_reps);
@@ -473,8 +483,11 @@ void mlx5e_reps_remove(struct mlx5e_priv *pf_dev)
 	}
 
 	/* we have vport per VF + one for the uplink */
-	for (vf = 0; vf < nvports; vf++)
+	for (vf = 0; vf < nvports; vf++) {
+		mlx5_delete_fdb_send_to_vport_rule(pf_dev->mdev,
+						   pf_dev->vf_reps[vf]->tx_to_vport_flow_index);
 		mlx5e_rep_destroy_netdev(pf_dev->vf_reps[vf]->dev);
+	}
 
 	mlx5e_close_rep_channels(pf_dev);
 
@@ -485,6 +498,9 @@ void mlx5e_reps_remove(struct mlx5e_priv *pf_dev)
 int mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev)
 {
 	int err;
+	int n,tc;
+	struct mlx5e_channel *c;
+	int nch = pf_dev->params.num_channels;
 
 	err = mlx5e_vf_reps_create(pf_dev);
 	if (err)  {
@@ -505,10 +521,30 @@ int mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev)
 		goto fdb_err;
 	}
 
+	/* Add re-inject rule to all the PF sqs */
+	for (n = 0; n < nch; n++) {
+		c = pf_dev->channel[n];
+		for (tc = 0; tc < c->num_tc; tc++) {
+			err = mlx5_add_fdb_send_to_vport_rule(pf_dev->mdev, 1,
+							      FDB_UPLINK_VPORT, c->sq[tc].sqn,
+							      &c->sq[tc].tx_to_vport_flow_index);
+			if (err)
+				goto err_pf_vport_rules;
+		}
+	}
+
 	INIT_LIST_HEAD(&pf_dev->mlx5_flow_groups);
 	spin_lock_init(&pf_dev->flows_lock);
 
 	return 0;
+
+err_pf_vport_rules:
+	for (n--; n >= 0; n--) {
+		c = pf_dev->channel[n];
+		for (tc--; tc >= 0; tc--)
+			mlx5_delete_fdb_send_to_vport_rule(pf_dev->mdev,
+							   c->sq[tc].tx_to_vport_flow_index);
+	}
 
 fdb_err:
 	mlx5_del_flow_table_entry(pf_dev->ft.main, uplink_miss_flow_index);
@@ -525,7 +561,9 @@ void mlx5e_stop_flow_offloads(struct mlx5e_priv *pf_dev)
 {
 	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
 	void *ft;
-
+	int nch = pf_dev->params.num_channels;
+	int n, tc;
+	struct mlx5e_channel *c;
 
 	/* FIXME: alarm/clean if there are offloaded flows left */
 
@@ -541,6 +579,16 @@ void mlx5e_stop_flow_offloads(struct mlx5e_priv *pf_dev)
 		ft = pf_dev->ft.main;
 		mlx5_del_flow_table_entry(ft, uplink_miss_flow_index);
 		uplink_miss_flow_index = 0;
+	}
+
+
+	for (n = 0; n < nch; n++) {
+		c = pf_dev->channel[n];
+		for (tc = 0; tc < c->num_tc; tc++) {
+			if (c->sq[tc].tx_to_vport_flow_index)
+				mlx5_delete_fdb_send_to_vport_rule(pf_dev->mdev,
+								   c->sq[tc].tx_to_vport_flow_index);
+		}
 	}
 
 	mlx5e_reps_remove(pf_dev);
@@ -645,9 +693,10 @@ int mlx5_add_fdb_send_to_vport_rule(struct mlx5_core_dev *mdev,
 	match_value = MLX5_ADDR_OF(flow_context, flow_context, match_value);
 	misc = MLX5_ADDR_OF(fte_match_param, match_value, misc_parameters);
 	MLX5_SET(fte_match_set_misc, misc, source_sqn, sqn);
+	MLX5_SET(fte_match_set_misc, misc, source_port, 0x0); /* source vport is 0 */
 
 	err = mlx5_set_flow_group_entry(ft, group_ix, flow_index, flow_context);
-	mlx5_core_warn(mdev, "Add FDB entry for send to vport %d flow index=%d\n",
+	mlx5_core_warn(mdev, "Add FDB entry for send to vport %x flow index=%x\n",
 		       vport,*flow_index);
 
 out:
@@ -655,6 +704,13 @@ out:
 	return err;
 }
 
+void mlx5_delete_fdb_send_to_vport_rule(struct mlx5_core_dev *mdev,
+					u32 flow_index)
+{
+	struct mlx5_flow_table *ft  = mdev->priv.sriov.eswitch.ft_fdb;
+
+	mlx5_del_flow_table_entry(ft, flow_index);
+}
 
 int mlx5_add_fdb_miss_rule(struct mlx5_core_dev *mdev)
 {
