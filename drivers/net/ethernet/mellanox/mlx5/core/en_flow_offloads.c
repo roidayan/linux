@@ -74,9 +74,12 @@ static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v)
 	}
 
 	/* NOTE - vlan push/pop actions to be implemented by VST!! */
-	if (mask->eth.tci) {
-		printk(KERN_ERR "skipping VLAN settings tci mask %x key %x\n", mask->eth.tci, key->eth.tci);
+	if (ntohs(key->eth.tci) & ~VLAN_TAG_PRESENT) {
+		printk(KERN_ERR "flow has VLAN (assuming VST): tci mask %x key %x\n",
+	               ntohs(mask->eth.tci) & ~VLAN_TAG_PRESENT,
+		       ntohs(key->eth.tci) & ~VLAN_TAG_PRESENT);
 #if 0
+		/* TODO: see if to use this for VGT? */
 		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, vlan_tag, 1);
 		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, vlan_tag, 1);
 
@@ -269,7 +272,7 @@ flow_alloc_failed:
 }
 
 int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
-		      int *mlx5_action,
+		      int *mlx5_action, u16 *mlx5_vlan,
 		      struct mlx5e_vf_rep **in_rep, struct mlx5e_vf_rep **out_rep)
 {
 	struct net *net;
@@ -278,6 +281,7 @@ int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
 	int in_ifindex, out_ifindex = -1 ;
 	struct sw_flow_action *action;
 	int act, err1, err2, __mlx5_action;
+	u16 vlan_proto;
 
 	__mlx5_action = 0;
 	for (act = 0; act < sw_flow->actions->count; act++) {
@@ -289,9 +293,15 @@ int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
 			}
 			out_ifindex = action->out_port_ifindex;
 			__mlx5_action |= MLX5_FLOW_ACTION_TYPE_OUTPUT;
-		} else if (action->type == SW_FLOW_ACTION_TYPE_VLAN_PUSH)
+		} else if (action->type == SW_FLOW_ACTION_TYPE_VLAN_PUSH) {
 			__mlx5_action |= MLX5_FLOW_ACTION_TYPE_VLAN_PUSH;
-		else if (action->type == SW_FLOW_ACTION_TYPE_VLAN_POP)
+			*mlx5_vlan = ntohs(action->vlan.vlan_tci) & ~VLAN_TAG_PRESENT;
+			vlan_proto = ntohs(action->vlan.vlan_proto);
+			printk(KERN_ERR "%s push vlan action tci %x proto %x TODO: set VST!!\n",
+			       __func__, *mlx5_vlan, vlan_proto);
+			if (vlan_proto != ETH_P_8021Q)
+				goto out_err;
+		} else if (action->type == SW_FLOW_ACTION_TYPE_VLAN_POP)
 			__mlx5_action |= MLX5_FLOW_ACTION_TYPE_VLAN_POP;
 		else if (action->type == SW_FLOW_ACTION_TYPE_DROP)
 			__mlx5_action |= MLX5_FLOW_ACTION_TYPE_DROP;
@@ -368,8 +378,9 @@ int mlx5e_flow_add(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
 {
 	struct mlx5e_vf_rep *in_rep, *out_rep;
 	int mlx5_action, err;
+	u16 mlx5_vlan = 0;
 
-	err = mlx5e_flow_adjust(pf_dev, sw_flow, &mlx5_action, &in_rep, &out_rep);
+	err = mlx5e_flow_adjust(pf_dev, sw_flow, &mlx5_action, &mlx5_vlan, &in_rep, &out_rep);
 	if (err)
 		goto out;
 

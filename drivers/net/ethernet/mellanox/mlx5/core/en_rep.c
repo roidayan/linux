@@ -271,7 +271,7 @@ static int mlx5e_rep_open(struct net_device *dev)
 	netif_start_queue(dev);
 	netif_carrier_on(dev);
 
-	printk(KERN_INFO "opened rep device for vport %d\n", priv->vport);
+	printk(KERN_INFO "opened rep device %s for vport %d\n", dev->name, priv->vport);
 	return 0;
 }
 
@@ -279,7 +279,7 @@ static int mlx5e_rep_close(struct net_device *dev)
 {
 	struct mlx5e_vf_rep *priv = netdev_priv(dev);
 
-	printk(KERN_INFO "closing rep device for vport %d\n", priv->vport);
+	printk(KERN_INFO "closing rep device %s for vport %d\n", dev->name, priv->vport);
 
 	netif_carrier_off(dev);
 	netif_stop_queue(dev);
@@ -335,8 +335,6 @@ int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u32 vport)
 	priv->vport  = vport;
 	priv->dev    = dev;
 
-	printk(KERN_INFO "%s vport %x dev %p priv %p\n",__func__, vport, dev, priv);
-
 	dev->netdev_ops	= &mlx5e_rep_netdev_ops;
 	dev->ethtool_ops = &mlx5e_rep_ethtool_ops;
 	dev->switchdev_ops = &mlx5e_rep_switchdev_ops;
@@ -360,6 +358,7 @@ int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u32 vport)
 	netif_carrier_off(dev);
 
 	err = register_netdev(dev);
+	printk(KERN_ERR "%s registered netdev %s (%p) for vport %d rep\n", __func__, dev->name, dev, priv->vport);
 	if (err)
 		goto err_free_netdev;
 out:
