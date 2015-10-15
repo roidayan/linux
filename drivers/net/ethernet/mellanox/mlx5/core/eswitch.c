@@ -629,10 +629,8 @@ static int esw_create_fdb_table(struct mlx5_eswitch *esw, int nvports)
 	/* Match criteria mask */
 	memset(dmac, 0xff, 6);
 
-	if (!mlx5_vf_fdb_rules) {
-		g[1].log_sz = 0;
-		g[1].match_criteria_enable = 0;
-	}
+	if (mlx5_vf_fdb_rules)
+		goto create_table;
 
 	g[MLX5_TX2VPORT_GROUP].log_sz = 8;
 	g[MLX5_TX2VPORT_GROUP].match_criteria_enable = MLX5_MATCH_MISC_PARAMETERS;
@@ -653,6 +651,8 @@ static int esw_create_fdb_table(struct mlx5_eswitch *esw, int nvports)
 
 	g[MLX5_MISS_GROUP].log_sz = 0;
 	g[MLX5_MISS_GROUP].match_criteria_enable = 0;
+
+create_table:
 
 	fdb = mlx5_create_flow_table(dev, 0,
 				     MLX5_FLOW_TABLE_TYPE_ESWITCH,
