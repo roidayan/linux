@@ -1434,7 +1434,7 @@ static int mlx5_set_path(struct mlx5_ib_dev *dev, const struct ib_ah_attr *ah,
 	path->port = port;
 
 	if (attr_mask & IB_QP_TIMEOUT)
-		path->ackto_lt = attr->timeout << 3;
+		path->ackto_lt = (alt ? attr->alt_timeout : attr->timeout) << 3;
 
 	return 0;
 }
