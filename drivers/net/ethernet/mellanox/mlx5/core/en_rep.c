@@ -154,9 +154,6 @@ static const struct ethtool_ops mlx5e_rep_ethtool_ops = {
 
 int __mlx5e_rep_attr_get(struct mlx5e_vf_rep *vf_rep, struct switchdev_attr *attr)
 {
-
-	printk(KERN_ERR "%s vport %d id len %d\n", __func__, vf_rep->vport, sizeof(vf_rep->hw_id));
-
 	switch (attr->id) {
 	case SWITCHDEV_ATTR_PORT_PARENT_ID:
 		attr->u.ppid.id_len = sizeof(vf_rep->hw_id);

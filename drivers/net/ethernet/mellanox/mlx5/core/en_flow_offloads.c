@@ -288,7 +288,7 @@ int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
 		action = &sw_flow->actions->actions[act];
 		if (action->type == SW_FLOW_ACTION_TYPE_OUTPUT) {
 			if (out_ifindex != -1) {
-				printk(KERN_ERR "%s not offloading floods\n", __func__);
+				pr_debug("%s not offloading floods\n", __func__);
 				goto out_err;
 			}
 			out_ifindex = action->out_port_ifindex;
@@ -327,7 +327,7 @@ int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
 
 	out_dev = dev_get_by_index_rcu(net, out_ifindex);
 
-	printk(KERN_ERR "%s in/out ifindex %d/%d dev %s/%s action %x\n", __func__, in_ifindex, out_ifindex,
+	pr_debug("%s in/out ifindex %d/%d dev %s/%s action %x\n", __func__, in_ifindex, out_ifindex,
 		in_dev? in_dev->name: "NULL", out_dev? out_dev->name: "NULL", __mlx5_action);
 
 	if (!in_dev || !out_dev)
@@ -439,10 +439,7 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 	spin_lock(&pf_dev->flows_lock);
 	/* find the group that this flow belongs to */
 	list_for_each_entry(group, &pf_dev->mlx5_flow_groups, groups_list) {
-		printk(KERN_ERR "%s flags %x sw_flow %p candidate group %p\n", __func__, flags, sw_flow, group);
 		if (!memcmp(group->match_c, match_c, MATCH_PARAMS_SIZE)) {
-			printk(KERN_ERR "%s flags %x sw_flow %p group %p match\n",
-				__func__, flags, sw_flow, group);
 			group_found = 1;
 			break;
 		}
@@ -450,13 +447,13 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 	spin_unlock(&pf_dev->flows_lock);
 
 	if (!group_found && (flags & FLOW_DEL)) {
-		// pr_err("flow group doesn't exist, can't remove flow\n");
+		// pr_err("%s sw_flow %p flow group doesn't exist, can't remove flow\n", __func__, sw_flow);
 		printk(KERN_ERR "%s sw_flow %p flow group doesn't exist, can't remove flow\n", __func__, sw_flow);
 		return -EINVAL;
 	}
 
 	if (group_found)
-		printk(KERN_ERR "%s flags %x sw_flow %p flow group %p\n", __func__, flags, sw_flow, group);
+		pr_debug("%s flags %x sw_flow %p flow group %p\n", __func__, flags, sw_flow, group);
 
 	if (!group_found) {
 		group = kzalloc(sizeof (*group), GFP_KERNEL);
@@ -464,7 +461,7 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 			pr_err("can't allocate flow group\n");
 			return -ENOMEM;
 		}
-		printk(KERN_ERR "%s sw_flow %p allocated flow group %p ref %d\n", __func__, sw_flow, group, group->refcount);
+		pr_debug(KERN_ERR "%s sw_flow %p allocated flow group %p\n", __func__, sw_flow, group);
 		INIT_LIST_HEAD(&group->flows_list);
 		memcpy(group->match_c, match_c, MATCH_PARAMS_SIZE);
 
@@ -481,8 +478,7 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 			kfree(group);
 			return -ENOMEM;
 		}
-
-		printk(KERN_ERR "%s flags %d using new flow group, index %d\n",__func__, flags, g_index);
+		pr_debug("%s flags %x using new flow group, index %d\n",__func__, flags, g_index);
 		err = mlx5_recreate_flow_group(eswitch->fdb_table.fdb, g_index, g);
 		if (!err) {
 			group->group_ix = g_index;
@@ -498,18 +494,19 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 
 	err = -EINVAL;
 
-	printk(KERN_ERR "%s sw_flow %p flags %x group %p ref %d\n", __func__, sw_flow, flags, group, group? group->refcount: -100);
+	pr_debug("%s flags %x sw_flow %p group %p ref %d\n", __func__, flags, sw_flow, group, group? group->refcount: -100);
 
 	if (flags & FLOW_ADD)
 		err = mlx5e_flow_add(pf_dev, sw_flow, group, match_v);
 	else if (flags & FLOW_DEL)
 		err = mlx5e_flow_del(pf_dev, group, match_v);
 
-	printk(KERN_ERR "%s err %d flags %d group %p ref %d index %d\n",__func__, err, flags, group, group->refcount, group->group_ix);
+	pr_debug("%s status %d flags %x group %p ref %d index %d\n",
+		__func__, err, flags, group, group->refcount, group->group_ix);
 
 	if ((!err || err == -EOPNOTSUPP) && !group->refcount) {
 		/* if the group gets to be empty or add failed - mark it as free */
-		printk(KERN_ERR "%s err %d flags %d freeing flow group index %d\n",__func__, err, flags, group->group_ix);
+		pr_debug("%s status %d flags %x freeing flow group index %d\n",__func__, err, flags, group->group_ix);
 		mlx5_set_free_flow_group(eswitch->fdb_table.fdb, group->group_ix);
 		list_del(&group->groups_list);
 		kfree(group);
