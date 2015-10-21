@@ -82,6 +82,13 @@ int mlx5_modify_nic_vport_promisc(struct mlx5_core_dev *mdev,
 				  int promisc_uc,
 				  int promisc_mc,
 				  int promisc_all);
+int mlx5_query_nic_vport_vlans(struct mlx5_core_dev *dev,
+			       u32 vport,
+			       u16 vlans[],
+			       int *size);
+int mlx5_modify_nic_vport_vlans(struct mlx5_core_dev *dev,
+				u16 vlans[],
+				int list_size);
 
 int mlx5_nic_vport_enable_roce(struct mlx5_core_dev *mdev);
 int mlx5_nic_vport_disable_roce(struct mlx5_core_dev *mdev);
