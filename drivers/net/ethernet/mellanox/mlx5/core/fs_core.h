@@ -51,6 +51,10 @@ enum fs_ft_type {
 	FS_FT_NIC_RX	 = 0x0,
 };
 
+enum fs_prio_flags {
+	MLX5_CORE_FS_PRIO_SHARED = 1
+};
+
 /* Should always be the first variable in the struct */
 struct fs_base {
 	struct list_head		list;
@@ -80,10 +84,16 @@ struct mlx5_flow_table {
 	uint32_t			id;
 	/* sorted list by start_index */
 	struct list_head		fgs;
+	struct {
+		bool			active;
+		unsigned int		max_types;
+		unsigned int		num_types;
+	} autogroup;
 	unsigned int			max_fte;
 	unsigned int			level;
 	enum fs_ft_type			type;
 	struct fs_star_rules		star_rules;
+	unsigned int			shared_refcount;
 };
 
 struct fs_prio {
@@ -91,6 +101,9 @@ struct fs_prio {
 	struct list_head		objs; /* each object is a namespace or ft */
 	unsigned int			max_ft;
 	unsigned int			prio;
+	/*Protect shared priority*/
+	struct  mutex			shared_lock;
+	u8				flags;
 };
 
 struct mlx5_flow_namespace {
@@ -129,6 +142,7 @@ struct mlx5_flow_root_namespace {
 	struct mlx5_flow_namespace	ns;
 	enum   fs_ft_type		table_type;
 	struct mlx5_core_dev		*dev;
+	struct mlx5_flow_table		*root_ft;
 	/* When chaining flow-tables, this lock should be taken */
 	struct mutex			fs_chain_lock;
 };
@@ -247,5 +261,9 @@ int mlx5_cmd_fs_set_fte(struct mlx5_core_dev *dev,
 int mlx5_cmd_fs_delete_fte(struct mlx5_core_dev *dev,
 			   enum fs_ft_type type, unsigned int table_id,
 			   unsigned int index);
+
+int mlx5_cmd_update_root_ft(struct mlx5_core_dev *dev,
+			    enum fs_ft_type type,
+			    unsigned int id);
 #endif
 
