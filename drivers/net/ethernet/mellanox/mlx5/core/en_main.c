@@ -1092,7 +1092,6 @@ static void mlx5e_build_rq_param(struct mlx5e_priv *priv,
 			 MLX5_MPWRQ_LOG_NUM_STRIDES - 9);
 		MLX5_SET(wq, wq, log_wqe_stride_size,
 			 MLX5_MPWRQ_LOG_STRIDE_SIZE - 6);
-		MLX5_SET(wq, wq, two_byte_shift_en, 1);
 		MLX5_SET(wq, wq, wq_type, MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ);
 		break;
 	default:
