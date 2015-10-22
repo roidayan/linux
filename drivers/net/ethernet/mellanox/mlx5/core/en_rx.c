@@ -85,12 +85,15 @@ static inline void mlx5e_decompress_cqe(struct mlx5e_cq *cq,
 
 static inline void mlx5e_decompress_cqes(struct mlx5e_cq *cq)
 {
+	struct mlx5e_rq *rq = container_of(cq, struct mlx5e_rq, cq);
 	struct mlx5_mini_cqe8 mini[8];
 	struct mlx5_cqe64 title;
 	u16 wqe_count;
 	u32 cqe_count;
 	u32 cqcc = cq->wq.cc;
 	u32 i;
+
+	rq->stats.cqe_compress++;
 
 	mlx5e_read_cqe_slot(cq, cqcc, &title);
 	mlx5e_read_cqe_slot(cq, cqcc+1, mini);
