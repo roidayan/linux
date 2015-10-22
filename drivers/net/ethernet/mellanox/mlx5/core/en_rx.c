@@ -51,43 +51,35 @@ static inline void mlx5e_write_cqe_slot(struct mlx5e_cq *cq, u32 cqcc,
 	memcpy(mlx5_cqwq_get_wqe(&cq->wq, ci), data, sizeof(struct mlx5_cqe64));
 }
 
-void mlx5e_decompress_cqe_common(struct mlx5e_cq *cq,
-				 u32 cqcc,
-				 struct mlx5_cqe64 *title,
-				 struct mlx5_mini_cqe8 *mini,
-				 u16 wqe_count)
+static inline bool mlx5e_is_mpwrq(struct mlx5e_rq *rq)
 {
-	title->check_sum    = mini->checksum;
-	title->wqe_counter  = cpu_to_be16(wqe_count);
-	title->op_own      &= 0xf0;
-	title->op_own      |= 0x01 & (cqcc >> cq->wq.log_sz);
+	return !!rq->wqe_info;
 }
 
-void mlx5e_decompress_cqe(struct mlx5e_cq *cq, u32 cqcc,
-			  struct mlx5_cqe64 *title,
-			  struct mlx5_mini_cqe8 *mini,
-			  u16 *wqe_count)
+static inline void mlx5e_decompress_cqe(struct mlx5e_cq *cq,
+					u32 cqcc,
+					struct mlx5_cqe64 *title,
+					struct mlx5_mini_cqe8 *mini,
+					u16 *wqe_count)
 {
 	struct mlx5e_rq *rq = container_of(cq, struct mlx5e_rq, cq);
 
-	title->byte_cnt = mini->byte_cnt;
-	mlx5e_decompress_cqe_common(cq, cqcc, title, mini, *wqe_count);
-	*wqe_count = (*wqe_count + 1) & rq->wq.sz_m1;
-}
+	title->byte_cnt     = mini->byte_cnt;
+	title->check_sum    = mini->checksum;
+	title->wqe_counter  = cpu_to_be16(*wqe_count);
+	title->op_own      &= 0xf0;
+	title->op_own      |= 0x01 & (cqcc >> cq->wq.log_sz);
 
-void mlx5e_decompress_cqe_mpw(struct mlx5e_cq *cq, u32 cqcc,
-			      struct mlx5_cqe64 *title,
-			      struct mlx5_mini_cqe8 *mini,
-			      u16 *wqe_count)
-{
-	u16 bc = (u16)be32_to_cpu(mini->byte_cnt);
-	u16 cs = DIV_ROUND_UP(bc, MLX5_MPWRQ_STRIDE_SIZE);
+	if (mlx5e_is_mpwrq(rq)) {
+		struct mpwrq_cqe_bc *cqe_bc =
+			(struct mpwrq_cqe_bc *)&mini->byte_cnt;
+		u16 cstrides = get_mpwrq_cqe_bc_consumed_strides(cqe_bc);
 
-	set_mpwrq_cqe_byte_cnt(title, bc);
-	set_mpwrq_cqe_consumed_strides(title, cs);
-	mlx5e_decompress_cqe_common(cq, cqcc, title, mini, *wqe_count);
-	*wqe_count = *wqe_count + DIV_ROUND_UP(be32_to_cpu(mini->byte_cnt),
-					       MLX5_MPWRQ_STRIDE_SIZE);
+		*wqe_count = *wqe_count + cstrides;
+	} else {
+		*wqe_count = (*wqe_count + 1) & rq->wq.sz_m1;
+	}
+
 }
 
 static inline void mlx5e_decompress_cqes(struct mlx5e_cq *cq)
@@ -105,7 +97,7 @@ static inline void mlx5e_decompress_cqes(struct mlx5e_cq *cq)
 	wqe_count = be16_to_cpu(title.wqe_counter);
 	cqe_count = be32_to_cpu(title.byte_cnt);
 
-	cq->decompress_cqe(cq, cqcc, &title, &mini[0], &wqe_count);
+	mlx5e_decompress_cqe(cq, cqcc, &title, &mini[0], &wqe_count);
 	mlx5e_write_cqe_slot(cq, cqcc, &title);
 
 	for (i = 1; i < cqe_count; i++) {
@@ -116,7 +108,7 @@ static inline void mlx5e_decompress_cqes(struct mlx5e_cq *cq)
 		if (!ix)
 			mlx5e_read_cqe_slot(cq, cqcc, mini);
 
-		cq->decompress_cqe(cq, cqcc, &title, &mini[ix], &wqe_count);
+		mlx5e_decompress_cqe(cq, cqcc, &title, &mini[ix], &wqe_count);
 		mlx5e_write_cqe_slot(cq, cqcc, &title);
 	}
 }

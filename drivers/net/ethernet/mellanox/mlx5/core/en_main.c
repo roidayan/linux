@@ -814,17 +814,6 @@ static int mlx5e_create_cq(struct mlx5e_channel *c,
 		cqe->op_own = 0xf1;
 	}
 
-	switch (priv->params.rq_wq_type) {
-	case MLX5_WQ_TYPE_LINKED_LIST:
-		cq->decompress_cqe = mlx5e_decompress_cqe;
-		break;
-	case MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ:
-		cq->decompress_cqe = mlx5e_decompress_cqe_mpw;
-		break;
-	default:
-		BUG_ON(true);
-	}
-
 	cq->channel = c;
 	cq->priv = priv;
 

@@ -687,11 +687,9 @@ static inline u16 get_mpwrq_cqe_byte_cnt(struct mlx5_cqe64 *cqe)
 	return be16_to_cpu(bc->byte_cnt);
 }
 
-static inline void set_mpwrq_cqe_byte_cnt(struct mlx5_cqe64 *cqe, u16 byte_cnt)
+static inline u16 get_mpwrq_cqe_bc_consumed_strides(struct mpwrq_cqe_bc *bc)
 {
-	struct mpwrq_cqe_bc *bc = (struct mpwrq_cqe_bc *)&cqe->byte_cnt;
-
-	bc->byte_cnt = cpu_to_be16(byte_cnt);
+	return 0x7fff & be16_to_cpu(bc->filler_consumed_strides);
 }
 
 static inline u16 get_mpwrq_cqe_consumed_strides(struct mlx5_cqe64 *cqe)
@@ -699,13 +697,6 @@ static inline u16 get_mpwrq_cqe_consumed_strides(struct mlx5_cqe64 *cqe)
 	struct mpwrq_cqe_bc *bc = (struct mpwrq_cqe_bc *)&cqe->byte_cnt;
 
 	return 0x7fff & be16_to_cpu(bc->filler_consumed_strides);
-}
-
-static inline void set_mpwrq_cqe_consumed_strides(struct mlx5_cqe64 *cqe, u16 c)
-{
-	struct mpwrq_cqe_bc *bc = (struct mpwrq_cqe_bc *)&cqe->byte_cnt;
-
-	bc->filler_consumed_strides = cpu_to_be16(c);
 }
 
 static inline bool is_mpwrq_filler_cqe(struct mlx5_cqe64 *cqe)

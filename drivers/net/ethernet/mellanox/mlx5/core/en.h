@@ -351,10 +351,6 @@ struct mlx5e_cq {
 	/* data path - accessed per cqe */
 	struct mlx5_cqwq           wq;
 	unsigned long              flags;
-	void (*decompress_cqe)(struct mlx5e_cq *cq, u32 cqcc,
-			       struct mlx5_cqe64 *title,
-			       struct mlx5_mini_cqe8 *mini,
-			       u16 *wqe_count);
 
 	/* data path - accessed per napi poll */
 	struct napi_struct        *napi;
@@ -624,15 +620,6 @@ void mlx5e_cq_error_event(struct mlx5_core_cq *mcq, enum mlx5_event event);
 int mlx5e_napi_poll(struct napi_struct *napi, int budget);
 bool mlx5e_poll_tx_cq(struct mlx5e_cq *cq);
 bool mlx5e_poll_rx_cq(struct mlx5e_cq *cq, int budget);
-
-void mlx5e_decompress_cqe(struct mlx5e_cq *cq, u32 cqcc,
-			  struct mlx5_cqe64 *title,
-			  struct mlx5_mini_cqe8 *mini,
-			  u16 *wqe_count);
-void mlx5e_decompress_cqe_mpw(struct mlx5e_cq *cq, u32 cqcc,
-			      struct mlx5_cqe64 *title,
-			      struct mlx5_mini_cqe8 *mini,
-			      u16 *wqe_count);
 
 void mlx5e_handle_rx_cqe(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe);
 void mlx5e_handle_rx_cqe_mpwrq(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe);
