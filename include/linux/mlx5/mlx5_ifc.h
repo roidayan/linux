@@ -187,6 +187,7 @@ enum {
 	MLX5_CMD_OP_MODIFY_RQT                    = 0x917,
 	MLX5_CMD_OP_DESTROY_RQT                   = 0x918,
 	MLX5_CMD_OP_QUERY_RQT                     = 0x919,
+	MLX5_CMD_OP_SET_FLOW_TABLE_ROOT		  = 0x92f,
 	MLX5_CMD_OP_CREATE_FLOW_TABLE             = 0x930,
 	MLX5_CMD_OP_DESTROY_FLOW_TABLE            = 0x931,
 	MLX5_CMD_OP_QUERY_FLOW_TABLE              = 0x932,
@@ -2832,11 +2833,13 @@ struct mlx5_ifc_set_fte_in_bits {
 	u8         reserved_4[0x8];
 	u8         table_id[0x18];
 
-	u8         reserved_5[0x40];
+	u8         reserved_5[0x18];
+	u8         modify_enable_mask[0x8];
+	u8         reserved_6[0x20];
 
 	u8         flow_index[0x20];
 
-	u8         reserved_6[0xe0];
+	u8         reserved_7[0xe0];
 
 	struct mlx5_ifc_flow_context_bits flow_context;
 };
@@ -6926,4 +6929,30 @@ struct mlx5_ifc_qtct_reg_bits {
 	u8         t_class[0x3];
 };
 
+struct mlx5_ifc_set_flow_table_root_out_bits {
+	u8         status[0x8];
+	u8         reserved_0[0x18];
+
+	u8         syndrome[0x20];
+
+	u8         reserved_1[0x40];
+};
+
+struct mlx5_ifc_set_flow_table_root_in_bits {
+	u8         opcode[0x10];
+	u8         reserved_0[0x10];
+
+	u8         reserved_1[0x10];
+	u8         op_mod[0x10];
+
+	u8         reserved_2[0x40];
+
+	u8         table_type[0x8];
+	u8         reserved_3[0x18];
+
+	u8         reserved_4[0x8];
+	u8         table_id[0x18];
+
+	u8         reserved_5[0x140];
+};
 #endif /* MLX5_IFC_H */
