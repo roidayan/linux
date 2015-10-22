@@ -371,7 +371,7 @@ void mlx5e_handle_rx_cqe_mpwrq(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe)
 	u16 wqe_id         = be16_to_cpu(cqe->wqe_id);
 	u32 consumed_bytes = cstrides  * MLX5_MPWRQ_STRIDE_SIZE;
 	u32 stride_offset  = stride_ix * MLX5_MPWRQ_STRIDE_SIZE;
-	u32 data_offset    = stride_offset + MLX5E_NET_IP_ALIGN;
+	u32 data_offset    = stride_offset;
 	struct mlx5e_mpw_info *wi = &rq->wqe_info[wqe_id];
 	struct mlx5e_rx_wqe  *wqe = mlx5_wq_ll_get_wqe(&rq->wq, wqe_id);
 	struct sk_buff *skb;
@@ -387,11 +387,9 @@ void mlx5e_handle_rx_cqe_mpwrq(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe)
 	if (is_mpwrq_filler_cqe(cqe))
 		goto mpwrq_cqe_out;
 
-	skb = netdev_alloc_skb(rq->netdev, MLX5_MPWRQ_SMALL_PACKET_THRESHOLD +
-					   MLX5E_NET_IP_ALIGN);
+	skb = netdev_alloc_skb(rq->netdev, MLX5_MPWRQ_SMALL_PACKET_THRESHOLD);
 	if (unlikely(!skb))
 		goto mpwrq_cqe_out;
-	skb_reserve(skb, MLX5E_NET_IP_ALIGN);
 
 	dma_sync_single_for_cpu(rq->pdev, wi->dma_addr + stride_offset,
 				consumed_bytes, DMA_FROM_DEVICE);
