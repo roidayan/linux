@@ -443,6 +443,34 @@ struct mlx5_roce {
 	struct notifier_block	nb;
 };
 
+#define MLX5_IB_FS_LAST_PRIO		3
+#define MLX5_IB_FS_MCAST_PRIO		(MLX5_IB_FS_LAST_PRIO + 1)
+#if (MLX5_NUM_BYPASS_FTS <= MLX5_IB_FS_MCAST_PRIO || \
+	MLX5_NUM_BYPASS_FTS <= MLX5_IB_FS_LAST_PRIO)
+#error "num of mlx5_ib flow tables is greater than supported"
+#endif
+#define MLX5_IB_FS_LEFTOVERS_PRIO	(MLX5_IB_FS_MCAST_PRIO + 1)
+
+#define MLX5_IB_NUM_FS_FT		(MLX5_IB_FS_LEFTOVERS_PRIO + 1)
+
+struct mlx5_ib_fs_prio {
+	struct mlx5_flow_table		*ft;
+	unsigned int			refcount;
+};
+
+struct mlx5_ib_fs_handler {
+	struct list_head		list;
+	struct ib_flow			ibflow;
+	unsigned int			prio;
+	struct mlx5_flow_rule		*rule;
+};
+
+struct mlx5_ib_fs {
+	struct mlx5_ib_fs_prio		prios[MLX5_IB_NUM_FS_FT];
+	/*Protect flow steering bypass flow tables*/
+	struct mutex			lock;
+};
+
 struct mlx5_ib_dev {
 	struct ib_device		ib_dev;
 	struct mlx5_core_dev		*mdev;
@@ -460,6 +488,7 @@ struct mlx5_ib_dev {
 	struct mlx5_mr_cache		cache;
 	struct timer_list		delay_timer;
 	int				fill_delay;
+	struct mlx5_ib_fs		fs;
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
 	struct ib_odp_caps	odp_caps;
 	/*

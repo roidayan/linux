@@ -42,7 +42,9 @@
 #define MLX5_FS_DEFAULT_FLOW_TAG 0XFFFFFF
 
 enum mlx5_flow_namespace_type {
+	MLX5_FLOW_NAMESPACE_BYPASS,
 	MLX5_FLOW_NAMESPACE_KERNEL,
+	MLX5_FLOW_NAMESPACE_LEFTOVERS,
 };
 
 struct mlx5_flow_table;
@@ -61,6 +63,13 @@ struct mlx5_flow_destination {
 struct mlx5_flow_namespace *
 mlx5_get_flow_namespace(struct mlx5_core_dev *dev,
 			enum mlx5_flow_namespace_type type);
+
+struct mlx5_flow_table *
+mlx5_create_auto_grouped_flow_table(struct mlx5_flow_namespace *ns,
+				    int prio,
+				    const char *name,
+				    int num_flow_table_entries,
+				    int max_num_groups);
 
 struct mlx5_flow_table *
 mlx5_create_flow_table(struct mlx5_flow_namespace *ns,
