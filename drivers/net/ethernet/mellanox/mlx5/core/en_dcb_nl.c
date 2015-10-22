@@ -45,51 +45,49 @@ static int mlx5e_dcbnl_ieee_getets(struct net_device *netdev,
 }
 
 enum {
-	MLX5E_VENDOR_GROUP_NUM	= 0,
-	MLX5E_ETS_GROUP_NUM	= 7,
+	MLX5E_VENDOR_TC_GROUP_NUM = 7,
+	MLX5E_ETS_TC_GROUP_NUM    = 0,
 };
 
-static void mlx5e_build_tc_group(struct ieee_ets *ets, u8 *tc_group, int max_tc,
-				 int *vendor_group_num_tcs)
+static void mlx5e_build_tc_group(struct ieee_ets *ets, u8 *tc_group, int max_tc)
 {
-	int strict_group = 0;
+	bool any_tc_mapped_to_ets = false;
+	int strict_group;
 	int i;
 
-	(*vendor_group_num_tcs) = 0;
+	for (i = 0; i <= max_tc; i++)
+		if (ets->tc_tsa[i] == IEEE_8021QAZ_TSA_ETS)
+			any_tc_mapped_to_ets = true;
 
-	for (i = max_tc; i >= 0; i--) {
+	strict_group = any_tc_mapped_to_ets ? 1 : 0;
+
+	for (i = 0; i <= max_tc; i++) {
 		switch (ets->tc_tsa[i]) {
 		case IEEE_8021QAZ_TSA_VENDOR:
-			(*vendor_group_num_tcs)++;
-			tc_group[i] = MLX5E_VENDOR_GROUP_NUM;
+			tc_group[i] = MLX5E_VENDOR_TC_GROUP_NUM;
 			break;
 		case IEEE_8021QAZ_TSA_STRICT:
-			if (strict_group == MLX5E_VENDOR_GROUP_NUM)
-				(*vendor_group_num_tcs)++;
 			tc_group[i] = strict_group++;
 			break;
 		case IEEE_8021QAZ_TSA_ETS:
-			tc_group[i] = MLX5E_ETS_GROUP_NUM;
+			tc_group[i] = MLX5E_ETS_TC_GROUP_NUM;
 			break;
 		}
 	}
 }
 
 static void mlx5e_build_tc_tx_bw(struct ieee_ets *ets, u8 *tc_tx_bw,
-				 u8 *tc_group, int max_tc,
-				 int vendor_group_num_tcs)
+				 u8 *tc_group, int max_tc)
 {
 	int i;
 
 	for (i = 0; i <= max_tc; i++) {
 		switch (ets->tc_tsa[i]) {
 		case IEEE_8021QAZ_TSA_VENDOR:
-			tc_tx_bw[i] = 100 / vendor_group_num_tcs;
+			tc_tx_bw[i] = 100;
 			break;
 		case IEEE_8021QAZ_TSA_STRICT:
 			tc_tx_bw[i] = 100;
-			if (tc_group[i] == MLX5E_VENDOR_GROUP_NUM)
-				tc_tx_bw[i] /= vendor_group_num_tcs;
 			break;
 		case IEEE_8021QAZ_TSA_ETS:
 			tc_tx_bw[i] = ets->tc_tx_bw[i] ?: 1;
@@ -103,13 +101,11 @@ int mlx5e_dcbnl_ieee_setets_core(struct mlx5e_priv *priv, struct ieee_ets *ets)
 	struct mlx5_core_dev *mdev = priv->mdev;
 	u8 tc_tx_bw[IEEE_8021QAZ_MAX_TCS];
 	u8 tc_group[IEEE_8021QAZ_MAX_TCS];
-	int vendor_group_num_tcs;
 	int max_tc = mlx5_max_tc(mdev);
 	int err;
 
-	mlx5e_build_tc_group(ets, tc_group, max_tc, &vendor_group_num_tcs);
-	mlx5e_build_tc_tx_bw(ets, tc_tx_bw, tc_group, max_tc,
-			     vendor_group_num_tcs);
+	mlx5e_build_tc_group(ets, tc_group, max_tc);
+	mlx5e_build_tc_tx_bw(ets, tc_tx_bw, tc_group, max_tc);
 
 	err = mlx5_set_port_prio_tc(mdev, ets->prio_tc);
 	if (err)
