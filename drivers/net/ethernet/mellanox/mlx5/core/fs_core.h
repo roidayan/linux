@@ -74,6 +74,84 @@ struct mlx5_flow_table {
 	uint32_t			id;
 };
 
+#define fs_list_for_each_entry(pos, cond, root)		\
+	list_for_each_entry(pos, root, base.list)	\
+		if (!(cond)) {} else
+
+#define fs_list_for_each_entry_continue(pos, cond, root)	\
+	list_for_each_entry_continue(pos, root, base.list)	\
+		if (!(cond)) {} else
+
+#define fs_list_for_each_entry_reverse(pos, cond, root)		\
+	list_for_each_entry_reverse(pos, root, base.list)	\
+		if (!(cond)) {} else
+
+#define fs_list_for_each_entry_continue_reverse(pos, cond, root)	\
+	list_for_each_entry_continue_reverse(pos, root, base.list)	\
+		if (!(cond)) {} else
+
+#define fs_for_each_ft(pos, prio)			\
+	fs_list_for_each_entry(pos, (pos)->base.type == FS_TYPE_FLOW_TABLE, \
+			       &(prio)->objs)
+
+#define fs_for_each_ft_reverse(pos, prio)			\
+	fs_list_for_each_entry_reverse(pos,			\
+				       (pos)->base.type == FS_TYPE_FLOW_TABLE, \
+				       &(prio)->objs)
+
+#define fs_for_each_ns(pos, prio)			\
+	fs_list_for_each_entry(pos,			\
+			       (pos)->base.type == FS_TYPE_NAMESPACE, \
+			       &(prio)->objs)
+
+#define fs_for_each_ns_or_ft_reverse(pos, prio)			\
+	list_for_each_entry_reverse(pos, &(prio)->objs, list)		\
+		if (!((pos)->type == FS_TYPE_NAMESPACE ||		\
+		      (pos)->type == FS_TYPE_FLOW_TABLE)) {} else
+
+#define fs_for_each_ns_or_ft(pos, prio)			\
+	list_for_each_entry(pos, &(prio)->objs, list)		\
+		if (!((pos)->type == FS_TYPE_NAMESPACE ||	\
+		      (pos)->type == FS_TYPE_FLOW_TABLE)) {} else
+
+#define fs_for_each_ns_or_ft_continue_reverse(pos, prio)		\
+	list_for_each_entry_continue_reverse(pos, &(prio)->objs, list)	\
+		if (!((pos)->type == FS_TYPE_NAMESPACE ||		\
+		      (pos)->type == FS_TYPE_FLOW_TABLE)) {} else
+
+#define fs_for_each_ns_or_ft_continue(pos, prio)			\
+	list_for_each_entry_continue(pos, &(prio)->objs, list)		\
+		if (!((pos)->type == FS_TYPE_NAMESPACE ||		\
+		      (pos)->type == FS_TYPE_FLOW_TABLE)) {} else
+
+#define fs_for_each_prio(pos, ns)			\
+	fs_list_for_each_entry(pos, (pos)->base.type == FS_TYPE_PRIO, \
+			       &(ns)->prios)
+
+#define fs_for_each_prio_reverse(pos, ns)			\
+	fs_list_for_each_entry_reverse(pos, (pos)->base.type == FS_TYPE_PRIO, \
+				       &(ns)->prios)
+
+#define fs_for_each_prio_continue(pos, ns)			\
+	fs_list_for_each_entry_continue(pos, (pos)->base.type == FS_TYPE_PRIO, \
+				       &(ns)->prios)
+
+#define fs_for_each_prio_continue_reverse(pos, ns)			\
+	fs_list_for_each_entry_continue_reverse(pos,			\
+						(pos)->base.type == FS_TYPE_PRIO, \
+						&(ns)->prios)
+
+#define fs_for_each_fg(pos, ft)			\
+	fs_list_for_each_entry(pos, (pos)->base.type == FS_TYPE_FLOW_GROUP, \
+			       &(ft)->fgs)
+
+#define fs_for_each_fte(pos, fg)			\
+	fs_list_for_each_entry(pos, (pos)->base.type == FS_TYPE_FLOW_ENTRY, \
+			       &(fg)->ftes)
+#define fs_for_each_dst(pos, fte)			\
+	fs_list_for_each_entry(pos, (pos)->base.type == FS_TYPE_FLOW_DEST, \
+			       &(fte)->dests)
+
 int mlx5_cmd_fs_create_ft(struct mlx5_core_dev *dev,
 			  enum fs_ft_type type, unsigned int level,
 			  unsigned int log_size, unsigned int *table_id);
