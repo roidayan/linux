@@ -69,12 +69,21 @@ struct mlx5_flow_rule {
 	struct mlx5_flow_destination		dest_attr;
 };
 
+struct fs_star_rules {
+	struct	mlx5_flow_group	 *fg;
+	unsigned int		used_index;
+	struct	fs_fte		*fte_star[2];
+};
+
 struct mlx5_flow_table {
 	struct fs_base			base;
 	uint32_t			id;
 	/* sorted list by start_index */
 	struct list_head		fgs;
+	unsigned int			max_fte;
 	unsigned int			level;
+	enum fs_ft_type			type;
+	struct fs_star_rules		star_rules;
 };
 
 struct fs_prio {
@@ -95,6 +104,39 @@ struct mlx5_core_fs_mask {
 	u8	match_criteria_enable;
 	u32	match_criteria[MLX5_ST_SZ_DW(fte_match_param)];
 };
+
+struct fs_fte {
+	struct fs_base				base;
+	u32					val[MLX5_ST_SZ_DW(fte_match_param)];
+	uint32_t				dests_size;
+	uint32_t				flow_tag;
+	struct list_head			dests;
+	uint32_t				index; /* index in ft */
+	u8					action; /* MLX5_FLOW_CONTEXT_ACTION */
+};
+
+struct mlx5_flow_group {
+	struct fs_base			base;
+	struct list_head		ftes;
+	struct mlx5_core_fs_mask	mask;
+	uint32_t			start_index;
+	uint32_t			max_ftes;
+	uint32_t			num_ftes;
+	uint32_t			id;
+};
+
+struct mlx5_flow_root_namespace {
+	struct mlx5_flow_namespace	ns;
+	enum   fs_ft_type		table_type;
+	struct mlx5_core_dev		*dev;
+	/* When chaining flow-tables, this lock should be taken */
+	struct mutex			fs_chain_lock;
+};
+
+#define fs_get_obj(v, _base)  {v = container_of((_base), typeof(*v), base); }
+#define fs_get_parent(v, child)  {v = (child)->base.parent ?		     \
+				  container_of((child)->base.parent,	     \
+					       typeof(*v), base) : NULL; }
 
 #define fs_list_for_each_entry(pos, cond, root)		\
 	list_for_each_entry(pos, root, base.list)	\
