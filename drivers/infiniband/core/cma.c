@@ -427,10 +427,11 @@ static int cma_translate_addr(struct sockaddr *addr, struct rdma_dev_addr *dev_a
 }
 
 static inline int cma_validate_port(struct ib_device *device, u8 port,
-				      union ib_gid *gid, int dev_type)
+				      union ib_gid *gid, int dev_type,
+				      int bound_if_index)
 {
-	u8 found_port;
 	int ret = -ENODEV;
+	struct net_device *ndev = NULL;
 
 	if ((dev_type == ARPHRD_INFINIBAND) && !rdma_protocol_ib(device, port))
 		return ret;
@@ -438,9 +439,13 @@ static inline int cma_validate_port(struct ib_device *device, u8 port,
 	if ((dev_type != ARPHRD_INFINIBAND) && rdma_protocol_ib(device, port))
 		return ret;
 
-	ret = ib_find_cached_gid(device, gid, &found_port, NULL);
-	if (port != found_port)
-		return -ENODEV;
+	if (dev_type == ARPHRD_ETHER)
+		ndev = dev_get_by_index(&init_net, bound_if_index);
+
+	ret = ib_find_cached_gid_by_port(device, gid, port, ndev, NULL);
+
+	if (ndev)
+		dev_put(ndev);
 
 	return ret;
 }
@@ -472,7 +477,8 @@ static int cma_acquire_dev(struct rdma_id_private *id_priv,
 		       &iboe_gid : &gid;
 
 		ret = cma_validate_port(cma_dev->device, port, gidp,
-					dev_addr->dev_type);
+					dev_addr->dev_type,
+					dev_addr->bound_dev_if);
 		if (!ret) {
 			id_priv->id.port_num = port;
 			goto out;
@@ -490,7 +496,8 @@ static int cma_acquire_dev(struct rdma_id_private *id_priv,
 			       &iboe_gid : &gid;
 
 			ret = cma_validate_port(cma_dev->device, port, gidp,
-						dev_addr->dev_type);
+						dev_addr->dev_type,
+						dev_addr->bound_dev_if);
 			if (!ret) {
 				id_priv->id.port_num = port;
 				goto out;
@@ -531,7 +538,9 @@ static int cma_resolve_ib_dev(struct rdma_id_private *id_priv)
 			if (ib_find_cached_pkey(cur_dev->device, p, pkey, &index))
 				continue;
 
-			for (i = 0; !ib_get_cached_gid(cur_dev->device, p, i, &gid); i++) {
+			for (i = 0; !ib_get_cached_gid(cur_dev->device, p, i,
+						       &gid, NULL);
+			     i++) {
 				if (!memcmp(&gid, dgid, sizeof(gid))) {
 					cma_dev = cur_dev;
 					sgid = gid;
@@ -718,18 +727,12 @@ static int cma_modify_qp_rtr(struct rdma_id_private *id_priv,
 		goto out;
 
 	ret = ib_query_gid(id_priv->id.device, id_priv->id.port_num,
-			   qp_attr.ah_attr.grh.sgid_index, &sgid);
+			   qp_attr.ah_attr.grh.sgid_index, &sgid, NULL);
 	if (ret)
 		goto out;
 
 	BUG_ON(id_priv->cma_dev->device != id_priv->id.device);
 
-	if (rdma_protocol_roce(id_priv->id.device, id_priv->id.port_num)) {
-		ret = rdma_addr_find_smac_by_sgid(&sgid, qp_attr.smac, NULL);
-
-		if (ret)
-			goto out;
-	}
 	if (conn_param)
 		qp_attr.max_dest_rd_atomic = conn_param->responder_resources;
 	ret = ib_modify_qp(id_priv->id.qp, &qp_attr, qp_attr_mask);
@@ -1067,14 +1070,14 @@ static int cma_save_req_info(const struct ib_cm_event *ib_event,
 		       sizeof(req->local_gid));
 		req->has_gid	= true;
 		req->service_id	= req_param->primary_path->service_id;
-		req->pkey	= req_param->bth_pkey;
+		req->pkey	= be16_to_cpu(req_param->primary_path->pkey);
 		break;
 	case IB_CM_SIDR_REQ_RECEIVED:
 		req->device	= sidr_param->listen_id->device;
 		req->port	= sidr_param->port;
 		req->has_gid	= false;
 		req->service_id	= sidr_param->service_id;
-		req->pkey	= sidr_param->bth_pkey;
+		req->pkey	= sidr_param->pkey;
 		break;
 	default:
 		return -EINVAL;
@@ -1324,7 +1327,7 @@ static struct rdma_id_private *cma_id_from_event(struct ib_cm_id *cm_id,
 	bind_list = cma_ps_find(rdma_ps_from_service_id(req.service_id),
 				cma_port_from_service_id(req.service_id));
 	id_priv = cma_find_listener(bind_list, cm_id, ib_event, &req, *net_dev);
-	if (IS_ERR(id_priv)) {
+	if (IS_ERR(id_priv) && *net_dev) {
 		dev_put(*net_dev);
 		*net_dev = NULL;
 	}
@@ -2294,16 +2297,17 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
 
 	route->num_paths = 1;
 
-	if (addr->dev_addr.bound_dev_if)
+	if (addr->dev_addr.bound_dev_if) {
 		ndev = dev_get_by_index(&init_net, addr->dev_addr.bound_dev_if);
+		route->path_rec->net = &init_net;
+		route->path_rec->ifindex = addr->dev_addr.bound_dev_if;
+	}
 	if (!ndev) {
 		ret = -ENODEV;
 		goto err2;
 	}
 
-	route->path_rec->vlan_id = rdma_vlan_dev_vlan_id(ndev);
 	memcpy(route->path_rec->dmac, addr->dev_addr.dst_dev_addr, ETH_ALEN);
-	memcpy(route->path_rec->smac, ndev->dev_addr, ndev->addr_len);
 
 	rdma_ip2gid((struct sockaddr *)&id_priv->id.route.addr.src_addr,
 		    &route->path_rec->sgid);
@@ -2426,7 +2430,7 @@ static int cma_bind_loopback(struct rdma_id_private *id_priv)
 	p = 1;
 
 port_found:
-	ret = ib_get_cached_gid(cma_dev->device, p, 0, &gid);
+	ret = ib_get_cached_gid(cma_dev->device, p, 0, &gid, NULL);
 	if (ret)
 		goto out;
 

@@ -55,7 +55,7 @@
 #include <be_roce.h>
 #include "ocrdma_sli.h"
 
-#define OCRDMA_ROCE_DRV_VERSION "10.6.0.0"
+#define OCRDMA_ROCE_DRV_VERSION "11.0.0.0"
 
 #define OCRDMA_ROCE_DRV_DESC "Emulex OneConnect RoCE Driver"
 #define OCRDMA_NODE_DESC "Emulex OneConnect RoCE HCA"
@@ -278,7 +278,6 @@ struct ocrdma_dev {
 	u32 hba_port_num;
 
 	struct list_head entry;
-	struct rcu_head rcu;
 	int id;
 	u64 *stag_arr;
 	u8 sl; /* service level */

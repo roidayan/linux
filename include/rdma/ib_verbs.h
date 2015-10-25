@@ -137,6 +137,8 @@ enum ib_device_cap_flags {
 	IB_DEVICE_BLOCK_MULTICAST_LOOPBACK = (1<<22),
 	IB_DEVICE_MEM_WINDOW_TYPE_2A	= (1<<23),
 	IB_DEVICE_MEM_WINDOW_TYPE_2B	= (1<<24),
+	IB_DEVICE_RC_IP_CSUM		= (1<<25),
+	IB_DEVICE_RAW_IP_CSUM		= (1<<26),
 	IB_DEVICE_MANAGED_FLOW_STEERING = (1<<29),
 	IB_DEVICE_SIGNATURE_HANDOVER	= (1<<30),
 	IB_DEVICE_ON_DEMAND_PAGING	= (1<<31),
@@ -697,7 +699,6 @@ struct ib_ah_attr {
 	u8			ah_flags;
 	u8			port_num;
 	u8			dmac[ETH_ALEN];
-	u16			vlan_id;
 };
 
 enum ib_wc_status {
@@ -873,7 +874,6 @@ enum ib_qp_create_flags {
 	IB_QP_CREATE_RESERVED_END		= 1 << 31,
 };
 
-
 /*
  * Note: users may not call ib_close_qp or ib_destroy_qp from the event_handler
  * callback to destroy the passed in QP.
@@ -957,10 +957,10 @@ enum ib_qp_attr_mask {
 	IB_QP_PATH_MIG_STATE		= (1<<18),
 	IB_QP_CAP			= (1<<19),
 	IB_QP_DEST_QPN			= (1<<20),
-	IB_QP_SMAC			= (1<<21),
-	IB_QP_ALT_SMAC			= (1<<22),
-	IB_QP_VID			= (1<<23),
-	IB_QP_ALT_VID			= (1<<24),
+	IB_QP_RESERVED1			= (1<<21),
+	IB_QP_RESERVED2			= (1<<22),
+	IB_QP_RESERVED3			= (1<<23),
+	IB_QP_RESERVED4			= (1<<24),
 };
 
 enum ib_qp_state {
@@ -1010,10 +1010,6 @@ struct ib_qp_attr {
 	u8			rnr_retry;
 	u8			alt_port_num;
 	u8			alt_timeout;
-	u8			smac[ETH_ALEN];
-	u8			alt_smac[ETH_ALEN];
-	u16			vlan_id;
-	u16			alt_vlan_id;
 };
 
 enum ib_wr_opcode {
@@ -2176,7 +2172,8 @@ static inline bool rdma_cap_roce_gid_table(const struct ib_device *device,
 }
 
 int ib_query_gid(struct ib_device *device,
-		 u8 port_num, int index, union ib_gid *gid);
+		 u8 port_num, int index, union ib_gid *gid,
+		 struct ib_gid_attr *attr);
 
 int ib_query_pkey(struct ib_device *device,
 		  u8 port_num, u16 index, u16 *pkey);
@@ -2190,7 +2187,7 @@ int ib_modify_port(struct ib_device *device,
 		   struct ib_port_modify *port_modify);
 
 int ib_find_gid(struct ib_device *device, union ib_gid *gid,
-		u8 *port_num, u16 *index);
+		struct net_device *ndev, u8 *port_num, u16 *index);
 
 int ib_find_pkey(struct ib_device *device,
 		 u8 port_num, u16 pkey, u16 *index);

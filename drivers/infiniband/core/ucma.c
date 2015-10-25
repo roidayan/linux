@@ -1211,7 +1211,6 @@ static int ucma_set_ib_path(struct ucma_context *ctx,
 		return -EINVAL;
 
 	memset(&sa_path, 0, sizeof(sa_path));
-	sa_path.vlan_id = 0xffff;
 
 	ib_sa_unpack_path(path_data->path_rec, &sa_path);
 	ret = rdma_set_ib_paths(ctx->cm_id, &sa_path, 1);
@@ -1624,11 +1623,16 @@ static int ucma_open(struct inode *inode, struct file *filp)
 	if (!file)
 		return -ENOMEM;
 
+	file->close_wq = create_singlethread_workqueue("ucma_close_id");
+	if (!file->close_wq) {
+		kfree(file);
+		return -ENOMEM;
+	}
+
 	INIT_LIST_HEAD(&file->event_list);
 	INIT_LIST_HEAD(&file->ctx_list);
 	init_waitqueue_head(&file->poll_wait);
 	mutex_init(&file->mut);
-	file->close_wq = create_singlethread_workqueue("ucma_close_id");
 
 	filp->private_data = file;
 	file->filp = filp;

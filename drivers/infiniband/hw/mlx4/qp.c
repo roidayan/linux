@@ -617,6 +617,18 @@ static int qp0_enabled_vf(struct mlx4_dev *dev, int qpn)
 	return 0;
 }
 
+static void mlx4_ib_free_qp_counter(struct mlx4_ib_dev *dev,
+				    struct mlx4_ib_qp *qp)
+{
+	mutex_lock(&dev->counters_table[qp->port - 1].mutex);
+	mlx4_counter_free(dev->dev, qp->counter_index->index);
+	list_del(&qp->counter_index->list);
+	mutex_unlock(&dev->counters_table[qp->port - 1].mutex);
+
+	kfree(qp->counter_index);
+	qp->counter_index = NULL;
+}
+
 static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 			    struct ib_qp_init_attr *init_attr,
 			    struct ib_udata *udata, int sqpn, struct mlx4_ib_qp **caller_qp,
@@ -746,9 +758,6 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 	} else {
 		qp->sq_no_prefetch = 0;
 
-		if (init_attr->create_flags & IB_QP_CREATE_BLOCK_MULTICAST_LOOPBACK)
-			qp->flags |= MLX4_IB_QP_BLOCK_MULTICAST_LOOPBACK;
-
 		if (init_attr->create_flags & IB_QP_CREATE_IPOIB_UD_LSO)
 			qp->flags |= MLX4_IB_QP_LSO;
 
@@ -821,6 +830,9 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 		if (err)
 			goto err_proxy;
 	}
+
+	if (init_attr->create_flags & IB_QP_CREATE_BLOCK_MULTICAST_LOOPBACK)
+		qp->flags |= MLX4_IB_QP_BLOCK_MULTICAST_LOOPBACK;
 
 	err = mlx4_qp_alloc(dev->dev, qpn, &qp->mqp, gfp);
 	if (err)
@@ -1086,6 +1098,7 @@ struct ib_qp *mlx4_ib_create_qp(struct ib_pd *pd,
 {
 	struct mlx4_ib_qp *qp = NULL;
 	int err;
+	int sup_u_create_flags = MLX4_IB_QP_BLOCK_MULTICAST_LOOPBACK;
 	u16 xrcdn = 0;
 	gfp_t gfp;
 
@@ -1109,8 +1122,10 @@ struct ib_qp *mlx4_ib_create_qp(struct ib_pd *pd,
 	}
 
 	if (init_attr->create_flags &&
-	    (udata ||
-	     ((init_attr->create_flags & ~(MLX4_IB_SRIOV_SQP | MLX4_IB_QP_CREATE_USE_GFP_NOIO)) &&
+	    ((udata && init_attr->create_flags & ~(sup_u_create_flags)) ||
+	     ((init_attr->create_flags & ~(MLX4_IB_SRIOV_SQP |
+					   MLX4_IB_QP_CREATE_USE_GFP_NOIO |
+					   MLX4_IB_QP_BLOCK_MULTICAST_LOOPBACK)) &&
 	      init_attr->qp_type != IB_QPT_UD) ||
 	     ((init_attr->create_flags & MLX4_IB_SRIOV_SQP) &&
 	      init_attr->qp_type > IB_QPT_GSI)))
@@ -1188,6 +1203,9 @@ int mlx4_ib_destroy_qp(struct ib_qp *qp)
 		dev->qp1_proxy[mqp->port - 1] = NULL;
 		mutex_unlock(&dev->qp1_proxy_lock[mqp->port - 1]);
 	}
+
+	if (mqp->counter_index)
+		mlx4_ib_free_qp_counter(dev, mqp);
 
 	pd = get_pd(mqp);
 	destroy_qp_common(dev, mqp, !!pd->ibpd.uobject);
@@ -1391,11 +1409,12 @@ static int _mlx4_set_path(struct mlx4_ib_dev *dev, const struct ib_ah_attr *ah,
 static int mlx4_set_path(struct mlx4_ib_dev *dev, const struct ib_qp_attr *qp,
 			 enum ib_qp_attr_mask qp_attr_mask,
 			 struct mlx4_ib_qp *mqp,
-			 struct mlx4_qp_path *path, u8 port)
+			 struct mlx4_qp_path *path, u8 port,
+			 u16 vlan_id, u8 *smac)
 {
 	return _mlx4_set_path(dev, &qp->ah_attr,
-			      mlx4_mac_to_u64((u8 *)qp->smac),
-			      (qp_attr_mask & IB_QP_VID) ? qp->vlan_id : 0xffff,
+			      mlx4_mac_to_u64(smac),
+			      vlan_id,
 			      path, &mqp->pri, port);
 }
 
@@ -1406,9 +1425,8 @@ static int mlx4_set_alt_path(struct mlx4_ib_dev *dev,
 			     struct mlx4_qp_path *path, u8 port)
 {
 	return _mlx4_set_path(dev, &qp->alt_ah_attr,
-			      mlx4_mac_to_u64((u8 *)qp->alt_smac),
-			      (qp_attr_mask & IB_QP_ALT_VID) ?
-			      qp->alt_vlan_id : 0xffff,
+			      0,
+			      0xffff,
 			      path, &mqp->alt, port);
 }
 
@@ -1424,7 +1442,8 @@ static void update_mcg_macs(struct mlx4_ib_dev *dev, struct mlx4_ib_qp *qp)
 	}
 }
 
-static int handle_eth_ud_smac_index(struct mlx4_ib_dev *dev, struct mlx4_ib_qp *qp, u8 *smac,
+static int handle_eth_ud_smac_index(struct mlx4_ib_dev *dev,
+				    struct mlx4_ib_qp *qp,
 				    struct mlx4_qp_context *context)
 {
 	u64 u64_mac;
@@ -1447,6 +1466,40 @@ static int handle_eth_ud_smac_index(struct mlx4_ib_dev *dev, struct mlx4_ib_qp *
 	return 0;
 }
 
+static int create_qp_lb_counter(struct mlx4_ib_dev *dev, struct mlx4_ib_qp *qp)
+{
+	struct counter_index *new_counter_index;
+	int err;
+	u32 tmp_idx;
+
+	if (rdma_port_get_link_layer(&dev->ib_dev, qp->port) !=
+	    IB_LINK_LAYER_ETHERNET ||
+	    !(qp->flags & MLX4_IB_QP_BLOCK_MULTICAST_LOOPBACK) ||
+	    !(dev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_LB_SRC_CHK))
+		return 0;
+
+	err = mlx4_counter_alloc(dev->dev, &tmp_idx);
+	if (err)
+		return err;
+
+	new_counter_index = kmalloc(sizeof(*new_counter_index), GFP_KERNEL);
+	if (!new_counter_index) {
+		mlx4_counter_free(dev->dev, tmp_idx);
+		return -ENOMEM;
+	}
+
+	new_counter_index->index = tmp_idx;
+	new_counter_index->allocated = 1;
+	qp->counter_index = new_counter_index;
+
+	mutex_lock(&dev->counters_table[qp->port - 1].mutex);
+	list_add_tail(&new_counter_index->list,
+		      &dev->counters_table[qp->port - 1].counters_list);
+	mutex_unlock(&dev->counters_table[qp->port - 1].mutex);
+
+	return 0;
+}
+
 static int __mlx4_ib_modify_qp(struct ib_qp *ibqp,
 			       const struct ib_qp_attr *attr, int attr_mask,
 			       enum ib_qp_state cur_state, enum ib_qp_state new_state)
@@ -1460,6 +1513,7 @@ static int __mlx4_ib_modify_qp(struct ib_qp *ibqp,
 	int sqd_event;
 	int steer_qp = 0;
 	int err = -EINVAL;
+	int counter_index;
 
 	/* APM is not supported under RoCE */
 	if (attr_mask & IB_QP_ALT_PATH &&
@@ -1519,6 +1573,9 @@ static int __mlx4_ib_modify_qp(struct ib_qp *ibqp,
 		context->sq_size_stride = ilog2(qp->sq.wqe_cnt) << 3;
 	context->sq_size_stride |= qp->sq.wqe_shift - 4;
 
+	if (new_state == IB_QPS_RESET && qp->counter_index)
+		mlx4_ib_free_qp_counter(dev, qp);
+
 	if (cur_state == IB_QPS_RESET && new_state == IB_QPS_INIT) {
 		context->sq_size_stride |= !!qp->sq_no_prefetch << 7;
 		context->xrcd = cpu_to_be32((u32) qp->xrcdn);
@@ -1543,10 +1600,24 @@ static int __mlx4_ib_modify_qp(struct ib_qp *ibqp,
 	}
 
 	if (cur_state == IB_QPS_INIT && new_state == IB_QPS_RTR) {
-		if (dev->counters[qp->port - 1].index != -1) {
-			context->pri_path.counter_index =
-					dev->counters[qp->port - 1].index;
+		err = create_qp_lb_counter(dev, qp);
+		if (err)
+			goto out;
+
+		counter_index =
+			dev->counters_table[qp->port - 1].default_counter;
+		if (qp->counter_index)
+			counter_index = qp->counter_index->index;
+
+		if (counter_index != -1) {
+			context->pri_path.counter_index = counter_index;
 			optpar |= MLX4_QP_OPTPAR_COUNTER_INDEX;
+			if (qp->counter_index) {
+				context->pri_path.fl |=
+					MLX4_FL_ETH_SRC_CHECK_MC_LB;
+				context->pri_path.vlan_control |=
+					MLX4_CTRL_ETH_SRC_CHECK_IF_COUNTER;
+			}
 		} else
 			context->pri_path.counter_index =
 				MLX4_SINK_COUNTER_INDEX(dev->dev);
@@ -1565,9 +1636,33 @@ static int __mlx4_ib_modify_qp(struct ib_qp *ibqp,
 	}
 
 	if (attr_mask & IB_QP_AV) {
+		u8 port_num = mlx4_is_bonded(to_mdev(ibqp->device)->dev) ? 1 :
+			attr_mask & IB_QP_PORT ? attr->port_num : qp->port;
+		union ib_gid gid;
+		struct ib_gid_attr gid_attr;
+		u16 vlan = 0xffff;
+		u8 smac[ETH_ALEN];
+		int status = 0;
+
+		if (rdma_cap_eth_ah(&dev->ib_dev, port_num) &&
+		    attr->ah_attr.ah_flags & IB_AH_GRH) {
+			int index = attr->ah_attr.grh.sgid_index;
+
+			status = ib_get_cached_gid(ibqp->device, port_num,
+						   index, &gid, &gid_attr);
+			if (!status && !memcmp(&gid, &zgid, sizeof(gid)))
+				status = -ENOENT;
+			if (!status && gid_attr.ndev) {
+				vlan = rdma_vlan_dev_vlan_id(gid_attr.ndev);
+				memcpy(smac, gid_attr.ndev->dev_addr, ETH_ALEN);
+				dev_put(gid_attr.ndev);
+			}
+		}
+		if (status)
+			goto out;
+
 		if (mlx4_set_path(dev, attr, attr_mask, qp, &context->pri_path,
-				  attr_mask & IB_QP_PORT ?
-				  attr->port_num : qp->port))
+				  port_num, vlan, smac))
 			goto out;
 
 		optpar |= (MLX4_QP_OPTPAR_PRIMARY_ADDR_PATH |
@@ -1704,7 +1799,7 @@ static int __mlx4_ib_modify_qp(struct ib_qp *ibqp,
 			if (qp->mlx4_ib_qp_type == MLX4_IB_QPT_UD ||
 			    qp->mlx4_ib_qp_type == MLX4_IB_QPT_PROXY_GSI ||
 			    qp->mlx4_ib_qp_type == MLX4_IB_QPT_TUN_GSI) {
-				err = handle_eth_ud_smac_index(dev, qp, (u8 *)attr->smac, context);
+				err = handle_eth_ud_smac_index(dev, qp, context);
 				if (err) {
 					err = -EINVAL;
 					goto out;
@@ -1848,6 +1943,8 @@ static int __mlx4_ib_modify_qp(struct ib_qp *ibqp,
 		}
 	}
 out:
+	if (err && qp->counter_index)
+		mlx4_ib_free_qp_counter(dev, qp);
 	if (err && steer_qp)
 		mlx4_ib_steer_qp_reg(dev, qp, 0);
 	kfree(context);
@@ -2197,7 +2294,10 @@ static int build_mlx_header(struct mlx4_ib_sqp *sqp, struct ib_send_wr *wr,
 		} else  {
 			err = ib_get_cached_gid(ib_dev,
 						be32_to_cpu(ah->av.ib.port_pd) >> 24,
-						ah->av.ib.gid_index, &sgid);
+						ah->av.ib.gid_index, &sgid,
+						NULL);
+			if (!err && !memcmp(&sgid, &zgid, sizeof(sgid)))
+				err = -ENOENT;
 			if (err)
 				return err;
 		}
@@ -2239,7 +2339,7 @@ static int build_mlx_header(struct mlx4_ib_sqp *sqp, struct ib_send_wr *wr,
 			ib_get_cached_gid(ib_dev,
 					  be32_to_cpu(ah->av.ib.port_pd) >> 24,
 					  ah->av.ib.gid_index,
-					  &sqp->ud_header.grh.source_gid);
+					  &sqp->ud_header.grh.source_gid, NULL);
 		}
 		memcpy(sqp->ud_header.grh.destination_gid.raw,
 		       ah->av.ib.dgid, 16);

@@ -320,6 +320,7 @@ struct mlx4_ib_qp {
 	struct list_head	qps_list;
 	struct list_head	cq_recv_list;
 	struct list_head	cq_send_list;
+	struct counter_index	*counter_index;
 };
 
 struct mlx4_ib_srq {
@@ -528,8 +529,15 @@ struct mlx4_ib_iov_port {
 };
 
 struct counter_index {
+	struct  list_head       list;
 	u32		index;
 	u8		allocated;
+};
+
+struct mlx4_ib_counters {
+	struct list_head        counters_list;
+	struct mutex            mutex; /* mutex for accessing counters list */
+	u32			default_counter;
 };
 
 struct mlx4_ib_dev {
@@ -550,7 +558,7 @@ struct mlx4_ib_dev {
 	struct mutex		cap_mask_mutex;
 	bool			ib_active;
 	struct mlx4_ib_iboe	iboe;
-	struct counter_index    counters[MLX4_MAX_PORTS];
+	struct mlx4_ib_counters counters_table[MLX4_MAX_PORTS];
 	int		       *eq_table;
 	struct kobject	       *iov_parent;
 	struct kobject	       *ports_parent;
@@ -813,7 +821,7 @@ int mlx4_ib_send_to_slave(struct mlx4_ib_dev *dev, int slave, u8 port,
 int mlx4_ib_send_to_wire(struct mlx4_ib_dev *dev, int slave, u8 port,
 			 enum ib_qp_type dest_qpt, u16 pkey_index, u32 remote_qpn,
 			 u32 qkey, struct ib_ah_attr *attr, u8 *s_mac,
-			 struct ib_mad *mad);
+			 u16 vlan_id, struct ib_mad *mad);
 
 __be64 mlx4_ib_get_new_demux_tid(struct mlx4_ib_demux_ctx *ctx);
 
