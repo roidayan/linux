@@ -72,6 +72,28 @@ struct mlx5_flow_rule {
 struct mlx5_flow_table {
 	struct fs_base			base;
 	uint32_t			id;
+	/* sorted list by start_index */
+	struct list_head		fgs;
+	unsigned int			level;
+};
+
+struct fs_prio {
+	struct fs_base			base;
+	struct list_head		objs; /* each object is a namespace or ft */
+	unsigned int			max_ft;
+	unsigned int			prio;
+};
+
+struct mlx5_flow_namespace {
+	/* parent == NULL => root ns */
+	struct	fs_base			base;
+	/* sorted by priority number */
+	struct	list_head		prios; /* list of fs_prios */
+};
+
+struct mlx5_core_fs_mask {
+	u8	match_criteria_enable;
+	u32	match_criteria[MLX5_ST_SZ_DW(fte_match_param)];
 };
 
 #define fs_list_for_each_entry(pos, cond, root)		\
