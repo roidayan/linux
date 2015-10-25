@@ -401,8 +401,8 @@ void mlx5e_handle_rx_cqe_mpwrq(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe)
 	if (unlikely(!skb))
 		goto mpwrq_cqe_out;
 
-	dma_unmap_single(rq->pdev, wi->dma_addr + stride_offset,
-			 consumed_bytes, DMA_FROM_DEVICE);
+	dma_sync_single_for_cpu(rq->pdev, wi->dma_addr + stride_offset,
+				consumed_bytes, DMA_FROM_DEVICE);
 
 	headlen = min_t(u16, MLX5_MPWRQ_SMALL_PACKET_THRESHOLD, byte_cnt);
 	skb_copy_to_linear_data(skb, page_address(wi->page) + data_offset,
