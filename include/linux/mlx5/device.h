@@ -624,7 +624,8 @@ struct mlx5_cqe64 {
 	__be32		imm_inval_pkey;
 	u8		rsvd40[4];
 	__be32		byte_cnt;
-	__be64		timestamp;
+	__be32		timestamp_h;
+	__be32		timestamp_l;
 	__be32		sop_drop_qpn;
 	__be16		wqe_counter;
 	u8		signature;
@@ -644,6 +645,16 @@ static inline u8 get_cqe_l4_hdr_type(struct mlx5_cqe64 *cqe)
 static inline int cqe_has_vlan(struct mlx5_cqe64 *cqe)
 {
 	return !!(cqe->l4_hdr_type_etc & 0x1);
+}
+
+static inline u64 get_cqe_ts(struct mlx5_cqe64 *cqe)
+{
+	u32 hi, lo;
+
+	hi = be32_to_cpu(cqe->timestamp_h);
+	lo = be32_to_cpu(cqe->timestamp_l);
+
+	return (u64)lo | ((u64)hi << 32);
 }
 
 enum {
