@@ -883,6 +883,29 @@ static void mlx5e_close_cq(struct mlx5e_cq *cq)
 	mlx5e_destroy_cq(cq);
 }
 
+/* mlx5e_service_task - Run service task for tasks that needed to be done
+ * periodically
+ */
+static void mlx5e_service_task(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct mlx5e_priv *priv = container_of(dwork, struct mlx5e_priv,
+					       service_task);
+
+	mutex_lock(&priv->state_lock);
+	if (test_bit(MLX5E_STATE_OPENED, &priv->state)) {
+		if (priv->tstamp.ptp) {
+			mlx5e_ptp_overflow_check(priv);
+			/* Only mlx5e_ptp_overflow_check is called from this
+			 * service task. schedule a new task only if ptp_clock
+			 * is initialized. if changed, move the scheduler.
+			 */
+			schedule_delayed_work(dwork, MLX5E_SERVICE_TASK_DELAY);
+		}
+	}
+	mutex_unlock(&priv->state_lock);
+}
+
 static int mlx5e_get_cpu(struct mlx5e_priv *priv, int ix)
 {
 	return cpumask_first(priv->mdev->priv.irq_info[ix].mask);
@@ -1134,6 +1157,8 @@ static int mlx5e_open_channels(struct mlx5e_priv *priv)
 			goto err_close_channels;
 	}
 
+	mlx5e_ptp_init(priv);
+
 	for (j = 0; j < nch; j++) {
 		err = mlx5e_wait_for_min_rx_wqes(&priv->channel[j]->rq);
 		if (err)
@@ -1160,6 +1185,7 @@ static void mlx5e_close_channels(struct mlx5e_priv *priv)
 	for (i = 0; i < priv->params.num_channels; i++)
 		mlx5e_close_channel(priv->channel[i]);
 
+	mlx5e_ptp_cleanup(priv);
 	kfree(priv->txq_to_sq_map);
 	kfree(priv->channel);
 }
@@ -1428,6 +1454,7 @@ int mlx5e_open_locked(struct net_device *netdev)
 	mlx5e_redirect_rqts(priv);
 
 	schedule_delayed_work(&priv->update_stats_work, 0);
+	schedule_delayed_work(&priv->service_task, 0);
 
 	return 0;
 
@@ -1931,6 +1958,74 @@ static int mlx5e_change_mtu(struct net_device *netdev, int new_mtu)
 	return err;
 }
 
+static int mlx5e_hwstamp_set(struct net_device *dev, struct ifreq *ifr)
+{
+	struct mlx5e_priv *priv = netdev_priv(dev);
+	struct hwtstamp_config config;
+
+	if (copy_from_user(&config, ifr->ifr_data, sizeof(config)))
+		return -EFAULT;
+
+	/* TX HW timestamp */
+	switch (config.tx_type) {
+	case HWTSTAMP_TX_OFF:
+	case HWTSTAMP_TX_ON:
+		break;
+	default:
+		return -ERANGE;
+	}
+
+	/* RX HW timestamp */
+	switch (config.rx_filter) {
+	case HWTSTAMP_FILTER_NONE:
+		break;
+	case HWTSTAMP_FILTER_ALL:
+	case HWTSTAMP_FILTER_SOME:
+	case HWTSTAMP_FILTER_PTP_V1_L4_EVENT:
+	case HWTSTAMP_FILTER_PTP_V1_L4_SYNC:
+	case HWTSTAMP_FILTER_PTP_V1_L4_DELAY_REQ:
+	case HWTSTAMP_FILTER_PTP_V2_L4_EVENT:
+	case HWTSTAMP_FILTER_PTP_V2_L4_SYNC:
+	case HWTSTAMP_FILTER_PTP_V2_L4_DELAY_REQ:
+	case HWTSTAMP_FILTER_PTP_V2_L2_EVENT:
+	case HWTSTAMP_FILTER_PTP_V2_L2_SYNC:
+	case HWTSTAMP_FILTER_PTP_V2_L2_DELAY_REQ:
+	case HWTSTAMP_FILTER_PTP_V2_EVENT:
+	case HWTSTAMP_FILTER_PTP_V2_SYNC:
+	case HWTSTAMP_FILTER_PTP_V2_DELAY_REQ:
+		config.rx_filter = HWTSTAMP_FILTER_ALL;
+		break;
+	default:
+		return -ERANGE;
+	}
+
+	priv->tstamp.hwtstamp_config.tx_type = config.tx_type;
+	priv->tstamp.hwtstamp_config.rx_filter = config.rx_filter;
+
+	return copy_to_user(ifr->ifr_data, &config,
+			    sizeof(config)) ? -EFAULT : 0;
+}
+
+static int mlx5e_hwstamp_get(struct net_device *dev, struct ifreq *ifr)
+{
+	struct mlx5e_priv *priv = netdev_priv(dev);
+
+	return copy_to_user(ifr->ifr_data, &priv->tstamp.hwtstamp_config,
+			    sizeof(priv->tstamp.hwtstamp_config)) ? -EFAULT : 0;
+}
+
+static int mlx5e_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+{
+	switch (cmd) {
+	case SIOCSHWTSTAMP:
+		return mlx5e_hwstamp_set(dev, ifr);
+	case SIOCGHWTSTAMP:
+		return mlx5e_hwstamp_get(dev, ifr);
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
 static struct net_device_ops mlx5e_netdev_ops = {
 	.ndo_open                = mlx5e_open,
 	.ndo_stop                = mlx5e_close,
@@ -1942,6 +2037,7 @@ static struct net_device_ops mlx5e_netdev_ops = {
 	.ndo_vlan_rx_kill_vid	 = mlx5e_vlan_rx_kill_vid,
 	.ndo_set_features        = mlx5e_set_features,
 	.ndo_change_mtu		 = mlx5e_change_mtu,
+	.ndo_do_ioctl		 = mlx5e_ioctl,
 };
 
 static int mlx5e_check_required_hca_cap(struct mlx5_core_dev *mdev)
@@ -2022,6 +2118,7 @@ static void mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 	INIT_WORK(&priv->update_carrier_work, mlx5e_update_carrier_work);
 	INIT_WORK(&priv->set_rx_mode_work, mlx5e_set_rx_mode_work);
 	INIT_DELAYED_WORK(&priv->update_stats_work, mlx5e_update_stats_work);
+	INIT_DELAYED_WORK(&priv->service_task, mlx5e_service_task);
 }
 
 static void mlx5e_set_netdev_dev_addr(struct net_device *netdev)

@@ -500,6 +500,38 @@ static int mlx5_core_disable_hca(struct mlx5_core_dev *dev)
 	return 0;
 }
 
+static u32 internal_timer_h(struct mlx5_core_dev *dev)
+{
+	return ioread32be(&dev->iseg->internal_timer_h);
+}
+
+static u32 internal_timer_l(struct mlx5_core_dev *dev)
+{
+	return ioread32be(&dev->iseg->internal_timer_l);
+}
+
+cycle_t mlx5_core_read_clock(struct mlx5_core_dev *dev)
+{
+	u32 timer_h, timer_h1, timer_l;
+
+	/*  Reading the internal timer using 2 PCI reads in a non-atomic manner
+	 * may hit the wraparound of the 32 LSBs. Reading the 32 MSBs twice can
+	 * verify a wraparound did not happen.
+	 */
+	timer_h = internal_timer_h(dev);
+	timer_l = internal_timer_l(dev);
+	timer_h1 = internal_timer_h(dev);
+	if (timer_h == timer_h1)
+		goto ret;
+
+	/* In case of overflow or wraparound, re-read the LSB */
+	timer_l = internal_timer_l(dev);
+
+ret:
+	return (u64)timer_l | (u64)timer_h1 << 32;
+}
+EXPORT_SYMBOL(mlx5_core_read_clock);
+
 static int mlx5_irq_set_affinity_hint(struct mlx5_core_dev *mdev, int i)
 {
 	struct mlx5_priv *priv  = &mdev->priv;
