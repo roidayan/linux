@@ -1257,11 +1257,10 @@ mlx5_add_flow_rule(struct mlx5_flow_table *ft,
 
 			dst = fs_add_dst_fg(g, match_value,
 					    action, flow_tag, dest);
-			mutex_unlock(&ft->base.lock);
-			goto unlock;
+			goto put;
 		}
 	mutex_unlock(&ft->base.lock);
-unlock:
+put:
 	fs_put(&ft->base);
 	return dst;
 
