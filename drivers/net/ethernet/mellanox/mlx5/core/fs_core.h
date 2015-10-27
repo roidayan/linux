@@ -49,6 +49,8 @@ enum fs_type {
 
 enum fs_ft_type {
 	FS_FT_NIC_RX	 = 0x0,
+	FS_FT_SNIFFER_RX = 0x5,
+	FS_FT_SNIFFER_TX = 0x6
 };
 
 enum fs_prio_flags {
@@ -71,6 +73,9 @@ struct fs_base {
 struct mlx5_flow_rule {
 	struct fs_base				base;
 	struct mlx5_flow_destination		dest_attr;
+	struct list_head			clients_data;
+	/*protect clients lits*/
+	struct mutex				clients_lock;
 };
 
 struct fs_star_rules {
@@ -111,6 +116,9 @@ struct mlx5_flow_namespace {
 	struct	fs_base			base;
 	/* sorted by priority number */
 	struct	list_head		prios; /* list of fs_prios */
+	struct  list_head		list_notifiers;
+	struct	rw_semaphore		notifiers_rw_sem;
+	struct  rw_semaphore		dests_rw_sem;
 };
 
 struct mlx5_core_fs_mask {
@@ -145,6 +153,20 @@ struct mlx5_flow_root_namespace {
 	struct mlx5_flow_table		*root_ft;
 	/* When chaining flow-tables, this lock should be taken */
 	struct mutex			fs_chain_lock;
+};
+
+struct mlx5_flow_handler {
+	struct list_head list;
+	rule_event_fn add_dst_cb;
+	rule_event_fn del_dst_cb;
+	void *client_context;
+	struct mlx5_flow_namespace *ns;
+};
+
+struct fs_client_priv_data {
+	struct mlx5_flow_handler *fs_handler;
+	struct list_head list;
+	void   *client_dst_data;
 };
 
 int mlx5_init_fs(struct mlx5_core_dev *dev);

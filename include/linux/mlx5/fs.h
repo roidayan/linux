@@ -45,6 +45,8 @@ enum mlx5_flow_namespace_type {
 	MLX5_FLOW_NAMESPACE_BYPASS,
 	MLX5_FLOW_NAMESPACE_KERNEL,
 	MLX5_FLOW_NAMESPACE_LEFTOVERS,
+	MLX5_FLOW_NAMESPACE_SNIFFER_RX,
+	MLX5_FLOW_NAMESPACE_SNIFFER_TX,
 };
 
 struct mlx5_flow_table;
@@ -100,5 +102,55 @@ mlx5_add_flow_rule(struct mlx5_flow_table *ft,
 		   u32 flow_tag,
 		   struct mlx5_flow_destination *dest);
 void mlx5_del_flow_rule(struct mlx5_flow_rule *fr);
+
+/*The following API is for sniffer*/
+typedef int (*rule_event_fn)(struct mlx5_flow_rule *rule,
+			     bool ctx_changed,
+			     void *client_data,
+			     void *context);
+
+struct mlx5_flow_handler;
+
+struct flow_client_priv_data;
+
+int mlx5_set_rule_private_data(struct mlx5_flow_rule *rule, struct
+			       mlx5_flow_handler *handler,  void
+			       *client_data);
+
+struct mlx5_flow_handler *mlx5_register_rule_notifier(struct mlx5_core_dev *dev,
+						      enum mlx5_flow_namespace_type ns_type,
+						      rule_event_fn add_cb,
+						      rule_event_fn del_cb,
+						      void *context);
+
+void mlx5_unregister_rule_notifier(struct mlx5_flow_handler *handler);
+
+void mlx5_flow_iterate_existing_rules(struct mlx5_flow_namespace *ns,
+					     rule_event_fn cb,
+					     void *context);
+
+void mlx5_get_match_criteria(u32 *match_criteria,
+			     struct mlx5_flow_rule *rule);
+
+void mlx5_get_match_value(u32 *match_value,
+			  struct mlx5_flow_rule *rule);
+
+u8 mlx5_get_match_criteria_enable(struct mlx5_flow_rule *rule);
+
+struct mlx5_flow_rules_list *get_roce_flow_rules(u8 roce_mode);
+
+void mlx5_del_flow_rules_list(struct mlx5_flow_rules_list *rules_list);
+
+struct mlx5_flow_rules_list {
+	struct list_head head;
+};
+
+struct mlx5_flow_rule_node {
+	struct	list_head list;
+	u32	match_criteria[MLX5_ST_SZ_DW(fte_match_param)];
+	u32	match_value[MLX5_ST_SZ_DW(fte_match_param)];
+	u8	match_criteria_enable;
+};
+/**********end API for sniffer**********/
 
 #endif
