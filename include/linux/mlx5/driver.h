@@ -525,6 +525,8 @@ struct mlx5_core_dev {
 	atomic_t		num_qps;
 	u32			issi;
 	struct mlx5_flow_root_namespace *root_ns;
+	struct mlx5_flow_root_namespace *sniffer_rx_root_ns;
+	struct mlx5_flow_root_namespace *sniffer_tx_root_ns;
 };
 
 struct mlx5_db {
