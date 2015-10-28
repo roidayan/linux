@@ -1100,6 +1100,8 @@ static void mlx5e_build_rq_param(struct mlx5e_priv *priv,
 	MLX5_SET(wq, wq, log_wq_stride,    ilog2(sizeof(struct mlx5e_rx_wqe)));
 	MLX5_SET(wq, wq, log_wq_sz,        priv->params.log_rq_size);
 	MLX5_SET(wq, wq, pd,               priv->pdn);
+	MLX5_SET(rqc, rqc, counter_set_id, priv->counter_set_id);
+
 
 	param->wq.buf_numa_node = dev_to_node(&priv->mdev->pdev->dev);
 	param->wq.linear = 1;
@@ -2323,12 +2325,20 @@ static void *mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 		goto err_destroy_tirs;
 	}
 
+	err = mlx5_vport_alloc_q_counter(priv->mdev,
+					 MLX5_INTERFACE_PROTOCOL_ETH,
+					 &priv->counter_set_id);
+	if (err) {
+		mlx5_core_warn(mdev, "alloc Q counters failed, %d\n", err);
+		goto err_destroy_flow_tables;
+	}
+
 	mlx5e_init_eth_addr(priv);
 
 	err = register_netdev(netdev);
 	if (err) {
 		mlx5_core_err(mdev, "register_netdev failed, %d\n", err);
-		goto err_destroy_flow_tables;
+		goto err_dealloc_q_counters;
 	}
 
 	mlx5e_enable_async_events(priv);
@@ -2336,6 +2346,9 @@ static void *mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 
 	return priv;
 
+err_dealloc_q_counters:
+	mlx5_vport_dealloc_q_counter(priv->mdev, MLX5_INTERFACE_PROTOCOL_ETH,
+				     priv->counter_set_id);
 err_destroy_flow_tables:
 	mlx5e_destroy_flow_tables(priv);
 
@@ -2383,6 +2396,8 @@ static void mlx5e_destroy_netdev(struct mlx5_core_dev *mdev, void *vpriv)
 	mlx5e_disable_async_events(priv);
 	flush_scheduled_work();
 	unregister_netdev(netdev);
+	mlx5_vport_dealloc_q_counter(priv->mdev, MLX5_INTERFACE_PROTOCOL_ETH,
+				     priv->counter_set_id);
 	mlx5e_destroy_flow_tables(priv);
 	mlx5e_destroy_tirs(priv);
 	mlx5e_destroy_rqt(priv, MLX5E_SINGLE_RQ_RQT);
