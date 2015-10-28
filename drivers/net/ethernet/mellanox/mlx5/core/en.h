@@ -594,6 +594,7 @@ struct mlx5e_priv {
 	struct mlx5_core_dev      *mdev;
 	struct net_device         *netdev;
 	struct mlx5e_stats         stats;
+	u16 counter_set_id;
 
 	struct kobject *ecn_root_kobj;
 	struct mlx5_ecn_ctx ecn_ctx[MLX5_CONG_PROTOCOL_NUM];
