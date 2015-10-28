@@ -59,5 +59,17 @@ int mlx5_query_hca_vport_node_guid(struct mlx5_core_dev *dev,
 
 int mlx5_nic_vport_enable_roce(struct mlx5_core_dev *mdev);
 int mlx5_nic_vport_disable_roce(struct mlx5_core_dev *mdev);
+int mlx5_vport_alloc_q_counter(struct mlx5_core_dev *mdev, int client_id,
+			       u16 *counter_set_id);
+int mlx5_vport_dealloc_q_counter(struct mlx5_core_dev *mdev, int client_id,
+				 u16 counter_set_id);
+int mlx5_vport_query_q_counter(struct mlx5_core_dev *mdev,
+			       u16 counter_set_id,
+			       int reset,
+			       void *out,
+			       int out_size);
+int mlx5_vport_query_out_of_buffer(struct mlx5_core_dev *mdev,
+				   u16 counter_set_id,
+				   u32 *out_of_buffer);
 
 #endif /* __MLX5_VPORT_H__ */

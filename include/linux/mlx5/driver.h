@@ -45,6 +45,8 @@
 #include <linux/mlx5/device.h>
 #include <linux/mlx5/doorbell.h>
 
+#define MLX5_QCOUNTER_SETS_NETDEV 64
+
 enum {
 	MLX5_BOARD_ID_LEN = 64,
 	MLX5_MAX_NAME_LEN = 16,
@@ -175,6 +177,12 @@ enum mlx5_cong_protocol {
 	MLX5_CON_PROTOCOL_R_ROCE_RP,
 	MLX5_CON_PROTOCOL_R_ROCE_NP,
 	MLX5_CONG_PROTOCOL_NUM,
+};
+
+enum {
+	MLX5_INTERFACE_PROTOCOL_IB  = 0,
+	MLX5_INTERFACE_PROTOCOL_ETH = 1,
+	MLX5_INTERFACE_NUMBER	    = 2,
 };
 
 struct mlx5_uuar_info {
@@ -527,6 +535,7 @@ struct mlx5_core_dev {
 	struct mlx5_flow_root_namespace *root_ns;
 	struct mlx5_flow_root_namespace *sniffer_rx_root_ns;
 	struct mlx5_flow_root_namespace *sniffer_tx_root_ns;
+	u32 num_q_counter_allocated[MLX5_INTERFACE_NUMBER];
 };
 
 struct mlx5_db {
@@ -861,11 +870,6 @@ enum {
 
 enum {
 	MAX_MR_CACHE_ENTRIES    = 16,
-};
-
-enum {
-	MLX5_INTERFACE_PROTOCOL_IB  = 0,
-	MLX5_INTERFACE_PROTOCOL_ETH = 1,
 };
 
 struct mlx5_interface {
