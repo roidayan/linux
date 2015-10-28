@@ -174,7 +174,8 @@ static int mlx5e_get_sset_count(struct net_device *dev, int sset)
 		return NUM_VPORT_COUNTERS + NUM_PPORT_COUNTERS +
 		       priv->params.num_channels * NUM_RQ_STATS +
 		       priv->params.num_channels * priv->params.num_tc *
-						   NUM_SQ_STATS;
+						   NUM_SQ_STATS +
+		       NUM_Q_COUNTERS;
 	/* fallthrough */
 	default:
 		return -EOPNOTSUPP;
@@ -204,6 +205,9 @@ static void mlx5e_get_strings(struct net_device *dev,
 		for (i = 0; i < NUM_PPORT_COUNTERS; i++)
 			strcpy(data + (idx++) * ETH_GSTRING_LEN,
 			       pport_strings[i]);
+
+		sprintf(data + (idx++) * ETH_GSTRING_LEN,
+			"q_counter_%s", qcounter_stats_strings[0]);
 
 		/* per channel counters */
 		for (i = 0; i < priv->params.num_channels; i++)
@@ -242,6 +246,8 @@ static void mlx5e_get_ethtool_stats(struct net_device *dev,
 
 	for (i = 0; i < NUM_PPORT_COUNTERS; i++)
 		data[idx++] = be64_to_cpu(((__be64 *)&priv->stats.pport)[i]);
+
+	data[idx++] = priv->stats.out_of_rx_buffer;
 
 	/* per channel counters */
 	for (i = 0; i < priv->params.num_channels; i++)
