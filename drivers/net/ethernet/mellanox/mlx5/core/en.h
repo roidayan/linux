@@ -317,9 +317,15 @@ struct mlx5e_sq_stats {
 #define NUM_SQ_STATS 8
 };
 
+static const char qcounter_stats_strings[][ETH_GSTRING_LEN] = {
+	"out_of_rx_buffer",
+#define NUM_Q_COUNTERS 1
+};
+
 struct mlx5e_stats {
 	struct mlx5e_vport_stats   vport;
 	struct mlx5e_pport_stats   pport;
+	u32                        out_of_rx_buffer;
 };
 
 struct mlx5e_params {

@@ -250,6 +250,9 @@ void mlx5e_update_stats(struct mlx5e_priv *priv)
 			       s->rx_csum_sw;
 
 	mlx5e_update_pport_counters(priv);
+	mlx5_vport_query_out_of_buffer(mdev, priv->counter_set_id,
+				       &priv->stats.out_of_rx_buffer);
+
 free_out:
 	kvfree(out);
 }
