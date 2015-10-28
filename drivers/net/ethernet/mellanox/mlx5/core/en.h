@@ -594,6 +594,7 @@ struct mlx5e_priv {
 	struct mlx5_core_dev      *mdev;
 	struct net_device         *netdev;
 	struct mlx5e_stats         stats;
+	u16 counter_set_id;
 };
 
 enum mlx5e_link_mode {
