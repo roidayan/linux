@@ -1947,6 +1947,73 @@ static inline int ib_copy_to_udata(struct ib_udata *udata, void *src, size_t len
 	return copy_to_user(udata->outbuf, src, len) ? -EFAULT : 0;
 }
 
+#define IB_UDATA_ELEMENT_CLEARED(type, ptr, len, expected)		\
+		({type v;						\
+		  typeof(ptr) __ptr = ptr;				\
+									\
+		  ptr = (void *)ptr + sizeof(type);			\
+		  len -= sizeof(type);					\
+		  !copy_from_user(&v, __ptr, sizeof(v)) && (v == expected); })
+
+static inline bool ib_is_udata_cleared(struct ib_udata *udata,
+				       u8 cleared_char,
+				       size_t offset,
+				       size_t len)
+{
+	const void __user *p = udata->inbuf + offset;
+#ifdef CONFIG_64BIT
+	u64 expected = cleared_char;
+#else
+	u32 expected = cleared_char;
+#endif
+
+	if (len > USHRT_MAX)
+		return false;
+
+	if (len && (uintptr_t)p & 1)
+		if (!IB_UDATA_ELEMENT_CLEARED(u8, p, len, expected))
+			return false;
+
+	expected = expected << 8 | expected;
+	if (len >= 2 && (uintptr_t)p & 2)
+		if (!IB_UDATA_ELEMENT_CLEARED(u16, p, len, expected))
+			return false;
+
+	expected = expected << 16 | expected;
+#ifdef CONFIG_64BIT
+	if (len >= 4 && (uintptr_t)p & 4)
+		if (!IB_UDATA_ELEMENT_CLEARED(u32, p, len, expected))
+			return false;
+
+	expected = expected << 32 | expected;
+#define IB_UDATA_CLEAR_LOOP_TYPE	u64
+#else
+#define IB_UDATA_CLEAR_LOOP_TYPE	u32
+#endif
+	while (len >= sizeof(IB_UDATA_CLEAR_LOOP_TYPE))
+		if (!IB_UDATA_ELEMENT_CLEARED(IB_UDATA_CLEAR_LOOP_TYPE, p, len,
+					      expected))
+			return false;
+
+#ifdef CONFIG_64BIT
+	expected = expected >> 32;
+	if (len >= 4 && (uintptr_t)p & 4)
+		if (!IB_UDATA_ELEMENT_CLEARED(u32, p, len, expected))
+			return false;
+#endif
+	expected = expected >> 16;
+	if (len >= 2 && (uintptr_t)p & 2)
+		if (!IB_UDATA_ELEMENT_CLEARED(u16, p, len, expected))
+			return false;
+
+	expected = expected >> 8;
+	if (len)
+		if (!IB_UDATA_ELEMENT_CLEARED(u8, p, len, expected))
+			return false;
+
+	return true;
+}
+
 /**
  * ib_modify_qp_is_ok - Check that the supplied attribute mask
  * contains all required attributes and no attributes not allowed for
