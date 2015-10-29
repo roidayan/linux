@@ -2164,6 +2164,47 @@ static void mlx5_disable_roce(struct mlx5_ib_dev *dev)
 	unregister_netdevice_notifier(&dev->roce.nb);
 }
 
+static void mlx5_ib_dealloc_q_port_counter(struct mlx5_ib_dev *dev, u8 port_num)
+{
+	mlx5_core_dealloc_q_counter(dev->mdev, MLX5_INTERFACE_PROTOCOL_IB,
+				    dev->port[port_num].q_cnt_id);
+	dev->port[port_num].q_cnt_id = 0;
+}
+
+static void mlx5_ib_dealloc_q_counters(struct mlx5_ib_dev *dev)
+{
+	unsigned int i;
+
+	for (i = 0; i < dev->num_ports; i++)
+		mlx5_ib_dealloc_q_port_counter(dev, i);
+}
+
+static int mlx5_ib_alloc_q_counters(struct mlx5_ib_dev *dev)
+{
+	int i;
+	int ret;
+
+	for (i = 0; i < dev->num_ports; i++) {
+		ret = mlx5_core_alloc_q_counter(dev->mdev,
+						MLX5_INTERFACE_PROTOCOL_IB,
+						&dev->port[i].q_cnt_id);
+		if (ret) {
+			mlx5_ib_warn(dev,
+				     "couldn't allocate queue counter for port %d\n",
+				     i + 1);
+			goto dealloc_counters;
+		}
+	}
+
+	return 0;
+
+dealloc_counters:
+	while (--i >= 0)
+		mlx5_ib_dealloc_q_port_counter(dev, i);
+
+	return ret;
+}
+
 static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 {
 	struct mlx5_ib_dev *dev;
@@ -2187,6 +2228,14 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 	dev->mdev = mdev;
 
 	rwlock_init(&dev->roce.netdev_lock);
+
+	dev->port = kcalloc(MLX5_CAP_GEN(mdev, num_ports), sizeof(*dev->port),
+			     GFP_KERNEL);
+	if (!dev->port) {
+		goto err_dealloc;
+	}
+
+
 	err = get_port_caps(dev);
 	if (err)
 		goto err_dealloc;
@@ -2315,7 +2364,7 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 	if (ll == IB_LINK_LAYER_ETHERNET) {
 		err = mlx5_enable_roce(dev);
 		if (err)
-			goto err_dealloc;
+			goto err_free_port;
 	}
 
 	err = create_dev_resources(&dev->devr);
@@ -2326,9 +2375,13 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 	if (err)
 		goto err_rsrc;
 
-	err = ib_register_device(&dev->ib_dev, NULL);
+	err = mlx5_ib_alloc_q_counters(dev);
 	if (err)
 		goto err_odp;
+
+	err = ib_register_device(&dev->ib_dev, NULL);
+	if (err)
+		goto err_q_cnt;
 
 	err = create_umr_res(dev);
 	if (err)
@@ -2351,6 +2404,9 @@ err_umrc:
 err_dev:
 	ib_unregister_device(&dev->ib_dev);
 
+err_q_cnt:
+	mlx5_ib_dealloc_q_counters(dev);
+
 err_odp:
 	mlx5_ib_odp_remove_one(dev);
 
@@ -2360,6 +2416,9 @@ err_rsrc:
 err_disable_roce:
 	if (ll == IB_LINK_LAYER_ETHERNET)
 		mlx5_disable_roce(dev);
+
+err_free_port:
+	kfree(dev->port);
 
 err_dealloc:
 	ib_dealloc_device((struct ib_device *)dev);
@@ -2373,11 +2432,13 @@ static void mlx5_ib_remove(struct mlx5_core_dev *mdev, void *context)
 	enum rdma_link_layer ll = mlx5_ib_port_link_layer(&dev->ib_dev, 1);
 
 	ib_unregister_device(&dev->ib_dev);
+	mlx5_ib_dealloc_q_counters(dev);
 	destroy_umrc_res(dev);
 	mlx5_ib_odp_remove_one(dev);
 	destroy_dev_resources(&dev->devr);
 	if (ll == IB_LINK_LAYER_ETHERNET)
 		mlx5_disable_roce(dev);
+	kfree(dev->port);
 	ib_dealloc_device(&dev->ib_dev);
 }
 
