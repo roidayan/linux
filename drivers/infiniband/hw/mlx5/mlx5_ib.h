@@ -471,6 +471,10 @@ struct mlx5_ib_fs {
 	struct mutex			lock;
 };
 
+struct mlx5_ib_port {
+	u16 q_cnt_id;
+};
+
 struct mlx5_ib_dev {
 	struct ib_device		ib_dev;
 	struct mlx5_core_dev		*mdev;
@@ -497,6 +501,8 @@ struct mlx5_ib_dev {
 	 */
 	struct srcu_struct      mr_srcu;
 #endif
+	/* Array with num_ports elements */
+	struct mlx5_ib_port	*port;
 };
 
 struct mlx5_uverbs_ex_query_device {

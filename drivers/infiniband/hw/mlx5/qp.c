@@ -2269,6 +2269,14 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 	if (!ibqp->uobject && cur_state == IB_QPS_RESET && new_state == IB_QPS_INIT)
 		context->sq_crq_size |= cpu_to_be16(1 << 4);
 
+	if (cur_state == IB_QPS_RESET && new_state == IB_QPS_INIT) {
+		u8 port_num = attr->port_num - rdma_start_port(ibqp->device);
+		struct mlx5_ib_port *mibport = &dev->port[port_num];
+
+		context->qp_counter_set_usr_page |=
+			cpu_to_be32(mibport->q_cnt_id << 24);
+	}
+
 	mlx5_cur = to_mlx5_state(cur_state);
 	mlx5_new = to_mlx5_state(new_state);
 	mlx5_st = to_mlx5_st(ibqp->qp_type);
