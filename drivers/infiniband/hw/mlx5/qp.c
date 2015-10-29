@@ -1032,6 +1032,7 @@ static int create_raw_packet_qp_rq(struct mlx5_ib_dev *dev,
 	MLX5_SET(rqc, rqc, flush_in_error_en, 1);
 	MLX5_SET(rqc, rqc, user_index, MLX5_GET(qpc, qpc, user_index));
 	MLX5_SET(rqc, rqc, cqn, MLX5_GET(qpc, qpc, cqn_rcv));
+	MLX5_SET(rqc, rqc, counter_set_id, dev->port[0].q_cnt_id);
 
 	wq = MLX5_ADDR_OF(rqc, rqc, wq);
 	MLX5_SET(wq, wq, wq_type, MLX5_WQ_TYPE_CYCLIC);
@@ -2285,6 +2286,15 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 
 	if (!ibqp->uobject && cur_state == IB_QPS_RESET && new_state == IB_QPS_INIT)
 		context->sq_crq_size |= cpu_to_be16(1 << 4);
+
+	if (cur_state == IB_QPS_RESET && new_state == IB_QPS_INIT) {
+		u8 port_num = (attr_mask & IB_QP_PORT ? attr->port_num :
+			       qp->port) - rdma_start_port(ibqp->device);
+		struct mlx5_ib_port *mibport = &dev->port[port_num];
+
+		context->qp_counter_set_usr_page |=
+			cpu_to_be32(mibport->q_cnt_id << 24);
+	}
 
 
 	mlx5_cur = to_mlx5_state(cur_state);

@@ -505,6 +505,10 @@ struct mlx5_roce {
 	struct notifier_block	nb;
 };
 
+struct mlx5_ib_port {
+	u16 q_cnt_id;
+};
+
 struct mlx5_ib_dev {
 	struct ib_device		ib_dev;
 	struct mlx5_core_dev		*mdev;
@@ -531,6 +535,8 @@ struct mlx5_ib_dev {
 	struct srcu_struct      mr_srcu;
 #endif
 	struct mlx5_ib_flow_db	flow_db;
+	/* Array with num_ports elements */
+	struct mlx5_ib_port	*port;
 };
 
 static inline struct mlx5_ib_cq *to_mibcq(struct mlx5_core_cq *mcq)
