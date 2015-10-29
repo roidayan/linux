@@ -129,19 +129,29 @@ static void _fs_put(struct fs_base *node, void (*kref_cb)(struct kref *kref),
 {
 	struct fs_base *parent_node = node->parent;
 
-	if (parent_node && !parent_locked)
+	if (parent_node && !parent_locked) {
+		lockdep_off();
 		mutex_lock(&parent_node->lock);
+		lockdep_on();
+	}
 	if (atomic_dec_and_test(&node->users_refcount)) {
 		if (parent_node) {
 			/*remove from parent's list*/
 			list_del_init(&node->list);
+			lockdep_off();
 			mutex_unlock(&parent_node->lock);
+			lockdep_on();
 		}
 		kref_put(&node->refcount, kref_cb);
-		if (parent_node && parent_locked)
+		if (parent_node && parent_locked) {
+			lockdep_off();
 			mutex_lock(&parent_node->lock);
+			lockdep_on();
+		}
 	} else if (parent_node && !parent_locked) {
+		lockdep_off();
 		mutex_unlock(&parent_node->lock);
+		lockdep_on();
 	}
 }
 
@@ -203,14 +213,20 @@ static void __fs_remove_node(struct kref *kref)
 {
 	struct fs_base *node = container_of(kref, struct fs_base, refcount);
 
+	lockdep_off();
 	if (node->parent)
 		mutex_lock(&node->parent->lock);
 	mutex_lock(&node->lock);
+	lockdep_on();
 	cmd_remove_node(node);
+	lockdep_off();
 	mutex_unlock(&node->lock);
+	lockdep_on();
 	complete(&node->complete);
 	if (node->parent) {
+		lockdep_off();
 		mutex_unlock(&node->parent->lock);
+		lockdep_on();
 		_fs_put(node->parent, _fs_remove_node, false);
 	}
 }
@@ -388,9 +404,13 @@ static struct mlx5_flow_table *find_first_ft_in_prio_reverse(struct fs_prio *pri
 	if (!prio)
 		return NULL;
 
+	lockdep_off();
 	mutex_lock(&prio->base.lock);
+	lockdep_on();
 	ft = _find_first_ft_in_prio_reverse(prio, start);
+	lockdep_off();
 	mutex_unlock(&prio->base.lock);
+	lockdep_on();
 
 	return ft;
 }
@@ -404,17 +424,23 @@ static struct mlx5_flow_table *find_first_ft_in_ns_reverse(struct mlx5_flow_name
 		return NULL;
 
 	fs_get_obj(prio, container_of(start, struct fs_base, list));
+	lockdep_off();
 	mutex_lock(&ns->base.lock);
+	lockdep_on();
 	fs_for_each_prio_continue_reverse(prio, ns) {
 		struct mlx5_flow_table *ft;
 
 		ft = find_first_ft_in_prio_reverse(prio, &prio->objs);
 		if (ft) {
+			lockdep_off();
 			mutex_unlock(&ns->base.lock);
+			lockdep_on();
 			return ft;
 		}
 	}
+	lockdep_off();
 	mutex_unlock(&ns->base.lock);
+	lockdep_on();
 
 	return NULL;
 }
@@ -492,9 +518,13 @@ static struct mlx5_flow_table *find_first_ft_in_prio(struct fs_prio *prio,
 	if (!prio)
 		return NULL;
 
+	lockdep_off();
 	mutex_lock(&prio->base.lock);
+	lockdep_on();
 	ft = _find_first_ft_in_prio(prio, start);
+	lockdep_off();
 	mutex_unlock(&prio->base.lock);
+	lockdep_on();
 
 	return ft;
 }
@@ -508,17 +538,23 @@ static struct mlx5_flow_table *find_first_ft_in_ns(struct mlx5_flow_namespace *n
 		return NULL;
 
 	fs_get_obj(prio, container_of(start, struct fs_base, list));
+	lockdep_off();
 	mutex_lock(&ns->base.lock);
+	lockdep_on();
 	fs_for_each_prio_continue(prio, ns) {
 		struct mlx5_flow_table *ft;
 
 		ft = find_first_ft_in_prio(prio, &prio->objs);
 		if (ft) {
+			lockdep_off();
 			mutex_unlock(&ns->base.lock);
+			lockdep_on();
 			return ft;
 		}
 	}
+	lockdep_off();
 	mutex_unlock(&ns->base.lock);
+	lockdep_on();
 
 	return NULL;
 }
@@ -1726,16 +1762,22 @@ int mlx5_destroy_flow_table(struct mlx5_flow_table *ft)
 
 	is_shared_prio = prio->flags & MLX5_CORE_FS_PRIO_SHARED;
 	if (is_shared_prio) {
+		lockdep_off();
 		mutex_lock(&prio->shared_lock);
+		lockdep_on();
 		if (ft->shared_refcount > 1) {
 			--ft->shared_refcount;
+			lockdep_off();
 			mutex_unlock(&prio->shared_lock);
+			lockdep_on();
 			return 0;
 		}
 	}
 
+	lockdep_off();
 	mutex_lock(&prio->base.lock);
 	mutex_lock(&ft->base.lock);
+	lockdep_on();
 	if (!list_is_last(&ft->base.list, &prio->objs)) {
 		mlx5_core_warn(root->dev,
 			       "flow steering tried to delete flow table %s which isn't last in prio\n",
@@ -1751,19 +1793,25 @@ int mlx5_destroy_flow_table(struct mlx5_flow_table *ft)
 	/* delete two last entries */
 	destroy_star_rule(ft, prio);
 
+	lockdep_off();
 	mutex_unlock(&ft->base.lock);
+	lockdep_on();
 	fs_remove_node_parent_locked(&ft->base);
+	lockdep_off();
 	mutex_unlock(&prio->base.lock);
 	if (is_shared_prio)
 		mutex_unlock(&prio->shared_lock);
+	lockdep_on();
 
 	return err;
 
 unlock_ft:
+	lockdep_off();
 	mutex_unlock(&ft->base.lock);
 	mutex_unlock(&prio->base.lock);
 	if (is_shared_prio)
 		mutex_unlock(&prio->shared_lock);
+	lockdep_on();
 
 	return err;
 }
