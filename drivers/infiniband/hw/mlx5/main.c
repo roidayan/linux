@@ -2205,6 +2205,192 @@ dealloc_counters:
 	return ret;
 }
 
+struct port_attribute {
+	struct attribute attr;
+	ssize_t (*show)(struct mlx5_ib_port *,
+			struct port_attribute *, char *buf);
+	ssize_t (*store)(struct mlx5_ib_port *,
+			 struct port_attribute *,
+			 const char *buf, size_t count);
+};
+
+struct port_counter_attribute {
+	struct port_attribute	attr;
+	size_t			offset;
+};
+
+static ssize_t port_attr_show(struct kobject *kobj,
+			      struct attribute *attr, char *buf)
+{
+	struct port_attribute *port_attr =
+		container_of(attr, struct port_attribute, attr);
+	struct mlx5_ib_port_sysfs_group *p =
+		container_of(kobj, struct mlx5_ib_port_sysfs_group,
+			     kobj);
+	struct mlx5_ib_port *mibport = container_of(p, struct mlx5_ib_port,
+						    group);
+
+	if (!port_attr->show)
+		return -EIO;
+
+	return port_attr->show(mibport, port_attr, buf);
+}
+
+static ssize_t show_port_counter(struct mlx5_ib_port *p,
+				 struct port_attribute *port_attr,
+				 char *buf)
+{
+	int outlen = MLX5_ST_SZ_BYTES(query_q_counter_out);
+	struct port_counter_attribute *counter_attr =
+		container_of(port_attr, struct port_counter_attribute, attr);
+	void *out;
+	int ret;
+
+	out = mlx5_vzalloc(outlen);
+	if (!out)
+		return -ENOMEM;
+
+	ret = mlx5_core_query_q_counter(p->dev->mdev,
+					p->q_cnt_id, 0,
+					out, outlen);
+	if (ret)
+		goto free;
+
+	ret = sprintf(buf, "%d\n",
+		      be32_to_cpu(*(__be32 *)(out + counter_attr->offset)));
+
+free:
+	kfree(out);
+	return ret;
+}
+
+#define PORT_COUNTER_ATTR(_name)					\
+struct port_counter_attribute port_counter_attr_##_name = {		\
+	.attr  = __ATTR(_name, S_IRUGO, show_port_counter, NULL),	\
+	.offset = MLX5_BYTE_OFF(query_q_counter_out, _name)		\
+}
+
+static PORT_COUNTER_ATTR(rx_write_requests);
+static PORT_COUNTER_ATTR(rx_read_requests);
+static PORT_COUNTER_ATTR(rx_atomic_requests);
+static PORT_COUNTER_ATTR(rx_dct_connect);
+static PORT_COUNTER_ATTR(out_of_buffer);
+static PORT_COUNTER_ATTR(out_of_sequence);
+static PORT_COUNTER_ATTR(duplicate_request);
+static PORT_COUNTER_ATTR(rnr_nak_retry_err);
+static PORT_COUNTER_ATTR(packet_seq_err);
+static PORT_COUNTER_ATTR(implied_nak_seq_err);
+static PORT_COUNTER_ATTR(local_ack_timeout_err);
+
+static struct attribute *counter_attrs[] = {
+	&port_counter_attr_rx_write_requests.attr.attr,
+	&port_counter_attr_rx_read_requests.attr.attr,
+	&port_counter_attr_rx_atomic_requests.attr.attr,
+	&port_counter_attr_rx_dct_connect.attr.attr,
+	&port_counter_attr_out_of_buffer.attr.attr,
+	&port_counter_attr_out_of_sequence.attr.attr,
+	&port_counter_attr_duplicate_request.attr.attr,
+	&port_counter_attr_rnr_nak_retry_err.attr.attr,
+	&port_counter_attr_packet_seq_err.attr.attr,
+	&port_counter_attr_implied_nak_seq_err.attr.attr,
+	&port_counter_attr_local_ack_timeout_err.attr.attr,
+	NULL
+};
+
+static struct attribute_group port_counters_group = {
+	.name  = "counters",
+	.attrs  = counter_attrs
+};
+
+static const struct sysfs_ops port_sysfs_ops = {
+	.show = port_attr_show
+};
+
+static struct kobj_type port_type = {
+	.sysfs_ops     = &port_sysfs_ops,
+};
+
+static int add_port_attrs(struct mlx5_ib_dev *dev,
+			  struct kobject *parent,
+			  struct mlx5_ib_port_sysfs_group *port,
+			  u8 port_num)
+{
+	int ret;
+
+	ret = kobject_init_and_add(&port->kobj, &port_type,
+				   parent,
+				   "%d", port_num);
+	if (ret)
+		return ret;
+
+	if (MLX5_CAP_GEN(dev->mdev, out_of_seq_cnt) &&
+	    MLX5_CAP_GEN(dev->mdev, retransmission_q_counters)) {
+		ret = sysfs_create_group(&port->kobj, &port_counters_group);
+		if (ret)
+			goto put_kobj;
+	}
+
+	port->enabled = true;
+	return ret;
+
+put_kobj:
+	kobject_put(&port->kobj);
+	return ret;
+}
+
+static void destroy_ports_attrs(struct mlx5_ib_dev *dev,
+				unsigned int num_ports)
+{
+	unsigned int i;
+
+	for (i = 0; i < num_ports; i++) {
+		struct mlx5_ib_port_sysfs_group *port =
+			&dev->port[i].group;
+
+		if (!port->enabled)
+			continue;
+
+		if (MLX5_CAP_GEN(dev->mdev, out_of_seq_cnt) &&
+		    MLX5_CAP_GEN(dev->mdev, retransmission_q_counters))
+			sysfs_remove_group(&port->kobj,
+					   &port_counters_group);
+		kobject_put(&port->kobj);
+		port->enabled = false;
+	}
+
+	if (dev->ports_parent) {
+		kobject_put(dev->ports_parent);
+		dev->ports_parent = NULL;
+	}
+}
+
+static int create_port_attrs(struct mlx5_ib_dev *dev)
+{
+	int ret = 0;
+	unsigned int i = 0;
+
+	dev->ports_parent = kobject_create_and_add("mlx5_ports",
+						   &dev->ib_dev.dev.kobj);
+	if (!dev->ports_parent)
+		return -ENOMEM;
+
+	for (i = 0; i < dev->num_ports; i++) {
+		ret = add_port_attrs(dev,
+				     dev->ports_parent,
+				     &dev->port[i].group,
+				     i + rdma_start_port(&dev->ib_dev));
+
+		if (ret)
+			goto _destroy_ports_attrs;
+	}
+
+	return 0;
+
+_destroy_ports_attrs:
+	destroy_ports_attrs(dev, i);
+	return ret;
+}
+
 static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 {
 	struct mlx5_ib_dev *dev;
@@ -2233,6 +2419,11 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 			     GFP_KERNEL);
 	if (!dev->port) {
 		goto err_dealloc;
+	}
+
+	for (i = 0; i < MLX5_CAP_GEN(mdev, num_ports); i++) {
+		dev->port[i].dev = dev;
+		dev->port[i].port_num = i;
 	}
 
 
@@ -2387,16 +2578,23 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 	if (err)
 		goto err_dev;
 
+	err = create_port_attrs(dev);
+	if (err)
+		goto err_umrc;
+
 	for (i = 0; i < ARRAY_SIZE(mlx5_class_attributes); i++) {
 		err = device_create_file(&dev->ib_dev.dev,
 					 mlx5_class_attributes[i]);
 		if (err)
-			goto err_umrc;
+			goto err_port_attrs;
 	}
 
 	dev->ib_active = true;
 
 	return dev;
+
+err_port_attrs:
+	destroy_ports_attrs(dev, dev->num_ports);
 
 err_umrc:
 	destroy_umrc_res(dev);
@@ -2431,6 +2629,7 @@ static void mlx5_ib_remove(struct mlx5_core_dev *mdev, void *context)
 	struct mlx5_ib_dev *dev = context;
 	enum rdma_link_layer ll = mlx5_ib_port_link_layer(&dev->ib_dev, 1);
 
+	destroy_ports_attrs(dev, dev->num_ports);
 	ib_unregister_device(&dev->ib_dev);
 	mlx5_ib_dealloc_q_counters(dev);
 	destroy_umrc_res(dev);
