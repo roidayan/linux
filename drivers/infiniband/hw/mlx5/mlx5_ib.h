@@ -505,8 +505,17 @@ struct mlx5_roce {
 	struct notifier_block	nb;
 };
 
+struct mlx5_ib_port_sysfs_group {
+	struct kobject		kobj;
+	bool   enabled;
+	struct attribute_group	counters;
+};
+
 struct mlx5_ib_port {
+	struct mlx5_ib_dev	*dev;
+	u8  port_num;	/* 0 based */
 	u16 q_cnt_id;
+	struct mlx5_ib_port_sysfs_group group;
 };
 
 struct mlx5_ib_dev {
@@ -537,6 +546,7 @@ struct mlx5_ib_dev {
 	struct mlx5_ib_flow_db	flow_db;
 	/* Array with num_ports elements */
 	struct mlx5_ib_port	*port;
+	struct kobject		*ports_parent;
 };
 
 static inline struct mlx5_ib_cq *to_mibcq(struct mlx5_core_cq *mcq)
