@@ -667,7 +667,8 @@ struct mlx5_ifc_cmd_hca_cap_bits {
 
 	u8         out_of_seq_cnt[0x1];
 	u8         vport_counters[0x1];
-	u8         reserved_16[0x4];
+	u8	   retransmission_q_counters[0x1];
+	u8         reserved_16[0x3];
 	u8         max_qp_cnt[0xa];
 	u8         pkey_table_size[0x10];
 
@@ -3340,11 +3341,31 @@ struct mlx5_ifc_query_q_counter_out_bits {
 
 	u8         out_of_buffer[0x20];
 
-	u8         reserved_6[0x20];
+	u8	   reserved_7[0x20];
 
 	u8         out_of_sequence[0x20];
 
-	u8         reserved_7[0x620];
+	u8	   reserved_8[0x20];
+
+	u8	   duplicate_request[0x20];
+
+	u8	   reserved_9[0x20];
+
+	u8	   rnr_nak_retry_err[0x20];
+
+	u8	   reserved_10[0x20];
+
+	u8	   packet_seq_err[0x20];
+
+	u8	   reserved_11[0x20];
+
+	u8	   implied_nak_seq_err[0x20];
+
+	u8	   reserved_12[0x20];
+
+	u8	   local_ack_timeout_err[0x20];
+
+	u8         reserved_13[0x4e0];
 };
 
 struct mlx5_ifc_query_q_counter_in_bits {
