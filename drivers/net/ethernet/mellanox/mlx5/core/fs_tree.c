@@ -372,9 +372,13 @@ static struct mlx5_flow_table *find_first_ft_in_prio_reverse(struct fs_prio *pri
 	if (!prio)
 		return NULL;
 
+	lockdep_off();
 	mutex_lock(&prio->base.lock);
+	lockdep_on();
 	ft = _find_first_ft_in_prio_reverse(prio, start);
+	lockdep_off();
 	mutex_unlock(&prio->base.lock);
+	lockdep_on();
 
 	return ft;
 }
@@ -388,17 +392,23 @@ static struct mlx5_flow_table *find_first_ft_in_ns_reverse(struct mlx5_flow_name
 		return NULL;
 
 	fs_get_obj(prio, container_of(start, struct fs_base, list));
+	lockdep_off();
 	mutex_lock(&ns->base.lock);
+	lockdep_on();
 	fs_for_each_prio_continue_reverse(prio, ns) {
 		struct mlx5_flow_table *ft;
 
 		ft = find_first_ft_in_prio_reverse(prio, &prio->objs);
 		if (ft) {
+			lockdep_off();
 			mutex_unlock(&ns->base.lock);
+			lockdep_on();
 			return ft;
 		}
 	}
+	lockdep_off();
 	mutex_unlock(&ns->base.lock);
+	lockdep_on();
 
 	return NULL;
 }
@@ -476,9 +486,13 @@ static struct mlx5_flow_table *find_first_ft_in_prio(struct fs_prio *prio,
 	if (!prio)
 		return NULL;
 
+	lockdep_off();
 	mutex_lock(&prio->base.lock);
+	lockdep_on();
 	ft = _find_first_ft_in_prio(prio, start);
+	lockdep_off();
 	mutex_unlock(&prio->base.lock);
+	lockdep_on();
 
 	return ft;
 }
@@ -492,17 +506,23 @@ static struct mlx5_flow_table *find_first_ft_in_ns(struct mlx5_flow_namespace *n
 		return NULL;
 
 	fs_get_obj(prio, container_of(start, struct fs_base, list));
+	lockdep_off();
 	mutex_lock(&ns->base.lock);
+	lockdep_on();
 	fs_for_each_prio_continue(prio, ns) {
 		struct mlx5_flow_table *ft;
 
 		ft = find_first_ft_in_prio(prio, &prio->objs);
 		if (ft) {
+			lockdep_off();
 			mutex_unlock(&ns->base.lock);
+			lockdep_on();
 			return ft;
 		}
 	}
+	lockdep_off();
 	mutex_unlock(&ns->base.lock);
+	lockdep_on();
 
 	return NULL;
 }
