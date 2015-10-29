@@ -471,8 +471,17 @@ struct mlx5_ib_fs {
 	struct mutex			lock;
 };
 
+struct mlx5_ib_port_sysfs_group {
+	struct kobject		kobj;
+	bool   enabled;
+	struct attribute_group	counters;
+};
+
 struct mlx5_ib_port {
+	struct mlx5_ib_dev	*dev;
+	u8  port_num;	/* 0 based */
 	u16 q_cnt_id;
+	struct mlx5_ib_port_sysfs_group group;
 };
 
 struct mlx5_ib_dev {
@@ -503,6 +512,7 @@ struct mlx5_ib_dev {
 #endif
 	/* Array with num_ports elements */
 	struct mlx5_ib_port	*port;
+	struct kobject		*ports_parent;
 };
 
 struct mlx5_uverbs_ex_query_device {
