@@ -1529,14 +1529,12 @@ out:
 	return ret;
 }
 
-struct mlx5_flow_rule *
-mlx5_add_flow_rule(struct mlx5_flow_table *ft,
-		   u8 match_criteria_enable,
-		   u32 *match_criteria,
-		   u32 *match_value,
-		   u32 action,
-		   u32 flow_tag,
-		   struct mlx5_flow_destination *dest)
+struct mlx5_flow_rule *fs_add_dst_ft(struct mlx5_flow_table *ft,
+				     u8 match_criteria_enable,
+				     u32 *match_criteria,
+				     u32 *match_value,
+				     u8 action, u32 flow_tag,
+				     struct mlx5_flow_destination *dest)
 {
 	struct mlx5_flow_group *g;
 	struct mlx5_flow_rule *dst = ERR_PTR(-EINVAL);
@@ -1571,16 +1569,46 @@ mlx5_add_flow_rule(struct mlx5_flow_table *ft,
 		fs_get(&g->base);
 		fs_remove_node(&g->base);
 	}
+
 put:
 	fs_put(&ft->base);
 	return dst;
+}
 
+struct mlx5_flow_rule *
+mlx5_add_flow_rule(struct mlx5_flow_table *ft,
+		   u8 match_criteria_enable,
+		   u32 *match_criteria,
+		   u32 *match_value,
+		   u32 action,
+		   u32 flow_tag,
+		   struct mlx5_flow_destination *dest)
+{
+	struct mlx5_flow_rule *dst;
+	struct mlx5_flow_namespace *ns;
+
+	ns = get_ns_with_notifiers(&ft->base);
+	if (ns)
+		down_read(&ns->dests_rw_sem);
+	dst =  fs_add_dst_ft(ft, match_criteria_enable, match_criteria,
+			     match_value, action, flow_tag, dest);
+	if (ns)
+		up_read(&ns->dests_rw_sem);
+
+	return dst;
 }
 EXPORT_SYMBOL(mlx5_add_flow_rule);
 
 void mlx5_del_flow_rule(struct mlx5_flow_rule *dst)
 {
+	struct mlx5_flow_namespace *ns;
+
+	ns = get_ns_with_notifiers(&dst->base);
+	if (ns)
+		down_read(&ns->dests_rw_sem);
 	fs_remove_node(&dst->base);
+	if (ns)
+		up_read(&ns->dests_rw_sem);
 }
 EXPORT_SYMBOL(mlx5_del_flow_rule);
 
