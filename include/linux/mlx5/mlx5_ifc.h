@@ -296,6 +296,14 @@ struct mlx5_ifc_odp_per_transport_service_cap_bits {
 	u8         reserved_1[0x1a];
 };
 
+union ip_addr {
+	struct {
+		u8 reserved[3][0x20];
+		u8 ip[0x20];
+	} ipv4;
+	u8 ipv6[4][0x20];
+};
+
 struct mlx5_ifc_fte_match_set_lyr_2_4_bits {
 	u8         smac_47_16[0x20];
 
@@ -326,9 +334,9 @@ struct mlx5_ifc_fte_match_set_lyr_2_4_bits {
 	u8         udp_sport[0x10];
 	u8         udp_dport[0x10];
 
-	u8         src_ip[4][0x20];
+	union ip_addr src_ip;
 
-	u8         dst_ip[4][0x20];
+	union ip_addr dst_ip;
 };
 
 struct mlx5_ifc_fte_match_set_misc_bits {

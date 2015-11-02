@@ -1248,23 +1248,20 @@ static int parse_flow_attr(u32 *match_c, u32 *match_v,
 			 ethertype, 0xffff);
 		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v,
 			 ethertype, 0x0800);
-
-
-		memcpy(MLX5_ADDR_OF(fte_match_set_lyr_2_4,
-				    outer_headers_c, src_ip),
+		memcpy(MLX5_ADDR_OF(fte_match_set_lyr_2_4, outer_headers_c,
+				    src_ip.ipv4.ip),
 		       &ib_spec->ipv4.mask.src_ip,
 		       sizeof(ib_spec->ipv4.mask.src_ip));
-		memcpy(MLX5_ADDR_OF(fte_match_set_lyr_2_4,
-				    outer_headers_v, src_ip),
+		memcpy(MLX5_ADDR_OF(fte_match_set_lyr_2_4, outer_headers_v,
+				    src_ip.ipv4.ip),
 		       &ib_spec->ipv4.val.src_ip,
 		       sizeof(ib_spec->ipv4.val.src_ip));
-
-		memcpy(MLX5_ADDR_OF(fte_match_set_lyr_2_4,
-				    outer_headers_c, dst_ip),
+		memcpy(MLX5_ADDR_OF(fte_match_set_lyr_2_4, outer_headers_c,
+				    dst_ip.ipv4.ip),
 		       &ib_spec->ipv4.mask.dst_ip,
 		       sizeof(ib_spec->ipv4.mask.dst_ip));
-		memcpy(MLX5_ADDR_OF(fte_match_set_lyr_2_4,
-				    outer_headers_v, dst_ip),
+		memcpy(MLX5_ADDR_OF(fte_match_set_lyr_2_4, outer_headers_v,
+				    dst_ip.ipv4.ip),
 		       &ib_spec->ipv4.val.dst_ip,
 		       sizeof(ib_spec->ipv4.val.dst_ip));
 
