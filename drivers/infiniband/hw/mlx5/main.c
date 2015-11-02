@@ -287,10 +287,15 @@ int mlx5_get_roce_gid_type(struct mlx5_ib_dev *dev, u8 port,
 
 	ret = ib_get_cached_gid(&dev->ib_dev, port, index, &gid, &attr);
 
-	if (!ret)
-		*gid_type = attr.gid_type;
+	if (ret)
+		return ret;
 
-	return ret;
+	if (attr.ndev)
+		dev_put(attr.ndev);
+
+	*gid_type = attr.gid_type;
+
+	return 0;
 }
 
 static int mlx5_use_mad_ifc(struct mlx5_ib_dev *dev)
