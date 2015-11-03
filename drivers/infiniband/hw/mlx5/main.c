@@ -1247,11 +1247,6 @@ static int parse_flow_attr(u32 *match_c, u32 *match_v,
 		if (ib_spec->size != sizeof(ib_spec->tcp_udp))
 			return -EINVAL;
 
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c,
-			 ethertype, 0xffff);
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v,
-			 ethertype, 0x0800);
-
 		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, ip_protocol,
 			 0xff);
 		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, ip_protocol,
@@ -1271,11 +1266,6 @@ static int parse_flow_attr(u32 *match_c, u32 *match_v,
 	case IB_FLOW_SPEC_UDP:
 		if (ib_spec->size != sizeof(ib_spec->tcp_udp))
 			return -EINVAL;
-
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c,
-			 ethertype, 0xffff);
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v,
-			 ethertype, 0x0800);
 
 		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, ip_protocol,
 			 0xff);
