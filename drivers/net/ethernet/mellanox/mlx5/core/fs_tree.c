@@ -39,43 +39,54 @@
 #define INIT_TREE_NODE_ARRAY_SIZE(...)	(sizeof((struct init_tree_node[]){__VA_ARGS__}) /\
 					 sizeof(struct init_tree_node))
 
-#define _ADD_PRIO(name_val, flags_val, min_level_val, max_ft_val,\
-		 ar_size_val, ...) {.type = FS_TYPE_PRIO,\
+#define ADD_PRIO(name_val, flags_val, min_level_val, max_ft_val, caps_val, \
+		 ...) {.type = FS_TYPE_PRIO,\
 	.name = name_val,\
 	.min_ft_level = min_level_val,\
 	.flags = flags_val,\
 	.max_ft = max_ft_val,\
+	.caps = caps_val,\
 	.children = (struct init_tree_node[]) {__VA_ARGS__},\
 	.ar_size = INIT_TREE_NODE_ARRAY_SIZE(__VA_ARGS__) \
 }
 
-#define ADD_PRIO(name_val, min_level_val, ar_size_val, ...)\
-	_ADD_PRIO(name_val, 0, min_level_val, 0,\
-		 ar_size_val, __VA_ARGS__)\
+#define ADD_FT_PRIO(name_val, flags_val, max_ft_val,  ...)\
+	ADD_PRIO(name_val, flags_val, 0, max_ft_val, {},\
+		 __VA_ARGS__)\
 
-#define ADD_FT_PRIO(name_val, flags_val, max_ft_val, ar_size_val, ...)\
-	_ADD_PRIO(name_val, flags_val, 0, max_ft_val,\
-		 ar_size_val, __VA_ARGS__)\
-
-#define ADD_NS(name_val, ar_size_val, ...) {.type = FS_TYPE_NAMESPACE,\
+#define ADD_NS(name_val, ...) {.type = FS_TYPE_NAMESPACE,\
 	.name = name_val,\
 	.children = (struct init_tree_node[]) {__VA_ARGS__},\
 	.ar_size = INIT_TREE_NODE_ARRAY_SIZE(__VA_ARGS__) \
 }
+
+#define INIT_CAPS_ARRAY_SIZE(...) ((sizeof(long[]){__VA_ARGS__}) /\
+				   sizeof(long))
+
+#define FS_CAP(cap) (__mlx5_bit_off(flow_table_nic_cap, cap))
+
+#define FS_REQUIRED_CAPS(...) {.arr_sz = INIT_CAPS_ARRAY_SIZE(__VA_ARGS__), \
+			       .caps = (long[]) {__VA_ARGS__}}
 
 #define BYPASS_MAX_FT 5
 #define BYPASS_PRIO_MAX_FT 1
 #define LEFTOVER_MAX_FT 1
 #define KERNEL_MAX_FT 2
 #define KENREL_MIN_LEVEL 3
-#define LEFTOVER_MIN_LEVEL (KENREL_MIN_LEVEL + 1)
-#define BYPASS_MIN_LEVEL (MLX5_NUM_BYPASS_FTS + LEFTOVER_MIN_LEVEL)
+#define LEFTOVER_MIN_LEVEL KENREL_MIN_LEVEL + 1
+#define BYPASS_MIN_LEVEL MLX5_NUM_BYPASS_FTS + LEFTOVER_MIN_LEVEL
+struct node_caps {
+	size_t	arr_sz;
+	long	*caps;
+};
+
 static struct init_tree_node {
 	enum fs_type	type;
 	const char	*name;
 	struct init_tree_node *children;
 	int ar_size;
-	u8 flags;
+	struct node_caps caps;
+	u8  flags;
 	int min_ft_level;
 	int prio;
 	int max_ft;
@@ -84,27 +95,32 @@ static struct init_tree_node {
 	.name = "root",
 	.ar_size = 3,
 	.children = (struct init_tree_node[]) {
-		ADD_PRIO("by_pass_prio", BYPASS_MIN_LEVEL,
-			 1, ADD_NS("by_pass_ns", 5,
-				   ADD_FT_PRIO("prio0", 0,
-					       BYPASS_PRIO_MAX_FT, 0),
-				   ADD_FT_PRIO("prio1", 0,
-					       BYPASS_PRIO_MAX_FT, 0),
-				   ADD_FT_PRIO("prio2", 0,
-					       BYPASS_PRIO_MAX_FT, 0),
-				   ADD_FT_PRIO("prio3", 0,
-					       BYPASS_PRIO_MAX_FT, 0),
-				   ADD_FT_PRIO("prio-mcast", 0,
-					       BYPASS_PRIO_MAX_FT, 0))),
-		ADD_PRIO("kernel_prio", KENREL_MIN_LEVEL,
-			 1, ADD_NS("kernel_ns", 1,
-				   ADD_FT_PRIO("prio_kernel-0", 0,
-					       KERNEL_MAX_FT, 0))),
-		ADD_PRIO("leftovers_prio", LEFTOVER_MIN_LEVEL, 1,
-			 ADD_NS("leftover_ns", 1,
+		ADD_PRIO("by_pass_prio", 0, BYPASS_MIN_LEVEL, 0,
+			 FS_REQUIRED_CAPS(FS_CAP(flow_table_properties_nic_receive.flow_modify_en),
+					  FS_CAP(flow_table_properties_nic_receive.modify_root)),
+			 ADD_NS("by_pass_ns",
+				ADD_FT_PRIO("prio0", 0,
+					    BYPASS_PRIO_MAX_FT),
+				ADD_FT_PRIO("prio1", 0,
+					    BYPASS_PRIO_MAX_FT),
+				ADD_FT_PRIO("prio2", 0,
+					    BYPASS_PRIO_MAX_FT),
+				ADD_FT_PRIO("prio3", 0,
+					    BYPASS_PRIO_MAX_FT),
+				ADD_FT_PRIO("prio-mcast", 0,
+					    BYPASS_PRIO_MAX_FT))),
+		ADD_PRIO("kernel_prio", 0, KENREL_MIN_LEVEL, 0, {},
+			 ADD_NS("kernel_ns",
+				ADD_FT_PRIO("prio_kernel-0", 0,
+					    KERNEL_MAX_FT))),
+		ADD_PRIO("leftovers_prio", 0,
+			 LEFTOVER_MIN_LEVEL, 0,
+			 FS_REQUIRED_CAPS(FS_CAP(flow_table_properties_nic_receive.flow_modify_en),
+					  FS_CAP(flow_table_properties_nic_receive.modify_root)),
+			 ADD_NS("leftover_ns",
 				ADD_FT_PRIO("leftovers_prio-0",
 					    MLX5_CORE_FS_PRIO_SHARED,
-					    LEFTOVER_MAX_FT, 0)))
+					    LEFTOVER_MAX_FT)))
 	}
 };
 
@@ -1934,7 +1950,24 @@ err:
 	return NULL;
 }
 
-int _init_root_tree(int max_ft_level,
+#define FLOW_TABLE_BIT_SZ 1
+#define GET_FLOW_TABLE_CAP(dev, offset) \
+	((be32_to_cpu(*((__be32 *)(dev->hca_caps_cur[MLX5_CAP_FLOW_TABLE]) +	\
+			offset / 32)) >>					\
+	  (32 - FLOW_TABLE_BIT_SZ - (offset & 0x1f))) & FLOW_TABLE_BIT_SZ)
+
+bool has_required_caps(struct mlx5_core_dev *dev, struct node_caps *caps)
+{
+	int i;
+
+	for (i = 0; i < caps->arr_sz; i++) {
+		if (!GET_FLOW_TABLE_CAP(dev, caps->caps[i]))
+			return false;
+	}
+	return true;
+}
+
+int _init_root_tree(struct mlx5_core_dev *dev, int max_ft_level,
 		    struct init_tree_node *node, struct fs_base *base_parent,
 		    struct init_tree_node *tree_parent)
 {
@@ -1946,7 +1979,8 @@ int _init_root_tree(int max_ft_level,
 	int err = 0;
 
 	if (node->type == FS_TYPE_PRIO) {
-		if (node->min_ft_level > max_ft_level)
+		if ((node->min_ft_level > max_ft_level) ||
+		    !has_required_caps(dev, &node->caps))
 			goto out;
 
 		fs_get_obj(fs_ns, base_parent);
@@ -1971,7 +2005,7 @@ int _init_root_tree(int max_ft_level,
 		return -EINVAL;
 	}
 	for (i = 0; i < node->ar_size; i++) {
-		err = _init_root_tree(max_ft_level, &node->children[i], base,
+		err = _init_root_tree(dev, max_ft_level, &node->children[i], base,
 				      node);
 		if (err)
 			break;
@@ -1980,7 +2014,7 @@ out:
 	return err;
 }
 
-int init_root_tree(int max_ft_level,
+int init_root_tree(struct mlx5_core_dev *dev, int max_ft_level,
 		   struct init_tree_node *node, struct fs_base *parent)
 {
 	int i;
@@ -1989,7 +2023,7 @@ int init_root_tree(int max_ft_level,
 
 	fs_get_obj(fs_ns, parent);
 	for (i = 0; i < node->ar_size; i++) {
-		err = _init_root_tree(max_ft_level,
+		err = _init_root_tree(dev, max_ft_level,
 				      &node->children[i], &fs_ns->base, node);
 		if (err)
 			break;
@@ -2090,7 +2124,7 @@ static int init_root_ns(struct mlx5_core_dev *dev)
 	if (IS_ERR_OR_NULL(dev->root_ns))
 		goto err;
 
-	if (init_root_tree(max_ft_level, &root_fs, &dev->root_ns->ns.base))
+	if (init_root_tree(dev, max_ft_level, &root_fs, &dev->root_ns->ns.base))
 		goto err;
 
 	set_max_ft(&dev->root_ns->ns);
@@ -2131,16 +2165,7 @@ static void cleanup_root_ns(struct mlx5_core_dev *dev)
 				list_first_entry(&iter_prio->objs,
 						 struct fs_base,
 						 list);
-
-			/*deleting the dummy ft(level 0*/
-			if (iter_ns->type == FS_TYPE_FLOW_TABLE) {
-				struct mlx5_flow_table *ft;
-
-				fs_get_obj(ft, iter_ns);
-				mlx5_destroy_flow_table(ft);
-			} else {
 				fs_remove_node(iter_ns);
-			}
 		}
 	}
 	/* stage 3 */
