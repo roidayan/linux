@@ -38,6 +38,7 @@
 #include "en.h"
 #include "eswitch.h"
 #include "en_rep.h"
+#include "eswitch.h"
 
 static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v)
 {

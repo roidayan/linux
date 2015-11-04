@@ -159,4 +159,16 @@ int mlx5_eswitch_get_vport_stats(struct mlx5_eswitch *esw,
 				 int vport,
 				 struct ifla_vf_stats *vf_stats);
 
+/* 0 - legacy, 1 - tx2vport  [.. offloaded ovs groups ..] last - miss */
+#define MLX5_OFFLOAD_GROUPS 16
+
+#define MLX5_TX2VPORT_GROUP 1
+
+#define MLX5_MISS_GROUP (MLX5_OFFLOAD_GROUPS - 1)
+
+#define MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG 8
+
+extern int mlx5_flow_offload_group_size_log;
+
+extern int mlx5_vf_fdb_rules;
 #endif /* __MLX5_ESWITCH_H__ */

@@ -58,12 +58,6 @@ int __mlx5e_rep_attr_get(struct mlx5e_vf_rep *vf_rep, struct switchdev_attr *att
 int __mlx5e_rep_obj_add(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj *obj);
 int __mlx5e_rep_obj_del(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj *obj);
 
-/* 0 - legacy, 1 - tx2vport  [.. offloaded ovs groups ..] last - miss */
-#define MLX5_OFFLOAD_GROUPS 16
-#define MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG 8
-
-#define MLX5_MISS_GROUP (MLX5_OFFLOAD_GROUPS - 1)
-
 #define MLX5E_MAX_NUM_TC	8
 
 #define MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE                0x6

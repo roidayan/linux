@@ -38,6 +38,7 @@
 #include "en.h"
 #include "eswitch.h"
 #include "en_rep.h"
+#include "eswitch.h"
 
 int  mlx5e_open_rep_channels(struct mlx5e_priv *priv);
 void mlx5e_close_rep_channels(struct mlx5e_priv *priv);
@@ -457,7 +458,7 @@ int mlx5e_vf_reps_create(struct mlx5e_priv *pf_dev)
 		vport = vf + 1; /* PF vport = 0 --> VF vport is vf+1 */
 
 		/* Set FDB sent to Vport rule, 1 ==  send to vport flow table group */
-		err = mlx5_add_fdb_send_to_vport_rule(pf_dev->mdev, 1, vport, sq->sqn,
+		err = mlx5_add_fdb_send_to_vport_rule(pf_dev->mdev, MLX5_TX2VPORT_GROUP, vport, sq->sqn,
 						      &pf_dev->vf_reps[vf]->tx_to_vport_flow_index);
 		if (err) {
 			printk(KERN_INFO "failed to add fdb send to vport rule, err %d\n", err);
@@ -538,7 +539,7 @@ int mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev)
 	for (n = 0; n < nch; n++) {
 		c = pf_dev->channel[n];
 		for (tc = 0; tc < c->num_tc; tc++) {
-			err = mlx5_add_fdb_send_to_vport_rule(pf_dev->mdev, 1,
+			err = mlx5_add_fdb_send_to_vport_rule(pf_dev->mdev, MLX5_TX2VPORT_GROUP,
 							      FDB_UPLINK_VPORT, c->sq[tc].sqn,
 							      &c->sq[tc].tx_to_vport_flow_index);
 			if (err)
