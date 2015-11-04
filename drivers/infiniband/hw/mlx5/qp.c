@@ -1189,6 +1189,21 @@ static int create_qp_common(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 		}
 	}
 
+	if (init_attr->create_flags &
+			(IB_QP_CREATE_CROSS_CHANNEL |
+			 IB_QP_CREATE_MANAGED_SEND |
+			 IB_QP_CREATE_MANAGED_RECV)) {
+		if (!MLX5_CAP_GEN(mdev, cd)) {
+			mlx5_ib_dbg(dev, "cross-channel isn't supported\n");
+			return -EINVAL;
+		}
+		if (init_attr->create_flags & IB_QP_CREATE_CROSS_CHANNEL)
+			qp->flags |= MLX5_IB_QP_CROSS_CHANNEL;
+		if (init_attr->create_flags & IB_QP_CREATE_MANAGED_SEND)
+			qp->flags |= MLX5_IB_QP_MANAGED_SEND;
+		if (init_attr->create_flags & IB_QP_CREATE_MANAGED_RECV)
+			qp->flags |= MLX5_IB_QP_MANAGED_RECV;
+	}
 	if (init_attr->sq_sig_type == IB_SIGNAL_ALL_WR)
 		qp->sq_signal_bits = MLX5_WQE_CTRL_CQ_UPDATE;
 
@@ -1269,6 +1284,13 @@ static int create_qp_common(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 
 	if (qp->flags & MLX5_IB_QP_BLOCK_MULTICAST_LOOPBACK)
 		in->ctx.flags_pd |= cpu_to_be32(MLX5_QP_BLOCK_MCAST);
+
+	if (qp->flags & MLX5_IB_QP_CROSS_CHANNEL)
+		in->ctx.params2 |= cpu_to_be32(MLX5_QP_BIT_CC_MASTER);
+	if (qp->flags & MLX5_IB_QP_MANAGED_SEND)
+		in->ctx.params2 |= cpu_to_be32(MLX5_QP_BIT_CC_SLAVE_SEND);
+	if (qp->flags & MLX5_IB_QP_MANAGED_RECV)
+		in->ctx.params2 |= cpu_to_be32(MLX5_QP_BIT_CC_SLAVE_RECV);
 
 	if (qp->scat_cqe && is_connected(init_attr->qp_type)) {
 		int rcqe_sz;
@@ -3849,6 +3871,13 @@ int mlx5_ib_query_qp(struct ib_qp *ibqp, struct ib_qp_attr *qp_attr, int qp_attr
 	qp_init_attr->create_flags = 0;
 	if (qp->flags & MLX5_IB_QP_BLOCK_MULTICAST_LOOPBACK)
 		qp_init_attr->create_flags |= IB_QP_CREATE_BLOCK_MULTICAST_LOOPBACK;
+
+	if (qp->flags & MLX5_IB_QP_CROSS_CHANNEL)
+		qp_init_attr->create_flags |= IB_QP_CREATE_CROSS_CHANNEL;
+	if (qp->flags & MLX5_IB_QP_MANAGED_SEND)
+		qp_init_attr->create_flags |= IB_QP_CREATE_MANAGED_SEND;
+	if (qp->flags & MLX5_IB_QP_MANAGED_RECV)
+		qp_init_attr->create_flags |= IB_QP_CREATE_MANAGED_RECV;
 
 	qp_init_attr->sq_sig_type = qp->sq_signal_bits & MLX5_WQE_CTRL_CQ_UPDATE ?
 		IB_SIGNAL_ALL_WR : IB_SIGNAL_REQ_WR;
