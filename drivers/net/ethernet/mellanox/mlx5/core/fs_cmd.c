@@ -159,6 +159,7 @@ int mlx5_cmd_fs_destroy_fg(struct mlx5_core_dev *dev,
 }
 
 int mlx5_cmd_fs_set_fte(struct mlx5_core_dev *dev,
+			enum fs_fte_status *fte_status,
 			u32 *match_val,
 			enum fs_ft_type type, unsigned int table_id,
 			unsigned int index, unsigned int group_id,
@@ -175,9 +176,23 @@ int mlx5_cmd_fs_set_fte(struct mlx5_core_dev *dev,
 	void *in_match_value;
 	void *in_dests;
 	int err;
+	int opmod = 0;
+	int modify_mask = 0;
+	int atomic_mod_cap;
 
 	if (!dev)
 		return -EINVAL;
+
+	if (*fte_status & FS_FTE_STATUS_EXISTING) {
+		atomic_mod_cap = MLX5_CAP_FLOWTABLE(dev,
+						    flow_table_properties_nic_receive.
+						    flow_modify_en);
+		if (!atomic_mod_cap)
+			return -ENOTSUPP;
+		opmod = 1;
+		modify_mask = 1 <<
+			MLX5_SET_FTE_MODIFY_ENABLE_MASK_DESTINATION_LIST;
+	}
 
 	in = mlx5_vzalloc(inlen);
 	if (!in) {
@@ -186,6 +201,8 @@ int mlx5_cmd_fs_set_fte(struct mlx5_core_dev *dev,
 	}
 
 	MLX5_SET(set_fte_in, in, opcode, MLX5_CMD_OP_SET_FLOW_TABLE_ENTRY);
+	MLX5_SET(set_fte_in, in, op_mod, opmod);
+	MLX5_SET(set_fte_in, in, modify_enable_mask, modify_mask);
 	MLX5_SET(set_fte_in, in, table_type, type);
 	MLX5_SET(set_fte_in, in, table_id,   table_id);
 	MLX5_SET(set_fte_in, in, flow_index, index);
@@ -217,17 +234,21 @@ int mlx5_cmd_fs_set_fte(struct mlx5_core_dev *dev,
 	memset(out, 0, sizeof(out));
 	err = mlx5_cmd_exec_check_status(dev, in, inlen, out,
 					 sizeof(out));
+	if (!err)
+		*fte_status = FS_FTE_STATUS_EXISTING;
 	kvfree(in);
 
 	return err;
 }
 
 int mlx5_cmd_fs_delete_fte(struct mlx5_core_dev *dev,
+			   enum fs_fte_status *fte_status,
 			   enum fs_ft_type type, unsigned int table_id,
 			   unsigned int index)
 {
 	u32 in[MLX5_ST_SZ_DW(delete_fte_in)];
 	u32 out[MLX5_ST_SZ_DW(delete_fte_out)];
+	int err;
 
 	if (!dev)
 		return -EINVAL;
@@ -239,7 +260,10 @@ int mlx5_cmd_fs_delete_fte(struct mlx5_core_dev *dev,
 	MLX5_SET(delete_fte_in, in, table_id, table_id);
 	MLX5_SET(delete_fte_in, in, flow_index, index);
 
-	return mlx5_cmd_exec_check_status(dev, in, sizeof(in), out,
-					  sizeof(out));
+	err =  mlx5_cmd_exec_check_status(dev, in, sizeof(in), out, sizeof(out));
+	if (!err)
+		*fte_status = 0;
+
+	return err;
 }
 
