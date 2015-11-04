@@ -280,6 +280,9 @@ struct mlx5_ib_cq_buf {
 enum mlx5_ib_qp_flags {
 	MLX5_IB_QP_BLOCK_MULTICAST_LOOPBACK     = 1 << 0,
 	MLX5_IB_QP_SIGNATURE_HANDLING           = 1 << 1,
+	MLX5_IB_QP_CROSS_CHANNEL		= 1 << 2,
+	MLX5_IB_QP_MANAGED_SEND			= 1 << 3,
+	MLX5_IB_QP_MANAGED_RECV			= 1 << 4,
 };
 
 struct mlx5_umr_wr {
@@ -322,6 +325,7 @@ struct mlx5_ib_cq {
 	struct mlx5_ib_cq_buf  *resize_buf;
 	struct ib_umem	       *resize_umem;
 	int			cqe_size;
+	u32			create_flags;
 };
 
 struct mlx5_ib_srq {
@@ -709,4 +713,12 @@ static inline int is_qp1(enum ib_qp_type qp_type)
 #define MLX5_MAX_UMR_SHIFT 16
 #define MLX5_MAX_UMR_PAGES (1 << MLX5_MAX_UMR_SHIFT)
 
+static inline u32 check_cq_create_flags(u32 flags)
+{
+	/*
+	 * It returns non-zero value for unsupported CQ
+	 * create flags, otherwise it returns zero.
+	 */
+	return (flags & ~IB_CQ_FLAGS_IGNORE_OVERRUN);
+}
 #endif /* MLX5_IB_H */

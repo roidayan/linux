@@ -531,6 +531,9 @@ static int mlx5_ib_init_device_flags(struct ib_device *ibdev)
 	ibdev->odp_caps = dev->odp_caps;
 #endif
 
+	if (MLX5_CAP_GEN(mdev, cd))
+		ibdev->device_cap_flags |= IB_DEVICE_CROSS_CHANNEL;
+
 	return 0;
 }
 
