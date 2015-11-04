@@ -467,7 +467,7 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 		memcpy(group->match_c, match_c, MATCH_PARAMS_SIZE);
 
 		g = &group->g;
-		g->log_sz = MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG;
+		g->log_sz = mlx5_flow_offload_group_size_log;
 		g->match_criteria_enable = MLX5_MATCH_OUTER_HEADERS | MLX5_MATCH_MISC_PARAMETERS;
 		memcpy(g->match_criteria, match_c, MATCH_PARAMS_SIZE);
 

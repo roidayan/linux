@@ -43,6 +43,10 @@ int mlx5_vf_fdb_rules = 1;
 module_param_named(vf_fdb_rules, mlx5_vf_fdb_rules, int, 0644);
 MODULE_PARM_DESC(vf_fdb_rules, "vf_fdb_rules: 1 = add FDB rules for VF MACs, 0 = don't add Default=1");
 
+int mlx5_flow_offload_group_size_log = 8;
+module_param_named(flow_offload_group_size_log, mlx5_flow_offload_group_size_log, int, 0644);
+MODULE_PARM_DESC(flow_offload_group_size_log, "flow_offload_group_size_log: log_2 if the flow offlloads group size Default=8");
+
 #define UPLINK_VPORT 0xFFFF
 
 #define MLX5_DEBUG_ESWITCH_MASK BIT(3)
