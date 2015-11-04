@@ -1533,7 +1533,7 @@ static struct mlx5_flow_rule *fs_add_dst_fg(struct mlx5_flow_group *fg,
 
 	mutex_lock(&fg->base.lock);
 	fs_for_each_fte(fte, fg) {
-		mutex_lock(&fte->base.lock);
+		mutex_lock_nested(&fte->base.lock, SINGLE_DEPTH_NESTING);
 		if (fs_match_exact_val(&fg->mask, match_value, &fte->val) &&
 		    action == fte->action && flow_tag == fte->flow_tag) {
 			dst = fs_add_dst_fte(fte, fg, dest);
