@@ -576,7 +576,6 @@ static int mlx5e_create_sq(struct mlx5e_channel *c,
 	sq->tc        = tc;
 	sq->edge      = (sq->wq.sz_m1 + 1) - MLX5_SEND_WQE_MAX_WQEBBS;
 	sq->bf_budget = MLX5E_SQ_BF_BUDGET;
-	priv->txq_to_sq_map[txq_ix] = sq;
 
 	return 0;
 
@@ -1125,6 +1124,8 @@ static int mlx5e_open_channels(struct mlx5e_priv *priv)
 	int err = -ENOMEM;
 	int i;
 	int j;
+	int tc;
+	int txq_ix;
 
 	priv->channel = kcalloc(nch, sizeof(struct mlx5e_channel *),
 				GFP_KERNEL);
@@ -1140,6 +1141,11 @@ static int mlx5e_open_channels(struct mlx5e_priv *priv)
 		err = mlx5e_open_channel(priv, i, &priv->params, &cparam, &priv->channel[i]);
 		if (err)
 			goto err_close_channels;
+
+		for (tc = 0; tc < priv->channel[i]->num_tc; tc++) {
+			txq_ix = i + tc * nch;
+			priv->txq_to_sq_map[txq_ix] = &priv->channel[i]->sq[tc];
+		}
 	}
 
 	for (j = 0; j < nch; j++) {
@@ -2463,8 +2469,8 @@ int mlx5e_open_rep_channels(struct mlx5e_priv *priv)
 	priv->rep_channel = kcalloc(nch, sizeof(struct mlx5e_channel *),
 				    GFP_KERNEL);
 
-	if (!priv->rep_channel || !priv->txq_to_sq_map)
-		goto err_free_txq_to_sq_map;
+	if (!priv->rep_channel)
+		goto err_free_rep_channel;
 
 	printk(KERN_INFO "%s creating %d channels for vf reps xmit\n", __func__, nch);
 
@@ -2493,7 +2499,7 @@ err_close_channels:
 	for (i--; i >= 0; i--)
 		mlx5e_close_channel(priv->rep_channel[i]);
 
-err_free_txq_to_sq_map:
+err_free_rep_channel:
 	kfree(priv->rep_channel);
 	priv->rep_channel = NULL;
 
