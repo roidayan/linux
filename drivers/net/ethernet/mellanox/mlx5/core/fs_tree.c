@@ -704,6 +704,7 @@ static int fs_set_star_rules(struct mlx5_core_dev *dev,
 	new_src_dst->dest_attr.ft = dst_ft;
 	if (dst_ft) {
 		err = mlx5_cmd_fs_set_fte(dev,
+					  &new_src_fte->status,
 					  match_value, src_ft->type,
 					  src_ft->id, new_src_fte->index,
 					  src_ft->star_rules.fg->id,
@@ -720,6 +721,7 @@ static int fs_set_star_rules(struct mlx5_core_dev *dev,
 	if (old_src_dst->dest_attr.ft) {
 		/*Remove old fte from prev*/
 		err = mlx5_cmd_fs_delete_fte(dev,
+					     &old_src_fte->status,
 					     src_ft->type, src_ft->id,
 					     old_src_fte->index);
 	}
@@ -1259,7 +1261,8 @@ static struct mlx5_flow_rule *fs_add_dst_fte(struct fs_fte *fte,
 	/*Add dest to dests list- added as first element after the head*/
 	list_add_tail(&dst->base.list, &fte->dests);
 	fte->dests_size++;
-	err = mlx5_cmd_fs_set_fte(fs_get_dev(&ft->base), fte->val, ft->type,
+	err = mlx5_cmd_fs_set_fte(fs_get_dev(&ft->base), &fte->status,
+				  fte->val, ft->type,
 				  ft->id, fte->index, fg->id, fte->flow_tag,
 				  fte->action, fte->dests_size, &fte->dests);
 	if (err)
@@ -1313,7 +1316,7 @@ static void fs_del_dst(struct mlx5_flow_rule *dst)
 	list_del(&dst->base.list);
 	fte->dests_size--;
 	if (fte->dests_size) {
-		err = mlx5_cmd_fs_set_fte(dev, match_value, ft->type,
+		err = mlx5_cmd_fs_set_fte(dev, &fte->status, match_value, ft->type,
 					  ft->id, fte->index, fg->id,
 					  fte->flow_tag, fte->action,
 					  fte->dests_size, &fte->dests);
@@ -1342,7 +1345,8 @@ static void fs_del_fte(struct fs_fte *fte)
 	dev = fs_get_dev(&ft->base);
 	WARN_ON(!dev);
 
-	err = mlx5_cmd_fs_delete_fte(dev, ft->type, ft->id, fte->index);
+	err = mlx5_cmd_fs_delete_fte(dev, &fte->status,
+				     ft->type, ft->id, fte->index);
 	if (err)
 		pr_warn("flow steering can't delete fte %s\n",
 			       fte->base.name);
@@ -1406,21 +1410,104 @@ static char *get_dest_name(struct mlx5_flow_destination *dest)
 	return NULL;
 }
 
+static bool _fs_match_exact_val(void *mask, void *val1, void *val2, size_t size)
+{
+	unsigned int i;
+
+	/* TODO: optimize by comparing 64bits when possible */
+	for (i = 0; i < size; i++, mask++, val1++, val2++)
+		if ((*((u8 *)val1) & (*(u8 *)mask)) !=
+		    ((*(u8 *)val2) & (*(u8 *)mask)))
+			return false;
+
+	return true;
+}
+
+static bool fs_match_exact_val(struct mlx5_core_fs_mask *mask,
+			       void *val1, void *val2)
+{
+	if (mask->match_criteria_enable &
+	    1 << MLX5_CREATE_FLOW_GROUP_IN_MATCH_CRITERIA_ENABLE_OUTER_HEADERS) {
+		void *fte_match1 = MLX5_ADDR_OF(fte_match_param,
+						val1, outer_headers);
+		void *fte_match2 = MLX5_ADDR_OF(fte_match_param,
+						val2, outer_headers);
+		void *fte_mask = MLX5_ADDR_OF(fte_match_param,
+					      mask->match_criteria, outer_headers);
+
+		if (!_fs_match_exact_val(fte_mask, fte_match1, fte_match2,
+					 MLX5_ST_SZ_BYTES(fte_match_set_lyr_2_4)))
+			return false;
+	}
+
+	if (mask->match_criteria_enable &
+	    1 << MLX5_CREATE_FLOW_GROUP_IN_MATCH_CRITERIA_ENABLE_MISC_PARAMETERS) {
+		void *fte_match1 = MLX5_ADDR_OF(fte_match_param,
+						val1, misc_parameters);
+		void *fte_match2 = MLX5_ADDR_OF(fte_match_param,
+						val2, misc_parameters);
+		void *fte_mask = MLX5_ADDR_OF(fte_match_param,
+					  mask->match_criteria, misc_parameters);
+
+		if (!_fs_match_exact_val(fte_mask, fte_match1, fte_match2,
+					 MLX5_ST_SZ_BYTES(fte_match_set_misc)))
+			return false;
+	}
+	if (mask->match_criteria_enable &
+	    1 << MLX5_CREATE_FLOW_GROUP_IN_MATCH_CRITERIA_ENABLE_INNER_HEADERS) {
+		void *fte_match1 = MLX5_ADDR_OF(fte_match_param,
+						val1, inner_headers);
+		void *fte_match2 = MLX5_ADDR_OF(fte_match_param,
+						val2, inner_headers);
+		void *fte_mask = MLX5_ADDR_OF(fte_match_param,
+					  mask->match_criteria, inner_headers);
+
+		if (!_fs_match_exact_val(fte_mask, fte_match1, fte_match2,
+					 MLX5_ST_SZ_BYTES(fte_match_set_lyr_2_4)))
+			return false;
+	}
+	return true;
+}
+
+static void add_rule_to_tree(struct mlx5_flow_rule *rule,
+			     struct fs_fte *fte)
+{
+	char *dest_name;
+
+	dest_name = get_dest_name(&rule->dest_attr);
+	fs_add_node(&rule->base, &fte->base, dest_name, 1);
+	/* re-add to list, since fs_add_node reset our list */
+	list_add_tail(&rule->base.list, &fte->dests);
+	kfree(dest_name);
+	call_to_add_rule_notifiers(rule, fte);
+}
+
 /* assuming parent fg is locked */
 static struct mlx5_flow_rule *fs_add_dst_fg(struct mlx5_flow_group *fg,
-						   u32 *match_value,
-						   u8 action,
-						   u32 flow_tag,
-						   struct mlx5_flow_destination *dest)
+					    u32 *match_value,
+					    u8 action,
+					    u32 flow_tag,
+					    struct mlx5_flow_destination *dest)
 {
 	struct fs_fte *fte;
 	struct mlx5_flow_rule *dst;
 	struct mlx5_flow_table *ft;
 	struct list_head *prev;
 	char fte_name[20];
-	char *dest_name;
 
 	mutex_lock(&fg->base.lock);
+	fs_for_each_fte(fte, fg) {
+		mutex_lock_nested(&fte->base.lock, SINGLE_DEPTH_NESTING);
+		if (fs_match_exact_val(&fg->mask, match_value, &fte->val) &&
+		    action == fte->action && flow_tag == fte->flow_tag) {
+			dst = fs_add_dst_fte(fte, fg, dest);
+			mutex_unlock(&fte->base.lock);
+			if (IS_ERR(dst))
+				goto unlock_fg;
+			goto add_rule;
+		}
+		mutex_unlock(&fte->base.lock);
+	}
 	fs_get_parent(ft,fg);
 	if (fg->num_ftes >= fg->max_ftes) {
 		dst = ERR_PTR(-ENOSPC);
@@ -1444,15 +1531,8 @@ static struct mlx5_flow_rule *fs_add_dst_fg(struct mlx5_flow_group *fg,
 	/* Add node to tree */
 	fs_add_node(&fte->base, &fg->base, fte_name, 0);
 	list_add(&fte->base.list, prev);
-
-	/* Add node to tree */
-	dest_name = get_dest_name(dest);
-	fs_add_node(&dst->base, &fte->base, dest_name, 1);
-	kfree(dest_name);
-	/* re-add to list, since fs_add_node reset our list */
-	list_add_tail(&dst->base.list, &fte->dests);
-	call_to_add_rule_notifiers(dst, fte);
-
+add_rule:
+	add_rule_to_tree(dst, fte);
 unlock_fg:
 	mutex_unlock(&fg->base.lock);
 	return dst;
