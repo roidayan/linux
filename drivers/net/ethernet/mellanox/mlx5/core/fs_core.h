@@ -38,6 +38,10 @@
 #include <linux/mutex.h>
 #include <linux/mlx5/fs.h>
 
+enum fs_fte_status {
+	FS_FTE_STATUS_EXISTING = 1UL << 0,
+};
+
 enum fs_type {
 	FS_TYPE_NAMESPACE,
 	FS_TYPE_PRIO,
@@ -134,6 +138,7 @@ struct fs_fte {
 	struct list_head			dests;
 	uint32_t				index; /* index in ft */
 	u8					action; /* MLX5_FLOW_CONTEXT_ACTION */
+	enum fs_fte_status			status;
 };
 
 struct mlx5_flow_group {
@@ -273,6 +278,7 @@ int mlx5_cmd_fs_destroy_fg(struct mlx5_core_dev *dev,
 
 
 int mlx5_cmd_fs_set_fte(struct mlx5_core_dev *dev,
+			enum fs_fte_status *status,
 			u32 *match_val,
 			enum fs_ft_type type, unsigned int table_id,
 			unsigned int index, unsigned int group_id,
@@ -281,6 +287,7 @@ int mlx5_cmd_fs_set_fte(struct mlx5_core_dev *dev,
 			struct list_head *dests);  /* mlx5_flow_desination */
 
 int mlx5_cmd_fs_delete_fte(struct mlx5_core_dev *dev,
+			   enum fs_fte_status *status,
 			   enum fs_ft_type type, unsigned int table_id,
 			   unsigned int index);
 
