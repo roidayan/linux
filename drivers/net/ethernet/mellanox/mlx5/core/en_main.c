@@ -2206,10 +2206,12 @@ static void mlx5e_build_netdev(struct net_device *netdev)
 
 	netdev->ethtool_ops	  = &mlx5e_ethtool_ops;
 
-	if (mlx5_core_is_pf(mdev)) {
+	if (mlx5_core_is_pf(mdev) && !mlx5_vf_fdb_rules) {
 		printk(KERN_ERR "adding switchdev ops for mlx5 PF device\n");
 		netdev->switchdev_ops  = &mlx5e_pf_switchdev_ops;
-	}
+	} else
+		printk(KERN_ERR "no switchdev ops for mlx5 PF device\n");
+
 	netdev->vlan_features    |= NETIF_F_SG;
 	netdev->vlan_features    |= NETIF_F_IP_CSUM;
 	netdev->vlan_features    |= NETIF_F_IPV6_CSUM;
