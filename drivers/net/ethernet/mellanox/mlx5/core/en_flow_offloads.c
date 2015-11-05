@@ -154,15 +154,14 @@ static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v)
 		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, udp_dport, ntohs(key->tp.dst));
 	}
 
-	/* FIXME: need to use meta data for realizing if this is IPv4/IPv6 */
-	if (mask->ipv4.addr.src) {
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, src_ip[0], mask->ipv4.addr.src);
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, src_ip[0], key->ipv4.addr.src);
+	if (mask->ipv4.addr.src && key->eth.type == ntohs(ETH_P_IP)) {
+		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, src_ip[3], ntohl(mask->ipv4.addr.src));
+		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, src_ip[3], ntohl(key->ipv4.addr.src));
 	}
 
-	if (mask->ipv4.addr.dst) {
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, dst_ip[0], mask->ipv4.addr.dst);
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, dst_ip[0], key->ipv4.addr.dst);
+	if (mask->ipv4.addr.dst && key->eth.type == ntohs(ETH_P_IP)) {
+		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, dst_ip[3], ntohl(mask->ipv4.addr.dst));
+		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, dst_ip[3], ntohl(key->ipv4.addr.dst));
 	}
 
 	/* FIXME: add IPv6 src/dst addressed */
