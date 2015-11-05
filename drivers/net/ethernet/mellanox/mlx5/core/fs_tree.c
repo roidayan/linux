@@ -651,20 +651,6 @@ static struct mlx5_flow_group *fs_alloc_fg(u32 *create_fg_in)
 	return fg;
 }
 
-static struct mlx5_flow_rule *get_unused_star_dest(struct mlx5_flow_table *ft)
-{
-	struct fs_fte *fte = ft->star_rules.fte_star[(ft->star_rules.used_index + 1) % 2];
-
-	return list_first_entry(&fte->dests, struct mlx5_flow_rule, base.list);
-}
-
-static struct mlx5_flow_rule *get_used_star_dest(struct mlx5_flow_table *ft)
-{
-	struct fs_fte *fte = ft->star_rules.fte_star[ft->star_rules.used_index];
-
-	return list_first_entry(&fte->dests, struct mlx5_flow_rule, base.list);
-}
-
 static struct mlx5_flow_root_namespace *find_root(struct fs_base *node)
 {
 	struct fs_base *parent;
@@ -695,57 +681,50 @@ static inline struct mlx5_core_dev *fs_get_dev(struct fs_base *node)
 	return NULL;
 }
 
-/* assumed src_ft and dst_ft can't be freed */
-static int fs_set_star_rules(struct mlx5_core_dev *dev,
-			     struct mlx5_flow_table *src_ft,
-			     struct mlx5_flow_table *dst_ft)
+static int fs_set_star_rule(struct mlx5_core_dev *dev,
+			    struct mlx5_flow_table *src_ft,
+			    struct mlx5_flow_table *dst_ft)
 {
-	struct mlx5_flow_rule *old_src_dst = get_used_star_dest(src_ft);
-	struct mlx5_flow_rule *new_src_dst = get_unused_star_dest(src_ft);
-	struct fs_fte *new_src_fte, *old_src_fte;
+	struct mlx5_flow_rule *src_dst;
+	struct fs_fte *src_fte;
 	int err = 0;
 	u32 *match_value;
 	int match_len = MLX5_ST_SZ_BYTES(fte_match_param);
 
+	src_dst = list_first_entry(&src_ft->star_rule.fte->dests,
+				   struct mlx5_flow_rule, base.list);
 	match_value = mlx5_vzalloc(match_len);
 	if (!match_value) {
-		pr_warn("failed to allocate inbox\n");
+		mlx5_core_warn(dev, "failed to allocate inbox\n");
 		return -ENOMEM;
 	}
 	/*Create match context*/
 
-	fs_get_parent(new_src_fte, new_src_dst);
-	fs_get_parent(old_src_fte, old_src_dst);
+	fs_get_parent(src_fte, src_dst);
 
-	new_src_dst->dest_attr.ft = dst_ft;
+	src_dst->dest_attr.ft = dst_ft;
 	if (dst_ft) {
 		err = mlx5_cmd_fs_set_fte(dev,
-					  &new_src_fte->status,
+					  &src_fte->status,
 					  match_value, src_ft->type,
-					  src_ft->id, new_src_fte->index,
-					  src_ft->star_rules.fg->id,
-					  new_src_fte->flow_tag,
-					  new_src_fte->action,
-					  new_src_fte->dests_size,
-					  &new_src_fte->dests);
+					  src_ft->id, src_fte->index,
+					  src_ft->star_rule.fg->id,
+					  src_fte->flow_tag,
+					  src_fte->action,
+					  src_fte->dests_size,
+					  &src_fte->dests);
 		if (err)
-			goto destroy_ctx;
+			goto free;
 
 		fs_get(&dst_ft->base);
+	} else {
+		mlx5_cmd_fs_delete_fte(dev,
+				       &src_fte->status,
+				       src_ft->type, src_ft->id,
+				       src_fte->index);
 	}
 
-	if (old_src_dst->dest_attr.ft) {
-		/*Remove old fte from prev*/
-		err = mlx5_cmd_fs_delete_fte(dev,
-					     &old_src_fte->status,
-					     src_ft->type, src_ft->id,
-					     old_src_fte->index);
-	}
-
-	src_ft->star_rules.used_index = (src_ft->star_rules.used_index + 1) % 2;
-	old_src_dst->dest_attr.ft = NULL;
-
-destroy_ctx:
+free:
 	kvfree(match_value);
 	return err;
 }
@@ -763,15 +742,18 @@ static int connect_prev_fts(struct fs_prio *locked_prio,
 
 	mutex_lock(&prev_prio->base.lock);
 	fs_for_each_ft(iter, prev_prio) {
-		struct mlx5_flow_table *prev_ft =
-			get_used_star_dest(iter)->dest_attr.ft;
+		struct mlx5_flow_rule *src_dst =
+			list_first_entry(&iter->star_rule.fte->dests,
+					 struct mlx5_flow_rule, base.list);
+		struct mlx5_flow_table *prev_ft = src_dst->dest_attr.ft;
 
 		if (prev_ft == next_ft)
 			continue;
 
-		err = fs_set_star_rules(dev, iter, next_ft);
+		err = fs_set_star_rule(dev, iter, next_ft);
 		if (err) {
-			pr_warn("mlx5: flow steering can't connect prev and next\n");
+			mlx5_core_warn(dev,
+				       "mlx5: flow steering can't connect prev and next\n");
 			goto unlock;
 		} else {
 			/* Assume ft's prio is locked */
@@ -792,19 +774,8 @@ unlock:
 	return 0;
 }
 
-static int create_star_rules(struct mlx5_flow_table *ft, struct fs_prio *prio)
+static int create_star_rule(struct mlx5_flow_table *ft, struct fs_prio *prio)
 {
-	/*When new flow table is created, we need to allocate two
-	 * flow entries for star rules(rules that points to the next FT),
-	 * the needed of two star rules is for ensure atomic insertion of
-	 * new flow table.
-	 * steps:
-	 * 1. Allocate two star rules
-	 * 2. make star rules#1 point on the next ft
-	 * 3. make star rule of the previous table on the new ft
-	 * 4. remove the old pointer from the prev table by removing flow entry.
-	 */
-	int i;
 	struct mlx5_flow_group *fg;
 	int err;
 	u32 *fg_in;
@@ -817,47 +788,43 @@ static int create_star_rules(struct mlx5_flow_table *ft, struct fs_prio *prio)
 
 	fg_in = mlx5_vzalloc(fg_inlen);
 	if (!fg_in) {
-		pr_warn("failed to allocate inbox\n");
+		mlx5_core_warn(root->dev, "failed to allocate inbox\n");
 		return -ENOMEM;
 	}
 
 	match_value = mlx5_vzalloc(match_len);
 	if (!match_value) {
-		pr_warn("failed to allocate inbox\n");
+		mlx5_core_warn(root->dev, "failed to allocate inbox\n");
 		kvfree(fg_in);
 		return -ENOMEM;
 	}
 
 	MLX5_SET(create_flow_group_in, fg_in, start_flow_index, ft->max_fte);
-	MLX5_SET(create_flow_group_in, fg_in, end_flow_index, ft->max_fte + 1);
+	MLX5_SET(create_flow_group_in, fg_in, end_flow_index, ft->max_fte);
 	fg = fs_alloc_fg(fg_in);
 	if (IS_ERR(fg)) {
 		err = PTR_ERR(fg);
 		goto out;
 	}
-	ft->star_rules.fg = fg;
+	ft->star_rule.fg = fg;
 	err =  mlx5_cmd_fs_create_fg(fs_get_dev(&prio->base), fg_in, ft->type,
 				     ft->id,
 				     &fg->id);
 	if (err)
 		goto free_fg;
 
-	ft->star_rules.used_index = 0;
-	/* Create star rules */
-	for (i = 0; i < ARRAY_SIZE(ft->star_rules.fte_star); i++) {
-		ft->star_rules.fte_star[i] = alloc_star_ft_entry(ft, fg,
-								 match_value,
-								 ft->max_fte + i);
-		if (IS_ERR(ft->star_rules.fte_star[i]))
-			goto free_star_rules;
-	}
+	ft->star_rule.fte = alloc_star_ft_entry(ft, fg,
+						      match_value,
+						      ft->max_fte);
+	if (IS_ERR(ft->star_rule.fte))
+		goto free_star_rule;
 
 	mutex_lock(&root->fs_chain_lock);
 	next_ft = find_next_ft(prio);
-	err = fs_set_star_rules(root->dev, ft, next_ft);
+	err = fs_set_star_rule(root->dev, ft, next_ft);
 	if (err) {
 		mutex_unlock(&root->fs_chain_lock);
-		goto free_star_rules;
+		goto free_star_rule;
 	}
 	if (next_ft) {
 		struct fs_prio *parent;
@@ -874,7 +841,7 @@ static int create_star_rules(struct mlx5_flow_table *ft, struct fs_prio *prio)
 		err = connect_prev_fts(NULL, prev_parent, ft);
 		if (err) {
 			mutex_unlock(&root->fs_chain_lock);
-			goto destroy_chained_start_rule;
+			goto destroy_chained_star_rule;
 		}
 		fs_put(&prev_ft->base);
 	}
@@ -884,15 +851,12 @@ static int create_star_rules(struct mlx5_flow_table *ft, struct fs_prio *prio)
 
 	return 0;
 
-destroy_chained_start_rule:
-	fs_set_star_rules(fs_get_dev(&prio->base), ft, NULL);
+destroy_chained_star_rule:
+	fs_set_star_rule(fs_get_dev(&prio->base), ft, NULL);
 	if (next_ft)
 		fs_put(&next_ft->base);
-free_star_rules:
-	while (--i >= 0) {
-		free_star_fte_entry(ft->star_rules.fte_star[i]);
-		ft->star_rules.fte_star[i] = NULL;
-	}
+free_star_rule:
+	free_star_fte_entry(ft->star_rule.fte);
 	mlx5_cmd_fs_destroy_fg(fs_get_dev(&ft->base), ft->type, ft->id,
 			       fg->id);
 free_fg:
@@ -903,9 +867,8 @@ out:
 	return err;
 }
 
-static void destroy_star_rules(struct mlx5_flow_table *ft, struct fs_prio *prio)
+static void destroy_star_rule(struct mlx5_flow_table *ft, struct fs_prio *prio)
 {
-	unsigned int i;
 	int err;
 	struct mlx5_flow_root_namespace *root;
 	struct mlx5_core_dev *dev = fs_get_dev(&prio->base);
@@ -930,11 +893,12 @@ static void destroy_star_rules(struct mlx5_flow_table *ft, struct fs_prio *prio)
 		/*Prev is connected to ft, only if ft is the first(last) in the prio*/
 		err = connect_prev_fts(prio, prev_prio, next_ft);
 		if (err)
-			pr_warn("flow steering can't connect prev and next of flow table\n");
+			mlx5_core_warn(root->dev,
+				       "flow steering can't connect prev and next of flow table\n");
 		fs_put(&prev_ft->base);
 	}
 
-	err = fs_set_star_rules(root->dev, ft, NULL);
+	err = fs_set_star_rule(root->dev, ft, NULL);
 	/*One put is for fs_get in find next ft*/
 	if (next_ft) {
 		fs_put(&next_ft->base);
@@ -943,19 +907,16 @@ static void destroy_star_rules(struct mlx5_flow_table *ft, struct fs_prio *prio)
 	}
 
 	mutex_unlock(&root->fs_chain_lock);
-
 	err = mlx5_cmd_fs_destroy_fg(dev, ft->type, ft->id,
-				     ft->star_rules.fg->id);
+				     ft->star_rule.fg->id);
 	if (err)
-		pr_warn("flow steering can't destroy star entry group\n");
+		mlx5_core_warn(dev,
+			       "flow steering can't destroy star entry group(index:%d) of ft:%s\n", ft->star_rule.fg->start_index,
+			       ft->base.name);
+	free_star_fte_entry(ft->star_rule.fte);
 
-	for (i = 0; i < ARRAY_SIZE(ft->star_rules.fte_star); i++) {
-		free_star_fte_entry(ft->star_rules.fte_star[i]);
-		ft->star_rules.fte_star[i] = NULL;
-	}
-
-	kfree(ft->star_rules.fg);
-	ft->star_rules.fg = NULL;
+	kfree(ft->star_rule.fg);
+	ft->star_rule.fg = NULL;
 }
 
 static int update_root_ft_create(struct mlx5_flow_root_namespace *root,
@@ -1020,13 +981,13 @@ static struct mlx5_flow_table *_create_ft_common(struct mlx5_flow_namespace *ns,
 	if (err)
 		goto free_ft;
 
-	err = create_star_rules(ft, fs_prio);
+	err = create_star_rule(ft, fs_prio);
 	if (err)
 		goto del_ft;
 
 	err = update_root_ft_create(root, ft);
 	if (err)
-		goto destroy_star_rules;
+		goto destroy_star_rule;
 
 	if (!name || !strlen(name)) {
 		snprintf(gen_name, 20, "flow_table_%u", ft->id);
@@ -1038,8 +999,8 @@ static struct mlx5_flow_table *_create_ft_common(struct mlx5_flow_namespace *ns,
 
 	return ft;
 
-destroy_star_rules:
-	destroy_star_rules(ft, fs_prio);
+destroy_star_rule:
+	destroy_star_rule(ft, fs_prio);
 del_ft:
 	mlx5_cmd_fs_destroy_ft(root->dev, ft->type, ft->id);
 free_ft:
@@ -1788,7 +1749,7 @@ int mlx5_destroy_flow_table(struct mlx5_flow_table *ft)
 		goto unlock_ft;
 
 	/* delete two last entries */
-	destroy_star_rules(ft, prio);
+	destroy_star_rule(ft, prio);
 
 	mutex_unlock(&ft->base.lock);
 	fs_remove_node_parent_locked(&ft->base);
