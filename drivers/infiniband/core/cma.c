@@ -2393,7 +2393,6 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
 {
 	struct rdma_route *route = &id_priv->id.route;
 	struct rdma_addr *addr = &route->addr;
-	enum ib_gid_type network_gid_type;
 	struct cma_work *work;
 	int ret;
 	struct net_device *ndev = NULL;
@@ -2418,13 +2417,13 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
 		ndev = dev_get_by_index(&init_net, addr->dev_addr.bound_dev_if);
 		route->path_rec->net = &init_net;
 		route->path_rec->ifindex = addr->dev_addr.bound_dev_if;
-		route->path_rec->gid_type = id_priv->gid_type;
 	}
 	if (!ndev) {
 		ret = -ENODEV;
 		goto err2;
 	}
 
+	route->path_rec->gid_type = id_priv->gid_type;
 	memcpy(route->path_rec->dmac, addr->dev_addr.dst_dev_addr, ETH_ALEN);
 
 	rdma_ip2gid((struct sockaddr *)&id_priv->id.route.addr.src_addr,
@@ -2433,14 +2432,11 @@ static int cma_resolve_iboe_route(struct rdma_id_private *id_priv)
 		    &route->path_rec->dgid);
 
 	/* Use the hint from IP Stack to select GID Type */
-	network_gid_type = ib_network_to_gid_type(id_priv->id.device,
-						  id_priv->id.port_num,
-						  addr->dev_addr.network);
 	if (addr->dev_addr.network != RDMA_NETWORK_IB) {
-		route->path_rec->gid_type = network_gid_type;
 		/* TODO: get the hoplimit from the inet/inet6 device */
 		route->path_rec->hop_limit = IPV6_DEFAULT_HOPLIMIT;
 	} else {
+		route->path_rec->gid_type = IB_GID_TYPE_IB;
 		route->path_rec->hop_limit = 1;
 	}
 	route->path_rec->reversible = 1;
