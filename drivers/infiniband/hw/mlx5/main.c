@@ -2154,7 +2154,7 @@ static void mlx5_ib_dealloc_q_port_counter(struct mlx5_ib_dev *dev, u8 port_num)
 
 static void mlx5_ib_dealloc_q_counters(struct mlx5_ib_dev *dev)
 {
-	unsigned int i = 0;
+	unsigned int i;
 
 	for (i = 0; i < dev->num_ports; i++)
 		mlx5_ib_dealloc_q_port_counter(dev, i);
@@ -2163,7 +2163,7 @@ static void mlx5_ib_dealloc_q_counters(struct mlx5_ib_dev *dev)
 static int mlx5_ib_alloc_q_counters(struct mlx5_ib_dev *dev)
 {
 	int i;
-	int ret = 0;
+	int ret;
 
 	for (i = 0; i < dev->num_ports; i++) {
 		ret = mlx5_vport_alloc_q_counter(dev->mdev,
@@ -2177,7 +2177,7 @@ static int mlx5_ib_alloc_q_counters(struct mlx5_ib_dev *dev)
 		}
 	}
 
-	return ret;
+	return 0;
 
 dealloc_counters:
 	while (--i >= 0)

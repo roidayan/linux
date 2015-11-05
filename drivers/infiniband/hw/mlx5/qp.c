@@ -2270,7 +2270,8 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 		context->sq_crq_size |= cpu_to_be16(1 << 4);
 
 	if (cur_state == IB_QPS_RESET && new_state == IB_QPS_INIT) {
-		u8 port_num = attr->port_num - rdma_start_port(ibqp->device);
+		u8 port_num = (attr_mask & IB_QP_PORT ? attr->port_num :
+			       qp->port) - rdma_start_port(ibqp->device);
 		struct mlx5_ib_port *mibport = &dev->port[port_num];
 
 		context->qp_counter_set_usr_page |=
