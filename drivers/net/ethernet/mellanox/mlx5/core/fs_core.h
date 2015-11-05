@@ -82,10 +82,9 @@ struct mlx5_flow_rule {
 	struct mutex				clients_lock;
 };
 
-struct fs_star_rules {
+struct fs_star_rule {
 	struct	mlx5_flow_group	 *fg;
-	unsigned int		used_index;
-	struct	fs_fte		*fte_star[2];
+	struct	fs_fte		*fte;
 };
 
 struct mlx5_flow_table {
@@ -101,7 +100,7 @@ struct mlx5_flow_table {
 	unsigned int			max_fte;
 	unsigned int			level;
 	enum fs_ft_type			type;
-	struct fs_star_rules		star_rules;
+	struct fs_star_rule		star_rule;
 	unsigned int			shared_refcount;
 };
 
