@@ -2025,13 +2025,20 @@ static inline bool rdma_ib_or_roce(const struct ib_device *device, u8 port_num)
 
 static inline enum ib_gid_type ib_network_to_gid_type(const struct ib_device *device,
 						      u8 port_num,
-						      enum rdma_network_type network_type)
+						      enum rdma_network_type network_type,
+						      union rdma_network_hdr *hdr)
 {
 	if (network_type == RDMA_NETWORK_IPV4 ||
-	    network_type == RDMA_NETWORK_IPV6)
-		return rdma_protocol_roce_udp_encap(device, port_num) ?
+	    network_type == RDMA_NETWORK_IPV6) {
+		const struct iphdr *ip4h = (struct iphdr *)&hdr->roce4grh;
+		const struct ipv6hdr *ip6h = (struct ipv6hdr *)&hdr->ibgrh;
+		u8 next_header = (network_type == RDMA_NETWORK_IPV4) ?
+			ip4h->protocol : ip6h->nexthdr;
+
+		return next_header == IPPROTO_UDP ?
 			IB_GID_TYPE_ROCE_UDP_ENCAP :
 			IB_GID_TYPE_ROCE_IP_ENCAP;
+	}
 
 	/* IB_GID_TYPE_IB same as RDMA_NETWORK_ROCE_V1 */
 	return IB_GID_TYPE_IB;
