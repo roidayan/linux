@@ -43,7 +43,7 @@ int mlx5_vf_fdb_rules = 1;
 module_param_named(vf_fdb_rules, mlx5_vf_fdb_rules, int, 0644);
 MODULE_PARM_DESC(vf_fdb_rules, "vf_fdb_rules: 1 = add FDB rules for VF MACs, 0 = don't add Default=1");
 
-int mlx5_flow_offload_group_size_log = 8;
+int mlx5_flow_offload_group_size_log = MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG;
 module_param_named(flow_offload_group_size_log, mlx5_flow_offload_group_size_log, int, 0644);
 MODULE_PARM_DESC(flow_offload_group_size_log, "flow_offload_group_size_log: log_2 if the flow offlloads group size Default=8");
 
@@ -642,7 +642,7 @@ static int esw_create_fdb_table(struct mlx5_eswitch *esw, int nvports)
 	memset(source_sqn, 0xff, 3);
 
 	for (i = 2; i < MLX5_MISS_GROUP; i++) {
-		g[i].log_sz = MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG;
+		g[i].log_sz = mlx5_flow_offload_group_size_log;
 		g[i].match_criteria_enable = 0; /* just place holder hack */
 	}
 
