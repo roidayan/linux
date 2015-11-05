@@ -250,6 +250,9 @@ int mlx5_cmd_fs_delete_fte(struct mlx5_core_dev *dev,
 	u32 out[MLX5_ST_SZ_DW(delete_fte_out)];
 	int err;
 
+	if (!(*fte_status & FS_FTE_STATUS_EXISTING))
+		return 0;
+
 	if (!dev)
 		return -EINVAL;
 	memset(in, 0, sizeof(in));
