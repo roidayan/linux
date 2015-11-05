@@ -108,7 +108,7 @@ struct net_device *ovs_hw_flow_adjust(struct datapath *dp, struct ovs_flow *flow
 	flow->flow.mask->key.misc.in_port_ifindex = 0;
 	vport = ovs_vport_ovsl(dp, flow->flow.key.phy.in_port);
 
-	printk("%s in_port %d vport %p type %d\n", __func__,
+	pr_debug("%s in_port %d vport %p type %d\n", __func__,
 		flow->flow.key.phy.in_port, vport, vport? vport->ops->type: -1);
 
 	if (vport && vport->ops->type == OVS_VPORT_TYPE_NETDEV) {
@@ -161,7 +161,7 @@ int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 	}
 #else
 	if (!dev || !dev->switchdev_ops) {
-		printk(KERN_ERR "%s can't offload flow add: in_dev %s\n", __func__, dev? dev->name: "no dev");
+		pr_debug("%s can't offload flow add: in_dev %s\n", __func__, dev? dev->name: "no dev");
 		err = -ENODEV;
 	} else {
 		if (rtnl_trylock())

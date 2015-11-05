@@ -966,8 +966,8 @@ static int ovs_flow_cmd_new(struct sk_buff *skb, struct genl_info *info)
 			goto err_unlock_ovs;
 		}
 		error = ovs_hw_flow_insert(dp, new_flow);
-		if (error)
-			pr_warn("failed to insert flow into hw\n");
+		if (error && error != -ENODEV)
+			pr_warn("%s failed to insert flow into hw err %d\n", __func__, error);
 
 		if (unlikely(reply)) {
 			error = ovs_flow_cmd_fill_info(new_flow,
@@ -1016,8 +1016,8 @@ static int ovs_flow_cmd_new(struct sk_buff *skb, struct genl_info *info)
 		rcu_assign_pointer(flow->sf_acts, acts);
 
 		error = ovs_hw_flow_insert(dp, flow);
-		if (error)
-			pr_warn("failed to insert flow into hw\n");
+		if (error && error != -ENODEV)
+			pr_warn("%s failed to insert flow into hw err %d\n", __func__, error);
 
 		if (unlikely(reply)) {
 			error = ovs_flow_cmd_fill_info(flow,
@@ -1145,8 +1145,8 @@ static int ovs_flow_cmd_set(struct sk_buff *skb, struct genl_info *info)
 		rcu_assign_pointer(flow->sf_acts, acts);
 
 		error = ovs_hw_flow_insert(dp, flow);
-		if (error)
-			pr_warn("failed to insert flow into hw\n");
+		if (error && error != -ENODEV)
+			pr_warn("%s failed to insert flow into hw err %d\n", __func__, error);
 
 		if (unlikely(reply)) {
 			error = ovs_flow_cmd_fill_info(flow,
