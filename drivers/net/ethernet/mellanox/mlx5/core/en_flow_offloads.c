@@ -213,7 +213,7 @@ int mlx5e_flow_set(struct mlx5e_priv *pf_dev, int mlx5_action,
 {
 	void *flow_context, *match_value, *dest, *misc;
 	struct mlx5_flow *flow;
-	int err;
+	int err = -ENOMEM;
 	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
 	u16 out_vport = 0; /* TODO ..->actions[i].out_port_ifindex --> vport */
 
@@ -256,6 +256,8 @@ int mlx5e_flow_set(struct mlx5e_priv *pf_dev, int mlx5_action,
 flow_set:
 	err = mlx5_set_flow_group_entry(eswitch->fdb_table.fdb, group->group_ix,
 					&flow->flow_index, flow_context);
+	if (err)
+		goto flow_set_failed;
 
 	group->refcount++;
 	list_add_tail(&flow->group_list, &group->flows_list);
@@ -264,12 +266,16 @@ flow_set:
 	kfree(flow_context);
 	return 0;
 
+flow_set_failed:
+	kfree(flow_context);
+
 flow_context_alloc_failed:
 	kfree(flow);
 
 flow_alloc_failed:
-	pr_warn("flow allocation failed\n");
-	return -ENOMEM;
+	if (err == -ENOMEM)
+		pr_warn("flow allocation failed\n");
+	return err;
 }
 
 int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
