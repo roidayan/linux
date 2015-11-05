@@ -177,7 +177,7 @@ int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 		flow->flow.actions = NULL;
 		flow->hw_offloaded = 0;
 	} else {
-		printk(KERN_ERR "%s ovs flow %p sw_flow %p offloaded -- added \n", __func__, flow, &flow->flow);
+		pr_debug("%s ovs flow %p sw_flow %p offloaded -- added \n", __func__, flow, &flow->flow);
 		if (ovs_identifier_is_ufid(&flow->id))
 			printk(KERN_ERR "%s ovs flow %p sw_flow %p ID %.8x %.8x %.8x %.8x\n", __func__,
 				flow, &flow->flow, flow->id.ufid[0], flow->id.ufid[1], flow->id.ufid[2], flow->id.ufid[3]);
@@ -201,7 +201,7 @@ int ovs_hw_flow_remove(struct datapath *dp, struct ovs_flow *flow)
 	if (!flow->hw_offloaded)
 		return 0;
 	else {
-		printk(KERN_ERR "%s ovs flow %p sw_flow %p offloaded -- deleted\n", __func__, flow, &flow->flow);
+		pr_debug("%s ovs flow %p sw_flow %p offloaded -- deleted\n", __func__, flow, &flow->flow);
 		if (ovs_identifier_is_ufid(&flow->id))
 			printk(KERN_ERR "%s ovs flow %p sw_flow %p ID %.8x %.8x %.8x %.8x\n", __func__,
 				flow, &flow->flow, flow->id.ufid[0], flow->id.ufid[1], flow->id.ufid[2], flow->id.ufid[3]);
