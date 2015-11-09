@@ -66,6 +66,7 @@ static inline void mlx5e_decompress_cqe(struct mlx5e_cq *cq,
 
 	title->byte_cnt     = mini->byte_cnt;
 	title->check_sum    = mini->checksum;
+	title->rss_hash_type = 0;
 	title->wqe_counter  = cpu_to_be16(*wqe_count);
 	title->op_own      &= 0xf0;
 	title->op_own      |= 0x01 & (cqcc >> cq->wq.log_sz);
