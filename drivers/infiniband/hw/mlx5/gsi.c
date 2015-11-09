@@ -216,6 +216,11 @@ struct ib_qp *mlx5_ib_gsi_create_qp(struct ib_pd *pd,
 	gsi->port_num = port_num;
 
 	hw_init_attr.qp_type = MLX5_IB_QPT_HW_GSI;
+	if (num_qps) {
+		hw_init_attr.cap.max_send_wr = 0;
+		hw_init_attr.cap.max_send_sge = 0;
+		hw_init_attr.cap.max_inline_data = 0;
+	}
 	gsi->rx_qp = ib_create_qp(pd, &hw_init_attr);
 	if (IS_ERR(gsi->rx_qp)) {
 		mlx5_ib_warn(dev, "unable to create hardware GSI QP. error %ld\n",
