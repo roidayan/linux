@@ -479,24 +479,57 @@ static void mlx5_ib_add_outstanding_wr(struct mlx5_ib_gsi_qp *gsi,
 	}
 }
 
+/* Call with gsi->lock locked */
+static void mlx5_ib_gsi_silent_drop(struct mlx5_ib_gsi_qp *gsi,
+				    struct ib_ud_wr *wr)
+{
+	struct ib_wc wc = {
+		{ .wr_id = wr->wr.wr_id },
+		.status = IB_WC_SUCCESS,
+		.opcode = IB_WC_SEND,
+		.qp = &gsi->ibqp,
+	};
+
+	mlx5_ib_add_outstanding_wr(gsi, wr, &wc);
+	generate_completions(gsi);
+}
+
 int mlx5_ib_gsi_post_send(struct ib_qp *qp, struct ib_send_wr *wr,
 			  struct ib_send_wr **bad_wr)
 {
 	struct mlx5_ib_gsi_qp *gsi = gsi_qp(qp);
+	struct mlx5_ib_dev *dev = to_mdev(qp->device);
 	unsigned long flags;
 	int ret;
 
-	spin_lock_irqsave(&gsi->lock, flags);
-	ret = ib_post_send(gsi->rx_qp, wr, bad_wr);
-	if (!ret)
-		*bad_wr = NULL;
+	if (!mlx5_ib_deth_sqpn_cap(dev))
+		return ib_post_send(gsi->rx_qp, wr, bad_wr);
 
-	for (; wr && &wr != bad_wr; wr = wr->next)
-		mlx5_ib_add_outstanding_wr(gsi, ud_wr(wr), NULL);
+	for (; wr; wr = wr->next) {
+		struct ib_ud_wr cur_wr = *ud_wr(wr);
+		int qp_index = cur_wr.pkey_index;
 
-	spin_unlock_irqrestore(&gsi->lock, flags);
+		cur_wr.wr.next = NULL;
 
-	return ret;
+		spin_lock_irqsave(&gsi->lock, flags);
+		if (qp_index >= gsi->num_qps || !gsi->tx_qps[qp_index]) {
+			mlx5_ib_gsi_silent_drop(gsi, &cur_wr);
+			spin_unlock_irqrestore(&gsi->lock, flags);
+			continue;
+		}
+
+		ret = ib_post_send(gsi->tx_qps[qp_index], &cur_wr.wr, bad_wr);
+		if (ret) {
+			spin_unlock_irqrestore(&gsi->lock, flags);
+			*bad_wr = wr;
+			return ret;
+		}
+
+		mlx5_ib_add_outstanding_wr(gsi, &cur_wr, NULL);
+		spin_unlock_irqrestore(&gsi->lock, flags);
+	}
+
+	return 0;
 }
 
 int mlx5_ib_gsi_post_recv(struct ib_qp *qp, struct ib_recv_wr *wr,
