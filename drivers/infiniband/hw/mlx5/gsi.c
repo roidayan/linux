@@ -40,6 +40,7 @@ struct mlx5_ib_gsi_qp {
 	enum ib_sig_type sq_sig_type;
 	/* Serialize qp state modifications */
 	struct mutex mutex;
+	struct ib_cq *cq;
 	int num_qps;
 	/* Protects access to the tx_qps. Post send operations synchronize
 	 * with tx_qp creation in setup_qp().
@@ -58,12 +59,50 @@ static bool mlx5_ib_deth_sqpn_cap(struct mlx5_ib_dev *dev)
 	return MLX5_CAP_GEN(dev->mdev, set_deth_sqpn);
 }
 
+static void handle_single_completion(struct mlx5_ib_gsi_qp *gsi,
+				     struct ib_wc *wc)
+{
+	struct ib_cq *gsi_cq = gsi->ibqp.send_cq;
+
+	wc->qp = &gsi->ibqp;
+	WARN_ON_ONCE(mlx5_ib_generate_wc(gsi_cq, wc));
+}
+
+static void cq_comp_handler(struct ib_cq *cq, void *context)
+{
+	struct mlx5_ib_gsi_qp *gsi = context;
+	struct mlx5_ib_dev *dev = to_mdev(gsi->rx_qp->device);
+	struct ib_wc wc;
+	int ret;
+
+	do {
+		ret = ib_poll_cq(cq, 1, &wc);
+		if (ret < 0)
+			mlx5_ib_warn(dev, "error polling on GSI CQ: %d\n",
+				     ret);
+		else if (ret == 1)
+			handle_single_completion(gsi, &wc);
+	} while (ret > 0);
+
+	WARN_ON_ONCE(ib_req_notify_cq(gsi->cq, IB_CQ_NEXT_COMP));
+}
+
+static void cq_event_handler(struct ib_event *event, void *context)
+{
+	struct mlx5_ib_gsi_qp *gsi = context;
+	struct ib_cq *cq = gsi->ibqp.send_cq;
+
+	if (cq->event_handler)
+		cq->event_handler(event, cq->cq_context);
+}
+
 struct ib_qp *mlx5_ib_gsi_create_qp(struct ib_pd *pd,
 				    struct ib_qp_init_attr *init_attr)
 {
 	struct mlx5_ib_dev *dev = to_mdev(pd->device);
 	struct mlx5_ib_gsi_qp *gsi;
 	struct ib_qp_init_attr hw_init_attr = *init_attr;
+	struct ib_cq_init_attr cq_init_attr = {};
 	const u8 port_num = init_attr->port_num;
 	const int num_pkeys = pd->device->attrs.max_pkeys;
 	const int num_qps = mlx5_ib_deth_sqpn_cap(dev) ? num_pkeys : 0;
@@ -115,12 +154,26 @@ struct ib_qp *mlx5_ib_gsi_create_qp(struct ib_pd *pd,
 		goto err_free_tx;
 	}
 
+	cq_init_attr.cqe = init_attr->cap.max_send_wr;
+	gsi->cq = ib_create_cq(pd->device, cq_comp_handler, cq_event_handler,
+			       gsi, &cq_init_attr);
+	if (IS_ERR(gsi->cq)) {
+		mlx5_ib_warn(dev, "unable to create send CQ for GSI QP. error %ld\n",
+			     PTR_ERR(gsi->cq));
+		ret = PTR_ERR(gsi->cq);
+		goto err_destroy_qp;
+	}
+
+	WARN_ON_ONCE(ib_req_notify_cq(gsi->cq, IB_CQ_NEXT_COMP));
+
 	dev->devr.ports[init_attr->port_num - 1].gsi = gsi;
 
 	mutex_unlock(&dev->devr.mutex);
 
 	return &gsi->ibqp;
 
+err_destroy_qp:
+	WARN_ON_ONCE(ib_destroy_qp(gsi->rx_qp));
 err_free_tx:
 	mutex_unlock(&dev->devr.mutex);
 	kfree(gsi->tx_qps);
@@ -158,6 +211,8 @@ int mlx5_ib_gsi_destroy_qp(struct ib_qp *qp)
 		gsi->tx_qps[qp_index] = NULL;
 	}
 
+	WARN_ON_ONCE(ib_destroy_cq(gsi->cq));
+
 	kfree(gsi->tx_qps);
 	kfree(gsi);
 
@@ -170,7 +225,7 @@ static struct ib_qp *create_gsi_ud_qp(struct mlx5_ib_gsi_qp *gsi)
 	struct ib_qp_init_attr init_attr = {
 		.event_handler = gsi->rx_qp->event_handler,
 		.qp_context = gsi->rx_qp->qp_context,
-		.send_cq = gsi->rx_qp->send_cq,
+		.send_cq = gsi->cq,
 		.recv_cq = gsi->rx_qp->recv_cq,
 		.cap = {
 			.max_send_wr = gsi->cap.max_send_wr,
