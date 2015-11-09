@@ -576,14 +576,14 @@ int mlx4_init_resource_tracker(struct mlx4_dev *dev)
 					}
 					res_alloc->quota[t] =
 						MLX4_MAX_MAC_NUM -
-						2 * max_vfs_pport;
-					res_alloc->guaranteed[t] = 2;
+						MLX4_VF_MAC_QUOTA * max_vfs_pport;
+					res_alloc->guaranteed[t] = MLX4_VF_MAC_QUOTA;
 					for (j = 0; j < MLX4_MAX_PORTS; j++)
 						res_alloc->res_port_free[j] =
 							MLX4_MAX_MAC_NUM;
 				} else {
 					res_alloc->quota[t] = MLX4_MAX_MAC_NUM;
-					res_alloc->guaranteed[t] = 2;
+					res_alloc->guaranteed[t] = MLX4_VF_MAC_QUOTA;
 				}
 				break;
 			case RES_VLAN:
