@@ -2104,3 +2104,11 @@ int mlx4_get_port_free_macs(struct mlx4_dev *mdev, int port)
 		mlx4_get_port_total_macs(mdev, port));
 }
 EXPORT_SYMBOL(mlx4_get_port_free_macs);
+
+bool mlx4_is_available_mac(struct mlx4_dev *mdev, int port)
+{
+	int free_macs = mlx4_get_port_free_macs(mdev, port);
+
+	return free_macs >= MLX4_VF_MAC_QUOTA;
+}
+EXPORT_SYMBOL(mlx4_is_available_mac);
