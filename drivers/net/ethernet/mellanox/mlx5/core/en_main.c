@@ -2006,14 +2006,16 @@ static int mlx5e_set_features(struct net_device *netdev,
 	if (changes & NETIF_F_LRO) {
 		bool was_opened = test_bit(MLX5E_STATE_OPENED, &priv->state);
 
-		if (was_opened)
+		if (was_opened && (priv->params.rq_wq_type ==
+				   MLX5_WQ_TYPE_LINKED_LIST))
 			mlx5e_close_locked(priv->netdev);
 
 		priv->params.lro_en = !!(features & NETIF_F_LRO);
 		mlx5e_modify_tir_lro(priv, MLX5E_TT_IPV4_TCP);
 		mlx5e_modify_tir_lro(priv, MLX5E_TT_IPV6_TCP);
 
-		if (was_opened)
+		if (was_opened && (priv->params.rq_wq_type ==
+				   MLX5_WQ_TYPE_LINKED_LIST))
 			err = mlx5e_open_locked(priv->netdev);
 	}
 
