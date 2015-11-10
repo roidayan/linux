@@ -220,7 +220,7 @@ int mlx5e_flow_set(struct mlx5e_priv *pf_dev, int mlx5_action,
 	flow = kzalloc(sizeof (*flow), GFP_KERNEL);
 	if (!flow)
 		goto flow_alloc_failed;
-	memcpy(flow->match_v, match_v, MATCH_PARAMS_SIZE);
+	memcpy(flow->match_v, match_v, sizeof(flow->match_v));
 
 	/* TODO: handle flows with fwding to > 1 output ports (multiple dests) */
 	flow_context = mlx5_vzalloc(MLX5_ST_SZ_BYTES(flow_context) +
@@ -229,7 +229,7 @@ int mlx5e_flow_set(struct mlx5e_priv *pf_dev, int mlx5_action,
 		goto flow_context_alloc_failed;
 
 	match_value = MLX5_ADDR_OF(flow_context, flow_context, match_value);
-	memcpy(match_value, match_v, MATCH_PARAMS_SIZE);
+	memcpy(match_value, match_v, sizeof(flow->match_v));
 
 	/* TODO: move this settings to be done with the linux -> mlx5 parsing, so we'll
 	 * be able to support few rules with same 12-tuple but different source vport
@@ -404,7 +404,7 @@ int mlx5e_flow_del(struct mlx5e_priv *pf_dev, struct mlx5_flow_group *group, u32
 
 	/* find the group that this flow belongs to */
 	list_for_each_entry(flow, &group->flows_list, group_list) {
-		if (!memcmp(flow->match_v, match_v, MATCH_PARAMS_SIZE)) {
+		if (!memcmp(flow->match_v, match_v, sizeof(flow->match_v))) {
 			flow_found = 1;
 			break;
 		}
@@ -446,7 +446,7 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 	spin_lock(&pf_dev->flows_lock);
 	/* find the group that this flow belongs to */
 	list_for_each_entry(group, &pf_dev->mlx5_flow_groups, groups_list) {
-		if (!memcmp(group->match_c, match_c, MATCH_PARAMS_SIZE)) {
+		if (!memcmp(group->match_c, match_c, sizeof(group->match_c))) {
 			group_found = 1;
 			break;
 		}
@@ -470,12 +470,12 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 		}
 		pr_debug(KERN_ERR "%s sw_flow %p allocated flow group %p\n", __func__, sw_flow, group);
 		INIT_LIST_HEAD(&group->flows_list);
-		memcpy(group->match_c, match_c, MATCH_PARAMS_SIZE);
+		memcpy(group->match_c, match_c, sizeof(group->match_c));
 
 		g = &group->g;
 		g->log_sz = mlx5_flow_offload_group_size_log;
 		g->match_criteria_enable = MLX5_MATCH_OUTER_HEADERS | MLX5_MATCH_MISC_PARAMETERS;
-		memcpy(g->match_criteria, match_c, MATCH_PARAMS_SIZE);
+		memcpy(g->match_criteria, match_c, sizeof(g->match_criteria));
 
 		spin_lock(&pf_dev->flows_lock);
 		g_index = mlx5_get_free_flow_group(eswitch->fdb_table.fdb, 2, MLX5_OFFLOAD_GROUPS-1);
