@@ -1061,6 +1061,7 @@ static int create_raw_qp_rq(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
 	MLX5_SET(rqc, rqc, flush_in_error_en, 1);
 	MLX5_SET(rqc, rqc, user_index, MLX5_GET(qpc, qpc, user_index));
 	MLX5_SET(rqc, rqc, cqn, MLX5_GET(qpc, qpc, cqn_rcv));
+	MLX5_SET(rqc, rqc, counter_set_id, dev->port[0].q_cnt_id);
 
 	wq = MLX5_ADDR_OF(rqc, rqc, wq);
 	MLX5_SET(wq, wq, wq_type, MLX5_WQ_TYPE_CYCLIC);
