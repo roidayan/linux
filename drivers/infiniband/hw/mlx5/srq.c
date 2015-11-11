@@ -80,24 +80,24 @@ static int create_srq_user(struct ib_pd *pd, struct mlx5_ib_srq *srq,
 	struct mlx5_ib_dev *dev = to_mdev(pd->device);
 	struct mlx5_ib_create_srq ucmd;
 	size_t ucmdlen;
+	void *xsrqc;
 	int err;
 	int npages;
 	int page_shift;
 	int ncont;
 	u32 offset;
+	int drv_data = udata->inlen - sizeof(struct ib_uverbs_cmd_hdr);
 
-	ucmdlen =
-		(udata->inlen - sizeof(struct ib_uverbs_cmd_hdr) <
-		 sizeof(ucmd)) ? (sizeof(ucmd) -
-				  sizeof(ucmd.reserved)) : sizeof(ucmd);
+	ucmdlen = (drv_data < sizeof(ucmd)) ?
+		  drv_data : sizeof(ucmd);
 
+	memset(&ucmd, 0, sizeof(ucmd));
 	if (ib_copy_from_udata(&ucmd, udata, ucmdlen)) {
 		mlx5_ib_dbg(dev, "failed copy udata\n");
 		return -EFAULT;
 	}
 
-	if (ucmdlen == sizeof(ucmd) &&
-	    ucmd.reserved != 0)
+	if (ucmd.reserved || ucmd.reserved1)
 		return -EINVAL;
 
 	srq->wq_sig = !!(ucmd.flags & MLX5_SRQ_FLAG_SIGNATURE);
@@ -138,6 +138,17 @@ static int create_srq_user(struct ib_pd *pd, struct mlx5_ib_srq *srq,
 	(*in)->ctx.log_pg_sz = page_shift - MLX5_ADAPTER_PAGE_SHIFT;
 	(*in)->ctx.pgoff_cqn = cpu_to_be32(offset << 26);
 
+	if (MLX5_CAP_GEN(dev->mdev, cqe_version) == 1) {
+		xsrqc = MLX5_ADDR_OF(create_xrc_srq_in, *in,
+				     xrc_srq_context_entry);
+		/* 0xffffff means we ask to work with cqe version 0 */
+		if (drv_data > offsetof(struct mlx5_ib_create_srq, uidx))
+			MLX5_SET(xrc_srqc, xsrqc, user_index, ucmd.uidx);
+		else
+			MLX5_SET(xrc_srqc, xsrqc, user_index,
+				 MLX5_IB_DEFAULT_UIDX);
+	}
+
 	return 0;
 
 err_in:
@@ -158,6 +169,7 @@ static int create_srq_kernel(struct mlx5_ib_dev *dev, struct mlx5_ib_srq *srq,
 	struct mlx5_wqe_srq_next_seg *next;
 	int page_shift;
 	int npages;
+	void *xsrqc;
 
 	err = mlx5_db_alloc(dev->mdev, &srq->db);
 	if (err) {
@@ -203,6 +215,13 @@ static int create_srq_kernel(struct mlx5_ib_dev *dev, struct mlx5_ib_srq *srq,
 	srq->wq_sig = !!srq_signature;
 
 	(*in)->ctx.log_pg_sz = page_shift - MLX5_ADAPTER_PAGE_SHIFT;
+
+	if (MLX5_CAP_GEN(dev->mdev, cqe_version) == 1) {
+		xsrqc = MLX5_ADDR_OF(create_xrc_srq_in, *in,
+				     xrc_srq_context_entry);
+		/* 0xffffff means we ask to work with cqe version 0 */
+		MLX5_SET(xrc_srqc, xsrqc, user_index, MLX5_IB_DEFAULT_UIDX);
+	}
 
 	return 0;
 
