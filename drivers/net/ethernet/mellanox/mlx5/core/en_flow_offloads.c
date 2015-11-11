@@ -164,6 +164,13 @@ static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v)
 		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, dst_ip[3], ntohl(key->ipv4.addr.dst));
 	}
 
+	if ((key->eth.type == ntohs(ETH_P_ARP) || key->eth.type == ntohs(ETH_P_RARP)) &&
+	    (memcmp(&mask->ipv4.arp.sha, zero_mac, ETH_ALEN) || mask->ipv4.addr.src ||
+	    memcmp(&mask->ipv4.arp.tha, zero_mac, ETH_ALEN) || mask->ipv4.addr.dst)) {
+		pr_warn("flow matching on ARP/RARP payload is unsupported\n");
+		goto out_err;
+	}
+
 	/* FIXME: add IPv6 src/dst addressed */
 	if (mask->ipv6.label) {
 		/* TODO use the misc section and put the flow label there */
