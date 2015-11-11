@@ -84,7 +84,8 @@ struct mlx5_ib_alloc_ucontext_resp {
 	__u32	max_recv_wr;
 	__u32	max_srq_recv_wr;
 	__u16	num_ports;
-	__u16	reserved1;
+	__u8	cqe_version;
+	__u8	reserved1;
 	__u32	comp_mask;
 	__u32	response_length;
 	__u32	reserved2;

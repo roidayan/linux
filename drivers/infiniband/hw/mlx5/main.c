@@ -890,6 +890,8 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 	resp.max_srq_recv_wr = 1 << MLX5_CAP_GEN(dev->mdev, log_max_srq_sz);
 	resp.response_length = min(offsetof(typeof(resp), response_length) +
 				   sizeof(resp.response_length), udata->outlen);
+	resp.cqe_version = MLX5_CAP_GEN(dev->mdev, cqe_version);
+	resp.reserved1 = 0;
 
 	context = kzalloc(sizeof(*context), GFP_KERNEL);
 	if (!context)
