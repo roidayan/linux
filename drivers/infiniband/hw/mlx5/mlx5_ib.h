@@ -58,6 +58,8 @@ pr_warn("%s:%s:%d:(pid %d): " format, (dev)->ib_dev.name, __func__,	\
 #define field_avail(type, fld, sz) (offsetof(type, fld) +		\
 				    sizeof(((type *)0)->fld) <= (sz))
 
+#define MLX5_IB_DEFAULT_UIDX 0xffffff
+
 enum {
 	MLX5_IB_MMAP_CMD_SHIFT	= 8,
 	MLX5_IB_MMAP_CMD_MASK	= 0xff,
