@@ -46,8 +46,8 @@ static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v,
 	struct sw_flow_key *key  = &flow->key;
 	struct sw_flow_key *mask = &flow->mask->key;
 
-	void *outer_headers_c = MLX5_ADDR_OF(fte_match_param, match_c, outer_headers);
-	void *outer_headers_v = MLX5_ADDR_OF(fte_match_param, match_v, outer_headers);
+	void *headers_c = MLX5_ADDR_OF(fte_match_param, match_c, outer_headers);
+	void *headers_v = MLX5_ADDR_OF(fte_match_param, match_v, outer_headers);
 
 	void *misc_c = MLX5_ADDR_OF(fte_match_param, match_c, misc_parameters);
 	void *misc_v = MLX5_ADDR_OF(fte_match_param, match_v, misc_parameters);
@@ -61,16 +61,16 @@ static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v,
 	MLX5_SET(fte_match_set_misc, misc_v, source_port, in_rep->vport);
 
 	if (memcmp(&mask->eth.src, zero_mac, ETH_ALEN)) {
-		memcpy(MLX5_ADDR_OF(fte_match_set_lyr_2_4, outer_headers_c, smac_47_16),
+		memcpy(MLX5_ADDR_OF(fte_match_set_lyr_2_4, headers_c, smac_47_16),
 		       &mask->eth.src, ETH_ALEN);
-		memcpy(MLX5_ADDR_OF(fte_match_set_lyr_2_4, outer_headers_v, smac_47_16),
+		memcpy(MLX5_ADDR_OF(fte_match_set_lyr_2_4, headers_v, smac_47_16),
 		       &key->eth.src, ETH_ALEN);
 	}
 
 	if (memcmp(&mask->eth.dst, zero_mac, ETH_ALEN)) {
-		memcpy(MLX5_ADDR_OF(fte_match_set_lyr_2_4, outer_headers_c, dmac_47_16),
+		memcpy(MLX5_ADDR_OF(fte_match_set_lyr_2_4, headers_c, dmac_47_16),
 		       &mask->eth.dst, ETH_ALEN);
-		memcpy(MLX5_ADDR_OF(fte_match_set_lyr_2_4, outer_headers_v, dmac_47_16),
+		memcpy(MLX5_ADDR_OF(fte_match_set_lyr_2_4, headers_v, dmac_47_16),
 		       &key->eth.dst, ETH_ALEN);
 	}
 
@@ -81,34 +81,34 @@ static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v,
 		       ntohs(key->eth.tci) & ~VLAN_TAG_PRESENT);
 #if 0
 		/* TODO: see if to use this for VGT? */
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, vlan_tag, 1);
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, vlan_tag, 1);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, vlan_tag, 1);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, vlan_tag, 1);
 
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, first_vid,
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, first_vid,
 			 ntohs(mask->eth.tci) & ~VLAN_TAG_PRESENT);
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, first_vid,
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, first_vid,
 			 ntohs(key->eth.tci) & ~VLAN_TAG_PRESENT);
 #endif
 	}
 
 	if (mask->eth.type) {
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, ethertype, ntohs(mask->eth.type));
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, ethertype, ntohs(key->eth.type));
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, ethertype, ntohs(mask->eth.type));
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, ethertype, ntohs(key->eth.type));
 	}
 
 	if (mask->ip.proto) {
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, ip_protocol, mask->ip.proto);
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, ip_protocol, key->ip.proto);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, ip_protocol, mask->ip.proto);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, ip_protocol, key->ip.proto);
 	}
 
 	if (mask->ip.tos >> 2) {
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, ip_dscp, mask->ip.tos >> 2);
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, ip_dscp, key->ip.tos  >> 2);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, ip_dscp, mask->ip.tos >> 2);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, ip_dscp, key->ip.tos  >> 2);
 	}
 
 	if (mask->ip.tos & 0x3) {
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, ip_ecn, mask->ip.tos & 0x3);
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, ip_ecn, key->ip.tos  & 0x3);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, ip_ecn, mask->ip.tos & 0x3);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, ip_ecn, key->ip.tos  & 0x3);
 	}
 
 	if (mask->ip.ttl) {
@@ -118,50 +118,50 @@ static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v,
 	}
 
 	if (mask->ip.frag && key->ip.frag == OVS_FRAG_TYPE_NONE) {
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, frag, 1);
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, frag, 0);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, frag, 1);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, frag, 0);
 	} else if (mask->ip.frag && key->ip.frag != OVS_FRAG_TYPE_NONE) {
 		printk(KERN_ERR "%s non zero val for OVS_FRAG %d, supported by PRM?!\n",
 			__func__, key->ip.frag);
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, frag, 1);
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, frag, 1);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, frag, 1);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, frag, 1);
 	}
 
 	/* PRM mandates ip protocol full match to set rules on UDP/TCP ports using one rule */
 	if (mask->tp.src && mask->ip.proto && key->ip.proto == IPPROTO_TCP) {
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, tcp_sport, ntohs(mask->tp.src));
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, tcp_sport, ntohs(key->tp.src));
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, tcp_sport, ntohs(mask->tp.src));
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, tcp_sport, ntohs(key->tp.src));
 	}
 
 	if (mask->tp.dst && mask->ip.proto && key->ip.proto == IPPROTO_TCP) {
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, tcp_dport, ntohs(mask->tp.dst));
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, tcp_dport, ntohs(key->tp.dst));
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, tcp_dport, ntohs(mask->tp.dst));
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, tcp_dport, ntohs(key->tp.dst));
 	}
 
 	if (mask->tp.flags) { /* FIXME: OVS flags are 16 bits, we need "only" 8 bits */
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, tcp_flags, mask->tp.flags);
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, tcp_flags, key->tp.flags);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, tcp_flags, mask->tp.flags);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, tcp_flags, key->tp.flags);
 	}
 
 	/* PRM mandates ip protocol full match to set rules on UDP/TCP ports using one rule */
 	if (mask->tp.src && mask->ip.proto && key->ip.proto == IPPROTO_UDP) {
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, udp_sport, ntohs(mask->tp.src));
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, udp_sport, ntohs(key->tp.src));
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, udp_sport, ntohs(mask->tp.src));
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, udp_sport, ntohs(key->tp.src));
 	}
 
 	if (mask->tp.dst && mask->ip.proto && key->ip.proto == IPPROTO_UDP) {
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, udp_dport, ntohs(mask->tp.dst));
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, udp_dport, ntohs(key->tp.dst));
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, udp_dport, ntohs(mask->tp.dst));
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, udp_dport, ntohs(key->tp.dst));
 	}
 
 	if (mask->ipv4.addr.src && key->eth.type == ntohs(ETH_P_IP)) {
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, src_ip[3], ntohl(mask->ipv4.addr.src));
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, src_ip[3], ntohl(key->ipv4.addr.src));
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, src_ip[3], ntohl(mask->ipv4.addr.src));
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, src_ip[3], ntohl(key->ipv4.addr.src));
 	}
 
 	if (mask->ipv4.addr.dst && key->eth.type == ntohs(ETH_P_IP)) {
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, dst_ip[3], ntohl(mask->ipv4.addr.dst));
-		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, dst_ip[3], ntohl(key->ipv4.addr.dst));
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, dst_ip[3], ntohl(mask->ipv4.addr.dst));
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, dst_ip[3], ntohl(key->ipv4.addr.dst));
 	}
 
 	if ((key->eth.type == ntohs(ETH_P_ARP) || key->eth.type == ntohs(ETH_P_RARP)) &&
