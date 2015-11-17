@@ -114,6 +114,19 @@ void mlx5_core_destroy_rq(struct mlx5_core_dev *dev, u32 rqn)
 }
 EXPORT_SYMBOL(mlx5_core_destroy_rq);
 
+int mlx5_core_query_rq(struct mlx5_core_dev *dev, u32 rqn, u32 *out)
+{
+	u32 in[MLX5_ST_SZ_DW(query_rq_in)];
+	int outlen = MLX5_ST_SZ_BYTES(query_rq_out);
+
+	memset(in, 0, sizeof(in));
+	MLX5_SET(query_rq_in, in, opcode, MLX5_CMD_OP_QUERY_RQ);
+	MLX5_SET(query_rq_in, in, rqn, rqn);
+
+	return mlx5_cmd_exec_check_status(dev, in, sizeof(in), out, outlen);
+}
+EXPORT_SYMBOL(mlx5_core_query_rq);
+
 int mlx5_core_create_sq(struct mlx5_core_dev *dev, u32 *in, int inlen, u32 *sqn)
 {
 	u32 out[MLX5_ST_SZ_DW(create_sq_out)];
@@ -155,6 +168,19 @@ void mlx5_core_destroy_sq(struct mlx5_core_dev *dev, u32 sqn)
 	mlx5_cmd_exec_check_status(dev, in, sizeof(in), out, sizeof(out));
 }
 EXPORT_SYMBOL(mlx5_core_destroy_sq);
+
+int mlx5_core_query_sq(struct mlx5_core_dev *dev, u32 sqn, u32 *out)
+{
+	u32 in[MLX5_ST_SZ_DW(query_sq_in)];
+	int outlen = MLX5_ST_SZ_BYTES(query_sq_out);
+
+	memset(in, 0, sizeof(in));
+	MLX5_SET(query_sq_in, in, opcode, MLX5_CMD_OP_QUERY_SQ);
+	MLX5_SET(query_sq_in, in, sqn, sqn);
+
+	return mlx5_cmd_exec_check_status(dev, in, sizeof(in), out, outlen);
+}
+EXPORT_SYMBOL(mlx5_core_query_sq);
 
 int mlx5_core_create_tir(struct mlx5_core_dev *dev, u32 *in, int inlen,
 			 u32 *tirn)
@@ -216,6 +242,19 @@ int mlx5_core_create_tis(struct mlx5_core_dev *dev, u32 *in, int inlen,
 	return err;
 }
 EXPORT_SYMBOL(mlx5_core_create_tis);
+
+int mlx5_core_modify_tis(struct mlx5_core_dev *dev, u32 tisn, u32 *in,
+			 int inlen)
+{
+	u32 out[MLX5_ST_SZ_DW(modify_tis_out)];
+
+	MLX5_SET(modify_tis_in, in, tisn, tisn);
+	MLX5_SET(modify_tis_in, in, opcode, MLX5_CMD_OP_MODIFY_TIS);
+
+	memset(out, 0, sizeof(out));
+	return mlx5_cmd_exec_check_status(dev, in, inlen, out, sizeof(out));
+}
+EXPORT_SYMBOL(mlx5_core_modify_tis);
 
 void mlx5_core_destroy_tis(struct mlx5_core_dev *dev, u32 tisn)
 {

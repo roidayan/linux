@@ -893,6 +893,12 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 	context->ibucontext.invalidate_range = &mlx5_ib_invalidate_range;
 #endif
 
+	if (MLX5_CAP_GEN(dev->mdev, log_max_transport_domain)) {
+		err = mlx5_alloc_transport_domain(dev->mdev, &context->tdn);
+		if (err)
+			goto out_uars;
+	}
+
 	INIT_LIST_HEAD(&context->db_page_list);
 	mutex_init(&context->db_page_mutex);
 
@@ -901,13 +907,17 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 	err = ib_copy_to_udata(udata, &resp,
 			       min(sizeof(resp), udata->outlen));
 	if (err)
-		goto out_uars;
+		goto out_td;
 
 	uuari->ver = ver;
 	uuari->num_low_latency_uuars = req.num_low_latency_uuars;
 	uuari->uars = uars;
 	uuari->num_uars = num_uars;
 	return &context->ibucontext;
+
+out_td:
+	if (MLX5_CAP_GEN(dev->mdev, log_max_transport_domain))
+		mlx5_dealloc_transport_domain(dev->mdev, context->tdn);
 
 out_uars:
 	for (i--; i >= 0; i--)
@@ -932,6 +942,9 @@ static int mlx5_ib_dealloc_ucontext(struct ib_ucontext *ibcontext)
 	struct mlx5_ib_dev *dev = to_mdev(ibcontext->device);
 	struct mlx5_uuar_info *uuari = &context->uuari;
 	int i;
+
+	if (MLX5_CAP_GEN(dev->mdev, log_max_transport_domain))
+		mlx5_dealloc_transport_domain(dev->mdev, context->tdn);
 
 	for (i = 0; i < uuari->num_uars; i++) {
 		if (mlx5_cmd_free_uar(dev->mdev, uuari->uars[i].index))
