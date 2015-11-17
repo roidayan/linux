@@ -42,6 +42,7 @@
 #include <linux/mlx5/qp.h>
 #include <linux/mlx5/srq.h>
 #include <linux/types.h>
+#include <linux/mlx5/transobj.h>
 
 #define mlx5_ib_dbg(dev, format, arg...)				\
 pr_debug("%s:%s:%d:(pid %d): " format, (dev)->ib_dev.name, __func__,	\
@@ -95,6 +96,8 @@ struct mlx5_ib_ucontext {
 	 */
 	struct mutex		db_page_mutex;
 	struct mlx5_uuar_info	uuari;
+	/* Transport Domain number */
+	u32			tdn;
 };
 
 static inline struct mlx5_ib_ucontext *to_mucontext(struct ib_ucontext *ibucontext)
@@ -173,23 +176,52 @@ struct mlx5_ib_pfault {
 	struct mlx5_pagefault	mpfault;
 };
 
-struct mlx5_ib_qp {
-	struct ib_qp		ibqp;
-	struct mlx5_core_qp	mqp;
-	struct mlx5_buf		buf;
-
-	struct mlx5_db		db;
-	struct mlx5_ib_wq	rq;
-
-	u32			doorbell_qpn;
-	u8			sq_signal_bits;
-	u8			fm_cache;
-	int			sq_max_wqes_per_wr;
-	int			sq_spare_wqes;
-	struct mlx5_ib_wq	sq;
-
+struct mlx5_ib_ubuffer {
 	struct ib_umem	       *umem;
 	int			buf_size;
+	u64			buf_addr;
+};
+
+struct mlx5_ib_rq {
+	struct mlx5_ib_wq	*rq;
+	struct mlx5_core_qp	mrq;
+	struct mlx5_ib_ubuffer  ubuffer;
+	struct mlx5_db		*doorbell;
+	u32			tirn;
+	u8			state;
+};
+
+struct mlx5_ib_sq {
+	struct mlx5_ib_wq	*sq;
+	struct mlx5_core_qp	msq;
+	struct mlx5_ib_ubuffer  ubuffer;
+	struct mlx5_db		*doorbell;
+	u32			tisn;
+	u8			state;
+};
+
+struct mlx5_ib_raw_packet_qp {
+	struct mlx5_ib_sq sq;
+	struct mlx5_ib_rq rq;
+};
+
+struct mlx5_ib_qp {
+	struct ib_qp		ibqp;
+	union {
+		struct mlx5_core_qp		mqp;
+		struct mlx5_ib_raw_packet_qp	raw_packet_qp;
+	};
+
+	struct mlx5_ib_wq	rq;
+	struct mlx5_ib_wq	sq;
+
+	struct mlx5_buf		buf;
+	struct mlx5_db		db;
+
+	struct mlx5_ib_ubuffer	ubuffer;
+
+	u8			sq_signal_bits;
+	u8			fm_cache;
 
 	/* serialize qp state modifications
 	 */
