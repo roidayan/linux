@@ -12,6 +12,11 @@
 #ifndef _NET_SW_FLOW_H_
 #define _NET_SW_FLOW_H_
 
+enum sw_flow_tunnel_type {
+	SW_FLOW_TUNNEL_NONE,
+	SW_FLOW_TUNNEL_VXLAN,
+};
+
 struct sw_flow_key_ipv4_tunnel {
 	__be64 tun_id;
 	__be32 ipv4_src;
@@ -21,6 +26,7 @@ struct sw_flow_key_ipv4_tunnel {
 	u8   ipv4_ttl;
 	__be16 tp_src;
 	__be16 tp_dst;
+	enum sw_flow_tunnel_type tunnel_type;
 } __packed __aligned(4); /* Minimize padding. */
 
 struct sw_flow_key {
