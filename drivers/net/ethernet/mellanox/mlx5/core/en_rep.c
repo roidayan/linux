@@ -161,8 +161,8 @@ static int mlx5e_rep_fdb_add(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj_f
 
 static int mlx5e_rep_fdb_del(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj_fdb *fdb)
 {
-	struct mlx5_eswitch *eswitch = &vf_rep->pf_dev->mdev->priv.sriov.eswitch;
-	struct mlx5_flow_table *ft = eswitch->ft_fdb;
+	struct mlx5_eswitch *eswitch = vf_rep->pf_dev->mdev->priv.eswitch;
+	struct mlx5_flow_table *ft = eswitch->fdb_table.fdb;
 
 	/* remove FDB vf mac rule */
 	mlx5_del_flow_table_entry(ft, vf_rep->vf_mac_flow_index);
@@ -557,8 +557,8 @@ out:
 int mlx5e_rep_add_l2_fdb_rule(struct mlx5e_vf_rep *vf_rep, const char *addr)
 {
 	struct mlx5_core_dev *mdev   = vf_rep->pf_dev->mdev;
-	struct mlx5_eswitch *eswitch = &mdev->priv.sriov.eswitch;
-	struct mlx5_flow_table *ft   = eswitch->ft_fdb;
+	struct mlx5_eswitch *eswitch = mdev->priv.eswitch;
+	struct mlx5_flow_table *ft = eswitch->fdb_table.fdb;
 	u32 *flow_context;
 	void *match_value, *dest;
 	u8   *dmac;
