@@ -31,6 +31,7 @@
  */
 
 #include <linux/etherdevice.h>
+#include <linux/module.h>
 #include <linux/mlx5/driver.h>
 #include <linux/mlx5/mlx5_ifc.h>
 #include <linux/mlx5/vport.h>
@@ -898,7 +899,7 @@ static void esw_vport_change_handler(struct work_struct *work)
 		  vport->vport, mac);
 
 	if (!mlx5_vf_fdb_rules && (vport->enabled_events & UC_ADDR_CHANGE)) {
-		mlx5_core_warn(dev, "%s skipping unicast event for vport=%d \n", vport->vport);
+		mlx5_core_warn(dev, "%s skipping unicast event for vport=%d \n", __func__, vport->vport);
 		goto skip_unicast;
 	}
 
