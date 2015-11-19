@@ -36,6 +36,7 @@
 #include <net/sw_flow.h>
 #include <uapi/linux/openvswitch.h>
 #include "en.h"
+#include "eswitch.h"
 
 static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v)
 {
@@ -203,7 +204,7 @@ int mlx5e_flow_add(struct mlx5e_priv *pf_dev,
 	void *flow_context, *match_value, *dest;
 	struct mlx5_flow *flow;
 	int err;
-	struct mlx5_eswitch *eswitch = &pf_dev->mdev->priv.sriov.eswitch;
+	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
 	u16 out_vport = 0; /* TODO ..->actions[i].out_port_ifindex --> vport */
 
 	flow = kzalloc(sizeof (*flow), GFP_KERNEL);
@@ -229,7 +230,7 @@ int mlx5e_flow_add(struct mlx5e_priv *pf_dev,
 		 MLX5_FLOW_CONTEXT_DEST_TYPE_VPORT);
 	MLX5_SET(dest_format_struct, dest, destination_id, out_vport);
 
-	err = mlx5_set_flow_group_entry(eswitch->ft_fdb, group->group_id,
+	err = mlx5_set_flow_group_entry(eswitch->fdb_table.fdb, group->group_id,
 					&flow->flow_index, flow_context);
 
 	list_add_tail(&flow->group_list, &group->flows_list);
@@ -248,7 +249,7 @@ flow_alloc_failed:
 int mlx5e_flow_del(struct mlx5e_priv *pf_dev, struct mlx5_flow_group *group, u32 *match_v)
 {
 	struct mlx5_flow *flow = NULL;
-	struct mlx5_eswitch *eswitch = &pf_dev->mdev->priv.sriov.eswitch;
+	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
 
 	/* find the group that this flow belongs to */
 	list_for_each_entry(flow, &group->flows_list, group_list) {
@@ -262,7 +263,7 @@ int mlx5e_flow_del(struct mlx5e_priv *pf_dev, struct mlx5_flow_group *group, u32
 		return -EINVAL;
 	}
 
-	mlx5_del_flow_table_entry(eswitch->ft_fdb, flow->flow_index);
+	mlx5_del_flow_table_entry(eswitch->fdb_table.fdb, flow->flow_index);
 	list_del(&flow->group_list);
 	kfree(flow);
 
@@ -274,7 +275,7 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 {
 	struct mlx5_flow_group *group = NULL;
 	struct mlx5_flow_table_group *g;
-	struct mlx5_eswitch *eswitch = &pf_dev->mdev->priv.sriov.eswitch;
+	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
 	int err;
 
 	u32 match_c[MATCH_PARAMS_SIZE];
@@ -312,7 +313,7 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 		g->match_criteria_enable = MLX5_MATCH_OUTER_HEADERS | MLX5_MATCH_MISC_PARAMETERS;
 		memcpy(g->match_criteria, match_c, MATCH_PARAMS_SIZE);
 		group->start_ix = 0; /* TODO: set the group start index */
-		err = mlx5_create_flow_group(eswitch->ft_fdb, g, group->start_ix, &group->group_id);
+		err = mlx5_create_flow_group(eswitch->fdb_table.fdb, g, group->start_ix, &group->group_id);
 		if (!err)
 			list_add_tail(&group->groups_list, &mlx5_flow_groups);
 
