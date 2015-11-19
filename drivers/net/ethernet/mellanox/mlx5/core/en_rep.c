@@ -715,7 +715,7 @@ out:
 void mlx5_delete_fdb_send_to_vport_rule(struct mlx5_core_dev *mdev,
 					u32 flow_index)
 {
-	struct mlx5_flow_table *ft  = mdev->priv.sriov.eswitch.ft_fdb;
+	struct mlx5_flow_table *ft  = mdev->priv.eswitch->fdb_table.fdb;
 
 	mlx5_del_flow_table_entry(ft, flow_index);
 }
