@@ -112,6 +112,7 @@ static void __mlx5_destroy_flow_group_cmd(struct mlx5_flow_table *ft, u32 id)
 {
 	u32 in[MLX5_ST_SZ_DW(destroy_flow_group_in)];
 	u32 out[MLX5_ST_SZ_DW(destroy_flow_group_out)];
+	int err;
 
 	memset(in, 0, sizeof(in));
 	memset(out, 0, sizeof(out));
@@ -121,7 +122,10 @@ static void __mlx5_destroy_flow_group_cmd(struct mlx5_flow_table *ft, u32 id)
 	MLX5_SET_DFGI(in, table_id,   ft->id);
 	MLX5_SET_DFGI(in, opcode, MLX5_CMD_OP_DESTROY_FLOW_GROUP);
 	MLX5_SET_DFGI(in, group_id, id);
-	mlx5_cmd_exec_check_status(ft->dev, in, sizeof(in), out, sizeof(out));
+	err = mlx5_cmd_exec_check_status(ft->dev, in, sizeof(in), out, sizeof(out));
+
+	if (err)
+		printk(KERN_ERR "%s err %d\n",__func__, err);
 }
 
 static int __mlx5_create_flow_group_cmd(struct mlx5_flow_table *ft, struct mlx5_ftg *ftg)
@@ -504,6 +508,8 @@ int mlx5_get_free_flow_group(void *flow_table, int start, int end)
 	for (i = start; i < end; i++) {
 		g = &ft->group[i].g;
 
+		printk(KERN_ERR "%s index %d MCE %x\n",__func__, i, g->match_criteria_enable);
+
 		if(g->match_criteria_enable == 0)
 			return i;
 	}
@@ -525,11 +531,15 @@ int mlx5_recreate_flow_group(void *flow_table, int g_index, struct mlx5_flow_tab
 	ftg = &ft->group[g_index];
 
 	/* destory the group in its previous form */
+	printk("%s destroying flow group: id %d start_ix %x log_sz %d\n",__func__, ftg->id, ftg->start_ix, g->log_sz);
 	__mlx5_destroy_flow_group_cmd(ft, ftg->id);
 
 	memcpy(&ftg->g, g, sizeof(*g));
 
 	err = __mlx5_create_flow_group_cmd(ft, ftg);
+
+	if (err)  /* rewind */
+		ftg->g.match_criteria_enable = 0;
 
 	return err;
 }

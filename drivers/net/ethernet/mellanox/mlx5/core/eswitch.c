@@ -596,6 +596,7 @@ out:
 
 /* 0 - legacy, 1 - tx2vport  [.. offloaded ovs groups ..] last - miss */
 #define MLX5_OFFLOAD_GROUPS 16
+#define MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG 8
 
 #define MLX5_TX2VPORT_GROUP 1
 #define MLX5_MISS_GROUP (MLX5_OFFLOAD_GROUPS - 1)
@@ -637,7 +638,7 @@ static int esw_create_fdb_table(struct mlx5_eswitch *esw, int nvports)
 	g[MLX5_TX2VPORT_GROUP].match_criteria_enable = 0; /* FIXME - put vport/SQN mask */
 
 	for (i = 2; i < MLX5_MISS_GROUP; i++) {
-		g[i].log_sz = 8;
+		g[i].log_sz = MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG;
 		g[i].match_criteria_enable = 0; /* just place holder hack */
 	}
 

@@ -59,6 +59,7 @@ int __mlx5e_rep_obj_del(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj *obj);
 
 /* 0 - legacy, 1 - tx2vport  [.. offloaded ovs groups ..] last - miss */
 #define MLX5_OFFLOAD_GROUPS 16
+#define MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG 8
 
 #define MLX5_MISS_GROUP (MLX5_OFFLOAD_GROUPS - 1)
 
@@ -537,6 +538,7 @@ struct mlx5e_priv {
 	struct work_struct	  vf_reps_work;
 	struct mlx5e_channel     **rep_channel;
 	struct list_head	 mlx5_flow_groups;
+	spinlock_t               flows_lock; /* protects mlx5_flow_groups list */
 };
 
 #define MLX5E_NET_IP_ALIGN 2

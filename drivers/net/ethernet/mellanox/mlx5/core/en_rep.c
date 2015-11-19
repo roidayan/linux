@@ -478,6 +478,7 @@ int mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev)
 	}
 
 	INIT_LIST_HEAD(&pf_dev->mlx5_flow_groups);
+	spin_lock_init(&pf_dev->flows_lock);
 
 	return 0;
 
