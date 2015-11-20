@@ -619,7 +619,10 @@ static int esw_create_fdb_table(struct mlx5_eswitch *esw, int nvports)
 		return -ENOMEM;
 
 	/* UC MC Full match rules*/
-	g[0].log_sz = MLX5_CAP_ESW_FLOWTABLE_FDB(dev, log_max_ft_size);
+	/* NO NO, this doesn't leave any room for OVS offload rules!!
+	 * g[0].log_sz = MLX5_CAP_ESW_FLOWTABLE_FDB(dev, log_max_ft_size);
+	 * */
+	g[0].log_sz = 12;
 	g[0].match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
 	dmac = MLX5_ADDR_OF(fte_match_param, g[0].match_criteria,
 			    outer_headers.dmac_47_16);
