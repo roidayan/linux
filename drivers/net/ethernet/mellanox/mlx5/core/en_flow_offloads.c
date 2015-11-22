@@ -221,7 +221,6 @@ int mlx5e_flow_set(struct mlx5e_priv *pf_dev, int mlx5_action,
 	struct mlx5_flow *flow;
 	int err = -ENOMEM;
 	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
-	u16 out_vport = 0; /* TODO ..->actions[i].out_port_ifindex --> vport */
 
 	flow = kzalloc(sizeof (*flow), GFP_KERNEL);
 	if (!flow)
