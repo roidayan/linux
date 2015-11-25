@@ -495,6 +495,10 @@ static int mlx5_ib_init_device_flags(struct ib_device *ibdev)
 	ibdev->vendor_part_id	   = mdev->pdev->device;
 	ibdev->hw_ver		   = mdev->pdev->revision;
 
+	if (MLX5_CAP_GEN(dev->mdev, eth_net_offloads) &&
+	    (MLX5_CAP_ETH(dev->mdev, csum_cap)))
+			ibdev->device_cap_flags |= IB_DEVICE_RAW_IP_CSUM;
+
 	ibdev->max_mr_size	   = ~0ull;
 	ibdev->page_size_cap	   = ~(min_page_size - 1);
 	ibdev->max_qp		   = 1 << MLX5_CAP_GEN(mdev, log_max_qp);
