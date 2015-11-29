@@ -522,6 +522,8 @@ static int mlx5_ib_init_device_flags(struct ib_device *ibdev)
 	ibdev->max_total_mcast_qp_attach = ibdev->max_mcast_qp_attach *
 					   ibdev->max_mcast_grp;
 	ibdev->max_map_per_fmr = INT_MAX; /* no limit in ConnectIB */
+	ibdev->hca_core_clock = MLX5_CAP_GEN(mdev, device_frequency_khz);
+	ibdev->timestamp_mask = 0x7FFFFFFFFFFFFFFFULL;
 
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
 	if (MLX5_CAP_GEN(mdev, pg))
