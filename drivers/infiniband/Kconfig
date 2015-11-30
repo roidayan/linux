@@ -56,7 +56,7 @@ config INFINIBAND_ADDR_TRANS
 
 config INFINIBAND_ADDR_TRANS_CONFIGFS
 	bool
-	depends on INFINIBAND_ADDR_TRANS && CONFIGFS_FS
+	depends on INFINIBAND_ADDR_TRANS && !(INFINIBAND=y && CONFIGFS_FS=m)
 	default y
 	---help---
 	  ConfigFS support for RDMA communication manager (CM).
