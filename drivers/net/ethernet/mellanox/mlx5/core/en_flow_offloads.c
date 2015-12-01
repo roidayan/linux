@@ -35,10 +35,127 @@
 #include <linux/mlx5/flow_table.h>
 #include <net/sw_flow.h>
 #include <uapi/linux/openvswitch.h>
+#include <net/ip_tunnels.h>
+
 #include "en.h"
 #include "eswitch.h"
 #include "en_rep.h"
 #include "eswitch.h"
+
+/* The default UDP port that ConnectX firmware uses for its VXLAN parser */
+#define MLX5_DEFAULT_VXLAN_UDP_DPORT (4789)
+
+static int parse_vxlan_attr(struct sw_flow_key_ipv4_tunnel *key,
+			    struct sw_flow_key_ipv4_tunnel *mask,
+			    u32 *match_c, u32 *match_v) {
+	void *headers_c = MLX5_ADDR_OF(fte_match_param, match_c, outer_headers);
+	void *headers_v = MLX5_ADDR_OF(fte_match_param, match_v, outer_headers);
+	void *misc_c = MLX5_ADDR_OF(fte_match_param, match_c, misc_parameters);
+	void *misc_v = MLX5_ADDR_OF(fte_match_param, match_v, misc_parameters);
+
+	if (key->tp_dst != htons(MLX5_DEFAULT_VXLAN_UDP_DPORT))
+		/* TODO enable other UDP ports with the ADD_VXLAN_UDP_PORT
+		 * firmware command
+		 */
+		return -EOPNOTSUPP;
+
+	if (mask->tun_flags & TUNNEL_KEY) {
+		MLX5_SET(fte_match_set_misc, misc_c, vxlan_vni,
+			 be64_to_cpu(mask->tun_id));
+		MLX5_SET(fte_match_set_misc, misc_v, vxlan_vni,
+			 be64_to_cpu(key->tun_id));
+	}
+
+	MLX5_SET_TO_ONES(fte_match_set_lyr_2_4, headers_c, ip_protocol);
+	MLX5_SET(fte_match_set_lyr_2_4, headers_v, ip_protocol, IPPROTO_UDP);
+
+	MLX5_SET(fte_match_set_lyr_2_4, headers_c, udp_sport,
+		 ntohs(mask->tp_src));
+	MLX5_SET(fte_match_set_lyr_2_4, headers_v, udp_sport,
+		 ntohs(key->tp_src));
+
+	MLX5_SET(fte_match_set_lyr_2_4, headers_c, udp_dport,
+		 ntohs(mask->tp_dst));
+	MLX5_SET(fte_match_set_lyr_2_4, headers_v, udp_dport,
+		 ntohs(key->tp_dst));
+
+	return 0;
+}
+
+static int parse_tunnel_attr(struct sw_flow_key_ipv4_tunnel *key,
+			     struct sw_flow_key_ipv4_tunnel *mask,
+			     u32 *match_c, u32 *match_v) {
+	void *headers_c = MLX5_ADDR_OF(fte_match_param, match_c,
+				       outer_headers);
+	void *headers_v = MLX5_ADDR_OF(fte_match_param, match_v,
+				       outer_headers);
+
+	switch (key->tunnel_type) {
+	case SW_FLOW_TUNNEL_VXLAN:
+		if (parse_vxlan_attr(key, mask, match_c, match_v))
+			return -EOPNOTSUPP;
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	/* TODO: In a VXLAN netdev, the MAC address is filtered based
+	 * on the source port netdev's address. Consider doing it for offloads.
+	 */
+
+	MLX5_SET_TO_ONES(fte_match_set_lyr_2_4, headers_c, ethertype);
+	MLX5_SET(fte_match_set_lyr_2_4, headers_v, ethertype, ETH_P_IP);
+
+	if (mask->ipv4_tos >> 2) {
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, ip_dscp,
+			 mask->ipv4_tos >> 2);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, ip_dscp,
+			 key->ipv4_tos  >> 2);
+	}
+
+	if (mask->ipv4_tos & 0x3) {
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, ip_ecn,
+			 mask->ipv4_tos & 0x3);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, ip_ecn,
+			 key->ipv4_tos & 0x3);
+	}
+
+	if (mask->ipv4_ttl) {
+		pr_warn_once("%s: non zero mask %x (val %d) for IP TTL, unsupported by mlx5 hardware\n",
+			     __func__, mask->ipv4_ttl, key->ipv4_ttl);
+	}
+
+	if (mask->tun_flags & TUNNEL_CSUM) {
+		pr_warn_once("%s: mlx5 hardware cannot enforce %s checksum\n",
+			     __func__, mask->tun_flags & TUNNEL_CSUM ?
+			     "zero" : "non-zero");
+	}
+
+	if (mask->tun_flags & TUNNEL_DONT_FRAGMENT) {
+		pr_warn_once("%s: mlx5 hardware cannot enforce don't fragment flag, request value is %d\n",
+			     __func__, key->tun_flags & TUNNEL_DONT_FRAGMENT);
+	}
+
+	/* let software handle IP fragments */
+	MLX5_SET(fte_match_set_lyr_2_4, headers_c, frag, 1);
+	MLX5_SET(fte_match_set_lyr_2_4, headers_v, frag, 0);
+
+	if (mask->ipv4_src) {
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, src_ip[3],
+			 ntohl(mask->ipv4_src));
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, src_ip[3],
+			 ntohl(key->ipv4_src));
+	}
+
+	if (mask->ipv4_dst) {
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, dst_ip[3],
+			 ntohl(mask->ipv4_dst));
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, dst_ip[3],
+			 ntohl(key->ipv4_dst));
+	}
+
+	return 0;
+}
 
 static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v,
 			   struct mlx5e_vf_rep *in_rep)
@@ -59,6 +176,25 @@ static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v,
 	/* set source vport for the flow */
 	MLX5_SET(fte_match_set_misc, misc_c, source_port, 0xffff);
 	MLX5_SET(fte_match_set_misc, misc_v, source_port, in_rep->vport);
+
+	if (mask->tun_key.tun_flags &
+	   ~(TUNNEL_KEY | TUNNEL_DONT_FRAGMENT | TUNNEL_CSUM)) {
+		dev_warn_ratelimited(&in_rep->dev->dev, "got unknown tunnel flag in flow: 0x%x\n",
+				     be16_to_cpu(mask->tun_key.tun_flags));
+		return -EOPNOTSUPP;
+	}
+
+	if (key->tun_key.tunnel_type != SW_FLOW_TUNNEL_NONE) {
+		if (parse_tunnel_attr(&flow->key.tun_key,
+				      &flow->mask->key.tun_key,
+				      match_c, match_v))
+			return -EOPNOTSUPP;
+
+		headers_c = MLX5_ADDR_OF(fte_match_param, match_c,
+					 inner_headers);
+		headers_v = MLX5_ADDR_OF(fte_match_param, match_v,
+					 inner_headers);
+	}
 
 	if (memcmp(&mask->eth.src, zero_mac, ETH_ALEN)) {
 		memcpy(MLX5_ADDR_OF(fte_match_set_lyr_2_4, headers_c, smac_47_16),
@@ -184,6 +320,28 @@ out_err:
 	return -EOPNOTSUPP;
 }
 
+static u8 generate_match_criteria_enable(u32 *match_c)
+{
+	u8 match_criteria_enable = 0;
+	void *outer_headers_c = MLX5_ADDR_OF(fte_match_param, match_c,
+					      outer_headers);
+	void *inner_headers_c = MLX5_ADDR_OF(fte_match_param, match_c,
+					      inner_headers);
+	void *misc_c = MLX5_ADDR_OF(fte_match_param, match_c,
+				     misc_parameters);
+	size_t header_size = MLX5_ST_SZ_BYTES(fte_match_set_lyr_2_4);
+	size_t misc_size = MLX5_ST_SZ_BYTES(fte_match_set_misc);
+
+	if (memchr_inv(outer_headers_c, 0, header_size))
+		match_criteria_enable |= MLX5_MATCH_OUTER_HEADERS;
+	if (memchr_inv(misc_c, 0, misc_size))
+		match_criteria_enable |= MLX5_MATCH_MISC_PARAMETERS;
+	if (memchr_inv(inner_headers_c, 0, header_size))
+		match_criteria_enable |= MLX5_MATCH_INNER_HEADERS;
+
+	return match_criteria_enable;
+}
+
 enum mlx5_flow_action_type {
 	MLX5_FLOW_ACTION_TYPE_OUTPUT    = 1 << SW_FLOW_ACTION_TYPE_OUTPUT,
 	MLX5_FLOW_ACTION_TYPE_VLAN_PUSH = 1 << SW_FLOW_ACTION_TYPE_VLAN_PUSH,
@@ -294,9 +452,17 @@ int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
 		action = &sw_flow->actions->actions[act];
 		if (action->type == SW_FLOW_ACTION_TYPE_OUTPUT) {
 			if (out_ifindex != -1) {
-				pr_debug("%s not offloading floods\n", __func__);
+				pr_debug("%s not offloading floods\n",
+					 __func__);
 				goto out_err;
 			}
+			if (sw_flow->key.tun_key.tunnel_type !=
+					SW_FLOW_TUNNEL_NONE) {
+				pr_debug("%s not offloading decap\n",
+					 __func__);
+				goto out_err;
+			}
+
 			out_ifindex = action->out_port_ifindex;
 			__mlx5_action |= MLX5_FLOW_ACTION_TYPE_OUTPUT;
 		} else if (action->type == SW_FLOW_ACTION_TYPE_VLAN_PUSH) {
@@ -465,7 +631,8 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 
 		g = &group->g;
 		g->log_sz = mlx5_flow_offload_group_size_log;
-		g->match_criteria_enable = MLX5_MATCH_OUTER_HEADERS | MLX5_MATCH_MISC_PARAMETERS;
+		g->match_criteria_enable = generate_match_criteria_enable(
+								match_c);
 		memcpy(g->match_criteria, match_c, sizeof(g->match_criteria));
 
 		spin_lock(&pf_dev->flows_lock);
