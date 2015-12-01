@@ -438,11 +438,16 @@ int mlx5e_vf_reps_create(struct mlx5e_priv *pf_dev)
 
 	for (vf = 0; vf < nvf; vf++) {
 		err = mlx5e_rep_create_netdev(pf_dev, vf+1);
-		if (err)
+		if (err) {
+			pr_warn("Failed to create VF representor %d. Error %d\n",
+				vf + 1, err);
 			goto err_vport_rep_create;
+		}
 	}
 	err = mlx5e_rep_create_netdev(pf_dev, FDB_UPLINK_VPORT);
 	if (err) {
+		pr_warn("Failed to create uplink representor. Error %d\n",
+			err);
 		goto err_vport_rep_create;
 	}
 
