@@ -13,6 +13,7 @@
 #include <linux/netdevice.h>
 #include <net/sw_flow.h>
 #include <net/switchdev.h>
+#include <net/ip_fib.h>
 
 #include "datapath.h"
 #include "vport-netdev.h"
@@ -99,25 +100,81 @@ errout:
 	return err;
 }
 
+static int get_vxlan_udp_dst_port(struct vport *vport)
+{
+	const struct nlattr *a;
+	struct sk_buff *skb = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+	int ret = -1;
+
+	if (!skb)
+		return ret;
+
+	if (!vport->ops->get_options(vport, skb)) {
+		a = (struct nlattr *)skb->data;
+		a = nla_find(a, skb->len, OVS_TUNNEL_ATTR_DST_PORT);
+		if (a)
+			ret = nla_get_u16(a);
+	}
+	nlmsg_free(skb);
+
+	return ret;
+}
+
 struct net_device *ovs_hw_flow_adjust(struct datapath *dp, struct ovs_flow *flow)
 {
 	struct vport *vport = NULL;
 	struct net_device *dev = NULL;
 
-	flow->flow.key.misc.in_port_ifindex = 0;
-	flow->flow.mask->key.misc.in_port_ifindex = 0;
 	vport = ovs_vport_ovsl(dp, flow->flow.key.phy.in_port);
 
-	pr_debug("%s in_port %d vport %p type %d\n", __func__,
-		flow->flow.key.phy.in_port, vport, vport? vport->ops->type: -1);
+	if (!vport) {
+		pr_debug("%s: failed to get vport in_port %d\n", __func__,
+			 flow->flow.key.phy.in_port);
+		return NULL;
+	}
 
-	if (vport && vport->ops->type == OVS_VPORT_TYPE_NETDEV) {
+	pr_debug("%s: in_port %d type %d\n", __func__,
+		 flow->flow.key.phy.in_port, vport->ops->type);
+
+	if (vport->ops->type == OVS_VPORT_TYPE_NETDEV) {
 		dev = vport->ops->get_netdev(vport);
-		if (dev) {
-			flow->flow.key.misc.in_port_ifindex = dev->ifindex;
-			flow->flow.mask->key.misc.in_port_ifindex = 0xFFFFFFFF;
-		} else
-			printk("%s couldn't get netdev for vport\n", __func__);
+		flow->flow.key.tun_key.tunnel_type = SW_FLOW_TUNNEL_NONE;
+	} else if (vport->ops->type == OVS_VPORT_TYPE_VXLAN) {
+		struct sw_flow_key_ipv4_tunnel *tun = &flow->flow.key.tun_key;
+		struct net *ns = ovs_dp_get_net(dp);
+		struct flowi4 flp = {
+				.daddr = tun->ipv4_dst,
+				.saddr = tun->ipv4_src,
+				.flowi4_proto = IPPROTO_UDP
+		};
+		struct fib_result res;
+		int err;
+
+		err = get_vxlan_udp_dst_port(vport);
+		if (err == -1) {
+			pr_debug("%s: failed to obtain vxlan udp dst_port\n",
+				 __func__);
+			return NULL;
+		}
+
+		flow->flow.key.tun_key.tp_dst = htons(err);
+		flow->flow.mask->key.tun_key.tp_dst = htons(~0);
+		flow->flow.key.tun_key.tunnel_type = SW_FLOW_TUNNEL_VXLAN;
+
+		flp.fl4_dport = flow->flow.key.tun_key.tp_dst;
+		flp.fl4_sport = flow->flow.key.tun_key.tp_src;
+
+		err = fib_lookup(ns, &flp, &res, FIB_LOOKUP_NOREF);
+		if (err) {
+			pr_debug("%s fib_lookup returned %d\n", __func__, err);
+			return NULL;
+		}
+		dev = FIB_RES_DEV(res);
+	}
+
+	if (dev) {
+		flow->flow.key.misc.in_port_ifindex = dev->ifindex;
+		flow->flow.mask->key.misc.in_port_ifindex = 0xFFFFFFFF;
 	}
 
 	return dev;
