@@ -480,7 +480,8 @@ err_add_fdb_rule:
 err_vport_rep_channel_open:
 err_vport_rep_create:
 	for (vf = nvports-1; vf >= 0; vf--)
-		mlx5e_rep_destroy_netdev(pf_dev->vf_reps[vf]->dev);
+		if (pf_dev->vf_reps[vf])
+			mlx5e_rep_destroy_netdev(pf_dev->vf_reps[vf]->dev);
 
 	kfree(pf_dev->vf_reps);
 	pf_dev->vf_reps = NULL;
