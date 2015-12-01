@@ -40,7 +40,8 @@
 #include "en_rep.h"
 #include "eswitch.h"
 
-static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v)
+static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v,
+			   struct mlx5e_vf_rep *in_rep)
 {
 	struct sw_flow_key *key  = &flow->key;
 	struct sw_flow_key *mask = &flow->mask->key;
@@ -49,16 +50,15 @@ static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v)
 	void *outer_headers_v = MLX5_ADDR_OF(fte_match_param, match_v, outer_headers);
 
 	void *misc_c = MLX5_ADDR_OF(fte_match_param, match_c, misc_parameters);
-	void *misc_v = MLX5_ADDR_OF(fte_match_param, match_c, misc_parameters);
+	void *misc_v = MLX5_ADDR_OF(fte_match_param, match_v, misc_parameters);
 
 	u8 zero_mac[ETH_ALEN];
 
 	eth_zero_addr(zero_mac);
 
 	/* set source vport for the flow */
-	misc_v = MLX5_ADDR_OF(fte_match_param, match_v, misc_parameters);
 	MLX5_SET(fte_match_set_misc, misc_c, source_port, 0xffff);
-	/* we translate key->misc.in_port_ifindex to vport in mlx5e_flow_set */
+	MLX5_SET(fte_match_set_misc, misc_v, source_port, in_rep->vport);
 
 	if (memcmp(&mask->eth.src, zero_mac, ETH_ALEN)) {
 		memcpy(MLX5_ADDR_OF(fte_match_set_lyr_2_4, outer_headers_c, smac_47_16),
@@ -217,7 +217,7 @@ int mlx5e_flow_set(struct mlx5e_priv *pf_dev, int mlx5_action,
 		   struct mlx5e_vf_rep *in, struct mlx5e_vf_rep *out,
 		   struct sw_flow *sw_flow, struct mlx5_flow_group *group, u32 *match_v)
 {
-	void *flow_context, *match_value, *dest, *misc;
+	void *flow_context, *match_value, *dest;
 	struct mlx5_flow *flow;
 	int err = -ENOMEM;
 	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
@@ -235,12 +235,6 @@ int mlx5e_flow_set(struct mlx5e_priv *pf_dev, int mlx5_action,
 
 	match_value = MLX5_ADDR_OF(flow_context, flow_context, match_value);
 	memcpy(match_value, match_v, sizeof(flow->match_v));
-
-	/* TODO: move this settings to be done with the linux -> mlx5 parsing, so we'll
-	 * be able to support few rules with same 12-tuple but different source vport
-	 */
-	misc = MLX5_ADDR_OF(fte_match_param, match_value, misc_parameters);
-	MLX5_SET(fte_match_set_misc, misc, source_port, in->vport);
 
 	if (mlx5_action & MLX5_FLOW_ACTION_TYPE_DROP) {
 		MLX5_SET(flow_context, flow_context, action,
@@ -371,7 +365,7 @@ int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
 		*out_rep = netdev_priv(out_dev);
 
 skip_id_check:
-
+  
 	if (in_ifindex == pf_dev->netdev->ifindex)
 		*in_rep = pf_dev->vf_reps[pf_dev->mdev->priv.sriov.num_vfs];
 	else
@@ -383,22 +377,6 @@ skip_id_check:
 
 out_err:
 	return -EOPNOTSUPP;
-}
-
-int mlx5e_flow_add(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
-		   struct mlx5_flow_group *group, u32 *match_v)
-{
-	struct mlx5e_vf_rep *in_rep, *out_rep;
-	int mlx5_action, err;
-	u16 mlx5_vlan = 0;
-
-	err = mlx5e_flow_adjust(pf_dev, sw_flow, &mlx5_action, &mlx5_vlan, &in_rep, &out_rep);
-	if (err)
-		goto out;
-
-	err = mlx5e_flow_set(pf_dev, mlx5_action, in_rep, out_rep, sw_flow, group, match_v);
-out:
-	return err;
 }
 
 int mlx5e_flow_del(struct mlx5e_priv *pf_dev, struct mlx5_flow_group *group, u32 *match_v)
@@ -435,16 +413,24 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 	struct mlx5_flow_group *group;
 	struct mlx5_flow_table_group *g;
 	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
-	int g_index, err, group_found = 0;
+	int g_index, err, mlx5_action, group_found = 0;
 
 	u32 match_c[MATCH_PARAMS_SIZE];
 	u32 match_v[MATCH_PARAMS_SIZE];
+
+	struct mlx5e_vf_rep *in_rep, *out_rep;
+	u16 mlx5_vlan = 0;
+
+	err = mlx5e_flow_adjust(pf_dev, sw_flow, &mlx5_action, &mlx5_vlan,
+				&in_rep, &out_rep);
+	if (err)
+		return err;
 
 	memset(match_c, 0, sizeof(match_c));
 	memset(match_v, 0, sizeof(match_v));
 
 	/* translate the flow from SW to PRM */
-	err = parse_flow_attr(sw_flow, match_c, match_v);
+	err = parse_flow_attr(sw_flow, match_c, match_v, in_rep);
 	if (err)
 		return err;
 
@@ -509,7 +495,8 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 	pr_debug("%s flags %x sw_flow %p group %p ref %d\n", __func__, flags, sw_flow, group, group? group->refcount: -100);
 
 	if (flags & FLOW_ADD)
-		err = mlx5e_flow_add(pf_dev, sw_flow, group, match_v);
+		err = mlx5e_flow_set(pf_dev, mlx5_action, in_rep, out_rep,
+				     sw_flow, group, match_v);
 	else if (flags & FLOW_DEL)
 		err = mlx5e_flow_del(pf_dev, group, match_v);
 
