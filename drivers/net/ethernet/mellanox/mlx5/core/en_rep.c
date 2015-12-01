@@ -443,7 +443,6 @@ int mlx5e_vf_reps_create(struct mlx5e_priv *pf_dev)
 	}
 	err = mlx5e_rep_create_netdev(pf_dev, FDB_UPLINK_VPORT);
 	if (err) {
-		vf++;
 		goto err_vport_rep_create;
 	}
 
