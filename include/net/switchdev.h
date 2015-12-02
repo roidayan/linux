@@ -284,7 +284,7 @@ static inline int switchdev_port_flow_add(struct net_device *dev, struct sw_flow
 }
 
 
-static inline int switchdev_port_flow_del(struct net_device *dev, struct sw_flow *flow);
+static inline int switchdev_port_flow_del(struct net_device *dev, struct sw_flow *flow)
 {
 	return -EOPNOTSUPP;
 }
