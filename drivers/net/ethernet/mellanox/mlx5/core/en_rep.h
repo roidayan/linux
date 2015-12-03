@@ -45,4 +45,7 @@ struct mlx5e_vf_rep {
 	u32 tx_to_vport_flow_index; // FDB ft
 
 	u32 vf_mac_flow_index; /* FIXME - support multiple MACs --> flow indexes */
+
+	u16 vst_vlan;
+	u32 vst_refcount;
 };

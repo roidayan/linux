@@ -417,8 +417,14 @@ struct mlx5_flow_group {
 struct mlx5_flow {
 	u32 match_v[MATCH_PARAMS_SIZE];
 	u32 flow_index;
+	struct mlx5e_vf_rep *out_rep;
 
 	struct list_head group_list; /* flows of the mother group */
+};
+
+enum {
+	FLOW_ADD = 0x1,
+	FLOW_DEL = 0x2
 };
 
 int mlx5e_flow_set(struct mlx5_flow_attr *attr,
@@ -459,6 +465,7 @@ int mlx5e_flow_set(struct mlx5_flow_attr *attr,
 		 MLX5_FLOW_CONTEXT_DEST_TYPE_VPORT);
 	MLX5_SET(dest_format_struct, dest, destination_id,
 		 attr->out_rep->vport);
+	flow->out_rep = attr->out_rep;
 
 flow_set:
 	err = mlx5_set_flow_group_entry(eswitch->fdb_table.fdb, group->group_ix,
@@ -521,16 +528,14 @@ int mlx5e_flow_adjust(struct mlx5_flow_attr *attr)
 			__mlx5_action |= MLX5_FLOW_ACTION_TYPE_OUTPUT;
 		} else if (action->type == SW_FLOW_ACTION_TYPE_VLAN_PUSH) {
 			__mlx5_action |= MLX5_FLOW_ACTION_TYPE_VLAN_PUSH;
-			attr->mlx5_vlan = ntohs(action->vlan.vlan_tci) &
-					  ~VLAN_TAG_PRESENT;
+			attr->mlx5_vlan = ntohs(action->vlan.vlan_tci);
 			vlan_proto = ntohs(action->vlan.vlan_proto);
-			printk(KERN_ERR "%s push vlan action tci %x proto %x TODO: set VST!!\n",
-			       __func__, attr->mlx5_vlan, vlan_proto);
 			if (vlan_proto != ETH_P_8021Q)
 				goto out_err;
-		} else if (action->type == SW_FLOW_ACTION_TYPE_VLAN_POP)
+		} else if (action->type == SW_FLOW_ACTION_TYPE_VLAN_POP) {
 			__mlx5_action |= MLX5_FLOW_ACTION_TYPE_VLAN_POP;
-		else if (action->type == SW_FLOW_ACTION_TYPE_DROP)
+			attr->mlx5_vlan = ntohs(attr->sw_flow->key.eth.tci);
+		} else if (action->type == SW_FLOW_ACTION_TYPE_DROP)
 			__mlx5_action |= MLX5_FLOW_ACTION_TYPE_DROP;
 		else {
 			printk(KERN_ERR "%s can't offload flow action %d\n", __func__, action->type);
@@ -612,6 +617,67 @@ static void mlx5e_flow_group_release(struct kref *kref)
 static void mlx5e_flow_group_put(struct mlx5_flow_group *group)
 {
 	kref_put(&group->kref, mlx5e_flow_group_release);
+}
+
+static int mlx5e_handle_vlan_actions(struct mlx5_flow_attr *attr, int flags)
+{
+	int err = 0;
+	u16 vlan_tag;
+	u8 vlan_prio;
+	struct mlx5e_vf_rep *vport = NULL;
+	struct mlx5_core_dev *mdev = attr->in_rep->pf_dev->mdev;
+	struct mlx5_eswitch *eswitch = mdev->priv.eswitch;
+
+	if (attr->mlx5_action & MLX5_FLOW_ACTION_TYPE_VLAN_PUSH) {
+		if (attr->in_rep->vport == FDB_UPLINK_VPORT) {
+			mlx5_core_warn(mdev, "can't do vlan push on ingress\n");
+			err = -ENOTSUPP;
+			goto out;
+		}
+		vport = attr->in_rep;
+	}
+
+	if (attr->mlx5_action & MLX5_FLOW_ACTION_TYPE_VLAN_POP) {
+		if (attr->out_rep->vport == FDB_UPLINK_VPORT) {
+			mlx5_core_warn(mdev, "can't do vlan pop on egress\n");
+			err = -ENOTSUPP;
+			goto out;
+		}
+		vport = attr->out_rep;
+	}
+
+	if (flags == FLOW_DEL) {
+		vport->vst_refcount--;
+		if (!vport->vst_refcount) {
+			vport->vst_vlan = 0;
+			err = mlx5_eswitch_set_vport_vlan(eswitch, vport->vport, 0, 0);
+		}
+		goto out;
+	}
+
+	/* being here --> (flags == FLOW_ADD) holds */
+	if (vport->vst_refcount && vport->vst_vlan != attr->mlx5_vlan) {
+		mlx5_core_warn(mdev, "VST exists with vlan %x, can't do for vlan %x\n",
+			       vport->vst_vlan, attr->mlx5_vlan);
+		err = -ENOTSUPP;
+		goto out;
+	}
+
+	vport->vst_refcount++;
+	if (!vport->vst_vlan) {
+		vlan_tag  = attr->mlx5_vlan & VLAN_VID_MASK;
+		vlan_prio = attr->mlx5_vlan >> VLAN_PRIO_SHIFT;
+		err = mlx5_eswitch_set_vport_vlan(eswitch, vport->vport, vlan_tag, vlan_prio);
+		if (err) {
+			mlx5_core_warn(mdev, "failed to set VST, vport %d vlan %d err %d\n",
+				       vport->vport, attr->mlx5_vlan, err);
+			vport->vst_refcount--;
+			goto out;
+		}
+		vport->vst_vlan = attr->mlx5_vlan;
+	}
+out:
+	return err;
 }
 
 static int __mlx5e_flow_del(struct mlx5e_priv *pf_dev,
@@ -733,6 +799,13 @@ int mlx5e_flow_add(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow)
 	if (err)
 		return err;
 
+	if (attr.mlx5_action & MLX5_FLOW_ACTION_TYPE_VLAN_PUSH ||
+	    attr.mlx5_action & MLX5_FLOW_ACTION_TYPE_VLAN_POP) {
+		err = mlx5e_handle_vlan_actions(&attr, FLOW_ADD);
+		if (err)
+			goto out;
+	}
+
 	group = mlx5e_get_flow_group(attr.pf_dev, attr.match_c);
 	if (!group) {
 		group = mlx5e_create_flow_group(attr.pf_dev, attr.match_c);
@@ -747,6 +820,7 @@ int mlx5e_flow_add(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow)
 
 	pr_debug("%s status %d group %p ref %d index %d\n", __func__, err,
 		 group, atomic_read(&group->kref.refcount), group->group_ix);
+out:
 	mlx5e_flow_group_put(group);
 
 	return err;
@@ -783,6 +857,10 @@ int mlx5e_flow_del(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow)
 	pr_debug("%s status %d group %p ref %d index %d\n", __func__, err,
 		 group, atomic_read(&group->kref.refcount), group->group_ix);
 	mlx5e_flow_group_put(group);
+
+	if (attr.mlx5_action & MLX5_FLOW_ACTION_TYPE_VLAN_PUSH ||
+	    attr.mlx5_action & MLX5_FLOW_ACTION_TYPE_VLAN_POP)
+		err = mlx5e_handle_vlan_actions(&attr, FLOW_DEL);
 
 	return err;
 }
