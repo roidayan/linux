@@ -373,7 +373,7 @@ out:
 	return flow_rule;
 }
 
-static int esw_create_fdb_table(struct mlx5_eswitch *esw, int nvports)
+static int esw_create_fdb_table(struct mlx5_eswitch *esw)
 {
 	int inlen = MLX5_ST_SZ_BYTES(create_flow_group_in);
 	struct mlx5_core_dev *dev = esw->dev;
@@ -806,7 +806,7 @@ int mlx5_eswitch_enable_sriov(struct mlx5_eswitch *esw, int nvfs)
 
 	esw_disable_vport(esw, 0);
 
-	err = esw_create_fdb_table(esw, nvfs + 1);
+	err = esw_create_fdb_table(esw);
 	if (err)
 		goto abort;
 
