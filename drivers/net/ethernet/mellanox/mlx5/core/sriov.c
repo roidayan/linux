@@ -147,16 +147,15 @@ int mlx5_core_sriov_configure(struct pci_dev *pdev, int num_vfs)
 	mlx5_core_cleanup_vfs(dev);
 
 	if (!num_vfs) {
+#ifdef CONFIG_MLX5_CORE_EN
+		mlx5_eswitch_disable_sriov(dev->priv.eswitch);
+#endif
 		kfree(sriov->vfs_ctx);
 		sriov->vfs_ctx = NULL;
 		if (!pci_vfs_assigned(pdev))
 			pci_disable_sriov(pdev);
 		else
 			pr_info("unloading PF driver while leaving orphan VFs\n");
-
-#ifdef CONFIG_MLX5_CORE_EN
-		mlx5_eswitch_disable_sriov(dev->priv.eswitch);
-#endif
 		return 0;
 	}
 

@@ -128,7 +128,6 @@ struct mlx5_eswitch_fdb {
 	void *fdb;
 };
 
-
 struct mlx5_eswitch {
 	struct mlx5_core_dev    *dev;
 	struct mlx5_l2_table    l2_table;
@@ -142,7 +141,6 @@ struct mlx5_eswitch {
 
 /* E-Switch API */
 int mlx5_eswitch_init(struct mlx5_core_dev *dev);
-
 void mlx5_eswitch_cleanup(struct mlx5_eswitch *esw);
 void mlx5_eswitch_vport_event(struct mlx5_eswitch *esw, struct mlx5_eqe *eqe);
 int mlx5_eswitch_enable_sriov(struct mlx5_eswitch *esw, int nvfs);

@@ -1986,7 +1986,7 @@ static int mlx5_vport_link2ifla(u8 esw_link)
 		return IFLA_VF_LINK_STATE_DISABLE;
 	case MLX5_ESW_VPORT_ADMIN_STATE_UP:
 		return IFLA_VF_LINK_STATE_ENABLE;
-	};
+	}
 	return IFLA_VF_LINK_STATE_AUTO;
 }
 
@@ -1997,7 +1997,7 @@ static int mlx5_ifla_link2vport(u8 ifla_link)
 		return MLX5_ESW_VPORT_ADMIN_STATE_DOWN;
 	case IFLA_VF_LINK_STATE_ENABLE:
 		return MLX5_ESW_VPORT_ADMIN_STATE_UP;
-	};
+	}
 	return MLX5_ESW_VPORT_ADMIN_STATE_AUTO;
 }
 
@@ -2045,12 +2045,7 @@ static struct net_device_ops mlx5e_netdev_ops = {
 	.ndo_vlan_rx_add_vid	 = mlx5e_vlan_rx_add_vid,
 	.ndo_vlan_rx_kill_vid	 = mlx5e_vlan_rx_kill_vid,
 	.ndo_set_features        = mlx5e_set_features,
-	.ndo_change_mtu		 = mlx5e_change_mtu,
-	.ndo_set_vf_mac          = mlx5e_set_vf_mac,
-	.ndo_set_vf_vlan         = mlx5e_set_vf_vlan,
-	.ndo_get_vf_config       = mlx5e_get_vf_config,
-	.ndo_set_vf_link_state   = mlx5e_set_vf_link_state,
-	.ndo_get_vf_stats        = mlx5e_get_vf_stats,
+	.ndo_change_mtu		 = mlx5e_change_mtu
 };
 
 static int mlx5e_pf_attr_get(struct net_device *dev, struct switchdev_attr *attr)
@@ -2200,6 +2195,14 @@ static void mlx5e_build_netdev(struct net_device *netdev)
 
 	if (priv->params.num_tc > 1)
 		mlx5e_netdev_ops.ndo_select_queue = mlx5e_select_queue;
+
+	if (MLX5_CAP_GEN(mdev, vport_group_manager)) {
+		mlx5e_netdev_ops.ndo_set_vf_mac = mlx5e_set_vf_mac;
+		mlx5e_netdev_ops.ndo_set_vf_vlan = mlx5e_set_vf_vlan;
+		mlx5e_netdev_ops.ndo_get_vf_config = mlx5e_get_vf_config;
+		mlx5e_netdev_ops.ndo_set_vf_link_state = mlx5e_set_vf_link_state;
+		mlx5e_netdev_ops.ndo_get_vf_stats = mlx5e_get_vf_stats;
+	}
 
 	netdev->netdev_ops        = &mlx5e_netdev_ops;
 	netdev->watchdog_timeo    = 15 * HZ;
