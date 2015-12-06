@@ -191,6 +191,7 @@ int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 	ASSERT_OVSL();
 	BUG_ON(flow->flow.actions);
 
+	flow->hw_offloaded = 0;
 	dev = ovs_hw_flow_adjust(dp, flow);
 
 	err = sw_flow_action_create(dp, &actions, flow->sf_acts);
@@ -226,7 +227,6 @@ int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 	if (err) {
 		kfree(actions);
 		flow->flow.actions = NULL;
-		flow->hw_offloaded = 0;
 	} else {
 		pr_debug("%s ovs flow %p sw_flow %p offloaded -- added \n", __func__, flow, &flow->flow);
 		if (ovs_identifier_is_ufid(&flow->id))
