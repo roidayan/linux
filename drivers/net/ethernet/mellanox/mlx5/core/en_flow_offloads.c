@@ -393,8 +393,8 @@ struct mlx5_flow {
 };
 
 int mlx5e_flow_set(struct mlx5e_priv *pf_dev, int mlx5_action,
-		   struct mlx5e_vf_rep *in, struct mlx5e_vf_rep *out,
-		   struct sw_flow *sw_flow, struct mlx5_flow_group *group, u32 *match_v)
+		   struct mlx5e_vf_rep *out, struct sw_flow *sw_flow,
+		   struct mlx5_flow_group *group, u32 *match_v)
 {
 	void *flow_context, *match_value, *dest;
 	struct mlx5_flow *flow;
@@ -689,7 +689,7 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 	pr_debug("%s flags %x sw_flow %p group %p ref %d\n", __func__, flags, sw_flow, group, group? group->refcount: -100);
 
 	if (flags & FLOW_ADD)
-		err = mlx5e_flow_set(pf_dev, mlx5_action, in_rep, out_rep,
+		err = mlx5e_flow_set(pf_dev, mlx5_action, out_rep,
 				     sw_flow, group, match_v);
 	else if (flags & FLOW_DEL)
 		err = mlx5e_flow_del(pf_dev, group, match_v);
