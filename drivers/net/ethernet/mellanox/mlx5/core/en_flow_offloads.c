@@ -565,13 +565,14 @@ out_err:
 	return -EOPNOTSUPP;
 }
 
-int mlx5e_flow_del(struct mlx5e_priv *pf_dev, struct mlx5_flow_group *group, u32 *match_v)
+static int __mlx5e_flow_del(struct mlx5e_priv *pf_dev,
+			    struct mlx5_flow_group *group, u32 *match_v)
 {
 	struct mlx5_flow *flow = NULL;
 	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
 	int flow_found = 0;
 
-	/* find the group that this flow belongs to */
+	/* find the flow based on the match values */
 	list_for_each_entry(flow, &group->flows_list, group_list) {
 		if (!memcmp(flow->match_v, match_v, sizeof(flow->match_v))) {
 			flow_found = 1;
@@ -711,7 +712,7 @@ int mlx5e_flow_act(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow,
 		err = mlx5e_flow_set(pf_dev, mlx5_action, out_rep,
 				     sw_flow, group, match_v);
 	else if (flags & FLOW_DEL)
-		err = mlx5e_flow_del(pf_dev, group, match_v);
+		err = __mlx5e_flow_del(pf_dev, group, match_v);
 
 	pr_debug("%s status %d flags %x group %p ref %d index %d\n",
 		__func__, err, flags, group, group->refcount, group->group_ix);
