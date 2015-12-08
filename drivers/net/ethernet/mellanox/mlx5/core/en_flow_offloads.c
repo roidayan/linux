@@ -601,12 +601,32 @@ int mlx5e_flow_del(struct mlx5e_priv *pf_dev, struct mlx5_flow_group *group, u32
 	return 0;
 }
 
+static struct mlx5_flow_group *mlx5e_get_flow_group(
+		struct mlx5e_priv *pf_dev,
+		u32 match_c[MATCH_PARAMS_SIZE])
+{
+	struct mlx5_flow_group *group;
+	bool group_found = false;
+
+	spin_lock(&pf_dev->flows_lock);
+	/* find the group that this flow belongs to */
+	list_for_each_entry(group, &pf_dev->mlx5_flow_groups, groups_list) {
+		if (!memcmp(group->match_c, match_c, sizeof(group->match_c))) {
+			group_found = true;
+			break;
+		}
+	}
+	spin_unlock(&pf_dev->flows_lock);
+
+	return group_found ? group : NULL;
+}
+
 int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags)
 {
 	struct mlx5_flow_group *group;
 	struct mlx5_flow_table_group *g;
 	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
-	int g_index, err, mlx5_action, group_found = 0;
+	int g_index, err, mlx5_action;
 
 	u32 match_c[MATCH_PARAMS_SIZE];
 	u32 match_v[MATCH_PARAMS_SIZE];
@@ -627,26 +647,18 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 	if (err)
 		return err;
 
-	spin_lock(&pf_dev->flows_lock);
-	/* find the group that this flow belongs to */
-	list_for_each_entry(group, &pf_dev->mlx5_flow_groups, groups_list) {
-		if (!memcmp(group->match_c, match_c, sizeof(group->match_c))) {
-			group_found = 1;
-			break;
-		}
-	}
-	spin_unlock(&pf_dev->flows_lock);
+	group = mlx5e_get_flow_group(pf_dev, match_c);
 
-	if (!group_found && (flags & FLOW_DEL)) {
+	if (!group && (flags & FLOW_DEL)) {
 		// pr_err("%s sw_flow %p flow group doesn't exist, can't remove flow\n", __func__, sw_flow);
 		printk(KERN_ERR "%s sw_flow %p flow group doesn't exist, can't remove flow\n", __func__, sw_flow);
 		return -EINVAL;
 	}
 
-	if (group_found)
+	if (group)
 		pr_debug("%s flags %x sw_flow %p flow group %p\n", __func__, flags, sw_flow, group);
 
-	if (!group_found) {
+	if (!group) {
 		group = kzalloc(sizeof (*group), GFP_KERNEL);
 		if (!group) {
 			pr_err("can't allocate flow group\n");
