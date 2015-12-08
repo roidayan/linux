@@ -621,12 +621,56 @@ static struct mlx5_flow_group *mlx5e_get_flow_group(
 	return group_found ? group : NULL;
 }
 
+static struct mlx5_flow_group *mlx5e_create_flow_group(
+		struct mlx5e_priv *pf_dev,
+		u32 match_c[MATCH_PARAMS_SIZE])
+{
+	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
+	struct mlx5_flow_group *group = kzalloc(sizeof(*group), GFP_KERNEL);
+	struct mlx5_flow_table_group *g;
+	int g_index;
+	int err;
+
+	if (!group)
+		return ERR_PTR(-ENOMEM);
+
+	INIT_LIST_HEAD(&group->flows_list);
+	memcpy(group->match_c, match_c, sizeof(group->match_c));
+
+	g = &group->g;
+	g->log_sz = mlx5_flow_offload_group_size_log;
+	g->match_criteria_enable = generate_match_criteria_enable(match_c);
+	memcpy(g->match_criteria, match_c, sizeof(g->match_criteria));
+
+	spin_lock(&pf_dev->flows_lock);
+	g_index = mlx5_get_free_flow_group(eswitch->fdb_table.fdb, 2,
+					   MLX5_OFFLOAD_GROUPS - 1);
+	spin_unlock(&pf_dev->flows_lock);
+	if (g_index == -1) {
+		pr_err("can't find free flow group, can't add flow\n");
+		kfree(group);
+		return ERR_PTR(-ENOMEM);
+	}
+	err = mlx5_recreate_flow_group(eswitch->fdb_table.fdb, g_index, g);
+	if (!err) {
+		group->group_ix = g_index;
+		spin_lock(&pf_dev->flows_lock);
+		list_add_tail(&group->groups_list, &pf_dev->mlx5_flow_groups);
+		spin_unlock(&pf_dev->flows_lock);
+	} else {
+		pr_err("can't allocate new flow group, can't add flow\n");
+		kfree(group);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	return group;
+}
+
 int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags)
 {
 	struct mlx5_flow_group *group;
-	struct mlx5_flow_table_group *g;
 	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
-	int g_index, err, mlx5_action;
+	int err, mlx5_action;
 
 	u32 match_c[MATCH_PARAMS_SIZE];
 	u32 match_v[MATCH_PARAMS_SIZE];
@@ -659,41 +703,9 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 		pr_debug("%s flags %x sw_flow %p flow group %p\n", __func__, flags, sw_flow, group);
 
 	if (!group) {
-		group = kzalloc(sizeof (*group), GFP_KERNEL);
-		if (!group) {
-			pr_err("can't allocate flow group\n");
-			return -ENOMEM;
-		}
-		pr_debug(KERN_ERR "%s sw_flow %p allocated flow group %p\n", __func__, sw_flow, group);
-		INIT_LIST_HEAD(&group->flows_list);
-		memcpy(group->match_c, match_c, sizeof(group->match_c));
-
-		g = &group->g;
-		g->log_sz = mlx5_flow_offload_group_size_log;
-		g->match_criteria_enable = generate_match_criteria_enable(
-								match_c);
-		memcpy(g->match_criteria, match_c, sizeof(g->match_criteria));
-
-		spin_lock(&pf_dev->flows_lock);
-		g_index = mlx5_get_free_flow_group(eswitch->fdb_table.fdb, 2, MLX5_OFFLOAD_GROUPS-1);
-		spin_unlock(&pf_dev->flows_lock);
-		if (g_index == -1) {
-			pr_err("can't find free flow group, can't add flow\n");
-			kfree(group);
-			return -ENOMEM;
-		}
-		pr_debug("%s flags %x using new flow group, index %d\n",__func__, flags, g_index);
-		err = mlx5_recreate_flow_group(eswitch->fdb_table.fdb, g_index, g);
-		if (!err) {
-			group->group_ix = g_index;
-			spin_lock(&pf_dev->flows_lock);
-			list_add_tail(&group->groups_list, &pf_dev->mlx5_flow_groups);
-			spin_unlock(&pf_dev->flows_lock);
-		} else {
-			pr_err("can't allocate new flow group, can't add flow\n");
-			kfree(group);
-			return -ENOMEM;
-		}
+		group = mlx5e_create_flow_group(pf_dev, match_c);
+		if (IS_ERR(group))
+			return PTR_ERR(group);
 	}
 
 	err = -EINVAL;
