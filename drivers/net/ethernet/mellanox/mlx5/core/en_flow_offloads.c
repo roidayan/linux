@@ -376,13 +376,14 @@ int mlx5_create_flow_group(void *ft, struct mlx5_flow_table_group *g,
 			   u32 start_ix, u32 *id);
 
 struct mlx5_flow_group {
+	struct kref kref;
 	u32 match_c[MATCH_PARAMS_SIZE];
 	u32 group_ix;
 	struct mlx5_flow_table_group g;
-	int refcount;
 
 	struct list_head groups_list; /* list of groups */
 	struct list_head flows_list;  /* flows for this group */
+	struct mlx5_eswitch *eswitch;
 };
 
 struct mlx5_flow {
@@ -437,7 +438,7 @@ flow_set:
 	if (err)
 		goto flow_set_failed;
 
-	group->refcount++;
+	kref_get(&group->kref);
 	list_add_tail(&flow->group_list, &group->flows_list);
 
 	printk(KERN_ERR "%s added sw_flow %p flow index %x \n", __func__, sw_flow, flow->flow_index);
@@ -565,6 +566,22 @@ out_err:
 	return -EOPNOTSUPP;
 }
 
+static void mlx5e_flow_group_release(struct kref *kref)
+{
+	struct mlx5_flow_group *group =
+		container_of(kref, struct mlx5_flow_group, kref);
+
+	mlx5_set_free_flow_group(group->eswitch->fdb_table.fdb,
+				 group->group_ix);
+	list_del(&group->groups_list);
+	kfree(group);
+}
+
+static void mlx5e_flow_group_put(struct mlx5_flow_group *group)
+{
+	kref_put(&group->kref, mlx5e_flow_group_release);
+}
+
 static int __mlx5e_flow_del(struct mlx5e_priv *pf_dev,
 			    struct mlx5_flow_group *group, u32 *match_v)
 {
@@ -591,7 +608,7 @@ static int __mlx5e_flow_del(struct mlx5e_priv *pf_dev,
 	list_del(&flow->group_list);
 	kfree(flow);
 
-	group->refcount--;
+	mlx5e_flow_group_put(group);
 	return 0;
 }
 
@@ -606,6 +623,7 @@ static struct mlx5_flow_group *mlx5e_get_flow_group(
 	/* find the group that this flow belongs to */
 	list_for_each_entry(group, &pf_dev->mlx5_flow_groups, groups_list) {
 		if (!memcmp(group->match_c, match_c, sizeof(group->match_c))) {
+			kref_get(&group->kref);
 			group_found = true;
 			break;
 		}
@@ -657,6 +675,9 @@ static struct mlx5_flow_group *mlx5e_create_flow_group(
 		return ERR_PTR(-ENOMEM);
 	}
 
+	group->eswitch = eswitch;
+	kref_init(&group->kref);
+
 	return group;
 }
 
@@ -665,7 +686,6 @@ int mlx5e_flow_act(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow,
 {
 	struct mlx5_flow_group *group;
 	struct mlx5e_priv *pf_dev = in_rep->pf_dev;
-	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
 	int err, mlx5_action;
 
 	u32 match_c[MATCH_PARAMS_SIZE];
@@ -706,7 +726,9 @@ int mlx5e_flow_act(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow,
 
 	err = -EINVAL;
 
-	pr_debug("%s flags %x sw_flow %p group %p ref %d\n", __func__, flags, sw_flow, group, group? group->refcount: -100);
+	pr_debug("%s flags %x sw_flow %p group %p ref %d\n", __func__, flags,
+		 sw_flow, group, group ? atomic_read(&group->kref.refcount) :
+					 -100);
 
 	if (flags & FLOW_ADD)
 		err = mlx5e_flow_set(pf_dev, mlx5_action, out_rep,
@@ -714,16 +736,10 @@ int mlx5e_flow_act(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow,
 	else if (flags & FLOW_DEL)
 		err = __mlx5e_flow_del(pf_dev, group, match_v);
 
-	pr_debug("%s status %d flags %x group %p ref %d index %d\n",
-		__func__, err, flags, group, group->refcount, group->group_ix);
-
-	if ((!err || err == -EOPNOTSUPP) && !group->refcount) {
-		/* if the group gets to be empty or add failed - mark it as free */
-		pr_debug("%s status %d flags %x freeing flow group index %d\n",__func__, err, flags, group->group_ix);
-		mlx5_set_free_flow_group(eswitch->fdb_table.fdb, group->group_ix);
-		list_del(&group->groups_list);
-		kfree(group);
-	}
+	pr_debug("%s status %d flags %x group %p ref %d index %d\n", __func__,
+		 err, flags, group, atomic_read(&group->kref.refcount),
+		 group->group_ix);
+	mlx5e_flow_group_put(group);
 
 	return err;
 }
