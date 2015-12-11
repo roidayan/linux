@@ -487,10 +487,14 @@ static PORT_PMA_ATTR(port_rcv_constraint_errors	    ,  8,  8, 136, IB_PMA_PORT_C
 static PORT_PMA_ATTR(local_link_integrity_errors    ,  9,  4, 152, IB_PMA_PORT_COUNTERS);
 static PORT_PMA_ATTR(excessive_buffer_overrun_errors, 10,  4, 156, IB_PMA_PORT_COUNTERS);
 static PORT_PMA_ATTR(VL15_dropped		    , 11, 16, 176, IB_PMA_PORT_COUNTERS);
-static PORT_PMA_ATTR(port_xmit_data		    , 12, 32, 192, IB_PMA_PORT_COUNTERS);
-static PORT_PMA_ATTR(port_rcv_data		    , 13, 32, 224, IB_PMA_PORT_COUNTERS);
-static PORT_PMA_ATTR(port_xmit_packets		    , 14, 32, 256, IB_PMA_PORT_COUNTERS);
-static PORT_PMA_ATTR(port_rcv_packets		    , 15, 32, 288, IB_PMA_PORT_COUNTERS);
+static PORT_PMA_ATTR(port_xmit_data		    ,  0, 64,  64, IB_PMA_PORT_COUNTERS_EXT);
+static PORT_PMA_ATTR(port_rcv_data		    ,  0, 64, 128, IB_PMA_PORT_COUNTERS_EXT);
+static PORT_PMA_ATTR(port_xmit_packets		    ,  0, 64, 192, IB_PMA_PORT_COUNTERS_EXT);
+static PORT_PMA_ATTR(port_rcv_packets		    ,  0, 64, 256, IB_PMA_PORT_COUNTERS_EXT);
+static PORT_PMA_ATTR(unicast_xmit_packets	    ,  0, 64, 320, IB_PMA_PORT_COUNTERS_EXT);
+static PORT_PMA_ATTR(unicast_rcv_packets	    ,  0, 64, 384, IB_PMA_PORT_COUNTERS_EXT);
+static PORT_PMA_ATTR(multicast_xmit_packets	    ,  0, 64, 448, IB_PMA_PORT_COUNTERS_EXT);
+static PORT_PMA_ATTR(multicast_rcv_packets	    ,  0, 64, 512, IB_PMA_PORT_COUNTERS_EXT);
 
 static struct attribute *pma_attrs[] = {
 	&port_pma_attr_symbol_error.attr.attr,
@@ -509,6 +513,10 @@ static struct attribute *pma_attrs[] = {
 	&port_pma_attr_port_rcv_data.attr.attr,
 	&port_pma_attr_port_xmit_packets.attr.attr,
 	&port_pma_attr_port_rcv_packets.attr.attr,
+	&port_pma_attr_unicast_rcv_packets.attr.attr,
+	&port_pma_attr_unicast_xmit_packets.attr.attr,
+	&port_pma_attr_multicast_rcv_packets.attr.attr,
+	&port_pma_attr_multicast_xmit_packets.attr.attr,
 	NULL
 };
 
