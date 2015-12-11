@@ -40,6 +40,7 @@
 #include <linux/netdevice.h>
 
 #include <rdma/ib_mad.h>
+#include <rdma/ib_pma.h>
 
 struct ib_port;
 
@@ -75,6 +76,7 @@ struct port_table_attribute {
 	struct port_attribute	attr;
 	char			name[8];
 	int			index;
+	int			attr_id;
 };
 
 static ssize_t port_attr_show(struct kobject *kobj,
@@ -392,10 +394,11 @@ static ssize_t show_port_pkey(struct ib_port *p, struct port_attribute *attr,
 	return sprintf(buf, "0x%04x\n", pkey);
 }
 
-#define PORT_PMA_ATTR(_name, _counter, _width, _offset)			\
+#define PORT_PMA_ATTR(_name, _counter, _width, _offset, _attr_id)	\
 struct port_table_attribute port_pma_attr_##_name = {			\
 	.attr  = __ATTR(_name, S_IRUGO, show_pma_counter, NULL),	\
-	.index = (_offset) | ((_width) << 16) | ((_counter) << 24)	\
+	.index = (_offset) | ((_width) << 16) | ((_counter) << 24),	\
+	.attr_id = _attr_id ,						\
 }
 
 static ssize_t show_pma_counter(struct ib_port *p, struct port_attribute *attr,
@@ -425,7 +428,7 @@ static ssize_t show_pma_counter(struct ib_port *p, struct port_attribute *attr,
 	in_mad->mad_hdr.mgmt_class    = IB_MGMT_CLASS_PERF_MGMT;
 	in_mad->mad_hdr.class_version = 1;
 	in_mad->mad_hdr.method        = IB_MGMT_METHOD_GET;
-	in_mad->mad_hdr.attr_id       = cpu_to_be16(0x12); /* PortCounters */
+	in_mad->mad_hdr.attr_id       = tab_attr->attr_id;
 
 	in_mad->data[41] = p->port_num;	/* PortSelect field */
 
@@ -467,22 +470,22 @@ out:
 	return ret;
 }
 
-static PORT_PMA_ATTR(symbol_error		    ,  0, 16,  32);
-static PORT_PMA_ATTR(link_error_recovery	    ,  1,  8,  48);
-static PORT_PMA_ATTR(link_downed		    ,  2,  8,  56);
-static PORT_PMA_ATTR(port_rcv_errors		    ,  3, 16,  64);
-static PORT_PMA_ATTR(port_rcv_remote_physical_errors,  4, 16,  80);
-static PORT_PMA_ATTR(port_rcv_switch_relay_errors   ,  5, 16,  96);
-static PORT_PMA_ATTR(port_xmit_discards		    ,  6, 16, 112);
-static PORT_PMA_ATTR(port_xmit_constraint_errors    ,  7,  8, 128);
-static PORT_PMA_ATTR(port_rcv_constraint_errors	    ,  8,  8, 136);
-static PORT_PMA_ATTR(local_link_integrity_errors    ,  9,  4, 152);
-static PORT_PMA_ATTR(excessive_buffer_overrun_errors, 10,  4, 156);
-static PORT_PMA_ATTR(VL15_dropped		    , 11, 16, 176);
-static PORT_PMA_ATTR(port_xmit_data		    , 12, 32, 192);
-static PORT_PMA_ATTR(port_rcv_data		    , 13, 32, 224);
-static PORT_PMA_ATTR(port_xmit_packets		    , 14, 32, 256);
-static PORT_PMA_ATTR(port_rcv_packets		    , 15, 32, 288);
+static PORT_PMA_ATTR(symbol_error		    ,  0, 16,  32, IB_PMA_PORT_COUNTERS);
+static PORT_PMA_ATTR(link_error_recovery	    ,  1,  8,  48, IB_PMA_PORT_COUNTERS);
+static PORT_PMA_ATTR(link_downed		    ,  2,  8,  56, IB_PMA_PORT_COUNTERS);
+static PORT_PMA_ATTR(port_rcv_errors		    ,  3, 16,  64, IB_PMA_PORT_COUNTERS);
+static PORT_PMA_ATTR(port_rcv_remote_physical_errors,  4, 16,  80, IB_PMA_PORT_COUNTERS);
+static PORT_PMA_ATTR(port_rcv_switch_relay_errors   ,  5, 16,  96, IB_PMA_PORT_COUNTERS);
+static PORT_PMA_ATTR(port_xmit_discards		    ,  6, 16, 112, IB_PMA_PORT_COUNTERS);
+static PORT_PMA_ATTR(port_xmit_constraint_errors    ,  7,  8, 128, IB_PMA_PORT_COUNTERS);
+static PORT_PMA_ATTR(port_rcv_constraint_errors	    ,  8,  8, 136, IB_PMA_PORT_COUNTERS);
+static PORT_PMA_ATTR(local_link_integrity_errors    ,  9,  4, 152, IB_PMA_PORT_COUNTERS);
+static PORT_PMA_ATTR(excessive_buffer_overrun_errors, 10,  4, 156, IB_PMA_PORT_COUNTERS);
+static PORT_PMA_ATTR(VL15_dropped		    , 11, 16, 176, IB_PMA_PORT_COUNTERS);
+static PORT_PMA_ATTR(port_xmit_data		    , 12, 32, 192, IB_PMA_PORT_COUNTERS);
+static PORT_PMA_ATTR(port_rcv_data		    , 13, 32, 224, IB_PMA_PORT_COUNTERS);
+static PORT_PMA_ATTR(port_xmit_packets		    , 14, 32, 256, IB_PMA_PORT_COUNTERS);
+static PORT_PMA_ATTR(port_rcv_packets		    , 15, 32, 288, IB_PMA_PORT_COUNTERS);
 
 static struct attribute *pma_attrs[] = {
 	&port_pma_attr_symbol_error.attr.attr,
