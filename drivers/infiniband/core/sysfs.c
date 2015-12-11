@@ -459,6 +459,11 @@ static ssize_t show_pma_counter(struct ib_port *p, struct port_attribute *attr,
 		ret = sprintf(buf, "%u\n",
 			      be32_to_cpup((__be32 *)(out_mad->data + 40 + offset / 8)));
 		break;
+	case 64:
+		ret = sprintf(buf, "%llu\n",
+				be64_to_cpup((__be64 *)(out_mad->data + 40 + offset / 8)));
+		break;
+
 	default:
 		ret = 0;
 	}
