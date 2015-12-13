@@ -1316,16 +1316,6 @@ static void get_ext_port_caps(struct mlx5_ib_dev *dev)
 		mlx5_query_ext_port_caps(dev, port);
 }
 
-static void config_atomic_responder(struct mlx5_ib_dev *dev,
-				    struct ib_device_attr *props)
-{
-	enum ib_atomic_cap cap = props->atomic_cap;
-
-	if (cap == IB_ATOMIC_HCA ||
-	    cap == IB_ATOMIC_GLOB)
-		dev->enable_atomic_resp = 1;
-}
-
 static int get_port_caps(struct mlx5_ib_dev *dev)
 {
 	struct ib_device_attr *dprops = NULL;
@@ -1347,8 +1337,6 @@ static int get_port_caps(struct mlx5_ib_dev *dev)
 		mlx5_ib_warn(dev, "query_device failed %d\n", err);
 		goto out;
 	}
-
-	config_atomic_responder(dev, dprops);
 
 	for (port = 1; port <= MLX5_CAP_GEN(dev->mdev, num_ports); port++) {
 		err = mlx5_ib_query_port(&dev->ib_dev, port, pprops);

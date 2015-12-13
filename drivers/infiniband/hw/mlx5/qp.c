@@ -2201,14 +2201,6 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 				cpu_to_be32(fls(attr->max_dest_rd_atomic - 1) << 21);
 	}
 
-	if ((attr_mask & IB_QP_ACCESS_FLAGS) &&
-	    (attr->qp_access_flags & IB_ACCESS_REMOTE_ATOMIC) &&
-	    !dev->enable_atomic_resp) {
-		mlx5_ib_warn(dev, "atomic responder is not supported\n");
-		err = -EINVAL;
-		goto out;
-	}
-
 	if (attr_mask & (IB_QP_ACCESS_FLAGS | IB_QP_MAX_DEST_RD_ATOMIC))
 		context->params2 |= to_mlx5_access_flags(qp, attr, attr_mask);
 
