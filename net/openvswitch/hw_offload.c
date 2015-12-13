@@ -271,7 +271,9 @@ int ovs_hw_flow_remove(struct datapath *dp, struct ovs_flow *flow)
 	list_for_each_entry(vport, &dp->swdev_rep_list, swdev_rep_list) {
 		dev = vport->ops->get_netdev(vport);
 		BUG_ON(!dev);
+		rtnl_lock();
 		err = switchdev_port_flow_del(dev, &flow->flow);
+		rtnl_unlock();
 		if (err == -ENODEV) /* out device is not in this switch */
 			continue;
 		if (err)
@@ -281,8 +283,11 @@ int ovs_hw_flow_remove(struct datapath *dp, struct ovs_flow *flow)
 	if (!dev || !dev->switchdev_ops) {
 		printk(KERN_ERR "%s can't offload flow del: in_dev %s\n", __func__, dev? dev->name: "no dev");
 		err = -ENODEV;
-	} else
+	} else {
+		rtnl_lock();
 		err = switchdev_port_flow_del(dev, &flow->flow);
+		rtnl_unlock();
+	}
 #endif
 	kfree(flow->flow.actions);
 	flow->flow.actions = NULL;
