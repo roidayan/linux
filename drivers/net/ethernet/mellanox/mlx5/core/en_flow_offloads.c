@@ -57,6 +57,16 @@ struct mlx5_flow_attr {
 
 /* The default UDP port that ConnectX firmware uses for its VXLAN parser */
 #define MLX5_DEFAULT_VXLAN_UDP_DPORT (4789)
+static int check_vxlan_port(u16 port)
+{
+	/* TODO enable other UDP ports with the ADD_VXLAN_UDP_PORT
+	 * firmware command
+	 */
+	if (port != MLX5_DEFAULT_VXLAN_UDP_DPORT)
+		return -EOPNOTSUPP;
+
+	return 0;
+}
 
 static int parse_vxlan_attr(struct mlx5_flow_attr *attr)
 {
@@ -73,10 +83,7 @@ static int parse_vxlan_attr(struct mlx5_flow_attr *attr)
 				    misc_parameters);
 	u16 dst_port = attr->sw_flow->tunnel_port;
 
-	if (dst_port != MLX5_DEFAULT_VXLAN_UDP_DPORT)
-		/* TODO enable other UDP ports with the
-		 * ADD_VXLAN_UDP_PORT firmware command
-		 */
+	if (check_vxlan_port(dst_port))
 		return -EOPNOTSUPP;
 
 	if (mask->tun_flags & TUNNEL_KEY) {
