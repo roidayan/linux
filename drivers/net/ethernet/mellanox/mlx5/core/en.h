@@ -404,9 +404,13 @@ struct mlx5e_cq {
 	struct mlx5_wq_ctrl        wq_ctrl;
 } ____cacheline_aligned_in_smp;
 
+struct mlx5e_dma_info {
+	struct page	*page;
+	dma_addr_t	addr;
+};
+
 struct mlx5e_mpw_info {
-	struct page          *page;
-	dma_addr_t	     dma_addr;
+	struct mlx5e_dma_info dma_info;
 	u16		     consumed_strides;
 };
 
