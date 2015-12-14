@@ -80,25 +80,25 @@ int mlx5e_alloc_rx_mpwqe(struct mlx5e_rq *rq, struct mlx5e_rx_wqe *wqe, u16 ix)
 	struct mlx5e_mpw_info *wi = &rq->wqe_info[ix];
 	int ret = 0;
 
-	wi->page = alloc_pages(GFP_ATOMIC | __GFP_COMP | __GFP_COLD,
-			       MLX5_MPWRQ_WQE_PAGE_ORDER);
-	if (unlikely(!wi->page))
+	wi->dma_info.page = alloc_pages(GFP_ATOMIC | __GFP_COMP | __GFP_COLD,
+					MLX5_MPWRQ_WQE_PAGE_ORDER);
+	if (unlikely(!wi->dma_info.page))
 		return -ENOMEM;
 
-	wi->dma_addr = dma_map_page(rq->pdev, wi->page, 0, rq->wqe_sz,
-				    PCI_DMA_FROMDEVICE);
-	if (dma_mapping_error(rq->pdev, wi->dma_addr)) {
+	wi->dma_info.addr = dma_map_page(rq->pdev, wi->dma_info.page, 0,
+					 rq->wqe_sz, PCI_DMA_FROMDEVICE);
+	if (dma_mapping_error(rq->pdev, wi->dma_info.addr)) {
 		ret = -ENOMEM;
 		goto err_put_page;
 	}
 
 	wi->consumed_strides = 0;
-	wqe->data.addr = cpu_to_be64(wi->dma_addr);
+	wqe->data.addr = cpu_to_be64(wi->dma_info.addr);
 
 	return 0;
 
 err_put_page:
-	put_page(wi->page);
+	put_page(wi->dma_info.page);
 	return ret;
 }
 
@@ -320,11 +320,12 @@ void mlx5e_handle_rx_cqe_mpwrq(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe)
 	if (unlikely(!skb))
 		goto mpwrq_cqe_out;
 
-	dma_sync_single_for_cpu(rq->pdev, wi->dma_addr + stride_offset,
+	dma_sync_single_for_cpu(rq->pdev, wi->dma_info.addr + stride_offset,
 				consumed_bytes, DMA_FROM_DEVICE);
 
 	headlen = min_t(u16, MLX5_MPWRQ_SMALL_PACKET_THRESHOLD, byte_cnt);
-	skb_copy_to_linear_data(skb, page_address(wi->page) + data_offset,
+	skb_copy_to_linear_data(skb,
+				page_address(wi->dma_info.page) + data_offset,
 				headlen);
 	skb_put(skb, headlen);
 
@@ -338,8 +339,8 @@ void mlx5e_handle_rx_cqe_mpwrq(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe)
 		skb->len      += byte_cnt;
 		skb->truesize  = SKB_TRUESIZE(skb->len);
 
-		get_page(wi->page);
-		skb_frag_set_page(skb, 0, wi->page);
+		get_page(wi->dma_info.page);
+		skb_frag_set_page(skb, 0, wi->dma_info.page);
 		skb_frag_size_set(f0, skb->data_len);
 		f0->page_offset = data_offset + headlen;
 	}
@@ -350,8 +351,9 @@ mpwrq_cqe_out:
 	if (likely(wi->consumed_strides < MLX5_MPWRQ_NUM_STRIDES))
 		return;
 
-	dma_unmap_page(rq->pdev, wi->dma_addr, rq->wqe_sz, PCI_DMA_FROMDEVICE);
-	put_page(wi->page);
+	dma_unmap_page(rq->pdev, wi->dma_info.addr, rq->wqe_sz,
+		       PCI_DMA_FROMDEVICE);
+	put_page(wi->dma_info.page);
 	mlx5_wq_ll_pop(&rq->wq, cqe->wqe_id, &wqe->next.next_wqe_index);
 }
 
