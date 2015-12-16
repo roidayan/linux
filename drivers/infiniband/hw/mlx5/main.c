@@ -1792,6 +1792,15 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 			(1ull << IB_USER_VERBS_CMD_CLOSE_XRCD);
 	}
 
+	if (MLX5_CAP_GEN(mdev, port_type) == MLX5_CAP_PORT_TYPE_ETH) {
+		dev->ib_dev.create_wq		= mlx5_ib_create_wq;
+		dev->ib_dev.modify_wq		= mlx5_ib_modify_wq;
+		dev->ib_dev.destroy_wq		= mlx5_ib_destroy_wq;
+		dev->ib_dev.uverbs_ex_cmd_mask |=
+				(1ull << IB_USER_VERBS_EX_CMD_CREATE_WQ) |
+				(1ull << IB_USER_VERBS_EX_CMD_MODIFY_WQ) |
+				(1ull << IB_USER_VERBS_EX_CMD_DESTROY_WQ);
+	}
 	err = init_node_data(dev);
 	if (err)
 		goto err_dealloc;

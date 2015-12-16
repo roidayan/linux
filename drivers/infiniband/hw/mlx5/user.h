@@ -44,6 +44,10 @@ enum {
 	MLX5_SRQ_FLAG_SIGNATURE		= 1 << 0,
 };
 
+enum {
+	MLX5_WQ_FLAG_SIGNATURE		= 1 << 0,
+};
+
 
 /* Increment this value if any changes that break userspace ABI
  * compatibility are made.
@@ -144,4 +148,15 @@ struct mlx5_ib_create_qp {
 struct mlx5_ib_create_qp_resp {
 	__u32	uuar_index;
 };
+
+struct mlx5_ib_create_wq {
+	__u64	buf_addr;
+	__u64	db_addr;
+	__u32	rq_wqe_count;
+	__u32	rq_wqe_shift;
+	__u32	user_index;
+	__u32	flags;
+	__u64	reserved[2];
+};
+
 #endif /* MLX5_IB_USER_H */
