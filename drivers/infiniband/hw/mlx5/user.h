@@ -46,6 +46,10 @@ enum {
 	MLX5_SRQ_FLAG_SIGNATURE		= 1 << 0,
 };
 
+enum {
+	MLX5_WQ_FLAG_SIGNATURE		= 1 << 0,
+};
+
 
 /* Increment this value if any changes that break userspace ABI
  * compatibility are made.
@@ -187,4 +191,15 @@ static inline int get_srq_user_index(struct mlx5_ib_ucontext *ucontext,
 
 	return verify_assign_uidx(cqe_version, ucmd->uidx, user_index);
 }
+
+struct mlx5_ib_create_wq {
+	__u64	buf_addr;
+	__u64	db_addr;
+	__u32	rq_wqe_count;
+	__u32	rq_wqe_shift;
+	__u32	user_index;
+	__u32	flags;
+	__u64	reserved[2];
+};
+
 #endif /* MLX5_IB_USER_H */
