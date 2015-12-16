@@ -2489,6 +2489,13 @@ int mlx5e_open_rep_channels(struct mlx5e_priv *priv)
 		}
 	}
 
+	err = mlx5e_refresh_tirs_self_loopback_enable(priv);
+	if (err) {
+		netdev_err(priv->netdev, "%s:	mlx5e_refresh_tirs_self_loopback_enable	failed, %d\n",
+			   __func__, err);
+		goto err_close_channels;
+	}
+
 #ifdef DO_REP_RX
 	for (j = 0; j < nch; j++) {
 		err = mlx5e_wait_for_min_rx_wqes(&priv->rep_channel[j]->rq, &rep_param);
