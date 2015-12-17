@@ -114,6 +114,36 @@ struct mlx5_ib_pd {
 	u32			pdn;
 };
 
+#define MLX5_IB_FLOW_MCAST_PRIO		(MLX5_BY_PASS_NUM_PRIOS - 1)
+#define MLX5_IB_FLOW_LAST_PRIO		(MLX5_IB_FLOW_MCAST_PRIO - 1)
+#if (MLX5_IB_FLOW_LAST_PRIO <= 0)
+#error "Invalid number of bypass priorities"
+#endif
+#define MLX5_IB_FLOW_LEFTOVERS_PRIO	(MLX5_IB_FLOW_MCAST_PRIO + 1)
+
+#define MLX5_IB_NUM_FLOW_FT		(MLX5_IB_FLOW_LEFTOVERS_PRIO + 1)
+struct mlx5_ib_flow_prio {
+	struct mlx5_flow_table		*flow_table;
+	unsigned int			refcount;
+};
+
+struct mlx5_ib_flow_handler {
+	struct list_head		list;
+	struct ib_flow			ibflow;
+	unsigned int			prio;
+	struct mlx5_flow_rule	*rule;
+};
+
+struct mlx5_ib_flow_db {
+	struct mlx5_ib_flow_prio	prios[MLX5_IB_NUM_FLOW_FT];
+	/* Protect flow steering bypass flow tables
+	 * when add/del flow rules.
+	 * only single add/removal of flow steering rule could be done
+	 * simultaneously.
+	 */
+	struct mutex			lock;
+};
+
 /* Use macros here so that don't have to duplicate
  * enum ib_send_flags and enum ib_qp_type for low-level driver
  */
@@ -512,6 +542,7 @@ struct mlx5_ib_dev {
 	 */
 	struct srcu_struct      mr_srcu;
 #endif
+	struct mlx5_ib_flow_db	flow_db;
 };
 
 static inline struct mlx5_ib_cq *to_mibcq(struct mlx5_core_cq *mcq)
