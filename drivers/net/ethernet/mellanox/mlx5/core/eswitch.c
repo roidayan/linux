@@ -39,10 +39,6 @@
 #include "mlx5_core.h"
 #include "eswitch.h"
 
-int mlx5_vf_fdb_rules = 1;
-module_param_named(vf_fdb_rules, mlx5_vf_fdb_rules, int, 0644);
-MODULE_PARM_DESC(vf_fdb_rules, "vf_fdb_rules: 1 = add FDB rules for VF MACs, 0 = don't add Default=1");
-
 int mlx5_flow_offload_group_size_log = MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG;
 module_param_named(flow_offload_group_size_log, mlx5_flow_offload_group_size_log, int, 0644);
 MODULE_PARM_DESC(flow_offload_group_size_log, "flow_offload_group_size_log: log_2 if the flow offlloads group size Default=8");
@@ -596,53 +592,31 @@ out:
 	return flow_rule;
 }
 
-static int esw_create_fdb_table(struct mlx5_eswitch *esw, int nvports)
+static int esw_create_flow_offloads_fdb_table(struct mlx5_eswitch *esw)
 {
 	struct mlx5_core_dev *dev = esw->dev;
 	struct mlx5_flow_table_group *g;
 	struct mlx5_flow_table *fdb;
-	u8 *dmac, *source_sqn, *source_vport;
-	int num_fdb_groups, i;
+	u8 *source_sqn, *source_vport;
+	int i;
 
-	esw_debug(dev, "Create FDB log_max_size(%d)\n",
-		  MLX5_CAP_ESW_FLOWTABLE_FDB(dev, log_max_ft_size));
-
-	if (!mlx5_vf_fdb_rules)
-		num_fdb_groups = MLX5_OFFLOAD_GROUPS;
-	else
-		num_fdb_groups = 1;
-
-	g = kcalloc(num_fdb_groups, sizeof(*g), GFP_KERNEL);
+	g = kcalloc(MLX5_OFFLOAD_GROUPS, sizeof(*g), GFP_KERNEL);
 	if (!g)
 		return -ENOMEM;
-
-	/* UC MC Full match rules*/
-	/* NO NO, this doesn't leave any room for OVS offload rules!!
-	 * g[0].log_sz = MLX5_CAP_ESW_FLOWTABLE_FDB(dev, log_max_ft_size);
-	 * */
-	g[0].log_sz = 12;
-	g[0].match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
-	dmac = MLX5_ADDR_OF(fte_match_param, g[0].match_criteria,
-			    outer_headers.dmac_47_16);
-	/* Match criteria mask */
-	memset(dmac, 0xff, 6);
-
-	if (mlx5_vf_fdb_rules)
-		goto create_table;
 
 	g[MLX5_TX2VPORT_GROUP].log_sz = 8;
 	g[MLX5_TX2VPORT_GROUP].match_criteria_enable = MLX5_MATCH_MISC_PARAMETERS;
 
 	/* source vport == 0 also can be set to this rule */
 	source_sqn = MLX5_ADDR_OF(fte_match_param, g[MLX5_TX2VPORT_GROUP].match_criteria,
-		  		  misc_parameters.source_sqn);
-	source_vport = MLX5_ADDR_OF(fte_match_param, g[1].match_criteria,
+				  misc_parameters.source_sqn);
+	source_vport = MLX5_ADDR_OF(fte_match_param, g[MLX5_TX2VPORT_GROUP].match_criteria,
 				    misc_parameters.source_port);
- 
+
 	memset(source_vport, 0xff, 2); /* TODO: Fix hard coded number */
 	memset(source_sqn, 0xff, 3);
 
-	for (i = 2; i < MLX5_MISS_GROUP; i++) {
+	for (i = 1; i < MLX5_MISS_GROUP; i++) {
 		g[i].log_sz = mlx5_flow_offload_group_size_log;
 		g[i].match_criteria_enable = 0; /* just place holder hack */
 	}
@@ -650,17 +624,61 @@ static int esw_create_fdb_table(struct mlx5_eswitch *esw, int nvports)
 	g[MLX5_MISS_GROUP].log_sz = 0;
 	g[MLX5_MISS_GROUP].match_criteria_enable = 0;
 
-create_table:
+	fdb = mlx5_create_flow_table(dev, 0,
+				     MLX5_FLOW_TABLE_TYPE_ESWITCH,
+				     MLX5_OFFLOAD_GROUPS, g);
+	if (fdb)
+		esw_debug(dev, "ESW: FDB Table created fdb->id %d\n",
+			  mlx5_get_flow_table_id(fdb));
+	else
+		esw_warn(dev, "ESW: Failed to create FDB Table\n");
+
+	kfree(g);
+	esw->fdb_table.fdb = fdb;
+	return fdb ? 0 : -ENOMEM;
+}
+
+/* TODO: Consider using the same function for both tables */
+static void esw_destroy_flow_offloads_fdb_table(struct mlx5_eswitch *esw)
+{
+	struct mlx5_core_dev *dev = esw->dev;
+
+	if (!esw->fdb_table.fdb)
+		return;
+
+	esw_debug(dev, "Destroy flow offloads FDB table(%d)\n",
+		  mlx5_get_flow_table_id(esw->fdb_table.fdb));
+	mlx5_destroy_flow_table(esw->fdb_table.fdb);
+	esw->fdb_table.fdb = NULL;
+}
+
+static int esw_create_fdb_table(struct mlx5_eswitch *esw, int nvports)
+{
+	struct mlx5_core_dev *dev = esw->dev;
+	struct mlx5_flow_table_group g;
+	struct mlx5_flow_table *fdb;
+	u8 *dmac;
+
+	esw_debug(dev, "Create FDB log_max_size(%d)\n",
+		  MLX5_CAP_ESW_FLOWTABLE_FDB(dev, log_max_ft_size));
+
+	memset(&g, 0, sizeof(g));
+	/* UC MC Full match rules*/
+	g.log_sz = MLX5_CAP_ESW_FLOWTABLE_FDB(dev, log_max_ft_size);
+	g.match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
+	dmac = MLX5_ADDR_OF(fte_match_param, g.match_criteria,
+			    outer_headers.dmac_47_16);
+	/* Match criteria mask */
+	memset(dmac, 0xff, 6);
 
 	fdb = mlx5_create_flow_table(dev, 0,
 				     MLX5_FLOW_TABLE_TYPE_ESWITCH,
-				     num_fdb_groups, g);
+				     1, &g);
 	if (fdb)
 		esw_debug(dev, "ESW: FDB Table created fdb->id %d\n", mlx5_get_flow_table_id(fdb));
 	else
 		esw_warn(dev, "ESW: Failed to create FDB Table\n");
 
-	kfree(g);
 	esw->fdb_table.fdb = fdb;
 	return fdb ? 0 : -ENOMEM;
 }
@@ -705,7 +723,7 @@ static int esw_add_uc_addr(struct mlx5_eswitch *esw, struct vport_addr *vaddr)
 	if (err)
 		goto abort;
 
-	if (esw->fdb_table.fdb) /* SRIOV is enabled: Forward UC MAC to vport */
+	if (esw->state == SRIOV_LEGACY) /* Legacy SRIOV is enabled: Forward UC MAC to vport */
 		vaddr->flow_rule = esw_fdb_set_vport_rule(esw, mac, vport);
 
 	esw_debug(esw->dev, "\tADDED UC MAC: vport[%d] %pM index:%d fr(%p)\n",
@@ -921,19 +939,12 @@ static void esw_vport_change_handler(struct work_struct *work)
 	esw_debug(dev, "vport[%d] Context Changed: perm mac: %pM\n",
 		  vport->vport, mac);
 
-	if (!mlx5_vf_fdb_rules && (vport->enabled_events & UC_ADDR_CHANGE)) {
-		mlx5_core_warn(dev, "%s skipping unicast event for vport=%d \n", __func__, vport->vport);
-		goto skip_unicast;
-	}
-
 	if (vport->enabled_events & UC_ADDR_CHANGE) {
 		esw_update_vport_addr_list(esw, vport->vport,
 					   MLX5_NVPRT_LIST_TYPE_UC);
 		esw_apply_vport_addr_list(esw, vport->vport,
 					  MLX5_NVPRT_LIST_TYPE_UC);
 	}
-
-skip_unicast:
 
 	if (vport->enabled_events & MC_ADDR_CHANGE) {
 		esw_update_vport_addr_list(esw, vport->vport,
@@ -1026,8 +1037,9 @@ static void esw_disable_vport(struct mlx5_eswitch *esw, int vport_num)
 }
 
 /* Public E-Switch API */
-int mlx5_eswitch_enable_sriov(struct mlx5_eswitch *esw, int nvfs)
+int mlx5_eswitch_enable_sriov(struct mlx5_eswitch *esw, int nvfs, bool flow_offloads)
 {
+	int enabled_events;
 	int err;
 	int i;
 
@@ -1041,17 +1053,26 @@ int mlx5_eswitch_enable_sriov(struct mlx5_eswitch *esw, int nvfs)
 		return -ENOTSUPP;
 	}
 
+	if (esw->state != SRIOV_DISABLED) {
+		esw_warn(esw->dev, "SRIOV is already enabled\n");
+		return 0;
+	}
 	esw_info(esw->dev, "E-Switch enable SRIOV: nvfs(%d)\n", nvfs);
-
 	esw_disable_vport(esw, 0);
 
-	err = esw_create_fdb_table(esw, nvfs + 1);
+	if (flow_offloads)
+		err = esw_create_flow_offloads_fdb_table(esw);
+	else
+		err = esw_create_fdb_table(esw, nvfs + 1);
+
 	if (err)
 		goto abort;
 
+	enabled_events = flow_offloads ? UC_ADDR_CHANGE : SRIOV_VPORT_EVENTS;
 	for (i = 0; i <= nvfs; i++)
-		esw_enable_vport(esw, i, SRIOV_VPORT_EVENTS);
+		esw_enable_vport(esw, i, enabled_events);
 
+	esw->state = flow_offloads ? SRIOV_FLOW_OFFLOADS : SRIOV_LEGACY;
 	esw_info(esw->dev, "SRIOV enabled: active vports(%d)\n",
 		 esw->enabled_vports);
 	return 0;
@@ -1068,6 +1089,10 @@ void mlx5_eswitch_disable_sriov(struct mlx5_eswitch *esw)
 	if (!esw || !MLX5_CAP_GEN(esw->dev, vport_group_manager) ||
 	    MLX5_CAP_GEN(esw->dev, port_type) != MLX5_CAP_PORT_TYPE_ETH)
 		return;
+	if (esw->state == SRIOV_DISABLED) {
+		esw_warn(esw->dev, "SRIOV is already disabled\n");
+		return;
+	}
 
 	esw_info(esw->dev, "disable SRIOV: active vports(%d)\n",
 		 esw->enabled_vports);
@@ -1075,8 +1100,13 @@ void mlx5_eswitch_disable_sriov(struct mlx5_eswitch *esw)
 	for (i = 0; i < esw->total_vports; i++)
 		esw_disable_vport(esw, i);
 
-	esw_destroy_fdb_table(esw);
 
+	if (esw->state == SRIOV_FLOW_OFFLOADS)
+		esw_destroy_flow_offloads_fdb_table(esw);
+	else
+		esw_destroy_fdb_table(esw);
+
+	esw->state = SRIOV_DISABLED;
 	/* VPORT 0 (PF) must be enabled back with non-sriov configuration */
 	esw_enable_vport(esw, 0, UC_ADDR_CHANGE);
 }
@@ -1138,6 +1168,7 @@ int mlx5_eswitch_init(struct mlx5_core_dev *dev)
 
 	esw->total_vports = total_vports;
 	esw->enabled_vports = 0;
+	esw->state = SRIOV_DISABLED;
 
 	dev->priv.eswitch = esw;
 	esw_enable_vport(esw, 0, UC_ADDR_CHANGE);

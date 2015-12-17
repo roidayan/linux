@@ -1950,12 +1950,29 @@ void mlx5e_set_vf_reps(struct work_struct *work)
 	int err;
 	struct mlx5e_priv *priv = container_of(work, struct mlx5e_priv,
 					       vf_reps_work);
+	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 
 	if (!(priv->pflags & MLX5e_PRIV_FLAGS_REPRESENTORS)) {
+		if (esw->state != SRIOV_LEGACY) {
+			mlx5_core_warn(priv->mdev, "Failed to set flow offloads mode. SRIOV in legacy mode must be enabled first.\n");
+			return;
+		}
+		mlx5_eswitch_disable_sriov(esw);
+		mlx5_eswitch_enable_sriov(esw, esw->total_vports - 1, true);
+
 		err = mlx5e_start_flow_offloads(priv);
+		if (err) {
+			mlx5_core_err(priv->mdev, "Fail to start flow offloads, %d\n", err);
+			mlx5_eswitch_disable_sriov(esw);
+			return;
+		}
 		priv->pflags |= MLX5e_PRIV_FLAGS_REPRESENTORS;
 	} else {
 		mlx5e_stop_flow_offloads(priv);
+
+		mlx5_eswitch_disable_sriov(esw);
+		mlx5_eswitch_enable_sriov(esw, esw->total_vports - 1, false);
+
 		priv->pflags &= ~MLX5e_PRIV_FLAGS_REPRESENTORS;
 	}
 }
@@ -2207,11 +2224,12 @@ static void mlx5e_build_netdev(struct net_device *netdev)
 
 	netdev->ethtool_ops	  = &mlx5e_ethtool_ops;
 
-	if (mlx5_core_is_pf(mdev) && !mlx5_vf_fdb_rules) {
+	if (mlx5_core_is_pf(mdev)) {
 		printk(KERN_ERR "adding switchdev ops for mlx5 PF device\n");
 		netdev->switchdev_ops  = &mlx5e_pf_switchdev_ops;
-	} else
-		printk(KERN_ERR "no switchdev ops for mlx5 PF device\n");
+	} else {
+		printk(KERN_ERR "no switchdev ops for mlx5 VF device\n");
+	}
 
 	netdev->vlan_features    |= NETIF_F_SG;
 	netdev->vlan_features    |= NETIF_F_IP_CSUM;

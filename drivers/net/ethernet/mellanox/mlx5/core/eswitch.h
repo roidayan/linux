@@ -137,13 +137,14 @@ struct mlx5_eswitch {
 	struct mlx5_vport       *vports;
 	int                     total_vports;
 	int                     enabled_vports;
+	int			state;
 };
 
 /* E-Switch API */
 int mlx5_eswitch_init(struct mlx5_core_dev *dev);
 void mlx5_eswitch_cleanup(struct mlx5_eswitch *esw);
 void mlx5_eswitch_vport_event(struct mlx5_eswitch *esw, struct mlx5_eqe *eqe);
-int mlx5_eswitch_enable_sriov(struct mlx5_eswitch *esw, int nvfs);
+int mlx5_eswitch_enable_sriov(struct mlx5_eswitch *esw, int nvfs, bool flow_offloads);
 void mlx5_eswitch_disable_sriov(struct mlx5_eswitch *esw);
 int mlx5_eswitch_set_vport_mac(struct mlx5_eswitch *esw,
 			       int vport, u8 mac[ETH_ALEN]);
@@ -157,14 +158,20 @@ int mlx5_eswitch_get_vport_stats(struct mlx5_eswitch *esw,
 				 int vport,
 				 struct ifla_vf_stats *vf_stats);
 
-/* 0 - legacy, 1 - tx2vport  [.. offloaded ovs groups ..] last - miss */
+/* 0 - tx2vport  [.. offloaded flow groups ..] last - miss */
 #define MLX5_OFFLOAD_GROUPS 16
 
-#define MLX5_TX2VPORT_GROUP 1
+#define MLX5_TX2VPORT_GROUP 0
 
 #define MLX5_MISS_GROUP (MLX5_OFFLOAD_GROUPS - 1)
 
 #define MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG 8
+
+enum {
+	SRIOV_DISABLED		= BIT(0),
+	SRIOV_LEGACY		= BIT(1),
+	SRIOV_FLOW_OFFLOADS	= BIT(2),
+};
 
 extern int mlx5_flow_offload_group_size_log;
 
