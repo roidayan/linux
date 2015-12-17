@@ -83,7 +83,6 @@ static int sw_flow_action_create(struct datapath *dp,
 		case OVS_ACTION_ATTR_POP_VLAN:
 			cur->type = SW_FLOW_ACTION_TYPE_VLAN_POP;
 			break;
-
 		default:
 			err = -EOPNOTSUPP;
 			goto errout;
@@ -187,7 +186,7 @@ int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 	struct vport *vport;
 #endif
 	struct net_device *dev;
-	int err, did_rtnl_lock;
+	int err;
 
 	ASSERT_OVSL();
 	BUG_ON(flow->flow.actions);
@@ -204,12 +203,9 @@ int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 		dev = vport->ops->get_netdev(vport);
 		BUG_ON(!dev);
 
-		did_rtnl_lock = 0;
-		if (rtnl_trylock())
-			did_rtnl_lock = 1;
+		rtnl_lock();
 		err = switchdev_port_flow_add(dev, &flow->flow);
-		if (did_rtnl_lock)
-			rtnl_unlock();
+		rtnl_unlock();
 
 		if (err == -ENODEV) /* out device is not in this switch */
 			continue;
@@ -221,11 +217,9 @@ int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 		pr_debug("%s can't offload flow add: in_dev %s\n", __func__, dev? dev->name: "no dev");
 		err = -ENODEV;
 	} else {
-		if (rtnl_trylock())
-			did_rtnl_lock = 1;
+		rtnl_lock();
 		err = switchdev_port_flow_add(dev, &flow->flow);
-		if (did_rtnl_lock)
-			rtnl_unlock();
+		rtnl_unlock();
 	}
 #endif
 
