@@ -729,7 +729,9 @@ struct mlx5_ifc_cmd_hca_cap_bits {
 
 	u8         reserved_20[0x3];
 	u8         log_max_msg[0x5];
-	u8         reserved_21[0x18];
+	u8         reserved_121[0x4];
+	u8         max_tc[0x4];
+	u8         reserved_122[0x10];
 
 	u8         stat_rate_support[0x10];
 	u8         reserved_22[0xc];
@@ -7059,6 +7061,45 @@ struct mlx5_ifc_modify_flow_table_in_bits {
 	u8         table_miss_id[0x18];
 
 	u8         reserved_9[0x100];
+};
+
+struct mlx5_ifc_ets_tcn_conf_bits {
+	u8         g;
+	u8         b;
+	u8         r;
+	u8         reserved_0[0x9];
+	u8         group[0x4];
+	u8         reserved_1[0x9];
+	u8         bw_allocation[0x7];
+	u8         reserved_2[0xc];
+	u8         max_bw_unit[0x4];
+	u8         reserved_3[0x8];
+	u8         max_bw_value[0x8];
+};
+
+struct mlx5_ifc_ets_global_conf_bits {
+	u8         r[0x8];
+	u8         reserved_0[0x20];
+	u8         max_bw_units[0x8];
+	u8         reserved_1[0x8];
+	u8         max_bw_value[0x8];
+};
+
+struct mlx5_ifc_qetc_reg_bits {
+	u8                                     reserved_0[0x8];
+	u8                                     port_number[0x8];
+	u8                                     reserved_1[0x30];
+	struct mlx5_ifc_ets_tcn_conf_bits      tc_conf[0x8];
+	struct mlx5_ifc_ets_global_conf_bits   global_conf;
+};
+
+struct mlx5_ifc_qtct_reg_bits {
+	u8         reserved_0[0x8];
+	u8         port_number[0x8];
+	u8         reserved_1[0xd];
+	u8         prio[0x3];
+	u8         reserved_2[0x1d];
+	u8         t_class[0x3];
 };
 
 #endif /* MLX5_IFC_H */
