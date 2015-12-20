@@ -49,6 +49,7 @@
 #include <linux/scatterlist.h>
 #include <linux/workqueue.h>
 #include <linux/socket.h>
+#include <linux/irq_poll.h>
 #include <uapi/linux/if_ether.h>
 
 #include <linux/atomic.h>
@@ -56,6 +57,7 @@
 #include <asm/uaccess.h>
 
 extern struct workqueue_struct *ib_wq;
+extern struct workqueue_struct *ib_comp_wq;
 
 union ib_gid {
 	u8	raw[16];
@@ -190,54 +192,6 @@ struct ib_cq_init_attr {
 	unsigned int	cqe;
 	int		comp_vector;
 	u32		flags;
-};
-
-struct ib_device_attr {
-	u64			fw_ver;
-	__be64			sys_image_guid;
-	u64			max_mr_size;
-	u64			page_size_cap;
-	u32			vendor_id;
-	u32			vendor_part_id;
-	u32			hw_ver;
-	int			max_qp;
-	int			max_qp_wr;
-	int			device_cap_flags;
-	int			max_sge;
-	int			max_sge_rd;
-	int			max_cq;
-	int			max_cqe;
-	int			max_mr;
-	int			max_pd;
-	int			max_qp_rd_atom;
-	int			max_ee_rd_atom;
-	int			max_res_rd_atom;
-	int			max_qp_init_rd_atom;
-	int			max_ee_init_rd_atom;
-	enum ib_atomic_cap	atomic_cap;
-	enum ib_atomic_cap	masked_atomic_cap;
-	int			max_ee;
-	int			max_rdd;
-	int			max_mw;
-	int			max_raw_ipv6_qp;
-	int			max_raw_ethy_qp;
-	int			max_mcast_grp;
-	int			max_mcast_qp_attach;
-	int			max_total_mcast_qp_attach;
-	int			max_ah;
-	int			max_fmr;
-	int			max_map_per_fmr;
-	int			max_srq;
-	int			max_srq_wr;
-	int			max_srq_sge;
-	unsigned int		max_fast_reg_page_list_len;
-	u16			max_pkeys;
-	u8			local_ca_ack_delay;
-	int			sig_prot_cap;
-	int			sig_guard_cap;
-	struct ib_odp_caps	odp_caps;
-	uint64_t		timestamp_mask;
-	uint64_t		hca_core_clock; /* in KHZ */
 };
 
 enum ib_mtu {
@@ -758,7 +712,10 @@ enum ib_wc_flags {
 };
 
 struct ib_wc {
-	u64			wr_id;
+	union {
+		u64		wr_id;
+		struct ib_cqe	*wr_cqe;
+	};
 	enum ib_wc_status	status;
 	enum ib_wc_opcode	opcode;
 	u32			vendor_err;
@@ -1079,9 +1036,16 @@ struct ib_mw_bind_info {
 	int		mw_access_flags;
 };
 
+struct ib_cqe {
+	void (*done)(struct ib_cq *cq, struct ib_wc *wc);
+};
+
 struct ib_send_wr {
 	struct ib_send_wr      *next;
-	u64			wr_id;
+	union {
+		u64		wr_id;
+		struct ib_cqe	*wr_cqe;
+	};
 	struct ib_sge	       *sg_list;
 	int			num_sge;
 	enum ib_wr_opcode	opcode;
@@ -1175,7 +1139,10 @@ static inline struct ib_sig_handover_wr *sig_handover_wr(struct ib_send_wr *wr)
 
 struct ib_recv_wr {
 	struct ib_recv_wr      *next;
-	u64			wr_id;
+	union {
+		u64		wr_id;
+		struct ib_cqe	*wr_cqe;
+	};
 	struct ib_sge	       *sg_list;
 	int			num_sge;
 };
@@ -1307,6 +1274,12 @@ struct ib_ah {
 
 typedef void (*ib_comp_handler)(struct ib_cq *cq, void *cq_context);
 
+enum ib_poll_context {
+	IB_POLL_DIRECT,		/* caller context, no hw completions */
+	IB_POLL_SOFTIRQ,	/* poll from softirq context */
+	IB_POLL_WORKQUEUE,	/* poll from workqueue */
+};
+
 struct ib_cq {
 	struct ib_device       *device;
 	struct ib_uobject      *uobject;
@@ -1315,6 +1288,12 @@ struct ib_cq {
 	void                   *cq_context;
 	int               	cqe;
 	atomic_t          	usecnt; /* count number of work queues */
+	enum ib_poll_context	poll_ctx;
+	struct ib_wc		*wc;
+	union {
+		struct irq_poll		iop;
+		struct work_struct	work;
+	};
 };
 
 struct ib_srq {
@@ -1603,7 +1582,6 @@ struct ib_device {
 	int		           (*get_protocol_stats)(struct ib_device *device,
 							 union rdma_protocol_stats *stats);
 	int		           (*query_device)(struct ib_device *device,
-						   struct ib_device_attr *device_attr,
 						   struct ib_udata *udata);
 	int		           (*query_port)(struct ib_device *device,
 						 u8 port_num,
@@ -1824,6 +1802,52 @@ struct ib_device {
 	u8                           node_type;
 	u8                           phys_port_cnt;
 
+	u64			fw_ver;
+	__be64			sys_image_guid;
+	u64			max_mr_size;
+	u64			page_size_cap;
+	u32			vendor_id;
+	u32			vendor_part_id;
+	u32			hw_ver;
+	int			max_qp;
+	int			max_qp_wr;
+	int			device_cap_flags;
+	int			max_sge;
+	int			max_sge_rd;
+	int			max_cq;
+	int			max_cqe;
+	int			max_mr;
+	int			max_pd;
+	int			max_qp_rd_atom;
+	int			max_ee_rd_atom;
+	int			max_res_rd_atom;
+	int			max_qp_init_rd_atom;
+	int			max_ee_init_rd_atom;
+	enum ib_atomic_cap	atomic_cap;
+	enum ib_atomic_cap	masked_atomic_cap;
+	int			max_ee;
+	int			max_rdd;
+	int			max_mw;
+	int			max_raw_ipv6_qp;
+	int			max_raw_ethy_qp;
+	int			max_mcast_grp;
+	int			max_mcast_qp_attach;
+	int			max_total_mcast_qp_attach;
+	int			max_ah;
+	int			max_fmr;
+	int			max_map_per_fmr;
+	int			max_srq;
+	int			max_srq_wr;
+	int			max_srq_sge;
+	unsigned int		max_fast_reg_page_list_len;
+	u16			max_pkeys;
+	u8			local_ca_ack_delay;
+	int			sig_prot_cap;
+	int			sig_guard_cap;
+	struct ib_odp_caps	odp_caps;
+	uint64_t		timestamp_mask;
+	uint64_t		hca_core_clock; /* in KHZ */
+
 	/**
 	 * The following mandatory functions are used only at device
 	 * registration.  Keep functions such as these at the end of this
@@ -1911,9 +1935,6 @@ int ib_modify_qp_is_ok(enum ib_qp_state cur_state, enum ib_qp_state next_state,
 int ib_register_event_handler  (struct ib_event_handler *event_handler);
 int ib_unregister_event_handler(struct ib_event_handler *event_handler);
 void ib_dispatch_event(struct ib_event *event);
-
-int ib_query_device(struct ib_device *device,
-		    struct ib_device_attr *device_attr);
 
 int ib_query_port(struct ib_device *device,
 		  u8 port_num, struct ib_port_attr *port_attr);
@@ -2453,6 +2474,11 @@ static inline int ib_post_recv(struct ib_qp *qp,
 {
 	return qp->device->post_recv(qp, recv_wr, bad_recv_wr);
 }
+
+struct ib_cq *ib_alloc_cq(struct ib_device *dev, void *private,
+		int nr_cqe, int comp_vector, enum ib_poll_context poll_ctx);
+void ib_free_cq(struct ib_cq *cq);
+int ib_process_cq_direct(struct ib_cq *cq, int budget);
 
 /**
  * ib_create_cq - Creates a CQ on the specified device.
