@@ -336,7 +336,8 @@ static struct net_device_ops mlx5e_rep_netdev_ops = {
 	.ndo_fdb_del	= switchdev_port_fdb_del,
 };
 
-int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u32 vport)
+int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u32 vport,
+			    struct mlx5e_vf_rep **rep)
 {
 	struct net_device *dev;
 	struct mlx5e_vf_rep *priv;
@@ -396,7 +397,7 @@ int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u32 vport)
 	if (err)
 		goto err_free_netdev;
 out:
-	pf_dev->vf_reps[vf] = priv;
+	*rep = priv;
 
 	return 0;
 
@@ -425,6 +426,7 @@ int mlx5e_vf_reps_create(struct mlx5e_priv *pf_dev)
 	struct mlx5_core_sriov *sriov = &pf_dev->mdev->priv.sriov;
 	int vf, err, size, nvf, nvports, vport;
 	struct mlx5e_sq *sq;
+	struct mlx5e_vf_rep **vf_reps;
 
 	nvf = sriov->num_vfs;
 	nvports = nvf + 1;
@@ -432,19 +434,19 @@ int mlx5e_vf_reps_create(struct mlx5e_priv *pf_dev)
 		__func__, nvports, sriov, sriov->num_vfs);
 
 	size = sizeof(struct mlx5e_vf_rep *) * nvports;
-	pf_dev->vf_reps = kzalloc(size, GFP_KERNEL);
-	if (!pf_dev->vf_reps)
+	vf_reps = kzalloc(size, GFP_KERNEL);
+	if (!vf_reps)
 		return -ENOMEM;
 
 	for (vf = 0; vf < nvf; vf++) {
-		err = mlx5e_rep_create_netdev(pf_dev, vf+1);
+		err = mlx5e_rep_create_netdev(pf_dev, vf + 1, &vf_reps[vf]);
 		if (err) {
 			pr_warn("Failed to create VF representor %d. Error %d\n",
 				vf + 1, err);
 			goto err_vport_rep_create;
 		}
 	}
-	err = mlx5e_rep_create_netdev(pf_dev, FDB_UPLINK_VPORT);
+	err = mlx5e_rep_create_netdev(pf_dev, FDB_UPLINK_VPORT, &vf_reps[nvf]);
 	if (err) {
 		pr_warn("Failed to create uplink representor. Error %d\n",
 			err);
@@ -462,29 +464,31 @@ int mlx5e_vf_reps_create(struct mlx5e_priv *pf_dev)
 		vport = vf + 1; /* PF vport = 0 --> VF vport is vf+1 */
 
 		/* Set FDB sent to Vport rule, 1 ==  send to vport flow table group */
-		err = mlx5_add_fdb_send_to_vport_rule(pf_dev->mdev, MLX5_TX2VPORT_GROUP, vport, sq->sqn,
-						      &pf_dev->vf_reps[vf]->tx_to_vport_flow_index);
+		err = mlx5_add_fdb_send_to_vport_rule(
+			pf_dev->mdev, MLX5_TX2VPORT_GROUP, vport, sq->sqn,
+			&vf_reps[vf]->tx_to_vport_flow_index);
 		if (err) {
 			printk(KERN_INFO "failed to add fdb send to vport rule, err %d\n", err);
 			goto err_add_fdb_rule;
 		}
 	}
 
+	pf_dev->vf_reps = vf_reps;
+
 	return 0;
 
 err_add_fdb_rule:
 	for (vf--; vf >= 0; vf--)
-		mlx5_delete_fdb_send_to_vport_rule(pf_dev->mdev,
-						   pf_dev->vf_reps[vf]->tx_to_vport_flow_index);
+		mlx5_delete_fdb_send_to_vport_rule(
+			pf_dev->mdev, vf_reps[vf]->tx_to_vport_flow_index);
 
 err_vport_rep_channel_open:
 err_vport_rep_create:
 	for (vf = nvports-1; vf >= 0; vf--)
-		if (pf_dev->vf_reps[vf])
-			mlx5e_rep_destroy_netdev(pf_dev->vf_reps[vf]->dev);
+		if (vf_reps[vf])
+			mlx5e_rep_destroy_netdev(vf_reps[vf]->dev);
 
-	kfree(pf_dev->vf_reps);
-	pf_dev->vf_reps = NULL;
+	kfree(vf_reps);
 	return err;
 }
 
@@ -492,28 +496,29 @@ void mlx5e_reps_remove(struct mlx5e_priv *pf_dev)
 {
 	struct mlx5_core_sriov *sriov = &pf_dev->mdev->priv.sriov;
 	int vf, nvports;
+	struct mlx5e_vf_rep **vf_reps = pf_dev->vf_reps;
 
 	nvports = sriov->num_vfs + 1;
 	printk(KERN_INFO "%s removing %d mlx5 vport reps\n", __func__, nvports);
 
-	if (!pf_dev->vf_reps) {
+	if (!vf_reps) {
 		printk(KERN_INFO "%s no vf reps, bailing out\n", __func__);
 		return;
 	}
+	pf_dev->vf_reps = NULL;
 
 	/* Uplink representor doesn't have send to vport rule */
 	for (vf = 0; vf < sriov->num_vfs; vf++)
 		mlx5_delete_fdb_send_to_vport_rule(pf_dev->mdev,
-						   pf_dev->vf_reps[vf]->tx_to_vport_flow_index);
+						   vf_reps[vf]->tx_to_vport_flow_index);
 
 	/* we have vport per VF + one for the uplink */
 	for (vf = 0; vf < nvports; vf++)
-		mlx5e_rep_destroy_netdev(pf_dev->vf_reps[vf]->dev);
+		mlx5e_rep_destroy_netdev(vf_reps[vf]->dev);
 
 	mlx5e_close_rep_channels(pf_dev);
 
-	kfree(pf_dev->vf_reps);
-	pf_dev->vf_reps = NULL;
+	kfree(vf_reps);
 }
 
 int mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev)
