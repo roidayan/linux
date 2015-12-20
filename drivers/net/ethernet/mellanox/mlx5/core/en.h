@@ -69,6 +69,7 @@
 #define MLX5_MPWRQ_WQE_NUM_PAGES		BIT(MLX5_MPWRQ_WQE_PAGE_ORDER)
 #define MLX5_CHANNEL_MAX_NUM_PAGES (MLX5_MPWRQ_WQE_NUM_PAGES * \
 				    BIT(MLX5E_PARAMS_MAXIMUM_LOG_RQ_SIZE_MPW))
+#define MLX5_UMR_ALIGN				(2048)
 #define MLX5_MPWRQ_SMALL_PACKET_THRESHOLD	(128)
 
 #define MLX5E_PARAMS_DEFAULT_LRO_WQE_SZ                 (64 * 1024)
@@ -391,6 +392,7 @@ struct mlx5e_tstamp {
 
 enum {
 	MLX5E_RQ_STATE_POST_WQES_ENABLE,
+	MLX5E_RQ_STATE_UMR_WQE_IN_PROGRESS,
 };
 
 struct mlx5e_cq {
@@ -412,17 +414,13 @@ struct mlx5e_dma_info {
 	dma_addr_t	addr;
 };
 
-struct mlx5e_mpw_info {
-	struct mlx5e_dma_info dma_info;
-	u16		     consumed_strides;
-};
-
 struct mlx5e_rq {
 	/* data path */
 	struct mlx5_wq_ll      wq;
 	u32                    wqe_sz;
 	struct sk_buff       **skb;
 	struct mlx5e_mpw_info *wqe_info;
+	__be32                 umr_mkey_be;
 
 	struct device         *pdev;
 	struct net_device     *netdev;
@@ -443,6 +441,24 @@ struct mlx5e_rq {
 	struct mlx5e_channel  *channel;
 	struct mlx5e_priv     *priv;
 } ____cacheline_aligned_in_smp;
+
+struct mlx5e_mpw_info {
+	union {
+		struct mlx5e_dma_info          dma_info;
+		struct {
+			__be64                *mtt;
+			dma_addr_t             mtt_addr;
+			struct mlx5e_dma_info *umr_dma_info;
+		};
+	};
+	u16 consumed_strides;
+
+	void (*complete_wqe)(struct mlx5e_rq *rq,
+			     struct mlx5_cqe64 *cqe,
+			     struct mlx5e_mpw_info *wi,
+			     struct sk_buff *skb);
+	void (*free_wqe)(struct mlx5e_rq *rq, struct mlx5e_mpw_info *wi);
+};
 
 struct mlx5e_tx_wqe_info {
 	u32 num_bytes;
@@ -698,6 +714,19 @@ void mlx5e_handle_rx_cqe_mpwrq(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe);
 bool mlx5e_post_rx_wqes(struct mlx5e_rq *rq);
 int mlx5e_alloc_rx_wqe(struct mlx5e_rq *rq, struct mlx5e_rx_wqe *wqe, u16 ix);
 int mlx5e_alloc_rx_mpwqe(struct mlx5e_rq *rq, struct mlx5e_rx_wqe *wqe, u16 ix);
+void mlx5e_post_rx_fragmented_mpwqe(struct mlx5e_rq *rq);
+void mlx5e_complete_rx_linear_mpwqe(struct mlx5e_rq *rq,
+				    struct mlx5_cqe64 *cqe,
+				    struct mlx5e_mpw_info *wi,
+				    struct sk_buff *skb);
+void mlx5e_complete_rx_fragmented_mpwqe(struct mlx5e_rq *rq,
+					struct mlx5_cqe64 *cqe,
+					struct mlx5e_mpw_info *wi,
+					struct sk_buff *skb);
+void mlx5e_free_rx_linear_mpwqe(struct mlx5e_rq *rq,
+				struct mlx5e_mpw_info *wi);
+void mlx5e_free_rx_fragmented_mpwqe(struct mlx5e_rq *rq,
+				    struct mlx5e_mpw_info *wi);
 struct mlx5_cqe64 *mlx5e_get_cqe(struct mlx5e_cq *cq);
 
 void mlx5e_update_stats(struct mlx5e_priv *priv);

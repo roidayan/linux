@@ -75,6 +75,125 @@ err_free_skb:
 	return -ENOMEM;
 }
 
+static inline int mlx5e_get_wqe_mtt_sz(void)
+{
+	/* UMR copies MTTs in units of MLX5_UMR_MTT_ALIGNMENT bytes. */
+	return ALIGN(MLX5_MPWRQ_WQE_NUM_PAGES * sizeof(__be64),
+		     MLX5_UMR_MTT_ALIGNMENT);
+}
+
+static int mlx5e_alloc_and_map_page(struct mlx5e_rq *rq,
+				    struct mlx5e_mpw_info *wi,
+				    int i)
+{
+	struct page *page;
+
+	page = alloc_page(GFP_ATOMIC | __GFP_COMP | __GFP_COLD);
+	if (!page)
+		return -ENOMEM;
+
+	wi->umr_dma_info[i].page = page;
+	wi->umr_dma_info[i].addr = dma_map_page(rq->pdev, page, 0, PAGE_SIZE,
+						PCI_DMA_FROMDEVICE);
+	if (dma_mapping_error(rq->pdev, wi->umr_dma_info[i].addr)) {
+		put_page(page);
+		return -ENOMEM;
+	}
+	wi->mtt[i] = cpu_to_be64(wi->umr_dma_info[i].addr | MLX5_EN_WR);
+
+	return 0;
+}
+
+static int mlx5e_alloc_rx_fragmented_mpwqe(struct mlx5e_rq *rq,
+					   struct mlx5e_rx_wqe *wqe,
+					   u16 ix)
+{
+	struct mlx5e_mpw_info *wi = &rq->wqe_info[ix];
+	int mtt_sz = mlx5e_get_wqe_mtt_sz();
+	u32 dma_offset = rq->ix * MLX5_CHANNEL_MAX_NUM_PAGES * PAGE_SIZE +
+		ix * rq->wqe_sz;
+	int i;
+
+	wi->umr_dma_info = kmalloc(sizeof(*wi->umr_dma_info) *
+				   MLX5_MPWRQ_WQE_NUM_PAGES,
+				   GFP_ATOMIC | __GFP_COMP | __GFP_COLD);
+	if (!wi->umr_dma_info)
+		goto err_out;
+
+	 /* To avoid copying garbage after the mtt array, we allocate
+	  * a little more.
+	  */
+	wi->mtt = kzalloc(mtt_sz + MLX5_UMR_ALIGN - 1,
+			  GFP_ATOMIC | __GFP_COMP | __GFP_COLD);
+	if (!wi->mtt)
+		goto err_free_umr;
+
+	wi->mtt = PTR_ALIGN(wi->mtt, MLX5_UMR_ALIGN);
+	wi->mtt_addr = dma_map_single(rq->pdev, wi->mtt, mtt_sz,
+				      PCI_DMA_TODEVICE);
+	if (dma_mapping_error(rq->pdev, wi->mtt_addr))
+		goto err_free_mtt;
+
+	for (i = 0; i < MLX5_MPWRQ_WQE_NUM_PAGES; i++)
+		if (mlx5e_alloc_and_map_page(rq, wi, i))
+			goto err_unmap;
+
+	wi->consumed_strides = 0;
+	wi->complete_wqe = mlx5e_complete_rx_fragmented_mpwqe;
+	wi->free_wqe     = mlx5e_free_rx_fragmented_mpwqe;
+	wqe->data.lkey = rq->umr_mkey_be;
+	wqe->data.addr = cpu_to_be64(dma_offset);
+
+	return 0;
+
+err_unmap:
+	while (--i >= 0) {
+		dma_unmap_page(rq->pdev, wi->umr_dma_info[i].addr, PAGE_SIZE,
+			       PCI_DMA_FROMDEVICE);
+		put_page(wi->umr_dma_info[i].page);
+	}
+	dma_unmap_single(rq->pdev, wi->mtt_addr, mtt_sz, PCI_DMA_TODEVICE);
+
+err_free_mtt:
+	kfree(wi->mtt);
+
+err_free_umr:
+	kfree(wi->umr_dma_info);
+
+err_out:
+	return -ENOMEM;
+}
+
+void mlx5e_free_rx_fragmented_mpwqe(struct mlx5e_rq *rq,
+				    struct mlx5e_mpw_info *wi)
+{
+	int mtt_sz = mlx5e_get_wqe_mtt_sz();
+	int i;
+
+	for (i = 0; i < MLX5_MPWRQ_WQE_NUM_PAGES; i++) {
+		dma_unmap_page(rq->pdev, wi->umr_dma_info[i].addr, PAGE_SIZE,
+			       PCI_DMA_FROMDEVICE);
+		put_page(wi->umr_dma_info[i].page);
+	}
+	dma_unmap_single(rq->pdev, wi->mtt_addr, mtt_sz, PCI_DMA_TODEVICE);
+	kfree(wi->mtt);
+	kfree(wi->umr_dma_info);
+}
+
+void mlx5e_post_rx_fragmented_mpwqe(struct mlx5e_rq *rq)
+{
+	struct mlx5_wq_ll *wq = &rq->wq;
+	struct mlx5e_rx_wqe *wqe = mlx5_wq_ll_get_wqe(wq, wq->head);
+
+	clear_bit(MLX5E_RQ_STATE_UMR_WQE_IN_PROGRESS, &rq->state);
+	mlx5_wq_ll_push(wq, be16_to_cpu(wqe->next.next_wqe_index));
+
+	/* ensure wqes are visible to device before updating doorbell record */
+	dma_wmb();
+
+	mlx5_wq_ll_update_db_record(wq);
+}
+
 int mlx5e_alloc_rx_mpwqe(struct mlx5e_rq *rq, struct mlx5e_rx_wqe *wqe, u16 ix)
 {
 	struct mlx5e_mpw_info *wi = &rq->wqe_info[ix];
