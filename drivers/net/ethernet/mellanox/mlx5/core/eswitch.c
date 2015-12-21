@@ -1069,10 +1069,10 @@ int mlx5_eswitch_enable_sriov(struct mlx5_eswitch *esw, int nvfs, bool flow_offl
 		goto abort;
 
 	enabled_events = flow_offloads ? UC_ADDR_CHANGE : SRIOV_VPORT_EVENTS;
+	esw->state = flow_offloads ? SRIOV_FLOW_OFFLOADS : SRIOV_LEGACY;
 	for (i = 0; i <= nvfs; i++)
 		esw_enable_vport(esw, i, enabled_events);
 
-	esw->state = flow_offloads ? SRIOV_FLOW_OFFLOADS : SRIOV_LEGACY;
 	esw_info(esw->dev, "SRIOV enabled: active vports(%d)\n",
 		 esw->enabled_vports);
 	return 0;
