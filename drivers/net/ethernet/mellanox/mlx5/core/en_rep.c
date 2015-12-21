@@ -501,12 +501,14 @@ void mlx5e_reps_remove(struct mlx5e_priv *pf_dev)
 		return;
 	}
 
-	/* we have vport per VF + one for the uplink */
-	for (vf = 0; vf < nvports; vf++) {
+	/* Uplink representor doesn't have send to vport rule */
+	for (vf = 0; vf < sriov->num_vfs; vf++)
 		mlx5_delete_fdb_send_to_vport_rule(pf_dev->mdev,
 						   pf_dev->vf_reps[vf]->tx_to_vport_flow_index);
+
+	/* we have vport per VF + one for the uplink */
+	for (vf = 0; vf < nvports; vf++)
 		mlx5e_rep_destroy_netdev(pf_dev->vf_reps[vf]->dev);
-	}
 
 	mlx5e_close_rep_channels(pf_dev);
 
