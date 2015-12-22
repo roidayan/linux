@@ -1951,6 +1951,7 @@ void mlx5e_set_vf_reps(struct work_struct *work)
 	struct mlx5e_priv *priv = container_of(work, struct mlx5e_priv,
 					       vf_reps_work);
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
+	int num_vfs = priv->mdev->priv.sriov.num_vfs;
 
 	if (!(priv->pflags & MLX5e_PRIV_FLAGS_REPRESENTORS)) {
 		if (esw->state != SRIOV_LEGACY) {
@@ -1958,7 +1959,7 @@ void mlx5e_set_vf_reps(struct work_struct *work)
 			return;
 		}
 		mlx5_eswitch_disable_sriov(esw);
-		mlx5_eswitch_enable_sriov(esw, esw->total_vports - 1, true);
+		mlx5_eswitch_enable_sriov(esw, num_vfs, true);
 
 		err = mlx5e_start_flow_offloads(priv);
 		if (err) {
@@ -1971,7 +1972,7 @@ void mlx5e_set_vf_reps(struct work_struct *work)
 		mlx5e_stop_flow_offloads(priv);
 
 		mlx5_eswitch_disable_sriov(esw);
-		mlx5_eswitch_enable_sriov(esw, esw->total_vports - 1, false);
+		mlx5_eswitch_enable_sriov(esw, num_vfs, false);
 
 		priv->pflags &= ~MLX5e_PRIV_FLAGS_REPRESENTORS;
 	}
