@@ -579,12 +579,14 @@ int mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev)
 	return 0;
 
 err_pf_vport_rules:
-	for (n--; n >= 0; n--) {
+	do {
 		c = pf_dev->channel[n];
 		for (tc--; tc >= 0; tc--)
 			mlx5_delete_fdb_send_to_vport_rule(pf_dev->mdev,
 							   c->sq[tc].tx_to_vport_flow_index);
-	}
+		tc = c->num_tc;
+		n--;
+	} while (n >= 0);
 
 fdb_err:
 	mlx5_del_flow_table_entry(pf_dev->ft.main, uplink_miss_flow_index);
@@ -631,9 +633,9 @@ void mlx5e_stop_flow_offloads(struct mlx5e_priv *pf_dev)
 	for (n = 0; n < nch; n++) {
 		c = pf_dev->channel[n];
 		for (tc = 0; tc < c->num_tc; tc++) {
-			if (c->sq[tc].tx_to_vport_flow_index)
-				mlx5_delete_fdb_send_to_vport_rule(pf_dev->mdev,
-								   c->sq[tc].tx_to_vport_flow_index);
+			mlx5_delete_fdb_send_to_vport_rule(
+					pf_dev->mdev,
+					c->sq[tc].tx_to_vport_flow_index);
 		}
 	}
 
