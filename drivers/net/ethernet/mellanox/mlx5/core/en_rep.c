@@ -43,20 +43,22 @@
 int mlx5e_open_rep_channel(struct mlx5e_vf_rep *vf_dev);
 void mlx5e_close_rep_channel(struct mlx5e_vf_rep *vf_dev);
 
-int  mlx5_pf_nic_add_vport_miss_rule(struct mlx5e_priv *pf_dev, u32 vport, u32 *flow_index);
+static int  mlx5_pf_nic_add_vport_miss_rule(struct mlx5e_priv *pf_dev,
+					    u32 vport, u32 *flow_index);
 
-int  mlx5_add_fdb_miss_rule(struct mlx5_core_dev *mdev);
+static int  mlx5_add_fdb_miss_rule(struct mlx5_core_dev *mdev);
 
-int mlx5_add_fdb_send_to_vport_rule(struct mlx5_core_dev *mdev,
-				    u32 group_ix,
-				    int vport,
-				    u32 sqn,
-				    u32 *flow_index);
+static int mlx5_add_fdb_send_to_vport_rule(struct mlx5_core_dev *mdev,
+					   u32 group_ix,
+					   int vport,
+					   u32 sqn,
+					   u32 *flow_index);
 
-int  mlx5e_rep_add_l2_fdb_rule(struct mlx5e_vf_rep *vf_rep, const char *addr);
+static int  mlx5e_rep_add_l2_fdb_rule(struct mlx5e_vf_rep *vf_rep,
+				      const char *addr);
 
-void mlx5_delete_fdb_send_to_vport_rule(struct mlx5_core_dev *mdev,
-					u32 flow_index);
+static void mlx5_delete_fdb_send_to_vport_rule(struct mlx5_core_dev *mdev,
+					       u32 flow_index);
 
 /* this is wrong, the miss rules must be in the 1st group of the PF NIC */
 //#define NIC_MISS_GROUP_INDEX 10
@@ -638,7 +640,8 @@ void mlx5e_stop_flow_offloads(struct mlx5e_priv *pf_dev)
 	mlx5_eswitch_enable_sriov(eswitch, num_vfs, false);
 }
 
-int mlx5_pf_nic_add_vport_miss_rule(struct mlx5e_priv *pf_dev, u32 vport, u32 *flow_index)
+static int mlx5_pf_nic_add_vport_miss_rule(struct mlx5e_priv *pf_dev,
+					   u32 vport, u32 *flow_index)
 {
 	u32 *flow_context;
 	void *match_value, *misc, *dest;
@@ -706,11 +709,11 @@ out:
 //miss rule: ANY --> send to vport 0
 //sent-to-vport rule: <source vport = 0, SQN = X> --> send to vport N
 
-int mlx5_add_fdb_send_to_vport_rule(struct mlx5_core_dev *mdev,
-				    u32 group_ix,
-				    int vport,
-				    u32 sqn,
-				    u32 *flow_index)
+static int mlx5_add_fdb_send_to_vport_rule(struct mlx5_core_dev *mdev,
+					   u32 group_ix,
+					   int vport,
+					   u32 sqn,
+					   u32 *flow_index)
 {
 	u32 *flow_context;
 	void *dest, *match_value, *misc;
@@ -748,15 +751,15 @@ out:
 	return err;
 }
 
-void mlx5_delete_fdb_send_to_vport_rule(struct mlx5_core_dev *mdev,
-					u32 flow_index)
+static void mlx5_delete_fdb_send_to_vport_rule(struct mlx5_core_dev *mdev,
+					       u32 flow_index)
 {
 	struct mlx5_flow_table *ft  = mdev->priv.eswitch->fdb_table.fdb;
 
 	mlx5_del_flow_table_entry(ft, flow_index);
 }
 
-int mlx5_add_fdb_miss_rule(struct mlx5_core_dev *mdev)
+static int mlx5_add_fdb_miss_rule(struct mlx5_core_dev *mdev)
 {
 	u32 *flow_context;
 	void *dest;
