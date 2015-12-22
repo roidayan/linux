@@ -365,7 +365,7 @@ static int vlan_device_event(struct notifier_block *unused, unsigned long event,
 	}
 
 	if ((event == NETDEV_UP) &&
-	    (dev->features & NETIF_F_HW_VLAN_CTAG_FILTER)) {
+	    (dev->hw_features & NETIF_F_HW_VLAN_CTAG_FILTER)) {
 		pr_info("adding VLAN 0 to HW filter on device %s\n",
 			dev->name);
 		vlan_vid_add(dev, htons(ETH_P_8021Q), 0);
@@ -417,7 +417,7 @@ static int vlan_device_event(struct notifier_block *unused, unsigned long event,
 		struct net_device *tmp;
 		LIST_HEAD(close_list);
 
-		if (dev->features & NETIF_F_HW_VLAN_CTAG_FILTER)
+		if (dev->hw_features & NETIF_F_HW_VLAN_CTAG_FILTER)
 			vlan_vid_del(dev, htons(ETH_P_8021Q), 0);
 
 		/* Put all VLANs for this dev in the down state too.  */

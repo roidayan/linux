@@ -162,10 +162,10 @@ static bool vlan_hw_filter_capable(const struct net_device *dev,
 				     const struct vlan_vid_info *vid_info)
 {
 	if (vid_info->proto == htons(ETH_P_8021Q) &&
-	    dev->features & NETIF_F_HW_VLAN_CTAG_FILTER)
+	    dev->hw_features & NETIF_F_HW_VLAN_CTAG_FILTER)
 		return true;
 	if (vid_info->proto == htons(ETH_P_8021AD) &&
-	    dev->features & NETIF_F_HW_VLAN_STAG_FILTER)
+	    dev->hw_features & NETIF_F_HW_VLAN_STAG_FILTER)
 		return true;
 	return false;
 }
