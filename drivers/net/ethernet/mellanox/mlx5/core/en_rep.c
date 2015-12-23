@@ -47,6 +47,7 @@ static int  mlx5_pf_nic_add_vport_miss_rule(struct mlx5e_priv *pf_dev,
 					    u32 vport, u32 *flow_index);
 
 static int  mlx5_add_fdb_miss_rule(struct mlx5_core_dev *mdev);
+static void  mlx5_del_fdb_miss_rule(struct mlx5_core_dev *mdev);
 
 static int mlx5_add_fdb_send_to_vport_rule(struct mlx5_core_dev *mdev,
 					   u32 group_ix,
@@ -574,6 +575,7 @@ int mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev)
 	return 0;
 
 err_pf_vport_rules:
+	mlx5_del_fdb_miss_rule(pf_dev->mdev);
 	do {
 		c = pf_dev->channel[n];
 		for (tc--; tc >= 0; tc--)
@@ -611,11 +613,7 @@ void mlx5e_stop_flow_offloads(struct mlx5e_priv *pf_dev)
 	/* FIXME: alarm/clean if there are offloaded flows left */
 
 	/* remove FDB miss rule */
-	if (fdb_miss_flow_index) {
-		ft = eswitch->fdb_table.fdb;
-		mlx5_del_flow_table_entry(ft, fdb_miss_flow_index);
-		fdb_miss_flow_index = 0;
-	}
+	mlx5_del_fdb_miss_rule(pf_dev->mdev);
 
 	/* remove uplink PF NIC miss rule */
 	if (uplink_miss_flow_index) {
@@ -792,6 +790,16 @@ static int mlx5_add_fdb_miss_rule(struct mlx5_core_dev *mdev)
 out:
 	kvfree(flow_context);
 	return err;
+}
+
+static void mlx5_del_fdb_miss_rule(struct mlx5_core_dev *mdev)
+{
+	if (fdb_miss_flow_index) {
+		void *ft = mdev->priv.eswitch->fdb_table.fdb;
+
+		mlx5_del_flow_table_entry(ft, fdb_miss_flow_index);
+		fdb_miss_flow_index = 0;
+	}
 }
 
 int mlx5e_rep_add_l2_fdb_rule(struct mlx5e_vf_rep *vf_rep, const char *addr)
