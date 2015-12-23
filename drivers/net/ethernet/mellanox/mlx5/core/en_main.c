@@ -2070,7 +2070,7 @@ static int mlx5e_pf_attr_get(struct net_device *dev, struct switchdev_attr *attr
 	int uplink_rep = pf_dev->mdev->priv.sriov.num_vfs;
 	struct mlx5e_vf_rep *vf_rep;
 
-	if (!pf_dev->mdev->priv.sriov.num_vfs || !pf_dev->vf_reps)
+	if (!mlx5e_reps_enabled(pf_dev))
 		return -EOPNOTSUPP;
 
 	vf_rep = pf_dev->vf_reps[uplink_rep];
@@ -2085,7 +2085,7 @@ static int mlx5e_pf_obj_add(struct net_device *dev,
 	int uplink_rep = pf_dev->mdev->priv.sriov.num_vfs;
 	struct mlx5e_vf_rep *vf_rep;
 
-	if (!pf_dev->mdev->priv.sriov.num_vfs || !pf_dev->vf_reps)
+	if (!mlx5e_reps_enabled(pf_dev))
 		return -EINVAL;
 
 	vf_rep = pf_dev->vf_reps[uplink_rep];
@@ -2100,7 +2100,7 @@ static int mlx5e_pf_obj_del(struct net_device *dev,
 	int uplink_rep = pf_dev->mdev->priv.sriov.num_vfs;
 	struct mlx5e_vf_rep *vf_rep;
 
-	if (!pf_dev->mdev->priv.sriov.num_vfs || !pf_dev->vf_reps)
+	if (!mlx5e_reps_enabled(pf_dev))
 		return -EINVAL;
 
 	vf_rep = pf_dev->vf_reps[uplink_rep];

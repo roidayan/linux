@@ -582,6 +582,11 @@ enum mlx5e_link_mode {
 
 #define MLX5E_PROT_MASK(link_mode) (1 << link_mode)
 
+static inline bool mlx5e_reps_enabled(struct mlx5e_priv *pf_dev)
+{
+	return pf_dev->vf_reps;
+}
+
 void mlx5e_send_nop(struct mlx5e_sq *sq, bool notify_hw);
 u16 mlx5e_select_queue(struct net_device *dev, struct sk_buff *skb,
 		       void *accel_priv, select_queue_fallback_t fallback);
