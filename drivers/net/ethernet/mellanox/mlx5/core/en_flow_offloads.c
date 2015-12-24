@@ -680,3 +680,24 @@ int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags
 
 	return err;
 }
+
+void mlx5e_clear_flows(struct mlx5e_priv *pf_dev)
+{
+	struct mlx5_flow_group *group, *group_tmp;
+	struct mlx5_flow *flow, *flow_tmp;
+	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
+
+	/* find the group that this flow belongs to */
+	list_for_each_entry_safe(group, group_tmp, &pf_dev->mlx5_flow_groups,
+				 groups_list) {
+		list_for_each_entry_safe(flow, flow_tmp, &group->flows_list,
+					 group_list) {
+			mlx5_del_flow_table_entry(eswitch->fdb_table.fdb,
+						  flow->flow_index);
+			list_del(&flow->group_list);
+			kfree(flow);
+		}
+		list_del(&group->groups_list);
+		kfree(group);
+	}
+}

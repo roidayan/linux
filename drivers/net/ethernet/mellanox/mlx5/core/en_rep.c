@@ -644,7 +644,7 @@ void mlx5e_stop_flow_offloads(struct mlx5e_priv *pf_dev)
 
 	ASSERT_RTNL();
 
-	/* FIXME: alarm/clean if there are offloaded flows left */
+	mlx5e_clear_flows(pf_dev);
 
 	/* remove FDB miss rule */
 	mlx5_del_fdb_miss_rule(pf_dev->mdev);

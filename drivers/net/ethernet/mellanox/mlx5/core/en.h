@@ -674,3 +674,4 @@ int mlx5e_add_pf_to_wire_rules(struct mlx5e_priv *pf_dev);
 struct sw_flow;
 
 int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags);
+void mlx5e_clear_flows(struct mlx5e_priv *pf_dev);
