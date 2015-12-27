@@ -516,14 +516,66 @@ void mlx5e_reps_remove(struct mlx5e_priv *pf_dev)
 	kfree(vf_reps);
 }
 
+void mlx5e_del_pf_to_wire_rules(struct mlx5e_priv *pf_dev)
+{
+	int nch = pf_dev->params.num_channels;
+	int n, tc;
+	struct mlx5e_channel *c;
+
+	for (n = 0; n < nch; n++) {
+		c = pf_dev->channel[n];
+		for (tc = 0; tc < c->num_tc; tc++) {
+			mlx5_delete_fdb_send_to_vport_rule(
+				pf_dev->mdev,
+				c->sq[tc].tx_to_vport_flow_index);
+		}
+	}
+}
+
+int mlx5e_add_pf_to_wire_rules(struct mlx5e_priv *pf_dev)
+{
+	int nch = pf_dev->params.num_channels;
+	int n, tc;
+	struct mlx5e_channel *c;
+	int err;
+
+	/* Add re-inject rule to all the PF sqs */
+	for (n = 0; n < nch; n++) {
+		c = pf_dev->channel[n];
+		for (tc = 0; tc < c->num_tc; tc++) {
+			err = mlx5_add_fdb_send_to_vport_rule(
+					pf_dev->mdev, MLX5_TX2VPORT_GROUP,
+					FDB_UPLINK_VPORT, c->sq[tc].sqn,
+					&c->sq[tc].tx_to_vport_flow_index);
+			if (err) {
+				printk(KERN_INFO "failed to add fdb pf to wire rule, err %d\n",
+				       err);
+				goto err_pf_vport_rules;
+			}
+		}
+	}
+
+	return 0;
+
+err_pf_vport_rules:
+	do {
+		c = pf_dev->channel[n];
+		for (tc--; tc >= 0; tc--) {
+			mlx5_delete_fdb_send_to_vport_rule(
+				pf_dev->mdev,
+				c->sq[tc].tx_to_vport_flow_index);
+		}
+		tc = c->num_tc;
+		n--;
+	} while (n >= 0);
+	return err;
+}
+
 int mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev)
 {
 	struct mlx5_eswitch *esw = pf_dev->mdev->priv.eswitch;
 	int num_vfs = pf_dev->mdev->priv.sriov.num_vfs;
 	int err;
-	int n,tc;
-	struct mlx5e_channel *c;
-	int nch = pf_dev->params.num_channels;
 
 	ASSERT_RTNL();
 
@@ -558,17 +610,9 @@ int mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev)
 		goto fdb_err;
 	}
 
-	/* Add re-inject rule to all the PF sqs */
-	for (n = 0; n < nch; n++) {
-		c = pf_dev->channel[n];
-		for (tc = 0; tc < c->num_tc; tc++) {
-			err = mlx5_add_fdb_send_to_vport_rule(pf_dev->mdev, MLX5_TX2VPORT_GROUP,
-							      FDB_UPLINK_VPORT, c->sq[tc].sqn,
-							      &c->sq[tc].tx_to_vport_flow_index);
-			if (err)
-				goto err_pf_vport_rules;
-		}
-	}
+	err = mlx5e_add_pf_to_wire_rules(pf_dev);
+	if (err)
+		goto err_pf_vport_rules;
 
 	INIT_LIST_HEAD(&pf_dev->mlx5_flow_groups);
 	spin_lock_init(&pf_dev->flows_lock);
@@ -576,15 +620,6 @@ int mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev)
 
 err_pf_vport_rules:
 	mlx5_del_fdb_miss_rule(pf_dev->mdev);
-	do {
-		c = pf_dev->channel[n];
-		for (tc--; tc >= 0; tc--)
-			mlx5_delete_fdb_send_to_vport_rule(pf_dev->mdev,
-							   c->sq[tc].tx_to_vport_flow_index);
-		tc = c->num_tc;
-		n--;
-	} while (n >= 0);
-
 fdb_err:
 	mlx5_del_flow_table_entry(pf_dev->ft.main, uplink_miss_flow_index);
 	uplink_miss_flow_index = 0;
@@ -604,9 +639,6 @@ void mlx5e_stop_flow_offloads(struct mlx5e_priv *pf_dev)
 	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
 	int num_vfs = pf_dev->mdev->priv.sriov.num_vfs;
 	void *ft;
-	int nch = pf_dev->params.num_channels;
-	int n, tc;
-	struct mlx5e_channel *c;
 
 	ASSERT_RTNL();
 
@@ -622,15 +654,7 @@ void mlx5e_stop_flow_offloads(struct mlx5e_priv *pf_dev)
 		uplink_miss_flow_index = 0;
 	}
 
-
-	for (n = 0; n < nch; n++) {
-		c = pf_dev->channel[n];
-		for (tc = 0; tc < c->num_tc; tc++) {
-			mlx5_delete_fdb_send_to_vport_rule(
-					pf_dev->mdev,
-					c->sq[tc].tx_to_vport_flow_index);
-		}
-	}
+	mlx5e_del_pf_to_wire_rules(pf_dev);
 
 	mlx5e_reps_remove(pf_dev);
 

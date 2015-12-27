@@ -1155,6 +1155,12 @@ static int mlx5e_open_channels(struct mlx5e_priv *priv)
 			goto err_close_channels;
 	}
 
+	if (mlx5e_reps_enabled(priv)) {
+		err = mlx5e_add_pf_to_wire_rules(priv);
+		if (err)
+			goto err_close_channels;
+	}
+
 	return 0;
 
 err_close_channels:
@@ -1171,6 +1177,9 @@ err_free_txq_to_sq_map:
 static void mlx5e_close_channels(struct mlx5e_priv *priv)
 {
 	int i;
+
+	if (mlx5e_reps_enabled(priv))
+		mlx5e_del_pf_to_wire_rules(priv);
 
 	for (i = 0; i < priv->params.num_channels; i++)
 		mlx5e_close_channel(priv->channel[i]);
