@@ -1170,6 +1170,7 @@ err_close_channels:
 err_free_txq_to_sq_map:
 	kfree(priv->txq_to_sq_map);
 	kfree(priv->channel);
+	priv->channel = NULL;
 
 	return err;
 }
@@ -1186,6 +1187,7 @@ static void mlx5e_close_channels(struct mlx5e_priv *priv)
 
 	kfree(priv->txq_to_sq_map);
 	kfree(priv->channel);
+	priv->channel = NULL;
 }
 
 static int mlx5e_rx_hash_fn(int hfunc)

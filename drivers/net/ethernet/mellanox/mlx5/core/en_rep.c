@@ -610,9 +610,11 @@ int mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev)
 		goto fdb_err;
 	}
 
-	err = mlx5e_add_pf_to_wire_rules(pf_dev);
-	if (err)
-		goto err_pf_vport_rules;
+	if (pf_dev->channel) {
+		err = mlx5e_add_pf_to_wire_rules(pf_dev);
+		if (err)
+			goto err_pf_vport_rules;
+	}
 
 	INIT_LIST_HEAD(&pf_dev->mlx5_flow_groups);
 	spin_lock_init(&pf_dev->flows_lock);
@@ -654,7 +656,8 @@ void mlx5e_stop_flow_offloads(struct mlx5e_priv *pf_dev)
 		uplink_miss_flow_index = 0;
 	}
 
-	mlx5e_del_pf_to_wire_rules(pf_dev);
+	if (pf_dev->channel)
+		mlx5e_del_pf_to_wire_rules(pf_dev);
 
 	mlx5e_reps_remove(pf_dev);
 
