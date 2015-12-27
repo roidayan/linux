@@ -259,22 +259,22 @@ static const char sq_stats_strings[][ETH_GSTRING_LEN] = {
 	"packets",
 	"tso_packets",
 	"tso_bytes",
+	"nop",
 	"csum_offload_none",
 	"stopped",
 	"wake",
 	"dropped",
-	"nop"
 };
 
 struct mlx5e_sq_stats {
 	u64 packets;
 	u64 tso_packets;
 	u64 tso_bytes;
+	u64 nop;
 	u64 csum_offload_none;
 	u64 stopped;
 	u64 wake;
 	u64 dropped;
-	u64 nop;
 #define NUM_SQ_STATS 8
 };
 
