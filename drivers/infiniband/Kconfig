@@ -74,6 +74,15 @@ config INFINIBAND_PEER_MEM
 	  memory in external hardware devices, such as GPU cards, SSD based
 	  storage, dedicated ASIC accelerators, etc.
 
+config INFINIBAND_IO_PEER_MEM
+	tristate "InfiniBand Peer memory client for IO memory"
+	depends on INFINIBAND_PEER_MEM
+	default y
+	---help---
+	  Adds kernel module allowing RDMA transfers with various types of memory
+	  like mmaped devices (that create PFN mappings) and mmaped files from DAX
+	  filesystems, such as those that reside on NVRAM devices.
+
 source "drivers/infiniband/hw/mthca/Kconfig"
 source "drivers/infiniband/hw/qib/Kconfig"
 source "drivers/infiniband/hw/cxgb3/Kconfig"
