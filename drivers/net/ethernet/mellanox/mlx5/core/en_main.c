@@ -34,6 +34,7 @@
 #include <net/switchdev.h>
 #include "en.h"
 #include "eswitch.h"
+#include "en_rep.h"
 
 struct mlx5e_rq_param {
 	u32                        rqc[MLX5_ST_SZ_DW(rqc)];
@@ -2432,44 +2433,31 @@ void mlx5e_cleanup(void)
 	mlx5_unregister_interface(&mlx5e_interface);
 }
 
-int mlx5e_open_rep_channels(struct mlx5e_priv *priv)
+int mlx5e_open_rep_channel(struct mlx5e_vf_rep *vf_dev)
 {
 	struct mlx5e_channel_param cparam;
-	int nch;
 	int err = -ENOMEM;
-	int i;
-	int j;
-	struct mlx5_core_sriov *sriov = &priv->mdev->priv.sriov;
+	struct mlx5e_priv *priv = vf_dev->pf_dev;
 	struct mlx5e_params rep_param;
 
 	memset(&rep_param, 0, sizeof (struct mlx5e_params));
 
 	rep_param.log_sq_size = priv->params.log_sq_size;
-	rep_param.num_channels = sriov->num_vfs; /* one channel per representor */
+	rep_param.num_channels = 1; /* one channel per representor */
 	rep_param.num_tc = 1; /* one SQ per channel  */
 	rep_param.tx_cq_moderation_usec = priv->params.tx_cq_moderation_usec;
 	rep_param.tx_cq_moderation_pkts = priv->params.tx_cq_moderation_pkts;
 	rep_param.min_rx_wqes   = 1;
 	rep_param.tx_max_inline = 0; /* no inline */
 
-	nch = rep_param.num_channels;
-
-	priv->rep_channel = kcalloc(nch, sizeof(struct mlx5e_channel *),
-				    GFP_KERNEL);
-
-	if (!priv->rep_channel)
-		goto err_free_rep_channel;
-
-	printk(KERN_INFO "%s creating %d channels for vf reps xmit\n", __func__, nch);
-
 	/* FIXME: the shared code uses priv->txq_to_sq_map, does netdev_get_tx_queue calls etc */
 	mlx5e_build_channel_param(priv, &rep_param, &cparam);
-	for (i = 0; i < nch; i++) {
-		err = mlx5e_open_channel(priv, i, &priv->params, &cparam, &priv->rep_channel[i]);
-		if (err) {
-			printk(KERN_INFO "%s mlx5e_open_channel failed for vf %d err %d\n", __func__, i, err);
-			goto err_close_channels;
-		}
+	err = mlx5e_open_channel(priv, 0, &priv->params, &cparam,
+				 &vf_dev->channel);
+	if (err) {
+		netdev_err(priv->netdev, "%s mlx5e_open_channel failed for vf %d err %d\n",
+			   __func__, vf_dev->vport - 1, err);
+		goto err_close_channels;
 	}
 
 	err = mlx5e_refresh_tirs_self_loopback_enable(priv);
@@ -2480,40 +2468,24 @@ int mlx5e_open_rep_channels(struct mlx5e_priv *priv)
 	}
 
 #ifdef DO_REP_RX
-	for (j = 0; j < nch; j++) {
-		err = mlx5e_wait_for_min_rx_wqes(&priv->rep_channel[j]->rq, &rep_param);
-		if (err) {
-			printk(KERN_INFO "%s mlx5e_wait_for_min_rx_wqes failed for vf %d err %d\n", __func__, j, err);
-			goto err_close_channels;
-		}
+	err = mlx5e_wait_for_min_rx_wqes(&vf_dev->channel->rq, &rep_param);
+	if (err) {
+		netdev_err(priv->netdev, "%s mlx5e_wait_for_min_rx_wqes failed for vf %d err %d\n",
+			   __func__, vf, err);
+		goto err_close_channels;
 	}
 #endif
 	return 0;
 
 err_close_channels:
-	for (i--; i >= 0; i--)
-		mlx5e_close_channel(priv->rep_channel[i]);
-
-err_free_rep_channel:
-	kfree(priv->rep_channel);
-	priv->rep_channel = NULL;
-
+	mlx5e_close_channel(vf_dev->channel);
 	return err;
 }
 
-void mlx5e_close_rep_channels(struct mlx5e_priv *priv)
+void mlx5e_close_rep_channel(struct mlx5e_vf_rep *vf_dev)
 {
-	int i;
-	struct mlx5_core_sriov *sriov = &priv->mdev->priv.sriov;
-
-	if (!priv->rep_channel) {
-		printk(KERN_INFO "%s no vf reps channels, bailing out\n", __func__);
-		return;
+	if (vf_dev->channel) {
+		mlx5e_close_channel(vf_dev->channel);
+		vf_dev->channel = NULL;
 	}
-
-	for (i = 0; i < sriov->num_vfs; i++)
-		mlx5e_close_channel(priv->rep_channel[i]);
-
-	kfree(priv->rep_channel);
-	priv->rep_channel = NULL;
 }

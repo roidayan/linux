@@ -36,6 +36,7 @@ struct mlx5e_vf_rep {
 	struct net_device *dev;
 	struct mlx5e_priv *pf_dev;
 	struct mlx5e_sq *reinject_sq;
+	struct mlx5e_channel *channel;
 
 	u8  hw_id[MLX5_REP_HW_ID_LEN];
 	// u8  vf;

@@ -531,7 +531,6 @@ struct mlx5e_priv {
 	struct mlx5e_stats         stats;
 
 	struct mlx5e_vf_rep	  **vf_reps;
-	struct mlx5e_channel     **rep_channel;
 	u32			  pflags;
 	struct list_head	 mlx5_flow_groups;
 	spinlock_t               flows_lock; /* protects mlx5_flow_groups list */
