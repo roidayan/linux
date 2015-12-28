@@ -58,6 +58,7 @@ struct mlx5e_channel_param {
 	struct mlx5e_sq_param      sq;
 	struct mlx5e_cq_param      rx_cq;
 	struct mlx5e_cq_param      tx_cq;
+	struct net_device          *netdev;
 };
 
 static void mlx5e_update_carrier(struct mlx5e_priv *priv)
@@ -569,7 +570,7 @@ static int mlx5e_create_sq(struct mlx5e_channel *c,
 		goto err_sq_wq_destroy;
 
 	txq_ix = c->ix + tc * params->num_channels;
-	sq->txq = netdev_get_tx_queue(priv->netdev, txq_ix);
+	sq->txq = netdev_get_tx_queue(c->netdev, txq_ix);
 
 	sq->pdev      = c->pdev;
 	sq->mkey_be   = c->mkey_be;
@@ -970,7 +971,7 @@ static int mlx5e_open_channel(struct mlx5e_priv *priv, int ix,
 			      struct mlx5e_channel_param *cparam,
 			      struct mlx5e_channel **cp)
 {
-	struct net_device *netdev = priv->netdev;
+	struct net_device *netdev = cparam->netdev;
 	int cpu = mlx5e_get_cpu(priv, ix);
 	struct mlx5e_channel *c;
 	int err;
@@ -983,11 +984,9 @@ static int mlx5e_open_channel(struct mlx5e_priv *priv, int ix,
 	c->ix       = ix;
 	c->cpu      = cpu;
 	c->pdev     = &priv->mdev->pdev->dev;
-	c->netdev   = priv->netdev;
+	c->netdev   = netdev;
 	c->mkey_be  = cpu_to_be32(priv->mr.key);
 	c->num_tc   = params->num_tc;
-
-	mlx5e_build_channeltc_to_txq_map(priv, params->num_channels, ix);
 
 	netif_napi_add(netdev, &c->napi, mlx5e_napi_poll, 64);
 
@@ -1138,10 +1137,13 @@ static int mlx5e_open_channels(struct mlx5e_priv *priv)
 		goto err_free_txq_to_sq_map;
 
 	mlx5e_build_channel_param(priv, &priv->params, &cparam);
+	cparam.netdev = priv->netdev;
 	for (i = 0; i < nch; i++) {
 		err = mlx5e_open_channel(priv, i, &priv->params, &cparam, &priv->channel[i]);
 		if (err)
 			goto err_close_channels;
+
+		mlx5e_build_channeltc_to_txq_map(priv, nch, i);
 
 		for (tc = 0; tc < priv->channel[i]->num_tc; tc++) {
 			txq_ix = i + tc * nch;
@@ -2463,6 +2465,7 @@ int mlx5e_open_rep_channel(struct mlx5e_vf_rep *vf_dev)
 
 	/* FIXME: the shared code uses priv->txq_to_sq_map, does netdev_get_tx_queue calls etc */
 	mlx5e_build_channel_param(priv, &rep_param, &cparam);
+	cparam.netdev = vf_dev->dev;
 	err = mlx5e_open_channel(priv, 0, &priv->params, &cparam,
 				 &vf_dev->channel);
 	if (err) {
