@@ -232,6 +232,12 @@ static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v,
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v, ethertype, ntohs(key->eth.type));
 	}
 
+	if ((key->eth.type == ntohs(ETH_P_IPV6) && mask->eth.type) &&
+	    memchr_inv(&mask->ipv6, 0, sizeof(mask->ipv6))) {
+		pr_warn("flow matching on IPv6 header isn't supported yet\n");
+		goto out_err;
+	}
+
 	if (mask->ip.proto) {
 		MLX5_SET(fte_match_set_lyr_2_4, headers_c, ip_protocol, mask->ip.proto);
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v, ip_protocol, key->ip.proto);
@@ -481,6 +487,12 @@ int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
 			printk(KERN_ERR "%s can't offload flow action %d\n", __func__, action->type);
 			goto out_err;
 		}
+	}
+
+	if ((__mlx5_action & MLX5_FLOW_ACTION_TYPE_VLAN_PUSH) ||
+	    (__mlx5_action & MLX5_FLOW_ACTION_TYPE_VLAN_POP)) {
+		printk(KERN_WARNING "%s offloading push/pop vlan actions isn't supported yet\n", __func__);
+		goto out_err;
 	}
 
 	net = dev_net(pf_dev->netdev);
