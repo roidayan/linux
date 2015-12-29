@@ -2407,6 +2407,7 @@ static void mlx5e_destroy_netdev(struct mlx5_core_dev *mdev, void *vpriv)
 	schedule_work(&priv->set_rx_mode_work);
 	mlx5e_disable_async_events(priv);
 	flush_scheduled_work();
+	mlx5e_reps_cleanup(priv);
 	unregister_netdev(netdev);
 	mlx5e_destroy_flow_tables(priv);
 	mlx5e_destroy_tirs(priv);

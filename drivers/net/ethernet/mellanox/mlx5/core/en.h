@@ -665,6 +665,7 @@ u16 mlx5e_get_max_inline_cap(struct mlx5_core_dev *mdev);
 
 int  mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev);
 void mlx5e_stop_flow_offloads(struct mlx5e_priv *pf_dev);
+void mlx5e_reps_cleanup(struct mlx5e_priv *pf_dev);
 
 void mlx5e_del_pf_to_wire_rules(struct mlx5e_priv *pf_dev);
 int mlx5e_add_pf_to_wire_rules(struct mlx5e_priv *pf_dev);

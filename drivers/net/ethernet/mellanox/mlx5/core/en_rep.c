@@ -636,10 +636,8 @@ err_offloads_fdb:
 
 }
 
-void mlx5e_stop_flow_offloads(struct mlx5e_priv *pf_dev)
+static void mlx5e_disable_flow_offloads(struct mlx5e_priv *pf_dev)
 {
-	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
-	int num_vfs = pf_dev->mdev->priv.sriov.num_vfs;
 	void *ft;
 
 	ASSERT_RTNL();
@@ -660,9 +658,26 @@ void mlx5e_stop_flow_offloads(struct mlx5e_priv *pf_dev)
 		mlx5e_del_pf_to_wire_rules(pf_dev);
 
 	mlx5e_reps_remove(pf_dev);
+}
 
+void mlx5e_stop_flow_offloads(struct mlx5e_priv *pf_dev)
+{
+	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
+	int num_vfs = pf_dev->mdev->priv.sriov.num_vfs;
+
+	mlx5e_disable_flow_offloads(pf_dev);
 	mlx5_eswitch_disable_sriov(eswitch);
 	mlx5_eswitch_enable_sriov(eswitch, num_vfs, false);
+}
+
+void mlx5e_reps_cleanup(struct mlx5e_priv *pf_dev)
+{
+	if (!mlx5e_reps_enabled(pf_dev))
+		return;
+
+	rtnl_lock();
+	mlx5e_disable_flow_offloads(pf_dev);
+	rtnl_unlock();
 }
 
 static int mlx5_pf_nic_add_vport_miss_rule(struct mlx5e_priv *pf_dev,
