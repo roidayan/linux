@@ -1945,39 +1945,6 @@ static int mlx5e_change_mtu(struct net_device *netdev, int new_mtu)
 	return err;
 }
 
-void mlx5e_set_vf_reps(struct work_struct *work)
-{
-	int err;
-	struct mlx5e_priv *priv = container_of(work, struct mlx5e_priv,
-					       vf_reps_work);
-	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
-	int num_vfs = priv->mdev->priv.sriov.num_vfs;
-
-	if (!(priv->pflags & MLX5e_PRIV_FLAGS_REPRESENTORS)) {
-		if (esw->state != SRIOV_LEGACY) {
-			mlx5_core_warn(priv->mdev, "Failed to set flow offloads mode. SRIOV in legacy mode must be enabled first.\n");
-			return;
-		}
-		mlx5_eswitch_disable_sriov(esw);
-		mlx5_eswitch_enable_sriov(esw, num_vfs, true);
-
-		err = mlx5e_start_flow_offloads(priv);
-		if (err) {
-			mlx5_core_err(priv->mdev, "Fail to start flow offloads, %d\n", err);
-			mlx5_eswitch_disable_sriov(esw);
-			return;
-		}
-		priv->pflags |= MLX5e_PRIV_FLAGS_REPRESENTORS;
-	} else {
-		mlx5e_stop_flow_offloads(priv);
-
-		mlx5_eswitch_disable_sriov(esw);
-		mlx5_eswitch_enable_sriov(esw, num_vfs, false);
-
-		priv->pflags &= ~MLX5e_PRIV_FLAGS_REPRESENTORS;
-	}
-}
-
 static int mlx5e_set_vf_mac(struct net_device *dev, int vf, u8 *mac)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
@@ -2192,7 +2159,6 @@ static void mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 	INIT_WORK(&priv->update_carrier_work, mlx5e_update_carrier_work);
 	INIT_WORK(&priv->set_rx_mode_work, mlx5e_set_rx_mode_work);
 	INIT_DELAYED_WORK(&priv->update_stats_work, mlx5e_update_stats_work);
-	INIT_WORK(&priv->vf_reps_work, mlx5e_set_vf_reps);
 }
 
 static void mlx5e_set_netdev_dev_addr(struct net_device *netdev)

@@ -31,6 +31,7 @@
  */
 
 #include "en.h"
+#include "eswitch.h"
 
 static void mlx5e_get_drvinfo(struct net_device *dev,
 			      struct ethtool_drvinfo *drvinfo)
@@ -871,9 +872,23 @@ static int mlx5e_set_priv_flags(struct net_device *netdev, u32 flags)
 	bool vfs_rep_old = !!(priv->pflags & MLX5e_PRIV_FLAGS_REPRESENTORS);
 
 	if (vfs_rep_new != vfs_rep_old) {
-		schedule_work(&priv->vf_reps_work);
+		int err;
+
 		netdev_info(netdev, "VFs representors %s\n", vfs_rep_new ?  "Enabled"
 			    : "Disabled");
+
+		if (!(priv->pflags & MLX5e_PRIV_FLAGS_REPRESENTORS)) {
+			err = mlx5e_start_flow_offloads(priv);
+			if (err) {
+				mlx5_core_err(priv->mdev, "Fail to start flow offloads, %d\n",
+					      err);
+				return err;
+			}
+			priv->pflags |= MLX5e_PRIV_FLAGS_REPRESENTORS;
+		} else {
+			mlx5e_stop_flow_offloads(priv);
+			priv->pflags &= ~MLX5e_PRIV_FLAGS_REPRESENTORS;
+		}
 	}
 	return 0;
 }

@@ -366,6 +366,7 @@ int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u32 vport,
 	dev->netdev_ops	= &mlx5e_rep_netdev_ops;
 	dev->ethtool_ops = &mlx5e_rep_ethtool_ops;
 	dev->switchdev_ops = &mlx5e_rep_switchdev_ops;
+	dev->destructor = free_netdev;
 
 	/* vport = vf + 1;  PF vport = 0 --> VF vport is vf+1 */
 
@@ -392,7 +393,7 @@ int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u32 vport,
 
 	netif_carrier_off(dev);
 
-	err = register_netdev(dev);
+	err = register_netdevice(dev);
 	printk(KERN_ERR "%s registered netdev %s (%p) for vport %d rep\n", __func__, dev->name, dev, priv->vport);
 	if (err)
 		goto err_free_netdev;
@@ -416,9 +417,7 @@ void mlx5e_rep_destroy_netdev(struct net_device *dev)
 		mlx5_del_flow_table_entry(ft, priv->miss_flow_index);
 
 	if (priv->vport != FDB_UPLINK_VPORT)
-		unregister_netdev(dev); /* this will call ndo_stop */
-
-	free_netdev(dev);
+		unregister_netdevice(dev); /* this will call ndo_stop */
 }
 
 int mlx5e_vf_reps_create(struct mlx5e_priv *pf_dev)
@@ -523,15 +522,31 @@ void mlx5e_reps_remove(struct mlx5e_priv *pf_dev)
 
 int mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev)
 {
+	struct mlx5_eswitch *esw = pf_dev->mdev->priv.eswitch;
+	int num_vfs = pf_dev->mdev->priv.sriov.num_vfs;
 	int err;
 	int n,tc;
 	struct mlx5e_channel *c;
 	int nch = pf_dev->params.num_channels;
 
+	ASSERT_RTNL();
+
+	if (esw->state != SRIOV_LEGACY) {
+		mlx5_core_warn(pf_dev->mdev, "Failed to set OVS offloads mode. SRIOV in legacy mode must be enabled first.\n");
+		return -EIO;
+	}
+
+	mlx5_eswitch_disable_sriov(esw);
+	err = mlx5_eswitch_enable_sriov(esw, num_vfs, true);
+	if (err) {
+		printk(KERN_ERR "failed creating offloads fdb err %d\n", err);
+		goto err_offloads_fdb;
+	}
+
 	err = mlx5e_vf_reps_create(pf_dev);
 	if (err)  {
 		printk(KERN_ERR "failed creating vf reps - err %d\n", err);
-		return err;
+		goto reps_create_err;
 	}
 
 	/* set NIC miss rule mapping uplink --> flow_tag */
@@ -561,7 +576,6 @@ int mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev)
 
 	INIT_LIST_HEAD(&pf_dev->mlx5_flow_groups);
 	spin_lock_init(&pf_dev->flows_lock);
-
 	return 0;
 
 err_pf_vport_rules:
@@ -578,7 +592,10 @@ fdb_err:
 
 pf_nic_err:
 	mlx5e_reps_remove(pf_dev);
-
+reps_create_err:
+	mlx5_eswitch_disable_sriov(esw);
+err_offloads_fdb:
+	mlx5_eswitch_enable_sriov(esw, num_vfs, false);
 	return err;
 
 }
@@ -586,10 +603,13 @@ pf_nic_err:
 void mlx5e_stop_flow_offloads(struct mlx5e_priv *pf_dev)
 {
 	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
+	int num_vfs = pf_dev->mdev->priv.sriov.num_vfs;
 	void *ft;
 	int nch = pf_dev->params.num_channels;
 	int n, tc;
 	struct mlx5e_channel *c;
+
+	ASSERT_RTNL();
 
 	/* FIXME: alarm/clean if there are offloaded flows left */
 
@@ -618,6 +638,9 @@ void mlx5e_stop_flow_offloads(struct mlx5e_priv *pf_dev)
 	}
 
 	mlx5e_reps_remove(pf_dev);
+
+	mlx5_eswitch_disable_sriov(eswitch);
+	mlx5_eswitch_enable_sriov(eswitch, num_vfs, false);
 }
 
 int mlx5_pf_nic_add_vport_miss_rule(struct mlx5e_priv *pf_dev, u32 vport, u32 *flow_index)
