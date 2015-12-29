@@ -576,15 +576,19 @@ out:
 
 	return res;
 }
-
-/* Handling for queue buffers -- we allocate a bunch of memory and
- * register it in a memory region at HCA virtual address 0.
+/*
+ * Handling for queue buffers -- we allocate a bunch of memory and
+ * register it in a memory region at HCA virtual address 0.  If the
+ * requested size is > max_direct, we split the allocation into
+ * multiple pages, so we don't require too much contiguous memory.
  */
-int mlx4_buf_direct_alloc(struct mlx4_dev *dev, int size, struct mlx4_buf *buf,
-			  gfp_t gfp)
-{
-		dma_addr_t t;
 
+int mlx4_buf_alloc(struct mlx4_dev *dev, int size, int max_direct,
+		   struct mlx4_buf *buf, gfp_t gfp)
+{
+	dma_addr_t t;
+
+	if (size <= max_direct) {
 		buf->nbufs        = 1;
 		buf->npages       = 1;
 		buf->page_shift   = get_order(size) + PAGE_SHIFT;
@@ -601,27 +605,12 @@ int mlx4_buf_direct_alloc(struct mlx4_dev *dev, int size, struct mlx4_buf *buf,
 		}
 
 		memset(buf->direct.buf, 0, size);
-
-		return 0;
-}
-EXPORT_SYMBOL_GPL(mlx4_buf_direct_alloc);
-
-int mlx4_buf_alloc(struct mlx4_dev *dev, int size, int max_direct,
-		   struct mlx4_buf *buf, gfp_t gfp)
-{
-	if (size <= max_direct) {
-		int err;
-
-		err = mlx4_buf_direct_alloc(dev, size, buf, gfp);
-		if (err)
-			return err;
 	} else {
-		dma_addr_t t;
 		int i;
 
-		buf->direct.buf = NULL;
-		buf->nbufs	= (size + PAGE_SIZE - 1) / PAGE_SIZE;
-		buf->npages	= buf->nbufs;
+		buf->direct.buf  = NULL;
+		buf->nbufs       = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+		buf->npages      = buf->nbufs;
 		buf->page_shift  = PAGE_SHIFT;
 		buf->page_list   = kcalloc(buf->nbufs, sizeof(*buf->page_list),
 					   gfp);
@@ -640,6 +629,19 @@ int mlx4_buf_alloc(struct mlx4_dev *dev, int size, int max_direct,
 
 			memset(buf->page_list[i].buf, 0, PAGE_SIZE);
 		}
+
+		if (BITS_PER_LONG == 64) {
+			struct page **pages;
+			pages = kmalloc(sizeof *pages * buf->nbufs, gfp);
+			if (!pages)
+				goto err_free;
+			for (i = 0; i < buf->nbufs; ++i)
+				pages[i] = virt_to_page(buf->page_list[i].buf);
+			buf->direct.buf = vmap(pages, buf->nbufs, VM_MAP, PAGE_KERNEL);
+			kfree(pages);
+			if (!buf->direct.buf)
+				goto err_free;
+		}
 	}
 
 	return 0;
@@ -653,11 +655,15 @@ EXPORT_SYMBOL_GPL(mlx4_buf_alloc);
 
 void mlx4_buf_free(struct mlx4_dev *dev, int size, struct mlx4_buf *buf)
 {
-	if (buf->nbufs == 1) {
+	int i;
+
+	if (buf->nbufs == 1)
 		dma_free_coherent(&dev->persist->pdev->dev, size,
-				  buf->direct.buf, buf->direct.map);
-	} else {
-		int i;
+				  buf->direct.buf,
+				  buf->direct.map);
+	else {
+		if (BITS_PER_LONG == 64)
+			vunmap(buf->direct.buf);
 
 		for (i = 0; i < buf->nbufs; ++i)
 			if (buf->page_list[i].buf)
@@ -783,7 +789,7 @@ void mlx4_db_free(struct mlx4_dev *dev, struct mlx4_db *db)
 EXPORT_SYMBOL_GPL(mlx4_db_free);
 
 int mlx4_alloc_hwq_res(struct mlx4_dev *dev, struct mlx4_hwq_resources *wqres,
-		       int size)
+		       int size, int max_direct)
 {
 	int err;
 
@@ -793,8 +799,7 @@ int mlx4_alloc_hwq_res(struct mlx4_dev *dev, struct mlx4_hwq_resources *wqres,
 
 	*wqres->db.db = 0;
 
-	err = mlx4_buf_direct_alloc(dev, size, &wqres->buf,
-				    GFP_KERNEL);
+	err = mlx4_buf_alloc(dev, size, max_direct, &wqres->buf, GFP_KERNEL);
 	if (err)
 		goto err_db;
 
