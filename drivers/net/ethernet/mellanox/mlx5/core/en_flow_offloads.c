@@ -42,6 +42,19 @@
 #include "en_rep.h"
 #include "eswitch.h"
 
+#define MATCH_PARAMS_SIZE MLX5_ST_SZ_DW(fte_match_param)
+
+struct mlx5_flow_attr {
+	struct sw_flow *sw_flow;
+	struct mlx5e_priv *pf_dev;
+	struct mlx5e_vf_rep *in_rep;
+	struct mlx5e_vf_rep *out_rep;
+	u32 match_c[MATCH_PARAMS_SIZE];
+	u32 match_v[MATCH_PARAMS_SIZE];
+	int mlx5_action;
+	u16 mlx5_vlan;
+};
+
 /* The default UDP port that ConnectX firmware uses for its VXLAN parser */
 #define MLX5_DEFAULT_VXLAN_UDP_DPORT (4789)
 
@@ -157,17 +170,20 @@ static int parse_tunnel_attr(struct sw_flow_key_ipv4_tunnel *key,
 	return 0;
 }
 
-static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v,
-			   struct mlx5e_vf_rep *in_rep)
+static int parse_flow_attr(struct mlx5_flow_attr *attr)
 {
-	struct sw_flow_key *key  = &flow->key;
-	struct sw_flow_key *mask = &flow->mask->key;
+	struct sw_flow_key *key  = &attr->sw_flow->key;
+	struct sw_flow_key *mask = &attr->sw_flow->mask->key;
 
-	void *headers_c = MLX5_ADDR_OF(fte_match_param, match_c, outer_headers);
-	void *headers_v = MLX5_ADDR_OF(fte_match_param, match_v, outer_headers);
+	void *headers_c = MLX5_ADDR_OF(fte_match_param, attr->match_c,
+				       outer_headers);
+	void *headers_v = MLX5_ADDR_OF(fte_match_param, attr->match_v,
+				       outer_headers);
 
-	void *misc_c = MLX5_ADDR_OF(fte_match_param, match_c, misc_parameters);
-	void *misc_v = MLX5_ADDR_OF(fte_match_param, match_v, misc_parameters);
+	void *misc_c = MLX5_ADDR_OF(fte_match_param, attr->match_c,
+				    misc_parameters);
+	void *misc_v = MLX5_ADDR_OF(fte_match_param, attr->match_v,
+				    misc_parameters);
 
 	u8 zero_mac[ETH_ALEN];
 
@@ -175,24 +191,25 @@ static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v,
 
 	/* set source vport for the flow */
 	MLX5_SET(fte_match_set_misc, misc_c, source_port, 0xffff);
-	MLX5_SET(fte_match_set_misc, misc_v, source_port, in_rep->vport);
+	MLX5_SET(fte_match_set_misc, misc_v, source_port, attr->in_rep->vport);
 
 	if (mask->tun_key.tun_flags &
 	   ~(TUNNEL_KEY | TUNNEL_DONT_FRAGMENT | TUNNEL_CSUM)) {
-		dev_warn_ratelimited(&in_rep->dev->dev, "got unknown tunnel flag in flow: 0x%x\n",
+		dev_warn_ratelimited(&attr->in_rep->dev->dev,
+				     "got unknown tunnel flag in flow: 0x%x\n",
 				     be16_to_cpu(mask->tun_key.tun_flags));
 		return -EOPNOTSUPP;
 	}
 
 	if (key->tun_key.tunnel_type != SW_FLOW_TUNNEL_NONE) {
-		if (parse_tunnel_attr(&flow->key.tun_key,
-				      &flow->mask->key.tun_key,
-				      match_c, match_v))
+		if (parse_tunnel_attr(&attr->sw_flow->key.tun_key,
+				      &attr->sw_flow->mask->key.tun_key,
+					  attr->match_c, attr->match_v))
 			return -EOPNOTSUPP;
 
-		headers_c = MLX5_ADDR_OF(fte_match_param, match_c,
+		headers_c = MLX5_ADDR_OF(fte_match_param, attr->match_c,
 					 inner_headers);
-		headers_v = MLX5_ADDR_OF(fte_match_param, match_v,
+		headers_v = MLX5_ADDR_OF(fte_match_param, attr->match_v,
 					 inner_headers);
 	}
 
@@ -370,8 +387,6 @@ enum mlx5_flow_action_type {
 	MLX5_FLOW_ACTION_TYPE_DROP	= 1 << SW_FLOW_ACTION_TYPE_DROP
 };
 
-#define MATCH_PARAMS_SIZE MLX5_ST_SZ_DW(fte_match_param)
-
 int mlx5_create_flow_group(void *ft, struct mlx5_flow_table_group *g,
 			   u32 start_ix, u32 *id);
 
@@ -393,19 +408,18 @@ struct mlx5_flow {
 	struct list_head group_list; /* flows of the mother group */
 };
 
-int mlx5e_flow_set(struct mlx5e_priv *pf_dev, int mlx5_action,
-		   struct mlx5e_vf_rep *out, struct sw_flow *sw_flow,
-		   struct mlx5_flow_group *group, u32 *match_v)
+int mlx5e_flow_set(struct mlx5_flow_attr *attr,
+		   struct mlx5_flow_group *group)
 {
 	void *flow_context, *match_value, *dest;
 	struct mlx5_flow *flow;
 	int err = -ENOMEM;
-	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
+	struct mlx5_eswitch *eswitch = attr->pf_dev->mdev->priv.eswitch;
 
 	flow = kzalloc(sizeof (*flow), GFP_KERNEL);
 	if (!flow)
 		goto flow_alloc_failed;
-	memcpy(flow->match_v, match_v, sizeof(flow->match_v));
+	memcpy(flow->match_v, attr->match_v, sizeof(flow->match_v));
 
 	/* TODO: handle flows with fwding to > 1 output ports (multiple dests) */
 	flow_context = mlx5_vzalloc(MLX5_ST_SZ_BYTES(flow_context) +
@@ -414,9 +428,9 @@ int mlx5e_flow_set(struct mlx5e_priv *pf_dev, int mlx5_action,
 		goto flow_context_alloc_failed;
 
 	match_value = MLX5_ADDR_OF(flow_context, flow_context, match_value);
-	memcpy(match_value, match_v, sizeof(flow->match_v));
+	memcpy(match_value, attr->match_v, sizeof(flow->match_v));
 
-	if (mlx5_action & MLX5_FLOW_ACTION_TYPE_DROP) {
+	if (attr->mlx5_action & MLX5_FLOW_ACTION_TYPE_DROP) {
 		MLX5_SET(flow_context, flow_context, action,
 			 MLX5_FLOW_CONTEXT_ACTION_DROP);
 		goto flow_set;
@@ -430,7 +444,8 @@ int mlx5e_flow_set(struct mlx5e_priv *pf_dev, int mlx5_action,
 	dest = MLX5_ADDR_OF(flow_context, flow_context, destination);
 	MLX5_SET(dest_format_struct, dest, destination_type,
 		 MLX5_FLOW_CONTEXT_DEST_TYPE_VPORT);
-	MLX5_SET(dest_format_struct, dest, destination_id, out->vport);
+	MLX5_SET(dest_format_struct, dest, destination_id,
+		 attr->out_rep->vport);
 
 flow_set:
 	err = mlx5_set_flow_group_entry(eswitch->fdb_table.fdb, group->group_ix,
@@ -441,7 +456,8 @@ flow_set:
 	kref_get(&group->kref);
 	list_add_tail(&flow->group_list, &group->flows_list);
 
-	printk(KERN_ERR "%s added sw_flow %p flow index %x \n", __func__, sw_flow, flow->flow_index);
+	pr_debug("%s added sw_flow %p flow index %x\n", __func__,
+		 attr->sw_flow, flow->flow_index);
 	kfree(flow_context);
 	return 0;
 
@@ -457,10 +473,12 @@ flow_alloc_failed:
 	return err;
 }
 
-int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
-		      int *mlx5_action, u16 *mlx5_vlan,
-		      struct mlx5e_vf_rep *in_rep,
-		      struct mlx5e_vf_rep **out_rep)
+static struct mlx5e_vf_rep *mlx5e_uplink_rep(struct mlx5e_priv *pf_dev)
+{
+	return pf_dev->vf_reps[pf_dev->mdev->priv.sriov.num_vfs];
+}
+
+int mlx5e_flow_adjust(struct mlx5_flow_attr *attr)
 {
 	struct net *net;
 	struct net_device *out_dev;
@@ -471,15 +489,15 @@ int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
 	u16 vlan_proto;
 
 	__mlx5_action = 0;
-	for (act = 0; act < sw_flow->actions->count; act++) {
-		action = &sw_flow->actions->actions[act];
+	for (act = 0; act < attr->sw_flow->actions->count; act++) {
+		action = &attr->sw_flow->actions->actions[act];
 		if (action->type == SW_FLOW_ACTION_TYPE_OUTPUT) {
 			if (out_ifindex != -1) {
 				pr_debug("%s not offloading floods\n",
 					 __func__);
 				goto out_err;
 			}
-			if (sw_flow->key.tun_key.tunnel_type !=
+			if (attr->sw_flow->key.tun_key.tunnel_type !=
 					SW_FLOW_TUNNEL_NONE) {
 				pr_debug("%s not offloading decap\n",
 					 __func__);
@@ -490,10 +508,11 @@ int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
 			__mlx5_action |= MLX5_FLOW_ACTION_TYPE_OUTPUT;
 		} else if (action->type == SW_FLOW_ACTION_TYPE_VLAN_PUSH) {
 			__mlx5_action |= MLX5_FLOW_ACTION_TYPE_VLAN_PUSH;
-			*mlx5_vlan = ntohs(action->vlan.vlan_tci) & ~VLAN_TAG_PRESENT;
+			attr->mlx5_vlan = ntohs(action->vlan.vlan_tci) &
+					  ~VLAN_TAG_PRESENT;
 			vlan_proto = ntohs(action->vlan.vlan_proto);
 			printk(KERN_ERR "%s push vlan action tci %x proto %x TODO: set VST!!\n",
-			       __func__, *mlx5_vlan, vlan_proto);
+			       __func__, attr->mlx5_vlan, vlan_proto);
 			if (vlan_proto != ETH_P_8021Q)
 				goto out_err;
 		} else if (action->type == SW_FLOW_ACTION_TYPE_VLAN_POP)
@@ -512,10 +531,10 @@ int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
 		goto out_err;
 	}
 
-	net = dev_net(pf_dev->netdev);
+	net = dev_net(attr->pf_dev->netdev);
 	if (!net) {
 		pr_err("can't get net name space from dev %s for ifindex conversion\n",
-		       pf_dev->netdev->name);
+				attr->pf_dev->netdev->name);
 		goto out_err;
 	}
 
@@ -526,7 +545,7 @@ int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
 	out_dev = dev_get_by_index_rcu(net, out_ifindex);
 
 	pr_debug("%s in/out dev %s/%s action %x\n", __func__,
-		 in_rep->dev->name, out_dev ? out_dev->name : "NULL",
+		 attr->in_rep->dev->name, out_dev ? out_dev->name : "NULL",
 		 __mlx5_action);
 
 	if (!out_dev)
@@ -540,7 +559,7 @@ int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
 	in_attr.id = out_attr.id = SWITCHDEV_ATTR_PORT_PARENT_ID;
 	in_attr.flags = out_attr.flags = SWITCHDEV_F_NO_RECURSE;
 
-	err1 = switchdev_port_attr_get(in_rep->dev, &in_attr);
+	err1 = switchdev_port_attr_get(attr->in_rep->dev, &in_attr);
 	err2 = switchdev_port_attr_get(out_dev, &out_attr);
 
 	if (err1 || err2)
@@ -548,17 +567,17 @@ int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
 
 	if (!netdev_phys_item_ids_match(&in_attr.u.ppid, &out_attr.u.ppid)) {
 		pr_err("devices in:%s out:%s not on same eSwitch, can't offload\n",
-				in_rep->dev->name, out_dev->name);
+				attr->in_rep->dev->name, out_dev->name);
 		goto out_err;
 	}
 
-	if (out_ifindex == pf_dev->netdev->ifindex)
-		*out_rep = pf_dev->vf_reps[pf_dev->mdev->priv.sriov.num_vfs];
+	if (out_ifindex == attr->pf_dev->netdev->ifindex)
+		attr->out_rep = mlx5e_uplink_rep(attr->pf_dev);
 	else
-		*out_rep = netdev_priv(out_dev);
+		attr->out_rep = netdev_priv(out_dev);
 
 skip_id_check:
-	*mlx5_action = __mlx5_action;
+	attr->mlx5_action = __mlx5_action;
 
 	return 0;
 
@@ -684,28 +703,26 @@ static struct mlx5_flow_group *mlx5e_create_flow_group(
 int mlx5e_flow_add(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow)
 {
 	struct mlx5_flow_group *group;
-	struct mlx5e_priv *pf_dev = in_rep->pf_dev;
-	int err, mlx5_action;
+	int err;
 
-	u32 match_c[MATCH_PARAMS_SIZE] = {};
-	u32 match_v[MATCH_PARAMS_SIZE] = {};
+	struct mlx5_flow_attr attr = {};
 
-	struct mlx5e_vf_rep *out_rep;
-	u16 mlx5_vlan = 0;
+	attr.sw_flow = sw_flow;
+	attr.in_rep = in_rep;
+	attr.pf_dev = in_rep->pf_dev;
 
-	err = mlx5e_flow_adjust(pf_dev, sw_flow, &mlx5_action, &mlx5_vlan,
-				in_rep, &out_rep);
+	err = mlx5e_flow_adjust(&attr);
 	if (err)
 		return err;
 
 	/* translate the flow from SW to PRM */
-	err = parse_flow_attr(sw_flow, match_c, match_v, in_rep);
+	err = parse_flow_attr(&attr);
 	if (err)
 		return err;
 
-	group = mlx5e_get_flow_group(pf_dev, match_c);
+	group = mlx5e_get_flow_group(attr.pf_dev, attr.match_c);
 	if (!group) {
-		group = mlx5e_create_flow_group(pf_dev, match_c);
+		group = mlx5e_create_flow_group(attr.pf_dev, attr.match_c);
 		if (IS_ERR(group))
 			return PTR_ERR(group);
 	}
@@ -713,8 +730,7 @@ int mlx5e_flow_add(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow)
 	pr_debug("%s sw_flow %p group %p ref %d\n", __func__, sw_flow, group,
 		 group ? atomic_read(&group->kref.refcount) : -100);
 
-	err = mlx5e_flow_set(pf_dev, mlx5_action, out_rep, sw_flow, group,
-			     match_v);
+	err = mlx5e_flow_set(&attr, group);
 
 	pr_debug("%s status %d group %p ref %d index %d\n", __func__, err,
 		 group, atomic_read(&group->kref.refcount), group->group_ix);
@@ -726,18 +742,20 @@ int mlx5e_flow_add(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow)
 int mlx5e_flow_del(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow)
 {
 	struct mlx5_flow_group *group;
-	struct mlx5e_priv *pf_dev = in_rep->pf_dev;
 	int err;
 
-	u32 match_c[MATCH_PARAMS_SIZE] = {};
-	u32 match_v[MATCH_PARAMS_SIZE] = {};
+	struct mlx5_flow_attr attr = {};
+
+	attr.sw_flow = sw_flow;
+	attr.in_rep = in_rep;
+	attr.pf_dev = in_rep->pf_dev;
 
 	/* translate the flow from SW to PRM */
-	err = parse_flow_attr(sw_flow, match_c, match_v, in_rep);
+	err = parse_flow_attr(&attr);
 	if (err)
 		return err;
 
-	group = mlx5e_get_flow_group(pf_dev, match_c);
+	group = mlx5e_get_flow_group(attr.pf_dev, attr.match_c);
 	if (!group) {
 		pr_err("%s sw_flow %p flow group doesn't exist, can't remove flow\n",
 		       __func__, sw_flow);
@@ -747,7 +765,7 @@ int mlx5e_flow_del(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow)
 	pr_debug("%s sw_flow %p group %p ref %d\n", __func__, sw_flow, group,
 		 group ? atomic_read(&group->kref.refcount) : -100);
 
-	err = __mlx5e_flow_del(pf_dev, group, match_v);
+	err = __mlx5e_flow_del(attr.pf_dev, group, attr.match_v);
 
 	pr_debug("%s status %d group %p ref %d index %d\n", __func__, err,
 		 group, atomic_read(&group->kref.refcount), group->group_ix);
