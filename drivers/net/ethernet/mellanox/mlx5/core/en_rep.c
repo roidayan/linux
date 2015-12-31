@@ -46,8 +46,8 @@ void mlx5e_close_rep_channel(struct mlx5e_vf_rep *vf_dev);
 static int  mlx5_pf_nic_add_vport_miss_rule(struct mlx5e_priv *pf_dev,
 					    u32 vport, u32 *flow_index);
 
-static int  mlx5_add_fdb_miss_rule(struct mlx5_core_dev *mdev);
-static void  mlx5_del_fdb_miss_rule(struct mlx5_core_dev *mdev);
+static int mlx5_add_fdb_miss_rule(struct mlx5_core_dev *mdev, u32 *fdb_miss_flow_index);
+static void mlx5_del_fdb_miss_rule(struct mlx5_core_dev *mdev, u32 fdb_miss_flow_index);
 
 static int mlx5_add_fdb_send_to_vport_rule(struct mlx5_core_dev *mdev,
 					   u32 group_ix,
@@ -73,7 +73,6 @@ static void mlx5_delete_fdb_send_to_vport_rule(struct mlx5_core_dev *mdev,
 #define NIC_UPLINK_STEERING_VPORT 0xff
 
 u32 uplink_miss_flow_index = 0; /* FIXME - add this to the PF somewhere */
-u32 fdb_miss_flow_index    = 0; /* FIXME - same */
 
 #if 0
 #define MLX5_REP_HW_ID_LEN 6
@@ -604,7 +603,7 @@ int mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev)
 		goto pf_nic_err;
 	}
 
-	err = mlx5_add_fdb_miss_rule(pf_dev->mdev);
+	err = mlx5_add_fdb_miss_rule(pf_dev->mdev, &pf_dev->fdb_miss_flow_index);
 	if (err)  {
 		printk(KERN_ERR "failed adding FDB miss rule err %d\n", err);
 		goto fdb_err;
@@ -621,7 +620,7 @@ int mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev)
 	return 0;
 
 err_pf_vport_rules:
-	mlx5_del_fdb_miss_rule(pf_dev->mdev);
+	mlx5_del_fdb_miss_rule(pf_dev->mdev, pf_dev->fdb_miss_flow_index);
 fdb_err:
 	mlx5_del_flow_table_entry(pf_dev->ft.main, uplink_miss_flow_index);
 	uplink_miss_flow_index = 0;
@@ -645,7 +644,7 @@ static void mlx5e_disable_flow_offloads(struct mlx5e_priv *pf_dev)
 	mlx5e_clear_flows(pf_dev);
 
 	/* remove FDB miss rule */
-	mlx5_del_fdb_miss_rule(pf_dev->mdev);
+	mlx5_del_fdb_miss_rule(pf_dev->mdev, pf_dev->fdb_miss_flow_index);
 
 	/* remove uplink PF NIC miss rule */
 	if (uplink_miss_flow_index) {
@@ -799,7 +798,7 @@ static void mlx5_delete_fdb_send_to_vport_rule(struct mlx5_core_dev *mdev,
 	mlx5_del_flow_table_entry(ft, flow_index);
 }
 
-static int mlx5_add_fdb_miss_rule(struct mlx5_core_dev *mdev)
+static int mlx5_add_fdb_miss_rule(struct mlx5_core_dev *mdev, u32 *fdb_miss_flow_index)
 {
 	u32 *flow_context;
 	void *dest;
@@ -826,22 +825,19 @@ static int mlx5_add_fdb_miss_rule(struct mlx5_core_dev *mdev)
 	MLX5_SET(flow_context, flow_context, destination_list_size, 1);
 	MLX5_SET(dest_format_struct, dest, destination_id, 0); /* send to PF vport */
 
-	err = mlx5_set_flow_group_entry(ft, MLX5_MISS_GROUP, &fdb_miss_flow_index, flow_context);
-	mlx5_core_warn(mdev, "ADD FDB entry for miss flow index=%d\n", fdb_miss_flow_index);
+	err = mlx5_set_flow_group_entry(ft, MLX5_MISS_GROUP, fdb_miss_flow_index, flow_context);
+	mlx5_core_warn(mdev, "ADD FDB entry for miss flow index=%d\n", *fdb_miss_flow_index);
 
 out:
 	kvfree(flow_context);
 	return err;
 }
 
-static void mlx5_del_fdb_miss_rule(struct mlx5_core_dev *mdev)
+static void mlx5_del_fdb_miss_rule(struct mlx5_core_dev *mdev, u32 fdb_miss_flow_index)
 {
-	if (fdb_miss_flow_index) {
-		void *ft = mdev->priv.eswitch->fdb_table.fdb;
+	void *ft = mdev->priv.eswitch->fdb_table.fdb;
 
-		mlx5_del_flow_table_entry(ft, fdb_miss_flow_index);
-		fdb_miss_flow_index = 0;
-	}
+	mlx5_del_flow_table_entry(ft, fdb_miss_flow_index);
 }
 
 int mlx5e_rep_add_l2_fdb_rule(struct mlx5e_vf_rep *vf_rep, const char *addr)
