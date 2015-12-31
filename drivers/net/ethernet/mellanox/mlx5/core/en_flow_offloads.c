@@ -210,9 +210,6 @@ static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v,
 		       &key->eth.dst, ETH_ALEN);
 	}
 
-	if (mask->eth.tci)
-		goto out_err;
-
 	/* NOTE - vlan push/pop actions to be implemented by VST!! */
 	if (ntohs(key->eth.tci) & ~VLAN_TAG_PRESENT) {
 		printk(KERN_ERR "flow has VLAN (assuming VST): tci mask %x key %x\n",
