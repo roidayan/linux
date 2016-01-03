@@ -210,21 +210,28 @@ static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v,
 		       &key->eth.dst, ETH_ALEN);
 	}
 
-	/* NOTE - vlan push/pop actions to be implemented by VST!! */
-	if (ntohs(key->eth.tci) & ~VLAN_TAG_PRESENT) {
-		printk(KERN_ERR "flow has VLAN (assuming VST): tci mask %x key %x\n",
-	               ntohs(mask->eth.tci) & ~VLAN_TAG_PRESENT,
-		       ntohs(key->eth.tci) & ~VLAN_TAG_PRESENT);
-#if 0
-		/* TODO: see if to use this for VGT? */
+	if ((ntohs(key->eth.tci) & VLAN_TAG_PRESENT) &&
+	    (ntohs(mask->eth.tci) & VLAN_TAG_PRESENT)) {
+		printk(KERN_ERR "flow has VLAN tci mask %x key %x\n",
+		       ntohs(mask->eth.tci), ntohs(key->eth.tci));
 		MLX5_SET(fte_match_set_lyr_2_4, headers_c, vlan_tag, 1);
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v, vlan_tag, 1);
 
 		MLX5_SET(fte_match_set_lyr_2_4, headers_c, first_vid,
-			 ntohs(mask->eth.tci) & ~VLAN_TAG_PRESENT);
+			 ntohs(mask->eth.tci) & VLAN_VID_MASK);
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v, first_vid,
-			 ntohs(key->eth.tci) & ~VLAN_TAG_PRESENT);
-#endif
+			 ntohs(key->eth.tci) & VLAN_VID_MASK);
+
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, first_prio,
+			 ntohs(mask->eth.tci) >> VLAN_PRIO_SHIFT);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, first_prio,
+			 ntohs(key->eth.tci) >> VLAN_PRIO_SHIFT);
+	}
+
+	if ((ntohs(mask->eth.tci) & VLAN_TAG_PRESENT) &&
+	      !(ntohs(key->eth.tci) & VLAN_TAG_PRESENT)) {
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, vlan_tag, 1);
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, vlan_tag, 0);
 	}
 
 	if (mask->eth.type) {
