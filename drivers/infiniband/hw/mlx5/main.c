@@ -687,6 +687,7 @@ static int mlx5_query_hca_port(struct ib_device *ibdev, u8 port,
 	props->qkey_viol_cntr	= rep->qkey_violation_counter;
 	props->subnet_timeout	= rep->subnet_timeout;
 	props->init_type_reply	= rep->init_type_reply;
+	props->grh_required	= rep->grh_required;
 
 	err = mlx5_query_port_link_width_oper(mdev, &ib_link_width_oper, port);
 	if (err)
@@ -2270,6 +2271,11 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 	dev->ib_dev.map_mr_sg		= mlx5_ib_map_mr_sg;
 	dev->ib_dev.check_mr_status	= mlx5_ib_check_mr_status;
 	dev->ib_dev.get_port_immutable  = mlx5_port_immutable;
+	dev->ib_dev.get_vf_config	= mlx5_ib_get_vf_config;
+	dev->ib_dev.set_vf_link_state	= mlx5_ib_set_vf_link_state;
+	dev->ib_dev.get_vf_stats	= mlx5_ib_get_vf_stats;
+	dev->ib_dev.set_vf_port_guid	= mlx5_ib_set_vf_port_guid;
+	dev->ib_dev.set_vf_node_guid	= mlx5_ib_set_vf_node_guid;
 
 	mlx5_ib_internal_fill_odp_caps(dev);
 
