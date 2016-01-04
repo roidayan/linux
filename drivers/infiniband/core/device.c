@@ -652,6 +652,7 @@ int ib_query_port(struct ib_device *device,
 	if (port_num < rdma_start_port(device) || port_num > rdma_end_port(device))
 		return -EINVAL;
 
+	memset(port_attr, 0, sizeof(*port_attr));
 	return device->query_port(device, port_num, port_attr);
 }
 EXPORT_SYMBOL(ib_query_port);
