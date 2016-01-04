@@ -56,6 +56,7 @@
 #include <linux/string.h>
 #include <linux/slab.h>
 
+#include <linux/if_link.h>
 #include <linux/atomic.h>
 #include <linux/mmu_notifier.h>
 #include <asm/uaccess.h>
@@ -1672,6 +1673,28 @@ struct ib_flow {
 	struct ib_uobject	*uobject;
 };
 
+struct ib_vf_stats {
+	u64	rx_frames;
+	u64	tx_frames;
+	u64     rx_bytes;
+	u64	tx_bytes;
+	u64	rx_errors;
+	u64	tx_errors;
+	u64	rx_dropped;
+	u64	tx_dropped;
+	u64	rx_mcast;
+};
+
+enum ib_link_state {
+	IB_LINK_STATE_AUTO,
+	IB_LINK_STATE_UP,
+	IB_LINK_STATE_DOWN
+};
+
+struct ib_vf_info {
+	enum ib_link_state state;
+};
+
 struct ib_mad_hdr;
 struct ib_grh;
 
@@ -1792,6 +1815,10 @@ struct ib_device {
 	int		           (*query_gid)(struct ib_device *device,
 						u8 port_num, int index,
 						union ib_gid *gid);
+	int			   (*set_vf_port_guid)(struct ib_device *device, int vf,
+						       u8 port, u64 guid);
+	int			   (*set_vf_node_guid)(struct ib_device *device, int vf,
+						       u64 guid);
 	/* When calling add_gid, the HW vendor's driver should
 	 * add the gid of device @device at gid index @index of
 	 * port @port_num to be @gid. Meta-info of that gid (for example,
@@ -1964,6 +1991,12 @@ struct ib_device {
 							   struct ib_rwq_ind_table_init_attr *init_attr,
 							   struct ib_udata *udata);
 	int			   (*destroy_rwq_ind_table)(struct ib_rwq_ind_table *wq_ind_table);
+	int			   (*get_vf_config)(struct ib_device *device, int vf, u8 port,
+						    struct ib_vf_info *info);
+	int			   (*set_vf_link_state)(struct ib_device *device, int vf, u8 port,
+							enum ib_link_state state);
+	int			   (*get_vf_stats)(struct ib_device *device, int vf, u8 port,
+						   struct ib_vf_stats *stats);
 
 
 	struct ib_dma_mapping_ops   *dma_ops;
@@ -2407,6 +2440,15 @@ static inline bool rdma_cap_roce_gid_table(const struct ib_device *device,
 int ib_query_gid(struct ib_device *device,
 		 u8 port_num, int index, union ib_gid *gid,
 		 struct ib_gid_attr *attr);
+
+int ib_get_vf_config(struct ib_device *device, int vf, u8 port,
+		     struct ib_vf_info *info);
+int ib_set_vf_link_state(struct ib_device *device, int vf, u8 port,
+			 enum ib_link_state state);
+int ib_set_vf_port_guid(struct ib_device *device, int vf, u8 port, u64 guid);
+int ib_set_vf_node_guid(struct ib_device *device, int vf, u64 guid);
+int ib_get_vf_stats(struct ib_device *device, int vf, u8 port,
+		    struct ib_vf_stats *stats);
 
 int ib_query_pkey(struct ib_device *device,
 		  u8 port_num, u16 index, u16 *pkey);
@@ -3221,5 +3263,20 @@ int ib_sg_to_pages(struct ib_mr *mr,
 		   struct scatterlist *sgl,
 		   int sg_nents,
 		   int (*set_page)(struct ib_mr *, u64));
+
+static inline u32 ib_to_net_link_state(enum ib_link_state ib_state)
+{
+	switch (ib_state) {
+	case IB_LINK_STATE_AUTO:
+		return IFLA_VF_LINK_STATE_AUTO;
+	case IB_LINK_STATE_UP:
+		return IFLA_VF_LINK_STATE_ENABLE;
+	case IB_LINK_STATE_DOWN:
+		return IFLA_VF_LINK_STATE_DISABLE;
+	default:
+		WARN(1, "invalid ib link state %d\n", ib_state);
+		return (u32)-1;
+	}
+}
 
 #endif /* IB_VERBS_H */
