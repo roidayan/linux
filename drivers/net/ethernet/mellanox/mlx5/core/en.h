@@ -514,6 +514,8 @@ struct mlx5e_priv {
 	int channeltc_to_txq_map[MLX5E_MAX_NUM_CHANNELS][MLX5E_MAX_NUM_TC];
 	/* priv data path fields - end */
 
+	struct net_device_ops      netdev_ops;
+
 	unsigned long              state;
 	struct mutex               state_lock; /* Protects Interface state */
 	struct mlx5_uar            cq_uar;
