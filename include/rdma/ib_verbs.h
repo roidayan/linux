@@ -97,6 +97,11 @@ enum rdma_node_type {
 	RDMA_NODE_USNIC_UDP,
 };
 
+enum {
+	IB_SA_WELL_KNOWN_GID_PREFIX	= 0xfe80000000000000ull,
+	IB_SA_WELL_KNOWN_GUID		= 2,
+};
+
 enum rdma_transport_type {
 	RDMA_TRANSPORT_IB,
 	RDMA_TRANSPORT_IWARP,
@@ -537,6 +542,7 @@ struct ib_port_attr {
 	u8			active_width;
 	u8			active_speed;
 	u8                      phys_state;
+	bool			grh_required;
 };
 
 enum ib_device_modify_flags {
