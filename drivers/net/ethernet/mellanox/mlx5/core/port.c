@@ -607,3 +607,153 @@ int mlx5_query_port_wol(struct mlx5_core_dev *mdev, u8 *wol_mode)
 	return err;
 }
 EXPORT_SYMBOL_GPL(mlx5_query_port_wol);
+
+int mlx5_core_query_hca_vport_context(struct mlx5_core_dev *dev,
+				      u8 other_vport, u8 port_num,
+				      u16 vf_num,
+				      struct mlx5_hca_vport_context *rep)
+{
+	int out_sz = MLX5_ST_SZ_BYTES(query_hca_vport_context_out);
+	u32 in[MLX5_ST_SZ_DW(query_hca_vport_context_in)];
+	int is_group_manager;
+	void *out;
+	void *ctx;
+	int err;
+
+	mlx5_core_dbg(dev, "vf_num %d\n", vf_num);
+	is_group_manager = MLX5_CAP_GEN(dev, vport_group_manager);
+
+	memset(in, 0, sizeof(in));
+	out = kzalloc(out_sz, GFP_KERNEL);
+	if (!out)
+		return -ENOMEM;
+
+	MLX5_SET(query_hca_vport_context_in, in, opcode, MLX5_CMD_OP_QUERY_HCA_VPORT_CONTEXT);
+
+	if (other_vport) {
+		if (is_group_manager) {
+			MLX5_SET(query_hca_vport_context_in, in, other_vport, 1);
+			MLX5_SET(query_hca_vport_context_in, in, vport_number, vf_num);
+		} else {
+			err = -EPERM;
+			goto ex;
+		}
+	}
+
+	if (MLX5_CAP_GEN(dev, num_ports) == 2)
+		MLX5_SET(query_hca_vport_context_in, in, port_num, port_num);
+
+	err = mlx5_cmd_exec(dev, in, sizeof(in), out,  out_sz);
+	if (err)
+		goto ex;
+	err = mlx5_cmd_status_to_err_v2(out);
+	if (err)
+		goto ex;
+
+	ctx = MLX5_ADDR_OF(query_hca_vport_context_out, out, hca_vport_context);
+	rep->field_select = MLX5_GET_PR(hca_vport_context, ctx, field_select);
+	rep->sm_virt_aware = MLX5_GET_PR(hca_vport_context, ctx, sm_virt_aware);
+	rep->has_smi = MLX5_GET_PR(hca_vport_context, ctx, has_smi);
+	rep->has_raw = MLX5_GET_PR(hca_vport_context, ctx, has_raw);
+	rep->policy = MLX5_GET_PR(hca_vport_context, ctx, vport_state_policy);
+	rep->phys_state = MLX5_GET_PR(hca_vport_context, ctx,
+				      port_physical_state);
+	rep->vport_state = MLX5_GET_PR(hca_vport_context, ctx, vport_state);
+	rep->port_physical_state = MLX5_GET_PR(hca_vport_context, ctx,
+					       port_physical_state);
+	rep->port_guid = MLX5_GET64_PR(hca_vport_context, ctx, port_guid);
+	rep->node_guid = MLX5_GET64_PR(hca_vport_context, ctx, node_guid);
+	rep->cap_mask1 = MLX5_GET_PR(hca_vport_context, ctx, cap_mask1);
+	rep->cap_mask1_perm = MLX5_GET_PR(hca_vport_context, ctx,
+					  cap_mask1_field_select);
+	rep->cap_mask2 = MLX5_GET_PR(hca_vport_context, ctx, cap_mask2);
+	rep->cap_mask2_perm = MLX5_GET_PR(hca_vport_context, ctx,
+					  cap_mask2_field_select);
+	rep->lid = MLX5_GET_PR(hca_vport_context, ctx, lid);
+	rep->init_type_reply = MLX5_GET_PR(hca_vport_context, ctx,
+					   init_type_reply);
+	rep->lmc = MLX5_GET_PR(hca_vport_context, ctx, lmc);
+	rep->subnet_timeout = MLX5_GET_PR(hca_vport_context, ctx,
+					  subnet_timeout);
+	rep->sm_lid = MLX5_GET_PR(hca_vport_context, ctx, sm_lid);
+	rep->sm_sl = MLX5_GET_PR(hca_vport_context, ctx, sm_sl);
+	rep->qkey_violation_counter = MLX5_GET_PR(hca_vport_context, ctx,
+						  qkey_violation_counter);
+	rep->pkey_violation_counter = MLX5_GET_PR(hca_vport_context, ctx,
+						  pkey_violation_counter);
+	rep->grh_required = MLX5_GET_PR(hca_vport_context, ctx, grh_required);
+	rep->sys_image_guid = MLX5_GET64_PR(hca_vport_context, ctx,
+					    system_image_guid);
+
+ex:
+	kfree(out);
+	return err;
+}
+EXPORT_SYMBOL_GPL(mlx5_core_query_hca_vport_context);
+
+int mlx5_core_modify_hca_vport_context(struct mlx5_core_dev *dev,
+				       u8 other_vport, u8 port_num,
+				       u16 vf_num,
+				       struct mlx5_hca_vport_context *req)
+{
+	int in_sz = MLX5_ST_SZ_BYTES(modify_hca_vport_context_in);
+	u8 out[MLX5_ST_SZ_BYTES(modify_hca_vport_context_out)];
+	int is_group_manager;
+	void *in;
+	int err;
+	void *ctx;
+
+	mlx5_core_dbg(dev, "vf_num %d\n", vf_num);
+	is_group_manager = MLX5_CAP_GEN(dev, vport_group_manager);
+	in = kzalloc(in_sz, GFP_KERNEL);
+	if (!in)
+		return -ENOMEM;
+
+	memset(out, 0, sizeof(out));
+	MLX5_SET(modify_hca_vport_context_in, in, opcode, MLX5_CMD_OP_MODIFY_HCA_VPORT_CONTEXT);
+	if (other_vport) {
+		if (is_group_manager) {
+			MLX5_SET(modify_hca_vport_context_in, in, other_vport, 1);
+			MLX5_SET(modify_hca_vport_context_in, in, vport_number, vf_num);
+		} else {
+			err = -EPERM;
+			goto ex;
+		}
+	}
+
+	if (MLX5_CAP_GEN(dev, num_ports) == 2)
+		MLX5_SET(modify_hca_vport_context_in, in, port_num, port_num);
+
+	ctx = MLX5_ADDR_OF(modify_hca_vport_context_in, in, hca_vport_context);
+	MLX5_SET(hca_vport_context, ctx, field_select, req->field_select);
+	MLX5_SET(hca_vport_context, ctx, sm_virt_aware, req->sm_virt_aware);
+	MLX5_SET(hca_vport_context, ctx, has_smi, req->has_smi);
+	MLX5_SET(hca_vport_context, ctx, has_raw, req->has_raw);
+	MLX5_SET(hca_vport_context, ctx, vport_state_policy, req->policy);
+	MLX5_SET(hca_vport_context, ctx, port_physical_state, req->phys_state);
+	MLX5_SET(hca_vport_context, ctx, vport_state, req->vport_state);
+	MLX5_SET64(hca_vport_context, ctx, port_guid, req->port_guid);
+	MLX5_SET64(hca_vport_context, ctx, node_guid, req->node_guid);
+	MLX5_SET(hca_vport_context, ctx, cap_mask1, req->cap_mask1);
+	MLX5_SET(hca_vport_context, ctx, cap_mask1_field_select, req->cap_mask1_perm);
+	MLX5_SET(hca_vport_context, ctx, cap_mask2, req->cap_mask2);
+	MLX5_SET(hca_vport_context, ctx, cap_mask2_field_select, req->cap_mask2_perm);
+	MLX5_SET(hca_vport_context, ctx, lid, req->lid);
+	MLX5_SET(hca_vport_context, ctx, init_type_reply, req->init_type_reply);
+	MLX5_SET(hca_vport_context, ctx, lmc, req->lmc);
+	MLX5_SET(hca_vport_context, ctx, subnet_timeout, req->subnet_timeout);
+	MLX5_SET(hca_vport_context, ctx, sm_lid, req->sm_lid);
+	MLX5_SET(hca_vport_context, ctx, sm_sl, req->sm_sl);
+	MLX5_SET(hca_vport_context, ctx, qkey_violation_counter, req->qkey_violation_counter);
+	MLX5_SET(hca_vport_context, ctx, pkey_violation_counter, req->pkey_violation_counter);
+	err = mlx5_cmd_exec(dev, in, in_sz, out, sizeof(out));
+	if (err)
+		goto ex;
+
+	err = mlx5_cmd_status_to_err_v2(out);
+
+ex:
+	kfree(in);
+	return err;
+}
+EXPORT_SYMBOL_GPL(mlx5_core_modify_hca_vport_context);
