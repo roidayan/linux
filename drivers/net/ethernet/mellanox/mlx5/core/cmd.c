@@ -572,6 +572,12 @@ const char *mlx5_command_str(int command)
 	case MLX5_CMD_OP_DELETE_VXLAN_UDP_DPORT:
 		return "DELETE_VXLAN_UDP_DPORT";
 
+	case MLX5_CMD_OP_QUERY_HCA_VPORT_CONTEXT:
+		return "QUERY_HCA_VPORT_CONTEXT";
+
+	case MLX5_CMD_OP_MODIFY_HCA_VPORT_CONTEXT:
+		return "MODIFY_HCA_VPORT_CONTEXT";
+
 	default: return "unknown command opcode";
 	}
 }
