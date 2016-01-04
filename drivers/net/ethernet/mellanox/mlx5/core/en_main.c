@@ -165,6 +165,7 @@ void mlx5e_update_stats(struct mlx5e_priv *priv)
 	s->rx_csum_sw		= 0;
 	s->rx_wqe_err		= 0;
 	s->rx_frag_mpwqe	= 0;
+	s->rx_cqe_compress	= 0;
 	for (i = 0; i < priv->params.num_channels; i++) {
 		rq_stats = &priv->channel[i]->rq.stats;
 
@@ -174,6 +175,7 @@ void mlx5e_update_stats(struct mlx5e_priv *priv)
 		s->rx_csum_sw	+= rq_stats->csum_sw;
 		s->rx_wqe_err   += rq_stats->wqe_err;
 		s->rx_frag_mpwqe   += rq_stats->frag_mpwqe;
+		s->rx_cqe_compress += rq_stats->cqe_compress;
 
 		for (j = 0; j < priv->params.num_tc; j++) {
 			sq_stats = &priv->channel[i]->sq[j].stats;
