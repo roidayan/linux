@@ -566,6 +566,12 @@ const char *mlx5_command_str(int command)
 	case MLX5_CMD_OP_QUERY_WOL_ROL:
 		return "QUERY_WOL_ROL";
 
+	case MLX5_CMD_OP_QUERY_HCA_VPORT_CONTEXT:
+		return "QUERY_HCA_VPORT_CONTEXT";
+
+	case MLX5_CMD_OP_MODIFY_HCA_VPORT_CONTEXT:
+		return "MODIFY_HCA_VPORT_CONTEXT";
+
 	default: return "unknown command opcode";
 	}
 }

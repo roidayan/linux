@@ -832,7 +832,15 @@ int mlx5_query_odp_caps(struct mlx5_core_dev *dev,
 			struct mlx5_odp_caps *odp_caps);
 int mlx5_core_query_ib_ppcnt(struct mlx5_core_dev *dev,
 			     u8 port_num, void *out, size_t sz);
+int mlx5_core_query_hca_vport_context(struct mlx5_core_dev *dev,
+				      u8 other_vport, u8 port_num,
+				      u16 vf_num,
+				      struct mlx5_hca_vport_context *rep);
 
+int mlx5_core_modify_hca_vport_context(struct mlx5_core_dev *dev,
+				       u8 other_vport, u8 port_num,
+				       u16 vf_num,
+				       struct mlx5_hca_vport_context *req);
 static inline int fw_initializing(struct mlx5_core_dev *dev)
 {
 	return ioread32be(&dev->iseg->initializing) >> 31;
