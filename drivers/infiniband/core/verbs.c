@@ -1702,6 +1702,55 @@ int ib_check_mr_status(struct ib_mr *mr, u32 check_mask,
 }
 EXPORT_SYMBOL(ib_check_mr_status);
 
+int ib_set_vf_link_state(struct ib_device *device, int vf, u8 port,
+			 enum ib_link_state state)
+{
+	if (!device->set_vf_link_state)
+		return -ENOSYS;
+
+	return device->set_vf_link_state(device, vf, port, state);
+}
+EXPORT_SYMBOL(ib_set_vf_link_state);
+
+int ib_get_vf_config(struct ib_device *device, int vf, u8 port,
+		     struct ib_vf_info *info)
+{
+	if (!device->get_vf_config)
+		return -ENOSYS;
+
+	return device->get_vf_config(device, vf, port, info);
+}
+EXPORT_SYMBOL(ib_get_vf_config);
+
+int ib_get_vf_stats(struct ib_device *device, int vf, u8 port,
+		    struct ib_vf_stats *stats)
+{
+	if (!device->get_vf_stats)
+		return -ENOSYS;
+
+	return device->get_vf_stats(device, vf, port, stats);
+}
+EXPORT_SYMBOL(ib_get_vf_stats);
+
+int ib_set_vf_port_guid(struct ib_device *device, int vf, u8 port,
+			u64 guid)
+{
+	if (!device->set_vf_port_guid)
+		return -ENOSYS;
+
+	return device->set_vf_port_guid(device, vf, port, guid);
+}
+EXPORT_SYMBOL(ib_set_vf_port_guid);
+
+int ib_set_vf_node_guid(struct ib_device *device, int vf, u64 guid)
+{
+	if (!device->set_vf_node_guid)
+		return -ENOSYS;
+
+	return device->set_vf_node_guid(device, vf, guid);
+}
+EXPORT_SYMBOL(ib_set_vf_node_guid);
+
 /**
  * ib_map_mr_sg() - Map the largest prefix of a dma mapped SG list
  *     and set it the memory region.
