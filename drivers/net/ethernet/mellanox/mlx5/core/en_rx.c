@@ -79,6 +79,8 @@ static inline void mlx5e_decompress_cqes(struct mlx5e_cq *cq)
 	u32 cqcc = cq->wq.cc;
 	u32 i;
 
+	rq->stats.cqe_compress++;
+
 	mlx5e_read_cqe_slot(cq, cqcc, &title);
 	mlx5e_read_cqe_slot(cq, cqcc+1, mini);
 
