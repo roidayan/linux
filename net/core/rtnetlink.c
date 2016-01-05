@@ -1389,6 +1389,8 @@ static const struct nla_policy ifla_vf_policy[IFLA_VF_MAX+1] = {
 	[IFLA_VF_RSS_QUERY_EN]	= { .len = sizeof(struct ifla_vf_rss_query_en) },
 	[IFLA_VF_STATS]		= { .type = NLA_NESTED },
 	[IFLA_VF_TRUST]		= { .len = sizeof(struct ifla_vf_trust) },
+	[IFLA_VF_IB_NODE_GUID]	= { .len = sizeof(struct ifla_vf_guid) },
+	[IFLA_VF_IB_PORT_GUID]	= { .len = sizeof(struct ifla_vf_guid) },
 };
 
 static const struct nla_policy ifla_vf_stats_policy[IFLA_VF_STATS_MAX + 1] = {
@@ -1536,6 +1538,61 @@ static int validate_linkmsg(struct net_device *dev, struct nlattr *tb[])
 	return 0;
 }
 
+static void set_infiniband_type(u8 *addr, u32 type)
+{
+	/* we use the last 4 bytes of the address to encode the type.
+	 * These bytes are not used for infiniband
+	 */
+	u32 *ptr = (u32 *)(addr + MAX_ADDR_LEN - 4);
+
+	*ptr = type;
+}
+
+static int handle_infiniband_guid(struct net_device *dev, struct ifla_vf_guid *ivt,
+				  int guid_type)
+{
+	const struct net_device_ops *ops = dev->netdev_ops;
+
+	set_infiniband_type(ivt->guid, guid_type);
+	return ops->ndo_set_vf_mac(dev, ivt->vf, ivt->guid);
+}
+
+static int handle_vf_guid(struct net_device *dev, struct ifla_vf_guid *ivt, int guid_type)
+{
+	if (dev->type != ARPHRD_INFINIBAND)
+		return -EOPNOTSUPP;
+
+	return handle_infiniband_guid(dev, ivt, guid_type);
+}
+
+static int handle_vf_mac(struct net_device *dev, struct ifla_vf_mac *ivm)
+{
+	const struct net_device_ops *ops = dev->netdev_ops;
+	struct ifla_vf_guid ivt;
+	u8 *s = ivm->mac;
+	u8 *d = ivt.guid;
+	int err;
+
+	if (dev->type != ARPHRD_INFINIBAND)
+		return ops->ndo_set_vf_mac(dev, ivm->vf, ivm->mac);
+
+	d[0] = s[0];
+	d[1] = s[1];
+	d[2] = s[2];
+	d[3] = 0xff;
+	d[4] = 0xfe;
+	d[5] = s[3];
+	d[6] = s[4];
+	d[7] = s[3];
+
+	ivt.vf = ivm->vf;
+	err = handle_infiniband_guid(dev, &ivt, IFLA_VF_IB_NODE_GUID);
+	if (err)
+		return err;
+
+	return handle_infiniband_guid(dev, &ivt, IFLA_VF_IB_PORT_GUID);
+}
+
 static int do_setvfinfo(struct net_device *dev, struct nlattr **tb)
 {
 	const struct net_device_ops *ops = dev->netdev_ops;
@@ -1544,12 +1601,10 @@ static int do_setvfinfo(struct net_device *dev, struct nlattr **tb)
 	if (tb[IFLA_VF_MAC]) {
 		struct ifla_vf_mac *ivm = nla_data(tb[IFLA_VF_MAC]);
 
-		err = -EOPNOTSUPP;
-		if (ops->ndo_set_vf_mac)
-			err = ops->ndo_set_vf_mac(dev, ivm->vf,
-						  ivm->mac);
-		if (err < 0)
-			return err;
+		if (!ops->ndo_set_vf_mac)
+			return -EOPNOTSUPP;
+
+		return handle_vf_mac(dev, ivm);
 	}
 
 	if (tb[IFLA_VF_VLAN]) {
@@ -1636,6 +1691,24 @@ static int do_setvfinfo(struct net_device *dev, struct nlattr **tb)
 			err = ops->ndo_set_vf_trust(dev, ivt->vf, ivt->setting);
 		if (err < 0)
 			return err;
+	}
+
+	if (tb[IFLA_VF_IB_NODE_GUID]) {
+		struct ifla_vf_guid *ivt = nla_data(tb[IFLA_VF_IB_NODE_GUID]);
+
+		if (!ops->ndo_set_vf_mac)
+			return -EOPNOTSUPP;
+
+		return handle_vf_guid(dev, ivt, IFLA_VF_IB_NODE_GUID);
+	}
+
+	if (tb[IFLA_VF_IB_PORT_GUID]) {
+		struct ifla_vf_guid *ivt = nla_data(tb[IFLA_VF_IB_PORT_GUID]);
+
+		if (!ops->ndo_set_vf_mac)
+			return -EOPNOTSUPP;
+
+		return handle_vf_guid(dev, ivt, IFLA_VF_IB_PORT_GUID);
 	}
 
 	return err;
