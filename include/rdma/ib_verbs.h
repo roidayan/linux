@@ -3279,4 +3279,23 @@ static inline u32 ib_to_net_link_state(enum ib_link_state ib_state)
 	}
 }
 
+static inline int ib_speed_to_int(u8 speed)
+{
+	switch (speed) {
+	case IB_SPEED_DDR:
+		return 50;
+	case IB_SPEED_QDR:
+		return 100;
+	case IB_SPEED_FDR10:
+		return 100;
+	case IB_SPEED_FDR:
+		return 140;
+	case IB_SPEED_EDR:
+		return 250;
+	case IB_SPEED_SDR:
+	default:                /* default to SDR for invalid rates */
+		return 25;
+	}
+}
+
 #endif /* IB_VERBS_H */
