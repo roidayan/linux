@@ -168,6 +168,17 @@ struct mlx4_port_config {
 
 static atomic_t pf_loading = ATOMIC_INIT(0);
 
+static inline void mlx4_set_num_reserved_uars(struct mlx4_dev *dev,
+					      struct mlx4_dev_cap *dev_cap)
+{
+	/* The first 128 UARs are used for EQ doorbells */
+	dev->caps.reserved_uars	=
+		max_t(int,
+		      mlx4_get_num_reserved_uar(dev),
+		      dev_cap->reserved_uars /
+			(1 << (PAGE_SHIFT - dev->uar_page_shift)));
+}
+
 int mlx4_check_port_params(struct mlx4_dev *dev,
 			   enum mlx4_port_type *port_type)
 {
@@ -386,8 +397,6 @@ static int mlx4_dev_cap(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
 	dev->caps.reserved_mtts      = dev_cap->reserved_mtts;
 	dev->caps.reserved_mrws	     = dev_cap->reserved_mrws;
 
-	/* The first 128 UARs are used for EQ doorbells */
-	dev->caps.reserved_uars	     = max_t(int, 128, dev_cap->reserved_uars);
 	dev->caps.reserved_pds	     = dev_cap->reserved_pds;
 	dev->caps.reserved_xrcds     = (dev->caps.flags & MLX4_DEV_CAP_FLAG_XRC) ?
 					dev_cap->reserved_xrcds : 0;
@@ -404,6 +413,12 @@ static int mlx4_dev_cap(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
 	dev->caps.stat_rate_support  = dev_cap->stat_rate_support;
 	dev->caps.max_gso_sz	     = dev_cap->max_gso_sz;
 	dev->caps.max_rss_tbl_sz     = dev_cap->max_rss_tbl_sz;
+
+	/* Save uar page shift */
+	if (!mlx4_is_slave(dev)) {
+		dev->uar_page_shift = DEFAULT_UAR_PAGE_SHIFT;
+		mlx4_set_num_reserved_uars(dev, dev_cap);
+	}
 
 	if (dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_PHV_EN) {
 		struct mlx4_init_hca_param hca_param;
@@ -813,6 +828,24 @@ static int mlx4_slave_cap(struct mlx4_dev *dev)
 		mlx4_err(dev, "HCA minimum page size of %d bigger than kernel PAGE_SIZE of %ld, aborting\n",
 			 page_size, PAGE_SIZE);
 		return -ENODEV;
+	}
+
+	/*Set uar_page_shift for VF*/
+	/*This code must be after mlx4_QUERY_HCA and mlx4_dev_cap*/
+	dev->uar_page_shift = hca_param.uar_page_sz + 12;
+	mlx4_set_num_reserved_uars(dev, &dev_cap);
+
+	/*Make sure the master uar page size is valid*/
+	if (dev->uar_page_shift > PAGE_SHIFT) {
+		mlx4_err(dev,
+			 "Invalid configuration: uar page size is larger than system page size?\n");
+		return  -ENODEV;
+	}
+
+	/* Use fake uar value for software layers if needed*/
+	if (dev->uar_page_shift != PAGE_SHIFT) {
+		hca_param.uar_page_sz = PAGE_SHIFT - 12;
+		hca_param.log_uar_sz = ilog2(dev->caps.num_uars);
 	}
 
 	/* slave gets uar page size from QUERY_HCA fw command */
@@ -2188,8 +2221,12 @@ static int mlx4_init_hca(struct mlx4_dev *dev)
 
 		dev->caps.max_fmr_maps = (1 << (32 - ilog2(dev->caps.num_mpts))) - 1;
 
-		init_hca.log_uar_sz = ilog2(dev->caps.num_uars);
-		init_hca.uar_page_sz = PAGE_SHIFT - 12;
+		/* Always set UAR page size 4KB */
+		init_hca.log_uar_sz = ilog2(dev->caps.num_uars) +
+				      PAGE_SHIFT -
+				      DEFAULT_UAR_PAGE_SHIFT;
+		init_hca.uar_page_sz = DEFAULT_UAR_PAGE_SHIFT - 12;
+
 		init_hca.mw_enabled = 0;
 		if (dev->caps.flags & MLX4_DEV_CAP_FLAG_MEM_WINDOW ||
 		    dev->caps.bmme_flags & MLX4_BMME_FLAG_TYPE_2_WIN)
