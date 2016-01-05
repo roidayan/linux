@@ -1076,9 +1076,9 @@ static void print_flow_key_eth(const char *prefix,
 static void print_flow_key_ip(const char *prefix,
 			      const struct sw_flow_key *key)
 {
-	pr_debug("%s ip   { proto %02x, tos %02x, ttl %02x }\n",
+	pr_debug("%s ip   { proto %02x, tos %02x, ttl %02x frag %02x }\n",
 		 prefix,
-		 key->ip.proto, key->ip.tos, key->ip.ttl);
+		 key->ip.proto, key->ip.tos, key->ip.ttl, key->ip.frag);
 }
 
 static void print_flow_key_ipv4(const char *prefix,
