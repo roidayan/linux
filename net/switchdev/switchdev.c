@@ -1124,6 +1124,9 @@ static void print_flow_actions(struct sw_flow_actions *actions)
 		case SW_FLOW_ACTION_TYPE_DROP:
 			pr_debug("    drop\n");
 			break;
+		case SW_FLOW_ACTION_TYPE_ENCAP:
+			pr_debug("    encap\n");
+			break;
 		}
 	}
 }
