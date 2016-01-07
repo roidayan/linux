@@ -102,6 +102,7 @@ enum sw_flow_action_type {
 	SW_FLOW_ACTION_TYPE_VLAN_PUSH,
 	SW_FLOW_ACTION_TYPE_VLAN_POP,
 	SW_FLOW_ACTION_TYPE_DROP,
+	SW_FLOW_ACTION_TYPE_ENCAP
 };
 
 struct sw_flow_action {
@@ -112,6 +113,10 @@ struct sw_flow_action {
 			__be16 vlan_proto;
 			u16 vlan_tci;
 		} vlan;
+		struct {
+			struct sw_flow_key_ipv4_tunnel tun_key;
+			enum sw_flow_tunnel_type tunnel_type;
+		};
 	};
 };
 
