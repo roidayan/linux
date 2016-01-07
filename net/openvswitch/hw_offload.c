@@ -143,7 +143,7 @@ struct net_device *ovs_hw_flow_adjust(struct datapath *dp, struct ovs_flow *flow
 
 	if (vport->ops->type == OVS_VPORT_TYPE_NETDEV) {
 		dev = vport->ops->get_netdev(vport);
-		flow->flow.key.tun_key.tunnel_type = SW_FLOW_TUNNEL_NONE;
+		flow->flow.tunnel_type = SW_FLOW_TUNNEL_NONE;
 	} else if (vport->ops->type == OVS_VPORT_TYPE_VXLAN) {
 		struct sw_flow_key_ipv4_tunnel *tun = &flow->flow.key.tun_key;
 		struct net *ns = ovs_dp_get_net(dp);
@@ -158,22 +158,23 @@ struct net_device *ovs_hw_flow_adjust(struct datapath *dp, struct ovs_flow *flow
 		err = get_vxlan_udp_dst_port(vport);
 		if (err == -1) {
 			pr_debug("%s: failed to obtain vxlan udp dst_port\n",
-				 __func__);
+					__func__);
 			return NULL;
 		}
 
-		flow->flow.key.tun_key.tp_dst = htons(err);
-		flow->flow.mask->key.tun_key.tp_dst = htons(~0);
-		flow->flow.key.tun_key.tunnel_type = SW_FLOW_TUNNEL_VXLAN;
+		flow->flow.tunnel_port = err;
+		flp.fl4_dport = flow->flow.tunnel_port;
 
-		flp.fl4_dport = flow->flow.key.tun_key.tp_dst;
-		flp.fl4_sport = flow->flow.key.tun_key.tp_src;
+		if (flow->flow.mask->key.tun_key.tp_src == htons(0xffff))
+			flp.fl4_sport = flow->flow.key.tun_key.tp_src;
 
 		err = fib_lookup(ns, &flp, &res, FIB_LOOKUP_NOREF);
 		if (err) {
 			pr_debug("%s fib_lookup returned %d\n", __func__, err);
 			return NULL;
 		}
+
+		flow->flow.tunnel_type = SW_FLOW_TUNNEL_VXLAN;
 		dev = FIB_RES_DEV(res);
 	}
 

@@ -26,7 +26,6 @@ struct sw_flow_key_ipv4_tunnel {
 	u8   ipv4_ttl;
 	__be16 tp_src;
 	__be16 tp_dst;
-	enum sw_flow_tunnel_type tunnel_type;
 } __packed __aligned(4); /* Minimize padding. */
 
 struct sw_flow_key {
@@ -129,6 +128,8 @@ struct sw_flow {
 	struct sw_flow_key unmasked_key;
 	struct sw_flow_mask *mask;
 	struct sw_flow_actions *actions;
+	enum sw_flow_tunnel_type tunnel_type;
+	u16 tunnel_port;
 };
 
 #endif /* _NET_SW_FLOW_H_ */

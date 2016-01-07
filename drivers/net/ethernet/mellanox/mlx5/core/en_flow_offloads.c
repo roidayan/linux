@@ -58,17 +58,24 @@ struct mlx5_flow_attr {
 /* The default UDP port that ConnectX firmware uses for its VXLAN parser */
 #define MLX5_DEFAULT_VXLAN_UDP_DPORT (4789)
 
-static int parse_vxlan_attr(struct sw_flow_key_ipv4_tunnel *key,
-			    struct sw_flow_key_ipv4_tunnel *mask,
-			    u32 *match_c, u32 *match_v) {
-	void *headers_c = MLX5_ADDR_OF(fte_match_param, match_c, outer_headers);
-	void *headers_v = MLX5_ADDR_OF(fte_match_param, match_v, outer_headers);
-	void *misc_c = MLX5_ADDR_OF(fte_match_param, match_c, misc_parameters);
-	void *misc_v = MLX5_ADDR_OF(fte_match_param, match_v, misc_parameters);
+static int parse_vxlan_attr(struct mlx5_flow_attr *attr)
+{
+	struct sw_flow_key_ipv4_tunnel *key = &attr->sw_flow->key.tun_key;
+	struct sw_flow_key_ipv4_tunnel *mask =
+				&attr->sw_flow->mask->key.tun_key;
+	void *headers_c = MLX5_ADDR_OF(fte_match_param, attr->match_c,
+				       outer_headers);
+	void *headers_v = MLX5_ADDR_OF(fte_match_param, attr->match_v,
+				       outer_headers);
+	void *misc_c = MLX5_ADDR_OF(fte_match_param, attr->match_c,
+				    misc_parameters);
+	void *misc_v = MLX5_ADDR_OF(fte_match_param, attr->match_v,
+				    misc_parameters);
+	u16 dst_port = attr->sw_flow->tunnel_port;
 
-	if (key->tp_dst != htons(MLX5_DEFAULT_VXLAN_UDP_DPORT))
-		/* TODO enable other UDP ports with the ADD_VXLAN_UDP_PORT
-		 * firmware command
+	if (dst_port != MLX5_DEFAULT_VXLAN_UDP_DPORT)
+		/* TODO enable other UDP ports with the
+		 * ADD_VXLAN_UDP_PORT firmware command
 		 */
 		return -EOPNOTSUPP;
 
@@ -87,25 +94,26 @@ static int parse_vxlan_attr(struct sw_flow_key_ipv4_tunnel *key,
 	MLX5_SET(fte_match_set_lyr_2_4, headers_v, udp_sport,
 		 ntohs(key->tp_src));
 
-	MLX5_SET(fte_match_set_lyr_2_4, headers_c, udp_dport,
-		 ntohs(mask->tp_dst));
-	MLX5_SET(fte_match_set_lyr_2_4, headers_v, udp_dport,
-		 ntohs(key->tp_dst));
+	MLX5_SET_TO_ONES(fte_match_set_lyr_2_4, headers_c, udp_dport);
+	MLX5_SET(fte_match_set_lyr_2_4, headers_v, udp_dport, dst_port);
 
 	return 0;
 }
 
-static int parse_tunnel_attr(struct sw_flow_key_ipv4_tunnel *key,
-			     struct sw_flow_key_ipv4_tunnel *mask,
-			     u32 *match_c, u32 *match_v) {
-	void *headers_c = MLX5_ADDR_OF(fte_match_param, match_c,
+static int parse_tunnel_attr(struct mlx5_flow_attr *attr)
+{
+	void *headers_c = MLX5_ADDR_OF(fte_match_param, attr->match_c,
 				       outer_headers);
-	void *headers_v = MLX5_ADDR_OF(fte_match_param, match_v,
+	void *headers_v = MLX5_ADDR_OF(fte_match_param, attr->match_v,
 				       outer_headers);
 
-	switch (key->tunnel_type) {
+	struct sw_flow_key_ipv4_tunnel *key = &attr->sw_flow->key.tun_key;
+	struct sw_flow_key_ipv4_tunnel *mask =
+			&attr->sw_flow->mask->key.tun_key;
+
+	switch (attr->sw_flow->tunnel_type) {
 	case SW_FLOW_TUNNEL_VXLAN:
-		if (parse_vxlan_attr(key, mask, match_c, match_v))
+		if (parse_vxlan_attr(attr))
 			return -EOPNOTSUPP;
 		break;
 	default:
@@ -201,10 +209,8 @@ static int parse_flow_attr(struct mlx5_flow_attr *attr)
 		return -EOPNOTSUPP;
 	}
 
-	if (key->tun_key.tunnel_type != SW_FLOW_TUNNEL_NONE) {
-		if (parse_tunnel_attr(&attr->sw_flow->key.tun_key,
-				      &attr->sw_flow->mask->key.tun_key,
-					  attr->match_c, attr->match_v))
+	if (attr->sw_flow->tunnel_type != SW_FLOW_TUNNEL_NONE) {
+		if (parse_tunnel_attr(attr))
 			return -EOPNOTSUPP;
 
 		headers_c = MLX5_ADDR_OF(fte_match_param, attr->match_c,
@@ -497,7 +503,7 @@ int mlx5e_flow_adjust(struct mlx5_flow_attr *attr)
 					 __func__);
 				goto out_err;
 			}
-			if (attr->sw_flow->key.tun_key.tunnel_type !=
+			if (attr->sw_flow->tunnel_type !=
 					SW_FLOW_TUNNEL_NONE) {
 				pr_debug("%s not offloading decap\n",
 					 __func__);
