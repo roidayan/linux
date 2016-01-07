@@ -29,7 +29,7 @@ static int sw_flow_action_create(struct datapath *dp,
 	struct sw_flow_actions *actions;
 	struct sw_flow_action *cur;
 	size_t count = 0;
-	int err, drop_only = 0;
+	int drop_only = 0;
 
 	for (a = attr, rem = len; rem > 0; a = nla_next(a, &rem))
 		count++;
@@ -63,6 +63,13 @@ static int sw_flow_action_create(struct datapath *dp,
 				struct vport *vport;
 
 				vport = ovs_vport_ovsl_rcu(dp, nla_get_u32(a));
+
+				if (vport->ops->type != OVS_VPORT_TYPE_NETDEV) {
+					pr_warn("unexpected output port type %d\n",
+						vport->ops->type);
+					goto errout;
+				}
+
 				cur->type = SW_FLOW_ACTION_TYPE_OUTPUT;
 				cur->out_port_ifindex =
 					vport->ops->get_netdev(vport)->ifindex;
@@ -84,7 +91,6 @@ static int sw_flow_action_create(struct datapath *dp,
 			cur->type = SW_FLOW_ACTION_TYPE_VLAN_POP;
 			break;
 		default:
-			err = -EOPNOTSUPP;
 			goto errout;
 		}
 		cur++;
@@ -96,7 +102,7 @@ out:
 
 errout:
 	kfree(actions);
-	return err;
+	return -EOPNOTSUPP;
 }
 
 static int get_vxlan_udp_dst_port(struct vport *vport)
