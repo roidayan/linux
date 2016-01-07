@@ -188,9 +188,6 @@ struct net_device *ovs_hw_flow_adjust(struct datapath *dp, struct ovs_flow *flow
 int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 {
 	struct sw_flow_actions *actions;
-#ifdef OVS_USE_HW_REPS
-	struct vport *vport;
-#endif
 	struct net_device *dev;
 	int err;
 
@@ -205,21 +202,6 @@ int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 		return err;
 	flow->flow.actions = actions;
 
-#ifdef OVS_USE_HW_REPS
-	list_for_each_entry(vport, &dp->swdev_rep_list, swdev_rep_list) {
-		dev = vport->ops->get_netdev(vport);
-		BUG_ON(!dev);
-
-		rtnl_lock();
-		err = switchdev_port_flow_add(dev, &flow->flow);
-		rtnl_unlock();
-
-		if (err == -ENODEV) /* out device is not in this switch */
-			continue;
-		if (err)
-			break;
-	}
-#else
 	if (!dev || !dev->switchdev_ops) {
 		pr_debug("%s can't offload flow add: in_dev %s\n", __func__, dev? dev->name: "no dev");
 		err = -ENODEV;
@@ -228,7 +210,6 @@ int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 		err = switchdev_port_flow_add(dev, &flow->flow);
 		rtnl_unlock();
 	}
-#endif
 
 	if (err) {
 		kfree(actions);
@@ -247,9 +228,6 @@ int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 int ovs_hw_flow_remove(struct datapath *dp, struct ovs_flow *flow)
 {
 	struct sw_flow_actions *actions;
-#ifdef OVS_USE_HW_REPS
-	struct vport *vport;
-#endif
 	struct net_device *dev;
 	int err = 0;
 
@@ -273,19 +251,6 @@ int ovs_hw_flow_remove(struct datapath *dp, struct ovs_flow *flow)
 		flow->flow.actions = actions;
 	}
 
-#ifdef OVS_USE_HW_REPS
-	list_for_each_entry(vport, &dp->swdev_rep_list, swdev_rep_list) {
-		dev = vport->ops->get_netdev(vport);
-		BUG_ON(!dev);
-		rtnl_lock();
-		err = switchdev_port_flow_del(dev, &flow->flow);
-		rtnl_unlock();
-		if (err == -ENODEV) /* out device is not in this switch */
-			continue;
-		if (err)
-			break;
-	}
-#else
 	if (!dev || !dev->switchdev_ops) {
 		printk(KERN_ERR "%s can't offload flow del: in_dev %s\n", __func__, dev? dev->name: "no dev");
 		err = -ENODEV;
@@ -294,7 +259,6 @@ int ovs_hw_flow_remove(struct datapath *dp, struct ovs_flow *flow)
 		err = switchdev_port_flow_del(dev, &flow->flow);
 		rtnl_unlock();
 	}
-#endif
 	kfree(flow->flow.actions);
 	flow->flow.actions = NULL;
 	return err;
@@ -322,82 +286,4 @@ int ovs_hw_flow_flush(struct datapath *dp)
 		}
 	}
 	return 0;
-}
-
-static bool __is_vport_in_swdev_rep_list(struct datapath *dp,
-					 struct vport *vport)
-{
-	struct vport *cur_vport;
-
-	list_for_each_entry(cur_vport, &dp->swdev_rep_list, swdev_rep_list) {
-		if (cur_vport == vport)
-			return true;
-	}
-	return false;
-}
-
-static struct vport *__find_vport_by_swdev_id(struct datapath *dp,
-					      struct vport *vport)
-{
-	struct net_device *dev;
-	struct vport *cur_vport;
-	int i;
-	int err;
-	struct switchdev_attr attr,curr_attr;
-
-	attr.id = curr_attr.id =  SWITCHDEV_ATTR_PORT_PARENT_ID;
-	attr.flags = curr_attr.flags = SWITCHDEV_F_NO_RECURSE;
-
-	err = switchdev_port_attr_get(vport->ops->get_netdev(vport), &attr);
-	if (err)
-		return ERR_PTR(err);
-
-	for (i = 0; i < DP_VPORT_HASH_BUCKETS; i++) {
-		hlist_for_each_entry(cur_vport, &dp->ports[i], dp_hash_node) {
-			if (cur_vport->ops->type != OVS_VPORT_TYPE_NETDEV)
-				continue;
-			if (cur_vport == vport)
-				continue;
-			dev = cur_vport->ops->get_netdev(cur_vport);
-			if (!dev)
-				continue;
-			err = switchdev_port_attr_get(dev, &curr_attr);
-			if (err)
-				continue;
-			if (netdev_phys_item_ids_match(&attr.u.ppid, &curr_attr.u.ppid))
-				return cur_vport;
-		}
-	}
-	return ERR_PTR(-ENOENT);
-}
-
-void ovs_hw_port_add(struct datapath *dp, struct vport *vport)
-{
-	struct vport *found_vport;
-
-	ASSERT_OVSL();
-	/* The representative list contains always one port per switch dev id */
-	found_vport = __find_vport_by_swdev_id(dp, vport);
-	if (IS_ERR(found_vport) && PTR_ERR(found_vport) == -ENOENT) {
-		list_add(&vport->swdev_rep_list, &dp->swdev_rep_list);
-		pr_debug("%s added to rep_list\n", vport->ops->get_name(vport));
-	}
-}
-
-void ovs_hw_port_del(struct datapath *dp, struct vport *vport)
-{
-	struct vport *found_vport;
-
-	ASSERT_OVSL();
-	if (!__is_vport_in_swdev_rep_list(dp, vport))
-		return;
-
-	list_del(&vport->swdev_rep_list);
-	pr_debug("%s deleted from rep_list\n", vport->ops->get_name(vport));
-	found_vport = __find_vport_by_swdev_id(dp, vport);
-	if (!IS_ERR(found_vport)) {
-		list_add(&found_vport->swdev_rep_list, &dp->swdev_rep_list);
-		pr_debug("%s added to rep_list instead\n",
-			 found_vport->ops->get_name(found_vport));
-	}
 }

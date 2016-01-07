@@ -16,7 +16,5 @@
 int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow);
 int ovs_hw_flow_remove(struct datapath *dp, struct ovs_flow *flow);
 int ovs_hw_flow_flush(struct datapath *dp);
-void ovs_hw_port_add(struct datapath *dp, struct vport *vport);
-void ovs_hw_port_del(struct datapath *dp, struct vport *vport);
 
 #endif

@@ -32,7 +32,6 @@
 #include "datapath.h"
 #include "vport-internal_dev.h"
 #include "vport-netdev.h"
-#include "hw_offload.h"
 
 static struct vport_ops ovs_netdev_vport_ops;
 
@@ -140,9 +139,6 @@ static struct vport *netdev_create(const struct vport_parms *parms)
 	dev_set_promiscuity(netdev_vport->dev, 1);
 	netdev_vport->dev->priv_flags |= IFF_OVS_DATAPATH;
 	rtnl_unlock();
-#ifdef OVS_USE_HW_REPS
-	ovs_hw_port_add(vport->dp, vport);
-#endif
 	return vport;
 
 error_master_upper_dev_unlink:
@@ -182,9 +178,6 @@ static void netdev_destroy(struct vport *vport)
 {
 	struct netdev_vport *netdev_vport = netdev_vport_priv(vport);
 
-#ifdef OVS_USE_HW_REPS
-	ovs_hw_port_del(vport->dp, vport);
-#endif
 	rtnl_lock();
 	if (netdev_vport->dev->priv_flags & IFF_OVS_DATAPATH)
 		ovs_netdev_detach_dev(vport);
