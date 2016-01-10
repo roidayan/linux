@@ -287,9 +287,17 @@ static int parse_flow_attr(struct sw_flow *flow, u32 *match_c, u32 *match_v,
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v, tcp_dport, ntohs(key->tp.dst));
 	}
 
-	if (mask->tp.flags) { /* FIXME: OVS flags are 16 bits, we need "only" 8 bits */
-		MLX5_SET(fte_match_set_lyr_2_4, headers_c, tcp_flags, mask->tp.flags);
-		MLX5_SET(fte_match_set_lyr_2_4, headers_v, tcp_flags, key->tp.flags);
+	if (mask->tp.flags) {
+		pr_warn("flow matching on TCP flags need validating, falling back to slowpath\n");
+		goto out_err;
+
+		if (mask->tp.flags & htons(0xff00))
+			goto out_err;
+
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, tcp_flags,
+			 ntohs(mask->tp.flags));
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, tcp_flags,
+			 ntohs(key->tp.flags));
 	}
 
 	/* PRM mandates ip protocol full match to set rules on UDP/TCP ports using one rule */
