@@ -235,6 +235,15 @@ struct mlx5e_pport_stats {
 	__be64 RFC_2819_counters[NUM_RFC_2819_COUNTERS];
 };
 
+static const char qcounter_stats_strings[][ETH_GSTRING_LEN] = {
+	"rx_out_of_buffer",
+};
+
+struct mlx5e_qcounter_stats {
+	u32 rx_out_of_buffer;
+#define NUM_Q_COUNTERS 1
+};
+
 static const char rq_stats_strings[][ETH_GSTRING_LEN] = {
 	"packets",
 	"csum_none",
@@ -288,6 +297,7 @@ struct mlx5e_sq_stats {
 struct mlx5e_stats {
 	struct mlx5e_vport_stats   vport;
 	struct mlx5e_pport_stats   pport;
+	struct mlx5e_qcounter_stats qcnt;
 };
 
 struct mlx5e_params {
@@ -565,6 +575,8 @@ struct mlx5e_priv {
 	struct net_device         *netdev;
 	struct mlx5e_stats         stats;
 	struct mlx5e_tstamp        tstamp;
+	bool q_count_valid;
+	u16 counter_set_id;
 };
 
 #define MLX5E_NET_IP_ALIGN 2
