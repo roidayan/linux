@@ -2166,16 +2166,21 @@ static void mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 	INIT_DELAYED_WORK(&priv->update_stats_work, mlx5e_update_stats_work);
 }
 
-static void mlx5e_set_netdev_dev_addr(struct net_device *netdev)
+static int mlx5e_set_netdev_dev_addr(struct net_device *netdev)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
+	int err;
 
-	mlx5_query_nic_vport_mac_address(priv->mdev, 0, netdev->dev_addr);
+	err = mlx5_query_nic_vport_mac_address(priv->mdev, 0, netdev->dev_addr);
+	if (err)
+		return err;
+
 	if (is_zero_ether_addr(netdev->dev_addr) &&
 	    !MLX5_CAP_GEN(priv->mdev, vport_group_manager)) {
 		eth_hw_addr_random(netdev);
 		mlx5_core_info(priv->mdev, "Assigned random MAC address %pM\n", netdev->dev_addr);
 	}
+	return 0;
 }
 
 static void mlx5e_build_priv_netdev_ops(struct mlx5e_priv *priv)
@@ -2205,7 +2210,7 @@ static void mlx5e_build_priv_netdev_ops(struct mlx5e_priv *priv)
 	}
 }
 
-static void mlx5e_build_netdev(struct net_device *netdev)
+static int mlx5e_build_netdev(struct net_device *netdev)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
 	struct mlx5_core_dev *mdev = priv->mdev;
@@ -2246,7 +2251,7 @@ static void mlx5e_build_netdev(struct net_device *netdev)
 
 	netdev->priv_flags       |= IFF_UNICAST_FLT;
 
-	mlx5e_set_netdev_dev_addr(netdev);
+	return mlx5e_set_netdev_dev_addr(netdev);
 }
 
 static int mlx5e_create_mkey(struct mlx5e_priv *priv, u32 pdn,
@@ -2293,7 +2298,9 @@ static void *mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 	}
 
 	mlx5e_build_netdev_priv(mdev, netdev, nch);
-	mlx5e_build_netdev(netdev);
+	err = mlx5e_build_netdev(netdev);
+	if (err)
+		goto err_free_netdev;
 
 	netif_carrier_off(netdev);
 
