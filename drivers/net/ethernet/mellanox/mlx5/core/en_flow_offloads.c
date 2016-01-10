@@ -458,12 +458,13 @@ flow_alloc_failed:
 
 int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
 		      int *mlx5_action, u16 *mlx5_vlan,
-		      struct mlx5e_vf_rep **in_rep, struct mlx5e_vf_rep **out_rep)
+		      struct mlx5e_vf_rep *in_rep,
+		      struct mlx5e_vf_rep **out_rep)
 {
 	struct net *net;
-	struct net_device *in_dev, *out_dev;
+	struct net_device *out_dev;
 	struct switchdev_attr in_attr,out_attr;
-	int in_ifindex, out_ifindex = -1 ;
+	int out_ifindex = -1;
 	struct sw_flow_action *action;
 	int act, err1, err2, __mlx5_action;
 	u16 vlan_proto;
@@ -517,30 +518,28 @@ int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
 		goto out_err;
 	}
 
-	in_ifindex = sw_flow->key.misc.in_port_ifindex;
-	in_dev  = dev_get_by_index_rcu(net, in_ifindex);
-
 	/* DROP action doesn't involve output port!! */
 	if (__mlx5_action & MLX5_FLOW_ACTION_TYPE_DROP)
 		goto skip_id_check;
 
 	out_dev = dev_get_by_index_rcu(net, out_ifindex);
 
-	pr_debug("%s in/out ifindex %d/%d dev %s/%s action %x\n", __func__, in_ifindex, out_ifindex,
-		in_dev? in_dev->name: "NULL", out_dev? out_dev->name: "NULL", __mlx5_action);
+	pr_debug("%s in/out dev %s/%s action %x\n", __func__,
+		 in_rep->dev->name, out_dev ? out_dev->name : "NULL",
+		 __mlx5_action);
 
-	if (!in_dev || !out_dev)
+	if (!out_dev)
 		return -EINVAL;
 
-	/* use flow->key.misc.in_port_ifindex to find the in port, and
-	 * flow->actions->actions[i].out_port_ifindex to find the outport.
-	 * Use switchdev ID attribute to make sure that they are both on our same PF
-	 * eSwitch and if not don't offload the flow - FIXME: belongs to OVS
+	/*
+	 * Use switchdev ID attribute to make sure in_rep and out_rep
+	 * belong to the same eSwitch and if not don't offload the flow
+	 * FIXME: belongs to OVS
 	 */
 	in_attr.id = out_attr.id = SWITCHDEV_ATTR_PORT_PARENT_ID;
 	in_attr.flags = out_attr.flags = SWITCHDEV_F_NO_RECURSE;
 
-	err1 = switchdev_port_attr_get(in_dev, &in_attr);
+	err1 = switchdev_port_attr_get(in_rep->dev, &in_attr);
 	err2 = switchdev_port_attr_get(out_dev, &out_attr);
 
 	if (err1 || err2)
@@ -548,7 +547,7 @@ int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
 
 	if (!netdev_phys_item_ids_match(&in_attr.u.ppid, &out_attr.u.ppid)) {
 		pr_err("devices in:%s out:%s not on same eSwitch, can't offload\n",
-		       in_dev->name, out_dev->name);
+				in_rep->dev->name, out_dev->name);
 		goto out_err;
 	}
 
@@ -558,12 +557,6 @@ int mlx5e_flow_adjust(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow,
 		*out_rep = netdev_priv(out_dev);
 
 skip_id_check:
-  
-	if (in_ifindex == pf_dev->netdev->ifindex)
-		*in_rep = pf_dev->vf_reps[pf_dev->mdev->priv.sriov.num_vfs];
-	else
-		*in_rep = netdev_priv(in_dev);
-
 	*mlx5_action = __mlx5_action;
 
 	return 0;
@@ -666,20 +659,22 @@ static struct mlx5_flow_group *mlx5e_create_flow_group(
 	return group;
 }
 
-int mlx5e_flow_act(struct mlx5e_priv *pf_dev, struct sw_flow *sw_flow, int flags)
+int mlx5e_flow_act(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow,
+		   int flags)
 {
 	struct mlx5_flow_group *group;
+	struct mlx5e_priv *pf_dev = in_rep->pf_dev;
 	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
 	int err, mlx5_action;
 
 	u32 match_c[MATCH_PARAMS_SIZE];
 	u32 match_v[MATCH_PARAMS_SIZE];
 
-	struct mlx5e_vf_rep *in_rep, *out_rep;
+	struct mlx5e_vf_rep *out_rep;
 	u16 mlx5_vlan = 0;
 
 	err = mlx5e_flow_adjust(pf_dev, sw_flow, &mlx5_action, &mlx5_vlan,
-				&in_rep, &out_rep);
+				in_rep, &out_rep);
 	if (err)
 		return err;
 

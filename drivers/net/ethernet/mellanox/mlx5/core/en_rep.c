@@ -187,12 +187,12 @@ static int mlx5e_rep_fdb_del(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj_f
 
 static int mlx5e_rep_flow_add(struct mlx5e_vf_rep *vf_rep, struct sw_flow *sw_flow)
 {
-	return mlx5e_flow_act(vf_rep->pf_dev, sw_flow, FLOW_ADD);
+	return mlx5e_flow_act(vf_rep, sw_flow, FLOW_ADD);
 }
 
 static int mlx5e_rep_flow_del(struct mlx5e_vf_rep *vf_rep, struct sw_flow *sw_flow)
 {
-	return mlx5e_flow_act(vf_rep->pf_dev, sw_flow, FLOW_DEL);
+	return mlx5e_flow_act(vf_rep, sw_flow, FLOW_DEL);
 }
 
 int __mlx5e_rep_obj_add(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj *obj)
