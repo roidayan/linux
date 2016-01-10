@@ -242,8 +242,8 @@ static int parse_flow_attr(struct mlx5_flow_attr *attr)
 
 	if ((ntohs(key->eth.tci) & VLAN_TAG_PRESENT) &&
 	    (ntohs(mask->eth.tci) & VLAN_TAG_PRESENT)) {
-		printk(KERN_ERR "flow has VLAN tci mask %x key %x\n",
-		       ntohs(mask->eth.tci), ntohs(key->eth.tci));
+		pr_debug("flow has VLAN tci mask %x key %x\n",
+			 ntohs(mask->eth.tci), ntohs(key->eth.tci));
 		MLX5_SET(fte_match_set_lyr_2_4, headers_c, vlan_tag, 1);
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v, vlan_tag, 1);
 
@@ -258,10 +258,22 @@ static int parse_flow_attr(struct mlx5_flow_attr *attr)
 			 ntohs(key->eth.tci) >> VLAN_PRIO_SHIFT);
 	}
 
+	/* on SX insertion is done after SX steering
+	 * on RX stripping is done after RX steering
+	 * src	      dst
+	 * VM	 -->  VM	:: problematic in RX steering (VST)
+	 * VM	 -->  UPLINK	:: no-vlan matching is unsupported by FW
+	 * UPLINK --> VM	:: this one we can support
+	 * as such we disallow matching on NO vlan for src being a VM
+	 */
 	if ((ntohs(mask->eth.tci) & VLAN_TAG_PRESENT) &&
 	      !(ntohs(key->eth.tci) & VLAN_TAG_PRESENT)) {
-		MLX5_SET(fte_match_set_lyr_2_4, headers_c, vlan_tag, 1);
-		MLX5_SET(fte_match_set_lyr_2_4, headers_v, vlan_tag, 0);
+		if (attr->in_rep->vport != FDB_UPLINK_VPORT) {
+			pr_debug("NO vlan matches from non-uplink src disallowed with VST, ignoring\n");
+		} else {
+			MLX5_SET(fte_match_set_lyr_2_4, headers_c, vlan_tag, 1);
+			MLX5_SET(fte_match_set_lyr_2_4, headers_v, vlan_tag, 0);
+		}
 	}
 
 	if (mask->eth.type) {
@@ -543,12 +555,6 @@ int mlx5e_flow_adjust(struct mlx5_flow_attr *attr)
 		}
 	}
 
-	if ((__mlx5_action & MLX5_FLOW_ACTION_TYPE_VLAN_PUSH) ||
-	    (__mlx5_action & MLX5_FLOW_ACTION_TYPE_VLAN_POP)) {
-		printk(KERN_WARNING "%s offloading push/pop vlan actions isn't supported yet\n", __func__);
-		goto out_err;
-	}
-
 	net = dev_net(attr->pf_dev->netdev);
 	if (!net) {
 		pr_err("can't get net name space from dev %s for ifindex conversion\n",
@@ -619,6 +625,47 @@ static void mlx5e_flow_group_put(struct mlx5_flow_group *group)
 	kref_put(&group->kref, mlx5e_flow_group_release);
 }
 
+static int mlx5e_handle_global_strip(struct mlx5e_priv *pf_dev, int flags)
+{
+	int vf, nvf, err;
+	u8 set_flags = 0;
+	struct mlx5e_vf_rep *vport;
+	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
+	struct mlx5_core_sriov *sriov = &pf_dev->mdev->priv.sriov;
+
+	nvf = sriov->num_vfs;
+
+	if (flags == FLOW_DEL) {
+		pf_dev->vlan_push_pop_refcount--;
+
+		if (pf_dev->vlan_push_pop_refcount)
+			return 0;
+	}
+
+	if (flags == FLOW_ADD) {
+		if (!pf_dev->vlan_push_pop_refcount)
+			set_flags = SET_VLAN_STRIP;
+
+		pf_dev->vlan_push_pop_refcount++;
+
+		if (!set_flags)
+			return 0;
+	}
+
+	/* apply global vlan strip policy changes */
+	pr_debug("%s applying global %s policy\n", __func__, set_flags ? "strip" : "no strip");
+	for (vf = 0; vf < nvf; vf++) {
+		vport = pf_dev->vf_reps[vf];
+		err = __mlx5_eswitch_set_vport_vlan(eswitch, vport->vport,
+						    0, 0, set_flags);
+		if (err)
+			goto out;
+	}
+
+out:
+	return err;
+}
+
 static int mlx5e_handle_vlan_actions(struct mlx5_flow_attr *attr, int flags)
 {
 	int err = 0;
@@ -650,8 +697,10 @@ static int mlx5e_handle_vlan_actions(struct mlx5_flow_attr *attr, int flags)
 		vport->vst_refcount--;
 		if (!vport->vst_refcount) {
 			vport->vst_vlan = 0;
-			err = mlx5_eswitch_set_vport_vlan(eswitch, vport->vport, 0, 0);
+			err = __mlx5_eswitch_set_vport_vlan(eswitch, vport->vport,
+							    0, 0, SET_VLAN_STRIP);
 		}
+		mlx5e_handle_global_strip(vport->pf_dev, flags);
 		goto out;
 	}
 
@@ -663,11 +712,14 @@ static int mlx5e_handle_vlan_actions(struct mlx5_flow_attr *attr, int flags)
 		goto out;
 	}
 
+	mlx5e_handle_global_strip(vport->pf_dev, flags);
+
 	vport->vst_refcount++;
 	if (!vport->vst_vlan) {
 		vlan_tag  = attr->mlx5_vlan & VLAN_VID_MASK;
 		vlan_prio = attr->mlx5_vlan >> VLAN_PRIO_SHIFT;
-		err = mlx5_eswitch_set_vport_vlan(eswitch, vport->vport, vlan_tag, vlan_prio);
+		err = __mlx5_eswitch_set_vport_vlan(eswitch, vport->vport, vlan_tag, vlan_prio,
+						    SET_VLAN_STRIP | SET_VLAN_INSERT);
 		if (err) {
 			mlx5_core_warn(mdev, "failed to set VST, vport %d vlan %d err %d\n",
 				       vport->vport, attr->mlx5_vlan, err);

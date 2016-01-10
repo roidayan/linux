@@ -535,6 +535,7 @@ struct mlx5e_priv {
 	struct list_head	 mlx5_flow_groups;
 	spinlock_t               flows_lock; /* protects mlx5_flow_groups list */
 	u32 			 fdb_miss_flow_index;
+	u32			 vlan_push_pop_refcount;
 };
 
 #define MLX5E_NET_IP_ALIGN 2

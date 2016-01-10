@@ -657,6 +657,8 @@ static void mlx5e_disable_flow_offloads(struct mlx5e_priv *pf_dev)
 		mlx5e_del_pf_to_wire_rules(pf_dev);
 
 	mlx5e_reps_remove(pf_dev);
+
+	pf_dev->vlan_push_pop_refcount = 0;
 }
 
 void mlx5e_stop_flow_offloads(struct mlx5e_priv *pf_dev)

@@ -166,6 +166,9 @@ enum {
 #define VLAN_INSERT	1
 #define VLAN_OVERWRITE	2
 
+int __mlx5_eswitch_set_vport_vlan(struct mlx5_eswitch *esw,
+				  int vport, u16 vlan, u8 qos, u8 set_flags);
+
 /* 0 - tx2vport  [.. offloaded flow groups ..] last - miss */
 #define MLX5_OFFLOAD_GROUPS 16
 
