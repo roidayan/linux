@@ -681,8 +681,7 @@ static struct mlx5_flow_group *mlx5e_create_flow_group(
 	return group;
 }
 
-int mlx5e_flow_act(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow,
-		   int flags)
+int mlx5e_flow_add(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow)
 {
 	struct mlx5_flow_group *group;
 	struct mlx5e_priv *pf_dev = in_rep->pf_dev;
@@ -705,37 +704,53 @@ int mlx5e_flow_act(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow,
 		return err;
 
 	group = mlx5e_get_flow_group(pf_dev, match_c);
-
-	if (!group && (flags & FLOW_DEL)) {
-		// pr_err("%s sw_flow %p flow group doesn't exist, can't remove flow\n", __func__, sw_flow);
-		printk(KERN_ERR "%s sw_flow %p flow group doesn't exist, can't remove flow\n", __func__, sw_flow);
-		return -EINVAL;
-	}
-
-	if (group)
-		pr_debug("%s flags %x sw_flow %p flow group %p\n", __func__, flags, sw_flow, group);
-
 	if (!group) {
 		group = mlx5e_create_flow_group(pf_dev, match_c);
 		if (IS_ERR(group))
 			return PTR_ERR(group);
 	}
 
-	err = -EINVAL;
+	pr_debug("%s sw_flow %p group %p ref %d\n", __func__, sw_flow, group,
+		 group ? atomic_read(&group->kref.refcount) : -100);
 
-	pr_debug("%s flags %x sw_flow %p group %p ref %d\n", __func__, flags,
-		 sw_flow, group, group ? atomic_read(&group->kref.refcount) :
-					 -100);
+	err = mlx5e_flow_set(pf_dev, mlx5_action, out_rep, sw_flow, group,
+			     match_v);
 
-	if (flags & FLOW_ADD)
-		err = mlx5e_flow_set(pf_dev, mlx5_action, out_rep,
-				     sw_flow, group, match_v);
-	else if (flags & FLOW_DEL)
-		err = __mlx5e_flow_del(pf_dev, group, match_v);
+	pr_debug("%s status %d group %p ref %d index %d\n", __func__, err,
+		 group, atomic_read(&group->kref.refcount), group->group_ix);
+	mlx5e_flow_group_put(group);
 
-	pr_debug("%s status %d flags %x group %p ref %d index %d\n", __func__,
-		 err, flags, group, atomic_read(&group->kref.refcount),
-		 group->group_ix);
+	return err;
+}
+
+int mlx5e_flow_del(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow)
+{
+	struct mlx5_flow_group *group;
+	struct mlx5e_priv *pf_dev = in_rep->pf_dev;
+	int err;
+
+	u32 match_c[MATCH_PARAMS_SIZE] = {};
+	u32 match_v[MATCH_PARAMS_SIZE] = {};
+
+	/* translate the flow from SW to PRM */
+	err = parse_flow_attr(sw_flow, match_c, match_v, in_rep);
+	if (err)
+		return err;
+
+	group = mlx5e_get_flow_group(pf_dev, match_c);
+	if (!group) {
+		pr_err("%s sw_flow %p flow group doesn't exist, can't remove flow\n",
+		       __func__, sw_flow);
+		return -EINVAL;
+	}
+
+	pr_debug("%s sw_flow %p group %p ref %d\n", __func__, sw_flow, group,
+		 group ? atomic_read(&group->kref.refcount) : -100);
+
+	err = __mlx5e_flow_del(pf_dev, group, match_v);
+
+	pr_debug("%s status %d group %p ref %d index %d\n", __func__, err,
+		 group, atomic_read(&group->kref.refcount), group->group_ix);
 	mlx5e_flow_group_put(group);
 
 	return err;

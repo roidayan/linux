@@ -671,10 +671,8 @@ void mlx5e_reps_cleanup(struct mlx5e_priv *pf_dev);
 void mlx5e_del_pf_to_wire_rules(struct mlx5e_priv *pf_dev);
 int mlx5e_add_pf_to_wire_rules(struct mlx5e_priv *pf_dev);
 
-#define FLOW_ADD (1 << 0)
-#define FLOW_DEL (1 << 1)
 struct sw_flow;
 
-int mlx5e_flow_act(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow,
-		   int flags);
+int mlx5e_flow_add(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow);
+int mlx5e_flow_del(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow);
 void mlx5e_clear_flows(struct mlx5e_priv *pf_dev);
