@@ -158,6 +158,11 @@ int mlx5_eswitch_get_vport_stats(struct mlx5_eswitch *esw,
 				 int vport,
 				 struct ifla_vf_stats *vf_stats);
 
+enum {
+	SET_VLAN_STRIP	= BIT(0),
+	SET_VLAN_INSERT	= BIT(1)
+};
+
 /* 0 - tx2vport  [.. offloaded flow groups ..] last - miss */
 #define MLX5_OFFLOAD_GROUPS 16
 
