@@ -126,6 +126,15 @@ free_out:
 	kvfree(out);
 }
 
+static void mlx5e_update_q_counter(struct mlx5e_priv *priv)
+{
+	struct mlx5e_qcounter_stats *qcnt = &priv->stats.qcnt;
+
+	if (priv->q_count_valid)
+		mlx5_core_query_out_of_buffer(priv->mdev, priv->counter_set_id,
+					      &qcnt->rx_out_of_buffer);
+}
+
 void mlx5e_update_stats(struct mlx5e_priv *priv)
 {
 	struct mlx5_core_dev *mdev = priv->mdev;
@@ -256,6 +265,8 @@ void mlx5e_update_stats(struct mlx5e_priv *priv)
 			       s->rx_csum_sw;
 
 	mlx5e_update_pport_counters(priv);
+	mlx5e_update_q_counter(priv);
+
 free_out:
 	kvfree(out);
 }
@@ -1061,6 +1072,8 @@ static void mlx5e_build_rq_param(struct mlx5e_priv *priv,
 	MLX5_SET(wq, wq, log_wq_stride,    ilog2(sizeof(struct mlx5e_rx_wqe)));
 	MLX5_SET(wq, wq, log_wq_sz,        priv->params.log_rq_size);
 	MLX5_SET(wq, wq, pd,               priv->pdn);
+	if (priv->q_count_valid)
+		MLX5_SET(rqc, rqc, counter_set_id, priv->counter_set_id);
 
 	param->wq.buf_numa_node = dev_to_node(&priv->mdev->pdev->dev);
 	param->wq.linear = 1;
@@ -2404,6 +2417,26 @@ static int mlx5e_create_mkey(struct mlx5e_priv *priv, u32 pdn,
 	return err;
 }
 
+static void mlx5e_create_q_counter(struct mlx5e_priv *priv)
+{
+	struct mlx5_core_dev *mdev = priv->mdev;
+	int err;
+
+	err = mlx5_core_alloc_q_counter(mdev, MLX5_INTERFACE_PROTOCOL_ETH,
+					&priv->counter_set_id);
+	priv->q_count_valid = !err;
+	if (err)
+		mlx5_core_warn(mdev, "alloc queue counters failed, %d\n", err);
+}
+
+static void mlx5e_destroy_q_counter(struct mlx5e_priv *priv)
+{
+	if (priv->q_count_valid)
+		mlx5_core_dealloc_q_counter(priv->mdev,
+					    MLX5_INTERFACE_PROTOCOL_ETH,
+					    priv->counter_set_id);
+}
+
 static void *mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 {
 	struct net_device *netdev;
@@ -2489,6 +2522,8 @@ static void *mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 		goto err_destroy_tirs;
 	}
 
+	mlx5e_create_q_counter(priv);
+
 	mlx5e_init_eth_addr(priv);
 
 	mlx5e_vxlan_init(priv);
@@ -2500,7 +2535,7 @@ static void *mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 	err = register_netdev(netdev);
 	if (err) {
 		mlx5_core_err(mdev, "register_netdev failed, %d\n", err);
-		goto err_destroy_flow_tables;
+		goto err_dealloc_q_counters;
 	}
 
 	if (mlx5e_vxlan_allowed(mdev))
@@ -2511,7 +2546,8 @@ static void *mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 
 	return priv;
 
-err_destroy_flow_tables:
+err_dealloc_q_counters:
+	mlx5e_destroy_q_counter(priv);
 	mlx5e_destroy_flow_tables(priv);
 
 err_destroy_tirs:
@@ -2559,6 +2595,7 @@ static void mlx5e_destroy_netdev(struct mlx5_core_dev *mdev, void *vpriv)
 	flush_scheduled_work();
 	unregister_netdev(netdev);
 	mlx5e_vxlan_cleanup(priv);
+	mlx5e_destroy_q_counter(priv);
 	mlx5e_destroy_flow_tables(priv);
 	mlx5e_destroy_tirs(priv);
 	mlx5e_destroy_rqt(priv, MLX5E_SINGLE_RQ_RQT);
