@@ -688,8 +688,8 @@ int mlx5e_flow_act(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow,
 	struct mlx5e_priv *pf_dev = in_rep->pf_dev;
 	int err, mlx5_action;
 
-	u32 match_c[MATCH_PARAMS_SIZE];
-	u32 match_v[MATCH_PARAMS_SIZE];
+	u32 match_c[MATCH_PARAMS_SIZE] = {};
+	u32 match_v[MATCH_PARAMS_SIZE] = {};
 
 	struct mlx5e_vf_rep *out_rep;
 	u16 mlx5_vlan = 0;
@@ -698,9 +698,6 @@ int mlx5e_flow_act(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow,
 				in_rep, &out_rep);
 	if (err)
 		return err;
-
-	memset(match_c, 0, sizeof(match_c));
-	memset(match_v, 0, sizeof(match_v));
 
 	/* translate the flow from SW to PRM */
 	err = parse_flow_attr(sw_flow, match_c, match_v, in_rep);
