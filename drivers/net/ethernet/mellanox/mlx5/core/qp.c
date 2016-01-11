@@ -72,14 +72,14 @@ static u64 qp_allowed_event_types(void)
 {
 	u64 mask;
 
-	mask = MLX5_EVENT_TYPE_PATH_MIG |
-	       MLX5_EVENT_TYPE_COMM_EST |
-	       MLX5_EVENT_TYPE_SQ_DRAINED |
-	       MLX5_EVENT_TYPE_SRQ_LAST_WQE |
-	       MLX5_EVENT_TYPE_WQ_CATAS_ERROR |
-	       MLX5_EVENT_TYPE_PATH_MIG_FAILED |
-	       MLX5_EVENT_TYPE_WQ_INVAL_REQ_ERROR |
-	       MLX5_EVENT_TYPE_WQ_ACCESS_ERROR;
+	mask = BIT(MLX5_EVENT_TYPE_PATH_MIG) |
+	       BIT(MLX5_EVENT_TYPE_COMM_EST) |
+	       BIT(MLX5_EVENT_TYPE_SQ_DRAINED) |
+	       BIT(MLX5_EVENT_TYPE_SRQ_LAST_WQE) |
+	       BIT(MLX5_EVENT_TYPE_WQ_CATAS_ERROR) |
+	       BIT(MLX5_EVENT_TYPE_PATH_MIG_FAILED) |
+	       BIT(MLX5_EVENT_TYPE_WQ_INVAL_REQ_ERROR) |
+	       BIT(MLX5_EVENT_TYPE_WQ_ACCESS_ERROR);
 
 	return mask;
 }
@@ -88,15 +88,15 @@ static u64 rq_allowed_event_types(void)
 {
 	u64 mask;
 
-	mask = MLX5_EVENT_TYPE_SRQ_LAST_WQE |
-	       MLX5_EVENT_TYPE_WQ_CATAS_ERROR;
+	mask = BIT(MLX5_EVENT_TYPE_SRQ_LAST_WQE) |
+	       BIT(MLX5_EVENT_TYPE_WQ_CATAS_ERROR);
 
 	return mask;
 }
 
 static u64 sq_allowed_event_types(void)
 {
-	return MLX5_EVENT_TYPE_WQ_CATAS_ERROR;
+	return BIT(MLX5_EVENT_TYPE_WQ_CATAS_ERROR);
 }
 
 static bool is_event_type_allowed(int rsc_type, int event_type)
