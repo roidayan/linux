@@ -32,6 +32,7 @@
  */
 
 #include <rdma/ib_smi.h>
+#include <rdma/ib_cache.h>
 
 #include "ipath_verbs.h"
 #include "ipath_kernel.h"
@@ -214,7 +215,15 @@ static void ipath_ud_loopback(struct ipath_qp *sqp, struct ipath_swqe *swqe)
 	wc.qp = &qp->ibqp;
 	wc.src_qp = sqp->ibqp.qp_num;
 	/* XXX do we know which pkey matched? Only needed for GSI. */
-	wc.pkey_index = 0;
+	if (qp->ibqp.qp_type == IB_QPT_GSI || qp->ibqp.qp_type == IB_QPT_SMI) {
+		if (sqp->ibqp.qp_type == IB_QPT_GSI ||
+		    sqp->ibqp.qp_type == IB_QPT_SMI)
+			wc.pkey_index = swqe->ud_wr.pkey_index;
+		else
+			wc.pkey_index = sqp->s_pkey_index;
+	} else {
+		wc.pkey_index = 0;
+	}
 	wc.slid = dev->dd->ipath_lid |
 		(ah_attr->src_path_bits &
 		 ((1 << dev->dd->ipath_lmc) - 1));
@@ -363,7 +372,9 @@ int ipath_make_ud_req(struct ipath_qp *qp)
 		bth0 |= 1 << 23;
 	bth0 |= extra_bytes << 20;
 	bth0 |= qp->ibqp.qp_type == IB_QPT_SMI ? IPATH_DEFAULT_P_KEY :
-		ipath_get_pkey(dev->dd, qp->s_pkey_index);
+		ipath_get_pkey(dev->dd, qp->ibqp.qp_type == IB_QPT_GSI ?
+					wqe->ud_wr.pkey_index :
+					qp->s_pkey_index);
 	ohdr->bth[0] = cpu_to_be32(bth0);
 	/*
 	 * Use the multicast QP if the destination LID is a multicast LID.
@@ -417,6 +428,8 @@ void ipath_ud_rcv(struct ipath_ibdev *dev, struct ipath_ib_header *hdr,
 	u32 src_qp;
 	u16 dlid;
 	int header_in_data;
+	u16 pkey;
+	int ret;
 
 	/* Check for GRH */
 	if (!has_grh) {
@@ -543,6 +556,16 @@ void ipath_ud_rcv(struct ipath_ibdev *dev, struct ipath_ib_header *hdr,
 		dev->n_pkt_drops++;
 		goto bail;
 	}
+	if (qp->ibqp.qp_num == 1) {
+		pkey = (u16)be32_to_cpu(ohdr->bth[0]);
+		ret = ib_find_cached_pkey(&dev->ibdev, 1, pkey, &wc.pkey_index);
+		if (ret) {
+			dev->n_pkt_drops++;
+			goto bail;
+		}
+	} else {
+		wc.pkey_index = 0;
+	}
 	if (has_grh) {
 		ipath_copy_sge(&qp->r_sge, &hdr->u.l.grh,
 			       sizeof(struct ib_grh));
@@ -559,8 +582,6 @@ void ipath_ud_rcv(struct ipath_ibdev *dev, struct ipath_ib_header *hdr,
 	wc.vendor_err = 0;
 	wc.qp = &qp->ibqp;
 	wc.src_qp = src_qp;
-	/* XXX do we know which pkey matched? Only needed for GSI. */
-	wc.pkey_index = 0;
 	wc.slid = be16_to_cpu(hdr->lrh[3]);
 	wc.sl = (be16_to_cpu(hdr->lrh[0]) >> 4) & 0xF;
 	dlid = be16_to_cpu(hdr->lrh[1]);
