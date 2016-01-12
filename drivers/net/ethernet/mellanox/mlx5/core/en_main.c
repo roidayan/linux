@@ -1477,8 +1477,8 @@ int mlx5e_open_locked(struct net_device *netdev)
 		goto err_close_channels;
 	}
 
-	mlx5e_update_carrier(priv);
 	mlx5e_redirect_rqts(priv);
+	mlx5e_update_carrier(priv);
 	mlx5e_timestamp_init(priv);
 
 	schedule_delayed_work(&priv->update_stats_work, 0);
@@ -1517,8 +1517,8 @@ int mlx5e_close_locked(struct net_device *netdev)
 	clear_bit(MLX5E_STATE_OPENED, &priv->state);
 
 	mlx5e_timestamp_cleanup(priv);
-	mlx5e_redirect_rqts(priv);
 	netif_carrier_off(priv->netdev);
+	mlx5e_redirect_rqts(priv);
 	mlx5e_close_channels(priv);
 
 	return 0;
