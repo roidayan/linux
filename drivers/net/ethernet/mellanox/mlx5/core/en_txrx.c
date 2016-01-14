@@ -81,6 +81,8 @@ static void mlx5e_poll_ico_cq(struct mlx5e_cq *cq)
 		}
 
 		switch (icowi->opcode) {
+		case MLX5_OPCODE_NOP:
+			break;
 		default:
 			WARN_ON_ONCE(true);
 		}

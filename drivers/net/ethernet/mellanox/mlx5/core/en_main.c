@@ -510,6 +510,8 @@ static int mlx5e_open_rq(struct mlx5e_channel *c,
 			 struct mlx5e_rq_param *param,
 			 struct mlx5e_rq *rq)
 {
+	struct mlx5e_sq *sq = &c->icosq;
+	u16 pi = sq->pc & sq->wq.sz_m1;
 	int err;
 
 	err = mlx5e_create_rq(c, param, rq);
@@ -525,7 +527,10 @@ static int mlx5e_open_rq(struct mlx5e_channel *c,
 		goto err_disable_rq;
 
 	set_bit(MLX5E_RQ_STATE_POST_WQES_ENABLE, &rq->state);
-	mlx5e_send_nop(&c->sq[0], true); /* trigger mlx5e_post_rx_wqes() */
+
+	sq->ico_wqe_info[pi].opcode = MLX5_OPCODE_NOP;
+	sq->ico_wqe_info[pi].num_wqebbs = 1;
+	mlx5e_send_nop(sq, true); /* trigger mlx5e_post_rx_wqes() */
 
 	return 0;
 
