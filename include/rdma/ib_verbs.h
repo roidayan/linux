@@ -271,6 +271,16 @@ struct ib_cq_init_attr {
 	u32		flags;
 };
 
+enum ib_lso_cap {
+	IB_SUPPORT_UD	= 1UL << 0,
+	IB_SUPPORT_RAW	= 1UL << 1,
+};
+
+struct ib_lso_caps {
+	u32 max_lso;
+	u32 lso_cap;
+};
+
 struct ib_device_attr {
 	u64			fw_ver;
 	__be64			sys_image_guid;
@@ -317,6 +327,7 @@ struct ib_device_attr {
 	struct ib_odp_caps	odp_caps;
 	uint64_t		timestamp_mask;
 	uint64_t		hca_core_clock; /* in KHZ */
+	struct ib_lso_caps	lso_caps;
 };
 
 enum ib_mtu {
