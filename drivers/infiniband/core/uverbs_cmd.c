@@ -3655,6 +3655,13 @@ int ib_uverbs_ex_query_device(struct ib_uverbs_file *file,
 	resp.hca_core_clock = attr.hca_core_clock;
 	resp.response_length += sizeof(resp.hca_core_clock);
 
+	if (ucore->outlen < resp.response_length + sizeof(resp.lso_caps))
+		goto end;
+
+	resp.lso_caps.max_lso = attr.lso_caps.max_lso;
+	resp.lso_caps.supported_qpts = attr.lso_caps.supported_qpts;
+	resp.response_length += sizeof(resp.lso_caps);
+
 end:
 	err = ib_copy_to_udata(ucore, &resp, resp.response_length);
 	return err;

@@ -219,6 +219,11 @@ struct ib_uverbs_odp_caps {
 	__u32 reserved;
 };
 
+struct ib_uverbs_lso_caps {
+	__u32 max_lso;
+	__u32 supported_qpts; /* Use enum ib_qp_type */
+};
+
 struct ib_uverbs_ex_query_device_resp {
 	struct ib_uverbs_query_device_resp base;
 	__u32 comp_mask;
@@ -226,6 +231,7 @@ struct ib_uverbs_ex_query_device_resp {
 	struct ib_uverbs_odp_caps odp_caps;
 	__u64 timestamp_mask;
 	__u64 hca_core_clock; /* in KHZ */
+	struct ib_uverbs_lso_caps lso_caps;
 };
 
 struct ib_uverbs_query_port {
