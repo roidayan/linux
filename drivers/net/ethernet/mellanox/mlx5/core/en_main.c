@@ -278,17 +278,19 @@ free_out:
 	kvfree(out);
 }
 
-static void mlx5e_update_stats_work(struct work_struct *work)
+static void mlx5e_periodical_update_work(struct work_struct *work)
 {
 	struct delayed_work *dwork = to_delayed_work(work);
 	struct mlx5e_priv *priv = container_of(dwork, struct mlx5e_priv,
-					       update_stats_work);
+					       periodical_update_work);
+
+	clear_bit(MLX5E_STATE_MPWQE_NO_LINEAR_ALLOC, &priv->state);
 	mutex_lock(&priv->state_lock);
 	if (test_bit(MLX5E_STATE_OPENED, &priv->state)) {
 		mlx5e_update_stats(priv);
 		schedule_delayed_work(dwork,
 				      msecs_to_jiffies(
-					      MLX5E_UPDATE_STATS_INTERVAL));
+					MLX5E_PERIODICAL_UPDATE_INTERVAL));
 	}
 	mutex_unlock(&priv->state_lock);
 }
@@ -1628,7 +1630,7 @@ int mlx5e_open_locked(struct net_device *netdev)
 	mlx5e_update_carrier(priv);
 	mlx5e_timestamp_init(priv);
 
-	schedule_delayed_work(&priv->update_stats_work, 0);
+	schedule_delayed_work(&priv->periodical_update_work, 0);
 
 	return 0;
 
@@ -2483,7 +2485,7 @@ static void mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 
 	INIT_WORK(&priv->update_carrier_work, mlx5e_update_carrier_work);
 	INIT_WORK(&priv->set_rx_mode_work, mlx5e_set_rx_mode_work);
-	INIT_DELAYED_WORK(&priv->update_stats_work, mlx5e_update_stats_work);
+	INIT_DELAYED_WORK(&priv->periodical_update_work, mlx5e_periodical_update_work);
 }
 
 static void mlx5e_set_netdev_dev_addr(struct net_device *netdev)

@@ -86,7 +86,7 @@
 #define MLX5E_INDIR_RQT_SIZE           BIT(MLX5E_LOG_INDIR_RQT_SIZE)
 #define MLX5E_MAX_NUM_CHANNELS         (MLX5E_INDIR_RQT_SIZE >> 1)
 #define MLX5E_TX_CQ_POLL_BUDGET        128
-#define MLX5E_UPDATE_STATS_INTERVAL    200 /* msecs */
+#define MLX5E_PERIODICAL_UPDATE_INTERVAL 200 /* msecs */
 #define MLX5E_SQ_BF_BUDGET             16
 
 #define MLX5E_NUM_MAIN_GROUPS 9
@@ -631,6 +631,7 @@ enum {
 	MLX5E_STATE_ASYNC_EVENTS_ENABLE,
 	MLX5E_STATE_OPENED,
 	MLX5E_STATE_DESTROYING,
+	MLX5E_STATE_MPWQE_NO_LINEAR_ALLOC,
 };
 
 struct mlx5e_vlan_db {
@@ -686,7 +687,7 @@ struct mlx5e_priv {
 	struct mlx5e_params        params;
 	struct work_struct         update_carrier_work;
 	struct work_struct         set_rx_mode_work;
-	struct delayed_work        update_stats_work;
+	struct delayed_work        periodical_update_work;
 
 	struct mlx5_core_dev      *mdev;
 	struct net_device         *netdev;

@@ -294,19 +294,22 @@ void mlx5e_free_rx_linear_mpwqe(struct mlx5e_rq *rq,
 
 int mlx5e_alloc_rx_mpwqe(struct mlx5e_rq *rq, struct mlx5e_rx_wqe *wqe, u16 ix)
 {
+	struct mlx5e_priv *priv = rq->priv;
 	int err;
 
-	err = mlx5e_alloc_rx_linear_mpwqe(rq, wqe, ix);
-	if (err) {
-		err = mlx5e_alloc_rx_fragmented_mpwqe(rq, wqe, ix);
-		if (err)
-			return err;
-		set_bit(MLX5E_RQ_STATE_UMR_WQE_IN_PROGRESS, &rq->state);
-		mlx5e_post_umr_wqe(rq, ix);
-		return -EBUSY;
+	if (!test_bit(MLX5E_STATE_MPWQE_NO_LINEAR_ALLOC, &priv->state)) {
+		if (!mlx5e_alloc_rx_linear_mpwqe(rq, wqe, ix))
+			return 0;
+		set_bit(MLX5E_STATE_MPWQE_NO_LINEAR_ALLOC, &priv->state);
 	}
 
-	return 0;
+	err = mlx5e_alloc_rx_fragmented_mpwqe(rq, wqe, ix);
+	if (err)
+		return err;
+	set_bit(MLX5E_RQ_STATE_UMR_WQE_IN_PROGRESS, &rq->state);
+	mlx5e_post_umr_wqe(rq, ix);
+
+	return -EBUSY;
 }
 
 bool mlx5e_post_rx_wqes(struct mlx5e_rq *rq)
