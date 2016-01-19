@@ -163,6 +163,9 @@ enum {
 	SET_VLAN_INSERT	= BIT(1)
 };
 
+#define VLAN_INSERT	1
+#define VLAN_OVERWRITE	2
+
 /* 0 - tx2vport  [.. offloaded flow groups ..] last - miss */
 #define MLX5_OFFLOAD_GROUPS 16
 

@@ -213,7 +213,6 @@ static int modify_esw_vport_cvlan(struct mlx5_core_dev *dev, u32 vport,
 				  u16 vlan, u8 qos, u8 set_flags)
 {
 	u32 in[MLX5_ST_SZ_DW(modify_esw_vport_context_in)];
-
 	memset(in, 0, sizeof(in));
 
 	if (!MLX5_CAP_ESW(dev, vport_cvlan_strip) ||
@@ -229,9 +228,13 @@ static int modify_esw_vport_cvlan(struct mlx5_core_dev *dev, u32 vport,
 				 esw_vport_context.vport_cvlan_strip, 1);
 
 		if (set_flags & SET_VLAN_INSERT) {
-			/* insert only if no vlan in packet */
-			MLX5_SET(modify_esw_vport_context_in, in,
-				 esw_vport_context.vport_cvlan_insert, 1);
+			if (MLX5_CAP_ESW(dev, vport_cvlan_insert_overwrite))
+				MLX5_SET(modify_esw_vport_context_in, in,
+					 esw_vport_context.vport_cvlan_insert, VLAN_OVERWRITE);
+			else
+				/* insert only if no vlan in packet */
+				MLX5_SET(modify_esw_vport_context_in, in,
+					 esw_vport_context.vport_cvlan_insert, VLAN_INSERT);
 
 			MLX5_SET(modify_esw_vport_context_in, in,
 				 esw_vport_context.cvlan_pcp, qos);
