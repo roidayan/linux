@@ -454,6 +454,7 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 	int max_rq_sg;
 	int max_sq_sg;
 	u64 min_page_size = 1ull << MLX5_CAP_GEN(mdev, log_pg_sz);
+	u64 max_lso;
 
 	if (uhw->inlen || uhw->outlen)
 		return -EINVAL;
@@ -508,9 +509,17 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 	if (MLX5_CAP_GEN(mdev, block_lb_mc))
 		props->device_cap_flags |= IB_DEVICE_BLOCK_MULTICAST_LOOPBACK;
 
-	if (MLX5_CAP_GEN(dev->mdev, eth_net_offloads) &&
-	    (MLX5_CAP_ETH(dev->mdev, csum_cap)))
+	if (MLX5_CAP_GEN(dev->mdev, eth_net_offloads)) {
+		if (MLX5_CAP_ETH(mdev, csum_cap))
 			props->device_cap_flags |= IB_DEVICE_RAW_IP_CSUM;
+
+		max_lso = MLX5_CAP_ETH(mdev, max_lso_cap);
+		if (max_lso) {
+			props->lso_caps.max_lso = 1 << max_lso;
+			props->lso_caps.supported_qpts |=
+				1 << IB_QPT_RAW_PACKET;
+		}
+	}
 
 	if (MLX5_CAP_GEN(mdev, ipoib_basic_offloads)) {
 		props->device_cap_flags |= IB_DEVICE_UD_IP_CSUM;
