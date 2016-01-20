@@ -208,10 +208,19 @@ enum ib_device_cap_flags {
 	 * of I/O operations with single completion queue managed
 	 * by hardware.
 	 */
-	IB_DEVICE_CROSS_CHANNEL		= (1 << 27),
+	IB_DEVICE_CROSS_CHANNEL			= (1 << 27),
 	IB_DEVICE_MANAGED_FLOW_STEERING		= (1 << 29),
 	IB_DEVICE_SIGNATURE_HANDOVER		= (1 << 30),
 	IB_DEVICE_ON_DEMAND_PAGING		= (1 << 31),
+};
+
+enum ib_device_cap_flags2 {
+	/*
+	 * The offload arithmetic operations support allows to
+	 * the user to benefit from the parallel calculation of
+	 * several input vectors of equal length.
+	 */
+	IB_DEVICE_VECTOR_CALC			= (1 << 0),
 };
 
 enum ib_signature_prot_cap {
@@ -274,6 +283,7 @@ struct ib_device_attr {
 	int			max_qp;
 	int			max_qp_wr;
 	int			device_cap_flags;
+	u64			device_cap_flags2;
 	int			max_sge;
 	int			max_sge_rd;
 	int			max_cq;

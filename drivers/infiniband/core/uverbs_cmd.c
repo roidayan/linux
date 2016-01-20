@@ -4055,6 +4055,9 @@ int ib_uverbs_ex_query_device(struct ib_uverbs_file *file,
 	resp.hca_core_clock = attr.hca_core_clock;
 	resp.response_length += sizeof(resp.hca_core_clock);
 
+	resp.device_cap_flags2 = attr.device_cap_flags2;
+	resp.response_length += sizeof(resp.device_cap_flags2);
+
 end:
 	err = ib_copy_to_udata(ucore, &resp, resp.response_length);
 	if (err)
