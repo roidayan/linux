@@ -231,6 +231,11 @@ struct ib_uverbs_ex_query_device_resp {
 	struct ib_uverbs_odp_caps odp_caps;
 	__u64 timestamp_mask;
 	__u64 hca_core_clock; /* in KHZ */
+	/*
+	 * Original capability field is limited
+	 * by __u32 variable.  Need to increase this field
+	 */
+	__u64 device_cap_flags2;
 };
 
 struct ib_uverbs_query_port {
