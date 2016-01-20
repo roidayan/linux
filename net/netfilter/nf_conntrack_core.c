@@ -1445,6 +1445,7 @@ get_next_corpse(struct net *net, int (*iter)(struct nf_conn *i, void *data),
 		}
 		spin_unlock(lockp);
 		local_bh_enable();
+		cond_resched();
 	}
 
 	for_each_possible_cpu(cpu) {
@@ -1457,6 +1458,7 @@ get_next_corpse(struct net *net, int (*iter)(struct nf_conn *i, void *data),
 				set_bit(IPS_DYING_BIT, &ct->status);
 		}
 		spin_unlock_bh(&pcpu->lock);
+		cond_resched();
 	}
 	return NULL;
 found:
@@ -1473,6 +1475,8 @@ void nf_ct_iterate_cleanup(struct net *net,
 	struct nf_conn *ct;
 	unsigned int bucket = 0;
 
+	might_sleep();
+
 	while ((ct = get_next_corpse(net, iter, data, &bucket)) != NULL) {
 		/* Time to push up daises... */
 		if (del_timer(&ct->timeout))
@@ -1481,6 +1485,7 @@ void nf_ct_iterate_cleanup(struct net *net,
 		/* ... else the timer will get him soon. */
 
 		nf_ct_put(ct);
+		cond_resched();
 	}
 }
 EXPORT_SYMBOL_GPL(nf_ct_iterate_cleanup);
