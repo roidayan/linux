@@ -4058,6 +4058,15 @@ int ib_uverbs_ex_query_device(struct ib_uverbs_file *file,
 	resp.device_cap_flags2 = attr.device_cap_flags2;
 	resp.response_length += sizeof(resp.device_cap_flags2);
 
+	if (ucore->outlen < resp.response_length + sizeof(resp.calc_caps))
+		goto end;
+
+	resp.calc_caps.calc_matrix = attr.calc_caps.calc_matrix;
+	resp.calc_caps.max_vector_count = attr.calc_caps.max_vector_count;
+	resp.calc_caps.max_chunk_size = attr.calc_caps.max_chunk_size;
+	resp.calc_caps.op_cap = attr.calc_caps.op_cap;
+	resp.response_length += sizeof(resp.calc_caps);
+
 end:
 	err = ib_copy_to_udata(ucore, &resp, resp.response_length);
 	if (err)
