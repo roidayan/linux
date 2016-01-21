@@ -77,6 +77,8 @@ struct mlx5_ib_alloc_ucontext_req_v2 {
 
 enum mlx5_ib_alloc_ucontext_resp_mask {
 	MLX5_IB_ALLOC_UCONTEXT_RESP_MASK_CORE_CLOCK_OFFSET = 1UL << 0,
+	MLX5_IB_ALLOC_UCONTEXT_RESP_MASK_RROCE_UDP_SPORT_MIN = 1UL << 1,
+	MLX5_IB_ALLOC_UCONTEXT_RESP_MASK_RROCE_UDP_SPORT_MAX = 1UL << 2,
 };
 
 struct mlx5_ib_alloc_ucontext_resp {
@@ -95,8 +97,11 @@ struct mlx5_ib_alloc_ucontext_resp {
 	__u32	response_length;
 	__u8	cqe_version;
 	__u8	reserved2;
-	__u16	reserved3;
+	__u16	rroce_udp_sport_min;
 	__u64	hca_core_clock_offset;
+	__u16   rroce_udp_sport_max;
+	__u16   reserved3;
+	__u32   reserved4;
 };
 
 struct mlx5_ib_alloc_pd_resp {
