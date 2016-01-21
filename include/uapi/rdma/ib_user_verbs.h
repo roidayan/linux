@@ -224,6 +224,13 @@ struct ib_uverbs_odp_caps {
 	__u32 reserved;
 };
 
+struct ib_uverbs_calc_caps {
+	__u32	calc_matrix;
+	__u32	max_vector_count;
+	__u32	max_chunk_size;
+	__u32	op_cap;
+};
+
 struct ib_uverbs_ex_query_device_resp {
 	struct ib_uverbs_query_device_resp base;
 	__u32 comp_mask;
@@ -236,6 +243,7 @@ struct ib_uverbs_ex_query_device_resp {
 	 * by __u32 variable.  Need to increase this field
 	 */
 	__u64 device_cap_flags2;
+	struct ib_uverbs_calc_caps calc_caps;
 };
 
 struct ib_uverbs_query_port {
