@@ -976,15 +976,30 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 	if (field_avail(typeof(resp), cqe_version, udata->outlen))
 		resp.response_length += sizeof(resp.cqe_version);
 
+	if (field_avail(typeof(resp), rroce_udp_sport_min, udata->outlen)) {
+		resp.comp_mask |=
+			MLX5_IB_ALLOC_UCONTEXT_RESP_MASK_RROCE_UDP_SPORT_MIN;
+		resp.rroce_udp_sport_min =
+			MLX5_CAP_ROCE(dev->mdev, r_roce_min_src_udp_port);
+		resp.response_length += sizeof(resp.reserved2) +
+					sizeof(resp.rroce_udp_sport_min);
+	}
+
 	if (field_avail(typeof(resp), hca_core_clock_offset, udata->outlen)) {
 		resp.comp_mask |=
 			MLX5_IB_ALLOC_UCONTEXT_RESP_MASK_CORE_CLOCK_OFFSET;
 		resp.hca_core_clock_offset =
 			offsetof(struct mlx5_init_seg, internal_timer_h) %
 			PAGE_SIZE;
-		resp.response_length += sizeof(resp.hca_core_clock_offset) +
-					sizeof(resp.reserved2) +
-					sizeof(resp.reserved3);
+		resp.response_length += sizeof(resp.hca_core_clock_offset);
+	}
+
+	if (field_avail(typeof(resp), rroce_udp_sport_max, udata->outlen)) {
+		resp.comp_mask |=
+			MLX5_IB_ALLOC_UCONTEXT_RESP_MASK_RROCE_UDP_SPORT_MAX;
+		resp.rroce_udp_sport_max =
+			MLX5_CAP_ROCE(dev->mdev, r_roce_max_src_udp_port);
+		resp.response_length += sizeof(resp.rroce_udp_sport_max);
 	}
 
 	err = ib_copy_to_udata(udata, &resp, resp.response_length);
