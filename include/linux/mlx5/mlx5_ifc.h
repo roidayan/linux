@@ -784,7 +784,8 @@ struct mlx5_ifc_cmd_hca_cap_bits {
 	u8         reserved_32[0x7];
 	u8         qkv[0x1];
 	u8         pkv[0x1];
-	u8         reserved_33[0x4];
+	u8         set_deth_sqpn[0x1];
+	u8         reserved_33[0x3];
 	u8         xrc[0x1];
 	u8         ud[0x1];
 	u8         uc[0x1];
@@ -1832,9 +1833,11 @@ struct mlx5_ifc_qpc_bits {
 	u8         reserved_17[0x8];
 	u8         cqn_snd[0x18];
 
-	u8         reserved_18[0x40];
+	u8         reserved_18[0x8];
+	u8         deth_sqpn[0x18];
 
-	u8         reserved_19[0x8];
+	u8         reserved_19[0x28];
+
 	u8         last_acked_psn[0x18];
 
 	u8         reserved_20[0x8];
