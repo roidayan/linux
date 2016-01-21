@@ -266,6 +266,24 @@ struct ib_odp_caps {
 	} per_transport_caps;
 };
 
+enum ib_calc_operations {
+	IB_CALC_NONE,
+	IB_CALC_ADD,
+	IB_CALC_MAX,
+	IB_CALC_AND,
+	IB_CALC_OR,
+	IB_CALC_XOR,
+	IB_CALC_MIN,
+	IB_CALC_SWAP_ENDIANNESS
+};
+
+struct ib_calc_caps {
+	u32	calc_matrix;
+	u32	max_vector_count;
+	u32	max_chunk_size;
+	u32	op_cap;
+};
+
 enum ib_cq_creation_flags {
 	IB_CQ_FLAGS_TIMESTAMP_COMPLETION   = 1 << 0,
 	IB_CQ_FLAGS_IGNORE_OVERRUN	   = 1 << 1,
@@ -324,6 +342,7 @@ struct ib_device_attr {
 	struct ib_odp_caps	odp_caps;
 	uint64_t		timestamp_mask;
 	uint64_t		hca_core_clock; /* in KHZ */
+	struct ib_calc_caps	calc_caps;
 };
 
 enum ib_mtu {
