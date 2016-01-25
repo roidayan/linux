@@ -74,9 +74,9 @@
 #define BY_PASS_MIN_LEVEL (KERNEL_MIN_LEVEL + MLX5_BY_PASS_NUM_PRIOS +\
 			   LEFTOVERS_NUM_PRIOS)
 
-#define KERNEL_NUM_LEVELS 2
+#define KERNEL_NUM_LEVELS 3
 #define KERNEL_NUM_PRIOS 1
-#define KERNEL_MIN_LEVEL 2
+#define KERNEL_MIN_LEVEL 3
 
 struct node_caps {
 	size_t	arr_sz;
