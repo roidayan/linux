@@ -598,20 +598,26 @@ enum mlx5e_tir_type {
 	MLX5E_DIRECT_TIR,
 };
 
-struct mlx5e_eth_addr_info {
+struct mlx5e_l2_rule {
 	u8  addr[ETH_ALEN + 2];
-	u32 tt_vec;
-	struct mlx5_flow_rule *ft_rule[MLX5E_NUM_TT];
+	struct mlx5_flow_rule *rule;
 };
 
-#define MLX5E_ETH_ADDR_HASH_SIZE (1 << BITS_PER_BYTE)
+struct mlx5e_flow_table {
+	int num_groups;
+	struct mlx5_flow_table		*t;
+	struct mlx5_flow_group		**g;
+};
 
-struct mlx5e_eth_addr_db {
-	struct hlist_head          netdev_uc[MLX5E_ETH_ADDR_HASH_SIZE];
-	struct hlist_head          netdev_mc[MLX5E_ETH_ADDR_HASH_SIZE];
-	struct mlx5e_eth_addr_info broadcast;
-	struct mlx5e_eth_addr_info allmulti;
-	struct mlx5e_eth_addr_info promisc;
+#define MLX5E_L2_ADDR_HASH_SIZE BIT(BITS_PER_BYTE)
+
+struct mlx5e_l2_table {
+	struct mlx5e_flow_table    ft;
+	struct hlist_head          netdev_uc[MLX5E_L2_ADDR_HASH_SIZE];
+	struct hlist_head          netdev_mc[MLX5E_L2_ADDR_HASH_SIZE];
+	struct mlx5e_l2_rule	   broadcast;
+	struct mlx5e_l2_rule	   allmulti;
+	struct mlx5e_l2_rule	   promisc;
 	bool                       broadcast_enabled;
 	bool                       allmulti_enabled;
 	bool                       promisc_enabled;
@@ -631,16 +637,17 @@ struct mlx5e_vlan_db {
 	bool          filter_disabled;
 };
 
-struct mlx5e_flow_table {
-	int num_groups;
-	struct mlx5_flow_table		*t;
-	struct mlx5_flow_group		**g;
+/* L3/L4 traffic type classifier */
+struct mlx5e_ttc {
+	struct mlx5e_flow_table  ft;
+	struct mlx5_flow_rule	 *rules[MLX5E_NUM_TT];
 };
 
-struct mlx5e_flow_tables {
+struct mlx5e_flow_steering {
 	struct mlx5_flow_namespace	*ns;
 	struct mlx5e_flow_table		vlan;
-	struct mlx5e_flow_table		main;
+	struct mlx5e_l2_table		l2;
+	struct mlx5e_ttc		ttc;
 };
 
 struct mlx5e_direct_tir {
@@ -669,8 +676,7 @@ struct mlx5e_priv {
 	u32                        indir_tirn[MLX5E_NUM_INDIR_TIRS];
 	struct mlx5e_direct_tir    direct_tir[MLX5E_MAX_NUM_CHANNELS];
 
-	struct mlx5e_flow_tables   fts;
-	struct mlx5e_eth_addr_db   eth_addr;
+	struct mlx5e_flow_steering fs;
 	struct mlx5e_vlan_db       vlan;
 
 	struct mlx5e_params        params;
@@ -757,7 +763,7 @@ void mlx5e_update_stats(struct mlx5e_priv *priv);
 
 int mlx5e_create_flow_tables(struct mlx5e_priv *priv);
 void mlx5e_destroy_flow_tables(struct mlx5e_priv *priv);
-void mlx5e_init_eth_addr(struct mlx5e_priv *priv);
+void mlx5e_init_l2_addr(struct mlx5e_priv *priv);
 void mlx5e_set_rx_mode_work(struct work_struct *work);
 
 void mlx5e_fill_hwstamp(struct mlx5e_tstamp *clock, u64 timestamp,
