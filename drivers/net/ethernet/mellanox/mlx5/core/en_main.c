@@ -2274,6 +2274,15 @@ static int mlx5e_set_features(struct net_device *netdev,
 			err = mlx5e_open_locked(priv->netdev);
 	}
 
+#if CONFIG_RFS_ACCEL
+	if (changes & NETIF_F_NTUPLE) {
+		if (features & NETIF_F_NTUPLE)
+			mlx5e_enable_arfs(priv);
+		else
+			mlx5e_disable_arfs(priv);
+	}
+#endif
+
 	mutex_unlock(&priv->state_lock);
 
 	if (changes & NETIF_F_HW_VLAN_CTAG_FILTER) {
@@ -2422,6 +2431,9 @@ static const struct net_device_ops mlx5e_netdev_ops_basic = {
 	.ndo_set_features        = mlx5e_set_features,
 	.ndo_change_mtu          = mlx5e_change_mtu,
 	.ndo_do_ioctl            = mlx5e_ioctl,
+#if CONFIG_RFS_ACCEL
+	.ndo_rx_flow_steer	 = mlx5e_rx_flow_steer,
+#endif
 };
 
 static const struct net_device_ops mlx5e_netdev_ops_sriov = {
@@ -2437,6 +2449,9 @@ static const struct net_device_ops mlx5e_netdev_ops_sriov = {
 	.ndo_vlan_rx_kill_vid    = mlx5e_vlan_rx_kill_vid,
 	.ndo_set_features        = mlx5e_set_features,
 	.ndo_change_mtu          = mlx5e_change_mtu,
+#if CONFIG_RFS_ACCEL
+	.ndo_rx_flow_steer	 = mlx5e_rx_flow_steer,
+#endif
 	.ndo_do_ioctl            = mlx5e_ioctl,
 	.ndo_set_vf_mac          = mlx5e_set_vf_mac,
 	.ndo_set_vf_vlan         = mlx5e_set_vf_vlan,
@@ -2626,10 +2641,16 @@ static int mlx5e_build_netdev(struct net_device *netdev)
 	netdev->hw_features      |= NETIF_F_HW_VLAN_CTAG_TX;
 	netdev->hw_features      |= NETIF_F_HW_VLAN_CTAG_RX;
 	netdev->hw_features      |= NETIF_F_HW_VLAN_CTAG_FILTER;
+#if CONFIG_RFS_ACCEL
+	netdev->hw_features	 |= NETIF_F_NTUPLE;
+#endif
 
 	netdev->features          = netdev->hw_features;
 	if (!priv->params.lro_en)
 		netdev->features  &= ~NETIF_F_LRO;
+#if CONFIG_RFS_ACCEL
+	netdev->features	 &= ~NETIF_F_NTUPLE;
+#endif
 
 	netdev->features         |= NETIF_F_HIGHDMA;
 

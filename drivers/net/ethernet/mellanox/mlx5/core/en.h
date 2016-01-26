@@ -847,6 +847,8 @@ int mlx5e_sysfs_create(struct net_device *dev);
 void mlx5e_sysfs_remove(struct net_device *dev);
 
 #if CONFIG_RFS_ACCEL
+int mlx5e_enable_arfs(struct mlx5e_priv *priv);
+int mlx5e_disable_arfs(struct mlx5e_priv *priv);
 int mlx5e_rx_flow_steer(struct net_device *dev, const struct sk_buff *skb,
 			u16 rxq_index, u32 flow_id);
 #endif
