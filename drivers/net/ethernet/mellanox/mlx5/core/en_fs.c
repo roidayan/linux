@@ -586,6 +586,80 @@ static void mlx5e_destroy_arfs_flow_tables(struct mlx5e_priv *priv)
 	}
 }
 
+static enum mlx5e_traffic_types mlx5e_get_arfs_tt(enum mlx5e_arfs_type type)
+{
+	switch (type) {
+	case MLX5E_ARFS_IPV4_TCP:
+		return MLX5E_TT_IPV4_TCP;
+	case MLX5E_ARFS_IPV4_UDP:
+		return MLX5E_TT_IPV4_UDP;
+	case MLX5E_ARFS_IPV6_TCP:
+		return MLX5E_TT_IPV6_TCP;
+	case MLX5E_ARFS_IPV6_UDP:
+		return MLX5E_TT_IPV6_UDP;
+	default:
+		return -EINVAL;
+	}
+}
+
+static int _mlx5e_disable_arfs(struct mlx5e_priv *priv, enum mlx5e_arfs_type
+			       num_types)
+{
+	struct mlx5_flow_destination dest;
+	u32 *tirn = priv->indir_tirn;
+	int err = 0;
+	int tt;
+	int i;
+
+	dest.type = MLX5_FLOW_DESTINATION_TYPE_TIR;
+	for (i = 0; i < num_types; i++) {
+		dest.tir_num = tirn[i];
+		tt = mlx5e_get_arfs_tt(i);
+		/* Modify ttc rules destination to bypass the aRFS tables*/
+		err = mlx5_modify_rule_destination(priv->fs.ttc.rules[tt],
+						   &dest);
+		if (err) {
+			netdev_err(priv->netdev,
+				   "%s: modify ttc destination failed\n",
+				   __func__);
+			return err;
+		}
+	}
+	return 0;
+}
+
+int mlx5e_disable_arfs(struct mlx5e_priv *priv)
+{
+	mlx5e_del_arfs_rules(priv);
+
+	return _mlx5e_disable_arfs(priv, MLX5E_ARFS_NUM_TYPES);
+}
+
+int mlx5e_enable_arfs(struct mlx5e_priv *priv)
+{
+	struct mlx5_flow_destination dest;
+	int err = 0;
+	int tt;
+	int i;
+
+	dest.type = MLX5_FLOW_DESTINATION_TYPE_FLOW_TABLE;
+	for (i = 0; i < MLX5E_ARFS_NUM_TYPES; i++) {
+		dest.ft = priv->fs.arfs.arfs_tables[i].ft.t;
+		tt = mlx5e_get_arfs_tt(i);
+		/* Modify ttc rules destination to point on the aRFS FTs */
+		err = mlx5_modify_rule_destination(priv->fs.ttc.rules[tt],
+						   &dest);
+		if (err) {
+			netdev_err(priv->netdev,
+				   "%s: modify ttc destination failed err=%d\n",
+				   __func__, err);
+			_mlx5e_disable_arfs(priv, i);
+			return err;
+		}
+	}
+	return 0;
+}
+
 static int mlx5e_add_arfs_default_rule(struct mlx5e_priv *priv,
 				       enum mlx5e_arfs_type type)
 {
