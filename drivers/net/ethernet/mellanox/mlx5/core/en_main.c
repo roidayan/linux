@@ -2280,6 +2280,21 @@ static int set_feature_rx_vlan(struct net_device *netdev, bool enable)
 	return err;
 }
 
+#ifdef CONFIG_RFS_ACCEL
+static int set_feature_arfs(struct net_device *netdev, bool enable)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+	int err;
+
+	if (enable)
+		err = mlx5e_arfs_enable(priv);
+	else
+		err = mlx5e_arfs_disable(priv);
+
+	return err;
+}
+#endif
+
 static int mlx5e_handle_feature(struct net_device *netdev,
 				netdev_features_t wanted_features,
 				netdev_features_t feature,
@@ -2319,6 +2334,10 @@ static int mlx5e_set_features(struct net_device *netdev,
 				    set_feature_rx_all);
 	err |= mlx5e_handle_feature(netdev, features, NETIF_F_HW_VLAN_CTAG_RX,
 				    set_feature_rx_vlan);
+#ifdef CONFIG_RFS_ACCEL
+	err |= mlx5e_handle_feature(netdev, features, NETIF_F_NTUPLE,
+				    set_feature_arfs);
+#endif
 
 	return err ? -EINVAL : 0;
 }
@@ -2529,6 +2548,9 @@ static const struct net_device_ops mlx5e_netdev_ops_basic = {
 	.ndo_set_features        = mlx5e_set_features,
 	.ndo_change_mtu          = mlx5e_change_mtu,
 	.ndo_do_ioctl            = mlx5e_ioctl,
+#ifdef CONFIG_RFS_ACCEL
+	.ndo_rx_flow_steer	 = mlx5e_rx_flow_steer,
+#endif
 };
 
 static const struct net_device_ops mlx5e_netdev_ops_sriov = {
@@ -2548,6 +2570,9 @@ static const struct net_device_ops mlx5e_netdev_ops_sriov = {
 	.ndo_add_vxlan_port      = mlx5e_add_vxlan_port,
 	.ndo_del_vxlan_port      = mlx5e_del_vxlan_port,
 	.ndo_features_check      = mlx5e_features_check,
+#ifdef CONFIG_RFS_ACCEL
+	.ndo_rx_flow_steer	 = mlx5e_rx_flow_steer,
+#endif
 	.ndo_set_vf_mac          = mlx5e_set_vf_mac,
 	.ndo_set_vf_vlan         = mlx5e_set_vf_vlan,
 	.ndo_get_vf_config       = mlx5e_get_vf_config,
@@ -2762,6 +2787,10 @@ static void mlx5e_build_netdev(struct net_device *netdev)
 	netdev->features          = netdev->hw_features;
 	if (!priv->params.lro_en)
 		netdev->features  &= ~NETIF_F_LRO;
+
+#ifdef CONFIG_RFS_ACCEL
+	netdev->features	 &= ~NETIF_F_NTUPLE;
+#endif
 
 	if (fcs_enabled)
 		netdev->features  &= ~NETIF_F_RXALL;
