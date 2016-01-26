@@ -430,6 +430,7 @@ struct mlx5_flow {
 	u32 match_v[MATCH_PARAMS_SIZE];
 	u32 flow_index;
 	struct mlx5e_vf_rep *out_rep;
+	int mlx5_action;
 
 	struct list_head group_list; /* flows of the mother group */
 };
@@ -477,7 +478,9 @@ int mlx5e_flow_set(struct mlx5_flow_attr *attr,
 		 MLX5_FLOW_CONTEXT_DEST_TYPE_VPORT);
 	MLX5_SET(dest_format_struct, dest, destination_id,
 		 attr->out_rep->vport);
-	flow->out_rep = attr->out_rep;
+
+	flow->out_rep	   = attr->out_rep;
+	flow->mlx5_action  = attr->mlx5_action;
 
 flow_set:
 	err = mlx5_set_flow_group_entry(eswitch->fdb_table.fdb, group->group_ix,
@@ -732,16 +735,16 @@ out:
 	return err;
 }
 
-static int __mlx5e_flow_del(struct mlx5e_priv *pf_dev,
-			    struct mlx5_flow_group *group, u32 *match_v)
+static int __mlx5e_flow_del(struct mlx5_flow_attr *attr,
+			    struct mlx5_flow_group *group)
 {
 	struct mlx5_flow *flow = NULL;
-	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
-	int flow_found = 0;
+	struct mlx5_eswitch *eswitch = attr->pf_dev->mdev->priv.eswitch;
+	int err, flow_found = 0;
 
 	/* find the flow based on the match values */
 	list_for_each_entry(flow, &group->flows_list, group_list) {
-		if (!memcmp(flow->match_v, match_v, sizeof(flow->match_v))) {
+		if (!memcmp(flow->match_v, attr->match_v, sizeof(flow->match_v))) {
 			flow_found = 1;
 			break;
 		}
@@ -756,6 +759,16 @@ static int __mlx5e_flow_del(struct mlx5e_priv *pf_dev,
 
 	mlx5_del_flow_table_entry(eswitch->fdb_table.fdb, flow->flow_index);
 	list_del(&flow->group_list);
+
+	if (flow->mlx5_action & MLX5_FLOW_ACTION_TYPE_VLAN_PUSH ||
+	    flow->mlx5_action & MLX5_FLOW_ACTION_TYPE_VLAN_POP) {
+		attr->out_rep	   = flow->out_rep;
+		attr->mlx5_action  = flow->mlx5_action;
+		err = mlx5e_handle_vlan_actions(attr, FLOW_DEL);
+		if (err)
+			pr_err("handling vlan action failed, err %d\n", err);
+	}
+
 	kfree(flow);
 
 	mlx5e_flow_group_put(group);
@@ -904,15 +917,12 @@ int mlx5e_flow_del(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow)
 	pr_debug("%s sw_flow %p group %p ref %d\n", __func__, sw_flow, group,
 		 group ? atomic_read(&group->kref.refcount) : -100);
 
-	err = __mlx5e_flow_del(attr.pf_dev, group, attr.match_v);
+	err = __mlx5e_flow_del(&attr, group);
 
 	pr_debug("%s status %d group %p ref %d index %d\n", __func__, err,
 		 group, atomic_read(&group->kref.refcount), group->group_ix);
 	mlx5e_flow_group_put(group);
 
-	if (attr.mlx5_action & MLX5_FLOW_ACTION_TYPE_VLAN_PUSH ||
-	    attr.mlx5_action & MLX5_FLOW_ACTION_TYPE_VLAN_POP)
-		err = mlx5e_handle_vlan_actions(&attr, FLOW_DEL);
 
 	return err;
 }
