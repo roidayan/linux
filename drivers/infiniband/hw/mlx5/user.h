@@ -176,10 +176,15 @@ static inline int get_qp_user_index(struct mlx5_ib_ucontext *ucontext,
 
 static inline int get_srq_user_index(struct mlx5_ib_ucontext *ucontext,
 				     struct mlx5_ib_create_srq *ucmd,
-				     int inlen,
+				     int inlen, int is_xrc,
 				     u32 *user_index)
 {
 	u8 cqe_version = ucontext->cqe_version;
+
+	if (!is_xrc) {
+		*user_index = 0;
+		return 0;
+	}
 
 	if (field_avail(struct mlx5_ib_create_srq, uidx, inlen) &&
 	    !cqe_version && (ucmd->uidx == MLX5_IB_DEFAULT_UIDX))
