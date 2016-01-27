@@ -623,9 +623,42 @@ struct mlx5e_l2_table {
 	bool                       promisc_enabled;
 };
 
+struct mlx5e_tuple {
+	__be16 etype;
+	u8     ip_proto;
+	union {
+		__be32 src_ipv4;
+		struct in6_addr src_ipv6;
+	};
+	union {
+		__be32 dst_ipv4;
+		struct in6_addr dst_ipv6;
+	};
+	__be16 src_port;
+	__be16 dst_port;
+};
+
+struct mlx5e_arfs_rule {
+	struct mlx5e_priv	*priv;
+	struct work_struct      arfs_work;
+	struct mlx5_flow_rule   *rule;
+	struct hlist_node	hlist;
+	struct list_head	list;
+	/* RX queue index */
+	int			rxq_index;
+	/* Flow ID passed to ndo_rx_flow_steer */
+	int			flow_id;
+	/* Filter ID returned by ndo_rx_flow_steer */
+	int			filter_id;
+	struct mlx5e_tuple	tuple;
+};
+
+#define MLX5E_ARFS_HASH_SHIFT BITS_PER_BYTE
+#define MLX5E_ARFS_HASH_SIZE BIT(BITS_PER_BYTE)
 struct mlx5e_arfs_table {
 	struct mlx5e_flow_table  ft;
 	struct mlx5_flow_rule    *default_rule;
+	struct hlist_head	 rules_hash[MLX5E_ARFS_HASH_SIZE];
 };
 
 enum  mlx5e_arfs_type {
@@ -638,6 +671,10 @@ enum  mlx5e_arfs_type {
 
 struct mlx5e_arfs {
 	struct mlx5e_arfs_table		arfs_tables[MLX5E_ARFS_NUM_TYPES];
+	/* Protect aRFS rules list */
+	spinlock_t			arfs_lock;
+	struct list_head		rules;
+	int				last_filter_id;
 };
 
 enum {
@@ -808,6 +845,11 @@ void mlx5e_build_default_indir_rqt(u32 *indirection_rqt, int len,
 				   int num_channels);
 int mlx5e_sysfs_create(struct net_device *dev);
 void mlx5e_sysfs_remove(struct net_device *dev);
+
+#if CONFIG_RFS_ACCEL
+int mlx5e_rx_flow_steer(struct net_device *dev, const struct sk_buff *skb,
+			u16 rxq_index, u32 flow_id);
+#endif
 
 static inline void mlx5e_tx_notify_hw(struct mlx5e_sq *sq,
 				      struct mlx5_wqe_ctrl_seg *ctrl, int bf_sz)
