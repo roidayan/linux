@@ -34,6 +34,7 @@
 #include <linux/ip.h>
 #include <linux/ipv6.h>
 #include <linux/tcp.h>
+#include <linux/hash.h>
 #include <linux/mlx5/fs.h>
 #include "en.h"
 
@@ -50,6 +51,10 @@ enum {
 };
 
 #define MLX5_SET_CFG(p, f, v) MLX5_SET(create_flow_group_in, p, f, v)
+
+#define mlx5e_for_each_hash_arfs_rule(hn, tmp, hash, i) \
+	for (i = 0; i < MLX5E_ARFS_HASH_SIZE; i++) \
+		hlist_for_each_entry_safe(hn, tmp, &hash[i], hlist)
 
 enum {
 	MLX5E_FULLMATCH = 0,
@@ -538,6 +543,30 @@ static void mlx5e_destroy_flow_table(struct mlx5e_flow_table *ft)
 	ft->t = NULL;
 }
 
+#if CONFIG_RFS_ACCEL
+static void mlx5e_del_arfs_rules(struct mlx5e_priv *priv)
+{
+	struct mlx5e_arfs_rule *rule;
+	struct mlx5e_arfs_rule *tmp;
+	LIST_HEAD(del_list);
+
+	spin_lock_bh(&priv->fs.arfs.arfs_lock);
+	list_for_each_entry_safe(rule, tmp, &priv->fs.arfs.rules, list) {
+		hlist_del(&rule->hlist);
+		list_move(&rule->list, &del_list);
+	}
+	spin_unlock_bh(&priv->fs.arfs.arfs_lock);
+
+	list_for_each_entry_safe(rule, tmp, &del_list, list) {
+		cancel_work_sync(&rule->arfs_work);
+		if (rule->rule)
+			mlx5_del_flow_rule(rule->rule);
+		list_del(&rule->list);
+		kfree(rule);
+	}
+}
+#endif
+
 static void mlx5e_destroy_arfs_table(struct mlx5e_arfs_table *arfs_t)
 {
 	mlx5_del_flow_rule(arfs_t->default_rule);
@@ -548,6 +577,9 @@ static void mlx5e_destroy_arfs_flow_tables(struct mlx5e_priv *priv)
 {
 	int i;
 
+#if CONFIG_RFS_ACCEL
+	mlx5e_del_arfs_rules(priv);
+#endif
 	for (i = 0; i < MLX5E_ARFS_NUM_TYPES; i++) {
 		if (!IS_ERR_OR_NULL(priv->fs.arfs.arfs_tables[i].ft.t))
 			mlx5e_destroy_arfs_table(&priv->fs.arfs.arfs_tables[i]);
@@ -739,6 +771,9 @@ static int mlx5e_create_arfs_flow_tables(struct mlx5e_priv *priv)
 {
 	int err = 0;
 	int i;
+
+	spin_lock_init(&priv->fs.arfs.arfs_lock);
+	INIT_LIST_HEAD(&priv->fs.arfs.rules);
 
 	for (i = 0; i < MLX5E_ARFS_NUM_TYPES; i++) {
 		err = mlx5e_create_arfs_flow_table(priv, i);
@@ -1330,3 +1365,310 @@ void mlx5e_destroy_flow_tables(struct mlx5e_priv *priv)
 	mlx5e_destroy_ttc_flow_table(priv);
 	mlx5e_destroy_arfs_flow_tables(priv);
 }
+
+#if CONFIG_RFS_ACCEL
+static struct hlist_head *
+arfs_hash_bucket(struct mlx5e_arfs_table *arfs_t, __be16 src_port,
+		 __be16 dst_port)
+{
+	unsigned long l;
+	int bucket_idx;
+
+	l = (__force unsigned long)src_port |
+	    ((__force unsigned long)dst_port << 2);
+
+	bucket_idx = hash_long(l, MLX5E_ARFS_HASH_SHIFT);
+
+	return &arfs_t->rules_hash[bucket_idx];
+}
+
+static u8 mlx5e_get_ip_proto(const struct sk_buff *skb)
+{
+	return (skb->protocol == htons(ETH_P_IP)) ?
+		ip_hdr(skb)->protocol : ipv6_hdr(skb)->nexthdr;
+}
+
+static struct mlx5e_arfs_table *get_arfs_table(struct mlx5e_arfs *arfs,
+					       u8 ip_proto, __be16 etype)
+{
+	if (etype == htons(ETH_P_IP) && ip_proto == IPPROTO_TCP)
+		return &arfs->arfs_tables[MLX5E_ARFS_IPV4_TCP];
+	if (etype == htons(ETH_P_IP) && ip_proto == IPPROTO_UDP)
+		return &arfs->arfs_tables[MLX5E_ARFS_IPV4_UDP];
+	if (etype == htons(ETH_P_IPV6) && ip_proto == IPPROTO_TCP)
+		return &arfs->arfs_tables[MLX5E_ARFS_IPV6_TCP];
+	if (etype == htons(ETH_P_IPV6) && ip_proto == IPPROTO_UDP)
+		return &arfs->arfs_tables[MLX5E_ARFS_IPV6_UDP];
+
+	return NULL;
+}
+
+static struct mlx5_flow_rule *mlx5e_add_arfs_rule(struct mlx5e_priv *priv,
+						  struct mlx5e_arfs_rule *arfs_rule)
+{
+	struct mlx5e_tuple *tuple = &arfs_rule->tuple;
+	struct mlx5e_arfs *arfs = &priv->fs.arfs;
+	struct mlx5_flow_destination dest;
+	struct mlx5_flow_rule *rule = NULL;
+	u8 match_criteria_enable = 0;
+	struct mlx5e_arfs_table *arfs_table;
+	struct mlx5_flow_table *ft;
+	u32 *match_criteria;
+	u32 *match_value;
+	int err = 0;
+
+	match_value	= mlx5_vzalloc(MLX5_ST_SZ_BYTES(fte_match_param));
+	match_criteria	= mlx5_vzalloc(MLX5_ST_SZ_BYTES(fte_match_param));
+	if (!match_value || !match_criteria) {
+		netdev_err(priv->netdev, "%s: alloc failed\n", __func__);
+		err = -ENOMEM;
+		goto out;
+	}
+
+	match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
+	MLX5_SET_TO_ONES(fte_match_param, match_criteria,
+			 outer_headers.ethertype);
+	MLX5_SET(fte_match_param, match_value, outer_headers.ethertype,
+		 ntohs(tuple->etype));
+	arfs_table = get_arfs_table(arfs, tuple->ip_proto, tuple->etype);
+	ft = arfs_table->ft.t;
+	if (tuple->ip_proto == IPPROTO_TCP) {
+		MLX5_SET_TO_ONES(fte_match_param, match_criteria,
+				 outer_headers.tcp_dport);
+		MLX5_SET_TO_ONES(fte_match_param, match_criteria,
+				 outer_headers.tcp_sport);
+		MLX5_SET(fte_match_param, match_value, outer_headers.tcp_dport,
+			 ntohs(tuple->dst_port));
+		MLX5_SET(fte_match_param, match_value, outer_headers.tcp_sport,
+			 ntohs(tuple->src_port));
+	} else {
+		MLX5_SET_TO_ONES(fte_match_param, match_criteria,
+				 outer_headers.udp_dport);
+		MLX5_SET_TO_ONES(fte_match_param, match_criteria,
+				 outer_headers.udp_sport);
+		MLX5_SET(fte_match_param, match_value, outer_headers.udp_dport,
+			 ntohs(tuple->dst_port));
+		MLX5_SET(fte_match_param, match_value, outer_headers.udp_sport,
+			 ntohs(tuple->src_port));
+	}
+	if (tuple->etype == htons(ETH_P_IP)) {
+		memcpy(MLX5_ADDR_OF(fte_match_param, match_value,
+				    outer_headers.src_ipv4_src_ipv6.ipv4_layout.ipv4),
+		       &tuple->src_ipv4,
+		       4);
+		memcpy(MLX5_ADDR_OF(fte_match_param, match_value,
+				    outer_headers.dst_ipv4_dst_ipv6.ipv4_layout.ipv4),
+		       &tuple->dst_ipv4,
+		       4);
+		MLX5_SET_TO_ONES(fte_match_param, match_criteria,
+				 outer_headers.src_ipv4_src_ipv6.ipv4_layout.ipv4);
+		MLX5_SET_TO_ONES(fte_match_param, match_criteria,
+				 outer_headers.dst_ipv4_dst_ipv6.ipv4_layout.ipv4);
+	} else {
+		memcpy(MLX5_ADDR_OF(fte_match_param, match_value,
+				    outer_headers.src_ipv4_src_ipv6.ipv6_layout.ipv6),
+		       &tuple->src_ipv6,
+		       16);
+		memcpy(MLX5_ADDR_OF(fte_match_param, match_value,
+				    outer_headers.dst_ipv4_dst_ipv6.ipv6_layout.ipv6),
+		       &tuple->dst_ipv6,
+		       16);
+		memset(MLX5_ADDR_OF(fte_match_param, match_criteria,
+				    outer_headers.src_ipv4_src_ipv6.ipv6_layout.ipv6),
+		       0xff,
+		       16);
+		memset(MLX5_ADDR_OF(fte_match_param, match_criteria,
+				    outer_headers.dst_ipv4_dst_ipv6.ipv6_layout.ipv6),
+		       0xff,
+		       16);
+	}
+	dest.type = MLX5_FLOW_DESTINATION_TYPE_TIR;
+	dest.tir_num = priv->direct_tir[arfs_rule->rxq_index].tirn;
+	rule = mlx5_add_flow_rule(ft, match_criteria_enable, match_criteria,
+				  match_value, MLX5_FLOW_CONTEXT_ACTION_FWD_DEST,
+				  MLX5_FS_DEFAULT_FLOW_TAG,
+				  &dest);
+	if (IS_ERR(rule)) {
+		err = PTR_ERR(rule);
+		netdev_err(priv->netdev, "%s: add rule failed, err=%d\n",
+			   __func__, err);
+	}
+
+out:
+	kvfree(match_criteria);
+	kvfree(match_value);
+	return err ? ERR_PTR(err) : rule;
+}
+
+static void mlx5e_modify_arfs_rule_rq(struct mlx5e_priv *priv,
+				      struct mlx5_flow_rule *rule, u16 rxq_index)
+{
+	struct mlx5_flow_destination dst;
+	int err = 0;
+
+	dst.type = MLX5_FLOW_DESTINATION_TYPE_TIR;
+	dst.tir_num = priv->direct_tir[rxq_index].tirn;
+	err =  mlx5_modify_rule_destination(rule, &dst);
+	if (err)
+		netdev_warn(priv->netdev,
+			    "Failed to modfiy aRFS destination\n");
+}
+
+static void mlx5e_handle_arfs_work(struct work_struct *work)
+{
+	struct mlx5e_arfs_rule *arfs_rule = container_of(work,
+							 struct mlx5e_arfs_rule,
+							 arfs_work);
+	struct mlx5e_priv *priv = arfs_rule->priv;
+	struct mlx5_flow_rule *rule;
+
+	if (!arfs_rule->rule) {
+		rule = mlx5e_add_arfs_rule(priv, arfs_rule);
+		if (IS_ERR(rule)) {
+			rule = NULL;
+			return;
+		}
+		arfs_rule->rule = rule;
+	} else {
+		mlx5e_modify_arfs_rule_rq(priv, arfs_rule->rule,
+					  arfs_rule->rxq_index);
+	}
+}
+
+/* return L4 destination port from ip4/6 packets */
+static __be16 mlx5e_get_dst_port(const struct sk_buff *skb)
+{
+	char *transport_header;
+
+	transport_header = skb_transport_header(skb);
+	if (mlx5e_get_ip_proto(skb) == IPPROTO_TCP)
+		return ((struct tcphdr *)transport_header)->dest;
+	return ((struct udphdr *)transport_header)->dest;
+}
+
+/* return L4 source port from ip4/6 packets */
+static __be16 mlx5e_get_src_port(const struct sk_buff *skb)
+{
+	char *transport_header;
+
+	transport_header = skb_transport_header(skb);
+	if (mlx5e_get_ip_proto(skb) == IPPROTO_TCP)
+		return ((struct tcphdr *)transport_header)->source;
+	return ((struct udphdr *)transport_header)->source;
+}
+
+static struct mlx5e_arfs_rule *mlx5e_alloc_arfs_rule(struct mlx5e_priv *priv,
+						     struct mlx5e_arfs_table *arfs_t,
+						     const struct sk_buff *skb,
+						     u16 rxq_index, u32 flow_id)
+{
+	struct mlx5e_arfs_rule *rule;
+	struct mlx5e_tuple *tuple;
+
+	rule = kzalloc(sizeof(*rule), GFP_ATOMIC);
+	if (!rule)
+		return NULL;
+
+	rule->priv = priv;
+	rule->rxq_index = rxq_index;
+	INIT_WORK(&rule->arfs_work, mlx5e_handle_arfs_work);
+
+	tuple = &rule->tuple;
+	tuple->etype = skb->protocol;
+	if (tuple->etype == htons(ETH_P_IP)) {
+		tuple->src_ipv4 = ip_hdr(skb)->saddr;
+		tuple->dst_ipv4 = ip_hdr(skb)->daddr;
+	} else {
+		memcpy(&tuple->src_ipv6, &ipv6_hdr(skb)->saddr,
+		       sizeof(struct in6_addr));
+		memcpy(&tuple->dst_ipv6, &ipv6_hdr(skb)->daddr,
+		       sizeof(struct in6_addr));
+	}
+	tuple->ip_proto = mlx5e_get_ip_proto(skb);
+	tuple->src_port = mlx5e_get_src_port(skb);
+	tuple->dst_port = mlx5e_get_dst_port(skb);
+
+	rule->flow_id = flow_id;
+	rule->filter_id = priv->fs.arfs.last_filter_id++ % RPS_NO_FILTER;
+
+	hlist_add_head(&rule->hlist,
+		       arfs_hash_bucket(arfs_t, tuple->src_port,
+					tuple->dst_port));
+	list_add_tail(&rule->list, &priv->fs.arfs.rules);
+
+	return rule;
+}
+
+static bool mlx5e_cmp_ips(struct mlx5e_tuple *tuple,
+			  const struct sk_buff *skb)
+{
+	if (tuple->etype == htons(ETH_P_IP) &&
+	    tuple->src_ipv4 == ip_hdr(skb)->saddr &&
+	    tuple->dst_ipv4 == ip_hdr(skb)->daddr)
+		return true;
+	else  if (tuple->etype == htons(ETH_P_IPV6) &&
+		  (!memcmp(&tuple->src_ipv6, &ipv6_hdr(skb)->saddr,
+			   sizeof(struct in6_addr))) &&
+		  (!memcmp(&tuple->dst_ipv6, &ipv6_hdr(skb)->daddr,
+			   sizeof(struct in6_addr))))
+		return true;
+	return false;
+}
+
+static struct mlx5e_arfs_rule *mlx5e_find_arfs_rule(struct mlx5e_arfs_table *arfs_t,
+						    const struct sk_buff *skb)
+{
+	struct mlx5e_arfs_rule *arfs_rule;
+	struct hlist_head *head;
+	__be16 src_port = mlx5e_get_src_port(skb);
+	__be16 dst_port = mlx5e_get_dst_port(skb);
+
+	head = arfs_hash_bucket(arfs_t, src_port, dst_port);
+	hlist_for_each_entry(arfs_rule, head, hlist) {
+		if (arfs_rule->tuple.src_port == src_port &&
+		    arfs_rule->tuple.dst_port == dst_port &&
+		    mlx5e_cmp_ips(&arfs_rule->tuple, skb)) {
+			return arfs_rule;
+		}
+	}
+
+	return NULL;
+}
+
+int mlx5e_rx_flow_steer(struct net_device *dev, const struct sk_buff *skb,
+			u16 rxq_index, u32 flow_id)
+{
+	struct mlx5e_priv *priv = netdev_priv(dev);
+	struct mlx5e_arfs *arfs = &priv->fs.arfs;
+	struct mlx5e_arfs_table *arfs_t;
+	struct mlx5e_arfs_rule *arfs_rule;
+
+	if (skb->protocol == htons(ETH_P_IP) &&
+	    skb->protocol == htons(ETH_P_IPV6))
+		return -EPROTONOSUPPORT;
+
+	arfs_t = get_arfs_table(arfs, mlx5e_get_ip_proto(skb), skb->protocol);
+	if (!arfs_t)
+		return -EPROTONOSUPPORT;
+
+	spin_lock_bh(&arfs->arfs_lock);
+	arfs_rule = mlx5e_find_arfs_rule(arfs_t, skb);
+	if (arfs_rule) {
+		if (arfs_rule->rxq_index == rxq_index) {
+			spin_unlock_bh(&arfs->arfs_lock);
+			return arfs_rule->filter_id;
+		}
+		arfs_rule->rxq_index = rxq_index;
+	} else {
+		arfs_rule = mlx5e_alloc_arfs_rule(priv, arfs_t, skb,
+						  rxq_index, flow_id);
+		if (!arfs_rule) {
+			spin_unlock_bh(&arfs->arfs_lock);
+			return -ENOMEM;
+		}
+	}
+	schedule_work(&arfs_rule->arfs_work);
+	spin_unlock_bh(&arfs->arfs_lock);
+	return arfs_rule->filter_id;
+}
+#endif
