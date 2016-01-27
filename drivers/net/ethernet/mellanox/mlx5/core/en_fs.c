@@ -1500,6 +1500,36 @@ out:
 	return err ? ERR_PTR(err) : rule;
 }
 
+#define MLX5E_ARFS_EXPIRY_QUOTA 60
+
+static void mlx5e_may_expire_flow(struct mlx5e_priv *priv)
+{
+	struct mlx5e_arfs_rule *rule;
+	struct mlx5e_arfs_rule *tmp;
+	int i = 0;
+	LIST_HEAD(del_list);
+
+	spin_lock_bh(&priv->fs.arfs.arfs_lock);
+	list_for_each_entry_safe(rule, tmp, &priv->fs.arfs.rules, list) {
+		if (i++ > MLX5E_ARFS_EXPIRY_QUOTA)
+			break;
+		if (!work_pending(&rule->arfs_work) &&
+		    rps_may_expire_flow(priv->netdev,
+					rule->rxq_index, rule->flow_id,
+					rule->filter_id)) {
+			hlist_del(&rule->hlist);
+			list_move(&rule->list, &del_list);
+		}
+	}
+	spin_unlock_bh(&priv->fs.arfs.arfs_lock);
+	list_for_each_entry_safe(rule, tmp, &del_list, list) {
+		if (rule->rule)
+			mlx5_del_flow_rule(rule->rule);
+		list_del(&rule->list);
+		kfree(rule);
+	}
+}
+
 static void mlx5e_modify_arfs_rule_rq(struct mlx5e_priv *priv,
 				      struct mlx5_flow_rule *rule, u16 rxq_index)
 {
@@ -1526,13 +1556,15 @@ static void mlx5e_handle_arfs_work(struct work_struct *work)
 		rule = mlx5e_add_arfs_rule(priv, arfs_rule);
 		if (IS_ERR(rule)) {
 			rule = NULL;
-			return;
+			goto out;
 		}
 		arfs_rule->rule = rule;
 	} else {
 		mlx5e_modify_arfs_rule_rq(priv, arfs_rule->rule,
 					  arfs_rule->rxq_index);
 	}
+out:
+	mlx5e_may_expire_flow(priv);
 }
 
 /* return L4 destination port from ip4/6 packets */
