@@ -868,7 +868,7 @@ int mlx5e_flow_add(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow)
 	    attr.mlx5_action & MLX5_FLOW_ACTION_TYPE_VLAN_POP) {
 		err = mlx5e_handle_vlan_actions(&attr, FLOW_ADD);
 		if (err)
-			goto out;
+			return err;
 	}
 
 	group = mlx5e_get_flow_group(attr.pf_dev, attr.match_c);
@@ -885,7 +885,6 @@ int mlx5e_flow_add(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow)
 
 	pr_debug("%s status %d group %p ref %d index %d\n", __func__, err,
 		 group, atomic_read(&group->kref.refcount), group->group_ix);
-out:
 	mlx5e_flow_group_put(group);
 
 	return err;
