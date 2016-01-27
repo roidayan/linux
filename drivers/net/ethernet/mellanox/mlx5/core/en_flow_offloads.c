@@ -630,7 +630,7 @@ static void mlx5e_flow_group_put(struct mlx5_flow_group *group)
 
 static int mlx5e_handle_global_strip(struct mlx5e_priv *pf_dev, int flags)
 {
-	int vf, nvf, err;
+	int vf, nvf, err = 0;
 	u8 set_flags = 0;
 	struct mlx5e_vf_rep *vport;
 	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
