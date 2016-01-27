@@ -623,6 +623,23 @@ struct mlx5e_l2_table {
 	bool                       promisc_enabled;
 };
 
+struct mlx5e_arfs_table {
+	struct mlx5e_flow_table  ft;
+	struct mlx5_flow_rule    *default_rule;
+};
+
+enum  mlx5e_arfs_type {
+	MLX5E_ARFS_IPV4_TCP,
+	MLX5E_ARFS_IPV6_TCP,
+	MLX5E_ARFS_IPV4_UDP,
+	MLX5E_ARFS_IPV6_UDP,
+	MLX5E_ARFS_NUM_TYPES,
+};
+
+struct mlx5e_arfs {
+	struct mlx5e_arfs_table		arfs_tables[MLX5E_ARFS_NUM_TYPES];
+};
+
 enum {
 	MLX5E_STATE_ASYNC_EVENTS_ENABLE,
 	MLX5E_STATE_OPENED,
@@ -648,6 +665,7 @@ struct mlx5e_flow_steering {
 	struct mlx5e_flow_table		vlan;
 	struct mlx5e_l2_table		l2;
 	struct mlx5e_ttc		ttc;
+	struct mlx5e_arfs		arfs;
 };
 
 struct mlx5e_direct_tir {
