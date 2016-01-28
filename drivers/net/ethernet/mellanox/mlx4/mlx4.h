@@ -402,6 +402,7 @@ struct mlx4_eq {
 	struct mlx4_active_ports actv_ports;
 	u32			ref_count;
 	cpumask_var_t		affinity_mask;
+	struct timer_list	eq_timer;
 };
 
 struct mlx4_slave_eqe {

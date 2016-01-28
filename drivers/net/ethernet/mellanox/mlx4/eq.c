@@ -53,6 +53,8 @@ enum {
 	MLX4_EQ_ENTRY_SIZE	= 0x20
 };
 
+#define MLX4_EQ_TIMER_RESCHED	HZ
+
 #define MLX4_EQ_STATUS_OK	   ( 0 << 28)
 #define MLX4_EQ_STATUS_WRITE_FAIL  (10 << 28)
 #define MLX4_EQ_OWNER_SW	   ( 0 << 24)
@@ -490,6 +492,17 @@ void mlx4_master_handle_slave_flr(struct work_struct *work)
 	}
 }
 
+static void mlx4_eq_timer(unsigned long eq_ptr)
+{
+	struct mlx4_eq *eq = (struct mlx4_eq *)eq_ptr;
+
+	disable_irq(eq->irq);
+	eq_set_ci(eq, 1);
+	/* Reset the interrupt timer. */
+	mod_timer(&eq->eq_timer, jiffies + MLX4_EQ_TIMER_RESCHED);
+	enable_irq(eq->irq);
+}
+
 static int mlx4_eq_int(struct mlx4_dev *dev, struct mlx4_eq *eq)
 {
 	struct mlx4_priv *priv = mlx4_priv(dev);
@@ -507,6 +520,9 @@ static int mlx4_eq_int(struct mlx4_dev *dev, struct mlx4_eq *eq)
 	unsigned long flags;
 	struct mlx4_vport_state *s_info;
 	int eqe_size = dev->caps.eqe_size;
+
+	/* Reset the interrupt timer. */
+	mod_timer(&eq->eq_timer, jiffies + MLX4_EQ_TIMER_RESCHED);
 
 	while ((eqe = next_eqe_sw(eq, dev->caps.eqe_factor, eqe_size))) {
 		/*
@@ -1061,6 +1077,8 @@ static int mlx4_create_eq(struct mlx4_dev *dev, int nent,
 	spin_lock_init(&eq->tasklet_ctx.lock);
 	tasklet_init(&eq->tasklet_ctx.task, mlx4_cq_tasklet_cb,
 		     (unsigned long)&eq->tasklet_ctx);
+	setup_timer(&eq->eq_timer, &mlx4_eq_timer,
+		    (unsigned long)eq);
 
 	return err;
 
@@ -1097,6 +1115,11 @@ static void mlx4_free_eq(struct mlx4_dev *dev,
 	 * strides of 64B,128B and 256B
 	 */
 	int npages = PAGE_ALIGN(dev->caps.eqe_size  * eq->nent) / PAGE_SIZE;
+
+	/* free_irq has been called.  The interrupt handler won't run again to
+	 * reschedule the timer
+	 */
+	del_timer_sync(&eq->eq_timer);
 
 	err = mlx4_HW2SW_EQ(dev, eq->eqn);
 	if (err)
@@ -1302,6 +1325,8 @@ int mlx4_init_eq_table(struct mlx4_dev *dev)
 	/* arm ASYNC eq */
 	eq_set_ci(&priv->eq_table.eq[MLX4_EQ_ASYNC], 1);
 
+	mod_timer(&priv->eq_table.eq[MLX4_EQ_ASYNC].eq_timer,
+		  jiffies + MLX4_EQ_TIMER_RESCHED);
 	return 0;
 
 err_out_unmap:
@@ -1529,6 +1554,8 @@ int mlx4_assign_eq(struct mlx4_dev *dev, u8 port, int *vector)
 #endif
 			eq_set_ci(&priv->eq_table.eq[*prequested_vector], 1);
 			priv->eq_table.eq[*prequested_vector].have_irq = 1;
+			mod_timer(&priv->eq_table.eq[*prequested_vector].eq_timer,
+				  jiffies + MLX4_EQ_TIMER_RESCHED);
 		}
 	}
 
