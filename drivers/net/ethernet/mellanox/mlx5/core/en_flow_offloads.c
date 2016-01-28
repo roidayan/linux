@@ -47,6 +47,7 @@
 struct mlx5_flow_attr {
 	struct sw_flow *sw_flow;
 	struct mlx5e_priv *pf_dev;
+	struct net *net;
 	struct mlx5e_vf_rep *in_rep;
 	struct mlx5e_vf_rep *out_rep;
 	u32 match_c[MATCH_PARAMS_SIZE];
@@ -513,7 +514,6 @@ static struct mlx5e_vf_rep *mlx5e_uplink_rep(struct mlx5e_priv *pf_dev)
 
 int mlx5e_flow_adjust(struct mlx5_flow_attr *attr)
 {
-	struct net *net;
 	struct net_device *out_dev;
 	struct switchdev_attr in_attr,out_attr;
 	int out_ifindex = -1;
@@ -556,18 +556,11 @@ int mlx5e_flow_adjust(struct mlx5_flow_attr *attr)
 		}
 	}
 
-	net = dev_net(attr->pf_dev->netdev);
-	if (!net) {
-		pr_err("can't get net name space from dev %s for ifindex conversion\n",
-				attr->pf_dev->netdev->name);
-		goto out_err;
-	}
-
 	/* DROP action doesn't involve output port!! */
 	if (__mlx5_action & MLX5_FLOW_ACTION_TYPE_DROP)
 		goto skip_id_check;
 
-	out_dev = dev_get_by_index_rcu(net, out_ifindex);
+	out_dev = dev_get_by_index_rcu(attr->net, out_ifindex);
 
 	pr_debug("%s in/out dev %s/%s action %x\n", __func__,
 		 attr->in_rep->dev->name, out_dev ? out_dev->name : "NULL",
@@ -852,6 +845,13 @@ int mlx5e_flow_add(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow)
 	attr.sw_flow = sw_flow;
 	attr.in_rep = in_rep;
 	attr.pf_dev = in_rep->pf_dev;
+
+	attr.net = dev_net(attr.pf_dev->netdev);
+	if (!attr.net) {
+		pr_err("can't get net name space from dev %s\n",
+		       attr.pf_dev->netdev->name);
+		return -EOPNOTSUPP;
+	}
 
 	err = mlx5e_flow_adjust(&attr);
 	if (err)
