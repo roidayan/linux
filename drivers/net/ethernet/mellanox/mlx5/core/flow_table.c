@@ -406,8 +406,8 @@ void *mlx5_create_flow_table(struct mlx5_core_dev *dev, u8 level, u8 table_type,
 		ft_size += (1 << group[i].log_sz);
 
 	ft = kzalloc(sizeof(*ft), GFP_KERNEL);
-	gr = kcalloc(num_groups, sizeof(struct mlx5_ftg), GFP_KERNEL);
-	bm = kcalloc(BITS_TO_LONGS(ft_size), sizeof(uintptr_t), GFP_KERNEL);
+	gr = mlx5_vzalloc(num_groups * sizeof(struct mlx5_ftg));
+	bm = mlx5_vzalloc(BITS_TO_LONGS(ft_size) * sizeof(uintptr_t));
 	if (!ft || !gr || !bm)
 		goto err_free_ft;
 
@@ -441,8 +441,8 @@ err_destroy_flow_table_cmd:
 
 err_free_ft:
 	mlx5_core_warn(dev, "failed to alloc flow table\n");
-	kfree(bm);
-	kfree(gr);
+	kvfree(bm);
+	kvfree(gr);
 	kfree(ft);
 
 	return NULL;
@@ -455,8 +455,8 @@ void mlx5_destroy_flow_table(void *flow_table)
 
 	mlx5_destroy_flow_table_groups(ft);
 	mlx5_destroy_flow_table_cmd(ft);
-	kfree(ft->bitmap);
-	kfree(ft->group);
+	kvfree(ft->bitmap);
+	kvfree(ft->group);
 	kfree(ft);
 }
 EXPORT_SYMBOL(mlx5_destroy_flow_table);
