@@ -723,7 +723,7 @@ struct mlx5e_priv {
 	u32                        pdn;
 	u32                        tdn;
 	u32                        mkey;
-	struct mlx5_core_mr        umr_mr;
+	struct mlx5_core_mkey      umr_mr;
 	struct mlx5e_rq            drop_rq;
 
 	struct mlx5e_channel     **channel;
