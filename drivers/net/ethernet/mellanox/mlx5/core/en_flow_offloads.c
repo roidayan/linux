@@ -503,8 +503,6 @@ flow_context_alloc_failed:
 	kfree(flow);
 
 flow_alloc_failed:
-	if (err == -ENOMEM)
-		pr_warn("flow allocation failed\n");
 	return err;
 }
 
