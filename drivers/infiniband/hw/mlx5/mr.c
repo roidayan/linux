@@ -59,7 +59,7 @@ static int clean_mr(struct mlx5_ib_mr *mr);
 
 static int destroy_mkey(struct mlx5_ib_dev *dev, struct mlx5_ib_mr *mr)
 {
-	int err = mlx5_core_destroy_mkey(dev->mdev, &mr->mmr);
+	int err = mlx5_core_destroy_mkey(dev->mdev, &mr->mmkey);
 
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
 	/* Wait until all page fault handlers using the mr complete. */
@@ -122,7 +122,7 @@ static void reg_mr_callback(int status, void *context)
 	struct mlx5_cache_ent *ent = &cache->ent[c];
 	u8 key;
 	unsigned long flags;
-	struct mlx5_mr_table *table = &dev->mdev->priv.mr_table;
+	struct mlx5_mkey_table *table = &dev->mdev->priv.mkey_table;
 	int err;
 
 	spin_lock_irqsave(&ent->lock, flags);
@@ -149,7 +149,8 @@ static void reg_mr_callback(int status, void *context)
 	spin_lock_irqsave(&dev->mdev->priv.mkey_lock, flags);
 	key = dev->mdev->priv.mkey_key++;
 	spin_unlock_irqrestore(&dev->mdev->priv.mkey_lock, flags);
-	mr->mmr.key = mlx5_idx_to_mkey(be32_to_cpu(mr->out.mkey) & 0xffffff) | key;
+	mr->mmkey
+		.key = mlx5_idx_to_mkey(be32_to_cpu(mr->out.mkey) & 0xffffff) | key;
 
 	cache->last_add = jiffies;
 
@@ -160,8 +161,8 @@ static void reg_mr_callback(int status, void *context)
 	spin_unlock_irqrestore(&ent->lock, flags);
 
 	write_lock_irqsave(&table->lock, flags);
-	err = radix_tree_insert(&table->tree, mlx5_base_mkey(mr->mmr.key),
-				&mr->mmr);
+	err = radix_tree_insert(&table->tree, mlx5_base_mkey(mr->mmkey.key),
+				&mr->mmkey);
 	if (err)
 		pr_err("Error inserting to mr tree. 0x%x\n", -err);
 	write_unlock_irqrestore(&table->lock, flags);
@@ -204,7 +205,7 @@ static int add_keys(struct mlx5_ib_dev *dev, int c, int num)
 		spin_lock_irq(&ent->lock);
 		ent->pending++;
 		spin_unlock_irq(&ent->lock);
-		err = mlx5_core_create_mkey(dev->mdev, &mr->mmr, in,
+		err = mlx5_core_create_mkey(dev->mdev, &mr->mmkey, in,
 					    sizeof(*in), reg_mr_callback,
 					    mr, &mr->out);
 		if (err) {
@@ -693,14 +694,14 @@ struct ib_mr *mlx5_ib_get_dma_mr(struct ib_pd *pd, int acc)
 	seg->qpn_mkey7_0 = cpu_to_be32(0xffffff << 8);
 	seg->start_addr = 0;
 
-	err = mlx5_core_create_mkey(mdev, &mr->mmr, in, sizeof(*in), NULL, NULL,
+	err = mlx5_core_create_mkey(mdev, &mr->mmkey, in, sizeof(*in), NULL, NULL,
 				    NULL);
 	if (err)
 		goto err_in;
 
 	kfree(in);
-	mr->ibmr.lkey = mr->mmr.key;
-	mr->ibmr.rkey = mr->mmr.key;
+	mr->ibmr.lkey = mr->mmkey.key;
+	mr->ibmr.rkey = mr->mmkey.key;
 	mr->umem = NULL;
 
 	return &mr->ibmr;
@@ -899,7 +900,7 @@ static struct mlx5_ib_mr *reg_umr(struct ib_pd *pd, struct ib_umem *umem,
 
 	memset(&umrwr, 0, sizeof(umrwr));
 	umrwr.wr.wr_id = (u64)(unsigned long)&umr_context;
-	prep_umr_reg_wqe(pd, &umrwr.wr, &sg, dma, npages, mr->mmr.key,
+	prep_umr_reg_wqe(pd, &umrwr.wr, &sg, dma, npages, mr->mmkey.key,
 			 page_shift, virt_addr, len, access_flags);
 
 	mlx5_ib_init_umr_context(&umr_context);
@@ -916,9 +917,9 @@ static struct mlx5_ib_mr *reg_umr(struct ib_pd *pd, struct ib_umem *umem,
 		}
 	}
 
-	mr->mmr.iova = virt_addr;
-	mr->mmr.size = len;
-	mr->mmr.pd = to_mpd(pd)->pdn;
+	mr->mmkey.iova = virt_addr;
+	mr->mmkey.size = len;
+	mr->mmkey.pd = to_mpd(pd)->pdn;
 
 	mr->live = 1;
 
@@ -1029,7 +1030,7 @@ int mlx5_ib_update_mtt(struct mlx5_ib_mr *mr, u64 start_page_index, int npages,
 		wr.wr.opcode = MLX5_IB_WR_UMR;
 		wr.npages = sg.length / sizeof(u64);
 		wr.page_shift = PAGE_SHIFT;
-		wr.mkey = mr->mmr.key;
+		wr.mkey = mr->mmkey.key;
 		wr.target.offset = start_page_index;
 
 		mlx5_ib_init_umr_context(&umr_context);
@@ -1102,7 +1103,7 @@ static struct mlx5_ib_mr *reg_create(struct ib_mr *ibmr, struct ib_pd *pd,
 	in->seg.qpn_mkey7_0 = cpu_to_be32(0xffffff << 8);
 	in->xlat_oct_act_size = cpu_to_be32(get_octo_len(virt_addr, length,
 							 1 << page_shift));
-	err = mlx5_core_create_mkey(dev->mdev, &mr->mmr, in, inlen, NULL,
+	err = mlx5_core_create_mkey(dev->mdev, &mr->mmkey, in, inlen, NULL,
 				    NULL, NULL);
 	if (err) {
 		mlx5_ib_warn(dev, "create mkey failed\n");
@@ -1113,7 +1114,7 @@ static struct mlx5_ib_mr *reg_create(struct ib_mr *ibmr, struct ib_pd *pd,
 	mr->live = 1;
 	kvfree(in);
 
-	mlx5_ib_dbg(dev, "mkey = 0x%x\n", mr->mmr.key);
+	mlx5_ib_dbg(dev, "mkey = 0x%x\n", mr->mmkey.key);
 
 	return mr;
 
@@ -1171,13 +1172,13 @@ struct ib_mr *mlx5_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 		goto error;
 	}
 
-	mlx5_ib_dbg(dev, "mkey 0x%x\n", mr->mmr.key);
+	mlx5_ib_dbg(dev, "mkey 0x%x\n", mr->mmkey.key);
 
 	mr->umem = umem;
 	mr->npages = npages;
 	atomic_add(npages, &dev->mdev->priv.reg_pages);
-	mr->ibmr.lkey = mr->mmr.key;
-	mr->ibmr.rkey = mr->mmr.key;
+	mr->ibmr.lkey = mr->mmkey.key;
+	mr->ibmr.rkey = mr->mmkey.key;
 	mr->ibmr.length = length;
 	mr->access_flags = access_flags;
 
@@ -1202,7 +1203,7 @@ static int unreg_umr(struct mlx5_ib_dev *dev, struct mlx5_ib_mr *mr)
 
 	memset(&umrwr.wr, 0, sizeof(umrwr));
 	umrwr.wr.wr_id = (u64)(unsigned long)&umr_context;
-	prep_umr_unreg_wqe(dev, &umrwr.wr, mr->mmr.key);
+	prep_umr_unreg_wqe(dev, &umrwr.wr, mr->mmkey.key);
 
 	mlx5_ib_init_umr_context(&umr_context);
 	down(&umrc->sem);
@@ -1257,7 +1258,7 @@ static int rereg_umr(struct ib_pd *pd, struct mlx5_ib_mr *mr, u64 virt_addr,
 		umrwr.wr.send_flags |= MLX5_IB_SEND_UMR_UPDATE_TRANSLATION;
 	}
 
-	prep_umr_wqe_common(pd, &umrwr.wr, &sg, dma, npages, mr->mmr.key,
+	prep_umr_wqe_common(pd, &umrwr.wr, &sg, dma, npages, mr->mmkey.key,
 			    page_shift);
 
 	if (flags & IB_MR_REREG_PD) {
@@ -1371,7 +1372,7 @@ int mlx5_ib_rereg_user_mr(struct ib_mr *ib_mr, int flags, u64 start,
 
 	if (flags & IB_MR_REREG_PD) {
 		ib_mr->pd = pd;
-		mr->mmr.pd = to_mpd(pd)->pdn;
+		mr->mmkey.pd = to_mpd(pd)->pdn;
 	}
 
 	if (flags & IB_MR_REREG_ACCESS)
@@ -1381,10 +1382,10 @@ int mlx5_ib_rereg_user_mr(struct ib_mr *ib_mr, int flags, u64 start,
 		mr->npages = npages;
 		atomic_add(npages, &dev->mdev->priv.reg_pages);
 		mr->ibmr.length = len;
-		mr->mmr.iova = addr;
-		mr->mmr.size = len;
-		mr->ibmr.lkey = mr->mmr.key;
-		mr->ibmr.rkey = mr->mmr.key;
+		mr->mmkey.iova = addr;
+		mr->mmkey.size = len;
+		mr->ibmr.lkey = mr->mmkey.key;
+		mr->ibmr.rkey = mr->mmkey.key;
 	}
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
 	update_odp_mr(mr);
@@ -1464,7 +1465,7 @@ static int clean_mr(struct mlx5_ib_mr *mr)
 		err = destroy_mkey(dev, mr);
 		if (err) {
 			mlx5_ib_warn(dev, "failed to destroy mkey 0x%x (%d)\n",
-				     mr->mmr.key, err);
+				     mr->mmkey.key, err);
 			return err;
 		}
 	} else {
@@ -1590,13 +1591,13 @@ struct ib_mr *mlx5_ib_alloc_mr(struct ib_pd *pd,
 	}
 
 	in->seg.flags = MLX5_PERM_UMR_EN | access_mode;
-	err = mlx5_core_create_mkey(dev->mdev, &mr->mmr, in, sizeof(*in),
+	err = mlx5_core_create_mkey(dev->mdev, &mr->mmkey, in, sizeof(*in),
 				    NULL, NULL, NULL);
 	if (err)
 		goto err_destroy_psv;
 
-	mr->ibmr.lkey = mr->mmr.key;
-	mr->ibmr.rkey = mr->mmr.key;
+	mr->ibmr.lkey = mr->mmkey.key;
+	mr->ibmr.rkey = mr->mmkey.key;
 	mr->umem = NULL;
 	kfree(in);
 
@@ -1626,7 +1627,7 @@ err_free:
 int mlx5_ib_check_mr_status(struct ib_mr *ibmr, u32 check_mask,
 			    struct ib_mr_status *mr_status)
 {
-	struct mlx5_ib_mr *mmr = to_mmr(ibmr);
+	struct mlx5_ib_mr *mmkey = to_mmr(ibmr);
 	int ret = 0;
 
 	if (check_mask & ~IB_MR_CHECK_SIG_STATUS) {
@@ -1637,26 +1638,26 @@ int mlx5_ib_check_mr_status(struct ib_mr *ibmr, u32 check_mask,
 
 	mr_status->fail_status = 0;
 	if (check_mask & IB_MR_CHECK_SIG_STATUS) {
-		if (!mmr->sig) {
+		if (!mmkey->sig) {
 			ret = -EINVAL;
 			pr_err("signature status check requested on a non-signature enabled MR\n");
 			goto done;
 		}
 
-		mmr->sig->sig_status_checked = true;
-		if (!mmr->sig->sig_err_exists)
+		mmkey->sig->sig_status_checked = true;
+		if (!mmkey->sig->sig_err_exists)
 			goto done;
 
-		if (ibmr->lkey == mmr->sig->err_item.key)
-			memcpy(&mr_status->sig_err, &mmr->sig->err_item,
+		if (ibmr->lkey == mmkey->sig->err_item.key)
+			memcpy(&mr_status->sig_err, &mmkey->sig->err_item,
 			       sizeof(mr_status->sig_err));
 		else {
 			mr_status->sig_err.err_type = IB_SIG_BAD_GUARD;
 			mr_status->sig_err.sig_err_offset = 0;
-			mr_status->sig_err.key = mmr->sig->err_item.key;
+			mr_status->sig_err.key = mmkey->sig->err_item.key;
 		}
 
-		mmr->sig->sig_err_exists = false;
+		mmkey->sig->sig_err_exists = false;
 		mr_status->fail_status |= IB_MR_CHECK_SIG_STATUS;
 	}
 
