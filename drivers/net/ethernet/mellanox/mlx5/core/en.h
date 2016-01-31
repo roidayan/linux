@@ -42,7 +42,7 @@
 #include "mlx5_core.h"
 
 #define FDB_TAG (1 << 23)
-#define FDB_UPLINK_VPORT 0xffffff
+#define FDB_UPLINK_VPORT 0xffff
 #define MLX5e_PRIV_FLAGS_REPRESENTORS	0x1
 
 int mlx5_set_flow_group_entry_index(void *flow_table, u32 group_ix,
