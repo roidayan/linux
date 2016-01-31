@@ -962,7 +962,7 @@ int mlx5e_flow_adjust(struct mlx5_flow_attr *attr)
 
 			__mlx5_action |= MLX5_FLOW_ACTION_TYPE_ENCAP;
 			attr->out_rep = mlx5e_uplink_rep(attr->pf_dev);
-			goto skip_id_check;
+			goto hairpin_check;
 		} else {
 			printk(KERN_ERR "%s can't offload flow action %d\n", __func__, action->type);
 			goto out_err;
@@ -971,7 +971,7 @@ int mlx5e_flow_adjust(struct mlx5_flow_attr *attr)
 
 	/* DROP action doesn't involve output port!! */
 	if (__mlx5_action & MLX5_FLOW_ACTION_TYPE_DROP)
-		goto skip_id_check;
+		goto skip_checks;
 
 	out_dev = dev_get_by_index_rcu(attr->net, out_ifindex);
 
@@ -1007,7 +1007,12 @@ int mlx5e_flow_adjust(struct mlx5_flow_attr *attr)
 	else
 		attr->out_rep = netdev_priv(out_dev);
 
-skip_id_check:
+hairpin_check:
+	/* hairpin is not supported */
+	if (attr->out_rep == attr->in_rep)
+		goto out_err;
+
+skip_checks:
 	attr->mlx5_action = __mlx5_action;
 
 	return 0;
