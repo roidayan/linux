@@ -493,11 +493,11 @@ flow_set:
 
 	pr_debug("%s added sw_flow %p flow index %x\n", __func__,
 		 attr->sw_flow, flow->flow_index);
-	kfree(flow_context);
+	kvfree(flow_context);
 	return 0;
 
 flow_set_failed:
-	kfree(flow_context);
+	kvfree(flow_context);
 
 flow_context_alloc_failed:
 	kfree(flow);
