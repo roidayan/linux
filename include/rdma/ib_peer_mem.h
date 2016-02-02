@@ -36,6 +36,8 @@
 #include <rdma/peer_mem.h>
 
 struct ib_ucontext;
+struct ib_umem;
+struct invalidation_ctx;
 
 struct ib_peer_memory_client {
 	const struct peer_memory_client *peer_mem;
@@ -43,6 +45,16 @@ struct ib_peer_memory_client {
 	int invalidation_required;
 	struct kref ref;
 	struct completion unload_comp;
+	/* lock is used via the invalidation flow */
+	struct mutex lock;
+	struct list_head   core_ticket_list;
+	u64	last_ticket;
+};
+
+struct core_ticket {
+	unsigned long key;
+	void *context;
+	struct list_head   ticket_list;
 };
 
 struct ib_peer_memory_client *ib_get_peer_client(struct ib_ucontext *context,
@@ -52,5 +64,12 @@ struct ib_peer_memory_client *ib_get_peer_client(struct ib_ucontext *context,
 
 void ib_put_peer_client(struct ib_peer_memory_client *ib_peer_client,
 			void *peer_client_context);
+
+int ib_peer_create_invalidation_ctx(struct ib_peer_memory_client *ib_peer_mem,
+				    struct ib_umem *umem,
+				    struct invalidation_ctx **invalidation_ctx);
+
+void ib_peer_destroy_invalidation_ctx(struct ib_peer_memory_client *ib_peer_mem,
+				      struct invalidation_ctx *ctx);
 
 #endif
