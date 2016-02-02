@@ -43,6 +43,63 @@
 
 #include "uverbs.h"
 
+#ifdef CONFIG_INFINIBAND_PEER_MEM
+static struct ib_umem *peer_umem_get(struct ib_peer_memory_client *ib_peer_mem,
+				     struct ib_umem *umem, unsigned long addr,
+				     int dmasync)
+{
+	int ret;
+	const struct peer_memory_client *peer_mem = ib_peer_mem->peer_mem;
+
+	umem->ib_peer_mem = ib_peer_mem;
+	/*
+	 * We always request write permissions to the pages, to force breaking
+	 * of any CoW during the registration of the MR. For read-only MRs we
+	 * use the "force" flag to indicate that CoW breaking is required but
+	 * the registration should not fail if referencing read-only areas.
+	 */
+	ret = peer_mem->get_pages(addr, umem->length,
+				  1, !umem->writable,
+				  &umem->sg_head,
+				  umem->peer_mem_client_context,
+				  0);
+	if (ret)
+		goto out;
+
+	umem->page_size = peer_mem->get_page_size
+					(umem->peer_mem_client_context);
+	ret = peer_mem->dma_map(&umem->sg_head,
+				umem->peer_mem_client_context,
+				umem->context->device->dma_device,
+				dmasync,
+				&umem->nmap);
+	if (ret)
+		goto put_pages;
+
+	return umem;
+
+put_pages:
+	peer_mem->put_pages(umem->peer_mem_client_context,
+					&umem->sg_head);
+out:
+	ib_put_peer_client(ib_peer_mem, umem->peer_mem_client_context);
+	return ERR_PTR(ret);
+}
+
+static void peer_umem_release(struct ib_umem *umem)
+{
+	const struct peer_memory_client *peer_mem =
+				umem->ib_peer_mem->peer_mem;
+
+	peer_mem->dma_unmap(&umem->sg_head,
+			    umem->peer_mem_client_context,
+			    umem->context->device->dma_device);
+	peer_mem->put_pages(&umem->sg_head,
+			    umem->peer_mem_client_context);
+	ib_put_peer_client(umem->ib_peer_mem, umem->peer_mem_client_context);
+	kfree(umem);
+}
+#endif
 
 static void __ib_umem_release(struct ib_device *dev, struct ib_umem *umem, int dirty)
 {
@@ -69,7 +126,7 @@ static void __ib_umem_release(struct ib_device *dev, struct ib_umem *umem, int d
 }
 
 /**
- * ib_umem_get - Pin and DMA map userspace memory.
+ * ib_umem_get_flags - Pin and DMA map userspace memory.
  *
  * If access flags indicate ODP memory, avoid pinning. Instead, stores
  * the mm for future page fault handling in conjunction with MMU notifiers.
@@ -78,10 +135,12 @@ static void __ib_umem_release(struct ib_device *dev, struct ib_umem *umem, int d
  * @addr: userspace virtual address to start at
  * @size: length of region to pin
  * @access: IB_ACCESS_xxx flags for memory being pinned
- * @dmasync: flush in-flight DMA when the memory region is written
+ * @flags: IB_UMEM_xxx flags for memory being used
  */
-struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
-			    size_t size, int access, int dmasync)
+struct ib_umem *ib_umem_get_flags(struct ib_ucontext *context,
+				  unsigned long addr,
+				  size_t size, int access,
+				  unsigned long flags)
 {
 	struct ib_umem *umem;
 	struct page **page_list;
@@ -96,7 +155,7 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
 	struct scatterlist *sg, *sg_list_start;
 	int need_release = 0;
 
-	if (dmasync)
+	if (flags & IB_UMEM_DMA_SYNC)
 		dma_set_attr(DMA_ATTR_WRITE_BARRIER, &attrs);
 
 	if (!size)
@@ -143,6 +202,28 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
 	}
 
 	umem->odp_data = NULL;
+
+#ifdef CONFIG_INFINIBAND_PEER_MEM
+	if (flags & IB_UMEM_PEER_ALLOW) {
+		struct ib_peer_memory_client *peer_mem_client;
+		struct ib_umem *peer_umem;
+
+		peer_mem_client =
+			ib_get_peer_client(context, addr, size,
+					   &umem->peer_mem_client_context);
+		if (IS_ERR(peer_mem_client)) {
+			kfree(umem);
+			return ERR_CAST(peer_mem_client);
+
+		} else if (peer_mem_client) {
+			peer_umem = peer_umem_get(peer_mem_client, umem, addr,
+						  flags & IB_UMEM_DMA_SYNC);
+			if (IS_ERR(peer_umem))
+				kfree(umem);
+			return peer_umem;
+		}
+	}
+#endif
 
 	/* We assume the memory is from hugetlb until proved otherwise */
 	umem->hugetlb   = 1;
@@ -240,7 +321,7 @@ out:
 
 	return ret < 0 ? ERR_PTR(ret) : umem;
 }
-EXPORT_SYMBOL(ib_umem_get);
+EXPORT_SYMBOL(ib_umem_get_flags);
 
 static void ib_umem_account(struct work_struct *work)
 {
@@ -263,6 +344,13 @@ void ib_umem_release(struct ib_umem *umem)
 	struct mm_struct *mm;
 	struct task_struct *task;
 	unsigned long diff;
+
+#ifdef CONFIG_INFINIBAND_PEER_MEM
+	if (umem->ib_peer_mem) {
+		peer_umem_release(umem);
+		return;
+	}
+#endif
 
 	if (umem->odp_data) {
 		ib_umem_odp_release(umem);
