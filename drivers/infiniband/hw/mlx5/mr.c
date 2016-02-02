@@ -1037,6 +1037,73 @@ err_1:
 	return ERR_PTR(err);
 }
 
+static int mlx5_ib_invalidate_mr(struct ib_mr *ibmr)
+{
+	struct mlx5_ib_dev *dev = to_mdev(ibmr->device);
+	struct mlx5_ib_mr *mr = to_mmr(ibmr);
+	int npages = mr->npages;
+	struct ib_umem *umem = mr->umem;
+
+#ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
+	if (umem && umem->odp_data) {
+		/* Prevent new page faults from succeeding */
+		mr->live = 0;
+		/* Wait for all running page-fault handlers to finish. */
+		synchronize_srcu(&dev->mr_srcu);
+		/* Destroy all page mappings */
+		mlx5_ib_invalidate_range(umem, ib_umem_start(umem),
+					 ib_umem_end(umem));
+		/*
+		 * We kill the umem before the MR for ODP,
+		 * so that there will not be any invalidations in
+		 * flight, looking at the *mr struct.
+		 */
+		ib_umem_release(umem);
+		atomic_sub(npages, &dev->mdev->priv.reg_pages);
+
+		/* Avoid double-freeing the umem. */
+		umem = NULL;
+	}
+#endif
+
+	clean_mr(mr);
+
+	if (umem) {
+		ib_umem_release(umem);
+		atomic_sub(npages, &dev->mdev->priv.reg_pages);
+	}
+	return 0;
+}
+
+#ifdef CONFIG_INFINIBAND_PEER_MEM
+static void mlx5_invalidate_umem(void *invalidation_cookie,
+				 struct ib_umem *umem,
+				 unsigned long addr, size_t size)
+{
+	struct mlx5_ib_mr *mr;
+	struct mlx5_ib_peer_id *peer_id = invalidation_cookie;
+
+	wait_for_completion(&peer_id->comp);
+	if (peer_id->mr == NULL)
+		return;
+
+	mr = peer_id->mr;
+	/* This function is called under client peer lock
+	 * so its resources are race protected
+	 */
+	if (atomic_inc_return(&mr->invalidated) > 1) {
+		umem->invalidation_ctx->inflight_invalidation = 1;
+		return;
+	}
+
+	umem->invalidation_ctx->peer_callback = 1;
+	mlx5_ib_invalidate_mr(&mr->ibmr);
+	complete(&mr->invalidation_comp);
+}
+#endif
+
+
+
 struct ib_mr *mlx5_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 				  u64 virt_addr, int access_flags,
 				  struct ib_udata *udata)
@@ -1049,15 +1116,37 @@ struct ib_mr *mlx5_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 	int ncont;
 	int order;
 	int err;
-
-	mlx5_ib_dbg(dev, "start 0x%llx, virt_addr 0x%llx, length 0x%llx, access_flags 0x%x\n",
+#ifdef CONFIG_INFINIBAND_PEER_MEM
+	struct ib_peer_memory_client *ib_peer_mem;
+	struct mlx5_ib_peer_id *mlx5_ib_peer_id = NULL;
+#endif
+	mlx5_ib_dbg(dev, "%llx virt %llx len %llx access_flags %x\n",
 		    start, virt_addr, length, access_flags);
-	umem = ib_umem_get(pd->uobject->context, start, length, access_flags,
-			   0);
+	umem = ib_umem_get_flags(pd->uobject->context, start, length,
+				 access_flags, IB_UMEM_PEER_ALLOW |
+				 IB_UMEM_PEER_INVAL_SUPP);
 	if (IS_ERR(umem)) {
 		mlx5_ib_dbg(dev, "umem get failed (%ld)\n", PTR_ERR(umem));
 		return (void *)umem;
 	}
+
+#ifdef CONFIG_INFINIBAND_PEER_MEM
+	ib_peer_mem = umem->ib_peer_mem;
+	if (ib_peer_mem) {
+		mlx5_ib_peer_id = kzalloc(sizeof(*mlx5_ib_peer_id), GFP_KERNEL);
+		if (!mlx5_ib_peer_id) {
+			err = -ENOMEM;
+			goto error;
+		}
+		init_completion(&mlx5_ib_peer_id->comp);
+		err = ib_umem_activate_invalidation_notifier
+			(umem,
+			 mlx5_invalidate_umem,
+			 mlx5_ib_peer_id);
+		if (err)
+			goto error;
+	}
+#endif
 
 	mlx5_ib_cont_pages(umem, start, &npages, &page_shift, &ncont, &order);
 	if (!npages) {
@@ -1098,6 +1187,15 @@ struct ib_mr *mlx5_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 	atomic_add(npages, &dev->mdev->priv.reg_pages);
 	mr->ibmr.lkey = mr->mmr.key;
 	mr->ibmr.rkey = mr->mmr.key;
+#ifdef CONFIG_INFINIBAND_PEER_MEM
+	atomic_set(&mr->invalidated, 0);
+	if (ib_peer_mem) {
+		init_completion(&mr->invalidation_comp);
+		mlx5_ib_peer_id->mr = mr;
+		mr->peer_id = mlx5_ib_peer_id;
+		complete(&mlx5_ib_peer_id->comp);
+	}
+#endif
 
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
 	if (umem->odp_data) {
@@ -1127,6 +1225,12 @@ struct ib_mr *mlx5_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 	return &mr->ibmr;
 
 error:
+#ifdef CONFIG_INFINIBAND_PEER_MEM
+	if (mlx5_ib_peer_id) {
+		complete(&mlx5_ib_peer_id->comp);
+		kfree(mlx5_ib_peer_id);
+	}
+#endif
 	ib_umem_release(umem);
 	return ERR_PTR(err);
 }
@@ -1245,7 +1349,6 @@ static int clean_mr(struct mlx5_ib_mr *mr)
 			mlx5_ib_warn(dev, "failed unregister\n");
 			return err;
 		}
-		free_cached_mr(dev, mr);
 	}
 
 	if (!umred)
@@ -1256,42 +1359,36 @@ static int clean_mr(struct mlx5_ib_mr *mr)
 
 int mlx5_ib_dereg_mr(struct ib_mr *ibmr)
 {
+#ifdef CONFIG_INFINIBAND_PEER_MEM
 	struct mlx5_ib_dev *dev = to_mdev(ibmr->device);
 	struct mlx5_ib_mr *mr = to_mmr(ibmr);
-	int npages = mr->npages;
-	struct ib_umem *umem = mr->umem;
+	int ret = 0;
+	int umred = mr->umred;
 
-#ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
-	if (umem && umem->odp_data) {
-		/* Prevent new page faults from succeeding */
-		mr->live = 0;
-		/* Wait for all running page-fault handlers to finish. */
-		synchronize_srcu(&dev->mr_srcu);
-		/* Destroy all page mappings */
-		mlx5_ib_invalidate_range(umem, ib_umem_start(umem),
-					 ib_umem_end(umem));
-		/*
-		 * We kill the umem before the MR for ODP,
-		 * so that there will not be any invalidations in
-		 * flight, looking at the *mr struct.
+	if (atomic_inc_return(&mr->invalidated) > 1) {
+		/* In case there is inflight invalidation
+		 * call pending for its termination
 		 */
-		ib_umem_release(umem);
-		atomic_sub(npages, &dev->mdev->priv.reg_pages);
-
-		/* Avoid double-freeing the umem. */
-		umem = NULL;
+		wait_for_completion(&mr->invalidation_comp);
+	} else {
+		ret = mlx5_ib_invalidate_mr(ibmr);
+		if (ret)
+			return ret;
 	}
-#endif
-
-	clean_mr(mr);
-
-	if (umem) {
-		ib_umem_release(umem);
-		atomic_sub(npages, &dev->mdev->priv.reg_pages);
+	kfree(mr->peer_id);
+	mr->peer_id = NULL;
+	if (umred) {
+		atomic_set(&mr->invalidated, 0);
+		free_cached_mr(dev, mr);
+	} else {
+		kfree(mr);
 	}
-
 	return 0;
+#else
+	return mlx5_ib_invalidate_mr(ibmr);
+#endif
 }
+
 
 struct ib_mr *mlx5_ib_alloc_mr(struct ib_pd *pd,
 			       enum ib_mr_type mr_type,
