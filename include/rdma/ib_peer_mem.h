@@ -60,6 +60,7 @@ struct core_ticket {
 struct ib_peer_memory_client *ib_get_peer_client(struct ib_ucontext *context,
 						 unsigned long addr,
 						 size_t size,
+						 unsigned long flags,
 						 void **peer_client_context);
 
 void ib_put_peer_client(struct ib_peer_memory_client *ib_peer_client,
