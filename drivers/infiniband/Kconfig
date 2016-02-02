@@ -64,6 +64,16 @@ config INFINIBAND_ADDR_TRANS_CONFIGFS
 	  This allows the user to config the default GID type that the CM
 	  uses for each device, when initiaing new connections.
 
+config INFINIBAND_PEER_MEM
+	bool "InfiniBand Peer memory access"
+	depends on INFINIBAND_USER_MEM
+	depends on MMU_NOTIFIER
+	default y
+	---help---
+	  Peer memory access feature allows RDMA operations to directly target
+	  memory in external hardware devices, such as GPU cards, SSD based
+	  storage, dedicated ASIC accelerators, etc.
+
 source "drivers/infiniband/hw/mthca/Kconfig"
 source "drivers/infiniband/hw/qib/Kconfig"
 source "drivers/infiniband/hw/cxgb3/Kconfig"
