@@ -435,6 +435,13 @@ enum mlx5_ib_mtt_access_flags {
 
 #define MLX5_IB_MTT_PRESENT (MLX5_IB_MTT_READ | MLX5_IB_MTT_WRITE)
 
+#ifdef CONFIG_INFINIBAND_PEER_MEM
+struct mlx5_ib_peer_id {
+	struct completion comp;
+	struct mlx5_ib_mr *mr;
+};
+#endif
+
 struct mlx5_ib_mr {
 	struct ib_mr		ibmr;
 	void			*descs;
@@ -454,6 +461,11 @@ struct mlx5_ib_mr {
 	struct mlx5_core_sig_ctx    *sig;
 	int			live;
 	void			*descs_alloc;
+#ifdef CONFIG_INFINIBAND_PEER_MEM
+	struct mlx5_ib_peer_id  *peer_id;
+	atomic_t      invalidated;
+	struct completion invalidation_comp;
+#endif
 };
 
 struct mlx5_ib_umr_context {
