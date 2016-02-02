@@ -43,6 +43,13 @@
 struct ib_ucontext;
 struct ib_umem_odp;
 
+#ifdef CONFIG_INFINIBAND_PEER_MEM
+struct invalidation_ctx {
+	struct ib_umem *umem;
+	u64 context_ticket;
+};
+#endif
+
 struct ib_umem {
 	struct ib_ucontext     *context;
 	size_t			length;
@@ -61,6 +68,7 @@ struct ib_umem {
 #ifdef CONFIG_INFINIBAND_PEER_MEM
 	/* peer memory that manages this umem */
 	struct ib_peer_memory_client *ib_peer_mem;
+	struct invalidation_ctx *invalidation_ctx;
 	/* peer memory private context */
 	void *peer_mem_client_context;
 #endif
