@@ -1624,6 +1624,52 @@ err_free:
 	return ERR_PTR(err);
 }
 
+struct ib_mw *mlx5_ib_alloc_mw(struct ib_pd *pd, enum ib_mw_type type)
+{
+	struct mlx5_ib_dev *dev = to_mdev(pd->device);
+	struct mlx5_create_mkey_mbox_in *in = NULL;
+	struct mlx5_ib_mw *mw = NULL;
+	int ndescs = roundup(1, 4);
+	int err;
+
+	mw = kzalloc(sizeof(*mw), GFP_KERNEL);
+	in = kzalloc(sizeof(*in), GFP_KERNEL);
+	if (!mw || !in) {
+		err = -ENOMEM;
+		goto free;
+	}
+
+	in->seg.status = MLX5_MKEY_STATUS_FREE;
+	in->seg.xlt_oct_size = cpu_to_be32(ndescs);
+	in->seg.flags_pd = cpu_to_be32(to_mpd(pd)->pdn);
+	in->seg.flags = MLX5_PERM_UMR_EN | MLX5_ACCESS_MODE_KLM |
+		MLX5_PERM_LOCAL_READ;
+	if (type == IB_MW_TYPE_2)
+		in->seg.flags_pd |= cpu_to_be32(MLX5_MKEY_REMOTE_INVAL);
+	in->seg.qpn_mkey7_0 = cpu_to_be32(0xffffff << 8);
+
+	err = mlx5_core_create_mkey(dev->mdev, &mw->mmkey, in, sizeof(*in),
+				    NULL, NULL, NULL);
+	if (err)
+		goto free;
+
+	mw->ibmw.rkey = mw->mmkey.key;
+	kfree(in);
+
+	return &mw->ibmw;
+
+free:
+	kfree(mw);
+	kfree(in);
+	return ERR_PTR(err);
+}
+
+int mlx5_ib_dealloc_mw(struct ib_mw *mw)
+{
+	return mlx5_core_destroy_mkey((to_mdev(mw->device))->mdev,
+				      &to_mmw(mw)->mmkey);
+}
+
 int mlx5_ib_check_mr_status(struct ib_mr *ibmr, u32 check_mask,
 			    struct ib_mr_status *mr_status)
 {
