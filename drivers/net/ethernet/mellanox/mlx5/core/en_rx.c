@@ -64,6 +64,7 @@ int mlx5e_alloc_rx_wqe(struct mlx5e_rq *rq, struct mlx5e_rx_wqe *wqe, u16 ix)
 
 	*((dma_addr_t *)skb->cb) = dma_addr;
 	wqe->data.addr = cpu_to_be64(dma_addr + MLX5E_NET_IP_ALIGN);
+	wqe->data.lkey = rq->mkey_be;
 
 	rq->skb[ix] = skb;
 
@@ -73,6 +74,62 @@ err_free_skb:
 	dev_kfree_skb(skb);
 
 	return -ENOMEM;
+}
+
+static void mlx5e_build_umr_wqe(struct mlx5e_rq *rq,
+				struct mlx5e_sq *sq,
+				struct mlx5e_umr_wqe *wqe,
+				u16 ix)
+{
+	struct mlx5_wqe_ctrl_seg      *cseg = &wqe->ctrl;
+	struct mlx5_wqe_umr_ctrl_seg *ucseg = &wqe->uctrl;
+	struct mlx5_wqe_data_seg      *dseg = &wqe->data;
+	struct mlx5e_mpw_info *wi = &rq->wqe_info[ix];
+	u8 ds_cnt = DIV_ROUND_UP(sizeof(*wqe), MLX5_SEND_WQE_DS);
+	u16 umr_wqe_mtt_offset = rq->ix * MLX5_CHANNEL_MAX_NUM_PAGES +
+					ix * MLX5_MPWRQ_WQE_NUM_PAGES;
+
+	memset(wqe, 0, sizeof(*wqe));
+	cseg->opmod_idx_opcode =
+		cpu_to_be32((sq->pc << MLX5_WQE_CTRL_WQE_INDEX_SHIFT) |
+			    MLX5_OPCODE_UMR);
+	cseg->qpn_ds    = cpu_to_be32((sq->sqn << MLX5_WQE_CTRL_QPN_SHIFT) |
+				      ds_cnt);
+	cseg->fm_ce_se  = MLX5_WQE_CTRL_CQ_UPDATE;
+	cseg->imm       = rq->umr_mkey_be;
+
+	ucseg->flags = MLX5_UMR_TRANSLATION_OFFSET_EN;
+	ucseg->klm_octowords =
+		cpu_to_be16(mlx5e_get_mtt_octw(MLX5_MPWRQ_WQE_NUM_PAGES));
+	ucseg->bsf_octowords =
+		cpu_to_be16(mlx5e_get_mtt_octw(umr_wqe_mtt_offset));
+	ucseg->mkey_mask     = cpu_to_be64(MLX5_MKEY_MASK_FREE);
+
+	dseg->lkey = sq->mkey_be;
+	dseg->addr = cpu_to_be64(wi->mtt_addr);
+}
+
+static void mlx5e_post_umr_wqe(struct mlx5e_rq *rq, u16 ix)
+{
+	struct mlx5e_sq *sq = &rq->channel->icosq;
+	struct mlx5_wq_cyc *wq = &sq->wq;
+	struct mlx5e_umr_wqe *wqe;
+	u8 num_wqebbs = DIV_ROUND_UP(sizeof(*wqe), MLX5_SEND_WQE_BB);
+	u16 pi;
+
+	/* fill sq edge with nops to avoid wqe wrap around */
+	while ((pi = (sq->pc & wq->sz_m1)) > sq->edge) {
+		sq->ico_wqe_info[pi].opcode = MLX5_OPCODE_NOP;
+		sq->ico_wqe_info[pi].num_wqebbs = 1;
+		mlx5e_send_nop(sq, true);
+	}
+
+	wqe = mlx5_wq_cyc_get_wqe(wq, pi);
+	mlx5e_build_umr_wqe(rq, sq, wqe, ix);
+	sq->ico_wqe_info[pi].opcode = MLX5_OPCODE_UMR;
+	sq->ico_wqe_info[pi].num_wqebbs = num_wqebbs;
+	sq->pc += num_wqebbs;
+	mlx5e_tx_notify_hw(sq, &wqe->ctrl, 0);
 }
 
 static inline int mlx5e_get_wqe_mtt_sz(void)
@@ -212,6 +269,7 @@ int mlx5e_alloc_rx_mpwqe(struct mlx5e_rq *rq, struct mlx5e_rx_wqe *wqe, u16 ix)
 	}
 
 	wi->consumed_strides = 0;
+	wqe->data.lkey = rq->mkey_be;
 	wqe->data.addr = cpu_to_be64(wi->dma_info.addr);
 
 	return 0;

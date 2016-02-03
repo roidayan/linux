@@ -141,6 +141,13 @@ struct mlx5e_rx_wqe {
 	struct mlx5_wqe_data_seg      data;
 };
 
+struct mlx5e_umr_wqe {
+	struct mlx5_wqe_ctrl_seg       ctrl;
+	struct mlx5_wqe_umr_ctrl_seg   uctrl;
+	struct mlx5_mkey_seg           mkc;
+	struct mlx5_wqe_data_seg       data;
+};
+
 #ifdef CONFIG_MLX5_CORE_EN_DCB
 #define MLX5E_MAX_BW_ALLOC 100 /* Max percentage of BW allocation */
 #define MLX5E_MIN_BW_ALLOC 1   /* Min percentage of BW allocation */
@@ -420,6 +427,7 @@ struct mlx5e_rq {
 	u32                    wqe_sz;
 	struct sk_buff       **skb;
 	struct mlx5e_mpw_info *wqe_info;
+	__be32                 mkey_be;
 	__be32                 umr_mkey_be;
 
 	struct device         *pdev;
@@ -759,7 +767,7 @@ void mlx5e_build_default_indir_rqt(u32 *indirection_rqt, int len,
 				   int num_channels);
 
 static inline void mlx5e_tx_notify_hw(struct mlx5e_sq *sq,
-				      struct mlx5e_tx_wqe *wqe, int bf_sz)
+				      struct mlx5_wqe_ctrl_seg *ctrl, int bf_sz)
 {
 	u16 ofst = MLX5_BF_OFFSET + sq->bf_offset;
 
@@ -774,13 +782,13 @@ static inline void mlx5e_tx_notify_hw(struct mlx5e_sq *sq,
 	wmb();
 
 	if (bf_sz) {
-		__iowrite64_copy(sq->uar_bf_map + ofst, &wqe->ctrl, bf_sz);
+		__iowrite64_copy(sq->uar_bf_map + ofst, ctrl, bf_sz);
 
 		/* flush the write-combining mapped buffer */
 		wmb();
 
 	} else {
-		mlx5_write64((__be32 *)&wqe->ctrl, sq->uar_map + ofst, NULL);
+		mlx5_write64((__be32 *)ctrl, sq->uar_map + ofst, NULL);
 	}
 
 	sq->bf_offset ^= sq->bf_buf_size;
