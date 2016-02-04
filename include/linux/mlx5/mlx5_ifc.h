@@ -532,7 +532,9 @@ struct mlx5_ifc_per_protocol_networking_offload_caps_bits {
 
 struct mlx5_ifc_roce_cap_bits {
 	u8         roce_apm[0x1];
-	u8         reserved_at_1[0x1f];
+	u8         reserved_at_1[0x1];
+	u8         roce_rx_allow_untagged[0x1];
+	u8         reserved_at_3[0x1d];
 
 	u8         reserved_at_20[0x60];
 
@@ -1895,7 +1897,8 @@ struct mlx5_ifc_qpc_bits {
 struct mlx5_ifc_roce_addr_layout_bits {
 	u8         source_l3_address[16][0x8];
 
-	u8         reserved_at_8[0x3];
+	u8         reserved_at_8[0x2];
+	u8         rx_allow_untagged[0x1];
 	u8         vlan_valid[0x1];
 	u8         vlan_id[0xc];
 	u8         source_mac_47_32[0x10];
