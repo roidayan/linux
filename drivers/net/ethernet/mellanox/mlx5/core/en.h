@@ -378,15 +378,10 @@ enum mlx5e_traffic_types {
 	MLX5E_TT_IPV6,
 	MLX5E_TT_ANY,
 	MLX5E_NUM_TT,
+	MLX5E_NUM_INDIR_TIRS = MLX5E_TT_ANY,
 };
 
 #define IS_HASHING_TT(tt) (tt != MLX5E_TT_ANY)
-
-enum mlx5e_rqt_ix {
-	MLX5E_INDIRECTION_RQT,
-	MLX5E_SINGLE_RQ_RQT,
-	MLX5E_NUM_RQT,
-};
 
 struct mlx5e_eth_addr_info {
 	u8  addr[ETH_ALEN + 2];
@@ -446,6 +441,11 @@ struct mlx5e_flow_tables {
 	struct mlx5e_flow_table		main;
 };
 
+struct mlx5e_direct_tir {
+	u32              tirn;
+	u32              rqtn;
+};
+
 struct mlx5e_priv {
 	/* priv data path fields - start */
 	struct mlx5e_sq            **txq_to_sq_map;
@@ -463,8 +463,9 @@ struct mlx5e_priv {
 
 	struct mlx5e_channel     **channel;
 	u32                        tisn[MLX5E_MAX_NUM_TC];
-	u32                        rqtn[MLX5E_NUM_RQT];
-	u32                        tirn[MLX5E_NUM_TT];
+	u32                        indir_rqtn;
+	u32                        indir_tirn[MLX5E_NUM_INDIR_TIRS];
+	struct mlx5e_direct_tir    direct_tir[MLX5E_MAX_NUM_CHANNELS];
 
 	struct mlx5e_flow_tables   fts;
 	struct mlx5e_eth_addr_db   eth_addr;
@@ -571,7 +572,7 @@ void mlx5e_disable_vlan_filter(struct mlx5e_priv *priv);
 
 int mlx5e_modify_rqs_vsd(struct mlx5e_priv *priv, bool vsd);
 
-int mlx5e_redirect_rqt(struct mlx5e_priv *priv, enum mlx5e_rqt_ix rqt_ix);
+int mlx5e_redirect_rqt(struct mlx5e_priv *priv, u32 rqtn, int sz, int ix);
 void mlx5e_build_tir_ctx_hash(void *tirc, struct mlx5e_priv *priv);
 
 int mlx5e_open_locked(struct net_device *netdev);
