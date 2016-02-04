@@ -64,6 +64,10 @@ MODULE_DESCRIPTION("Mellanox Connect-IB HCA IB driver");
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_VERSION(DRIVER_VERSION);
 
+static bool mlx5_ib_asymmetric_vlan;
+module_param_named(asymmetric_vlan, mlx5_ib_asymmetric_vlan, bool, 0444);
+MODULE_PARM_DESC(asymmetric_vlan, "Asymmetric VLAN: 0 = Off, 1 = On. Default = 0");
+
 static int deprecated_prof_sel = 2;
 module_param_named(prof_sel, deprecated_prof_sel, int, 0444);
 MODULE_PARM_DESC(prof_sel, "profile selector. Deprecated here. Moved to module mlx5_core");
@@ -178,7 +182,8 @@ static int mlx5_query_port_roce(struct ib_device *device, u8 port_num,
 	return 0;
 }
 
-static void ib_gid_to_mlx5_roce_addr(const union ib_gid *gid,
+static void ib_gid_to_mlx5_roce_addr(const struct mlx5_ib_dev *dev,
+				     const union ib_gid *gid,
 				     const struct ib_gid_attr *attr,
 				     void *mlx5_addr)
 {
@@ -197,6 +202,10 @@ static void ib_gid_to_mlx5_roce_addr(const union ib_gid *gid,
 		MLX5_SET_RA(mlx5_addr, vlan_valid, 1);
 		MLX5_SET_RA(mlx5_addr, vlan_id, vlan_dev_vlan_id(attr->ndev));
 	}
+
+	if (MLX5_CAP_ROCE(dev->mdev, roce_rx_allow_untagged))
+		MLX5_SET_RA(mlx5_addr, rx_allow_untagged,
+			    mlx5_ib_asymmetric_vlan);
 
 	switch (attr->gid_type) {
 	case IB_GID_TYPE_IB:
@@ -245,7 +254,7 @@ static int set_roce_addr(struct ib_device *device, u8 port_num,
 
 	memset(in, 0, sizeof(in));
 
-	ib_gid_to_mlx5_roce_addr(gid, attr, in_addr);
+	ib_gid_to_mlx5_roce_addr(dev, gid, attr, in_addr);
 
 	MLX5_SET(set_roce_address_in, in, roce_address_index, index);
 	MLX5_SET(set_roce_address_in, in, opcode, MLX5_CMD_OP_SET_ROCE_ADDRESS);
@@ -2433,6 +2442,10 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 		dev->ib_dev.get_vf_stats	= mlx5_ib_get_vf_stats;
 		dev->ib_dev.set_vf_guid		= mlx5_ib_set_vf_guid;
 	}
+
+	if (!MLX5_CAP_ROCE(dev->mdev, roce_rx_allow_untagged) &&
+	    mlx5_ib_asymmetric_vlan)
+		mlx5_ib_warn(dev, "Asymmetric VLAN is requested but not supported on device.\n");
 
 	mlx5_ib_internal_fill_odp_caps(dev);
 
