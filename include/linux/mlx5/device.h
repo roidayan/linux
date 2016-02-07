@@ -1202,6 +1202,10 @@ enum mlx5_cap_mode {
 	HCA_CAP_OPMOD_GET_CUR	= 1,
 };
 
+/*
+ * The numbers in this enum should follow the PRM document.
+ * Table: SET_HCA_CAP Input Structure Field
+ */
 enum mlx5_cap_type {
 	MLX5_CAP_GENERAL = 0,
 	MLX5_CAP_ETHERNET_OFFLOADS,
@@ -1213,6 +1217,8 @@ enum mlx5_cap_type {
 	MLX5_CAP_FLOW_TABLE,
 	MLX5_CAP_ESWITCH_FLOW_TABLE,
 	MLX5_CAP_ESWITCH,
+	MLX5_CAP_RESERVED,
+	MLX5_CAP_VECTOR_CALC,
 	/* NUM OF CAP Types */
 	MLX5_CAP_NUM
 };
@@ -1274,6 +1280,10 @@ enum mlx5_cap_type {
 
 #define MLX5_CAP_ODP(mdev, cap)\
 	MLX5_GET(odp_cap, mdev->hca_caps_cur[MLX5_CAP_ODP], cap)
+
+#define MLX5_CAP_VECTOR_CALC(mdev, cap) \
+	MLX5_GET(vector_calc_cap, \
+		 mdev->hca_caps_cur[MLX5_CAP_VECTOR_CALC], cap)
 
 enum {
 	MLX5_CMD_STAT_OK			= 0x0,
