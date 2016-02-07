@@ -1225,6 +1225,11 @@ static void mlx5e_build_rx_cq_param(struct mlx5e_priv *priv,
 		BUG_ON(true);
 	}
 
+	if (MLX5_CAP_GEN(priv->mdev, cqe_compression)) {
+		MLX5_SET(cqc, cqc, mini_cqe_res_format, MLX5_CQE_FORMAT_CSUM);
+		MLX5_SET(cqc, cqc, cqe_comp_en, 1);
+	}
+
 	mlx5e_build_common_cq_param(priv, param);
 }
 
