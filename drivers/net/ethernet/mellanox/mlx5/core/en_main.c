@@ -3132,10 +3132,19 @@ static void *mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 		rtnl_unlock();
 	}
 
+	err = mlx5e_sysfs_create(netdev);
+	if (err) {
+		mlx5_core_err(mdev, "mlx5e_sysfs_create failed, %d\n", err);
+		goto err_unregister_netdev;
+	}
+
 	mlx5e_enable_async_events(priv);
 	queue_work(priv->wq, &priv->set_rx_mode_work);
 
 	return priv;
+
+err_unregister_netdev:
+	unregister_netdev(netdev);
 
 err_tc_cleanup:
 	mlx5e_tc_cleanup(priv);
@@ -3190,6 +3199,7 @@ static void mlx5e_destroy_netdev(struct mlx5_core_dev *mdev, void *vpriv)
 	queue_work(priv->wq, &priv->set_rx_mode_work);
 	mlx5e_disable_async_events(priv);
 	flush_workqueue(priv->wq);
+	mlx5e_sysfs_remove(netdev);
 	if (test_bit(MLX5_INTERFACE_STATE_SHUTDOWN, &mdev->intf_state)) {
 		netif_device_detach(netdev);
 		mlx5e_close(netdev);
