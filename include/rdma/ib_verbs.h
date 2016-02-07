@@ -209,6 +209,11 @@ enum ib_device_cap_flags {
 	 * by hardware.
 	 */
 	IB_DEVICE_CROSS_CHANNEL		= (1 << 27),
+	/*
+	 * IB_DEVICE_PEER_MEMORY - driver capability oppening RDMA
+	 * access to another devices memory.
+	 */
+	IB_DEVICE_PEER_MEMORY			= (1 << 28),
 	IB_DEVICE_MANAGED_FLOW_STEERING		= (1 << 29),
 	IB_DEVICE_SIGNATURE_HANDOVER		= (1 << 30),
 	IB_DEVICE_ON_DEMAND_PAGING		= (1 << 31),

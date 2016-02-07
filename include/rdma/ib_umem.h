@@ -36,9 +36,28 @@
 #include <linux/list.h>
 #include <linux/scatterlist.h>
 #include <linux/workqueue.h>
+#ifdef CONFIG_INFINIBAND_PEER_MEM
+#include <rdma/ib_peer_mem.h>
+#endif
 
 struct ib_ucontext;
 struct ib_umem_odp;
+struct ib_umem;
+
+#ifdef CONFIG_INFINIBAND_PEER_MEM
+struct invalidation_ctx {
+	struct ib_umem *umem;
+	u64 context_ticket;
+	void (*func)(void *invalidation_cookie,
+		     struct ib_umem *umem,
+		     unsigned long addr, size_t size);
+	void *cookie;
+	int peer_callback;
+	int inflight_invalidation;
+	int peer_invalidated;
+	struct completion comp;
+};
+#endif
 
 struct ib_umem {
 	struct ib_ucontext     *context;
@@ -55,6 +74,13 @@ struct ib_umem {
 	struct sg_table sg_head;
 	int             nmap;
 	int             npages;
+#ifdef CONFIG_INFINIBAND_PEER_MEM
+	/* peer memory that manages this umem */
+	struct ib_peer_memory_client *ib_peer_mem;
+	struct invalidation_ctx *invalidation_ctx;
+	/* peer memory private context */
+	void *peer_mem_client_context;
+#endif
 };
 
 /* Returns the offset of the umem start relative to the first page. */
@@ -80,30 +106,55 @@ static inline size_t ib_umem_num_pages(struct ib_umem *umem)
 	return (ib_umem_end(umem) - ib_umem_start(umem)) >> PAGE_SHIFT;
 }
 
-#ifdef CONFIG_INFINIBAND_USER_MEM
+enum ib_peer_mem_flags {
+	IB_UMEM_DMA_SYNC	= (1 << 0),
+	IB_UMEM_PEER_ALLOW	= (1 << 1),
+	IB_UMEM_PEER_INVAL_SUPP	= (1 << 2),
+};
 
-struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
-			    size_t size, int access, int dmasync);
+#ifdef CONFIG_INFINIBAND_USER_MEM
+struct ib_umem *ib_umem_get_flags(struct ib_ucontext *context,
+				  unsigned long addr, size_t size,
+				  int access, unsigned long flags);
+
 void ib_umem_release(struct ib_umem *umem);
 int ib_umem_page_count(struct ib_umem *umem);
 int ib_umem_copy_from(void *dst, struct ib_umem *umem, size_t offset,
 		      size_t length);
 
+#ifdef CONFIG_INFINIBAND_PEER_MEM
+int ib_umem_activate_invalidation_notifier(struct ib_umem *umem,
+					   void (*func)(void *cookie,
+					   struct ib_umem *umem,
+					   unsigned long addr, size_t size),
+					   void *cookie);
+#endif
+
 #else /* CONFIG_INFINIBAND_USER_MEM */
 
 #include <linux/err.h>
 
-static inline struct ib_umem *ib_umem_get(struct ib_ucontext *context,
-					  unsigned long addr, size_t size,
-					  int access, int dmasync) {
+static inline struct ib_umem *ib_umem_get_flags(struct ib_ucontext *context,
+						unsigned long addr, size_t size,
+						int access,
+						unsigned long flags) {
 	return ERR_PTR(-EINVAL);
 }
+
 static inline void ib_umem_release(struct ib_umem *umem) { }
 static inline int ib_umem_page_count(struct ib_umem *umem) { return 0; }
 static inline int ib_umem_copy_from(void *dst, struct ib_umem *umem, size_t offset,
 		      		    size_t length) {
 	return -EINVAL;
 }
+
 #endif /* CONFIG_INFINIBAND_USER_MEM */
+
+static inline struct ib_umem *ib_umem_get(struct ib_ucontext *context,
+					  unsigned long addr, size_t size,
+					  int access, int dmasync) {
+	return ib_umem_get_flags(context, addr, size, access,
+				 dmasync ? IB_UMEM_DMA_SYNC : 0);
+}
 
 #endif /* IB_UMEM_H */

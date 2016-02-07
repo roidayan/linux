@@ -479,6 +479,9 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 		IB_DEVICE_PORT_ACTIVE_EVENT		|
 		IB_DEVICE_SYS_IMAGE_GUID		|
 		IB_DEVICE_RC_RNR_NAK_GEN;
+#ifdef CONFIG_INFINIBAND_PEER_MEM
+	props->device_cap_flags |= IB_DEVICE_PEER_MEMORY;
+#endif
 
 	if (MLX5_CAP_GEN(mdev, pkv))
 		props->device_cap_flags |= IB_DEVICE_BAD_PKEY_CNTR;
