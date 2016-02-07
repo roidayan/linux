@@ -565,6 +565,9 @@ struct mlx5e_channel {
 	u8                         num_tc;
 	unsigned long              flags;
 
+	/* data path - accessed per napi poll */
+	struct irq_desc           *irq_desc;
+
 	/* control */
 	struct mlx5e_priv         *priv;
 	int                        ix;
