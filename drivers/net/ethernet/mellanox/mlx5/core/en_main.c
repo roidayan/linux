@@ -1090,6 +1090,7 @@ static int mlx5e_open_channel(struct mlx5e_priv *priv, int ix,
 		goto err_close_sqs;
 
 	netif_set_xps_queue(netdev, get_cpu_mask(c->cpu), ix);
+	c->irq_desc = irq_to_desc(c->rq.cq.mcq.irqn);
 	*cp = c;
 
 	return 0;
