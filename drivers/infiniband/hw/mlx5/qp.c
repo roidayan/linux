@@ -848,7 +848,9 @@ static int create_kernel_qp(struct mlx5_ib_dev *dev,
 	int err;
 
 	uuari = &dev->mdev->priv.uuari;
-	if (init_attr->create_flags & ~(IB_QP_CREATE_SIGNATURE_EN | IB_QP_CREATE_BLOCK_MULTICAST_LOOPBACK))
+	if (init_attr->create_flags & ~(IB_QP_CREATE_SIGNATURE_EN |
+					IB_QP_CREATE_BLOCK_MULTICAST_LOOPBACK |
+					mlx5_ib_create_qp_sqpn_qp1()))
 		return -EINVAL;
 
 	if (init_attr->qp_type == MLX5_IB_QPT_REG_UMR)
@@ -892,6 +894,11 @@ static int create_kernel_qp(struct mlx5_ib_dev *dev,
 	/* Set "fast registration enabled" for all kernel QPs */
 	(*in)->ctx.params1 |= cpu_to_be32(1 << 11);
 	(*in)->ctx.sq_crq_size |= cpu_to_be16(1 << 4);
+
+	if (init_attr->create_flags & mlx5_ib_create_qp_sqpn_qp1()) {
+		(*in)->ctx.deth_sqpn = cpu_to_be32(1);
+		qp->flags |= MLX5_IB_QP_SQPN_QP1;
+	}
 
 	mlx5_fill_page_array(&qp->buf, (*in)->pas);
 
@@ -1334,6 +1341,11 @@ static int create_qp_common(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 			if (ucmd.sq_wqe_count > max_wqes) {
 				mlx5_ib_dbg(dev, "requested sq_wqe_count (%d) > max allowed (%d)\n",
 					    ucmd.sq_wqe_count, max_wqes);
+				return -EINVAL;
+			}
+			if (init_attr->create_flags &
+			    mlx5_ib_create_qp_sqpn_qp1()) {
+				mlx5_ib_dbg(dev, "user-space is not allowed to create UD QPs spoofing as QP1\n");
 				return -EINVAL;
 			}
 			err = create_user_qp(dev, pd, qp, udata, init_attr, &in,
@@ -2353,6 +2365,8 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 	if (!ibqp->uobject && cur_state == IB_QPS_RESET && new_state == IB_QPS_INIT)
 		context->sq_crq_size |= cpu_to_be16(1 << 4);
 
+	if (qp->flags & MLX5_IB_QP_SQPN_QP1)
+		context->deth_sqpn = cpu_to_be32(1);
 
 	mlx5_cur = to_mlx5_state(cur_state);
 	mlx5_new = to_mlx5_state(new_state);
@@ -3944,6 +3958,8 @@ int mlx5_ib_query_qp(struct ib_qp *ibqp, struct ib_qp_attr *qp_attr,
 		qp_init_attr->create_flags |= IB_QP_CREATE_MANAGED_SEND;
 	if (qp->flags & MLX5_IB_QP_MANAGED_RECV)
 		qp_init_attr->create_flags |= IB_QP_CREATE_MANAGED_RECV;
+	if (qp->flags & MLX5_IB_QP_SQPN_QP1)
+		qp_init_attr->create_flags |= mlx5_ib_create_qp_sqpn_qp1();
 
 	qp_init_attr->sq_sig_type = qp->sq_signal_bits & MLX5_WQE_CTRL_CQ_UPDATE ?
 		IB_SIGNAL_ALL_WR : IB_SIGNAL_REQ_WR;
