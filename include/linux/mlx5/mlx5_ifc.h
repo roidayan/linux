@@ -883,10 +883,10 @@ struct mlx5_ifc_cmd_hca_cap_bits {
 	u8         device_frequency_mhz[0x20];
 	u8         device_frequency_khz[0x20];
 	u8         reserved_at_4ff[0x5f];
-	u8         cqe_zip[0x1];
+	u8         cqe_compression[0x1];
 
-	u8         cqe_zip_timeout[0x10];
-	u8         cqe_zip_max_num[0x10];
+	u8         cqe_compression_timeout[0x10];
+	u8         cqe_compression_max_num[0x10];
 
 	u8         reserved_at_57f[0x220];
 };
@@ -2560,7 +2560,7 @@ struct mlx5_ifc_cqc_bits {
 	u8         scqe_break_moderation_en[0x1];
 	u8         oi[0x1];
 	u8         reserved_at_f[0x2];
-	u8         cqe_zip_en[0x1];
+	u8         cqe_comp_en[0x1];
 	u8         mini_cqe_res_format[0x2];
 	u8         st[0x4];
 	u8         reserved_at_18[0x8];
