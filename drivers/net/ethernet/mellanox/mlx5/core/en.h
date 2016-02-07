@@ -674,6 +674,10 @@ struct mlx5e_priv {
 	struct mlx5e_tstamp        tstamp;
 	bool q_count_valid;
 	u16 counter_set_id;
+
+	struct kobject *ecn_root_kobj;
+	struct mlx5_ecn_ctx ecn_ctx[MLX5_CONG_PROTOCOL_NUM];
+	struct mlx5_ecn_enable_ctx ecn_enable_ctx[MLX5_CONG_PROTOCOL_NUM][8];
 };
 
 enum mlx5e_link_mode {
@@ -767,6 +771,8 @@ int mlx5e_open_locked(struct net_device *netdev);
 int mlx5e_close_locked(struct net_device *netdev);
 void mlx5e_build_default_indir_rqt(u32 *indirection_rqt, int len,
 				   int num_channels);
+int mlx5e_sysfs_create(struct net_device *dev);
+void mlx5e_sysfs_remove(struct net_device *dev);
 
 static inline void mlx5e_tx_notify_hw(struct mlx5e_sq *sq,
 				      struct mlx5_wqe_ctrl_seg *ctrl, int bf_sz)

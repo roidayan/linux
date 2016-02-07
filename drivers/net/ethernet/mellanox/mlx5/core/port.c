@@ -538,3 +538,75 @@ int mlx5_query_port_wol(struct mlx5_core_dev *mdev, u8 *wol_mode)
 	return err;
 }
 EXPORT_SYMBOL_GPL(mlx5_query_port_wol);
+
+int mlx5_query_port_cong_status(struct mlx5_core_dev *mdev, int protocol,
+				int priority, int *is_enable)
+{
+	u32 in[MLX5_ST_SZ_DW(query_cong_status_in)];
+	u32 out[MLX5_ST_SZ_DW(query_cong_status_out)];
+	int err;
+
+	memset(in, 0, sizeof(in));
+	memset(out, 0, sizeof(out));
+
+	MLX5_SET(query_cong_status_in, in, opcode,
+		 MLX5_CMD_OP_QUERY_CONG_STATUS);
+	MLX5_SET(query_cong_status_in, in, cong_protocol, protocol);
+	MLX5_SET(query_cong_status_in, in, priority, priority);
+
+	err = mlx5_cmd_exec_check_status(mdev, in, sizeof(in),
+					 out, sizeof(out));
+	if (!err)
+		*is_enable = MLX5_GET(query_cong_status_out, out, enable);
+	return err;
+}
+
+int mlx5_modify_port_cong_status(struct mlx5_core_dev *mdev, int protocol,
+				 int priority, int enable)
+{
+	u32 in[MLX5_ST_SZ_DW(modify_cong_status_in)];
+	u32 out[MLX5_ST_SZ_DW(modify_cong_status_out)];
+	int err;
+
+	memset(in, 0, sizeof(in));
+	memset(out, 0, sizeof(out));
+
+	MLX5_SET(modify_cong_status_in, in, opcode,
+		 MLX5_CMD_OP_MODIFY_CONG_STATUS);
+	MLX5_SET(modify_cong_status_in, in, cong_protocol, protocol);
+	MLX5_SET(modify_cong_status_in, in, priority, priority);
+	MLX5_SET(modify_cong_status_in, in, enable, enable);
+
+	err = mlx5_cmd_exec_check_status(mdev, in, sizeof(in),
+					 out, sizeof(out));
+	return err;
+}
+
+int mlx5_query_port_cong_params(struct mlx5_core_dev *mdev, int protocol,
+				void *out, int out_size)
+{
+	u32 in[MLX5_ST_SZ_DW(query_cong_params_in)];
+	int err;
+
+	memset(in, 0, sizeof(in));
+
+	MLX5_SET(query_cong_params_in, in, opcode,
+		 MLX5_CMD_OP_QUERY_CONG_PARAMS);
+	MLX5_SET(query_cong_params_in, in, cong_protocol, protocol);
+
+	err = mlx5_cmd_exec_check_status(mdev, in, sizeof(in),
+					 out, out_size);
+	return err;
+}
+
+int mlx5_modify_port_cong_params(struct mlx5_core_dev *mdev,
+				 void *in, int in_size)
+{
+	u32 out[MLX5_ST_SZ_DW(modify_cong_params_out)];
+	int err;
+
+	memset(out, 0, sizeof(out));
+
+	err = mlx5_cmd_exec_check_status(mdev, in, in_size, out, sizeof(out));
+	return err;
+}

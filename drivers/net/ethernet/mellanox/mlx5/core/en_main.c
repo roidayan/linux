@@ -2632,10 +2632,19 @@ static void *mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 		goto err_dealloc_q_counters;
 	}
 
+	err = mlx5e_sysfs_create(netdev);
+	if (err) {
+		mlx5_core_err(mdev, "mlx5e_sysfs_create failed, %d\n", err);
+		goto err_unregister_netdev;
+	}
+
 	mlx5e_enable_async_events(priv);
 	schedule_work(&priv->set_rx_mode_work);
 
 	return priv;
+
+err_unregister_netdev:
+	unregister_netdev(netdev);
 
 err_dealloc_q_counters:
 	mlx5e_destroy_q_counter(priv);
@@ -2684,6 +2693,7 @@ static void mlx5e_destroy_netdev(struct mlx5_core_dev *mdev, void *vpriv)
 	schedule_work(&priv->set_rx_mode_work);
 	mlx5e_disable_async_events(priv);
 	flush_scheduled_work();
+	mlx5e_sysfs_remove(netdev);
 	unregister_netdev(netdev);
 	mlx5e_destroy_q_counter(priv);
 	mlx5e_destroy_flow_tables(priv);
