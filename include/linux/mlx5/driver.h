@@ -164,6 +164,12 @@ enum mlx5_port_status {
 	MLX5_PORT_DOWN      = 2,
 };
 
+enum {
+	MLX5_INTERFACE_PROTOCOL_IB  = 0,
+	MLX5_INTERFACE_PROTOCOL_ETH,
+	MLX5_NUM_INTERFACE
+};
+
 struct mlx5_uuar_info {
 	struct mlx5_uar	       *uars;
 	int			num_uars;
@@ -452,6 +458,12 @@ struct mlx5_irq_info {
 
 struct mlx5_eswitch;
 
+struct mlx5_q_counter_allocator {
+	u32 used;
+	u32 max;
+	struct mutex lock; /* sync q counters allocation requests */
+};
+
 struct mlx5_priv {
 	char			name[MLX5_MAX_NAME_LEN];
 	struct mlx5_eq_table	eq_table;
@@ -511,6 +523,7 @@ struct mlx5_priv {
 	unsigned long		pci_dev_data;
 	struct mlx5_flow_root_namespace *root_ns;
 	struct mlx5_flow_root_namespace *fdb_root_ns;
+	struct mlx5_q_counter_allocator q_counter_allocator[MLX5_NUM_INTERFACE];
 };
 
 enum mlx5_device_state {
@@ -845,11 +858,6 @@ enum {
 
 enum {
 	MAX_MR_CACHE_ENTRIES    = 16,
-};
-
-enum {
-	MLX5_INTERFACE_PROTOCOL_IB  = 0,
-	MLX5_INTERFACE_PROTOCOL_ETH = 1,
 };
 
 struct mlx5_interface {

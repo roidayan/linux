@@ -953,6 +953,31 @@ static void mlx5_pci_close(struct mlx5_core_dev *dev, struct mlx5_priv *priv)
 	debugfs_remove(priv->dbg_root);
 }
 
+static void mlx5_init_queue_counter_allocator(struct mlx5_core_dev *dev,
+					      struct mlx5_priv *priv)
+{
+	struct mlx5_q_counter_allocator *q_ptr = priv->q_counter_allocator;
+	int qcounter_sets_netdev = min_t(int, 64,
+					 MLX5_CAP_GEN(dev, max_qp_cnt) / 2);
+	int i;
+
+	for (i = 0; i < MLX5_NUM_INTERFACE; i++) {
+		q_ptr[i].used = 0;
+		q_ptr[i].max  = 0;
+		mutex_init(&q_ptr[i].lock);
+	}
+	/* Set q counters quotas per interface */
+	q_ptr[MLX5_INTERFACE_PROTOCOL_ETH].max = qcounter_sets_netdev;
+	q_ptr[MLX5_INTERFACE_PROTOCOL_IB].max = MLX5_CAP_GEN(dev, max_qp_cnt) -
+		qcounter_sets_netdev;
+}
+
+static void mlx5_cleanup_queue_counter_allocator(struct mlx5_core_dev *dev,
+						 struct mlx5_priv *priv)
+{
+	/* nothing */
+}
+
 #define MLX5_IB_MOD "mlx5_ib"
 static int mlx5_load_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv)
 {
@@ -1097,6 +1122,7 @@ static int mlx5_load_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv)
 	mlx5_init_qp_table(dev);
 	mlx5_init_srq_table(dev);
 	mlx5_init_mr_table(dev);
+	mlx5_init_queue_counter_allocator(dev, priv);
 
 	err = mlx5_init_fs(dev);
 	if (err) {
@@ -1143,6 +1169,7 @@ err_sriov:
 err_reg_dev:
 	mlx5_cleanup_fs(dev);
 err_fs:
+	mlx5_cleanup_queue_counter_allocator(dev, priv);
 	mlx5_cleanup_mr_table(dev);
 	mlx5_cleanup_srq_table(dev);
 	mlx5_cleanup_qp_table(dev);
@@ -1212,6 +1239,7 @@ static int mlx5_unload_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv)
 #endif
 
 	mlx5_cleanup_fs(dev);
+	mlx5_cleanup_queue_counter_allocator(dev, priv);
 	mlx5_cleanup_mr_table(dev);
 	mlx5_cleanup_srq_table(dev);
 	mlx5_cleanup_qp_table(dev);
