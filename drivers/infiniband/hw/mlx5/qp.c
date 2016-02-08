@@ -2570,6 +2570,48 @@ static __be64 get_umr_update_mtt_mask(void)
 	return cpu_to_be64(result);
 }
 
+/*
+ * set_rereg_mkey_mask: Setting and unsetting mkey bitmask so match requested
+ * changes to MR.
+ * @mask: current mask.
+ * @flags: represent the user's selection of fields to update in the MR.
+ *
+ * for every relevant flag, the relevant bits will be explicitly set or unset.
+ */
+static __be64 set_rereg_mkey_mask(__be64 mask, int flags)
+{
+	u64 result = __be64_to_cpu(mask);
+
+	if (flags & MLX5_IB_SEND_UMR_UPDATE_TRANSLATION)
+		result |= (MLX5_MKEY_MASK_LEN |
+			   MLX5_MKEY_MASK_PAGE_SIZE |
+			   MLX5_MKEY_MASK_START_ADDR);
+	else
+		result &= ~(MLX5_MKEY_MASK_LEN |
+			    MLX5_MKEY_MASK_PAGE_SIZE |
+			    MLX5_MKEY_MASK_START_ADDR);
+
+	if (flags & MLX5_IB_SEND_UMR_UPDATE_ACCESS)
+		result |= (MLX5_MKEY_MASK_LR |
+			   MLX5_MKEY_MASK_LW |
+			   MLX5_MKEY_MASK_RR |
+			   MLX5_MKEY_MASK_RW |
+			   MLX5_MKEY_MASK_A);
+	else
+		result &= ~(MLX5_MKEY_MASK_LR |
+			    MLX5_MKEY_MASK_LW |
+			    MLX5_MKEY_MASK_RR |
+			    MLX5_MKEY_MASK_RW |
+			    MLX5_MKEY_MASK_A);
+
+	if (flags & MLX5_IB_SEND_UMR_UPDATE_PD)
+		result |= MLX5_MKEY_MASK_PD;
+	else
+		result &= ~MLX5_MKEY_MASK_PD;
+
+	return cpu_to_be64(result);
+}
+
 static void set_reg_umr_segment(struct mlx5_wqe_umr_ctrl_seg *umr,
 				struct ib_send_wr *wr)
 {
@@ -2597,6 +2639,15 @@ static void set_reg_umr_segment(struct mlx5_wqe_umr_ctrl_seg *umr,
 
 	if (!wr->num_sge)
 		umr->flags |= MLX5_UMR_INLINE;
+
+	/*
+	 * Updates to support re-registration of MR
+	 */
+	if (wr->send_flags & MLX5_IB_SEND_UMR_UPDATE_TRANSLATION ||
+	    wr->send_flags & MLX5_IB_SEND_UMR_UPDATE_ACCESS ||
+	    wr->send_flags & MLX5_IB_SEND_UMR_UPDATE_PD)
+		umr->mkey_mask = set_rereg_mkey_mask(umr->mkey_mask,
+						     wr->send_flags);
 }
 
 static u8 get_umr_flags(int acc)
@@ -2642,7 +2693,8 @@ static void set_reg_mkey_segment(struct mlx5_mkey_seg *seg, struct ib_send_wr *w
 
 	seg->flags = convert_access(umrwr->access_flags);
 	if (!(wr->send_flags & MLX5_IB_SEND_UMR_UPDATE_MTT)) {
-		seg->flags_pd = cpu_to_be32(to_mpd(umrwr->pd)->pdn);
+		if (umrwr->pd)
+			seg->flags_pd = cpu_to_be32(to_mpd(umrwr->pd)->pdn);
 		seg->start_addr = cpu_to_be64(umrwr->target.virt_addr);
 	}
 	seg->len = cpu_to_be64(umrwr->length);
