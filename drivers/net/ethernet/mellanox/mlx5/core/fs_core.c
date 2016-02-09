@@ -1028,6 +1028,31 @@ void mlx5_del_flow_rule(struct mlx5_flow_rule *rule)
 }
 EXPORT_SYMBOL(mlx5_del_flow_rule);
 
+int mlx5_modify_rule_destination(struct mlx5_flow_rule *rule,
+				 struct mlx5_flow_destination *dest)
+{
+	struct mlx5_flow_table *ft;
+	struct mlx5_flow_group *fg;
+	struct fs_fte *fte;
+	int err;
+
+	fs_get_obj(fte, rule->node.parent);
+	if (!(fte->action & MLX5_FLOW_CONTEXT_ACTION_FWD_DEST))
+		return -EINVAL;
+	fs_get_obj(fg, fte->node.parent);
+	fs_get_obj(ft, fg->node.parent);
+
+	memcpy(&rule->dest_attr, dest, sizeof(*dest));
+	err = mlx5_cmd_update_fte(get_dev(&ft->node),
+				  ft, fg->id, fte);
+	if (err) {
+		unlock_ref_node(&fte->node);
+		return err;
+	}
+
+	return 0;
+}
+
 /* Assuming prio->node.children(flow tables) is sorted by level */
 static struct mlx5_flow_table *find_next_ft(struct mlx5_flow_table *ft)
 {
