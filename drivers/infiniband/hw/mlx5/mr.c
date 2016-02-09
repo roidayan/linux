@@ -817,14 +817,14 @@ static struct ib_umem *mr_umem_get(struct ib_pd *pd, u64 start, u64 length,
 					   access_flags, 0);
 	if (IS_ERR(umem)) {
 		mlx5_ib_err(dev, "umem get failed (%ld)\n", PTR_ERR(umem));
-		return NULL;
+		return (void *)umem;
 	}
 
 	mlx5_ib_cont_pages(umem, start, npages, page_shift, ncont, order);
 	if (!npages) {
 		mlx5_ib_warn(dev, "avoid zero region\n");
 		ib_umem_release(umem);
-		return NULL;
+		return ERR_PTR(-EINVAL);
 	}
 
 	mlx5_ib_dbg(dev, "npages %d, ncont %d, order %d, page_shift %d\n",
@@ -1102,7 +1102,6 @@ static struct mlx5_ib_mr *reg_create(struct ib_mr *ibmr, struct ib_pd *pd,
 				    NULL, NULL);
 	if (err) {
 		mlx5_ib_warn(dev, "create mkey failed\n");
-		ib_umem_release(mr->umem);
 		goto err_2;
 	}
 	mr->umem = umem;
@@ -1142,6 +1141,9 @@ struct ib_mr *mlx5_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 
 	umem = mr_umem_get(pd, start, length, access_flags, &npages,
 			   &page_shift, &ncont, &order);
+
+	if (IS_ERR(umem))
+		return (void *)umem;
 
 	if (use_umr(order)) {
 		mr = reg_umr(pd, umem, virt_addr, length, ncont, page_shift,
@@ -1321,6 +1323,9 @@ int mlx5_ib_rereg_user_mr(struct ib_mr *ib_mr, int flags, u64 start,
 	ib_umem_release(mr->umem);
 	mr->umem = mr_umem_get(pd, start, length, access_flags, &npages,
 			    &page_shift, &ncont, &order);
+
+	if (IS_ERR(mr->umem))
+		return -ENOMEM;
 
 	if (flags & IB_MR_REREG_TRANS &&
 	    !use_umr_mtt_update(mr, start, length)) {
