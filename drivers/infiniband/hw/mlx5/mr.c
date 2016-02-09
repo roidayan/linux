@@ -50,9 +50,10 @@ enum {
 static __be64 mlx5_ib_update_mtt_emergency_buffer[
 		MLX5_UMR_MTT_MIN_CHUNK_SIZE/sizeof(__be64)]
 	__aligned(MLX5_UMR_ALIGN);
-static void mlx5_free_priv_descs(struct mlx5_ib_mr *mr);
 static DEFINE_MUTEX(mlx5_ib_update_mtt_emergency_buffer_mutex);
 #endif
+
+static void mlx5_free_priv_descs(struct mlx5_ib_mr *mr);
 
 static int clean_mr(struct mlx5_ib_mr *mr);
 
@@ -1243,15 +1244,10 @@ static int rereg_umr(struct ib_pd *pd, struct mlx5_ib_mr *mr, u64 virt_addr,
 	umrwr.wr.send_flags = MLX5_IB_SEND_UMR_FAIL_IF_FREE;
 
 	if (flags & IB_MR_REREG_TRANS) {
-		size = ALIGN(sizeof(u64) * npages, MLX5_UMR_MTT_ALIGNMENT);
-		mr_pas = kmalloc(size + MLX5_UMR_ALIGN - 1, GFP_KERNEL);
-		if (!mr_pas)
-			return -ENOMEM;
-
 		err = dma_map_mr_pas(dev, mr->umem, npages, page_shift, &size,
 				     &mr_pas, &dma);
 		if (err)
-			goto out;
+			return err;
 
 		umrwr.target.virt_addr = virt_addr;
 		umrwr.length = length;
@@ -1293,10 +1289,10 @@ static int rereg_umr(struct ib_pd *pd, struct mlx5_ib_mr *mr, u64 virt_addr,
 
 error_dma:
 	up(&umrc->sem);
-	if (flags & IB_MR_REREG_TRANS)
+	if (flags & IB_MR_REREG_TRANS) {
 		dma_unmap_single(ddev, dma, size, DMA_TO_DEVICE);
-out:
-	kfree(mr_pas);
+		kfree(mr_pas);
+	}
 	return err;
 }
 
