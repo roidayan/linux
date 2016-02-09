@@ -1351,9 +1351,6 @@ static int clean_mr(struct mlx5_ib_mr *mr)
 		}
 	}
 
-	if (!umred)
-		kfree(mr);
-
 	return 0;
 }
 
