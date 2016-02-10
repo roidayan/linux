@@ -553,6 +553,9 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 	if (MLX5_CAP_GEN(mdev, cd))
 		props->device_cap_flags |= IB_DEVICE_CROSS_CHANNEL;
 
+	if (MLX5_CAP_GEN(dev->mdev, vector_calc))
+		props->device_cap_flags2 |= IB_DEVICE_VECTOR_CALC;
+
 	return 0;
 }
 
