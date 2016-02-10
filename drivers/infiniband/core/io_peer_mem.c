@@ -67,7 +67,7 @@ static void do_invalidate(struct context *ctx)
 		goto unlock_and_return;
 
 	ctx->active = 0;
-	pr_debug("invalidated addr %lx size %lx\n", ctx->addr, ctx->size);
+	pr_debug("invalidated addr %lx size %zx\n", ctx->addr, ctx->size);
 	mem_invalidate_callback(reg_handle, ctx->core_context);
 
 unlock_and_return:
