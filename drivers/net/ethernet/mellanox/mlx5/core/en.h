@@ -675,6 +675,7 @@ struct mlx5e_arfs {
 	spinlock_t			arfs_lock;
 	struct list_head		rules;
 	int				last_filter_id;
+	struct workqueue_struct		*workqueue;
 };
 
 enum {

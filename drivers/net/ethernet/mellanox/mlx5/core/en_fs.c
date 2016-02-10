@@ -580,6 +580,8 @@ static void mlx5e_destroy_arfs_flow_tables(struct mlx5e_priv *priv)
 #if CONFIG_RFS_ACCEL
 	mlx5e_del_arfs_rules(priv);
 #endif
+	flush_workqueue(priv->fs.arfs.workqueue);
+	destroy_workqueue(priv->fs.arfs.workqueue);
 	for (i = 0; i < MLX5E_ARFS_NUM_TYPES; i++) {
 		if (!IS_ERR_OR_NULL(priv->fs.arfs.arfs_tables[i].ft.t))
 			mlx5e_destroy_arfs_table(&priv->fs.arfs.arfs_tables[i]);
@@ -848,6 +850,9 @@ static int mlx5e_create_arfs_flow_tables(struct mlx5e_priv *priv)
 
 	spin_lock_init(&priv->fs.arfs.arfs_lock);
 	INIT_LIST_HEAD(&priv->fs.arfs.rules);
+	priv->fs.arfs.workqueue = create_singlethread_workqueue("mlx5e_arfs");
+	if (!priv->fs.arfs.workqueue)
+		return -ENOMEM;
 
 	for (i = 0; i < MLX5E_ARFS_NUM_TYPES; i++) {
 		err = mlx5e_create_arfs_flow_table(priv, i);
@@ -857,6 +862,7 @@ static int mlx5e_create_arfs_flow_tables(struct mlx5e_priv *priv)
 	return 0;
 err:
 	mlx5e_destroy_arfs_flow_tables(priv);
+
 	return err;
 }
 
@@ -1773,7 +1779,7 @@ int mlx5e_rx_flow_steer(struct net_device *dev, const struct sk_buff *skb,
 			return -ENOMEM;
 		}
 	}
-	schedule_work(&arfs_rule->arfs_work);
+	queue_work(priv->fs.arfs.workqueue, &arfs_rule->arfs_work);
 	spin_unlock_bh(&arfs->arfs_lock);
 	return arfs_rule->filter_id;
 }
