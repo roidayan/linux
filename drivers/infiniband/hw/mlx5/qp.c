@@ -2570,44 +2570,40 @@ static __be64 get_umr_update_mtt_mask(void)
 	return cpu_to_be64(result);
 }
 
-/*
- * set_rereg_mkey_mask: Setting and unsetting mkey bitmask so match requested
- * changes to MR.
- * @mask: current mask.
- * @flags: represent the user's selection of fields to update in the MR.
- *
- * for every relevant flag, the relevant bits will be explicitly set or unset.
- */
-static __be64 set_rereg_mkey_mask(__be64 mask, int flags)
+static __be64 get_umr_update_translation_mask(void)
 {
-	u64 result = __be64_to_cpu(mask);
+	u64 result;
 
-	if (flags & MLX5_IB_SEND_UMR_UPDATE_TRANSLATION)
-		result |= (MLX5_MKEY_MASK_LEN |
-			   MLX5_MKEY_MASK_PAGE_SIZE |
-			   MLX5_MKEY_MASK_START_ADDR);
-	else
-		result &= ~(MLX5_MKEY_MASK_LEN |
-			    MLX5_MKEY_MASK_PAGE_SIZE |
-			    MLX5_MKEY_MASK_START_ADDR);
+	result = MLX5_MKEY_MASK_LEN |
+		 MLX5_MKEY_MASK_PAGE_SIZE |
+		 MLX5_MKEY_MASK_START_ADDR |
+		 MLX5_MKEY_MASK_KEY |
+		 MLX5_MKEY_MASK_FREE;
 
-	if (flags & MLX5_IB_SEND_UMR_UPDATE_ACCESS)
-		result |= (MLX5_MKEY_MASK_LR |
-			   MLX5_MKEY_MASK_LW |
-			   MLX5_MKEY_MASK_RR |
-			   MLX5_MKEY_MASK_RW |
-			   MLX5_MKEY_MASK_A);
-	else
-		result &= ~(MLX5_MKEY_MASK_LR |
-			    MLX5_MKEY_MASK_LW |
-			    MLX5_MKEY_MASK_RR |
-			    MLX5_MKEY_MASK_RW |
-			    MLX5_MKEY_MASK_A);
+	return cpu_to_be64(result);
+}
 
-	if (flags & MLX5_IB_SEND_UMR_UPDATE_PD)
-		result |= MLX5_MKEY_MASK_PD;
-	else
-		result &= ~MLX5_MKEY_MASK_PD;
+static __be64 get_umr_update_access_mask(void)
+{
+	u64 result;
+
+	result = MLX5_MKEY_MASK_LW |
+		 MLX5_MKEY_MASK_RR |
+		 MLX5_MKEY_MASK_RW |
+		 MLX5_MKEY_MASK_A |
+		 MLX5_MKEY_MASK_KEY |
+		 MLX5_MKEY_MASK_FREE;
+
+	return cpu_to_be64(result);
+}
+
+static __be64 get_umr_update_pd_mask(void)
+{
+	u64 result;
+
+	result = MLX5_MKEY_MASK_PD |
+		 MLX5_MKEY_MASK_KEY |
+		 MLX5_MKEY_MASK_FREE;
 
 	return cpu_to_be64(result);
 }
@@ -2630,24 +2626,21 @@ static void set_reg_umr_segment(struct mlx5_wqe_umr_ctrl_seg *umr,
 			umr->mkey_mask = get_umr_update_mtt_mask();
 			umr->bsf_octowords = get_klm_octo(umrwr->target.offset);
 			umr->flags |= MLX5_UMR_TRANSLATION_OFFSET_EN;
-		} else {
-			umr->mkey_mask = get_umr_reg_mr_mask();
 		}
+		if (wr->send_flags & MLX5_IB_SEND_UMR_UPDATE_TRANSLATION)
+			umr->mkey_mask |= get_umr_update_translation_mask();
+		if (wr->send_flags & MLX5_IB_SEND_UMR_UPDATE_ACCESS)
+			umr->mkey_mask |= get_umr_update_access_mask();
+		if (wr->send_flags & MLX5_IB_SEND_UMR_UPDATE_PD)
+			umr->mkey_mask |= get_umr_update_pd_mask();
+		if (!umr->mkey_mask)
+			umr->mkey_mask = get_umr_reg_mr_mask();
 	} else {
 		umr->mkey_mask = get_umr_unreg_mr_mask();
 	}
 
 	if (!wr->num_sge)
 		umr->flags |= MLX5_UMR_INLINE;
-
-	/*
-	 * Updates to support re-registration of MR
-	 */
-	if (wr->send_flags & MLX5_IB_SEND_UMR_UPDATE_TRANSLATION ||
-	    wr->send_flags & MLX5_IB_SEND_UMR_UPDATE_ACCESS ||
-	    wr->send_flags & MLX5_IB_SEND_UMR_UPDATE_PD)
-		umr->mkey_mask = set_rereg_mkey_mask(umr->mkey_mask,
-						     wr->send_flags);
 }
 
 static u8 get_umr_flags(int acc)
