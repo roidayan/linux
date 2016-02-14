@@ -1313,22 +1313,25 @@ int mlx5_ib_rereg_user_mr(struct ib_mr *ib_mr, int flags, u64 start,
 	int order;
 	int err;
 
-	flags |= IB_MR_REREG_TRANS;
-	/*
-	 * Replace umem. This needs to be done whether or not UMR is
-	 * used.
-	 */
-	ib_umem_release(mr->umem);
-	mr->umem = mr_umem_get(pd, addr, len, access_flags, &npages,
-			    &page_shift, &ncont, &order);
+	if (flags != IB_MR_REREG_PD) {
+		/*
+		 * Replace umem. This needs to be done whether or not UMR is
+		 * used unless only PD is changed and it's context is the same
+		 * as the previous PD's.
+		 */
+		flags |= IB_MR_REREG_TRANS;
+		ib_umem_release(mr->umem);
+		mr->umem = mr_umem_get(pd, addr, len, access_flags, &npages,
+				    &page_shift, &ncont, &order);
 
-	if (IS_ERR(mr->umem)) {
-		err = PTR_ERR(mr->umem);
-		mr->umem = NULL;
-		return err;
+		if (IS_ERR(mr->umem)) {
+			err = PTR_ERR(mr->umem);
+			mr->umem = NULL;
+			return err;
+		}
 	}
 
-	if (!use_umr_mtt_update(mr, addr, len)) {
+	if (flags & IB_MR_REREG_TRANS && !use_umr_mtt_update(mr, addr, len)) {
 		/*
 		 * UMR can't be used - MKey needs to be replaced.
 		 */
