@@ -2411,6 +2411,24 @@ u16 mlx5e_get_max_inline_cap(struct mlx5_core_dev *mdev)
 	       2 /*sizeof(mlx5e_tx_wqe.inline_hdr_start)*/;
 }
 
+void mlx5e_build_default_indir_rqt(struct mlx5_core_dev *mdev,
+				   u32 *indirection_rqt, int len,
+				   int num_channels)
+{
+	int node = mdev->priv.numa_node;
+	int node_num_of_cores;
+	int i;
+
+	if (node == -1)
+		node = first_online_node;
+
+	node_num_of_cores = cpumask_weight(cpumask_of_node(node));
+	num_channels = min_t(int, num_channels, node_num_of_cores);
+
+	for (i = 0; i < len; i++)
+		indirection_rqt[i] = i % num_channels;
+}
+
 #ifdef CONFIG_MLX5_CORE_EN_DCB
 static void mlx5e_ets_init(struct mlx5e_priv *priv)
 {
@@ -2441,7 +2459,6 @@ static void mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 				    int num_channels)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
-	int i;
 
 	priv->params.log_sq_size           =
 		MLX5E_PARAMS_DEFAULT_LOG_SQ_SIZE;
@@ -2475,8 +2492,8 @@ static void mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 	netdev_rss_key_fill(priv->params.toeplitz_hash_key,
 			    sizeof(priv->params.toeplitz_hash_key));
 
-	for (i = 0; i < MLX5E_INDIR_RQT_SIZE; i++)
-		priv->params.indirection_rqt[i] = i % num_channels;
+	mlx5e_build_default_indir_rqt(mdev, priv->params.indirection_rqt,
+				      MLX5E_INDIR_RQT_SIZE, num_channels);
 
 	priv->params.lro_wqe_sz            =
 		MLX5E_PARAMS_DEFAULT_LRO_WQE_SZ;
