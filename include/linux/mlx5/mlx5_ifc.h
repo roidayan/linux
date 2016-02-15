@@ -7283,4 +7283,34 @@ struct mlx5_ifc_qtct_reg_bits {
 	u8         tclass[0x3];
 };
 
+struct mlx5_ifc_mcia_reg_bits {
+	u8         l[0x1];
+	u8         reserved_at_1[0x7];
+	u8         module[0x8];
+	u8         reserved_at_10[0x8];
+	u8         status[0x8];
+
+	u8         i2c_device_address[0x8];
+	u8         page_number[0x8];
+	u8         device_address[0x10];
+
+	u8         reserved_at_40[0x10];
+	u8         size[0x10];
+
+	u8         reserved_at_60[0x20];
+
+	u8         dword_0[0x20];
+	u8         dword_1[0x20];
+	u8         dword_2[0x20];
+	u8         dword_3[0x20];
+	u8         dword_4[0x20];
+	u8         dword_5[0x20];
+	u8         dword_6[0x20];
+	u8         dword_7[0x20];
+	u8         dword_8[0x20];
+	u8         dword_9[0x20];
+	u8         dword_10[0x20];
+	u8         dword_11[0x20];
+};
+
 #endif /* MLX5_IFC_H */
