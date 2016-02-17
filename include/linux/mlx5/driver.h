@@ -460,8 +460,6 @@ struct mlx5_priv {
 	struct mlx5_uuar_info	uuari;
 	MLX5_DECLARE_DOORBELL_LOCK(cq_uar_lock);
 
-	struct io_mapping	*bf_mapping;
-
 	/* pages stuff */
 	struct workqueue_struct *pg_wq;
 	struct rb_root		page_root;

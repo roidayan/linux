@@ -246,11 +246,11 @@ int mlx5_alloc_map_uar(struct mlx5_core_dev *mdev, struct mlx5_uar *uar)
 		err = -ENOMEM;
 		goto err_free_uar;
 	}
-
-	if (mdev->priv.bf_mapping)
-		uar->bf_map = io_mapping_map_wc(mdev->priv.bf_mapping,
-						uar->index << PAGE_SHIFT);
-
+#ifdef ARCH_HAS_IOREMAP_WC
+	uar->bf_map = ioremap_wc(pfn << PAGE_SHIFT, PAGE_SIZE);
+	if (!uar->bf_map)
+		mlx5_core_warn(mdev, "ioremap_wc() failed\n");
+#endif
 	return 0;
 
 err_free_uar:
@@ -262,7 +262,7 @@ EXPORT_SYMBOL(mlx5_alloc_map_uar);
 
 void mlx5_unmap_free_uar(struct mlx5_core_dev *mdev, struct mlx5_uar *uar)
 {
-	io_mapping_unmap(uar->bf_map);
+	iounmap(uar->bf_map);
 	iounmap(uar->map);
 	mlx5_cmd_free_uar(mdev, uar->index);
 }
