@@ -438,6 +438,7 @@ enum mlx5_flow_action_type {
 	MLX5_FLOW_ACTION_TYPE_VLAN_POP  = 1 << SW_FLOW_ACTION_TYPE_VLAN_POP,
 	MLX5_FLOW_ACTION_TYPE_DROP	= 1 << SW_FLOW_ACTION_TYPE_DROP,
 	MLX5_FLOW_ACTION_TYPE_ENCAP     = 1 << SW_FLOW_ACTION_TYPE_ENCAP,
+	MLX5_FLOW_ACTION_TYPE_DECAP     = 1 << 5,
 };
 
 int mlx5_create_flow_group(void *ft, struct mlx5_flow_table_group *g,
@@ -855,7 +856,8 @@ int mlx5e_flow_set(struct mlx5_flow_attr *attr,
 		flow_context_action |= MLX5_FLOW_CONTEXT_ACTION_ENCAP;
 		MLX5_SET(flow_context, flow_context, encap_id,
 			 attr->encap->encap_id);
-	}
+	} else if (attr->mlx5_action & MLX5_FLOW_ACTION_TYPE_DECAP)
+		flow_context_action |= MLX5_FLOW_CONTEXT_ACTION_DECAP;
 
 	MLX5_SET(flow_context, flow_context, action, flow_context_action);
 
@@ -906,6 +908,15 @@ static inline bool is_tunnel_type_supported(struct mlx5_core_dev *dev,
 	}
 }
 
+static inline bool is_decap_supported(struct mlx5_core_dev *dev,
+				      enum sw_flow_tunnel_type type)
+{
+	if (!MLX5_CAP_ESW_FLOWTABLE_FDB(dev, decap))
+		return false;
+
+	return is_tunnel_type_supported(dev, type);
+}
+
 static inline bool is_encap_supported(struct mlx5_core_dev *dev,
 				      enum sw_flow_tunnel_type type)
 {
@@ -935,9 +946,12 @@ int mlx5e_flow_adjust(struct mlx5_flow_attr *attr)
 			}
 			if (attr->sw_flow->tunnel_type !=
 					SW_FLOW_TUNNEL_NONE) {
-				pr_debug("%s not offloading decap\n",
-					 __func__);
-				goto out_err;
+				if (!is_decap_supported(
+						attr->pf_dev->mdev,
+						attr->sw_flow->tunnel_type))
+					goto out_err;
+
+				__mlx5_action |= MLX5_FLOW_ACTION_TYPE_DECAP;
 			}
 
 			out_ifindex = action->out_port_ifindex;
