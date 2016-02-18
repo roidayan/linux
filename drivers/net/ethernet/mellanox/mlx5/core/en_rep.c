@@ -378,6 +378,7 @@ static struct net_device_ops mlx5e_rep_netdev_ops = {
 	.ndo_start_xmit	= mlx5e_rep_xmit,
 	.ndo_fdb_add	= switchdev_port_fdb_add,
 	.ndo_fdb_del	= switchdev_port_fdb_del,
+	.ndo_set_mac_address = eth_mac_addr,
 };
 
 int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u32 vport,
