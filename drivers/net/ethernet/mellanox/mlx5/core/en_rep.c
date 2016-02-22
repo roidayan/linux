@@ -615,8 +615,9 @@ int mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev)
 
 	INIT_LIST_HEAD(&pf_dev->mlx5_flow_groups);
 	spin_lock_init(&pf_dev->flows_lock);
-	return 0;
+	hash_init(pf_dev->encap_tbl);
 
+	return 0;
 err_pf_vport_rules:
 	mlx5_del_fdb_miss_rule(pf_dev->mdev, pf_dev->fdb_miss_flow_index);
 fdb_err:

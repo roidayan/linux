@@ -36,6 +36,7 @@
 #include <net/sw_flow.h>
 #include <uapi/linux/openvswitch.h>
 #include <net/ip_tunnels.h>
+#include <net/vxlan.h>
 
 #include "en.h"
 #include "eswitch.h"
@@ -43,6 +44,26 @@
 #include "eswitch.h"
 
 #define MATCH_PARAMS_SIZE MLX5_ST_SZ_DW(fte_match_param)
+
+#define INVALID_FLOW_IX  (-1)
+
+struct mlx5e_encap_info {
+	enum sw_flow_tunnel_type tunnel_type;
+	__be32 daddr;
+/* TODO what if OVS want a different src addr ?*/
+	__be32 tun_id;
+	__be16 tp_dst;
+};
+
+struct mlx5e_encap_entry {
+	struct hlist_node encap_hlist;
+	struct list_head flows;
+	u32 encap_id;
+	struct neighbour *n;
+	struct mlx5e_encap_info tun_info;
+
+	bool valid_encap;
+};
 
 struct mlx5_flow_attr {
 	struct sw_flow *sw_flow;
@@ -54,6 +75,8 @@ struct mlx5_flow_attr {
 	u32 match_v[MATCH_PARAMS_SIZE];
 	int mlx5_action;
 	u16 mlx5_vlan;
+
+	struct mlx5e_encap_entry *encap;
 };
 
 /* The default UDP port that ConnectX firmware uses for its VXLAN parser */
@@ -410,7 +433,8 @@ enum mlx5_flow_action_type {
 	MLX5_FLOW_ACTION_TYPE_OUTPUT    = 1 << SW_FLOW_ACTION_TYPE_OUTPUT,
 	MLX5_FLOW_ACTION_TYPE_VLAN_PUSH = 1 << SW_FLOW_ACTION_TYPE_VLAN_PUSH,
 	MLX5_FLOW_ACTION_TYPE_VLAN_POP  = 1 << SW_FLOW_ACTION_TYPE_VLAN_POP,
-	MLX5_FLOW_ACTION_TYPE_DROP	= 1 << SW_FLOW_ACTION_TYPE_DROP
+	MLX5_FLOW_ACTION_TYPE_DROP	= 1 << SW_FLOW_ACTION_TYPE_DROP,
+	MLX5_FLOW_ACTION_TYPE_ENCAP     = 1 << SW_FLOW_ACTION_TYPE_ENCAP,
 };
 
 int mlx5_create_flow_group(void *ft, struct mlx5_flow_table_group *g,
@@ -433,13 +457,245 @@ struct mlx5_flow {
 	struct mlx5e_vf_rep *out_rep;
 	int mlx5_action;
 
+	struct mlx5_flow_group *group;
 	struct list_head group_list; /* flows of the mother group */
+	struct list_head encap; /* flows sharing the same encap */
 };
 
 enum {
 	FLOW_ADD = 0x1,
 	FLOW_DEL = 0x2
 };
+
+static int route_lookup(struct mlx5e_priv *pf_dev,
+			struct flowi4 *fl4,
+			struct neighbour **out_n,
+			__be32 *saddr,
+			int *out_ttl)
+{
+	struct rtable *rt;
+	struct neighbour *n = NULL;
+	int ttl;
+
+	/* TODO: get the right name space */
+	rt = ip_route_output_key(dev_net(pf_dev->netdev), fl4);
+	if (IS_ERR(rt)) {
+		/* TODO fl4.daddr is BE */
+		pr_warn("%s: no route to %pI4\n",
+			__func__, &fl4->daddr);
+		return -EOPNOTSUPP;
+	}
+	if (rt->dst.dev != pf_dev->netdev) {
+		pr_warn("%s: flow was routed to a different netdev\n",
+			__func__);
+		ip_rt_put(rt);
+		return -EOPNOTSUPP;
+	}
+
+	ttl = ip4_dst_hoplimit(&rt->dst);
+	n = dst_neigh_lookup(&rt->dst, &fl4->daddr);
+	ip_rt_put(rt);
+	if (!n)
+		return -ENOMEM;
+
+	*out_n = n;
+	*saddr = fl4->saddr;
+	*out_ttl = ttl;
+
+	return 0;
+}
+
+static int gen_vxlan_header(struct mlx5e_priv *pf_dev,
+			    char buf[],
+			    struct neighbour *n,
+			    int ttl,
+			    __be32 saddr,
+			    __be16 udp_dst_port,
+			    __be32 vx_vni)
+{
+	int encap_size = VXLAN_HLEN + sizeof(struct iphdr) + ETH_HLEN;
+	struct ethhdr *eth = (struct ethhdr *)buf;
+	struct iphdr  *ip = (struct iphdr *)((char *)eth +
+			sizeof(struct ethhdr));
+	struct udphdr *udp = (struct udphdr *)((char *)ip +
+			sizeof(struct iphdr));
+	struct vxlanhdr *vxh = (struct vxlanhdr *)((char *)udp
+			+ sizeof(struct udphdr));
+
+	memset(buf, 0, encap_size);
+	neigh_ha_snapshot(eth->h_dest, n, pf_dev->netdev);
+
+	ether_addr_copy(eth->h_source, pf_dev->netdev->dev_addr);
+	eth->h_proto = htons(ETH_P_IP);
+
+	ip->daddr = *(u32 *)n->primary_key;
+	ip->saddr = saddr;
+
+	ip->ttl = ttl;
+	ip->protocol = IPPROTO_UDP;
+	ip->version = 0x4;
+	ip->ihl = 0x5;
+
+	udp->dest = udp_dst_port;
+	vxh->vx_flags = htonl(VXLAN_HF_VNI);
+	vxh->vx_vni = vx_vni;
+
+	return encap_size;
+}
+
+#define MAX_ENCAP_SIZE (128)
+
+static int create_encap_header(struct mlx5e_priv *pf_dev,
+			       struct mlx5e_encap_entry *e)
+{
+	int err;
+	char encap_header[MAX_ENCAP_SIZE];
+	int encap_size;
+	struct flowi4 fl4 = {};
+	struct neighbour *n;
+	__be32 saddr;
+	int ttl;
+
+	switch (e->tun_info.tunnel_type) {
+	case SW_FLOW_TUNNEL_VXLAN:
+		fl4.flowi4_proto = IPPROTO_UDP;
+		fl4.fl4_dport = e->tun_info.tp_dst;
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	fl4.daddr = e->tun_info.daddr;
+
+	err = route_lookup(pf_dev, &fl4, &n, &saddr, &ttl);
+	if (err)
+		return err;
+
+	e->n = n;
+
+	if (!(n->nud_state & NUD_VALID)) {
+		neigh_event_send(n, NULL);
+		return -EAGAIN;
+	}
+
+	switch (e->tun_info.tunnel_type) {
+	case SW_FLOW_TUNNEL_VXLAN:
+		encap_size = gen_vxlan_header(pf_dev, encap_header,
+					      n, ttl, saddr,
+					      e->tun_info.tp_dst,
+					      e->tun_info.tun_id);
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	err = mlx5_alloc_encap_cmd(pf_dev->mdev, MLX5_HEADER_TYPE_VXLAN,
+				   encap_size, encap_header, &e->encap_id);
+	if (!err)
+		e->valid_encap = true;
+
+	return err;
+}
+
+static inline int cmp_encap_info(struct mlx5e_encap_info *a,
+				 struct mlx5e_encap_info *b)
+{
+	return memcmp(a, b, sizeof(*a));
+}
+
+static inline int hash_encap_info(struct mlx5e_encap_info *info)
+{
+	return jhash(info, sizeof(*info), 0);
+}
+
+static int mlx5e_get_encap(struct mlx5_flow_attr *attr,
+			   struct sw_flow_action *action) {
+	struct mlx5e_encap_entry *e;
+	struct mlx5e_encap_info info;
+	uintptr_t key;
+	bool found = false;
+
+	info.tunnel_type = action->tunnel_type;
+	switch (info.tunnel_type) {
+	case SW_FLOW_TUNNEL_VXLAN:
+		info.tp_dst = action->tun_key.tp_dst;
+		if (check_vxlan_port(ntohs(info.tp_dst)))
+			return -EOPNOTSUPP;
+
+		info.tun_id = htonl(be64_to_cpu(action->tun_key.tun_id) << 8);
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	info.daddr = action->tun_key.ipv4_dst;
+	key = hash_encap_info(&info);
+
+	hash_for_each_possible_rcu(attr->pf_dev->encap_tbl, e,
+				   encap_hlist, key) {
+		if (!cmp_encap_info(&e->tun_info, &info)) {
+			found = true;
+			break;
+		}
+	}
+
+	if (found) {
+		attr->encap = e;
+		return 0;
+	}
+
+	e = kzalloc(sizeof(*e), GFP_KERNEL);
+	if (!e)
+		return -ENOMEM;
+
+	e->valid_encap = false;
+
+	e->tun_info = info;
+	attr->encap = e;
+
+	hash_add_rcu(attr->pf_dev->encap_tbl,
+		     &e->encap_hlist, key);
+
+	return create_encap_header(attr->pf_dev, e);
+}
+
+static void mlx5e_detach_encap(struct mlx5e_priv *pf_dev,
+			       struct mlx5_flow *flow) {
+	struct list_head *next = flow->encap.next;
+
+	list_del(&flow->encap);
+	if (list_empty(next)) {
+		struct mlx5e_encap_entry *e;
+
+		e = list_entry(next, struct mlx5e_encap_entry, flows);
+		if (e->n) {
+			neigh_release(e->n);
+			if (e->valid_encap) {
+				mlx5_dealloc_encap_cmd(pf_dev->mdev,
+						       e->encap_id);
+				e->valid_encap = false;
+			}
+		}
+		hlist_del_rcu(&e->encap_hlist);
+		kfree(e);
+	}
+}
+
+static void mlx5e_flow_group_release(struct kref *kref)
+{
+	struct mlx5_flow_group *group =
+		container_of(kref, struct mlx5_flow_group, kref);
+
+	mlx5_set_free_flow_group(group->eswitch->fdb_table.fdb,
+				 group->group_ix);
+	list_del(&group->groups_list);
+	kfree(group);
+}
+
+static void mlx5e_flow_group_put(struct mlx5_flow_group *group)
+{
+	kref_put(&group->kref, mlx5e_flow_group_release);
+}
 
 int mlx5e_flow_set(struct mlx5_flow_attr *attr,
 		   struct mlx5_flow_group *group)
@@ -448,20 +704,29 @@ int mlx5e_flow_set(struct mlx5_flow_attr *attr,
 	struct mlx5_flow *flow;
 	int err = -ENOMEM;
 	struct mlx5_eswitch *eswitch = attr->pf_dev->mdev->priv.eswitch;
-
-	flow = kzalloc(sizeof (*flow), GFP_KERNEL);
-	if (!flow)
-		goto flow_alloc_failed;
-	memcpy(flow->match_v, attr->match_v, sizeof(flow->match_v));
+	u16 flow_context_action;
 
 	/* TODO: handle flows with fwding to > 1 output ports (multiple dests) */
 	flow_context = mlx5_vzalloc(MLX5_ST_SZ_BYTES(flow_context) +
 				    MLX5_ST_SZ_BYTES(dest_format_struct));
 	if (!flow_context)
-		goto flow_context_alloc_failed;
+		return -ENOMEM;
+
+	flow = kzalloc(sizeof(*flow), GFP_KERNEL);
+	if (!flow)
+		goto free_flow_context;
+
+	memcpy(flow->match_v, attr->match_v, sizeof(flow->match_v));
+	flow->out_rep	   = attr->out_rep;
+	flow->mlx5_action  = attr->mlx5_action;
+	flow->group = group;
+	flow->flow_index = INVALID_FLOW_IX;
 
 	match_value = MLX5_ADDR_OF(flow_context, flow_context, match_value);
 	memcpy(match_value, attr->match_v, sizeof(flow->match_v));
+
+	kref_get(&group->kref);
+	list_add_tail(&flow->group_list, &group->flows_list);
 
 	if (attr->mlx5_action & MLX5_FLOW_ACTION_TYPE_DROP) {
 		MLX5_SET(flow_context, flow_context, action,
@@ -469,8 +734,24 @@ int mlx5e_flow_set(struct mlx5_flow_attr *attr,
 		goto flow_set;
 	}
 
-	MLX5_SET(flow_context, flow_context, action,
-		 MLX5_FLOW_CONTEXT_ACTION_FWD_DEST);
+	flow_context_action = MLX5_FLOW_CONTEXT_ACTION_FWD_DEST;
+	if (attr->mlx5_action & MLX5_FLOW_ACTION_TYPE_ENCAP) {
+		err = mlx5e_get_encap(attr, attr->sw_flow->actions->actions);
+		if (!attr->encap)
+			goto encap_error;
+
+		list_add(&flow->encap, &attr->encap->flows);
+		if (!attr->encap->valid_encap) {
+			err = 0;
+			goto free_flow_context;
+		}
+
+		flow_context_action |= MLX5_FLOW_CONTEXT_ACTION_ENCAP;
+		MLX5_SET(flow_context, flow_context, encap_id,
+			 attr->encap->encap_id);
+	}
+
+	MLX5_SET(flow_context, flow_context, action, flow_context_action);
 
 	MLX5_SET(flow_context, flow_context, destination_list_size, 1);
 
@@ -480,17 +761,11 @@ int mlx5e_flow_set(struct mlx5_flow_attr *attr,
 	MLX5_SET(dest_format_struct, dest, destination_id,
 		 attr->out_rep->vport);
 
-	flow->out_rep	   = attr->out_rep;
-	flow->mlx5_action  = attr->mlx5_action;
-
 flow_set:
 	err = mlx5_set_flow_group_entry(eswitch->fdb_table.fdb, group->group_ix,
 					&flow->flow_index, flow_context);
 	if (err)
 		goto flow_set_failed;
-
-	kref_get(&group->kref);
-	list_add_tail(&flow->group_list, &group->flows_list);
 
 	pr_debug("%s added sw_flow %p flow index %x\n", __func__,
 		 attr->sw_flow, flow->flow_index);
@@ -498,18 +773,40 @@ flow_set:
 	return 0;
 
 flow_set_failed:
-	kvfree(flow_context);
-
-flow_context_alloc_failed:
+	if (attr->mlx5_action & MLX5_FLOW_ACTION_TYPE_ENCAP)
+		mlx5e_detach_encap(attr->pf_dev, flow);
+encap_error:
+	list_del(&flow->group_list);
+	mlx5e_flow_group_put(group);
 	kfree(flow);
-
-flow_alloc_failed:
+free_flow_context:
+	kvfree(flow_context);
 	return err;
 }
 
 static struct mlx5e_vf_rep *mlx5e_uplink_rep(struct mlx5e_priv *pf_dev)
 {
 	return pf_dev->vf_reps[pf_dev->mdev->priv.sriov.num_vfs];
+}
+
+static inline bool is_tunnel_type_supported(struct mlx5_core_dev *dev,
+					    enum sw_flow_tunnel_type type)
+{
+	switch (type) {
+	case SW_FLOW_TUNNEL_VXLAN:
+		return MLX5_CAP_ESW(dev, vxlan_encap_decap);
+	default:
+		return false;
+	}
+}
+
+static inline bool is_encap_supported(struct mlx5_core_dev *dev,
+				      enum sw_flow_tunnel_type type)
+{
+	if (!MLX5_CAP_ESW_FLOWTABLE_FDB(dev, encap))
+		return false;
+
+	return is_tunnel_type_supported(dev, type);
 }
 
 int mlx5e_flow_adjust(struct mlx5_flow_attr *attr)
@@ -550,7 +847,17 @@ int mlx5e_flow_adjust(struct mlx5_flow_attr *attr)
 			attr->mlx5_vlan = ntohs(attr->sw_flow->key.eth.tci);
 		} else if (action->type == SW_FLOW_ACTION_TYPE_DROP)
 			__mlx5_action |= MLX5_FLOW_ACTION_TYPE_DROP;
-		else {
+		else if (action->type == SW_FLOW_ACTION_TYPE_ENCAP) {
+			if (attr->sw_flow->actions->count != 1)
+				goto out_err;
+			if (!is_encap_supported(attr->pf_dev->mdev,
+						action->tunnel_type))
+				goto out_err;
+
+			__mlx5_action |= MLX5_FLOW_ACTION_TYPE_ENCAP;
+			attr->out_rep = mlx5e_uplink_rep(attr->pf_dev);
+			goto skip_id_check;
+		} else {
 			printk(KERN_ERR "%s can't offload flow action %d\n", __func__, action->type);
 			goto out_err;
 		}
@@ -603,22 +910,6 @@ out_err:
 	return -EOPNOTSUPP;
 }
 
-static void mlx5e_flow_group_release(struct kref *kref)
-{
-	struct mlx5_flow_group *group =
-		container_of(kref, struct mlx5_flow_group, kref);
-
-	mlx5_set_free_flow_group(group->eswitch->fdb_table.fdb,
-				 group->group_ix);
-	list_del(&group->groups_list);
-	kfree(group);
-}
-
-static void mlx5e_flow_group_put(struct mlx5_flow_group *group)
-{
-	kref_put(&group->kref, mlx5e_flow_group_release);
-}
-
 static int mlx5e_handle_global_strip(struct mlx5e_priv *pf_dev, int flags)
 {
 	int vf, nvf, err = 0;
@@ -631,7 +922,6 @@ static int mlx5e_handle_global_strip(struct mlx5e_priv *pf_dev, int flags)
 
 	if (flags == FLOW_DEL) {
 		pf_dev->vlan_push_pop_refcount--;
-
 		if (pf_dev->vlan_push_pop_refcount)
 			return 0;
 	}
@@ -726,11 +1016,25 @@ out:
 	return err;
 }
 
+static void mlx5e_destroy_flow(struct mlx5e_priv *pf_dev,
+			       struct mlx5_flow *flow)
+{
+	if (flow->flow_index != INVALID_FLOW_IX)
+		mlx5_del_flow_table_entry(
+				pf_dev->mdev->priv.eswitch->fdb_table.fdb,
+				flow->flow_index);
+	list_del(&flow->group_list);
+
+	if (flow->mlx5_action & MLX5_FLOW_ACTION_TYPE_ENCAP)
+		mlx5e_detach_encap(pf_dev, flow);
+
+	kfree(flow);
+}
+
 static int __mlx5e_flow_del(struct mlx5_flow_attr *attr,
 			    struct mlx5_flow_group *group)
 {
 	struct mlx5_flow *flow = NULL;
-	struct mlx5_eswitch *eswitch = attr->pf_dev->mdev->priv.eswitch;
 	int err, flow_found = 0;
 
 	/* find the flow based on the match values */
@@ -748,8 +1052,6 @@ static int __mlx5e_flow_del(struct mlx5_flow_attr *attr,
 
 	printk(KERN_ERR "%s deleting flow index %x \n", __func__, flow->flow_index);
 
-	mlx5_del_flow_table_entry(eswitch->fdb_table.fdb, flow->flow_index);
-	list_del(&flow->group_list);
 
 	if (flow->mlx5_action & MLX5_FLOW_ACTION_TYPE_VLAN_PUSH ||
 	    flow->mlx5_action & MLX5_FLOW_ACTION_TYPE_VLAN_POP) {
@@ -760,8 +1062,7 @@ static int __mlx5e_flow_del(struct mlx5_flow_attr *attr,
 			pr_err("handling vlan action failed, err %d\n", err);
 	}
 
-	kfree(flow);
-
+	mlx5e_destroy_flow(attr->pf_dev, flow);
 	mlx5e_flow_group_put(group);
 	return 0;
 }
@@ -771,6 +1072,7 @@ static struct mlx5_flow_group *mlx5e_get_flow_group(
 		u32 match_c[MATCH_PARAMS_SIZE])
 {
 	struct mlx5_flow_group *group;
+
 	bool group_found = false;
 
 	spin_lock(&pf_dev->flows_lock);
@@ -928,19 +1230,15 @@ void mlx5e_clear_flows(struct mlx5e_priv *pf_dev)
 {
 	struct mlx5_flow_group *group, *group_tmp;
 	struct mlx5_flow *flow, *flow_tmp;
-	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
 
 	/* find the group that this flow belongs to */
 	list_for_each_entry_safe(group, group_tmp, &pf_dev->mlx5_flow_groups,
 				 groups_list) {
 		list_for_each_entry_safe(flow, flow_tmp, &group->flows_list,
-					 group_list) {
-			mlx5_del_flow_table_entry(eswitch->fdb_table.fdb,
-						  flow->flow_index);
-			list_del(&flow->group_list);
-			kfree(flow);
-		}
+					 group_list)
+			mlx5e_destroy_flow(pf_dev, flow);
 		list_del(&group->groups_list);
 		kfree(group);
 	}
+
 }

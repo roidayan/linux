@@ -37,6 +37,7 @@
 #include <linux/mlx5/qp.h>
 #include <linux/mlx5/cq.h>
 #include <linux/mlx5/vport.h>
+#include <linux/hashtable.h>
 #include "wq.h"
 #include "transobj.h"
 #include "mlx5_core.h"
@@ -533,6 +534,7 @@ struct mlx5e_priv {
 	struct mlx5e_vf_rep	  **vf_reps;
 	u32			  pflags;
 	struct list_head	 mlx5_flow_groups;
+	DECLARE_HASHTABLE(encap_tbl, 8);
 	spinlock_t               flows_lock; /* protects mlx5_flow_groups list */
 	u32 			 fdb_miss_flow_index;
 	u32			 vlan_push_pop_refcount;
