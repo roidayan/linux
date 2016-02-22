@@ -932,6 +932,25 @@ int ib_get_cached_pkey(struct ib_device *device,
 }
 EXPORT_SYMBOL(ib_get_cached_pkey);
 
+int ib_get_cached_subnet_prefix(struct ib_device *device,
+				u8                port_num,
+				u64              *sn_pfx)
+{
+	unsigned long flags;
+	int p = port_num - rdma_start_port(device);
+
+	if (port_num < rdma_start_port(device) ||
+	    port_num > rdma_end_port(device))
+		return -EINVAL;
+
+	read_lock_irqsave(&device->cache.lock, flags);
+	*sn_pfx = device->cache.subnet_prefix_cache[p];
+	read_unlock_irqrestore(&device->cache.lock, flags);
+
+	return 0;
+}
+EXPORT_SYMBOL(ib_get_cached_subnet_prefix);
+
 int ib_find_cached_pkey(struct ib_device *device,
 			u8                port_num,
 			u16               pkey,
@@ -1108,6 +1127,8 @@ static void ib_cache_update(struct ib_device *device,
 
 	device->cache.lmc_cache[port - rdma_start_port(device)] = tprops->lmc;
 
+	device->cache.subnet_prefix_cache[port - rdma_start_port(device)] =
+							tprops->subnet_prefix;
 	write_unlock_irq(&device->cache.lock);
 
 	kfree(gid_cache);
@@ -1166,9 +1187,18 @@ int ib_cache_setup_one(struct ib_device *device)
 					  (rdma_end_port(device) -
 					   rdma_start_port(device) + 1),
 					  GFP_KERNEL);
+
+	device->cache.subnet_prefix_cache = kcalloc((rdma_end_port(device) -
+						     rdma_start_port(device) + 1),
+						    sizeof(*device->cache.subnet_prefix_cache),
+						    GFP_KERNEL);
+
 	if (!device->cache.pkey_cache ||
-	    !device->cache.lmc_cache) {
-		pr_warn("Couldn't allocate cache for %s\n", device->name);
+	    !device->cache.lmc_cache ||
+	    !device->cache.subnet_prefix_cache) {
+		kfree(device->cache.pkey_cache);
+		kfree(device->cache.lmc_cache);
+		kfree(device->cache.subnet_prefix_cache);
 		return -ENOMEM;
 	}
 
@@ -1211,6 +1241,7 @@ void ib_cache_release_one(struct ib_device *device)
 	gid_table_release_one(device);
 	kfree(device->cache.pkey_cache);
 	kfree(device->cache.lmc_cache);
+	kfree(device->cache.subnet_prefix_cache);
 }
 
 void ib_cache_cleanup_one(struct ib_device *device)
