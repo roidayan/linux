@@ -178,11 +178,6 @@ struct net_device *ovs_hw_flow_adjust(struct datapath *dp, struct ovs_flow *flow
 		dev = FIB_RES_DEV(res);
 	}
 
-	if (dev) {
-		flow->flow.key.misc.in_port_ifindex = dev->ifindex;
-		flow->flow.mask->key.misc.in_port_ifindex = 0xFFFFFFFF;
-	}
-
 	return dev;
 }
 

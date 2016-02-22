@@ -1098,14 +1098,6 @@ static void print_flow_key_tcp(const char *prefix,
 		 ntohs(key->tp.src), ntohs(key->tp.dst), ntohs(key->tp.flags));
 }
 
-static void print_flow_key_misc(const char *prefix,
-				const struct sw_flow_key *key)
-{
-	pr_debug("%s misc { in_port_ifindex %08x }\n",
-		 prefix,
-		 key->misc.in_port_ifindex);
-}
-
 static void print_flow_actions(struct sw_flow_actions *actions)
 {
 	int i;
@@ -1156,8 +1148,7 @@ static void print_flow(const struct sw_flow *flow, struct net_device *dev,
 	print_flow_key_ipv4(PREFIX_MASK, &flow->mask->key);
 	print_flow_key_tcp(PREFIX_NONE, &flow->key);
 	print_flow_key_tcp(PREFIX_MASK, &flow->mask->key);
-	print_flow_key_misc(PREFIX_NONE, &flow->key);
-	print_flow_key_misc(PREFIX_MASK, &flow->mask->key);
+	pr_debug("            { in_port_ifindex %08x }\n", dev->ifindex);
 	print_flow_actions(flow->actions);
 }
 
