@@ -35,6 +35,8 @@
 #include <linux/mlx5/flow_table.h>
 #include <linux/list.h>
 #include <net/sw_flow.h>
+#include <net/netevent.h>
+#include <net/arp.h>
 #include "en.h"
 #include "eswitch.h"
 #include "en_rep.h"
@@ -568,6 +570,44 @@ err_pf_vport_rules:
 	return err;
 }
 
+static bool mlx5e_dev_check(const struct net_device *dev)
+{
+	/* check switchdev_ops as we only care about
+	 * PF neighbor events.
+	 */
+	return dev->switchdev_ops == &mlx5e_pf_switchdev_ops;
+}
+
+static int mlx5e_netevent_event(struct notifier_block *unused,
+				unsigned long event, void *ptr)
+{
+	struct net_device *dev;
+	struct neighbour *n = ptr;
+	int err;
+
+	switch (event) {
+	case NETEVENT_NEIGH_UPDATE:
+		if (n->tbl != &arp_tbl)
+			return NOTIFY_DONE;
+		dev = n->dev;
+		if (!mlx5e_dev_check(dev))
+			return NOTIFY_DONE;
+		err = mlx5e_neigh_update(dev, n);
+		if (err)
+			netdev_warn(dev,
+				    "failed to handle neigh update (err %d)\n",
+				    err);
+		break;
+	}
+
+	return NOTIFY_DONE;
+}
+
+static int netevent_clients;
+static struct notifier_block mlx5e_netevent_nb __read_mostly = {
+	.notifier_call = mlx5e_netevent_event,
+};
+
 int mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev)
 {
 	struct mlx5_eswitch *esw = pf_dev->mdev->priv.eswitch;
@@ -616,8 +656,20 @@ int mlx5e_start_flow_offloads(struct mlx5e_priv *pf_dev)
 	INIT_LIST_HEAD(&pf_dev->mlx5_flow_groups);
 	spin_lock_init(&pf_dev->flows_lock);
 	hash_init(pf_dev->encap_tbl);
+	hash_init(pf_dev->neigh_tbl);
+	INIT_WORK(&pf_dev->update_encaps_work, mlx5e_update_encaps);
+	INIT_LIST_HEAD(&pf_dev->update_encaps_list);
+	spin_lock_init(&pf_dev->encaps_lock);
+
+	if (netevent_clients == 0 &&
+	    register_netevent_notifier(&mlx5e_netevent_nb))
+		goto err_reg_notifier;
+	netevent_clients++;
 
 	return 0;
+err_reg_notifier:
+	if (pf_dev->channel)
+		mlx5e_del_pf_to_wire_rules(pf_dev);
 err_pf_vport_rules:
 	mlx5_del_fdb_miss_rule(pf_dev->mdev, pf_dev->fdb_miss_flow_index);
 fdb_err:
@@ -639,6 +691,9 @@ static void mlx5e_disable_flow_offloads(struct mlx5e_priv *pf_dev)
 	void *ft;
 
 	ASSERT_RTNL();
+
+	if (!(--netevent_clients))
+		unregister_netevent_notifier(&mlx5e_netevent_nb);
 
 	mlx5e_clear_flows(pf_dev);
 

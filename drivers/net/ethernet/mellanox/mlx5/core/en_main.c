@@ -2089,7 +2089,7 @@ static int mlx5e_pf_obj_del(struct net_device *dev,
 	return __mlx5e_rep_obj_del(vf_rep, obj);
 }
 
-static const struct switchdev_ops mlx5e_pf_switchdev_ops = {
+const struct switchdev_ops mlx5e_pf_switchdev_ops = {
 	.switchdev_port_attr_get	= mlx5e_pf_attr_get,
 	.switchdev_port_obj_add		= mlx5e_pf_obj_add,
 	.switchdev_port_obj_del		= mlx5e_pf_obj_del,

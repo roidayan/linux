@@ -57,10 +57,13 @@ struct mlx5e_encap_info {
 
 struct mlx5e_encap_entry {
 	struct hlist_node encap_hlist;
+	struct hlist_node neigh_hlist;
 	struct list_head flows;
+	struct list_head update_encaps_list;
 	u32 encap_id;
 	struct neighbour *n;
 	struct mlx5e_encap_info tun_info;
+	unsigned char h_dest[ETH_ALEN];	/* destination eth addr	*/
 
 	bool valid_encap;
 };
@@ -507,8 +510,9 @@ static int route_lookup(struct mlx5e_priv *pf_dev,
 
 static int gen_vxlan_header(struct mlx5e_priv *pf_dev,
 			    char buf[],
-			    struct neighbour *n,
+			    unsigned char h_dest[ETH_ALEN],
 			    int ttl,
+			    __be32 daddr,
 			    __be32 saddr,
 			    __be16 udp_dst_port,
 			    __be32 vx_vni)
@@ -523,12 +527,12 @@ static int gen_vxlan_header(struct mlx5e_priv *pf_dev,
 			+ sizeof(struct udphdr));
 
 	memset(buf, 0, encap_size);
-	neigh_ha_snapshot(eth->h_dest, n, pf_dev->netdev);
 
+	ether_addr_copy(eth->h_dest, h_dest);
 	ether_addr_copy(eth->h_source, pf_dev->netdev->dev_addr);
 	eth->h_proto = htons(ETH_P_IP);
 
-	ip->daddr = *(u32 *)n->primary_key;
+	ip->daddr = daddr;
 	ip->saddr = saddr;
 
 	ip->ttl = ttl;
@@ -572,17 +576,22 @@ static int create_encap_header(struct mlx5e_priv *pf_dev,
 		return err;
 
 	e->n = n;
+	hash_add_rcu(pf_dev->neigh_tbl, &e->neigh_hlist,
+		     (uintptr_t)n);
 
 	if (!(n->nud_state & NUD_VALID)) {
 		neigh_event_send(n, NULL);
 		return -EAGAIN;
 	}
 
+	neigh_ha_snapshot(e->h_dest, n, pf_dev->netdev);
+
 	switch (e->tun_info.tunnel_type) {
 	case SW_FLOW_TUNNEL_VXLAN:
 		encap_size = gen_vxlan_header(pf_dev, encap_header,
-					      n, ttl, saddr,
-					      e->tun_info.tp_dst,
+					      e->h_dest, ttl,
+					      *(__be32 *)n->primary_key,
+					      saddr, e->tun_info.tp_dst,
 					      e->tun_info.tun_id);
 		break;
 	default:
@@ -649,6 +658,8 @@ static int mlx5e_get_encap(struct mlx5_flow_attr *attr,
 		return -ENOMEM;
 
 	e->valid_encap = false;
+	INIT_LIST_HEAD(&e->flows);
+	INIT_LIST_HEAD(&e->update_encaps_list);
 
 	e->tun_info = info;
 	attr->encap = e;
@@ -669,6 +680,8 @@ static void mlx5e_detach_encap(struct mlx5e_priv *pf_dev,
 
 		e = list_entry(next, struct mlx5e_encap_entry, flows);
 		if (e->n) {
+			hlist_del_rcu(&e->neigh_hlist);
+			synchronize_rcu();
 			neigh_release(e->n);
 			if (e->valid_encap) {
 				mlx5_dealloc_encap_cmd(pf_dev->mdev,
@@ -677,8 +690,101 @@ static void mlx5e_detach_encap(struct mlx5e_priv *pf_dev,
 			}
 		}
 		hlist_del_rcu(&e->encap_hlist);
+		list_del(&e->update_encaps_list);
 		kfree(e);
 	}
+}
+
+static void mlx5e_update_flows(struct mlx5e_priv *pf_dev,
+			       struct mlx5e_encap_entry *e)
+{
+	struct mlx5_eswitch *eswitch = pf_dev->mdev->priv.eswitch;
+	void *flow_context, *match_value, *dest;
+	struct mlx5_flow *flow;
+	int err = -ENOMEM;
+
+	ASSERT_RTNL();
+
+	list_for_each_entry(flow, &e->flows, encap) {
+		if (flow->flow_index != INVALID_FLOW_IX) {
+			mlx5_del_flow_table_entry(
+				pf_dev->mdev->priv.eswitch->fdb_table.fdb,
+				flow->flow_index);
+			flow->flow_index = INVALID_FLOW_IX;
+		}
+	}
+
+	if (e->valid_encap) {
+		mlx5_dealloc_encap_cmd(pf_dev->mdev, e->encap_id);
+		e->valid_encap = false;
+	}
+
+	if (e->n) {
+		hash_del_rcu(&e->neigh_hlist);
+		neigh_release(e->n);
+		e->n = NULL;
+	}
+
+	err = create_encap_header(pf_dev, e);
+	if (err)
+		return;
+
+	/* TODO: move allocation to mlx5e_update_encaps */
+	flow_context = mlx5_vzalloc(MLX5_ST_SZ_BYTES(flow_context) +
+				    MLX5_ST_SZ_BYTES(dest_format_struct));
+	if (!flow_context)
+		return;
+
+	MLX5_SET(flow_context, flow_context, encap_id, e->encap_id);
+
+	MLX5_SET(flow_context, flow_context, action,
+		 MLX5_FLOW_CONTEXT_ACTION_ENCAP |
+		 MLX5_FLOW_CONTEXT_ACTION_FWD_DEST);
+
+	MLX5_SET(flow_context, flow_context, destination_list_size, 1);
+
+	dest = MLX5_ADDR_OF(flow_context, flow_context, destination);
+	MLX5_SET(dest_format_struct, dest, destination_type,
+		 MLX5_FLOW_CONTEXT_DEST_TYPE_VPORT);
+	MLX5_SET(dest_format_struct, dest, destination_id,
+		 FDB_UPLINK_VPORT);
+
+	match_value = MLX5_ADDR_OF(flow_context, flow_context, match_value);
+
+	list_for_each_entry(flow, &e->flows, encap) {
+		memcpy(match_value, flow->match_v, sizeof(flow->match_v));
+		err = mlx5_set_flow_group_entry(eswitch->fdb_table.fdb,
+						flow->group->group_ix,
+						&flow->flow_index,
+						flow_context);
+		if (err)
+			pr_warn("Error setting flow\n");
+	}
+
+	kfree(flow_context);
+}
+
+void mlx5e_update_encaps(struct work_struct *work)
+{
+	struct mlx5e_priv *pf_dev = container_of(work, struct mlx5e_priv,
+					       update_encaps_work);
+	struct list_head update_encaps_list;
+	struct mlx5e_encap_entry *e, *e2;
+
+	rtnl_lock();
+
+	spin_lock_irq(&pf_dev->encaps_lock);
+	INIT_LIST_HEAD(&update_encaps_list);
+	list_splice_init(&pf_dev->update_encaps_list, &update_encaps_list);
+	spin_unlock_irq(&pf_dev->encaps_lock);
+
+	list_for_each_entry_safe(e, e2, &update_encaps_list,
+				 update_encaps_list) {
+		list_del_init(&e->update_encaps_list);
+		mlx5e_update_flows(pf_dev, e);
+	}
+
+	rtnl_unlock();
 }
 
 static void mlx5e_flow_group_release(struct kref *kref)
@@ -1224,6 +1330,58 @@ int mlx5e_flow_del(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow)
 
 
 	return err;
+}
+
+static inline bool neighbour_valid(struct neighbour *n)
+{
+	return !!(n->nud_state & NUD_VALID);
+}
+
+int mlx5e_neigh_update(struct net_device *dev, struct neighbour *n)
+{
+	struct mlx5e_priv *pf_dev = netdev_priv(dev);
+	struct mlx5e_encap_entry *e;
+	uintptr_t key = (uintptr_t)n;
+	unsigned long flags;
+	bool wakeup_thread = false;
+	bool found = false;
+
+	rcu_read_lock();
+	hash_for_each_possible_rcu(pf_dev->neigh_tbl, e, neigh_hlist, key) {
+		if (e->n == n) {
+			spin_lock_irqsave(&pf_dev->encaps_lock, flags);
+			/* Use list_empty_careful as mlx5e_update_encaps
+			 * may remove e from a list without a lock
+			 */
+			if ((e->valid_encap != neighbour_valid(n) ||
+			     !ether_addr_equal(e->h_dest, n->ha)) &&
+			     list_empty_careful(&e->update_encaps_list)) {
+				if (list_empty(&pf_dev->update_encaps_list))
+					wakeup_thread = true;
+				list_add_tail(&e->update_encaps_list,
+					      &pf_dev->update_encaps_list);
+			}
+			spin_unlock_irqrestore(&pf_dev->encaps_lock, flags);
+			found = true;
+		}
+	}
+	rcu_read_unlock();
+
+	if (!found)
+		return 0;
+
+	/* If we are offloading traffic targeted
+	 * at a certain neighbor we should probe
+	 * that neighbor when it becomes stale to make
+	 * sure it is still valid
+	 */
+	if (n->nud_state & NUD_STALE)
+		neigh_event_send(n, NULL);
+
+	if (wakeup_thread)
+		schedule_work(&pf_dev->update_encaps_work);
+
+	return 0;
 }
 
 void mlx5e_clear_flows(struct mlx5e_priv *pf_dev)

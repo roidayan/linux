@@ -222,6 +222,8 @@ static const char pport_strings[][ETH_GSTRING_LEN] = {
 	"p8192to10239octets",
 };
 
+extern const struct switchdev_ops mlx5e_pf_switchdev_ops;
+
 #define NUM_IEEE_802_3_COUNTERS		19
 #define NUM_RFC_2863_COUNTERS		13
 #define NUM_RFC_2819_COUNTERS		21
@@ -535,9 +537,13 @@ struct mlx5e_priv {
 	u32			  pflags;
 	struct list_head	 mlx5_flow_groups;
 	DECLARE_HASHTABLE(encap_tbl, 8);
+	DECLARE_HASHTABLE(neigh_tbl, 8);
 	spinlock_t               flows_lock; /* protects mlx5_flow_groups list */
 	u32 			 fdb_miss_flow_index;
 	u32			 vlan_push_pop_refcount;
+	struct work_struct	 update_encaps_work;
+	struct list_head	 update_encaps_list;
+	spinlock_t               encaps_lock; /* protects update_encaps_list */
 };
 
 #define MLX5E_NET_IP_ALIGN 2
@@ -675,7 +681,9 @@ void mlx5e_del_pf_to_wire_rules(struct mlx5e_priv *pf_dev);
 int mlx5e_add_pf_to_wire_rules(struct mlx5e_priv *pf_dev);
 
 struct sw_flow;
+void mlx5e_update_encaps(struct work_struct *work);
 
 int mlx5e_flow_add(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow);
 int mlx5e_flow_del(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow);
+int mlx5e_neigh_update(struct net_device *dev, struct neighbour *n);
 void mlx5e_clear_flows(struct mlx5e_priv *pf_dev);
