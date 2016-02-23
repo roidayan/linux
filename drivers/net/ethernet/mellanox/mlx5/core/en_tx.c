@@ -167,6 +167,7 @@ static netdev_tx_t mlx5e_sq_xmit(struct mlx5e_sq *sq, struct sk_buff *skb)
 
 	u8  opcode = MLX5_OPCODE_SEND;
 	dma_addr_t dma_addr = 0;
+	unsigned int num_bytes;
 	bool bf = false;
 	u16 headlen;
 	u16 ds_cnt;
@@ -192,8 +193,7 @@ static netdev_tx_t mlx5e_sq_xmit(struct mlx5e_sq *sq, struct sk_buff *skb)
 		opcode       = MLX5_OPCODE_LSO;
 		ihs          = skb_transport_offset(skb) + tcp_hdrlen(skb);
 		payload_len  = skb->len - ihs;
-		MLX5E_TX_SKB_CB(skb)->num_bytes = skb->len +
-					(skb_shinfo(skb)->gso_segs - 1) * ihs;
+		num_bytes = skb->len + (skb_shinfo(skb)->gso_segs - 1) * ihs;
 		sq->stats.tso_packets++;
 		sq->stats.tso_bytes += payload_len;
 	} else {
@@ -201,9 +201,10 @@ static netdev_tx_t mlx5e_sq_xmit(struct mlx5e_sq *sq, struct sk_buff *skb)
 		     !skb->xmit_more &&
 		     !skb_shinfo(skb)->nr_frags;
 		ihs = mlx5e_get_inline_hdr_size(sq, skb, bf);
-		MLX5E_TX_SKB_CB(skb)->num_bytes = max_t(unsigned int, skb->len,
-							ETH_ZLEN);
+		num_bytes = max_t(unsigned int, skb->len, ETH_ZLEN);
 	}
+
+	MLX5E_TX_SKB_CB(skb)->num_bytes = num_bytes;
 
 	if (skb_vlan_tag_present(skb)) {
 		mlx5e_insert_vlan(eseg->inline_hdr_start, skb, ihs);
@@ -293,6 +294,7 @@ static netdev_tx_t mlx5e_sq_xmit(struct mlx5e_sq *sq, struct sk_buff *skb)
 	sq->bf_budget = bf ? sq->bf_budget - 1 : 0;
 
 	sq->stats.packets++;
+	sq->stats.bytes += num_bytes;
 	return NETDEV_TX_OK;
 
 dma_unmap_wqe_err:

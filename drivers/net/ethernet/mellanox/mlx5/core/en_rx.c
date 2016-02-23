@@ -267,8 +267,10 @@ bool mlx5e_poll_rx_cq(struct mlx5e_cq *cq, int budget)
 		if (flow_tag & FDB_TAG)
 			vport = handle_fdb_flow_tag(rq->netdev, skb, flow_tag);
 
-		if (vport == FDB_UPLINK_VPORT)
+		if (vport == FDB_UPLINK_VPORT) {
 			rq->stats.packets++;
+			rq->stats.bytes += be32_to_cpu(cqe->byte_cnt);
+		}
 
 		napi_gro_receive(cq->napi, skb);
 
