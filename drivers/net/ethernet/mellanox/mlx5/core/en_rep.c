@@ -386,7 +386,7 @@ int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u32 vport,
 {
 	struct net_device *dev;
 	struct mlx5e_vf_rep *priv;
-	int err, vf;
+	int err;
 	char *rep_name;
 	u8 mac[ETH_ALEN];
 
@@ -415,11 +415,8 @@ int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u32 vport,
 
 	/* vport = vf + 1;  PF vport = 0 --> VF vport is vf+1 */
 
-	if (vport == FDB_UPLINK_VPORT) {
-		vf = pf_dev->mdev->priv.sriov.num_vfs;
+	if (vport == FDB_UPLINK_VPORT)
 		goto out;
-	} else
-		vf = vport - 1;
 
 	memset(mac, 0, ETH_ALEN);
 	mlx5_query_nic_vport_mac_address(pf_dev->mdev, vport, mac);
