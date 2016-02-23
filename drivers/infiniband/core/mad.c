@@ -345,6 +345,16 @@ struct ib_mad_agent *ib_register_mad_agent(struct ib_device *device,
 		goto error3;
 	}
 
+	if (qp_type == IB_QPT_SMI) {
+		ret2 = security_ib_end_port_smp(device->name,
+						port_num,
+						&mad_agent_priv->agent);
+		if (ret2) {
+			ret = ERR_PTR(ret2);
+			goto error4;
+		}
+	}
+
 	if (mad_reg_req) {
 		reg_req = kmemdup(mad_reg_req, sizeof *reg_req, GFP_KERNEL);
 		if (!reg_req) {
@@ -529,6 +539,17 @@ struct ib_mad_agent *ib_register_mad_snoop(struct ib_device *device,
 	if (err) {
 		ret = ERR_PTR(err);
 		goto error2;
+	}
+
+	if (qp_type == IB_QPT_SMI) {
+		err = security_ib_end_port_smp(device->name,
+					       port_num,
+					       &mad_snoop_priv->agent);
+
+		if (err) {
+			ret = ERR_PTR(err);
+			goto error3;
+		}
 	}
 
 	/* Now, fill in the various structures */
@@ -1244,12 +1265,24 @@ int ib_post_send_mad(struct ib_mad_send_buf *send_buf,
 
 	/* Walk list of send WRs and post each on send list */
 	for (; send_buf; send_buf = next_send_buf) {
+		int err = 0;
 
 		mad_send_wr = container_of(send_buf,
 					   struct ib_mad_send_wr_private,
 					   send_buf);
 		mad_agent_priv = mad_send_wr->mad_agent_priv;
 		pkey_index = mad_send_wr->send_wr.pkey_index;
+
+		if (mad_agent_priv->agent.qp->qp_type == IB_QPT_SMI)
+			err = security_ib_end_port_smp(
+					mad_agent_priv->agent.device->name,
+					mad_agent_priv->agent.port_num,
+					&mad_agent_priv->agent);
+
+		if (err) {
+			ret = err;
+			goto error;
+		}
 
 		ret = ib_security_ma_pkey_access(mad_agent_priv->agent.device,
 						 mad_agent_priv->agent.port_num,
@@ -1992,7 +2025,16 @@ static void ib_mad_complete_recv(struct ib_mad_agent_private *mad_agent_priv,
 	struct ib_mad_send_wr_private *mad_send_wr;
 	struct ib_mad_send_wc mad_send_wc;
 	unsigned long flags;
-	int ret;
+	int ret = 0;
+
+	if (mad_agent_priv->agent.qp->qp_type == IB_QPT_SMI)
+		ret = security_ib_end_port_smp(
+					mad_agent_priv->agent.device->name,
+					mad_agent_priv->agent.port_num,
+					&mad_agent_priv->agent);
+
+	if (ret)
+		goto security_error;
 
 	ret = ib_security_ma_pkey_access(mad_agent_priv->agent.device,
 					 mad_agent_priv->agent.port_num,
