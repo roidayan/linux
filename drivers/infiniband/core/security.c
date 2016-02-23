@@ -614,4 +614,28 @@ int ib_security_modify_qp(struct ib_qp *qp,
 }
 EXPORT_SYMBOL(ib_security_modify_qp);
 
+int ib_security_ma_pkey_access(struct ib_device *dev,
+			       u8 port_num,
+			       u16 pkey_index,
+			       struct ib_mad_agent *mad_agent)
+{
+	u64 subnet_prefix;
+	u16 pkey;
+	int ret;
+
+	ret = ib_get_cached_pkey(dev, port_num, pkey_index, &pkey);
+	if (ret)
+		return ret;
+
+	ret = ib_get_cached_subnet_prefix(dev, port_num, &subnet_prefix);
+
+	if (ret)
+		return ret;
+
+	return security_ib_mad_agent_pkey_access(subnet_prefix,
+						 pkey,
+						 mad_agent);
+}
+EXPORT_SYMBOL(ib_security_ma_pkey_access);
+
 #endif /* CONFIG_SECURITY_INFINIBAND */

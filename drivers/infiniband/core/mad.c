@@ -40,9 +40,11 @@
 #include <linux/dma-mapping.h>
 #include <linux/slab.h>
 #include <linux/module.h>
+#include <linux/security.h>
 #include <rdma/ib_cache.h>
 
 #include "mad_priv.h"
+#include "core_priv.h"
 #include "mad_rmpp.h"
 #include "smi.h"
 #include "opa_smi.h"
@@ -337,11 +339,17 @@ struct ib_mad_agent *ib_register_mad_agent(struct ib_device *device,
 		goto error1;
 	}
 
+	ret2 = security_ib_mad_agent_alloc_security(&mad_agent_priv->agent);
+	if (ret2) {
+		ret = ERR_PTR(ret2);
+		goto error3;
+	}
+
 	if (mad_reg_req) {
 		reg_req = kmemdup(mad_reg_req, sizeof *reg_req, GFP_KERNEL);
 		if (!reg_req) {
 			ret = ERR_PTR(-ENOMEM);
-			goto error3;
+			goto error4;
 		}
 	}
 
@@ -384,7 +392,7 @@ struct ib_mad_agent *ib_register_mad_agent(struct ib_device *device,
 				if (method) {
 					if (method_in_use(&method,
 							   mad_reg_req))
-						goto error4;
+						goto error5;
 				}
 			}
 			ret2 = add_nonoui_reg_req(mad_reg_req, mad_agent_priv,
@@ -400,14 +408,14 @@ struct ib_mad_agent *ib_register_mad_agent(struct ib_device *device,
 					if (is_vendor_method_in_use(
 							vendor_class,
 							mad_reg_req))
-						goto error4;
+						goto error5;
 				}
 			}
 			ret2 = add_oui_reg_req(mad_reg_req, mad_agent_priv);
 		}
 		if (ret2) {
 			ret = ERR_PTR(ret2);
-			goto error4;
+			goto error5;
 		}
 	}
 
@@ -417,9 +425,11 @@ struct ib_mad_agent *ib_register_mad_agent(struct ib_device *device,
 
 	return &mad_agent_priv->agent;
 
-error4:
+error5:
 	spin_unlock_irqrestore(&port_priv->reg_lock, flags);
 	kfree(reg_req);
+error4:
+	security_ib_mad_agent_free_security(&mad_agent_priv->agent);
 error3:
 	kfree(mad_agent_priv);
 error1:
@@ -489,6 +499,7 @@ struct ib_mad_agent *ib_register_mad_snoop(struct ib_device *device,
 	struct ib_mad_agent *ret;
 	struct ib_mad_snoop_private *mad_snoop_priv;
 	int qpn;
+	int err;
 
 	/* Validate parameters */
 	if ((is_snooping_sends(mad_snoop_flags) && !snoop_handler) ||
@@ -513,6 +524,13 @@ struct ib_mad_agent *ib_register_mad_snoop(struct ib_device *device,
 		goto error1;
 	}
 
+	err = security_ib_mad_agent_alloc_security(&mad_snoop_priv->agent);
+
+	if (err) {
+		ret = ERR_PTR(err);
+		goto error2;
+	}
+
 	/* Now, fill in the various structures */
 	mad_snoop_priv->qp_info = &port_priv->qp_info[qpn];
 	mad_snoop_priv->agent.device = device;
@@ -523,17 +541,19 @@ struct ib_mad_agent *ib_register_mad_snoop(struct ib_device *device,
 	mad_snoop_priv->agent.port_num = port_num;
 	mad_snoop_priv->mad_snoop_flags = mad_snoop_flags;
 	init_completion(&mad_snoop_priv->comp);
+
 	mad_snoop_priv->snoop_index = register_snoop_agent(
 						&port_priv->qp_info[qpn],
 						mad_snoop_priv);
 	if (mad_snoop_priv->snoop_index < 0) {
 		ret = ERR_PTR(mad_snoop_priv->snoop_index);
-		goto error2;
+		goto error3;
 	}
 
 	atomic_set(&mad_snoop_priv->refcount, 1);
 	return &mad_snoop_priv->agent;
-
+error3:
+	security_ib_mad_agent_free_security(&mad_snoop_priv->agent);
 error2:
 	kfree(mad_snoop_priv);
 error1:
@@ -579,6 +599,8 @@ static void unregister_mad_agent(struct ib_mad_agent_private *mad_agent_priv)
 	deref_mad_agent(mad_agent_priv);
 	wait_for_completion(&mad_agent_priv->comp);
 
+	security_ib_mad_agent_free_security(&mad_agent_priv->agent);
+
 	kfree(mad_agent_priv->reg_req);
 	kfree(mad_agent_priv);
 }
@@ -596,6 +618,8 @@ static void unregister_mad_snoop(struct ib_mad_snoop_private *mad_snoop_priv)
 
 	deref_snoop_agent(mad_snoop_priv);
 	wait_for_completion(&mad_snoop_priv->comp);
+
+	security_ib_mad_agent_free_security(&mad_snoop_priv->agent);
 
 	kfree(mad_snoop_priv);
 }
@@ -1216,6 +1240,7 @@ int ib_post_send_mad(struct ib_mad_send_buf *send_buf,
 	struct ib_mad_send_wr_private *mad_send_wr;
 	unsigned long flags;
 	int ret = -EINVAL;
+	u16 pkey_index;
 
 	/* Walk list of send WRs and post each on send list */
 	for (; send_buf; send_buf = next_send_buf) {
@@ -1224,6 +1249,15 @@ int ib_post_send_mad(struct ib_mad_send_buf *send_buf,
 					   struct ib_mad_send_wr_private,
 					   send_buf);
 		mad_agent_priv = mad_send_wr->mad_agent_priv;
+		pkey_index = mad_send_wr->send_wr.pkey_index;
+
+		ret = ib_security_ma_pkey_access(mad_agent_priv->agent.device,
+						 mad_agent_priv->agent.port_num,
+						 pkey_index,
+						 &mad_agent_priv->agent);
+
+		if (ret)
+			goto error;
 
 		if (!send_buf->mad_agent->send_handler ||
 		    (send_buf->timeout_ms &&
@@ -1958,6 +1992,15 @@ static void ib_mad_complete_recv(struct ib_mad_agent_private *mad_agent_priv,
 	struct ib_mad_send_wr_private *mad_send_wr;
 	struct ib_mad_send_wc mad_send_wc;
 	unsigned long flags;
+	int ret;
+
+	ret = ib_security_ma_pkey_access(mad_agent_priv->agent.device,
+					 mad_agent_priv->agent.port_num,
+					 mad_recv_wc->wc->pkey_index,
+					 &mad_agent_priv->agent);
+
+	if (ret)
+		goto security_error;
 
 	INIT_LIST_HEAD(&mad_recv_wc->rmpp_list);
 	list_add(&mad_recv_wc->recv_buf.list, &mad_recv_wc->rmpp_list);
@@ -2015,6 +2058,12 @@ static void ib_mad_complete_recv(struct ib_mad_agent_private *mad_agent_priv,
 						   mad_recv_wc);
 		deref_mad_agent(mad_agent_priv);
 	}
+
+	return;
+
+security_error:
+	ib_free_recv_mad(mad_recv_wc);
+	deref_mad_agent(mad_agent_priv);
 }
 
 static enum smi_action handle_ib_smi(const struct ib_mad_port_private *port_priv,
