@@ -294,6 +294,7 @@ static int mlx5_internal_err_ret_value(struct mlx5_core_dev *dev, u16 op,
 	case MLX5_CMD_OP_DESTROY_FLOW_TABLE:
 	case MLX5_CMD_OP_DESTROY_FLOW_GROUP:
 	case MLX5_CMD_OP_DELETE_FLOW_TABLE_ENTRY:
+	case MLX5_CMD_OP_DEALLOC_ENCAP_HEADER:
 		return MLX5_CMD_STAT_OK;
 
 	case MLX5_CMD_OP_QUERY_HCA_CAP:
@@ -395,6 +396,7 @@ static int mlx5_internal_err_ret_value(struct mlx5_core_dev *dev, u16 op,
 	case MLX5_CMD_OP_QUERY_FLOW_GROUP:
 	case MLX5_CMD_OP_SET_FLOW_TABLE_ENTRY:
 	case MLX5_CMD_OP_QUERY_FLOW_TABLE_ENTRY:
+	case MLX5_CMD_OP_ALLOC_ENCAP_HEADER:
 		*status = MLX5_DRIVER_STATUS_ABORTED;
 		*synd = MLX5_DRIVER_SYND;
 		return -EIO;
@@ -559,6 +561,12 @@ const char *mlx5_command_str(int command)
 
 	case MLX5_CMD_OP_ACCESS_REG:
 		return "MLX5_CMD_OP_ACCESS_REG";
+
+	case MLX5_CMD_OP_ALLOC_ENCAP_HEADER:
+		return "ALLOC_ENCAP_HEADER";
+
+	case MLX5_CMD_OP_DEALLOC_ENCAP_HEADER:
+		return "DEALLOC_ENCAP_HEADER";
 
 	default: return "unknown command opcode";
 	}

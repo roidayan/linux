@@ -63,6 +63,13 @@ int mlx5_set_flow_group_entry(void *ft, u32 group_ix,
 void mlx5_del_flow_table_entry(void *flow_table, u32 flow_index);
 u32 mlx5_get_flow_table_id(void *flow_table);
 
+int mlx5_alloc_encap_cmd(struct mlx5_core_dev *dev,
+			 int header_type,
+			 size_t size,
+			 void *encap_header,
+			 u32 *encap_id);
+void mlx5_dealloc_encap_cmd(struct mlx5_core_dev *dev, u32 encap_id);
+
 void mlx5_set_free_flow_group(void *flow_table, int g_index);
 int  mlx5_get_free_flow_group(void *flow_table, int start, int end);
 int  mlx5_recreate_flow_group(void *flow_table, int g_index, struct mlx5_flow_table_group *g);
