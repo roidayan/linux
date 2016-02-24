@@ -6018,6 +6018,44 @@ static void selinux_unregister_ib_flush_callback(void)
 	mutex_unlock(&ib_flush_mutex);
 }
 
+static int selinux_pkey_access(u64 subnet_prefix, u16 pkey_val, void *security)
+{
+	struct common_audit_data ad;
+	int err;
+	u32 sid = 0;
+	struct ib_security_struct *sec = security;
+	struct lsm_pkey_audit pkey;
+
+	err = security_pkey_sid(subnet_prefix, pkey_val, &sid);
+
+	if (err)
+		goto out;
+
+	ad.type = LSM_AUDIT_DATA_PKEY;
+	pkey.subnet_prefix = subnet_prefix;
+	pkey.pkey = pkey_val;
+	ad.u.pkey = &pkey;
+	err = avc_has_perm(sec->sid, sid,
+			   SECCLASS_INFINIBAND_PKEY,
+			   INFINIBAND_PKEY__ACCESS, &ad);
+out:
+	return err;
+}
+
+static int selinux_ib_qp_pkey_access(u64 subnet_prefix, u16 pkey_val,
+				     struct ib_qp_security *qp_sec)
+{
+	return selinux_pkey_access(subnet_prefix, pkey_val,
+				   qp_sec->q_security);
+}
+
+static int selinux_ib_mad_agent_pkey_access(u64 subnet_prefix, u16 pkey_val,
+					    struct ib_mad_agent *mad_agent)
+{
+	return selinux_pkey_access(subnet_prefix, pkey_val,
+					mad_agent->m_security);
+}
+
 static int selinux_ib_qp_alloc_security(struct ib_qp_security *qp_sec)
 {
 	struct ib_security_struct *sec;
@@ -6248,6 +6286,9 @@ static struct security_hook_list selinux_hooks[] = {
 		      selinux_register_ib_flush_callback),
 	LSM_HOOK_INIT(unregister_ib_flush_callback,
 		      selinux_unregister_ib_flush_callback),
+	LSM_HOOK_INIT(ib_qp_pkey_access, selinux_ib_qp_pkey_access),
+	LSM_HOOK_INIT(ib_mad_agent_pkey_access,
+		      selinux_ib_mad_agent_pkey_access),
 	LSM_HOOK_INIT(ib_qp_alloc_security,
 		      selinux_ib_qp_alloc_security),
 	LSM_HOOK_INIT(ib_qp_free_security,
