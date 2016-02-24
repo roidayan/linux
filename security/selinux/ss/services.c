@@ -53,6 +53,7 @@
 #include <linux/flex_array.h>
 #include <linux/vmalloc.h>
 #include <net/netlabel.h>
+#include <rdma/ib_verbs.h>
 
 #include "flask.h"
 #include "avc.h"
@@ -2262,6 +2263,48 @@ int security_pkey_sid(u64 subnet_prefix, u16 pkey_num, u32 *out_sid)
 		*out_sid = c->sid[0];
 	} else {
 		*out_sid = SECINITSID_PKEY;
+	}
+
+out:
+	read_unlock(&policy_rwlock);
+	return rc;
+}
+
+/**
+ * security_ib_end_port_sid - Obtain the SID for a subnet management interface.
+ * @dev_name: device name
+ * @port: port number
+ * @out_sid: security identifier
+ */
+int security_ib_end_port_sid(const char *dev_name, u8 port, u32 *out_sid)
+{
+	struct ocontext *c;
+	int rc = 0;
+
+	read_lock(&policy_rwlock);
+
+	c = policydb.ocontexts[OCON_IB_END_PORT];
+	while (c) {
+		if (c->u.ib_end_port.port == port &&
+		    !strncmp(c->u.ib_end_port.dev_name,
+			    dev_name,
+			    IB_DEVICE_NAME_MAX))
+			break;
+
+		c = c->next;
+	}
+
+	if (c) {
+		if (!c->sid[0]) {
+			rc = sidtab_context_to_sid(&sidtab,
+						   &c->context[0],
+						   &c->sid[0]);
+			if (rc)
+				goto out;
+		}
+		*out_sid = c->sid[0];
+	} else {
+		*out_sid = SECINITSID_IB_END_PORT;
 	}
 
 out:

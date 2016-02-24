@@ -167,5 +167,7 @@ struct security_class_mapping secclass_map[] = {
 	  { COMMON_CAP2_PERMS, NULL } },
 	{ "infiniband_pkey",
 	  { "access", NULL } },
+	{ "infiniband_end_port",
+	  { "smp", NULL } },
 	{ NULL }
   };

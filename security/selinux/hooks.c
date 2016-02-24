@@ -6056,6 +6056,32 @@ static int selinux_ib_mad_agent_pkey_access(u64 subnet_prefix, u16 pkey_val,
 					mad_agent->m_security);
 }
 
+static int selinux_ib_end_port_smp(const char *dev_name, u8 port,
+				   struct ib_mad_agent *mad_agent)
+{
+	struct common_audit_data ad;
+	int err;
+	u32 sid = 0;
+	struct ib_security_struct *sec = mad_agent->m_security;
+	struct lsm_ib_end_port_audit ib_end_port;
+
+	err = security_ib_end_port_sid(dev_name, port, &sid);
+
+	if (err)
+		goto out;
+
+	ad.type = LSM_AUDIT_DATA_IB_END_PORT;
+	strncpy(ib_end_port.dev_name, dev_name, sizeof(ib_end_port.dev_name));
+	ib_end_port.port = port;
+	ad.u.ib_end_port = &ib_end_port;
+	err = avc_has_perm(sec->sid, sid,
+			   SECCLASS_INFINIBAND_END_PORT,
+			   INFINIBAND_END_PORT__SMP, &ad);
+
+out:
+	return err;
+}
+
 static int selinux_ib_qp_alloc_security(struct ib_qp_security *qp_sec)
 {
 	struct ib_security_struct *sec;
@@ -6289,6 +6315,7 @@ static struct security_hook_list selinux_hooks[] = {
 	LSM_HOOK_INIT(ib_qp_pkey_access, selinux_ib_qp_pkey_access),
 	LSM_HOOK_INIT(ib_mad_agent_pkey_access,
 		      selinux_ib_mad_agent_pkey_access),
+	LSM_HOOK_INIT(ib_end_port_smp, selinux_ib_end_port_smp),
 	LSM_HOOK_INIT(ib_qp_alloc_security,
 		      selinux_ib_qp_alloc_security),
 	LSM_HOOK_INIT(ib_qp_free_security,
