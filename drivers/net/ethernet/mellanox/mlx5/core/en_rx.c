@@ -244,6 +244,7 @@ void mlx5e_post_rx_fragmented_mpwqe(struct mlx5e_rq *rq)
 
 	clear_bit(MLX5E_RQ_STATE_UMR_WQE_IN_PROGRESS, &rq->state);
 	mlx5_wq_ll_push(wq, be16_to_cpu(wqe->next.next_wqe_index));
+	rq->stats.mpwqe_frag++;
 
 	/* ensure wqes are visible to device before updating doorbell record */
 	dma_wmb();
