@@ -41,6 +41,68 @@ static inline bool mlx5e_rx_hw_stamp(struct mlx5e_tstamp *tstamp)
 	return tstamp->hwtstamp_config.rx_filter == HWTSTAMP_FILTER_ALL;
 }
 
+static inline void mlx5e_read_cqe_slot(struct mlx5e_cq *cq, u32 cqcc,
+				       void *data)
+{
+	u32 ci = cqcc & cq->wq.sz_m1;
+
+	memcpy(data, mlx5_cqwq_get_wqe(&cq->wq, ci), sizeof(struct mlx5_cqe64));
+}
+
+static inline void mlx5e_write_cqe_slot(struct mlx5e_cq *cq, u32 cqcc,
+					void *data)
+{
+	u32 ci = cqcc & cq->wq.sz_m1;
+
+	memcpy(mlx5_cqwq_get_wqe(&cq->wq, ci), data, sizeof(struct mlx5_cqe64));
+}
+
+static inline void mlx5e_decompress_cqe(struct mlx5e_cq *cq, u32 cqcc,
+					struct mlx5_cqe64 *title,
+					struct mlx5_mini_cqe8 *mini,
+					u16 wqe_counter)
+{
+	title->byte_cnt     = mini->byte_cnt;
+	title->check_sum    = mini->checksum;
+	title->wqe_counter  = cpu_to_be16(wqe_counter);
+	title->op_own      &= 0xf0;
+	title->op_own      |= 0x01 & (cqcc >> cq->wq.log_sz);
+}
+
+static inline void mlx5e_decompress_cqes(struct mlx5e_cq *cq)
+{
+	struct mlx5e_rq *rq = container_of(cq, struct mlx5e_rq, cq);
+	struct mlx5_mini_cqe8 mini[8];
+	struct mlx5_cqe64 title;
+	u16 wqe_counter;
+	u32 cqe_count;
+	u32 cqcc = cq->wq.cc;
+	u32 i;
+
+	mlx5e_read_cqe_slot(cq, cqcc, &title);
+	mlx5e_read_cqe_slot(cq, cqcc+1, mini);
+
+	wqe_counter = be16_to_cpu(title.wqe_counter);
+	cqe_count   = be32_to_cpu(title.byte_cnt);
+
+	mlx5e_decompress_cqe(cq, cqcc, &title, &mini[0], wqe_counter);
+	mlx5e_write_cqe_slot(cq, cqcc, &title);
+
+	for (i = 1; i < cqe_count; i++) {
+		u32 ix = i % MLX5_MINI_CQE_ARRAY_SIZE;
+
+		cqcc++;
+
+		if (!ix)
+			mlx5e_read_cqe_slot(cq, cqcc, mini);
+
+		wqe_counter = (wqe_counter + 1) & rq->wq.sz_m1;
+
+		mlx5e_decompress_cqe(cq, cqcc, &title, &mini[ix], wqe_counter);
+		mlx5e_write_cqe_slot(cq, cqcc, &title);
+	}
+}
+
 int mlx5e_alloc_rx_wqe(struct mlx5e_rq *rq, struct mlx5e_rx_wqe *wqe, u16 ix)
 {
 	struct sk_buff *skb;
@@ -663,6 +725,9 @@ int mlx5e_poll_rx_cq(struct mlx5e_cq *cq, int budget)
 
 		if (!cqe)
 			break;
+
+		if (mlx5_get_cqe_format(cqe) == MLX5_COMPRESSED)
+			mlx5e_decompress_cqes(cq);
 
 		mlx5_cqwq_pop(&cq->wq);
 
