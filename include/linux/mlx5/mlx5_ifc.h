@@ -620,7 +620,7 @@ struct mlx5_ifc_odp_cap_bits {
 enum {
 	MLX5_WQ_TYPE_LINKED_LIST  = 0x0,
 	MLX5_WQ_TYPE_CYCLIC       = 0x1,
-	MLX5_WQ_TYPE_STRQ         = 0x2,
+	MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ = 0x2,
 };
 
 enum {
@@ -750,7 +750,8 @@ struct mlx5_ifc_cmd_hca_cap_bits {
 	u8         cqe_version[0x4];
 
 	u8         compact_address_vector[0x1];
-	u8         reserved_at_200[0xe];
+	u8         striding_rq[0x1];
+	u8         reserved_at_201[0xd];
 	u8         drain_sigerr[0x1];
 	u8         cmdif_checksum[0x2];
 	u8         sigerr_cqe[0x1];
@@ -963,7 +964,13 @@ struct mlx5_ifc_wq_bits {
 	u8         reserved_at_118[0x3];
 	u8         log_wq_sz[0x5];
 
-	u8         reserved_at_120[0x4e0];
+	u8         reserved_at_120[0x15];
+	u8         log_wqe_num_of_strides[0x3];
+	u8         two_byte_shift_en[0x1];
+	u8         reserved_at_139[0x4];
+	u8         log_wqe_stride_size[0x3];
+
+	u8         reserved_at_140[0x4c0];
 
 	struct mlx5_ifc_cmd_pas_bits pas[0];
 };
