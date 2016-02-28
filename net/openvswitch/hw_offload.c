@@ -18,6 +18,26 @@
 #include "datapath.h"
 #include "vport-netdev.h"
 
+static int get_vxlan_udp_dst_port(struct vport *vport)
+{
+	const struct nlattr *a;
+	struct sk_buff *skb = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+	int ret = -1;
+
+	if (!skb)
+		return ret;
+
+	if (!vport->ops->get_options(vport, skb)) {
+		a = (struct nlattr *)skb->data;
+		a = nla_find(a, skb->len, OVS_TUNNEL_ATTR_DST_PORT);
+		if (a)
+			ret = nla_get_u16(a);
+	}
+	nlmsg_free(skb);
+
+	return ret;
+}
+
 static int sw_flow_action_create(struct datapath *dp,
 				 struct sw_flow_actions **p_actions,
 				 struct ovs_flow_actions *acts)
@@ -31,8 +51,10 @@ static int sw_flow_action_create(struct datapath *dp,
 	size_t count = 0;
 	int drop_only = 0;
 
-	for (a = attr, rem = len; rem > 0; a = nla_next(a, &rem))
-		count++;
+	for (a = attr, rem = len; rem > 0; a = nla_next(a, &rem)) {
+		if (nla_type(a) != OVS_ACTION_ATTR_SET)
+			count++;
+	}
 
 	/* Open-Flow's drop action is pipeline termination --> no OVS action
 	 * for HW offloading we need to set explicit HW drop action.
@@ -90,6 +112,58 @@ static int sw_flow_action_create(struct datapath *dp,
 		case OVS_ACTION_ATTR_POP_VLAN:
 			cur->type = SW_FLOW_ACTION_TYPE_VLAN_POP;
 			break;
+		case OVS_ACTION_ATTR_SET:
+			{
+				struct ovs_tunnel_info *egress_tun_info;
+				struct vport *vport;
+				const struct nlattr *b = nla_data(a);
+				int err;
+
+				if (nla_type(b) != OVS_KEY_ATTR_TUNNEL_INFO) {
+					pr_warn("unexpected second nla_type %d\n",
+						nla_type(b));
+					goto errout;
+				}
+
+				egress_tun_info = nla_data(b);
+
+				a = nla_next(a, &rem);
+				if (nla_type(a) != OVS_ACTION_ATTR_OUTPUT) {
+					pr_warn("unexpected second action type %d\n",
+						nla_type(a));
+					goto errout;
+				}
+
+				vport =	ovs_vport_ovsl_rcu(dp, nla_get_u32(a));
+				if (!vport) {
+					pr_warn("failed to get vport number %d\n",
+						nla_get_u32(a));
+					goto errout;
+				}
+
+				cur->type = SW_FLOW_ACTION_TYPE_ENCAP;
+				cur->tun_key = egress_tun_info->tunnel;
+
+				switch (vport->ops->type) {
+				case OVS_VPORT_TYPE_VXLAN:
+					err = get_vxlan_udp_dst_port(vport);
+					if (err == -1) {
+						pr_warn("%s: failed to obtain vxlan udp dst_port\n",
+							__func__);
+						goto errout;
+					}
+
+					cur->tun_key.tp_dst = htons(err);
+					cur->tunnel_type = SW_FLOW_TUNNEL_VXLAN;
+					break;
+
+				default:
+					pr_warn("unexpected output port type %d\n",
+						vport->ops->type);
+					goto errout;
+				}
+			}
+			break;
 		default:
 			goto errout;
 		}
@@ -103,26 +177,6 @@ out:
 errout:
 	kfree(actions);
 	return -EOPNOTSUPP;
-}
-
-static int get_vxlan_udp_dst_port(struct vport *vport)
-{
-	const struct nlattr *a;
-	struct sk_buff *skb = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
-	int ret = -1;
-
-	if (!skb)
-		return ret;
-
-	if (!vport->ops->get_options(vport, skb)) {
-		a = (struct nlattr *)skb->data;
-		a = nla_find(a, skb->len, OVS_TUNNEL_ATTR_DST_PORT);
-		if (a)
-			ret = nla_get_u16(a);
-	}
-	nlmsg_free(skb);
-
-	return ret;
 }
 
 struct net_device *ovs_hw_flow_adjust(struct datapath *dp, struct ovs_flow *flow)
