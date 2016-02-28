@@ -110,7 +110,7 @@ int mlx5e_alloc_rx_wqe(struct mlx5e_rq *rq, struct mlx5e_rx_wqe *wqe, u16 ix)
 	struct sk_buff *skb;
 	dma_addr_t dma_addr;
 
-	skb = netdev_alloc_skb(rq->netdev, rq->wqe_sz);
+	skb = napi_alloc_skb(rq->cq.napi, rq->wqe_sz);
 	if (unlikely(!skb))
 		return -ENOMEM;
 
@@ -701,7 +701,7 @@ void mlx5e_handle_rx_cqe_mpwrq(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe)
 		goto mpwrq_cqe_out;
 	}
 
-	skb = netdev_alloc_skb(rq->netdev, MLX5_MPWRQ_SMALL_PACKET_THRESHOLD);
+	skb = napi_alloc_skb(rq->cq.napi, MLX5_MPWRQ_SMALL_PACKET_THRESHOLD);
 	if (unlikely(!skb))
 		goto mpwrq_cqe_out;
 
