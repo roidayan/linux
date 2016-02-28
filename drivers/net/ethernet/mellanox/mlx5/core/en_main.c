@@ -383,7 +383,6 @@ static int mlx5e_create_rq(struct mlx5e_channel *c,
 	for (i = 0; i < wq_sz; i++) {
 		struct mlx5e_rx_wqe *wqe = mlx5_wq_ll_get_wqe(&rq->wq, i);
 
-		wqe->data.lkey       = c->mkey_be;
 		wqe->data.byte_count = cpu_to_be32(byte_count);
 	}
 
@@ -394,6 +393,8 @@ static int mlx5e_create_rq(struct mlx5e_channel *c,
 	rq->channel = c;
 	rq->ix      = c->ix;
 	rq->priv    = c->priv;
+	rq->mkey_be = c->mkey_be;
+	rq->umr_mkey_be = cpu_to_be32(c->priv->umr_mkey.key);
 
 	return 0;
 
@@ -1262,6 +1263,7 @@ static void mlx5e_build_icosq_param(struct mlx5e_priv *priv,
 	mlx5e_build_sq_param_common(priv, param);
 
 	MLX5_SET(wq, wq, log_wq_sz, log_wq_size);
+	MLX5_SET(sqc, sqc, reg_umr, MLX5_CAP_ETH(priv->mdev, reg_umr_sq));
 
 	param->icosq = true;
 }
@@ -1269,7 +1271,7 @@ static void mlx5e_build_icosq_param(struct mlx5e_priv *priv,
 static void mlx5e_build_channel_param(struct mlx5e_priv *priv,
 				      struct mlx5e_channel_param *cparam)
 {
-	u8 icosq_log_wq_sz = 0;
+	u8 icosq_log_wq_sz = MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE;
 
 	memset(cparam, 0, sizeof(*cparam));
 
@@ -2415,6 +2417,13 @@ static void mlx5e_ets_init(struct mlx5e_priv *priv)
 }
 #endif
 
+static bool mlx5e_check_fragmented_striding_rq_cap(struct mlx5_core_dev *mdev)
+{
+	return MLX5_CAP_GEN(mdev, striding_rq) &&
+		MLX5_CAP_GEN(mdev, umr_ptr_rlky) &&
+		MLX5_CAP_ETH(mdev, reg_umr_sq);
+}
+
 static void mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 				    struct net_device *netdev,
 				    int num_channels)
@@ -2424,7 +2433,7 @@ static void mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 
 	priv->params.log_sq_size           =
 		MLX5E_PARAMS_DEFAULT_LOG_SQ_SIZE;
-	priv->params.rq_wq_type = MLX5_CAP_GEN(mdev, striding_rq) ?
+	priv->params.rq_wq_type = mlx5e_check_fragmented_striding_rq_cap(mdev) ?
 		MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ :
 		MLX5_WQ_TYPE_LINKED_LIST;
 

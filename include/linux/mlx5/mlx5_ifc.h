@@ -512,7 +512,8 @@ struct mlx5_ifc_per_protocol_networking_offload_caps_bits {
 	u8         max_lso_cap[0x5];
 	u8         reserved_at_10[0x4];
 	u8         rss_ind_tbl_cap[0x4];
-	u8         reserved_at_18[0x3];
+	u8         reg_umr_sq[0x1];
+	u8         reserved_at_19[0x2];
 	u8         tunnel_lso_const_out_ip_id[0x1];
 	u8         reserved_at_1c[0x2];
 	u8         tunnel_statless_gre[0x1];
@@ -782,7 +783,9 @@ struct mlx5_ifc_cmd_hca_cap_bits {
 	u8         cd[0x1];
 	u8         reserved_at_22c[0x1];
 	u8         apm[0x1];
-	u8         reserved_at_22e[0x7];
+	u8         reserved_at_22e[0x1];
+	u8         umr_ptr_rlky[0x1];
+	u8         reserved_at_230[0x5];
 	u8         qkv[0x1];
 	u8         pkv[0x1];
 	u8         reserved_at_237[0x4];
@@ -2138,7 +2141,8 @@ struct mlx5_ifc_sqc_bits {
 	u8         flush_in_error_en[0x1];
 	u8         reserved_at_4[0x4];
 	u8         state[0x4];
-	u8         reserved_at_c[0x14];
+	u8         reg_umr[0x1];
+	u8         reserved_at_d[0x13];
 
 	u8         reserved_at_20[0x8];
 	u8         user_index[0x18];
