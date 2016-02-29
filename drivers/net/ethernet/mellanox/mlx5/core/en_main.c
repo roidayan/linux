@@ -1406,6 +1406,7 @@ static int mlx5e_set_dev_port_mtu(struct net_device *netdev)
 	struct mlx5e_priv *priv = netdev_priv(netdev);
 	struct mlx5_core_dev *mdev = priv->mdev;
 	int hw_mtu;
+	unsigned int port_mtu;
 	int err;
 
 	err = mlx5_set_port_mtu(mdev, MLX5E_SW2HW_MTU(netdev->mtu), 1);
@@ -1413,12 +1414,13 @@ static int mlx5e_set_dev_port_mtu(struct net_device *netdev)
 		return err;
 
 	mlx5_query_port_oper_mtu(mdev, &hw_mtu, 1);
+	port_mtu = MLX5E_HW2SW_MTU(hw_mtu);
+	if (netdev->mtu > port_mtu) {
+		netdev_warn(netdev, "%s: Requested MTU (%u) was truncated to port MTU (%u)\n",
+			    __func__, netdev->mtu, port_mtu);
 
-	if (MLX5E_HW2SW_MTU(hw_mtu) != netdev->mtu)
-		netdev_warn(netdev, "%s: Port MTU %d is different than netdev mtu %d\n",
-			    __func__, MLX5E_HW2SW_MTU(hw_mtu), netdev->mtu);
-
-	netdev->mtu = MLX5E_HW2SW_MTU(hw_mtu);
+		netdev->mtu = port_mtu;
+	}
 	return 0;
 }
 
