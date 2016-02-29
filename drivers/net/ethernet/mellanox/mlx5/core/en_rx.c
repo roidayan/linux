@@ -111,8 +111,10 @@ int mlx5e_alloc_rx_wqe(struct mlx5e_rq *rq, struct mlx5e_rx_wqe *wqe, u16 ix)
 	dma_addr_t dma_addr;
 
 	skb = napi_alloc_skb(rq->cq.napi, rq->wqe_sz);
-	if (unlikely(!skb))
+	if (unlikely(!skb)) {
+		rq->stats.buff_alloc_err++;
 		return -ENOMEM;
+	}
 
 	dma_addr = dma_map_single(rq->pdev,
 				  /* hw start padding */
@@ -702,8 +704,10 @@ void mlx5e_handle_rx_cqe_mpwrq(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe)
 	}
 
 	skb = napi_alloc_skb(rq->cq.napi, MLX5_MPWRQ_SMALL_PACKET_THRESHOLD);
-	if (unlikely(!skb))
+	if (unlikely(!skb)) {
+		rq->stats.buff_alloc_err++;
 		goto mpwrq_cqe_out;
+	}
 
 	wi->complete_wqe(rq, cqe, wi, skb);
 
