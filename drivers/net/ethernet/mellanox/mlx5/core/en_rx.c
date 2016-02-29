@@ -720,10 +720,12 @@ mpwrq_cqe_out:
 int mlx5e_poll_rx_cq(struct mlx5e_cq *cq, int budget)
 {
 	struct mlx5e_rq *rq = container_of(cq, struct mlx5e_rq, cq);
+	struct mlx5_cqe64 *next_cqe = mlx5e_get_cqe(cq);
+	struct mlx5_cqe64 *cqe;
 	int work_done;
 
 	for (work_done = 0; work_done < budget; work_done++) {
-		struct mlx5_cqe64 *cqe = mlx5e_get_cqe(cq);
+		cqe = next_cqe;
 
 		if (!cqe)
 			break;
@@ -732,6 +734,8 @@ int mlx5e_poll_rx_cq(struct mlx5e_cq *cq, int budget)
 			mlx5e_decompress_cqes(cq);
 
 		mlx5_cqwq_pop(&cq->wq);
+		next_cqe = mlx5e_get_cqe(cq);
+		prefetch(next_cqe);
 
 		rq->handle_rx_cqe(rq, cqe);
 	}
