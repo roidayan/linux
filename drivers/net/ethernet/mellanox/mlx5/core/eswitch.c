@@ -41,7 +41,7 @@
 
 int mlx5_flow_offload_group_size_log = MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG;
 module_param_named(flow_offload_group_size_log, mlx5_flow_offload_group_size_log, int, 0644);
-MODULE_PARM_DESC(flow_offload_group_size_log, "flow_offload_group_size_log: log_2 if the flow offlloads group size Default=8");
+MODULE_PARM_DESC(flow_offload_group_size_log, "flow_offload_group_size_log: log_2 if the flow offloads group size Default=8");
 
 #define UPLINK_VPORT 0xFFFF
 
