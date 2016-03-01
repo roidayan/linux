@@ -163,8 +163,9 @@ int mlx5_core_query_mkey(struct mlx5_core_dev *dev, struct mlx5_core_mkey *mkey,
 }
 EXPORT_SYMBOL(mlx5_core_query_mkey);
 
-int mlx5_core_dump_fill_mkey(struct mlx5_core_dev *dev, struct mlx5_core_mkey *_mkey,
-			     u32 *mkey)
+static int mlx5_core_query_special_contexts(struct mlx5_core_dev *dev,
+					    u32 *dump_fill_mkey,
+					    u32 *reserved_lkey)
 {
 	struct mlx5_query_special_ctxs_mbox_in in;
 	struct mlx5_query_special_ctxs_mbox_out out;
@@ -181,11 +182,26 @@ int mlx5_core_dump_fill_mkey(struct mlx5_core_dev *dev, struct mlx5_core_mkey *_
 	if (out.hdr.status)
 		return mlx5_cmd_status_to_err(&out.hdr);
 
-	*mkey = be32_to_cpu(out.dump_fill_mkey);
+	if (dump_fill_mkey)
+		*dump_fill_mkey = be32_to_cpu(out.dump_fill_mkey);
+	if (reserved_lkey)
+		*reserved_lkey  = be32_to_cpu(out.reserved_lkey);
 
 	return err;
 }
+
+int mlx5_core_dump_fill_mkey(struct mlx5_core_dev *dev, struct mlx5_core_mkey *_mkey,
+			     u32 *mkey)
+{
+	return mlx5_core_query_special_contexts(dev, mkey, NULL);
+}
 EXPORT_SYMBOL(mlx5_core_dump_fill_mkey);
+
+int mlx5_core_query_reserved_lkey(struct mlx5_core_dev *dev, u32 *mkey)
+{
+	return mlx5_core_query_special_contexts(dev, NULL, mkey);
+}
+EXPORT_SYMBOL(mlx5_core_query_reserved_lkey);
 
 int mlx5_core_create_psv(struct mlx5_core_dev *dev, u32 pdn,
 			 int npsvs, u32 *sig_index)

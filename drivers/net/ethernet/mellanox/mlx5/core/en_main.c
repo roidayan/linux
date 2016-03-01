@@ -407,6 +407,7 @@ static int mlx5e_enable_rq(struct mlx5e_rq *rq, struct mlx5e_rq_param *param)
 	MLX5_SET(rqc,  rqc, cqn,		rq->cq.mcq.cqn);
 	MLX5_SET(rqc,  rqc, state,		MLX5_RQC_STATE_RST);
 	MLX5_SET(rqc,  rqc, flush_in_error_en,	1);
+	MLX5_SET(rqc,  rqc, rlky,		1);
 	MLX5_SET(wq,   wq,  log_wq_pg_sz,	rq->wq_ctrl.buf.page_shift -
 						MLX5_ADAPTER_PAGE_SHIFT);
 	MLX5_SET64(wq, wq,  dbr_addr,		rq->wq_ctrl.db.dma);
@@ -645,6 +646,7 @@ static int mlx5e_enable_sq(struct mlx5e_sq *sq, struct mlx5e_sq_param *param)
 	MLX5_SET(sqc,  sqc, state,		MLX5_SQC_STATE_RST);
 	MLX5_SET(sqc,  sqc, tis_lst_sz,		1);
 	MLX5_SET(sqc,  sqc, flush_in_error_en,	1);
+	MLX5_SET(sqc,  sqc, rlky,		1);
 
 	MLX5_SET(wq,   wq, wq_type,       MLX5_WQ_TYPE_CYCLIC);
 	MLX5_SET(wq,   wq, uar_page,      sq->uar.index);
@@ -2392,31 +2394,6 @@ static void mlx5e_build_netdev(struct net_device *netdev)
 	mlx5e_set_netdev_dev_addr(netdev);
 }
 
-static int mlx5e_create_mkey(struct mlx5e_priv *priv, u32 pdn,
-			     struct mlx5_core_mkey *mkey)
-{
-	struct mlx5_core_dev *mdev = priv->mdev;
-	struct mlx5_create_mkey_mbox_in *in;
-	int err;
-
-	in = mlx5_vzalloc(sizeof(*in));
-	if (!in)
-		return -ENOMEM;
-
-	in->seg.flags = MLX5_PERM_LOCAL_WRITE |
-			MLX5_PERM_LOCAL_READ  |
-			MLX5_ACCESS_MODE_PA;
-	in->seg.flags_pd = cpu_to_be32(pdn | MLX5_MKEY_LEN64);
-	in->seg.qpn_mkey7_0 = cpu_to_be32(0xffffff << 8);
-
-	err = mlx5_core_create_mkey(mdev, mkey, in, sizeof(*in), NULL, NULL,
-				    NULL);
-
-	kvfree(in);
-
-	return err;
-}
-
 static void mlx5e_create_q_counter(struct mlx5e_priv *priv)
 {
 	struct mlx5_core_dev *mdev = priv->mdev;
@@ -2480,16 +2457,16 @@ static void *mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 		goto err_dealloc_pd;
 	}
 
-	err = mlx5e_create_mkey(priv, priv->pdn, &priv->mkey);
+	err = mlx5_core_query_reserved_lkey(mdev, &priv->mkey.key);
 	if (err) {
-		mlx5_core_err(mdev, "create mkey failed, %d\n", err);
+		mlx5_core_err(mdev, "get reserved lkey failed, %d\n", err);
 		goto err_dealloc_transport_domain;
 	}
 
 	err = mlx5e_create_tises(priv);
 	if (err) {
 		mlx5_core_warn(mdev, "create tises failed, %d\n", err);
-		goto err_destroy_mkey;
+		goto err_dealloc_transport_domain;
 	}
 
 	err = mlx5e_open_drop_rq(priv);
@@ -2565,9 +2542,6 @@ err_close_drop_rq:
 err_destroy_tises:
 	mlx5e_destroy_tises(priv);
 
-err_destroy_mkey:
-	mlx5_core_destroy_mkey(mdev, &priv->mkey);
-
 err_dealloc_transport_domain:
 	mlx5_core_dealloc_transport_domain(mdev, priv->tdn);
 
@@ -2602,7 +2576,6 @@ static void mlx5e_destroy_netdev(struct mlx5_core_dev *mdev, void *vpriv)
 	mlx5e_destroy_rqt(priv, MLX5E_INDIRECTION_RQT);
 	mlx5e_close_drop_rq(priv);
 	mlx5e_destroy_tises(priv);
-	mlx5_core_destroy_mkey(priv->mdev, &priv->mkey);
 	mlx5_core_dealloc_transport_domain(priv->mdev, priv->tdn);
 	mlx5_core_dealloc_pd(priv->mdev, priv->pdn);
 	mlx5_unmap_free_uar(priv->mdev, &priv->cq_uar);
