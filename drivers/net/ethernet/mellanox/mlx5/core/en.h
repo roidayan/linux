@@ -68,6 +68,9 @@
 						 MLX5_MPWRQ_LOG_STRIDE_SIZE)
 #define MLX5_MPWRQ_WQE_PAGE_ORDER	(MLX5_MPWRQ_LOG_WQE_SZ >= PAGE_SHIFT ? \
 					 MLX5_MPWRQ_LOG_WQE_SZ - PAGE_SHIFT : 0)
+#define MLX5_MPWRQ_WQE_NUM_PAGES		BIT(MLX5_MPWRQ_WQE_PAGE_ORDER)
+#define MLX5_CHANNEL_MAX_NUM_PAGES (MLX5_MPWRQ_WQE_NUM_PAGES * \
+				    BIT(MLX5E_PARAMS_MAXIMUM_LOG_RQ_SIZE_MPW))
 #define MLX5_MPWRQ_SMALL_PACKET_THRESHOLD	(128)
 
 #define MLX5E_PARAMS_DEFAULT_LRO_WQE_SZ                 (64 * 1024)
@@ -639,6 +642,7 @@ struct mlx5e_priv {
 	u32                        pdn;
 	u32                        tdn;
 	struct mlx5_core_mkey      mkey;
+	struct mlx5_core_mkey      umr_mkey;
 	struct mlx5e_rq            drop_rq;
 
 	struct mlx5e_channel     **channel;
@@ -776,6 +780,11 @@ static inline int mlx5e_get_max_num_channels(struct mlx5_core_dev *mdev)
 {
 	return min_t(int, mdev->priv.eq_table.num_comp_vectors,
 		     MLX5E_MAX_NUM_CHANNELS);
+}
+
+static inline int mlx5e_get_mtt_octw(int npages)
+{
+	return ALIGN(npages, 8) / 2;
 }
 
 extern const struct ethtool_ops mlx5e_ethtool_ops;

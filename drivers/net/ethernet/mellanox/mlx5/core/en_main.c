@@ -2565,6 +2565,40 @@ static void mlx5e_destroy_q_counter(struct mlx5e_priv *priv)
 					    priv->counter_set_id);
 }
 
+static int mlx5e_create_umr_mkey(struct mlx5e_priv *priv)
+{
+	struct mlx5_core_dev *mdev = priv->mdev;
+	struct mlx5_create_mkey_mbox_in *in;
+	struct mlx5_mkey_seg *mkc;
+	int inlen = sizeof(*in);
+	int npages = MLX5E_MAX_NUM_CHANNELS * MLX5_CHANNEL_MAX_NUM_PAGES;
+	int err;
+
+	in = mlx5_vzalloc(inlen);
+	if (!in)
+		return -ENOMEM;
+
+	mkc = &in->seg;
+	mkc->status = MLX5_MKEY_STATUS_FREE;
+	mkc->flags = MLX5_PERM_UMR_EN |
+		     MLX5_PERM_LOCAL_READ |
+		     MLX5_PERM_LOCAL_WRITE |
+		     MLX5_ACCESS_MODE_MTT;
+
+	mkc->qpn_mkey7_0 = cpu_to_be32(0xffffff << 8);
+	mkc->flags_pd = cpu_to_be32(priv->pdn);
+	mkc->len = cpu_to_be64(npages << PAGE_SHIFT);
+	mkc->xlt_oct_size = cpu_to_be32(mlx5e_get_mtt_octw(npages));
+	mkc->log2_page_size = PAGE_SHIFT;
+
+	err = mlx5_core_create_mkey(mdev, &priv->umr_mkey, in, inlen, NULL,
+				    NULL, NULL);
+
+	kvfree(in);
+
+	return err;
+}
+
 static void *mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 {
 	struct net_device *netdev;
@@ -2614,10 +2648,16 @@ static void *mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 		goto err_dealloc_transport_domain;
 	}
 
+	err = mlx5e_create_umr_mkey(priv);
+	if (err) {
+		mlx5_core_err(mdev, "create umr mkey failed, %d\n", err);
+		goto err_dealloc_transport_domain;
+	}
+
 	err = mlx5e_create_tises(priv);
 	if (err) {
 		mlx5_core_warn(mdev, "create tises failed, %d\n", err);
-		goto err_dealloc_transport_domain;
+		goto err_destroy_umr_mkey;
 	}
 
 	err = mlx5e_open_drop_rq(priv);
@@ -2693,6 +2733,9 @@ err_close_drop_rq:
 err_destroy_tises:
 	mlx5e_destroy_tises(priv);
 
+err_destroy_umr_mkey:
+	mlx5_core_destroy_mkey(mdev, &priv->umr_mkey);
+
 err_dealloc_transport_domain:
 	mlx5_core_dealloc_transport_domain(mdev, priv->tdn);
 
@@ -2727,6 +2770,7 @@ static void mlx5e_destroy_netdev(struct mlx5_core_dev *mdev, void *vpriv)
 	mlx5e_destroy_rqt(priv, MLX5E_INDIRECTION_RQT);
 	mlx5e_close_drop_rq(priv);
 	mlx5e_destroy_tises(priv);
+	mlx5_core_destroy_mkey(priv->mdev, &priv->umr_mkey);
 	mlx5_core_dealloc_transport_domain(priv->mdev, priv->tdn);
 	mlx5_core_dealloc_pd(priv->mdev, priv->pdn);
 	mlx5_unmap_free_uar(priv->mdev, &priv->cq_uar);
