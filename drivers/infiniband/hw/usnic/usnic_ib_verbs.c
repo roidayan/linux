@@ -327,6 +327,8 @@ int usnic_ib_query_port(struct ib_device *ibdev, u8 port,
 {
 	struct usnic_ib_dev *us_ibdev = to_usdev(ibdev);
 	struct ethtool_cmd cmd;
+	union ib_gid gid;
+	int err;
 
 	usnic_dbg("\n");
 
@@ -363,6 +365,11 @@ int usnic_ib_query_port(struct ib_device *ibdev, u8 port,
 	props->max_msg_sz = us_ibdev->ufdev->mtu;
 	props->max_vl_num = 1;
 	mutex_unlock(&us_ibdev->usdev_lock);
+	err = ib_query_gid(ibdev, port, 0, &gid, NULL);
+	if (err)
+		return err;
+
+	props->subnet_prefix = be64_to_cpu(gid.global.subnet_prefix);
 
 	return 0;
 }

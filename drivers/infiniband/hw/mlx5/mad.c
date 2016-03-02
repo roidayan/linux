@@ -527,6 +527,7 @@ int mlx5_query_mad_ifc_port(struct ib_device *ibdev, u8 port,
 		goto out;
 	}
 
+	props->subnet_prefix	= be64_to_cpup((__be64 *)(out_mad->data + 8));
 	props->lid		= be16_to_cpup((__be16 *)(out_mad->data + 16));
 	props->lmc		= out_mad->data[34] & 0x7;
 	props->sm_lid		= be16_to_cpup((__be16 *)(out_mad->data + 18));

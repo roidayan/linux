@@ -1127,6 +1127,8 @@ static int iwch_query_port(struct ib_device *ibdev,
 	struct iwch_dev *dev;
 	struct net_device *netdev;
 	struct in_device *inetdev;
+	union ib_gid gid;
+	int err;
 
 	PDBG("%s ibdev %p\n", __func__, ibdev);
 
@@ -1171,6 +1173,11 @@ static int iwch_query_port(struct ib_device *ibdev,
 	props->active_width = 2;
 	props->active_speed = IB_SPEED_DDR;
 	props->max_msg_sz = -1;
+	err = ib_query_gid(ibdev, port, 0, &gid, NULL);
+	if (err)
+		return err;
+
+	props->subnet_prefix = be64_to_cpu(gid.global.subnet_prefix);
 
 	return 0;
 }

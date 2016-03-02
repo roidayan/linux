@@ -665,6 +665,7 @@ static int mlx5_query_hca_port(struct ib_device *ibdev, u8 port,
 	int err;
 	u8 ib_link_width_oper;
 	u8 vl_hw_cap;
+	union ib_gid gid;
 
 	rep = kzalloc(sizeof(*rep), GFP_KERNEL);
 	if (!rep) {
@@ -720,6 +721,14 @@ static int mlx5_query_hca_port(struct ib_device *ibdev, u8 port,
 
 	err = translate_max_vl_num(ibdev, vl_hw_cap,
 				   &props->max_vl_num);
+	if (err)
+		goto out;
+
+	err = mlx5_query_hca_vport_gid(mdev, 0,  port, 0, 0, &gid);
+	if (err)
+		goto out;
+
+	props->subnet_prefix = be64_to_cpu(gid.global.subnet_prefix);
 out:
 	kfree(rep);
 	return err;

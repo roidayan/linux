@@ -475,6 +475,8 @@ static int nes_query_port(struct ib_device *ibdev, u8 port, struct ib_port_attr 
 {
 	struct nes_vnic *nesvnic = to_nesvnic(ibdev);
 	struct net_device *netdev = nesvnic->netdev;
+	union ib_gid gid;
+	int err;
 
 	memset(props, 0, sizeof(*props));
 
@@ -510,6 +512,11 @@ static int nes_query_port(struct ib_device *ibdev, u8 port, struct ib_port_attr 
 	props->active_width = IB_WIDTH_4X;
 	props->active_speed = IB_SPEED_SDR;
 	props->max_msg_sz = 0x80000000;
+	err = ib_query_gid(ibdev, port, 0, &gid, NULL);
+	if (err)
+		return err;
+
+	props->subnet_prefix = be64_to_cpu(gid.global.subnet_prefix);
 
 	return 0;
 }

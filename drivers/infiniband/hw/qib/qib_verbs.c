@@ -1629,6 +1629,8 @@ static int qib_query_port(struct ib_device *ibdev, u8 port,
 	struct qib_pportdata *ppd = ppd_from_ibp(ibp);
 	enum ib_mtu mtu;
 	u16 lid = ppd->lid;
+	union ib_gid gid;
+	int err;
 
 	memset(props, 0, sizeof(*props));
 	props->lid = lid ? lid : be16_to_cpu(IB_LID_PERMISSIVE);
@@ -1671,6 +1673,11 @@ static int qib_query_port(struct ib_device *ibdev, u8 port,
 	}
 	props->active_mtu = mtu;
 	props->subnet_timeout = ibp->subnet_timeout;
+	err = ib_query_gid(ibdev, port, 0, &gid, NULL);
+	if (err)
+		return err;
+
+	props->subnet_prefix = be64_to_cpu(gid.global.subnet_prefix);
 
 	return 0;
 }

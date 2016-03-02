@@ -350,6 +350,8 @@ static int c4iw_query_port(struct ib_device *ibdev, u8 port,
 	struct c4iw_dev *dev;
 	struct net_device *netdev;
 	struct in_device *inetdev;
+	union ib_gid gid;
+	int err;
 
 	PDBG("%s ibdev %p\n", __func__, ibdev);
 
@@ -394,6 +396,11 @@ static int c4iw_query_port(struct ib_device *ibdev, u8 port,
 	props->active_width = 2;
 	props->active_speed = IB_SPEED_DDR;
 	props->max_msg_sz = -1;
+	err = ib_query_gid(ibdev, port, 0, &gid, NULL);
+	if (err)
+		return err;
+
+	props->subnet_prefix = be64_to_cpu(gid.global.subnet_prefix);
 
 	return 0;
 }

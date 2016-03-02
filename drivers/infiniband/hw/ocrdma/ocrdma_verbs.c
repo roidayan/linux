@@ -209,6 +209,8 @@ int ocrdma_query_port(struct ib_device *ibdev,
 	enum ib_port_state port_state;
 	struct ocrdma_dev *dev;
 	struct net_device *netdev;
+	union ib_gid gid;
+	int err;
 
 	dev = get_ocrdma_dev(ibdev);
 	if (port > 1) {
@@ -244,6 +246,11 @@ int ocrdma_query_port(struct ib_device *ibdev,
 				 &props->active_width);
 	props->max_msg_sz = 0x80000000;
 	props->max_vl_num = 4;
+	err = ib_query_gid(ibdev, port, 0, &gid, NULL);
+	if (err)
+		return err;
+
+	props->subnet_prefix = be64_to_cpu(gid.global.subnet_prefix);
 	return 0;
 }
 
