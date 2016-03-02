@@ -35,6 +35,11 @@
 
 #include <linux/mlx5/driver.h>
 
+enum {
+	mlx5_flow_table_decap_en = BIT(0),
+	mlx5_flow_table_encap_en = BIT(1)
+};
+
 struct mlx5_flow_table_group {
 	u8	log_sz;
 	u8	match_criteria_enable;
@@ -51,7 +56,7 @@ struct mlx5_flow_destination {
 };
 
 void *mlx5_create_flow_table(struct mlx5_core_dev *dev, u8 level, u8 table_type,
-			     u16 num_groups,
+			     u32 flags, u16 num_groups,
 			     struct mlx5_flow_table_group *group);
 void mlx5_destroy_flow_table(void *flow_table);
 int mlx5_add_flow_table_entry(void *flow_table, u8 match_criteria_enable,

@@ -989,7 +989,7 @@ static int mlx5e_create_main_flow_table(struct mlx5e_priv *priv)
 
 	priv->ft.main = mlx5_create_flow_table(priv->mdev, 1,
 					       MLX5_FLOW_TABLE_TYPE_NIC_RCV,
-					       nic_groups, g);
+					       0, nic_groups, g);
 	kfree(g);
 
 	return priv->ft.main ? 0 : -ENOMEM;
@@ -1023,7 +1023,7 @@ static int mlx5e_create_vlan_flow_table(struct mlx5e_priv *priv)
 
 	priv->ft.vlan = mlx5_create_flow_table(priv->mdev, 0,
 					       MLX5_FLOW_TABLE_TYPE_NIC_RCV,
-					       2, g);
+					       0, 2, g);
 
 	kfree(g);
 	return priv->ft.vlan ? 0 : -ENOMEM;

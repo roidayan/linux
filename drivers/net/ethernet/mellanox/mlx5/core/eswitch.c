@@ -605,6 +605,7 @@ static int esw_create_flow_offloads_fdb_table(struct mlx5_eswitch *esw)
 	struct mlx5_core_dev *dev = esw->dev;
 	struct mlx5_flow_table_group *g;
 	struct mlx5_flow_table *fdb;
+	int flags = 0;
 	u8 *source_sqn, *source_vport;
 	int i;
 
@@ -632,8 +633,14 @@ static int esw_create_flow_offloads_fdb_table(struct mlx5_eswitch *esw)
 	g[MLX5_MISS_GROUP].log_sz = 0;
 	g[MLX5_MISS_GROUP].match_criteria_enable = 0;
 
+	if (MLX5_CAP_ESW_FLOWTABLE_FDB(dev, encap))
+		flags |= mlx5_flow_table_encap_en;
+	if (MLX5_CAP_ESW_FLOWTABLE_FDB(dev, decap))
+		flags |= mlx5_flow_table_decap_en;
+
 	fdb = mlx5_create_flow_table(dev, 0,
 				     MLX5_FLOW_TABLE_TYPE_ESWITCH,
+				     flags,
 				     MLX5_OFFLOAD_GROUPS, g);
 	if (fdb)
 		esw_debug(dev, "ESW: FDB Table created fdb->id %d\n",
@@ -681,7 +688,7 @@ static int esw_create_fdb_table(struct mlx5_eswitch *esw, int nvports)
 
 	fdb = mlx5_create_flow_table(dev, 0,
 				     MLX5_FLOW_TABLE_TYPE_ESWITCH,
-				     1, &g);
+				     0, 1, &g);
 	if (fdb)
 		esw_debug(dev, "ESW: FDB Table created fdb->id %d\n", mlx5_get_flow_table_id(fdb));
 	else

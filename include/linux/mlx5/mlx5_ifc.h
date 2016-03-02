@@ -5782,7 +5782,9 @@ struct mlx5_ifc_create_flow_table_in_bits {
 
 	u8         reserved_4[0x20];
 
-	u8         reserved_5[0x8];
+	u8         encap_en[0x1];
+	u8         decap_en[0x1];
+	u8         reserved_5[0x6];
 	u8         level[0x8];
 	u8         reserved_6[0x8];
 	u8         log_size[0x8];

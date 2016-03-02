@@ -51,6 +51,7 @@ struct mlx5_flow_table {
 	struct mlx5_ftg		*group;
 	unsigned long		*bitmap;
 	u32			size;
+	u32			flags;
 };
 
 static int mlx5_set_flow_entry_cmd(struct mlx5_flow_table *ft, u32 group_ix,
@@ -237,6 +238,10 @@ static int mlx5_create_flow_table_cmd(struct mlx5_flow_table *ft)
 	MLX5_SET(create_flow_table_in, in, table_type, ft->type);
 	MLX5_SET(create_flow_table_in, in, level,      ft->level);
 	MLX5_SET(create_flow_table_in, in, log_size,   order_base_2(ft->size));
+	MLX5_SET(create_flow_table_in, in, decap_en,
+		 !!(ft->flags & mlx5_flow_table_decap_en));
+	MLX5_SET(create_flow_table_in, in, encap_en,
+		 !!(ft->flags & mlx5_flow_table_encap_en));
 
 	MLX5_SET(create_flow_table_in, in, opcode,
 		 MLX5_CMD_OP_CREATE_FLOW_TABLE);
@@ -391,7 +396,7 @@ int mlx5_set_flow_group_entry(void *flow_table, u32 group_ix,
 EXPORT_SYMBOL(mlx5_set_flow_group_entry);
 
 void *mlx5_create_flow_table(struct mlx5_core_dev *dev, u8 level, u8 table_type,
-			     u16 num_groups,
+			     u32 flags, u16 num_groups,
 			     struct mlx5_flow_table_group *group)
 {
 	struct mlx5_flow_table *ft;
@@ -418,6 +423,7 @@ void *mlx5_create_flow_table(struct mlx5_core_dev *dev, u8 level, u8 table_type,
 	ft->type	= table_type;
 	ft->size	= ft_size;
 	ft->dev		= dev;
+	ft->flags	= flags;
 	mutex_init(&ft->mutex);
 
 	for (i = 0; i < ft->num_groups; i++) {
