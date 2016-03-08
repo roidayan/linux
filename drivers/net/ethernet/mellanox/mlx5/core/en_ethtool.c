@@ -421,6 +421,8 @@ static int mlx5e_get_coalesce(struct net_device *netdev,
 	coal->rx_max_coalesced_frames = priv->params.rx_cq_moderation_pkts;
 	coal->tx_coalesce_usecs       = priv->params.tx_cq_moderation_usec;
 	coal->tx_max_coalesced_frames = priv->params.tx_cq_moderation_pkts;
+	coal->use_adaptive_rx_coalesce = (priv->params.rx_cq_period_mode ==
+					  MLX5_CQ_PERIOD_MODE_START_FROM_CQE);
 
 	return 0;
 }
@@ -431,6 +433,9 @@ static int mlx5e_set_coalesce(struct net_device *netdev,
 	struct mlx5e_priv *priv    = netdev_priv(netdev);
 	struct mlx5_core_dev *mdev = priv->mdev;
 	struct mlx5e_channel *c;
+	bool rx_mode_changed;
+	u8 rx_cq_period_mode;
+	int err = 0;
 	int tc;
 	int i;
 
@@ -438,14 +443,37 @@ static int mlx5e_set_coalesce(struct net_device *netdev,
 		return -ENOTSUPP;
 
 	mutex_lock(&priv->state_lock);
+
+	rx_cq_period_mode = coal->use_adaptive_rx_coalesce ?
+		MLX5_CQ_PERIOD_MODE_START_FROM_CQE :
+		MLX5_CQ_PERIOD_MODE_START_FROM_EQE;
+	rx_mode_changed = rx_cq_period_mode != priv->params.rx_cq_period_mode;
+
+	if (rx_cq_period_mode == MLX5_CQ_PERIOD_MODE_START_FROM_EQE &&
+	    !MLX5_CAP_GEN(mdev, cq_period_start_from_cqe)) {
+		err = -ENOTSUPP;
+		goto out;
+	}
+
 	priv->params.tx_cq_moderation_usec = coal->tx_coalesce_usecs;
 	priv->params.tx_cq_moderation_pkts = coal->tx_max_coalesced_frames;
+
+	if (rx_mode_changed) {
+		bool was_opened;
+
+		was_opened = test_bit(MLX5E_STATE_OPENED, &priv->state);
+		if (was_opened)
+			mlx5e_close_locked(netdev);
+
+		mlx5e_set_rx_cq_mode_params(&priv->params, rx_cq_period_mode);
+
+		if (was_opened)
+			err = mlx5e_open_locked(netdev);
+		goto out;
+	}
+
 	priv->params.rx_cq_moderation_usec = coal->rx_coalesce_usecs;
 	priv->params.rx_cq_moderation_pkts = coal->rx_max_coalesced_frames;
-
-	if (!test_bit(MLX5E_STATE_OPENED, &priv->state))
-		goto out;
-
 	for (i = 0; i < priv->params.num_channels; ++i) {
 		c = priv->channel[i];
 
@@ -463,7 +491,7 @@ static int mlx5e_set_coalesce(struct net_device *netdev,
 
 out:
 	mutex_unlock(&priv->state_lock);
-	return 0;
+	return err;
 }
 
 static u32 ptys2ethtool_supported_link(u32 eth_proto_cap)
