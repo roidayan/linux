@@ -756,7 +756,8 @@ struct mlx5_ifc_cmd_hca_cap_bits {
 	u8         local_ca_ack_delay[0x5];
 	u8         reserved_at_1af[0x2];
 	u8         ports_check[0x1];
-	u8         reserved_at_1b2[0x3];
+	u8         reserved_at_1b2[0x2];
+	u8         beacon_led[0x1];
 	u8         port_type[0x2];
 	u8         num_ports[0x8];
 
@@ -6385,6 +6386,17 @@ struct mlx5_ifc_ptys_reg_bits {
 	u8         reserved_at_1a0[0x60];
 };
 
+struct mlx5_ifc_mlcr_reg_bits {
+	u8         reserved_at_0[0x8];
+	u8         local_port[0x8];
+	u8         reserved_at_10[0x20];
+
+	u8         beacon_duration[0x10];
+	u8         reserved_at_40[0x10];
+
+	u8         beacon_remain[0x10];
+};
+
 struct mlx5_ifc_ptas_reg_bits {
 	u8         reserved_at_0[0x20];
 
@@ -7140,6 +7152,7 @@ union mlx5_ifc_ports_control_registers_document_bits {
 	struct mlx5_ifc_pspa_reg_bits pspa_reg;
 	struct mlx5_ifc_ptas_reg_bits ptas_reg;
 	struct mlx5_ifc_ptys_reg_bits ptys_reg;
+	struct mlx5_ifc_mlcr_reg_bits mlcr_reg;
 	struct mlx5_ifc_pude_reg_bits pude_reg;
 	struct mlx5_ifc_pvlc_reg_bits pvlc_reg;
 	struct mlx5_ifc_slrg_reg_bits slrg_reg;
