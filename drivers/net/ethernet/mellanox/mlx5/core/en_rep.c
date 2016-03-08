@@ -374,6 +374,19 @@ static netdev_tx_t mlx5e_rep_xmit(struct sk_buff *skb, struct net_device *dev)
 	return tx_t;
 }
 
+int mlx5e_rep_get_phys_port_name(struct net_device *dev, char *buf, size_t len)
+{
+	struct mlx5e_vf_rep *priv = netdev_priv(dev);
+	int ret;
+
+	ret = snprintf(buf, len, "%s_%d", priv->pf_dev->netdev->name,
+		       priv->vport - 1);
+	if (ret >= len)
+		return -EOPNOTSUPP;
+
+	return 0;
+}
+
 static struct net_device_ops mlx5e_rep_netdev_ops = {
 	.ndo_open	= mlx5e_rep_open,
 	.ndo_stop	= mlx5e_rep_close,
@@ -381,6 +394,7 @@ static struct net_device_ops mlx5e_rep_netdev_ops = {
 	.ndo_fdb_add	= switchdev_port_fdb_add,
 	.ndo_fdb_del	= switchdev_port_fdb_del,
 	.ndo_set_mac_address = eth_mac_addr,
+	.ndo_get_phys_port_name = mlx5e_rep_get_phys_port_name,
 };
 
 int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u32 vport,
@@ -389,17 +403,9 @@ int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u32 vport,
 	struct net_device *dev;
 	struct mlx5e_vf_rep *priv;
 	int err;
-	char *rep_name;
 	u8 mac[ETH_ALEN];
 
-	rep_name = kzalloc(256, GFP_KERNEL);
-	if (!rep_name)
-		return -ENOMEM;
-	sprintf(rep_name, "%s_%d", pf_dev->netdev->name, vport - 1);
-
-	dev = alloc_netdev_mqs(sizeof(struct mlx5e_vf_rep), rep_name,
-			       NET_NAME_UNKNOWN, ether_setup, 1, 1);
-	kfree(rep_name);
+	dev = alloc_etherdev(sizeof(struct mlx5e_vf_rep));
 	if (!dev)
 		return -ENOMEM;
 
