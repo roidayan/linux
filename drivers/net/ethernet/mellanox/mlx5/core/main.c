@@ -497,6 +497,10 @@ static int handle_hca_cap(struct mlx5_core_dev *dev)
 
 	MLX5_SET(cmd_hca_cap, set_hca_cap, log_uar_page_sz, PAGE_SHIFT - 12);
 
+	/* disable link up by INIT_HCA */
+	if (MLX5_CAP_GEN_MAX(dev, disable_link_up))
+		MLX5_SET(cmd_hca_cap, set_hca_cap, disable_link_up, 1);
+
 	err = set_caps(dev, set_ctx, set_sz,
 		       MLX5_SET_HCA_CAP_OP_MOD_GENERAL_DEVICE);
 
