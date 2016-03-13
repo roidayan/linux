@@ -196,12 +196,12 @@ static int mlx5e_dcbnl_ieee_setpfc(struct net_device *dev,
 
 	mlx5_query_port_admin_status(mdev, &ps);
 	if (ps == MLX5_PORT_UP)
-		mlx5_set_port_admin_status(mdev, MLX5_PORT_DOWN);
+		mlx5_set_port_admin_status(mdev, MLX5_PORT_DOWN, 1);
 
 	ret = mlx5_set_port_pfc(mdev, pfc->pfc_en, pfc->pfc_en);
 
 	if (ps == MLX5_PORT_UP)
-		mlx5_set_port_admin_status(mdev, MLX5_PORT_UP);
+		mlx5_set_port_admin_status(mdev, MLX5_PORT_UP, 1);
 
 	return ret;
 }
