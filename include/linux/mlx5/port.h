@@ -50,7 +50,8 @@ int mlx5_query_port_proto_oper(struct mlx5_core_dev *dev,
 int mlx5_set_port_proto(struct mlx5_core_dev *dev, u32 proto_admin,
 			int proto_mask);
 int mlx5_set_port_admin_status(struct mlx5_core_dev *dev,
-			       enum mlx5_port_status status);
+			       enum mlx5_port_status status,
+			       u8 port);
 int mlx5_query_port_admin_status(struct mlx5_core_dev *dev,
 				 enum mlx5_port_status *status);
 
