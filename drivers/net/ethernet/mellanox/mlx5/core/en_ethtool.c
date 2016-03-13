@@ -678,10 +678,10 @@ static int mlx5e_set_settings(struct net_device *netdev,
 
 	mlx5_query_port_admin_status(mdev, &ps);
 	if (ps == MLX5_PORT_UP)
-		mlx5_set_port_admin_status(mdev, MLX5_PORT_DOWN);
+		mlx5_set_port_admin_status(mdev, MLX5_PORT_DOWN, 1);
 	mlx5_set_port_proto(mdev, link_modes, MLX5_PTYS_EN);
 	if (ps == MLX5_PORT_UP)
-		mlx5_set_port_admin_status(mdev, MLX5_PORT_UP);
+		mlx5_set_port_admin_status(mdev, MLX5_PORT_UP, 1);
 
 out:
 	return err;

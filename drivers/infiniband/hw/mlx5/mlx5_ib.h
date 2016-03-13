@@ -62,6 +62,11 @@ pr_warn("%s:%s:%d:(pid %d): " format, (dev)->ib_dev.name, __func__,	\
 #define MLX5_IB_DEFAULT_UIDX 0xffffff
 #define MLX5_USER_ASSIGNED_UIDX_MASK __mlx5_mask(qpc, user_index)
 
+#define mlx5_foreach_port(dev, p, type)					\
+	for ((p) = 0; (p) < MLX5_CAP_GEN(dev->mdev, num_ports); (p)++)	\
+		if (mlx5_ib_port_link_layer(&dev->ib_dev, (p) + 1) ==	\
+		    (type))
+
 enum {
 	MLX5_IB_MMAP_CMD_SHIFT	= 8,
 	MLX5_IB_MMAP_CMD_MASK	= 0xff,
