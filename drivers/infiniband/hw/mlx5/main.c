@@ -2261,6 +2261,9 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 	if (err)
 		goto err_dealloc;
 
+	mlx5_foreach_port(dev, i, IB_LINK_LAYER_INFINIBAND)
+		mlx5_set_port_admin_status(dev->mdev, MLX5_PORT_UP, i + 1);
+
 	if (mlx5_use_mad_ifc(dev))
 		get_ext_port_caps(dev);
 
@@ -2443,6 +2446,9 @@ err_disable_roce:
 	if (ll == IB_LINK_LAYER_ETHERNET)
 		mlx5_disable_roce(dev);
 
+	mlx5_foreach_port(dev, i, IB_LINK_LAYER_INFINIBAND)
+		mlx5_set_port_admin_status(mdev, MLX5_PORT_DOWN, i + 1);
+
 err_dealloc:
 	ib_dealloc_device((struct ib_device *)dev);
 
@@ -2453,6 +2459,7 @@ static void mlx5_ib_remove(struct mlx5_core_dev *mdev, void *context)
 {
 	struct mlx5_ib_dev *dev = context;
 	enum rdma_link_layer ll = mlx5_ib_port_link_layer(&dev->ib_dev, 1);
+	int i;
 
 	ib_unregister_device(&dev->ib_dev);
 	destroy_umrc_res(dev);
@@ -2460,6 +2467,10 @@ static void mlx5_ib_remove(struct mlx5_core_dev *mdev, void *context)
 	destroy_dev_resources(&dev->devr);
 	if (ll == IB_LINK_LAYER_ETHERNET)
 		mlx5_disable_roce(dev);
+
+	mlx5_foreach_port(dev, i, IB_LINK_LAYER_INFINIBAND)
+		mlx5_set_port_admin_status(mdev, MLX5_PORT_DOWN, i + 1);
+
 	ib_dealloc_device(&dev->ib_dev);
 }
 
