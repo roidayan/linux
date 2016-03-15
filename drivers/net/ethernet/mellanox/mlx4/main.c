@@ -3886,7 +3886,7 @@ static void mlx4_remove_one(struct pci_dev *pdev)
 	}
 
 	pci_release_regions(pdev);
-	mlx4_pci_disable_device(pdev);
+	mlx4_pci_disable_device(dev);
 	kfree(dev->persist);
 	kfree(priv);
 	pci_set_drvdata(pdev, NULL);
