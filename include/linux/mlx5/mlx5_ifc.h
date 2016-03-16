@@ -2258,8 +2258,9 @@ struct mlx5_ifc_sqc_bits {
 	u8         reserved_at_40[0x8];
 	u8         cqn[0x18];
 
-	u8         reserved_at_60[0xa0];
+	u8         reserved_at_60[0x90];
 
+	u8         packet_pacing_rate_limit_index[0x10];
 	u8         tis_lst_sz[0x10];
 	u8         reserved_at_110[0x10];
 
