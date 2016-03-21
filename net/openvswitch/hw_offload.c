@@ -270,6 +270,7 @@ int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 			printk(KERN_ERR "%s ovs flow %p sw_flow %p ID %.8x %.8x %.8x %.8x\n", __func__,
 				flow, &flow->flow, flow->id.ufid[0], flow->id.ufid[1], flow->id.ufid[2], flow->id.ufid[3]);
 		flow->hw_offloaded = 1;
+		flow->hw_sw_dev = dev;
 	}
 
 	return err;
@@ -311,6 +312,7 @@ int ovs_hw_flow_remove(struct datapath *dp, struct ovs_flow *flow)
 	}
 	kfree(flow->flow.actions);
 	flow->flow.actions = NULL;
+	flow->hw_sw_dev = NULL;
 	return err;
 }
 
@@ -335,5 +337,28 @@ int ovs_hw_flow_flush(struct datapath *dp)
 				return err;
 		}
 	}
+	return 0;
+}
+
+int ovs_hw_flow_stats(struct ovs_flow *flow,
+		      struct ovs_flow_stats *ovs_stats,
+		      unsigned long *used)
+{
+	struct switchdev_stats swd_stats;
+	int err = 0;
+
+	if (!flow->hw_sw_dev) {
+		pr_err("Offloaded flow without HW Switch dev. %s ovs flow %p sw_flow %p\n",
+		       __func__, flow, &flow->flow);
+		return -1;
+	}
+	err = switchdev_port_flow_stats(flow->hw_sw_dev, &flow->flow,
+					&swd_stats);
+	if (err)
+		return err;
+	ovs_stats->n_packets = swd_stats.packets;
+	ovs_stats->n_bytes   = swd_stats.bytes;
+	*used		     = swd_stats.used;
+
 	return 0;
 }

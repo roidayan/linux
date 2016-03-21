@@ -16,5 +16,8 @@
 int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow);
 int ovs_hw_flow_remove(struct datapath *dp, struct ovs_flow *flow);
 int ovs_hw_flow_flush(struct datapath *dp);
+int ovs_hw_flow_stats(const struct ovs_flow *flow,
+		      struct ovs_flow_stats *ovs_stats,
+		      unsigned long *used);
 
 #endif

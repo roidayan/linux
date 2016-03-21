@@ -49,6 +49,7 @@
 #include "datapath.h"
 #include "flow.h"
 #include "flow_netlink.h"
+#include "hw_offload.h"
 
 u64 ovs_flow_used_time(unsigned long flow_jiffies)
 {
@@ -139,6 +140,11 @@ void ovs_flow_stats_get(const struct ovs_flow *flow,
 	*used = 0;
 	*tcp_flags = 0;
 	memset(ovs_stats, 0, sizeof(*ovs_stats));
+
+	if (flow->hw_offloaded) {
+		ovs_hw_flow_stats(flow, ovs_stats, used);
+		return;
+	}
 
 	for_each_node(node) {
 		struct flow_stats *stats = rcu_dereference_ovsl(flow->stats[node]);
