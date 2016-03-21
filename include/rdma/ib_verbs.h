@@ -1102,7 +1102,9 @@ enum ib_qp_attr_mask {
 	IB_QP_RESERVED2			= (1<<22),
 	IB_QP_RESERVED3			= (1<<23),
 	IB_QP_RESERVED4			= (1<<24),
+	IB_QP_ATTR_LEGACY_MAX		= (1<<25),
 	IB_QP_RATE_LIMIT		= (1<<25),
+	IB_QP_ATTR_MAX			= (1<<26),
 };
 
 enum ib_qp_state {
