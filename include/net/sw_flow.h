@@ -132,6 +132,7 @@ struct sw_flow {
 	struct sw_flow_actions *actions;
 	enum sw_flow_tunnel_type tunnel_type;
 	u16 tunnel_port;
+	u16 hw_flow_counter_id;
 };
 
 #endif /* _NET_SW_FLOW_H_ */
