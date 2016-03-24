@@ -341,10 +341,8 @@ static int parse_flow_attr(struct mlx5_flow_attr *attr)
 		MLX5_SET(fte_match_set_lyr_2_4, headers_c, frag, 1);
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v, frag, 0);
 	} else if (mask->ip.frag && key->ip.frag != OVS_FRAG_TYPE_NONE) {
-		printk(KERN_ERR "%s non zero val for OVS_FRAG %d, supported by PRM?!\n",
-			__func__, key->ip.frag);
-		MLX5_SET(fte_match_set_lyr_2_4, headers_c, frag, 1);
-		MLX5_SET(fte_match_set_lyr_2_4, headers_v, frag, 1);
+		pr_warn("offloading fragmented traffic is unsupported\n");
+		goto out_err;
 	}
 
 	/* PRM mandates ip protocol full match to set rules on UDP/TCP ports using one rule */
