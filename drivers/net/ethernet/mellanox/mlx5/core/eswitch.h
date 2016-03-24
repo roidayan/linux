@@ -172,8 +172,7 @@ int __mlx5_eswitch_set_vport_vlan(struct mlx5_eswitch *esw,
 /* 0 - tx2vport  [.. offloaded flow groups ..] last - miss */
 #define MLX5_OFFLOAD_GROUPS 16
 
-#define MLX5_TX2VPORT_GROUP 0
-
+#define MLX5_TX2VPORT_GROUP (MLX5_OFFLOAD_GROUPS - 2)
 #define MLX5_MISS_GROUP (MLX5_OFFLOAD_GROUPS - 1)
 
 #define MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG 8

@@ -613,8 +613,10 @@ static int esw_create_flow_offloads_fdb_table(struct mlx5_eswitch *esw)
 	if (!g)
 		return -ENOMEM;
 
-	g[MLX5_TX2VPORT_GROUP].log_sz = 8;
-	g[MLX5_TX2VPORT_GROUP].match_criteria_enable = MLX5_MATCH_MISC_PARAMETERS;
+	for (i = 0; i < MLX5_TX2VPORT_GROUP; i++) {
+		g[i].log_sz = mlx5_flow_offload_group_size_log;
+		g[i].match_criteria_enable = 0; /* just place holder hack */
+	}
 
 	/* source vport == 0 also can be set to this rule */
 	source_sqn = MLX5_ADDR_OF(fte_match_param, g[MLX5_TX2VPORT_GROUP].match_criteria,
@@ -625,10 +627,8 @@ static int esw_create_flow_offloads_fdb_table(struct mlx5_eswitch *esw)
 	memset(source_vport, 0xff, 2); /* TODO: Fix hard coded number */
 	memset(source_sqn, 0xff, 3);
 
-	for (i = 1; i < MLX5_MISS_GROUP; i++) {
-		g[i].log_sz = mlx5_flow_offload_group_size_log;
-		g[i].match_criteria_enable = 0; /* just place holder hack */
-	}
+	g[MLX5_TX2VPORT_GROUP].log_sz = 8;
+	g[MLX5_TX2VPORT_GROUP].match_criteria_enable = MLX5_MATCH_MISC_PARAMETERS;
 
 	g[MLX5_MISS_GROUP].log_sz = 0;
 	g[MLX5_MISS_GROUP].match_criteria_enable = 0;
