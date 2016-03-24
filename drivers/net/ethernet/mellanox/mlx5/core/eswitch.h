@@ -175,7 +175,7 @@ int __mlx5_eswitch_set_vport_vlan(struct mlx5_eswitch *esw,
 #define MLX5_TX2VPORT_GROUP (MLX5_OFFLOAD_GROUPS - 2)
 #define MLX5_MISS_GROUP (MLX5_OFFLOAD_GROUPS - 1)
 
-#define MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG 8
+#define MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG 10
 
 enum {
 	SRIOV_DISABLED		= BIT(0),
