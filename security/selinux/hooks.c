@@ -92,6 +92,7 @@
 #include "netif.h"
 #include "netnode.h"
 #include "netport.h"
+#include "pkey.h"
 #include "xfrm.h"
 #include "netlabel.h"
 #include "audit.h"
@@ -172,6 +173,8 @@ static int selinux_cache_avc_callback(u32 event)
 		sel_netnode_flush();
 		sel_netport_flush();
 		synchronize_net();
+
+		sel_pkey_flush();
 		mutex_lock(&ib_flush_mutex);
 		if (ib_flush_callback)
 			ib_flush_callback();
@@ -6026,7 +6029,7 @@ static int selinux_pkey_access(u64 subnet_prefix, u16 pkey_val, void *security)
 	struct ib_security_struct *sec = security;
 	struct lsm_pkey_audit pkey;
 
-	err = security_pkey_sid(subnet_prefix, pkey_val, &sid);
+	err = sel_pkey_sid(subnet_prefix, pkey_val, &sid);
 
 	if (err)
 		goto out;
