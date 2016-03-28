@@ -754,7 +754,9 @@ struct mlx5_ifc_cmd_hca_cap_bits {
 	u8	   early_vf_enable;
 	u8         reserved_at_1a8[0x2];
 	u8         local_ca_ack_delay[0x5];
-	u8         reserved_at_1af[0x6];
+	u8         reserved_at_1af[0x2];
+	u8         ports_check[0x1];
+	u8         reserved_at_1b2[0x3];
 	u8         port_type[0x2];
 	u8         num_ports[0x8];
 
@@ -6790,6 +6792,16 @@ struct mlx5_ifc_pamp_reg_bits {
 	u8         num_of_indices[0xc];
 
 	u8         index_data[18][0x10];
+};
+
+struct mlx5_ifc_pcmr_reg_bits {
+	u8         reserved_at_0[0x8];
+	u8         local_port[0x8];
+	u8         reserved_at_10[0x2e];
+	u8         fcs_cap[0x1];
+	u8         reserved_at_3f[0x1f];
+	u8         fcs_chk[0x1];
+	u8         reserved_at_5f[0x1];
 };
 
 struct mlx5_ifc_lane_2_module_mapping_bits {
