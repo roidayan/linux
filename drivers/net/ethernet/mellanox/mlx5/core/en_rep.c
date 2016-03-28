@@ -438,7 +438,6 @@ int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u32 vport,
 	struct net_device *dev;
 	struct mlx5e_vf_rep *priv;
 	int err;
-	u8 mac[ETH_ALEN];
 
 	dev = alloc_etherdev(sizeof(struct mlx5e_vf_rep));
 	if (!dev)
@@ -461,15 +460,7 @@ int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u32 vport,
 	if (vport == FDB_UPLINK_VPORT)
 		goto out;
 
-	memset(mac, 0, ETH_ALEN);
-	mlx5_query_nic_vport_mac_address(pf_dev->mdev, vport, mac);
-
-	if (is_zero_ether_addr(mac)) {
-		ether_addr_copy(dev->dev_addr, pf_dev->netdev->dev_addr);
-		dev->dev_addr[ETH_ALEN - 1] += vport;
-	} else {
-		ether_addr_copy(dev->dev_addr, mac);
-	}
+	eth_hw_addr_random(dev);
 
 	netif_carrier_off(dev);
 
