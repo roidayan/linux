@@ -344,6 +344,29 @@ static int setup_port_pkey_list(struct ib_device *device)
 	return 0;
 }
 
+static void ib_security_flush(void)
+{
+	struct ib_device *dev;
+
+	down_read(&lists_rwsem);
+	list_for_each_entry(dev, &device_list, core_list) {
+		int i;
+
+		for (i = rdma_start_port(dev); i <= rdma_end_port(dev); i++) {
+			u64 sp;
+			int ret = ib_get_cached_subnet_prefix(dev,
+							      i,
+							      &sp);
+
+			WARN_ONCE(ret,
+				  "ib_get_cached_subnet_prefix err: %d, this should never happen here\n",
+				  ret);
+			ib_security_cache_change(dev, i, sp);
+		}
+	}
+	up_read(&lists_rwsem);
+}
+
 /**
  * ib_register_device - Register an IB device with IB core
  * @device:Device to register
@@ -1075,6 +1098,8 @@ static int __init ib_core_init(void)
 		goto err_sa;
 	}
 
+	security_register_ib_flush_callback(&ib_security_flush);
+
 	ib_cache_setup();
 
 	return 0;
@@ -1098,6 +1123,7 @@ err:
 
 static void __exit ib_core_cleanup(void)
 {
+	security_unregister_ib_flush_callback();
 	ib_cache_cleanup();
 	ib_remove_ibnl_clients();
 	ib_sa_cleanup();
