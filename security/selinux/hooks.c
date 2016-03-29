@@ -94,6 +94,9 @@
 #include "audit.h"
 #include "avc_ss.h"
 
+static void (*ib_flush_callback)(void);
+static DEFINE_MUTEX(ib_flush_mutex);
+
 /* SECMARK reference count */
 static atomic_t selinux_secmark_refcount = ATOMIC_INIT(0);
 
@@ -159,13 +162,17 @@ static int selinux_peerlbl_enabled(void)
 	return (selinux_policycap_alwaysnetwork || netlbl_enabled() || selinux_xfrm_enabled());
 }
 
-static int selinux_netcache_avc_callback(u32 event)
+static int selinux_cache_avc_callback(u32 event)
 {
 	if (event == AVC_CALLBACK_RESET) {
 		sel_netif_flush();
 		sel_netnode_flush();
 		sel_netport_flush();
 		synchronize_net();
+		mutex_lock(&ib_flush_mutex);
+		if (ib_flush_callback)
+			ib_flush_callback();
+		mutex_unlock(&ib_flush_mutex);
 	}
 	return 0;
 }
@@ -5993,6 +6000,23 @@ static int selinux_key_getsecurity(struct key *key, char **_buffer)
 
 #endif
 
+#ifdef CONFIG_SECURITY_INFINIBAND
+static void selinux_register_ib_flush_callback(void (*callback)(void))
+{
+	mutex_lock(&ib_flush_mutex);
+	ib_flush_callback = callback;
+	mutex_unlock(&ib_flush_mutex);
+}
+
+static void selinux_unregister_ib_flush_callback(void)
+{
+	mutex_lock(&ib_flush_mutex);
+	ib_flush_callback = NULL;
+	mutex_unlock(&ib_flush_mutex);
+}
+
+#endif
+
 static struct security_hook_list selinux_hooks[] = {
 	LSM_HOOK_INIT(binder_set_context_mgr, selinux_binder_set_context_mgr),
 	LSM_HOOK_INIT(binder_transaction, selinux_binder_transaction),
@@ -6174,6 +6198,12 @@ static struct security_hook_list selinux_hooks[] = {
 	LSM_HOOK_INIT(tun_dev_attach_queue, selinux_tun_dev_attach_queue),
 	LSM_HOOK_INIT(tun_dev_attach, selinux_tun_dev_attach),
 	LSM_HOOK_INIT(tun_dev_open, selinux_tun_dev_open),
+#ifdef CONFIG_SECURITY_INFINIBAND
+	LSM_HOOK_INIT(register_ib_flush_callback,
+		      selinux_register_ib_flush_callback),
+	LSM_HOOK_INIT(unregister_ib_flush_callback,
+		      selinux_unregister_ib_flush_callback),
+#endif
 
 #ifdef CONFIG_SECURITY_NETWORK_XFRM
 	LSM_HOOK_INIT(xfrm_policy_alloc_security, selinux_xfrm_policy_alloc),
@@ -6233,9 +6263,11 @@ static __init int selinux_init(void)
 					    0, SLAB_PANIC, NULL);
 	avc_init();
 
+	ib_flush_callback = NULL;
+
 	security_add_hooks(selinux_hooks, ARRAY_SIZE(selinux_hooks));
 
-	if (avc_add_callback(selinux_netcache_avc_callback, AVC_CALLBACK_RESET))
+	if (avc_add_callback(selinux_cache_avc_callback, AVC_CALLBACK_RESET))
 		panic("SELinux: Unable to register AVC netcache callback\n");
 
 	if (selinux_enforcing)
