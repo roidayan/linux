@@ -927,6 +927,41 @@ static int mlx5e_set_rxfh(struct net_device *dev, const u32 *indir,
 	return 0;
 }
 
+static int mlx5e_get_flow(struct mlx5e_priv *priv, struct ethtool_rxnfc *info,
+			  int location)
+{
+	struct mlx5e_ethtool_rule *eth_rule;
+
+	if (location < 0 || location >= MAX_NUM_OF_ETHTOOL_RULES)
+		return -EINVAL;
+
+	list_for_each_entry(eth_rule, &priv->fs.ethtool.rules, list) {
+		if (eth_rule->flow_spec.location == location) {
+			info->fs = eth_rule->flow_spec;
+			return 0;
+		}
+	}
+
+	return -ENOENT;
+}
+
+static int mlx5e_get_all_flows(struct mlx5e_priv *priv,
+			       struct ethtool_rxnfc *info,
+			       u32 *rule_locs)
+{
+	int location = 0;
+	int idx = 0;
+	int err = 0;
+
+	while ((!err || err == -ENOENT) && idx < info->rule_cnt) {
+		err = mlx5e_get_flow(priv, info, location);
+		if (!err)
+			rule_locs[idx++] = location;
+		location++;
+	}
+	return err;
+}
+
 static int mlx5e_get_rxnfc(struct net_device *netdev,
 			   struct ethtool_rxnfc *info, u32 *rule_locs)
 {
@@ -936,6 +971,15 @@ static int mlx5e_get_rxnfc(struct net_device *netdev,
 	switch (info->cmd) {
 	case ETHTOOL_GRXRINGS:
 		info->data = priv->params.num_channels;
+		break;
+	case ETHTOOL_GRXCLSRLCNT:
+		info->rule_cnt = priv->fs.ethtool.tot_num_rules;
+		break;
+	case ETHTOOL_GRXCLSRULE:
+		err = mlx5e_get_flow(priv, info, info->fs.location);
+		break;
+	case ETHTOOL_GRXCLSRLALL:
+		err = mlx5e_get_all_flows(priv, info, rule_locs);
 		break;
 	default:
 		err = -EOPNOTSUPP;
