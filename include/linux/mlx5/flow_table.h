@@ -79,4 +79,7 @@ void mlx5_set_free_flow_group(void *flow_table, int g_index);
 int  mlx5_get_free_flow_group(void *flow_table, int start, int end);
 int  mlx5_recreate_flow_group(void *flow_table, int g_index, struct mlx5_flow_table_group *g);
 
+int mlx5_alloc_flow_counter(struct mlx5_core_dev *dev, u16 *id);
+int mlx5_dealloc_flow_counter(struct mlx5_core_dev *dev, u16 id);
+
 #endif /* MLX5_FLOW_TABLE_H */

@@ -62,7 +62,10 @@ static int mlx5_set_flow_entry_cmd(struct mlx5_flow_table *ft, u32 group_ix,
 	void *in_flow_context;
 	int fcdls =
 		MLX5_GET(flow_context, flow_context, destination_list_size) *
-		MLX5_ST_SZ_BYTES(dest_format_struct);
+		MLX5_ST_SZ_BYTES(dest_format_struct) +
+		MLX5_GET(flow_context, flow_context,
+			 flow_counter_list_size) *
+		MLX5_ST_SZ_BYTES(flow_counter_list);
 	int inlen = MLX5_ST_SZ_BYTES(set_fte_in) + fcdls;
 	int err;
 
@@ -364,7 +367,6 @@ int mlx5_add_flow_table_entry(void *flow_table, u8 match_criteria_enable,
 		mlx5_core_warn(ft->dev, "alloc_flow_index failed\n");
 		return err;
 	}
-
 	return mlx5_set_flow_entry_cmd(ft, group_ix, *flow_index, flow_context);
 }
 EXPORT_SYMBOL(mlx5_add_flow_table_entry);
@@ -390,7 +392,6 @@ int mlx5_set_flow_group_entry(void *flow_table, u32 group_ix,
 		mlx5_core_warn(ft->dev, "alloc_flow_index failed err %d\n", err);
 		return err;
 	}
-
 	return mlx5_set_flow_entry_cmd(ft, group_ix, *flow_index, flow_context);
 }
 EXPORT_SYMBOL(mlx5_set_flow_group_entry);
@@ -598,4 +599,47 @@ int mlx5_recreate_flow_group(void *flow_table, int g_index, struct mlx5_flow_tab
 		ftg->g.match_criteria_enable = 0;
 
 	return err;
+}
+
+int mlx5_alloc_flow_counter(struct mlx5_core_dev *dev, u16 *id)
+{
+	u32 in[MLX5_ST_SZ_DW(alloc_flow_counter_in)];
+	u32 out[MLX5_ST_SZ_DW(alloc_flow_counter_out)];
+	int err;
+
+	memset(in, 0, sizeof(in));
+	memset(out, 0, sizeof(out));
+
+	MLX5_SET(alloc_flow_counter_in, in, opcode,
+		 MLX5_CMD_OP_ALLOC_FLOW_COUNTER);
+
+	err = mlx5_cmd_exec_check_status(dev, in, sizeof(in), out,
+					 sizeof(out));
+	if (err)
+		return err;
+	*id = MLX5_GET(alloc_flow_counter_out, out, flow_counter_id);
+	pr_debug("%s flow counter id is %x\n", __func__, *id);
+	return 0;
+}
+
+int mlx5_dealloc_flow_counter(struct mlx5_core_dev *dev, u16 id)
+{
+	u32 in[MLX5_ST_SZ_DW(dealloc_flow_counter_in)];
+	u32 out[MLX5_ST_SZ_DW(dealloc_flow_counter_out)];
+	int err;
+
+	memset(in, 0, sizeof(in));
+	memset(out, 0, sizeof(out));
+
+	MLX5_SET(dealloc_flow_counter_in, in, opcode,
+		 MLX5_CMD_OP_DEALLOC_FLOW_COUNTER);
+	MLX5_SET(dealloc_flow_counter_in, in, flow_counter_id, id);
+
+	err = mlx5_cmd_exec_check_status(dev, in, sizeof(in), out,
+					 sizeof(out));
+	if (err) {
+		pr_err("Failed to deallocate hw flow counter id %d\n", id);
+		return err;
+	}
+	return 0;
 }
