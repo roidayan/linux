@@ -634,10 +634,9 @@ static int esw_create_flow_offloads_fdb_table(struct mlx5_eswitch *esw)
 	g[MLX5_MISS_GROUP].log_sz = 0;
 	g[MLX5_MISS_GROUP].match_criteria_enable = 0;
 
-	if (MLX5_CAP_ESW_FLOWTABLE_FDB(dev, encap))
-		flags |= mlx5_flow_table_encap_en;
-	if (MLX5_CAP_ESW_FLOWTABLE_FDB(dev, decap))
-		flags |= mlx5_flow_table_decap_en;
+	if (MLX5_CAP_ESW_FLOWTABLE_FDB(dev, encap) &&
+	    MLX5_CAP_ESW_FLOWTABLE_FDB(dev, decap))
+		flags |= mlx5_flow_table_tunnel_en;
 
 	fdb = mlx5_create_flow_table(dev, 0,
 				     MLX5_FLOW_TABLE_TYPE_ESWITCH,

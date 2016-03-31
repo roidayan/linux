@@ -933,30 +933,16 @@ static struct mlx5e_vf_rep *mlx5e_uplink_rep(struct mlx5e_priv *pf_dev)
 static inline bool is_tunnel_type_supported(struct mlx5_core_dev *dev,
 					    enum sw_flow_tunnel_type type)
 {
+	if (!MLX5_CAP_ESW_FLOWTABLE_FDB(dev, decap) ||
+	    !MLX5_CAP_ESW_FLOWTABLE_FDB(dev, encap))
+		return false;
+
 	switch (type) {
 	case SW_FLOW_TUNNEL_VXLAN:
 		return MLX5_CAP_ESW(dev, vxlan_encap_decap);
 	default:
 		return false;
 	}
-}
-
-static inline bool is_decap_supported(struct mlx5_core_dev *dev,
-				      enum sw_flow_tunnel_type type)
-{
-	if (!MLX5_CAP_ESW_FLOWTABLE_FDB(dev, decap))
-		return false;
-
-	return is_tunnel_type_supported(dev, type);
-}
-
-static inline bool is_encap_supported(struct mlx5_core_dev *dev,
-				      enum sw_flow_tunnel_type type)
-{
-	if (!MLX5_CAP_ESW_FLOWTABLE_FDB(dev, encap))
-		return false;
-
-	return is_tunnel_type_supported(dev, type);
 }
 
 int mlx5e_flow_adjust(struct mlx5_flow_attr *attr)
@@ -979,7 +965,7 @@ int mlx5e_flow_adjust(struct mlx5_flow_attr *attr)
 			}
 			if (attr->sw_flow->tunnel_type !=
 					SW_FLOW_TUNNEL_NONE) {
-				if (!is_decap_supported(
+				if (!is_tunnel_type_supported(
 						attr->pf_dev->mdev,
 						attr->sw_flow->tunnel_type))
 					goto out_err;
@@ -1003,8 +989,8 @@ int mlx5e_flow_adjust(struct mlx5_flow_attr *attr)
 		else if (action->type == SW_FLOW_ACTION_TYPE_ENCAP) {
 			if (attr->sw_flow->actions->count != 1)
 				goto out_err;
-			if (!is_encap_supported(attr->pf_dev->mdev,
-						action->tunnel_type))
+			if (!is_tunnel_type_supported(attr->pf_dev->mdev,
+						      action->tunnel_type))
 				goto out_err;
 
 			__mlx5_action |= MLX5_FLOW_ACTION_TYPE_ENCAP;

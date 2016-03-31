@@ -242,9 +242,9 @@ static int mlx5_create_flow_table_cmd(struct mlx5_flow_table *ft)
 	MLX5_SET(create_flow_table_in, in, level,      ft->level);
 	MLX5_SET(create_flow_table_in, in, log_size,   order_base_2(ft->size));
 	MLX5_SET(create_flow_table_in, in, decap_en,
-		 !!(ft->flags & mlx5_flow_table_decap_en));
+		 !!(ft->flags & mlx5_flow_table_tunnel_en));
 	MLX5_SET(create_flow_table_in, in, encap_en,
-		 !!(ft->flags & mlx5_flow_table_encap_en));
+		 !!(ft->flags & mlx5_flow_table_tunnel_en));
 
 	MLX5_SET(create_flow_table_in, in, opcode,
 		 MLX5_CMD_OP_CREATE_FLOW_TABLE);

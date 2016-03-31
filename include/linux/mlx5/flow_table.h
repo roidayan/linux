@@ -36,8 +36,7 @@
 #include <linux/mlx5/driver.h>
 
 enum {
-	mlx5_flow_table_decap_en = BIT(0),
-	mlx5_flow_table_encap_en = BIT(1)
+	mlx5_flow_table_tunnel_en = BIT(0),
 };
 
 struct mlx5_flow_table_group {
