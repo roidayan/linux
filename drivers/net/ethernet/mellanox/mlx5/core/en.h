@@ -58,6 +58,9 @@ struct mlx5e_vf_rep;
 int __mlx5e_rep_attr_get(struct mlx5e_vf_rep *vf_rep, struct switchdev_attr *attr);
 int __mlx5e_rep_obj_add(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj *obj);
 int __mlx5e_rep_obj_del(struct mlx5e_vf_rep *vf_rep, struct switchdev_obj *obj);
+int __mlx5e_rep_obj_stats(struct mlx5e_vf_rep *vf_rep,
+			  struct switchdev_obj *obj,
+			  struct switchdev_stats *stats);
 
 #define MLX5E_MAX_NUM_TC	8
 
@@ -690,4 +693,6 @@ void mlx5e_update_encaps(struct work_struct *work);
 int mlx5e_flow_add(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow);
 int mlx5e_flow_del(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow);
 int mlx5e_neigh_update(struct net_device *dev, struct neighbour *n);
+int mlx5e_flow_stats(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow,
+		     struct switchdev_stats *stats);
 void mlx5e_clear_flows(struct mlx5e_priv *pf_dev);

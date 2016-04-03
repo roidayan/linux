@@ -32,6 +32,7 @@
 
 #include <linux/mlx5/flow_table.h>
 #include <net/switchdev.h>
+#include <linux/module.h>
 #include "en.h"
 #include "eswitch.h"
 #include "en_rep.h"
@@ -258,6 +259,7 @@ static void mlx5e_update_stats_work(struct work_struct *work)
 				      msecs_to_jiffies(
 					      MLX5E_UPDATE_STATS_INTERVAL));
 	}
+
 	mutex_unlock(&priv->state_lock);
 }
 
@@ -2089,10 +2091,27 @@ static int mlx5e_pf_obj_del(struct net_device *dev,
 	return __mlx5e_rep_obj_del(vf_rep, obj);
 }
 
+static int mlx5e_pf_obj_stats(struct net_device *dev,
+			      struct switchdev_obj *obj,
+			      struct switchdev_stats *stats)
+{
+	struct mlx5e_priv *pf_dev = netdev_priv(dev);
+	int uplink_rep = pf_dev->mdev->priv.sriov.num_vfs;
+	struct mlx5e_vf_rep *vf_rep;
+
+	if (!mlx5e_reps_enabled(pf_dev))
+		return -EINVAL;
+
+	vf_rep = pf_dev->vf_reps[uplink_rep];
+
+	return __mlx5e_rep_obj_stats(vf_rep, obj, stats);
+}
+
 const struct switchdev_ops mlx5e_pf_switchdev_ops = {
 	.switchdev_port_attr_get	= mlx5e_pf_attr_get,
 	.switchdev_port_obj_add		= mlx5e_pf_obj_add,
 	.switchdev_port_obj_del		= mlx5e_pf_obj_del,
+	.switchdev_port_obj_stats	= mlx5e_pf_obj_stats,
 };
 
 static int mlx5e_check_required_hca_cap(struct mlx5_core_dev *mdev)

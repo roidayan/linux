@@ -1389,6 +1389,23 @@ int mlx5e_flow_del(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow)
 	return err;
 }
 
+int mlx5e_flow_stats(struct mlx5e_vf_rep *in_rep,
+		     struct sw_flow *flow,
+		     struct switchdev_stats *stats)
+{
+	struct mlx5_eswitch *hw_sw = in_rep->pf_dev->mdev->priv.eswitch;
+
+	if (hw_sw) {
+		mlx5_eswitch_get_fc_stats(hw_sw, flow->hw_flow_counter_id,
+					  &stats->packets,
+					  &stats->bytes,
+					  &stats->used);
+		return 0;
+	}
+
+	return -EOPNOTSUPP;
+}
+
 static inline bool neighbour_valid(struct neighbour *n)
 {
 	return !!(n->nud_state & NUD_VALID);
