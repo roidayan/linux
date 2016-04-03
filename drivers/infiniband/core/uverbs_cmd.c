@@ -255,6 +255,17 @@ static void put_wq_read(struct ib_wq *wq)
 	put_uobj_read(wq->uobject);
 }
 
+static struct ib_rwq_ind_table *idr_read_rwq_indirection_table(int ind_table_handle,
+							       struct ib_ucontext *context)
+{
+	return idr_read_obj(&ib_uverbs_rwq_ind_tbl_idr, ind_table_handle, context, 0);
+}
+
+static void put_rwq_indirection_table_read(struct ib_rwq_ind_table *ind_table)
+{
+	put_uobj_read(ind_table->uobject);
+}
+
 static struct ib_qp *idr_write_qp(int qp_handle, struct ib_ucontext *context)
 {
 	struct ib_uobject *uobj;
@@ -1764,6 +1775,9 @@ static int create_qp(struct ib_uverbs_file *file,
 	struct ib_qp_init_attr		attr;
 	struct ib_uverbs_ex_create_qp_resp resp;
 	int				ret;
+	struct ib_rx_hash_conf  rx_hash_conf;
+	struct ib_rwq_ind_table *ind_tbl = NULL;
+	bool rx_hash_qp = 0;
 
 	if (cmd->qp_type == IB_QPT_RAW_PACKET && !capable(CAP_NET_RAW))
 		return -EPERM;
@@ -1775,6 +1789,9 @@ static int create_qp(struct ib_uverbs_file *file,
 	init_uobj(&obj->uevent.uobject, cmd->user_handle, file->ucontext,
 		  &qp_lock_class);
 	down_write(&obj->uevent.uobject.mutex);
+	rx_hash_qp = (cmd_sz >= (offsetof(typeof(*cmd), rx_hash_conf) +
+				sizeof(cmd->rx_hash_conf)) &&
+			cmd->rx_hash_conf.rx_hash_function);
 
 	if (cmd->qp_type == IB_QPT_XRC_TGT) {
 		xrcd = idr_read_xrcd(cmd->pd_handle, file->ucontext,
@@ -1807,11 +1824,11 @@ static int create_qp(struct ib_uverbs_file *file,
 				}
 			}
 		}
-
-		scq = idr_read_cq(cmd->send_cq_handle, file->ucontext, !!rcq);
+		if (!rx_hash_qp)
+			scq = idr_read_cq(cmd->send_cq_handle, file->ucontext, !!rcq);
 		rcq = rcq ?: scq;
 		pd  = idr_read_pd(cmd->pd_handle, file->ucontext);
-		if (!pd || !scq) {
+		if (!pd || (!scq && !rx_hash_qp)) {
 			ret = -EINVAL;
 			goto err_put;
 		}
@@ -1843,6 +1860,29 @@ static int create_qp(struct ib_uverbs_file *file,
 	if (cmd_sz >= offsetof(typeof(*cmd), create_flags) +
 		      sizeof(cmd->create_flags))
 		attr.create_flags = cmd->create_flags;
+
+	attr.rx_hash_conf = NULL;
+	if (rx_hash_qp) {
+		if (memchr_inv(cmd->rx_hash_conf.reserved, 0,
+			       sizeof(cmd->rx_hash_conf.reserved))) {
+			ret = -EOPNOTSUPP;
+			goto err_put;
+		}
+
+		ind_tbl = idr_read_rwq_indirection_table(cmd->rx_hash_conf.rwq_ind_tbl_handle,
+							 file->ucontext);
+		if (!ind_tbl) {
+			ret = -EINVAL;
+			goto err_put;
+		}
+
+		rx_hash_conf.rwq_ind_tbl = ind_tbl;
+		rx_hash_conf.rx_hash_fields_mask = cmd->rx_hash_conf.rx_hash_fields_mask;
+		rx_hash_conf.rx_hash_function = cmd->rx_hash_conf.rx_hash_function;
+		rx_hash_conf.rx_hash_key = cmd->rx_hash_conf.rx_hash_key;
+		rx_hash_conf.rx_key_len = cmd->rx_hash_conf.rx_key_len;
+		attr.rx_hash_conf = &rx_hash_conf;
+	}
 
 	if (attr.create_flags & ~(IB_QP_CREATE_BLOCK_MULTICAST_LOOPBACK |
 				IB_QP_CREATE_CROSS_CHANNEL |
@@ -1877,16 +1917,20 @@ static int create_qp(struct ib_uverbs_file *file,
 		qp->send_cq	  = attr.send_cq;
 		qp->recv_cq	  = attr.recv_cq;
 		qp->srq		  = attr.srq;
+		qp->rwq_ind_tbl	  = ind_tbl;
 		qp->event_handler = attr.event_handler;
 		qp->qp_context	  = attr.qp_context;
 		qp->qp_type	  = attr.qp_type;
 		atomic_set(&qp->usecnt, 0);
 		atomic_inc(&pd->usecnt);
-		atomic_inc(&attr.send_cq->usecnt);
+		if (!rx_hash_qp)
+			atomic_inc(&attr.send_cq->usecnt);
 		if (attr.recv_cq)
 			atomic_inc(&attr.recv_cq->usecnt);
 		if (attr.srq)
 			atomic_inc(&attr.srq->usecnt);
+		if (ind_tbl)
+			atomic_inc(&ind_tbl->usecnt);
 	}
 	qp->uobject = &obj->uevent.uobject;
 
@@ -1926,6 +1970,8 @@ static int create_qp(struct ib_uverbs_file *file,
 		put_cq_read(rcq);
 	if (srq)
 		put_srq_read(srq);
+	if (ind_tbl)
+		put_rwq_indirection_table_read(ind_tbl);
 
 	mutex_lock(&file->mutex);
 	list_add_tail(&obj->uevent.uobject.list, &file->ucontext->qp_list);
@@ -1953,6 +1999,8 @@ err_put:
 		put_cq_read(rcq);
 	if (srq)
 		put_srq_read(srq);
+	if (ind_tbl)
+		put_rwq_indirection_table_read(ind_tbl);
 
 	put_uobj_write(&obj->uevent.uobject);
 	return ret;

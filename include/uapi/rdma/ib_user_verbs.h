@@ -522,6 +522,15 @@ struct ib_uverbs_create_qp {
 	__u64 driver_data[0];
 };
 
+struct ib_uverbs_hash_conf {
+	__u64 rx_hash_fields_mask; /* enum ib_rx_hash_fields */
+	__u32 rwq_ind_tbl_handle;
+	__u8 rx_hash_function; /* enum ib_rx_hash_function_flags */
+	__u8 rx_key_len; /* valid only for Toeplitz */
+	__u8 rx_hash_key[128]; /* valid only for Toeplitz */
+	__u8 reserved[18];
+};
+
 struct ib_uverbs_ex_create_qp {
 	__u64 user_handle;
 	__u32 pd_handle;
@@ -539,6 +548,7 @@ struct ib_uverbs_ex_create_qp {
 	__u8 reserved;
 	__u32 comp_mask;
 	__u32 create_flags;
+	struct ib_uverbs_hash_conf rx_hash_conf;
 };
 
 struct ib_uverbs_open_qp {
