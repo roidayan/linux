@@ -1005,6 +1005,7 @@ struct ib_qp_init_attr {
 	enum ib_qp_type		qp_type;
 	enum ib_qp_create_flags	create_flags;
 	u8			port_num; /* special QP types only */
+	struct ib_rx_hash_conf	*rx_hash_conf;
 };
 
 struct ib_qp_open_attr {
@@ -1494,6 +1495,40 @@ struct ib_qp {
 	void		       *qp_context;
 	u32			qp_num;
 	enum ib_qp_type		qp_type;
+	struct ib_rwq_ind_table *rwq_ind_tbl;
+};
+
+/* RX Hash function flags */
+enum ib_rx_hash_function_flags {
+	IB_RX_HASH_FUNC_TOEPLITZ	= 1 << 0,
+	IB_RX_HASH_FUNC_XOR		= 1 << 1
+};
+
+/*
+ * RX Hash flags, these flags allows to set which incoming packet's field should
+ * participates in RX Hash. Each flag represent certain packet's field,
+ * when the flag is set the field that is represented by the flag will
+ * participate in RX Hash calculation.
+ * Note: *IPV4 and *IPV6 flags can't be enabled together on the same QP
+ * and *TCP and *UDP flags can't be enabled together on the same QP.
+*/
+enum ib_rx_hash_fields {
+	IB_RX_HASH_SRC_IPV4	= 1 << 0,
+	IB_RX_HASH_DST_IPV4	= 1 << 1,
+	IB_RX_HASH_SRC_IPV6	= 1 << 2,
+	IB_RX_HASH_DST_IPV6	= 1 << 3,
+	IB_RX_HASH_SRC_PORT_TCP	= 1 << 4,
+	IB_RX_HASH_DST_PORT_TCP	= 1 << 5,
+	IB_RX_HASH_SRC_PORT_UDP	= 1 << 6,
+	IB_RX_HASH_DST_PORT_UDP	= 1 << 7
+};
+
+struct ib_rx_hash_conf {
+	enum ib_rx_hash_function_flags rx_hash_function;
+	u8			rx_key_len; /* valid only for Toeplitz */
+	u8			*rx_hash_key;
+	u64			rx_hash_fields_mask; /* enum ib_rx_hash_fields */
+	struct ib_rwq_ind_table *rwq_ind_tbl;
 };
 
 struct ib_mr {

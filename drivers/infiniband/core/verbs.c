@@ -729,6 +729,15 @@ struct ib_qp *ib_create_qp(struct ib_pd *pd,
 	struct ib_qp *qp, *real_qp;
 	struct ib_device *device;
 
+	if (qp_init_attr->rx_hash_conf) {
+		if (qp_init_attr->send_cq || qp_init_attr->recv_cq)
+			return ERR_PTR(-EINVAL);
+		if ((qp_init_attr->qp_type != IB_QPT_UD) ||
+		    (qp_init_attr->qp_type != IB_QPT_RAW_ETHERTYPE) ||
+		    (qp_init_attr->qp_type != IB_QPT_RAW_PACKET))
+			return ERR_PTR(-EINVAL);
+	}
+
 	device = pd ? pd->device : qp_init_attr->xrcd->device;
 	qp = device->create_qp(pd, qp_init_attr, NULL);
 
@@ -737,6 +746,7 @@ struct ib_qp *ib_create_qp(struct ib_pd *pd,
 		qp->real_qp    = qp;
 		qp->uobject    = NULL;
 		qp->qp_type    = qp_init_attr->qp_type;
+		qp->rwq_ind_tbl = NULL;
 
 		atomic_set(&qp->usecnt, 0);
 		if (qp_init_attr->qp_type == IB_QPT_XRC_TGT) {
@@ -764,7 +774,8 @@ struct ib_qp *ib_create_qp(struct ib_pd *pd,
 				qp->srq = NULL;
 			} else {
 				qp->recv_cq = qp_init_attr->recv_cq;
-				atomic_inc(&qp_init_attr->recv_cq->usecnt);
+				if (!qp_init_attr->rx_hash_conf)
+					atomic_inc(&qp_init_attr->recv_cq->usecnt);
 				qp->srq = qp_init_attr->srq;
 				if (qp->srq)
 					atomic_inc(&qp_init_attr->srq->usecnt);
@@ -775,7 +786,12 @@ struct ib_qp *ib_create_qp(struct ib_pd *pd,
 			qp->xrcd    = NULL;
 
 			atomic_inc(&pd->usecnt);
-			atomic_inc(&qp_init_attr->send_cq->usecnt);
+			if (qp_init_attr->rx_hash_conf) {
+				qp->rwq_ind_tbl = qp_init_attr->rx_hash_conf->rwq_ind_tbl;
+				atomic_inc(&qp->rwq_ind_tbl->usecnt);
+			} else {
+				atomic_inc(&qp_init_attr->send_cq->usecnt);
+			}
 		}
 	}
 
@@ -1248,6 +1264,7 @@ int ib_destroy_qp(struct ib_qp *qp)
 	struct ib_pd *pd;
 	struct ib_cq *scq, *rcq;
 	struct ib_srq *srq;
+	struct ib_rwq_ind_table *ind_tbl;
 	int ret;
 
 	if (atomic_read(&qp->usecnt))
@@ -1260,6 +1277,7 @@ int ib_destroy_qp(struct ib_qp *qp)
 	scq  = qp->send_cq;
 	rcq  = qp->recv_cq;
 	srq  = qp->srq;
+	ind_tbl = qp->rwq_ind_tbl;
 
 	ret = qp->device->destroy_qp(qp);
 	if (!ret) {
@@ -1271,6 +1289,8 @@ int ib_destroy_qp(struct ib_qp *qp)
 			atomic_dec(&rcq->usecnt);
 		if (srq)
 			atomic_dec(&srq->usecnt);
+		if (ind_tbl)
+			atomic_dec(&ind_tbl->usecnt);
 	}
 
 	return ret;
