@@ -46,6 +46,7 @@ struct mlx5e_sq_param {
 	u32                        sqc[MLX5_ST_SZ_DW(sqc)];
 	struct mlx5_wq_param       wq;
 	u16                        max_inline;
+	u8                         min_inline_mode;
 };
 
 struct mlx5e_cq_param {
@@ -556,6 +557,9 @@ static int mlx5e_create_sq(struct mlx5e_channel *c,
 	sq->uar_bf_map  = sq->uar.bf_map;
 	sq->bf_buf_size = (1 << MLX5_CAP_GEN(mdev, log_bf_reg_size)) / 2;
 	sq->max_inline  = param->max_inline;
+	sq->min_inline_mode =
+		MLX5_CAP_ETH(mdev, wqe_inline_mode) == MLX5E_INLINE_MODE_VPORT_CONTEXT ?
+		param->min_inline_mode : 0;
 
 	err = mlx5e_alloc_sq_db(sq, cpu_to_node(c->cpu));
 	if (err)
@@ -617,6 +621,7 @@ static int mlx5e_enable_sq(struct mlx5e_sq *sq, struct mlx5e_sq_param *param)
 
 	MLX5_SET(sqc,  sqc, tis_num_0,		priv->tisn[sq->tc]);
 	MLX5_SET(sqc,  sqc, cqn,		c->sq[sq->tc].cq.mcq.cqn);
+	MLX5_SET(sqc,  sqc, min_wqe_inline_mode, sq->min_inline_mode);
 	MLX5_SET(sqc,  sqc, state,		MLX5_SQC_STATE_RST);
 	MLX5_SET(sqc,  sqc, tis_lst_sz,		1);
 	MLX5_SET(sqc,  sqc, flush_in_error_en,	1);
@@ -1065,6 +1070,7 @@ static void mlx5e_build_sq_param(struct mlx5e_priv *priv,
 
 	param->wq.buf_numa_node = dev_to_node(&priv->mdev->pdev->dev);
 	param->max_inline = priv->params.tx_max_inline;
+	param->min_inline_mode = priv->params.tx_min_inline_mode;
 }
 
 static void mlx5e_build_common_cq_param(struct mlx5e_priv *priv,
@@ -2144,6 +2150,23 @@ u16 mlx5e_get_max_inline_cap(struct mlx5_core_dev *mdev)
 	       2 /*sizeof(mlx5e_tx_wqe.inline_hdr_start)*/;
 }
 
+static void mlx5e_query_min_inline(struct mlx5_core_dev *mdev,
+				  u8 *min_inline_mode)
+{
+	switch (MLX5_CAP_ETH(mdev, wqe_inline_mode)) {
+	case MLX5E_INLINE_MODE_L2:
+		*min_inline_mode = MLX5_INLINE_MODE_L2;
+		break;
+	case MLX5E_INLINE_MODE_VPORT_CONTEXT:
+		mlx5_query_nic_vport_min_inline(mdev,
+						min_inline_mode);
+		break;
+	case MLX5_INLINE_MODE_NOT_REQUIRED:
+		*min_inline_mode = MLX5_INLINE_MODE_NONE;
+		break;
+	}
+}
+
 static void mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 				    struct net_device *netdev,
 				    int num_channels)
@@ -2166,6 +2189,7 @@ static void mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 	priv->params.tx_max_inline         = mlx5e_get_max_inline_cap(mdev);
 	priv->params.min_rx_wqes           =
 		MLX5E_PARAMS_DEFAULT_MIN_RX_WQES;
+	mlx5e_query_min_inline(mdev, &priv->params.tx_min_inline_mode);
 	priv->params.num_tc                = 1;
 	priv->params.default_vlan_prio     = 0;
 	priv->params.rss_hfunc             = ETH_RSS_HASH_XOR;
