@@ -135,6 +135,29 @@ static int mlx5_modify_nic_vport_context(struct mlx5_core_dev *mdev, void *in,
 	return mlx5_cmd_exec_check_status(mdev, in, inlen, out, sizeof(out));
 }
 
+int mlx5_query_nic_vport_min_inline(struct mlx5_core_dev *mdev,
+				    u8 *min_inline_mode)
+{
+	u32 *out;
+	int outlen = MLX5_ST_SZ_BYTES(query_nic_vport_context_out);
+	int err;
+
+	out = mlx5_vzalloc(outlen);
+	if (!out)
+		return -ENOMEM;
+
+	err = mlx5_query_nic_vport_context(mdev, 0, out, outlen);
+	if (err)
+		goto out;
+
+	*min_inline_mode = MLX5_GET(query_nic_vport_context_out, out,
+			       nic_vport_context.min_inline_mode);
+out:
+	kvfree(out);
+	return err;
+}
+EXPORT_SYMBOL_GPL(mlx5_query_nic_vport_min_inline);
+
 int mlx5_query_nic_vport_mac_address(struct mlx5_core_dev *mdev,
 				     u16 vport, u8 *addr)
 {

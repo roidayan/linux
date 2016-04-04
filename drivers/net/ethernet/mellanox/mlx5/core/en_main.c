@@ -33,6 +33,7 @@
 #include <linux/mlx5/flow_table.h>
 #include <net/switchdev.h>
 #include <linux/module.h>
+#include <linux/ipv6.h>
 #include "en.h"
 #include "eswitch.h"
 #include "en_rep.h"
@@ -50,6 +51,7 @@ struct mlx5e_sq_param {
 	u32                        sqc[MLX5_ST_SZ_DW(sqc)];
 	struct mlx5_wq_param       wq;
 	u16                        max_inline;
+	u8			   min_inline_mode;
 };
 
 struct mlx5e_cq_param {
@@ -568,6 +570,7 @@ static int mlx5e_create_sq(struct mlx5e_channel *c,
 	sq->uar_bf_map  = sq->uar.bf_map;
 	sq->bf_buf_size = (1 << MLX5_CAP_GEN(mdev, log_bf_reg_size)) / 2;
 	sq->max_inline  = param->max_inline;
+	sq->min_inline_mode = param->min_inline_mode;
 
 	err = mlx5e_alloc_sq_db(sq, cpu_to_node(c->cpu));
 	if (err)
@@ -629,6 +632,7 @@ static int mlx5e_enable_sq(struct mlx5e_sq *sq, struct mlx5e_sq_param *param)
 
 	MLX5_SET(sqc,  sqc, tis_num_0,		priv->tisn[sq->tc]);
 	MLX5_SET(sqc,  sqc, cqn,		c->sq[sq->tc].cq.mcq.cqn);
+	MLX5_SET(sqc,  sqc, min_inline_mode,	param->min_inline_mode);
 	MLX5_SET(sqc,  sqc, state,		MLX5_SQC_STATE_RST);
 	MLX5_SET(sqc,  sqc, tis_lst_sz,		1);
 	MLX5_SET(sqc,  sqc, flush_in_error_en,	1);
@@ -1077,6 +1081,7 @@ static void mlx5e_build_sq_param(struct mlx5e_priv *priv,
 
 	param->wq.buf_numa_node = dev_to_node(&priv->mdev->pdev->dev);
 	param->max_inline = priv->params.tx_max_inline;
+	param->min_inline_mode = params->min_inline_mode;
 }
 
 static void mlx5e_build_common_cq_param(struct mlx5e_priv *priv,
@@ -2157,6 +2162,19 @@ u16 mlx5e_get_max_inline_cap(struct mlx5_core_dev *mdev)
 	       2 /*sizeof(mlx5e_tx_wqe.inline_hdr_start)*/;
 }
 
+u8 mlx5e_get_min_inline_mode(struct mlx5_core_dev *mdev)
+{
+	u8 min_inline_mode;
+	int err;
+
+	err = mlx5_query_nic_vport_min_inline(mdev, &min_inline_mode);
+	if (err) {
+		mlx5_core_err(mdev, "Fail to query min tx inline mode\n");
+		return MLX5_INLINE_MODE_L2;
+	}
+	return min_inline_mode;
+}
+
 static void mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 				    struct net_device *netdev,
 				    int num_channels)
@@ -2177,6 +2195,7 @@ static void mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 	priv->params.tx_cq_moderation_pkts =
 		MLX5E_PARAMS_DEFAULT_TX_CQ_MODERATION_PKTS;
 	priv->params.tx_max_inline         = mlx5e_get_max_inline_cap(mdev);
+	priv->params.min_inline_mode	   = mlx5e_get_min_inline_mode(mdev);
 	priv->params.min_rx_wqes           =
 		MLX5E_PARAMS_DEFAULT_MIN_RX_WQES;
 	priv->params.num_tc                = 1;
@@ -2494,6 +2513,7 @@ int mlx5e_open_rep_channel(struct mlx5e_vf_rep *vf_dev)
 	rep_param.tx_cq_moderation_pkts = priv->params.tx_cq_moderation_pkts;
 	rep_param.min_rx_wqes   = 1;
 	rep_param.tx_max_inline = 0; /* no inline */
+	rep_param.min_inline_mode = mlx5e_get_min_inline_mode(priv->mdev);
 
 	/* FIXME: the shared code uses priv->txq_to_sq_map, does netdev_get_tx_queue calls etc */
 	mlx5e_build_channel_param(priv, &rep_param, &cparam);

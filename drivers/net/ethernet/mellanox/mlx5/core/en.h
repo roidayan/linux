@@ -305,6 +305,7 @@ struct mlx5e_params {
 	bool lro_en;
 	u32 lro_wqe_sz;
 	u16 tx_max_inline;
+	u8  min_inline_mode;
 	u8  rss_hfunc;
 	u8  toeplitz_hash_key[40];
 	u32 indirection_rqt[MLX5E_INDIR_RQT_SIZE];
@@ -407,6 +408,7 @@ struct mlx5e_sq {
 	u32                        sqn;
 	u16                        bf_buf_size;
 	u16                        max_inline;
+	u8			   min_inline_mode;
 	u16                        edge;
 	struct device             *pdev;
 	__be32                     mkey_be;
