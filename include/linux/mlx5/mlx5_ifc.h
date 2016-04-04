@@ -517,7 +517,8 @@ struct mlx5_ifc_per_protocol_networking_offload_caps_bits {
 	u8         self_lb_en_modifiable[0x1];
 	u8         reserved_1[0x2];
 	u8         max_lso_cap[0x5];
-	u8         reserved_2[0x4];
+	u8         reserved_2[0x2];
+	u8	   wqe_inline_mode[0x2];
 	u8         rss_ind_tbl_cap[0x4];
 	u8         reserved_3[0x3];
 	u8         tunnel_lso_const_out_ip_id[0x1];
@@ -4477,7 +4478,8 @@ struct mlx5_ifc_modify_nic_vport_context_out_bits {
 };
 
 struct mlx5_ifc_modify_nic_vport_field_select_bits {
-	u8         reserved_0[0x19];
+	u8         reserved_0[0x18];
+	u8	   min_inline[0x1];
 	u8         mtu[0x1];
 	u8         change_event[0x1];
 	u8         promisc[0x1];

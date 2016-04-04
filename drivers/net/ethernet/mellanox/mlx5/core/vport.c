@@ -222,6 +222,38 @@ int mlx5_modify_nic_vport_mac_address(struct mlx5_core_dev *mdev,
 }
 EXPORT_SYMBOL(mlx5_modify_nic_vport_mac_address);
 
+int mlx5_modify_nic_vport_min_inline(struct mlx5_core_dev *mdev,
+				     u16 vport, int inline_mode)
+{
+	void *in;
+	int inlen = MLX5_ST_SZ_BYTES(modify_nic_vport_context_in);
+	int err;
+	void *nic_vport_ctx;
+
+	in = mlx5_vzalloc(inlen);
+	if (!in) {
+		mlx5_core_warn(mdev, "failed to allocate inbox\n");
+		return -ENOMEM;
+	}
+
+	MLX5_SET(modify_nic_vport_context_in, in,
+		 field_select.min_inline, 1);
+	MLX5_SET(modify_nic_vport_context_in, in, vport_number, vport);
+	MLX5_SET(modify_nic_vport_context_in, in, other_vport, 1);
+
+	nic_vport_ctx = MLX5_ADDR_OF(modify_nic_vport_context_in,
+				     in, nic_vport_context);
+	MLX5_SET(nic_vport_context, nic_vport_ctx,
+		 min_inline_mode, inline_mode);
+
+	err = mlx5_modify_nic_vport_context(mdev, in, inlen);
+
+	kvfree(in);
+
+	return err;
+}
+EXPORT_SYMBOL(mlx5_modify_nic_vport_min_inline);
+
 int mlx5_query_nic_vport_mac_list(struct mlx5_core_dev *dev,
 				  u32 vport,
 				  enum mlx5_list_type list_type,

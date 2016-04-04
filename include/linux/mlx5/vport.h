@@ -47,6 +47,8 @@ int mlx5_query_nic_vport_min_inline(struct mlx5_core_dev *mdev,
 				    u8 *min_inline);
 int mlx5_modify_nic_vport_mac_address(struct mlx5_core_dev *dev,
 				      u16 vport, u8 *addr);
+int mlx5_modify_nic_vport_min_inline(struct mlx5_core_dev *mdev,
+				     u16 vport, int inline_mode);
 int mlx5_query_hca_vport_gid(struct mlx5_core_dev *dev, u8 other_vport,
 			     u8 port_num, u16  vf_num, u16 gid_index,
 			     union ib_gid *gid);
