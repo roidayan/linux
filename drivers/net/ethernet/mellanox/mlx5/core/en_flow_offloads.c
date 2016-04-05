@@ -390,10 +390,9 @@ static int parse_flow_attr(struct mlx5_flow_attr *attr)
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v, dst_ip[3], ntohl(key->ipv4.addr.dst));
 	}
 
-	if ((key->eth.type == ntohs(ETH_P_ARP) || key->eth.type == ntohs(ETH_P_RARP)) &&
-	    (memcmp(&mask->ipv4.arp.sha, zero_mac, ETH_ALEN) || mask->ipv4.addr.src ||
-	    memcmp(&mask->ipv4.arp.tha, zero_mac, ETH_ALEN) || mask->ipv4.addr.dst)) {
-		pr_warn("flow matching on ARP/RARP payload is unsupported\n");
+	if (key->eth.type == htons(ETH_P_ARP) ||
+	    key->eth.type == htons(ETH_P_RARP)) {
+		pr_debug("flow offloading of ARPs is currently disabled\n");
 		goto out_err;
 	}
 
