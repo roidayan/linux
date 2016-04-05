@@ -37,6 +37,10 @@
 #include "eswitch.h"
 #include "en_rep.h"
 
+uint mlx5_eswitch_offload_counters_query_interval = 1000;
+module_param_named(eswitch_offload_counters_query_interval, mlx5_eswitch_offload_counters_query_interval, uint, 0644);
+MODULE_PARM_DESC(eswitch_offload_counters_query_interval, "eswitch_offload_counters_query_interval: Flow Counters query interval in milliseconds Default=1000");
+
 struct mlx5e_rq_param {
 	u32                        rqc[MLX5_ST_SZ_DW(rqc)];
 	struct mlx5_wq_param       wq;
@@ -259,6 +263,13 @@ static void mlx5e_update_stats_work(struct work_struct *work)
 				      msecs_to_jiffies(
 					      MLX5E_UPDATE_STATS_INTERVAL));
 	}
+	if (time_after(jiffies, priv->next_eswitch_stats_update) &&
+	    priv->mdev->priv.eswitch) {
+		priv->next_eswitch_stats_update = jiffies +
+		(mlx5_eswitch_offload_counters_query_interval / 1000) * HZ;
+		mlx5_eswitch_query_all_fcs(priv->mdev->priv.eswitch);
+	}
+
 
 	mutex_unlock(&priv->state_lock);
 }
@@ -2185,6 +2196,7 @@ static void mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 	priv->netdev                       = netdev;
 	priv->params.num_channels          = num_channels;
 	priv->default_vlan_prio            = priv->params.default_vlan_prio;
+	priv->next_eswitch_stats_update    = 0;
 
 	spin_lock_init(&priv->async_events_spinlock);
 	mutex_init(&priv->state_lock);

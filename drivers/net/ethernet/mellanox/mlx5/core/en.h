@@ -551,6 +551,7 @@ struct mlx5e_priv {
 	struct work_struct	 update_encaps_work;
 	struct list_head	 update_encaps_list;
 	spinlock_t               encaps_lock; /* protects update_encaps_list */
+	unsigned long		 next_eswitch_stats_update;
 };
 
 #define MLX5E_NET_IP_ALIGN 2
