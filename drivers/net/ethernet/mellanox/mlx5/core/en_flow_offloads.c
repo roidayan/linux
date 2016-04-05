@@ -903,6 +903,7 @@ flow_set:
 					&flow->flow_index, flow_context);
 	if (err)
 		goto flow_set_failed;
+	mlx5_eswitch_add_fc(eswitch, flow_counter_id);
 	attr->sw_flow->hw_flow_counter_id = flow_counter_id;
 
 	pr_debug("%s added sw_flow %p flow index %x\n", __func__,
@@ -1351,6 +1352,7 @@ int mlx5e_flow_del(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow)
 {
 	struct mlx5_flow_group *group;
 	int err;
+	struct mlx5_eswitch *eswitch;
 
 	struct mlx5_flow_attr attr = {};
 
@@ -1374,6 +1376,8 @@ int mlx5e_flow_del(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow)
 		 group ? atomic_read(&group->kref.refcount) : -100);
 
 	err = __mlx5e_flow_del(&attr, group);
+	eswitch = in_rep->pf_dev->mdev->priv.eswitch;
+	mlx5_eswitch_del_fc(eswitch, sw_flow->hw_flow_counter_id);
 	mlx5_dealloc_flow_counter(in_rep->pf_dev->mdev,
 				  sw_flow->hw_flow_counter_id);
 

@@ -32,6 +32,7 @@
 
 #include <linux/etherdevice.h>
 #include <linux/module.h>
+#include <linux/rwlock.h>
 #include <linux/mlx5/driver.h>
 #include <linux/mlx5/mlx5_ifc.h>
 #include <linux/mlx5/vport.h>
@@ -1196,6 +1197,9 @@ int mlx5_eswitch_init(struct mlx5_core_dev *dev)
 	esw_enable_vport(esw, 0, UC_ADDR_CHANGE);
 	/* VF Vports will be enabled when SRIOV is enabled */
 
+	rwlock_init(&esw->fc_table.lock);
+	esw->fc_table.max_id_in_use = 0;
+
 	return 0;
 abort:
 	if (esw->work_queue)
@@ -1394,4 +1398,105 @@ int mlx5_eswitch_get_vport_stats(struct mlx5_eswitch *esw,
 free_out:
 	kvfree(out);
 	return err;
+}
+
+int mlx5_eswitch_query_all_fcs(struct mlx5_eswitch *esw)
+{
+	int outlen = MLX5_ST_SZ_BYTES(query_flow_counter_out);
+	u32 in[MLX5_ST_SZ_DW(query_flow_counter_in)];
+	struct flow_counter_rec *counter;
+	int err = 0;
+	u32 *out;
+	int id;
+	u64 packets;
+	u64 bytes;
+
+	out = mlx5_vzalloc(outlen);
+	if (!out)
+		return -ENOMEM;
+
+	memset(in, 0, sizeof(in));
+	MLX5_SET(query_flow_counter_in, in, opcode,
+		 MLX5_CMD_OP_QUERY_FLOW_COUNTER);
+	MLX5_SET(query_flow_counter_in, in, op_mod, 0);
+
+	for (id = 0; id <= esw->fc_table.max_id_in_use; id++) {
+		counter = esw->fc_table.counters[id];
+		if (!counter)
+			continue;
+
+		MLX5_SET(query_flow_counter_in, in, flow_counter_id, id);
+
+		memset(out, 0, outlen);
+		err = mlx5_cmd_exec(esw->dev, in, sizeof(in), out, outlen);
+		if (err) {
+			pr_warn("MLX5 E-Switch: failed query flow counter: %d\n",
+				id);
+			continue;
+		}
+
+		packets = MLX5_GET64(query_flow_counter_out, out,
+				     flow_statistics.packets);
+		bytes = MLX5_GET64(query_flow_counter_out, out,
+				   flow_statistics.octets);
+		if (packets != counter->packets) {
+			write_lock(&esw->fc_table.lock);
+			counter->jiffies = jiffies;
+			counter->packets = packets;
+			counter->bytes   = bytes;
+			write_unlock(&esw->fc_table.lock);
+		}
+	}
+	kvfree(out);
+	return 0;
+}
+
+int mlx5_eswitch_get_fc_stats(struct mlx5_eswitch *esw, u16 counter_id,
+			      u64 *packets, u64 *bytes, unsigned long *used)
+{
+	struct flow_counter_rec counter;
+
+	read_lock(&esw->fc_table.lock);
+	if (!esw->fc_table.counters[counter_id]) {
+		pr_err("Trying to get stats from an un-allocated counter id: %d\n",
+		       counter_id);
+		return -1;
+	}
+	counter = *esw->fc_table.counters[counter_id];
+	read_unlock(&esw->fc_table.lock);
+
+	*packets = counter.packets;
+	*bytes   = counter.bytes;
+	*used    = counter.jiffies;
+	return 0;
+}
+
+int mlx5_eswitch_add_fc(struct mlx5_eswitch *esw, u16 counter_id)
+{
+	struct flow_counter_rec *ptr = (struct flow_counter_rec *)
+			kzalloc(sizeof(struct flow_counter_rec), GFP_KERNEL);
+	ptr->jiffies = jiffies;
+	/* save a lock */
+	esw->fc_table.counters[counter_id] = ptr;
+
+	if (esw->fc_table.max_id_in_use < counter_id)
+		esw->fc_table.max_id_in_use = counter_id;
+
+	return 0;
+}
+
+int mlx5_eswitch_del_fc(struct mlx5_eswitch *esw, u16 counter_id)
+{
+	struct flow_counter_rec *counter = esw->fc_table.counters[counter_id];
+
+	write_lock(&esw->fc_table.lock);
+	esw->fc_table.counters[counter_id] = NULL;
+	write_unlock(&esw->fc_table.lock);
+	kfree(counter);
+	return 0;
+}
+
+void mlx5_eswitch_dump_all_fcs(struct mlx5_eswitch *esw)
+{
+	/* TODO maybe via sysfs */
 }

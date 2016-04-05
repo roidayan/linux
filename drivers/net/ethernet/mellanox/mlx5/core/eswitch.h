@@ -128,11 +128,25 @@ struct mlx5_eswitch_fdb {
 	void *fdb;
 };
 
+#define FLOW_COUNTER_TABLE_SIZE (1UL << 15)
+struct flow_counter_rec {
+	u64		packets;
+	u64		bytes;
+	unsigned long	jiffies;
+};
+
+struct flow_counters_table {
+	struct flow_counter_rec *counters[FLOW_COUNTER_TABLE_SIZE];
+	u16			 max_id_in_use;
+	rwlock_t		 lock;
+};
+
 struct mlx5_eswitch {
 	struct mlx5_core_dev    *dev;
 	struct mlx5_l2_table    l2_table;
 	struct mlx5_eswitch_fdb fdb_table;
 	struct hlist_head       mc_table[MLX5_L2_ADDR_HASH_SIZE];
+	struct flow_counters_table fc_table;
 	struct workqueue_struct *work_queue;
 	struct mlx5_vport       *vports;
 	int                     total_vports;
@@ -157,6 +171,12 @@ int mlx5_eswitch_get_vport_config(struct mlx5_eswitch *esw,
 int mlx5_eswitch_get_vport_stats(struct mlx5_eswitch *esw,
 				 int vport,
 				 struct ifla_vf_stats *vf_stats);
+int mlx5_eswitch_query_all_fcs(struct mlx5_eswitch *esw);
+int mlx5_eswitch_get_fc_stats(struct mlx5_eswitch *esw, u16 counter_id,
+			      u64 *packets, u64 *bytes, unsigned long *used);
+int mlx5_eswitch_add_fc(struct mlx5_eswitch *esw, u16 counter_id);
+int mlx5_eswitch_del_fc(struct mlx5_eswitch *esw, u16 counter_id);
+void mlx5_eswitch_dump_all_fcs(struct mlx5_eswitch *esw);
 
 enum {
 	SET_VLAN_STRIP	= BIT(0),
