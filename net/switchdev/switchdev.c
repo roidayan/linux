@@ -275,6 +275,26 @@ int switchdev_port_obj_add(struct net_device *dev, struct switchdev_obj *obj)
 EXPORT_SYMBOL_GPL(switchdev_port_obj_add);
 
 /**
+ *	switchdev_port_obj_stats - fill port stats
+ *
+ *	@dev: port device
+ *	@obj: object to collect stats
+ *	@stats: stats to fill
+ */
+int switchdev_port_obj_stats(struct net_device *dev, struct switchdev_obj *obj,
+			     struct switchdev_stats *stats)
+{
+	const struct switchdev_ops *ops = dev->switchdev_ops;
+	int err = -EOPNOTSUPP;
+
+	if (ops && ops->switchdev_port_obj_stats)
+		return ops->switchdev_port_obj_stats(dev, obj, stats);
+
+	return err;
+}
+EXPORT_SYMBOL_GPL(switchdev_port_obj_stats);
+
+/**
  *	switchdev_port_obj_del - Delete port object
  *
  *	@dev: port device
@@ -1154,6 +1174,20 @@ static void print_flow(const struct sw_flow *flow, struct net_device *dev,
 	pr_debug("            { in_port_ifindex %08x }\n", dev->ifindex);
 	print_flow_actions(flow->actions);
 }
+
+int switchdev_port_flow_stats(struct net_device *dev, struct sw_flow *flow,
+			      struct switchdev_stats *stats)
+{
+	struct switchdev_obj obj = {
+		.id = SWITCHDEV_OBJ_FLOW,
+	};
+
+	obj.u.flow = flow;
+
+	print_flow(flow, dev, "stats");
+	return switchdev_port_obj_stats(dev, &obj, stats);
+}
+EXPORT_SYMBOL_GPL(switchdev_port_flow_stats);
 
 int switchdev_port_flow_add(struct net_device *dev, struct sw_flow *flow)
 {

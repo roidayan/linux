@@ -80,6 +80,12 @@ struct switchdev_obj {
 	} u;
 };
 
+struct switchdev_stats {
+	u64		packets;
+	u64		bytes;
+	unsigned long	used;
+};
+
 /**
  * struct switchdev_ops - switchdev operations
  *
@@ -103,7 +109,10 @@ struct switchdev_ops {
 	int	(*switchdev_port_obj_del)(struct net_device *dev,
 					  struct switchdev_obj *obj);
 	int	(*switchdev_port_obj_dump)(struct net_device *dev,
-					  struct switchdev_obj *obj);
+					   struct switchdev_obj *obj);
+	int	(*switchdev_port_obj_stats)(struct net_device *dev,
+					    struct switchdev_obj *obj,
+					    struct switchdev_stats *stats);
 };
 
 enum switchdev_notifier_type {
@@ -164,6 +173,8 @@ int switchdev_port_fdb_dump(struct sk_buff *skb, struct netlink_callback *cb,
 
 int switchdev_port_flow_add(struct net_device *dev, struct sw_flow *flow);
 int switchdev_port_flow_del(struct net_device *dev, struct sw_flow *flow);
+int switchdev_port_flow_stats(struct net_device *dev, struct sw_flow *flow,
+			      struct switchdev_stats *stats);
 
 #else
 
