@@ -154,9 +154,11 @@ static int parse_tunnel_attr(struct mlx5_flow_attr *attr)
 		return -EOPNOTSUPP;
 	}
 
-	/* TODO: In a VXLAN netdev, the MAC address is filtered based
-	 * on the source port netdev's address. Consider doing it for offloads.
-	 */
+	MLX5_SET_TO_ONES(fte_match_set_lyr_2_4, headers_c, dmac_47_16);
+	MLX5_SET_TO_ONES(fte_match_set_lyr_2_4, headers_c, dmac_15_0);
+	ether_addr_copy(MLX5_ADDR_OF(fte_match_set_lyr_2_4, headers_v,
+				     dmac_47_16),
+			attr->pf_dev->netdev->dev_addr);
 
 	MLX5_SET_TO_ONES(fte_match_set_lyr_2_4, headers_c, ethertype);
 	MLX5_SET(fte_match_set_lyr_2_4, headers_v, ethertype, ETH_P_IP);
