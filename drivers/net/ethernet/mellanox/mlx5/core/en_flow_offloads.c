@@ -461,6 +461,10 @@ struct mlx5_flow {
 	u32 flow_index;
 	struct mlx5e_vf_rep *out_rep;
 	int mlx5_action;
+	/* a copy for encap flows with deferred setup,
+	 * happens in update_flows
+	 */
+	u16 flow_counter_id;
 
 	struct mlx5_flow_group *group;
 	struct list_head group_list; /* flows of the mother group */
@@ -740,10 +744,12 @@ static void mlx5e_update_flows(struct mlx5e_priv *pf_dev,
 	MLX5_SET(flow_context, flow_context, encap_id, e->encap_id);
 
 	MLX5_SET(flow_context, flow_context, action,
+		 MLX5_FLOW_CONTEXT_ACTION_COUNT |
 		 MLX5_FLOW_CONTEXT_ACTION_ENCAP |
 		 MLX5_FLOW_CONTEXT_ACTION_FWD_DEST);
 
 	MLX5_SET(flow_context, flow_context, destination_list_size, 1);
+	MLX5_SET(flow_context, flow_context, flow_counter_list_size, 1);
 
 	dest = MLX5_ADDR_OF(flow_context, flow_context, destination);
 	MLX5_SET(dest_format_struct, dest, destination_type,
@@ -751,10 +757,14 @@ static void mlx5e_update_flows(struct mlx5e_priv *pf_dev,
 	MLX5_SET(dest_format_struct, dest, destination_id,
 		 FDB_UPLINK_VPORT);
 
+	dest += MLX5_ST_SZ_BYTES(dest_format_struct);
+
 	match_value = MLX5_ADDR_OF(flow_context, flow_context, match_value);
 
 	list_for_each_entry(flow, &e->flows, encap) {
 		memcpy(match_value, flow->match_v, sizeof(flow->match_v));
+		MLX5_SET(flow_counter_list, dest,
+			 flow_counter_id, flow->flow_counter_id);
 		err = mlx5_set_flow_group_entry(eswitch->fdb_table.fdb,
 						flow->group->group_ix,
 						&flow->flow_index,
@@ -813,6 +823,7 @@ int mlx5e_flow_set(struct mlx5_flow_attr *attr,
 	int err = -ENOMEM;
 	struct mlx5_eswitch *eswitch = attr->pf_dev->mdev->priv.eswitch;
 	u16 flow_context_action;
+	u16 flow_counter_id = 0;
 
 	/* TODO: handle flows with fwding to > 1 output ports (multiple dests) */
 	flow_context = mlx5_vzalloc(MLX5_ST_SZ_BYTES(flow_context) +
@@ -830,6 +841,12 @@ int mlx5e_flow_set(struct mlx5_flow_attr *attr,
 	flow->group = group;
 	flow->flow_index = INVALID_FLOW_IX;
 
+	if (mlx5_alloc_flow_counter(attr->pf_dev->mdev, &flow_counter_id)) {
+		pr_err("Failed Allocating HW Flow Counter ID.\n");
+		goto alloc_counter_failed;
+	}
+	flow->flow_counter_id = flow_counter_id;
+
 	match_value = MLX5_ADDR_OF(flow_context, flow_context, match_value);
 	memcpy(match_value, attr->match_v, sizeof(flow->match_v));
 
@@ -838,11 +855,19 @@ int mlx5e_flow_set(struct mlx5_flow_attr *attr,
 
 	if (attr->mlx5_action & MLX5_FLOW_ACTION_TYPE_DROP) {
 		MLX5_SET(flow_context, flow_context, action,
-			 MLX5_FLOW_CONTEXT_ACTION_DROP);
+			 MLX5_FLOW_CONTEXT_ACTION_DROP |
+			 MLX5_FLOW_CONTEXT_ACTION_COUNT);
+		MLX5_SET(flow_context, flow_context, destination_list_size, 0);
+		MLX5_SET(flow_context, flow_context, flow_counter_list_size, 1);
+		dest = MLX5_ADDR_OF(flow_context, flow_context, destination);
+		MLX5_SET(flow_counter_list, dest,
+			 flow_counter_id, flow_counter_id);
+
 		goto flow_set;
 	}
 
-	flow_context_action = MLX5_FLOW_CONTEXT_ACTION_FWD_DEST;
+	flow_context_action = MLX5_FLOW_CONTEXT_ACTION_FWD_DEST |
+				MLX5_FLOW_CONTEXT_ACTION_COUNT;
 	if (attr->mlx5_action & MLX5_FLOW_ACTION_TYPE_ENCAP) {
 		err = mlx5e_get_encap(attr, attr->sw_flow->actions->actions);
 		if (!attr->encap)
@@ -861,20 +886,24 @@ int mlx5e_flow_set(struct mlx5_flow_attr *attr,
 		flow_context_action |= MLX5_FLOW_CONTEXT_ACTION_DECAP;
 
 	MLX5_SET(flow_context, flow_context, action, flow_context_action);
-
 	MLX5_SET(flow_context, flow_context, destination_list_size, 1);
+	MLX5_SET(flow_context, flow_context, flow_counter_list_size, 1);
 
 	dest = MLX5_ADDR_OF(flow_context, flow_context, destination);
 	MLX5_SET(dest_format_struct, dest, destination_type,
 		 MLX5_FLOW_CONTEXT_DEST_TYPE_VPORT);
 	MLX5_SET(dest_format_struct, dest, destination_id,
 		 attr->out_rep->vport);
+	dest += MLX5_ST_SZ_BYTES(dest_format_struct);
+	MLX5_SET(flow_counter_list, dest,
+		 flow_counter_id, flow_counter_id);
 
 flow_set:
 	err = mlx5_set_flow_group_entry(eswitch->fdb_table.fdb, group->group_ix,
 					&flow->flow_index, flow_context);
 	if (err)
 		goto flow_set_failed;
+	attr->sw_flow->hw_flow_counter_id = flow_counter_id;
 
 	pr_debug("%s added sw_flow %p flow index %x\n", __func__,
 		 attr->sw_flow, flow->flow_index);
@@ -885,8 +914,10 @@ flow_set_failed:
 	if (attr->mlx5_action & MLX5_FLOW_ACTION_TYPE_ENCAP)
 		mlx5e_detach_encap(attr->pf_dev, flow);
 encap_error:
+	mlx5_dealloc_flow_counter(attr->pf_dev->mdev, flow_counter_id);
 	list_del(&flow->group_list);
 	mlx5e_flow_group_put(group);
+alloc_counter_failed:
 	kfree(flow);
 free_flow_context:
 	kvfree(flow_context);
@@ -1343,6 +1374,8 @@ int mlx5e_flow_del(struct mlx5e_vf_rep *in_rep, struct sw_flow *sw_flow)
 		 group ? atomic_read(&group->kref.refcount) : -100);
 
 	err = __mlx5e_flow_del(&attr, group);
+	mlx5_dealloc_flow_counter(in_rep->pf_dev->mdev,
+				  sw_flow->hw_flow_counter_id);
 
 	pr_debug("%s status %d group %p ref %d index %d\n", __func__, err,
 		 group, atomic_read(&group->kref.refcount), group->group_ix);

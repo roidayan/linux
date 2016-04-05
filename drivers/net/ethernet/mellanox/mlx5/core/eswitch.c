@@ -1075,10 +1075,17 @@ int mlx5_eswitch_enable_sriov(struct mlx5_eswitch *esw, int nvfs, bool flow_offl
 	esw_info(esw->dev, "E-Switch enable SRIOV: nvfs(%d)\n", nvfs);
 	esw_disable_vport(esw, 0);
 
-	if (flow_offloads)
+	if (flow_offloads) {
+		/* Check if the FDB support flow counter */
+		if (!MLX5_CAP_ESW_FLOWTABLE_FDB(esw->dev, flow_counter)) {
+			esw_warn(esw->dev, "E-Switch FDB flow counter is not supported\n");
+			err = -ENOTSUPP;
+			goto abort;
+		}
 		err = esw_create_flow_offloads_fdb_table(esw);
-	else
+	} else {
 		err = esw_create_fdb_table(esw, nvfs + 1);
+	}
 
 	if (err)
 		goto abort;
@@ -1188,6 +1195,7 @@ int mlx5_eswitch_init(struct mlx5_core_dev *dev)
 	dev->priv.eswitch = esw;
 	esw_enable_vport(esw, 0, UC_ADDR_CHANGE);
 	/* VF Vports will be enabled when SRIOV is enabled */
+
 	return 0;
 abort:
 	if (esw->work_queue)
