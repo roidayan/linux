@@ -514,7 +514,8 @@ struct mlx5_ifc_per_protocol_networking_offload_caps_bits {
 	u8         reserved_at_10[0x4];
 	u8         rss_ind_tbl_cap[0x4];
 	u8         reg_umr_sq[0x1];
-	u8         reserved_at_19[0x2];
+	u8         scatter_fcs[0x1];
+	u8         reserved_at_1a[0x1];
 	u8         tunnel_lso_const_out_ip_id[0x1];
 	u8         reserved_at_1c[0x2];
 	u8         tunnel_statless_gre[0x1];
@@ -2257,7 +2258,8 @@ enum {
 
 struct mlx5_ifc_rqc_bits {
 	u8         rlky[0x1];
-	u8         reserved_at_1[0x2];
+	u8         reserved_at_1[0x1];
+	u8         scatter_fcs[0x1];
 	u8         vsd[0x1];
 	u8         mem_rq_type[0x4];
 	u8         state[0x4];
