@@ -244,7 +244,6 @@ int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 	ASSERT_OVSL();
 	BUG_ON(flow->flow.actions);
 
-	flow->hw_offloaded = 0;
 	dev = ovs_hw_flow_adjust(dp, flow);
 
 	err = sw_flow_action_create(dp, &actions, flow->sf_acts);
