@@ -562,6 +562,7 @@ enum ib_event_type {
 	IB_EVENT_QP_LAST_WQE_REACHED,
 	IB_EVENT_CLIENT_REREGISTER,
 	IB_EVENT_GID_CHANGE,
+	IB_EVENT_WQ_FATAL,
 };
 
 const char *__attribute_const__ ib_event_msg(enum ib_event_type event);
@@ -572,6 +573,7 @@ struct ib_event {
 		struct ib_cq	*cq;
 		struct ib_qp	*qp;
 		struct ib_srq	*srq;
+		struct ib_wq	*wq;
 		u8		port_num;
 	} element;
 	enum ib_event_type	event;
@@ -1003,6 +1005,7 @@ struct ib_qp_init_attr {
 	enum ib_qp_type		qp_type;
 	enum ib_qp_create_flags	create_flags;
 	u8			port_num; /* special QP types only */
+	struct ib_rx_hash_conf	*rx_hash_conf;
 };
 
 struct ib_qp_open_attr {
@@ -1311,6 +1314,8 @@ struct ib_ucontext {
 	struct list_head	ah_list;
 	struct list_head	xrcd_list;
 	struct list_head	rule_list;
+	struct list_head	wq_list;
+	struct list_head	rwq_ind_tbl_list;
 	int			closing;
 
 	struct pid             *tgid;
@@ -1416,6 +1421,63 @@ struct ib_srq {
 	} ext;
 };
 
+enum ib_wq_type {
+	IB_WQT_RQ
+};
+
+enum ib_wq_state {
+	IB_WQS_RESET,
+	IB_WQS_RDY,
+	IB_WQS_ERR
+};
+
+struct ib_wq {
+	struct ib_device       *device;
+	struct ib_uobject      *uobject;
+	void		    *wq_context;
+	void		    (*event_handler)(struct ib_event *, void *);
+	struct ib_pd	       *pd;
+	struct ib_cq	       *cq;
+	u32		wq_num;
+	enum ib_wq_state       state;
+	enum ib_wq_type	wq_type;
+	atomic_t		usecnt;
+};
+
+struct ib_wq_init_attr {
+	void		       *wq_context;
+	enum ib_wq_type	wq_type;
+	u32		max_wr;
+	u32		max_sge;
+	struct	ib_cq	       *cq;
+	void		    (*event_handler)(struct ib_event *, void *);
+};
+
+enum ib_wq_attr_mask {
+	IB_WQ_STATE	= 1 << 0,
+	IB_WQ_CUR_STATE	= 1 << 1,
+};
+
+struct ib_wq_attr {
+	enum	ib_wq_state	wq_state;
+	enum	ib_wq_state	curr_wq_state;
+};
+
+struct ib_rwq_ind_table {
+	struct ib_device	*device;
+	struct ib_uobject      *uobject;
+	atomic_t		usecnt;
+	u32		ind_tbl_num;
+	u32		log_ind_tbl_size;
+	struct ib_wq	**ind_tbl;
+};
+
+struct ib_rwq_ind_table_init_attr {
+	u32		log_ind_tbl_size;
+	/* Each entry is a pointer to Receive Work Queue */
+	struct ib_wq	**ind_tbl;
+};
+
 struct ib_qp {
 	struct ib_device       *device;
 	struct ib_pd	       *pd;
@@ -1433,6 +1495,40 @@ struct ib_qp {
 	void		       *qp_context;
 	u32			qp_num;
 	enum ib_qp_type		qp_type;
+	struct ib_rwq_ind_table *rwq_ind_tbl;
+};
+
+/* RX Hash function flags */
+enum ib_rx_hash_function_flags {
+	IB_RX_HASH_FUNC_TOEPLITZ	= 1 << 0,
+	IB_RX_HASH_FUNC_XOR		= 1 << 1
+};
+
+/*
+ * RX Hash flags, these flags allows to set which incoming packet's field should
+ * participates in RX Hash. Each flag represent certain packet's field,
+ * when the flag is set the field that is represented by the flag will
+ * participate in RX Hash calculation.
+ * Note: *IPV4 and *IPV6 flags can't be enabled together on the same QP
+ * and *TCP and *UDP flags can't be enabled together on the same QP.
+*/
+enum ib_rx_hash_fields {
+	IB_RX_HASH_SRC_IPV4	= 1 << 0,
+	IB_RX_HASH_DST_IPV4	= 1 << 1,
+	IB_RX_HASH_SRC_IPV6	= 1 << 2,
+	IB_RX_HASH_DST_IPV6	= 1 << 3,
+	IB_RX_HASH_SRC_PORT_TCP	= 1 << 4,
+	IB_RX_HASH_DST_PORT_TCP	= 1 << 5,
+	IB_RX_HASH_SRC_PORT_UDP	= 1 << 6,
+	IB_RX_HASH_DST_PORT_UDP	= 1 << 7
+};
+
+struct ib_rx_hash_conf {
+	enum ib_rx_hash_function_flags rx_hash_function;
+	u8			rx_key_len; /* valid only for Toeplitz */
+	u8			*rx_hash_key;
+	u64			rx_hash_fields_mask; /* enum ib_rx_hash_fields */
+	struct ib_rwq_ind_table *rwq_ind_tbl;
 };
 
 struct ib_mr {
@@ -1878,7 +1974,18 @@ struct ib_device {
 						   struct ifla_vf_stats *stats);
 	int			   (*set_vf_guid)(struct ib_device *device, int vf, u8 port, u64 guid,
 						  int type);
-
+	struct ib_wq *		   (*create_wq)(struct ib_pd *pd,
+						struct ib_wq_init_attr *init_attr,
+						struct ib_udata *udata);
+	int			   (*destroy_wq)(struct ib_wq *wq);
+	int			   (*modify_wq)(struct ib_wq *wq,
+						struct ib_wq_attr *attr,
+						u32 wq_attr_mask,
+						struct ib_udata *udata);
+	struct ib_rwq_ind_table *  (*create_rwq_ind_table)(struct ib_device *device,
+							   struct ib_rwq_ind_table_init_attr *init_attr,
+							   struct ib_udata *udata);
+	int                        (*destroy_rwq_ind_table)(struct ib_rwq_ind_table *wq_ind_table);
 	struct ib_dma_mapping_ops   *dma_ops;
 
 	struct module               *owner;
@@ -3110,6 +3217,15 @@ int ib_check_mr_status(struct ib_mr *mr, u32 check_mask,
 struct net_device *ib_get_net_dev_by_params(struct ib_device *dev, u8 port,
 					    u16 pkey, const union ib_gid *gid,
 					    const struct sockaddr *addr);
+struct ib_wq *ib_create_wq(struct ib_pd *pd,
+			   struct ib_wq_init_attr *init_attr);
+int ib_destroy_wq(struct ib_wq *wq);
+int ib_modify_wq(struct ib_wq *wq, struct ib_wq_attr *attr,
+		 u32 wq_attr_mask);
+struct ib_rwq_ind_table *ib_create_rwq_ind_table(struct ib_device *device,
+						 struct ib_rwq_ind_table_init_attr*
+						 wq_ind_table_init_attr);
+int ib_destroy_rwq_ind_table(struct ib_rwq_ind_table *wq_ind_table);
 
 int ib_map_mr_sg(struct ib_mr *mr,
 		 struct scatterlist *sg,
