@@ -228,6 +228,7 @@ static int parse_flow_attr(struct mlx5_flow_attr *attr)
 				    misc_parameters);
 	void *misc_v = MLX5_ADDR_OF(fte_match_param, attr->match_v,
 				    misc_parameters);
+	int min_inline = MLX5_INLINE_MODE_L2;
 
 	u8 zero_mac[ETH_ALEN];
 
@@ -319,16 +320,19 @@ static int parse_flow_attr(struct mlx5_flow_attr *attr)
 	if (mask->ip.proto) {
 		MLX5_SET(fte_match_set_lyr_2_4, headers_c, ip_protocol, mask->ip.proto);
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v, ip_protocol, key->ip.proto);
+		min_inline = MLX5_INLINE_MODE_IP;
 	}
 
 	if (mask->ip.tos >> 2) {
 		MLX5_SET(fte_match_set_lyr_2_4, headers_c, ip_dscp, mask->ip.tos >> 2);
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v, ip_dscp, key->ip.tos  >> 2);
+		min_inline = MLX5_INLINE_MODE_IP;
 	}
 
 	if (mask->ip.tos & 0x3) {
 		MLX5_SET(fte_match_set_lyr_2_4, headers_c, ip_ecn, mask->ip.tos & 0x3);
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v, ip_ecn, key->ip.tos  & 0x3);
+		min_inline = MLX5_INLINE_MODE_IP;
 	}
 
 	if (mask->ip.ttl) {
@@ -340,20 +344,35 @@ static int parse_flow_attr(struct mlx5_flow_attr *attr)
 	if (mask->ip.frag && key->ip.frag == OVS_FRAG_TYPE_NONE) {
 		MLX5_SET(fte_match_set_lyr_2_4, headers_c, frag, 1);
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v, frag, 0);
+		min_inline = MLX5_INLINE_MODE_IP;
 	} else if (mask->ip.frag && key->ip.frag != OVS_FRAG_TYPE_NONE) {
 		pr_warn("offloading fragmented traffic is unsupported\n");
 		goto out_err;
+	}
+
+	if (mask->ipv4.addr.src && key->eth.type == ntohs(ETH_P_IP)) {
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, src_ip[3], ntohl(mask->ipv4.addr.src));
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, src_ip[3], ntohl(key->ipv4.addr.src));
+		min_inline = MLX5_INLINE_MODE_IP;
+	}
+
+	if (mask->ipv4.addr.dst && key->eth.type == ntohs(ETH_P_IP)) {
+		MLX5_SET(fte_match_set_lyr_2_4, headers_c, dst_ip[3], ntohl(mask->ipv4.addr.dst));
+		MLX5_SET(fte_match_set_lyr_2_4, headers_v, dst_ip[3], ntohl(key->ipv4.addr.dst));
+		min_inline = MLX5_INLINE_MODE_IP;
 	}
 
 	/* PRM mandates ip protocol full match to set rules on UDP/TCP ports using one rule */
 	if (mask->tp.src && mask->ip.proto && key->ip.proto == IPPROTO_TCP) {
 		MLX5_SET(fte_match_set_lyr_2_4, headers_c, tcp_sport, ntohs(mask->tp.src));
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v, tcp_sport, ntohs(key->tp.src));
+		min_inline = MLX5_INLINE_MODE_TCP_UDP;
 	}
 
 	if (mask->tp.dst && mask->ip.proto && key->ip.proto == IPPROTO_TCP) {
 		MLX5_SET(fte_match_set_lyr_2_4, headers_c, tcp_dport, ntohs(mask->tp.dst));
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v, tcp_dport, ntohs(key->tp.dst));
+		min_inline = MLX5_INLINE_MODE_TCP_UDP;
 	}
 
 	if (mask->tp.flags) {
@@ -367,27 +386,20 @@ static int parse_flow_attr(struct mlx5_flow_attr *attr)
 			 ntohs(mask->tp.flags));
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v, tcp_flags,
 			 ntohs(key->tp.flags));
+		min_inline = MLX5_INLINE_MODE_TCP_UDP;
 	}
 
 	/* PRM mandates ip protocol full match to set rules on UDP/TCP ports using one rule */
 	if (mask->tp.src && mask->ip.proto && key->ip.proto == IPPROTO_UDP) {
 		MLX5_SET(fte_match_set_lyr_2_4, headers_c, udp_sport, ntohs(mask->tp.src));
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v, udp_sport, ntohs(key->tp.src));
+		min_inline = MLX5_INLINE_MODE_TCP_UDP;
 	}
 
 	if (mask->tp.dst && mask->ip.proto && key->ip.proto == IPPROTO_UDP) {
 		MLX5_SET(fte_match_set_lyr_2_4, headers_c, udp_dport, ntohs(mask->tp.dst));
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v, udp_dport, ntohs(key->tp.dst));
-	}
-
-	if (mask->ipv4.addr.src && key->eth.type == ntohs(ETH_P_IP)) {
-		MLX5_SET(fte_match_set_lyr_2_4, headers_c, src_ip[3], ntohl(mask->ipv4.addr.src));
-		MLX5_SET(fte_match_set_lyr_2_4, headers_v, src_ip[3], ntohl(key->ipv4.addr.src));
-	}
-
-	if (mask->ipv4.addr.dst && key->eth.type == ntohs(ETH_P_IP)) {
-		MLX5_SET(fte_match_set_lyr_2_4, headers_c, dst_ip[3], ntohl(mask->ipv4.addr.dst));
-		MLX5_SET(fte_match_set_lyr_2_4, headers_v, dst_ip[3], ntohl(key->ipv4.addr.dst));
+		min_inline = MLX5_INLINE_MODE_TCP_UDP;
 	}
 
 	if (key->eth.type == htons(ETH_P_ARP) ||
@@ -399,6 +411,15 @@ static int parse_flow_attr(struct mlx5_flow_attr *attr)
 	/* FIXME: add IPv6 src/dst addressed */
 	if (mask->ipv6.label) {
 		/* TODO use the misc section and put the flow label there */
+	}
+
+	if (min_inline > mlx5_flow_offload_min_inline_mode &&
+	    attr->in_rep->vport != FDB_UPLINK_VPORT) {
+		dev_warn_ratelimited(
+			&attr->pf_dev->netdev->dev,
+			"Flow is not offloaded due to min inline setting, required = %d actual = %d\n",
+			min_inline, mlx5_flow_offload_min_inline_mode);
+		goto out_err;
 	}
 
 

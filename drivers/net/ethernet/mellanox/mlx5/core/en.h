@@ -226,6 +226,7 @@ static const char pport_strings[][ETH_GSTRING_LEN] = {
 };
 
 extern const struct switchdev_ops mlx5e_pf_switchdev_ops;
+extern int mlx5_flow_offload_min_inline_mode;
 
 #define NUM_IEEE_802_3_COUNTERS		19
 #define NUM_RFC_2863_COUNTERS		13
