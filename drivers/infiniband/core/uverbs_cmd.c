@@ -1887,7 +1887,8 @@ static int create_qp(struct ib_uverbs_file *file,
 	if (attr.create_flags & ~(IB_QP_CREATE_BLOCK_MULTICAST_LOOPBACK |
 				IB_QP_CREATE_CROSS_CHANNEL |
 				IB_QP_CREATE_MANAGED_SEND |
-				IB_QP_CREATE_MANAGED_RECV)) {
+				IB_QP_CREATE_MANAGED_RECV |
+				IB_QP_CREATE_SCATTER_FCS)) {
 		ret = -EINVAL;
 		goto err_put;
 	}
@@ -4159,6 +4160,11 @@ int ib_uverbs_ex_query_device(struct ib_uverbs_file *file,
 	resp.lso_caps.lso_cap = attr.lso_caps.lso_cap;
 	resp.response_length += sizeof(resp.lso_caps);
 
+	if (ucore->outlen < resp.response_length + sizeof(resp.device_cap_flags_ex))
+		goto end;
+
+	resp.device_cap_flags_ex = attr.device_cap_flags;
+	resp.response_length += sizeof(resp.device_cap_flags_ex);
 end:
 	err = ib_copy_to_udata(ucore, &resp, resp.response_length);
 	return err;
