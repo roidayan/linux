@@ -293,7 +293,7 @@ int ovs_hw_flow_remove(struct datapath *dp, struct ovs_flow *flow)
 				flow, &flow->flow, flow->id.ufid[0], flow->id.ufid[1], flow->id.ufid[2], flow->id.ufid[3]);
 	}
 
-	dev = ovs_hw_flow_adjust(dp, flow);
+	dev = flow->hw_sw_dev;
 
 	if (!flow->flow.actions) {
 		err = sw_flow_action_create(dp, &actions, flow->sf_acts);
