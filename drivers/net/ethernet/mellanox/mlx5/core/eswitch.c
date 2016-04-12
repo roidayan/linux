@@ -1438,13 +1438,20 @@ int mlx5_eswitch_query_all_fcs(struct mlx5_eswitch *esw)
 				     flow_statistics.packets);
 		bytes = MLX5_GET64(query_flow_counter_out, out,
 				   flow_statistics.octets);
+
+		write_lock(&esw->fc_table.lock);
+		/* the counter might have been deleted by now */
+		counter = esw->fc_table.counters[id];
+		if (!counter) {
+			write_unlock(&esw->fc_table.lock);
+			continue;
+		}
 		if (packets != counter->packets) {
-			write_lock(&esw->fc_table.lock);
 			counter->jiffies = jiffies;
 			counter->packets = packets;
 			counter->bytes   = bytes;
-			write_unlock(&esw->fc_table.lock);
 		}
+		write_unlock(&esw->fc_table.lock);
 	}
 	kvfree(out);
 	return 0;
