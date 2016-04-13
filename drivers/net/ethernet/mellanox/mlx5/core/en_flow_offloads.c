@@ -330,9 +330,14 @@ static int parse_flow_attr(struct mlx5_flow_attr *attr)
 	}
 
 	if (mask->ip.tos & 0x3) {
-		MLX5_SET(fte_match_set_lyr_2_4, headers_c, ip_ecn, mask->ip.tos & 0x3);
-		MLX5_SET(fte_match_set_lyr_2_4, headers_v, ip_ecn, key->ip.tos  & 0x3);
-		min_inline = MLX5_INLINE_MODE_IP;
+		if ((key->ip.tos & 0x3) == 0) {
+			MLX5_SET(fte_match_set_lyr_2_4, headers_c, ip_ecn, mask->ip.tos & 0x3);
+			MLX5_SET(fte_match_set_lyr_2_4, headers_v, ip_ecn, key->ip.tos  & 0x3);
+		} else {
+			printk(KERN_ERR "%s non zero ECN is currently not supported\n",
+					       __func__);
+				goto out_err;
+		}
 	}
 
 	if (mask->ip.ttl) {
