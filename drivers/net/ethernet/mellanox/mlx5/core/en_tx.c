@@ -120,19 +120,18 @@ u16 mlx5e_select_queue(struct net_device *dev, struct sk_buff *skb,
 static unsigned int mlx5e_calc_min_inline(enum mlx5_inline_modes mode,
 					  struct sk_buff *skb, u16 max_inline)
 {
-#define TCP_MIN_HLEN 20
-
 	switch (mode) {
 	case MLX5_INLINE_MODE_NONE:
 		return 0;
 	case MLX5_INLINE_MODE_L2:
-		return ETH_HLEN;
+		return min_t(unsigned int, skb_headlen(skb),
+			     ETH_HLEN + VLAN_HLEN);
 	case MLX5_INLINE_MODE_IP:
 		skb_probe_transport_header(skb, ETH_HLEN);
 		return skb_transport_offset(skb);
 	case MLX5_INLINE_MODE_TCP_UDP:
-		skb_probe_transport_header(skb, ETH_HLEN);
-		return skb_transport_offset(skb) + TCP_MIN_HLEN;
+		return eth_get_headlen(skb->data,
+				       min_t(unsigned int, max_inline, skb_headlen(skb)));
 	}
 	return 0;
 }
