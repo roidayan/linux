@@ -344,7 +344,22 @@ static int parse_flow_attr(struct mlx5_flow_attr *attr)
 	if (mask->ip.frag && key->ip.frag == OVS_FRAG_TYPE_NONE) {
 		MLX5_SET(fte_match_set_lyr_2_4, headers_c, frag, 1);
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v, frag, 0);
-		min_inline = MLX5_INLINE_MODE_IP;
+		/* min_inline = MLX5_INLINE_MODE_IP;
+		 * When OVS works in L2 forwarding mode (normal action)
+		 * it adds a no fragment match criteria.
+		 * The reason for the match is unclear,
+		 * and we don't won't to penalize all the users the
+		 * work in MLX5_INLINE_MODE_L2, so we ignore it.
+		 *
+		 * The side effect of this is that the user can't treat fragment
+		 * and non fragment traffic differently. If we a vm is allowed
+		 * to send non fragmented traffic then it will also be able to
+		 * send non fragmented traffic.
+		 *
+		 * Ideally we would remove the no fragment match entirely, but
+		 * then we might get 3 different rules with the same match and
+		 * the driver doesn't support this at this point.
+		 */
 	} else if (mask->ip.frag && key->ip.frag != OVS_FRAG_TYPE_NONE) {
 		pr_warn("offloading fragmented traffic is unsupported\n");
 		goto out_err;
