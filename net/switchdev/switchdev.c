@@ -1184,7 +1184,6 @@ int switchdev_port_flow_stats(struct net_device *dev, struct sw_flow *flow,
 
 	obj.u.flow = flow;
 
-	print_flow(flow, dev, "stats");
 	return switchdev_port_obj_stats(dev, &obj, stats);
 }
 EXPORT_SYMBOL_GPL(switchdev_port_flow_stats);
