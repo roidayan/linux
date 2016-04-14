@@ -308,7 +308,6 @@ int ovs_hw_flow_remove(struct datapath *dp, struct ovs_flow *flow)
 	}
 	kfree(flow->flow.actions);
 	flow->flow.actions = NULL;
-	flow->hw_sw_dev = NULL;
 	return err;
 }
 
