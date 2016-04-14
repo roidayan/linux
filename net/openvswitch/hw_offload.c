@@ -343,8 +343,8 @@ int ovs_hw_flow_stats(struct ovs_flow *flow,
 	int err = 0;
 
 	if (!flow->hw_sw_dev) {
-		pr_err("Offloaded flow without HW Switch dev. %s ovs flow %p sw_flow %p\n",
-		       __func__, flow, &flow->flow);
+		pr_debug("Offloaded flow without HW Switch dev. %s ovs flow %p sw_flow %p\n",
+			 __func__, flow, &flow->flow);
 		return -1;
 	}
 	err = switchdev_port_flow_stats(flow->hw_sw_dev, &flow->flow,
