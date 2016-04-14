@@ -1234,7 +1234,7 @@ static int __mlx5e_flow_del(struct mlx5_flow_attr *attr,
 		return -EINVAL;
 	}
 
-	printk(KERN_ERR "%s deleting flow index %x \n", __func__, flow->flow_index);
+	pr_debug("%s deleting flow index %x \n", __func__, flow->flow_index);
 
 
 	if (flow->mlx5_action & MLX5_FLOW_ACTION_TYPE_VLAN_PUSH ||

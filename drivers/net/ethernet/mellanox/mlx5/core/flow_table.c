@@ -565,7 +565,7 @@ int mlx5_get_free_flow_group(void *flow_table, int start, int end)
 	for (i = start; i < end; i++) {
 		g = &ft->group[i].g;
 
-		printk(KERN_ERR "%s index %d MCE %x\n",__func__, i, g->match_criteria_enable);
+		pr_debug("%s index %d MCE %x\n",__func__, i, g->match_criteria_enable);
 
 		if(g->match_criteria_enable == 0)
 			return i;
@@ -588,7 +588,7 @@ int mlx5_recreate_flow_group(void *flow_table, int g_index, struct mlx5_flow_tab
 	ftg = &ft->group[g_index];
 
 	/* destory the group in its previous form */
-	printk("%s destroying flow group: id %d start_ix %x log_sz %d\n",__func__, ftg->id, ftg->start_ix, g->log_sz);
+	pr_debug("%s destroying flow group: id %d start_ix %x log_sz %d\n",__func__, ftg->id, ftg->start_ix, g->log_sz);
 	__mlx5_destroy_flow_group_cmd(ft, ftg->id);
 
 	memcpy(&ftg->g, g, sizeof(*g));

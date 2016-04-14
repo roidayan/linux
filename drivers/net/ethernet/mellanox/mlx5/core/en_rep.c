@@ -1014,7 +1014,7 @@ u32 handle_fdb_flow_tag(struct net_device *dev, struct sk_buff *skb, u32 flow_ta
 
 	if (skb_vlan_tag_present(skb) && vf_rep->vst_refcount) {
 		if (net_ratelimit())
-			netdev_warn(dev, "%s removing vlan %x from skb, tag %x\n",
+			netdev_info(dev, "%s removing vlan %x from skb, tag %x\n",
 				    __func__, skb->vlan_tci, flow_tag);
 		skb->vlan_proto = 0;
 		skb->vlan_tci = 0;
