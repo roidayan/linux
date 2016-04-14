@@ -1464,8 +1464,9 @@ int mlx5_eswitch_get_fc_stats(struct mlx5_eswitch *esw, u16 counter_id,
 
 	read_lock(&esw->fc_table.lock);
 	if (!esw->fc_table.counters[counter_id]) {
-		pr_err("Trying to get stats from an un-allocated counter id: %d\n",
-		       counter_id);
+		pr_debug("Trying to get stats from an un-allocated counter id: %d\n",
+			 counter_id);
+		read_unlock(&esw->fc_table.lock);
 		return -1;
 	}
 	counter = *esw->fc_table.counters[counter_id];
