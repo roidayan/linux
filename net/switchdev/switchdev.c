@@ -268,7 +268,7 @@ int switchdev_port_obj_add(struct net_device *dev, struct switchdev_obj *obj)
 	err = __switchdev_port_obj_add(dev, obj);
 	/* TODO: remove this when mlx5 moved to do all checks in the prepare phase */
 	if (err != -EOPNOTSUPP)
-		WARN(err, "%s: Commit of object (id=%d) failed err %d.\n", dev->name, obj->id, err);
+		WARN_ONCE(err, "%s: Commit of object (id=%d) failed err %d.\n", dev->name, obj->id, err);
 
 	return err;
 }
