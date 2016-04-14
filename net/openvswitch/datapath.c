@@ -966,8 +966,10 @@ static int ovs_flow_cmd_new(struct sk_buff *skb, struct genl_info *info)
 			goto err_unlock_ovs;
 		}
 		error = ovs_hw_flow_insert(dp, new_flow);
-		if (error && error != -ENODEV)
+		if (error && error != -ENODEV && error != -EOPNOTSUPP)
 			pr_warn("%s failed to insert flow into hw err %d\n", __func__, error);
+		if (error && error != -ENODEV && error == -EOPNOTSUPP)
+			pr_debug("%s failed to insert flow into hw err %d\n", __func__, error);
 
 		if (unlikely(reply)) {
 			error = ovs_flow_cmd_fill_info(new_flow,

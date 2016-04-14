@@ -86,11 +86,8 @@ static int sw_flow_action_create(struct datapath *dp,
 
 				vport = ovs_vport_ovsl_rcu(dp, nla_get_u32(a));
 
-				if (vport->ops->type != OVS_VPORT_TYPE_NETDEV) {
-					pr_warn("unexpected output port type %d\n",
-						vport->ops->type);
+				if (vport->ops->type != OVS_VPORT_TYPE_NETDEV)
 					goto errout;
-				}
 
 				cur->type = SW_FLOW_ACTION_TYPE_OUTPUT;
 				cur->out_port_ifindex =
@@ -266,7 +263,7 @@ int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 	} else {
 		pr_debug("%s ovs flow %p sw_flow %p offloaded -- added \n", __func__, flow, &flow->flow);
 		if (ovs_identifier_is_ufid(&flow->id))
-			printk(KERN_ERR "%s ovs flow %p sw_flow %p ID %.8x %.8x %.8x %.8x\n", __func__,
+			pr_debug("%s ovs flow %p sw_flow %p ID %.8x %.8x %.8x %.8x\n", __func__,
 				flow, &flow->flow, flow->id.ufid[0], flow->id.ufid[1], flow->id.ufid[2], flow->id.ufid[3]);
 		flow->hw_offloaded = 1;
 		flow->hw_sw_dev = dev;
@@ -288,7 +285,7 @@ int ovs_hw_flow_remove(struct datapath *dp, struct ovs_flow *flow)
 	else {
 		pr_debug("%s ovs flow %p sw_flow %p offloaded -- deleted\n", __func__, flow, &flow->flow);
 		if (ovs_identifier_is_ufid(&flow->id))
-			printk(KERN_ERR "%s ovs flow %p sw_flow %p ID %.8x %.8x %.8x %.8x\n", __func__,
+			pr_debug("%s ovs flow %p sw_flow %p ID %.8x %.8x %.8x %.8x\n", __func__,
 				flow, &flow->flow, flow->id.ufid[0], flow->id.ufid[1], flow->id.ufid[2], flow->id.ufid[3]);
 	}
 
