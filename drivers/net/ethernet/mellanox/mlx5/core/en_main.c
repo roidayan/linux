@@ -3211,6 +3211,8 @@ static void *mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 	mlx5e_enable_async_events(priv);
 	queue_work(priv->wq, &priv->set_rx_mode_work);
 
+	mlx5_lag_add_slave(mdev, netdev);
+
 	return priv;
 
 err_unregister_netdev:
@@ -3266,6 +3268,7 @@ static void mlx5e_destroy_netdev(struct mlx5_core_dev *mdev, void *vpriv)
 
 	set_bit(MLX5E_STATE_DESTROYING, &priv->state);
 
+	mlx5_lag_remove_slave(mdev);
 	queue_work(priv->wq, &priv->set_rx_mode_work);
 	mlx5e_disable_async_events(priv);
 	flush_workqueue(priv->wq);
