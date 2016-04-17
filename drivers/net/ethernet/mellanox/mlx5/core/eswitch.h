@@ -133,12 +133,12 @@ struct flow_counter_rec {
 	u64		packets;
 	u64		bytes;
 	unsigned long	jiffies;
+	bool		on;
 };
 
 struct flow_counters_table {
-	struct flow_counter_rec *counters[FLOW_COUNTER_TABLE_SIZE];
+	struct flow_counter_rec counters[FLOW_COUNTER_TABLE_SIZE];
 	u16			 max_id_in_use;
-	rwlock_t		 lock;
 };
 
 struct mlx5_eswitch {

@@ -1196,7 +1196,6 @@ int mlx5_eswitch_init(struct mlx5_core_dev *dev)
 	esw_enable_vport(esw, 0, UC_ADDR_CHANGE);
 	/* VF Vports will be enabled when SRIOV is enabled */
 
-	rwlock_init(&esw->fc_table.lock);
 	esw->fc_table.max_id_in_use = 0;
 
 	return 0;
@@ -1420,8 +1419,8 @@ int mlx5_eswitch_query_all_fcs(struct mlx5_eswitch *esw)
 	MLX5_SET(query_flow_counter_in, in, op_mod, 0);
 
 	for (id = 0; id <= esw->fc_table.max_id_in_use; id++) {
-		counter = esw->fc_table.counters[id];
-		if (!counter)
+		counter = &esw->fc_table.counters[id];
+		if (!counter->on)
 			continue;
 
 		MLX5_SET(query_flow_counter_in, in, flow_counter_id, id);
@@ -1439,19 +1438,15 @@ int mlx5_eswitch_query_all_fcs(struct mlx5_eswitch *esw)
 		bytes = MLX5_GET64(query_flow_counter_out, out,
 				   flow_statistics.octets);
 
-		write_lock(&esw->fc_table.lock);
 		/* the counter might have been deleted by now */
-		counter = esw->fc_table.counters[id];
-		if (!counter) {
-			write_unlock(&esw->fc_table.lock);
+		if (!esw->fc_table.counters[id].on)
 			continue;
-		}
+
 		if (packets != counter->packets) {
 			counter->jiffies = jiffies;
 			counter->packets = packets;
 			counter->bytes   = bytes;
 		}
-		write_unlock(&esw->fc_table.lock);
 	}
 	kvfree(out);
 	return 0;
@@ -1460,31 +1455,24 @@ int mlx5_eswitch_query_all_fcs(struct mlx5_eswitch *esw)
 int mlx5_eswitch_get_fc_stats(struct mlx5_eswitch *esw, u16 counter_id,
 			      u64 *packets, u64 *bytes, unsigned long *used)
 {
-	struct flow_counter_rec counter;
+	struct flow_counter_rec *counter = &esw->fc_table.counters[counter_id];
 
-	read_lock(&esw->fc_table.lock);
-	if (!esw->fc_table.counters[counter_id]) {
+	if (!counter->on) {
 		pr_debug("Trying to get stats from an un-allocated counter id: %d\n",
 			 counter_id);
-		read_unlock(&esw->fc_table.lock);
 		return -1;
 	}
-	counter = *esw->fc_table.counters[counter_id];
-	read_unlock(&esw->fc_table.lock);
 
-	*packets = counter.packets;
-	*bytes   = counter.bytes;
-	*used    = counter.jiffies;
+	*packets = counter->packets;
+	*bytes   = counter->bytes;
+	*used    = counter->jiffies;
 	return 0;
 }
 
 int mlx5_eswitch_add_fc(struct mlx5_eswitch *esw, u16 counter_id)
 {
-	struct flow_counter_rec *ptr = (struct flow_counter_rec *)
-			kzalloc(sizeof(struct flow_counter_rec), GFP_KERNEL);
-	ptr->jiffies = jiffies;
-	/* save a lock */
-	esw->fc_table.counters[counter_id] = ptr;
+	esw->fc_table.counters[counter_id].jiffies = jiffies;
+	esw->fc_table.counters[counter_id].on = true;
 
 	if (esw->fc_table.max_id_in_use < counter_id)
 		esw->fc_table.max_id_in_use = counter_id;
@@ -1494,12 +1482,7 @@ int mlx5_eswitch_add_fc(struct mlx5_eswitch *esw, u16 counter_id)
 
 int mlx5_eswitch_del_fc(struct mlx5_eswitch *esw, u16 counter_id)
 {
-	struct flow_counter_rec *counter = esw->fc_table.counters[counter_id];
-
-	write_lock(&esw->fc_table.lock);
-	esw->fc_table.counters[counter_id] = NULL;
-	write_unlock(&esw->fc_table.lock);
-	kfree(counter);
+	esw->fc_table.counters[counter_id].on = false;
 	return 0;
 }
 
