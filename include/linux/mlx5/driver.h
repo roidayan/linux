@@ -487,6 +487,7 @@ struct mlx5_fc_stats {
 };
 
 struct mlx5_eswitch;
+struct lag_dev;
 
 struct mlx5_priv {
 	char			name[MLX5_MAX_NAME_LEN];
@@ -545,6 +546,7 @@ struct mlx5_priv {
 	struct mlx5_flow_steering *steering;
 	struct mlx5_eswitch     *eswitch;
 	struct mlx5_core_sriov	sriov;
+	struct lag_dev		*lag_ctx;
 	unsigned long		pci_dev_data;
 	struct mlx5_fc_stats		fc_stats;
 };
@@ -962,6 +964,10 @@ void *mlx5_get_protocol_dev(struct mlx5_core_dev *mdev, int protocol);
 int mlx5_register_interface(struct mlx5_interface *intf);
 void mlx5_unregister_interface(struct mlx5_interface *intf);
 int mlx5_core_query_vendor_id(struct mlx5_core_dev *mdev, u32 *vendor_id);
+
+void mlx5_lag_add_slave(struct mlx5_core_dev *dev, struct net_device *netdev);
+void mlx5_lag_remove_slave(struct mlx5_core_dev *dev);
+bool mlx5_lag_is_active(struct mlx5_core_dev *dev);
 
 struct mlx5_profile {
 	u64	mask;
