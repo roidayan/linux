@@ -776,16 +776,18 @@ static int min_inline_mode2max_bytes(enum mlx5_inline_modes mode)
 {
 /* IPv4/IPv6 header can include also ip options/extended headers */
 #define MAX_IP_HLEN 60
+/* TCP header can include also extended headers */
+#define MAX_TCP_UDP_HLEN 60
 
 	switch (mode) {
 	case MLX5_INLINE_MODE_NONE:
 		return 0;
 	case MLX5_INLINE_MODE_L2:
-		return ETH_HLEN;
+		return ETH_HLEN + VLAN_HLEN;
 	case MLX5_INLINE_MODE_IP:
 		return ETH_HLEN + MAX_IP_HLEN;
 	case MLX5_INLINE_MODE_TCP_UDP:
-		return ETH_HLEN + MAX_IP_HLEN + sizeof(struct tcphdr);
+		return ETH_HLEN + MAX_IP_HLEN + MAX_TCP_UDP_HLEN;
 	}
 	return 0;
 }
