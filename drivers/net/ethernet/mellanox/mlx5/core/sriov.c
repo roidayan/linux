@@ -42,7 +42,7 @@
 
 int mlx5_flow_offload_min_inline_mode = MLX5_INLINE_MODE_L2;
 module_param_named(flow_offload_min_inline, mlx5_flow_offload_min_inline_mode, int, 0644);
-MODULE_PARM_DESC(flow_offload_min_inline, "flow_offload_min_inline: minimum required headres to be copy on the wqe. Default = 1 (L2 headres are required)");
+MODULE_PARM_DESC(flow_offload_min_inline, "flow_offload_min_inline: minimum required headers to be copy on the wqe. Default = 1 (1=L2 headers, 2=L3, 3=L4)");
 
 static void enable_vfs(struct mlx5_core_dev *dev, int num_vfs)
 {
