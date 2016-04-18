@@ -237,6 +237,7 @@ struct ib_uverbs_ex_query_device_resp {
 	__u64 timestamp_mask;
 	__u64 hca_core_clock; /* in KHZ */
 	struct ib_uverbs_lso_caps lso_caps;
+	__u64 device_cap_flags_ex;
 };
 
 struct ib_uverbs_query_port {
