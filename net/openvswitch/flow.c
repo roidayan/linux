@@ -143,7 +143,6 @@ void ovs_flow_stats_get(const struct ovs_flow *flow,
 
 	if (flow->hw_offloaded) {
 		ovs_hw_flow_stats(flow, ovs_stats, used);
-		return;
 	}
 
 	for_each_node(node) {
