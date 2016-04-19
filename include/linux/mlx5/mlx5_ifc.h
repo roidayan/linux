@@ -139,6 +139,8 @@ enum {
 	MLX5_CMD_OP_ALLOC_Q_COUNTER               = 0x771,
 	MLX5_CMD_OP_DEALLOC_Q_COUNTER             = 0x772,
 	MLX5_CMD_OP_QUERY_Q_COUNTER               = 0x773,
+	MLX5_CMD_OP_SET_RATE_LIMIT                = 0x780,
+	MLX5_CMD_OP_QUERY_RATE_LIMIT              = 0x781,
 	MLX5_CMD_OP_ALLOC_PD                      = 0x800,
 	MLX5_CMD_OP_DEALLOC_PD                    = 0x801,
 	MLX5_CMD_OP_ALLOC_UAR                     = 0x802,
@@ -505,6 +507,17 @@ struct mlx5_ifc_e_switch_cap_bits {
 	u8         reserved_at_20[0x7e0];
 };
 
+struct mlx5_ifc_qos_cap_bits {
+	u8         packet_pacing[0x1];
+	u8         reserved_0[0x1f];
+	u8         reserved_1[0x20];
+	u8         packet_pacing_max_rate[0x20];
+	u8         packet_pacing_min_rate[0x20];
+	u8         reserved_2[0x10];
+	u8         packet_pacing_rate_table_size[0x10];
+	u8         reserved_3[0x760];
+};
+
 struct mlx5_ifc_per_protocol_networking_offload_caps_bits {
 	u8         csum_cap[0x1];
 	u8         vlan_cap[0x1];
@@ -803,7 +816,7 @@ struct mlx5_ifc_cmd_hca_cap_bits {
 	u8         tph[0x1];
 	u8         rf[0x1];
 	u8         dct[0x1];
-	u8         reserved_at_21b[0x1];
+	u8         qos[0x1];
 	u8         eth_net_offloads[0x1];
 	u8         roce[0x1];
 	u8         atomic[0x1];
@@ -2018,6 +2031,7 @@ union mlx5_ifc_hca_cap_union_bits {
 	struct mlx5_ifc_flow_table_eswitch_cap_bits flow_table_eswitch_cap;
 	struct mlx5_ifc_e_switch_cap_bits e_switch_cap;
 	struct mlx5_ifc_vector_calc_cap_bits vector_calc_cap;
+	struct mlx5_ifc_qos_cap_bits qos_cap;
 	u8         reserved_at_0[0x8000];
 };
 
@@ -6352,6 +6366,30 @@ struct mlx5_ifc_add_vxlan_udp_dport_in_bits {
 
 	u8         reserved_at_60[0x10];
 	u8         vxlan_udp_port[0x10];
+};
+
+struct mlx5_ifc_set_rate_limit_out_bits {
+	u8         status[0x8];
+	u8         reserved_at_8[0x18];
+
+	u8         syndrome[0x20];
+
+	u8         reserved_at_40[0x40];
+};
+
+struct mlx5_ifc_set_rate_limit_in_bits {
+	u8         opcode[0x10];
+	u8         reserved_at_10[0x10];
+
+	u8         reserved_at_20[0x10];
+	u8         op_mod[0x10];
+
+	u8         reserved_at_40[0x10];
+	u8         rate_limit_index[0x10];
+
+	u8         reserved_at_60[0x20];
+
+	u8         rate_limit[0x20];
 };
 
 struct mlx5_ifc_access_register_out_bits {
