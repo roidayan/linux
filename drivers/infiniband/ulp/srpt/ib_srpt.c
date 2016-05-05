@@ -249,12 +249,15 @@ static void srpt_set_ioc(u8 *c_list, u32 slot, u8 value)
 static void srpt_get_class_port_info(struct ib_dm_mad *mad)
 {
 	struct ib_class_port_info *cif;
+	char *p_cap_mask2;
 
 	cif = (struct ib_class_port_info *)mad->data;
 	memset(cif, 0, sizeof(*cif));
 	cif->base_version = 1;
 	cif->class_version = 1;
-	cif->resp_time_value = 20;
+
+	p_cap_mask2 = (char *)&cif->cap_mask2_resp_time;
+	p_cap_mask2[3] = 20;
 
 	mad->mad_hdr.status = 0;
 }
