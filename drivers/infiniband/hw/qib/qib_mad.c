@@ -1158,6 +1158,7 @@ static int pma_get_classportinfo(struct ib_pma_mad *pmp,
 	struct ib_class_port_info *p =
 		(struct ib_class_port_info *)pmp->data;
 	struct qib_devdata *dd = dd_from_ibdev(ibdev);
+	char *p_cap_mask2;
 
 	memset(pmp->data, 0, sizeof(pmp->data));
 
@@ -1172,11 +1173,12 @@ static int pma_get_classportinfo(struct ib_pma_mad *pmp,
 	 * Set the most significant bit of CM2 to indicate support for
 	 * congestion statistics
 	 */
-	p->reserved[0] = dd->psxmitwait_supported << 7;
+	p_cap_mask2 = (char *)&p->cap_mask2_resp_time;
+	p_cap_mask2[0] = dd->psxmitwait_supported << 7;
 	/*
 	 * Expected response time is 4.096 usec. * 2^18 == 1.073741824 sec.
 	 */
-	p->resp_time_value = 18;
+	p_cap_mask2[3] = 18;
 
 	return reply((struct ib_smp *) pmp);
 }
