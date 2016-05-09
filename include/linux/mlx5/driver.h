@@ -968,6 +968,7 @@ int mlx5_core_query_vendor_id(struct mlx5_core_dev *mdev, u32 *vendor_id);
 void mlx5_lag_add_slave(struct mlx5_core_dev *dev, struct net_device *netdev);
 void mlx5_lag_remove_slave(struct mlx5_core_dev *dev);
 bool mlx5_lag_is_active(struct mlx5_core_dev *dev);
+struct net_device *mlx5_lag_get_roce_netdev(struct mlx5_core_dev *dev);
 
 struct mlx5_profile {
 	u64	mask;
