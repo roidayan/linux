@@ -2571,6 +2571,47 @@ destroy_flow_table:
 	return err;
 }
 
+static int mlx5_roce_lag_init(struct mlx5_ib_dev *dev)
+{
+	struct mlx5_core_dev *mdev = dev->mdev;
+	struct mlx5_flow_namespace *ns = mlx5_get_flow_namespace(mdev,
+								 MLX5_FLOW_NAMESPACE_LAG);
+	struct mlx5_flow_table *ft;
+	int err;
+
+	if (!ns || !mlx5_lag_is_active(mdev))
+		return 0;
+
+	err = mlx5_core_create_vport_lag(mdev);
+	if (err)
+		return err;
+
+	ft = mlx5_create_lag_demux_flow_table(ns, 0, 0);
+	if (IS_ERR(ft)) {
+		err = PTR_ERR(ft);
+		goto err_destroy_vport_lag;
+	}
+
+	dev->flow_db.lag_demux_ft = ft;
+	return 0;
+
+err_destroy_vport_lag:
+	mlx5_core_destroy_vport_lag(mdev);
+	return err;
+}
+
+static void mlx5_roce_lag_cleanup(struct mlx5_ib_dev *dev)
+{
+	struct mlx5_core_dev *mdev = dev->mdev;
+
+	if (dev->flow_db.lag_demux_ft) {
+		mlx5_destroy_flow_table(dev->flow_db.lag_demux_ft);
+		dev->flow_db.lag_demux_ft = NULL;
+
+		mlx5_core_destroy_vport_lag(mdev);
+	}
+}
+
 static int mlx5_enable_roce(struct mlx5_ib_dev *dev)
 {
 	int err;
@@ -2584,10 +2625,17 @@ static int mlx5_enable_roce(struct mlx5_ib_dev *dev)
 	if (err)
 		goto err_unregister_netdevice_notifier;
 
+	err = mlx5_roce_lag_init(dev);
+	if (err)
+		goto err_disable_roce;
+
 	/* RoCE can be supported without flow steering*/
 	mlx5_init_roce_steering(dev);
 
 	return 0;
+
+err_disable_roce:
+	mlx5_nic_vport_disable_roce(dev->mdev);
 
 err_unregister_netdevice_notifier:
 	unregister_netdevice_notifier(&dev->roce.nb);
@@ -2608,6 +2656,7 @@ static void mlx5_cleanup_roce_steering(struct mlx5_ib_dev *dev)
 static void mlx5_disable_roce(struct mlx5_ib_dev *dev)
 {
 	mlx5_cleanup_roce_steering(dev);
+	mlx5_roce_lag_cleanup(dev);
 	mlx5_nic_vport_disable_roce(dev->mdev);
 	unregister_netdevice_notifier(&dev->roce.nb);
 }
