@@ -2124,26 +2124,34 @@ static int modify_raw_packet_qp(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
 	struct mlx5_ib_raw_packet_qp *raw_packet_qp = &qp->raw_packet_qp;
 	struct mlx5_ib_rq *rq = &raw_packet_qp->rq;
 	struct mlx5_ib_sq *sq = &raw_packet_qp->sq;
-	int rq_state;
-	int sq_state;
+	bool modify_rq = false, modify_sq = false;
+	int rq_state = MLX5_RQC_STATE_RST;
+	int sq_state = MLX5_SQC_STATE_RST;
 	int err;
 
 	switch (operation) {
 	case MLX5_CMD_OP_RST2INIT_QP:
 		rq_state = MLX5_RQC_STATE_RDY;
+		modify_rq = true;
+		break;
+	case MLX5_CMD_OP_RTR2RTS_QP:
 		sq_state = MLX5_SQC_STATE_RDY;
+		modify_sq = true;
 		break;
 	case MLX5_CMD_OP_2ERR_QP:
 		rq_state = MLX5_RQC_STATE_ERR;
 		sq_state = MLX5_SQC_STATE_ERR;
+		modify_rq = true;
+		modify_sq = true;
 		break;
 	case MLX5_CMD_OP_2RST_QP:
 		rq_state = MLX5_RQC_STATE_RST;
 		sq_state = MLX5_SQC_STATE_RST;
+		modify_rq = true;
+		modify_sq = true;
 		break;
 	case MLX5_CMD_OP_INIT2INIT_QP:
 	case MLX5_CMD_OP_INIT2RTR_QP:
-	case MLX5_CMD_OP_RTR2RTS_QP:
 	case MLX5_CMD_OP_RTS2RTS_QP:
 		/* Nothing to do here... */
 		return 0;
@@ -2152,13 +2160,16 @@ static int modify_raw_packet_qp(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
 		return -EINVAL;
 	}
 
-	if (qp->rq.wqe_cnt) {
+	modify_rq &= !!qp->rq.wqe_cnt;
+	modify_sq &= !!qp->sq.wqe_cnt;
+
+	if (modify_rq) {
 		err =  modify_raw_packet_qp_rq(dev->mdev, rq, rq_state);
 		if (err)
 			return err;
 	}
 
-	if (qp->sq.wqe_cnt)
+	if (modify_sq)
 		return modify_raw_packet_qp_sq(dev->mdev, sq, sq_state);
 
 	return 0;
