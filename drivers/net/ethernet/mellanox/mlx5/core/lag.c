@@ -113,6 +113,31 @@ static int mlx5_cmd_destroy_lag(struct mlx5_core_dev *dev)
 					  sizeof(out));
 }
 
+int mlx5_core_create_vport_lag(struct mlx5_core_dev *dev)
+{
+	u32  in[MLX5_ST_SZ_DW(create_vport_lag_in)]  = {0};
+	u32 out[MLX5_ST_SZ_DW(create_vport_lag_out)] = {0};
+
+	MLX5_SET(create_vport_lag_in, in, opcode, MLX5_CMD_OP_CREATE_VPORT_LAG);
+
+	return mlx5_cmd_exec_check_status(dev, in, sizeof(in), out,
+					  sizeof(out));
+}
+EXPORT_SYMBOL(mlx5_core_create_vport_lag);
+
+int mlx5_core_destroy_vport_lag(struct mlx5_core_dev *dev)
+{
+	u32  in[MLX5_ST_SZ_DW(destroy_vport_lag_in)]  = {0};
+	u32 out[MLX5_ST_SZ_DW(destroy_vport_lag_out)] = {0};
+
+	MLX5_SET(destroy_vport_lag_in, in, opcode,
+		 MLX5_CMD_OP_DESTROY_VPORT_LAG);
+
+	return mlx5_cmd_exec_check_status(dev, in, sizeof(in), out,
+					  sizeof(out));
+}
+EXPORT_SYMBOL(mlx5_core_destroy_vport_lag);
+
 static struct lag_dev *mlx5_lag_dev_get(struct mlx5_core_dev *dev)
 {
 	return dev->priv.lag_ctx;
