@@ -111,13 +111,35 @@ static int mlx5_netdev_event(struct notifier_block *this,
 	struct mlx5_ib_dev *ibdev = container_of(this, struct mlx5_ib_dev,
 						 roce.nb);
 
-	if ((event != NETDEV_UNREGISTER) && (event != NETDEV_REGISTER))
-		return NOTIFY_DONE;
+	switch (event) {
+	case NETDEV_REGISTER:
+	case NETDEV_UNREGISTER:
+		write_lock(&ibdev->roce.netdev_lock);
+		if (ndev->dev.parent == &ibdev->mdev->pdev->dev)
+			ibdev->roce.netdev = (event == NETDEV_UNREGISTER) ?
+					     NULL : ndev;
+		write_unlock(&ibdev->roce.netdev_lock);
+		break;
 
-	write_lock(&ibdev->roce.netdev_lock);
-	if (ndev->dev.parent == &ibdev->mdev->pdev->dev)
-		ibdev->roce.netdev = (event == NETDEV_UNREGISTER) ? NULL : ndev;
-	write_unlock(&ibdev->roce.netdev_lock);
+	case NETDEV_UP:
+	case NETDEV_DOWN: {
+		struct ib_event ibev = {0};
+
+		if (ndev == ibdev->roce.netdev) {
+			if (ibdev->ib_active) {
+				ibev.device = &ibdev->ib_dev;
+				ibev.event = (event == NETDEV_UP) ?
+					     IB_EVENT_PORT_ACTIVE : IB_EVENT_PORT_ERR;
+				ibev.element.port_num = 1;
+				ib_dispatch_event(&ibev);
+			}
+		}
+		break;
+	}
+
+	default:
+		break;
+	}
 
 	return NOTIFY_DONE;
 }
@@ -2028,14 +2050,19 @@ static void mlx5_ib_event(struct mlx5_core_dev *dev, void *context,
 		break;
 
 	case MLX5_DEV_EVENT_PORT_UP:
-		ibev.event = IB_EVENT_PORT_ACTIVE;
-		port = (u8)param;
-		break;
-
 	case MLX5_DEV_EVENT_PORT_DOWN:
 	case MLX5_DEV_EVENT_PORT_INITIALIZED:
-		ibev.event = IB_EVENT_PORT_ERR;
 		port = (u8)param;
+
+		/* In RoCE, port up/down events are handled in
+		 * mlx5_netdev_event().
+		 */
+		if (mlx5_ib_port_link_layer(&ibdev->ib_dev, port) ==
+			IB_LINK_LAYER_ETHERNET)
+			return;
+
+		ibev.event = (event == MLX5_DEV_EVENT_PORT_UP) ?
+			     IB_EVENT_PORT_ACTIVE : IB_EVENT_PORT_ERR;
 		break;
 
 	case MLX5_DEV_EVENT_LID_CHANGE:
