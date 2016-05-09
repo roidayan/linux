@@ -502,7 +502,8 @@ static struct mlx5_flow_group *alloc_flow_group(u32 *create_fg_in)
 }
 
 static struct mlx5_flow_table *alloc_flow_table(int level, u16 vport, int max_fte,
-						enum fs_flow_table_type table_type)
+						enum fs_flow_table_type table_type,
+						enum fs_flow_table_op_mod op_mod)
 {
 	struct mlx5_flow_table *ft;
 
@@ -512,6 +513,7 @@ static struct mlx5_flow_table *alloc_flow_table(int level, u16 vport, int max_ft
 
 	ft->level = level;
 	ft->node.type = FS_TYPE_FLOW_TABLE;
+	ft->op_mod = op_mod;
 	ft->type = table_type;
 	ft->vport = vport;
 	ft->max_fte = max_fte;
@@ -752,6 +754,7 @@ static void list_add_flow_table(struct mlx5_flow_table *ft,
 }
 
 static struct mlx5_flow_table *__mlx5_create_flow_table(struct mlx5_flow_namespace *ns,
+							enum fs_flow_table_op_mod op_mod,
 							u16 vport, int prio,
 							int max_fte, u32 level)
 {
@@ -784,18 +787,29 @@ static struct mlx5_flow_table *__mlx5_create_flow_table(struct mlx5_flow_namespa
 	level += fs_prio->start_level;
 	ft = alloc_flow_table(level,
 			      vport,
-			      roundup_pow_of_two(max_fte),
-			      root->table_type);
+			      max_fte ? roundup_pow_of_two(max_fte) : 0,
+			      root->table_type,
+			      op_mod);
 	if (!ft) {
 		err = -ENOMEM;
 		goto unlock_root;
 	}
 
 	tree_init_node(&ft->node, 1, del_flow_table);
-	log_table_sz = ilog2(ft->max_fte);
 	next_ft = find_next_chained_ft(fs_prio);
-	err = root->cmds->create_flow_table(root->dev, ft->vport, ft->type, ft->level,
-					    log_table_sz, next_ft, &ft->id);
+
+	if (ft->op_mod == FS_FT_OP_MOD_LAG_DEMUX) {
+		err = root->cmds->create_lag_demux_flow_table(root->dev,
+							      ft->level,
+							      next_ft,
+							      &ft->id);
+	} else {
+		log_table_sz = ilog2(ft->max_fte);
+		err = root->cmds->create_flow_table(root->dev, ft->vport,
+						    ft->type, ft->level,
+						    log_table_sz, next_ft,
+						    &ft->id);
+	}
 	if (err)
 		goto free_ft;
 
@@ -822,15 +836,26 @@ struct mlx5_flow_table *mlx5_create_flow_table(struct mlx5_flow_namespace *ns,
 					       int prio, int max_fte,
 					       u32 level)
 {
-	return __mlx5_create_flow_table(ns, 0, prio, max_fte, level);
+	return __mlx5_create_flow_table(ns, FS_FT_OP_MOD_NORMAL, 0, prio,
+					max_fte, level);
 }
 
 struct mlx5_flow_table *mlx5_create_vport_flow_table(struct mlx5_flow_namespace *ns,
 						     int prio, int max_fte,
 						     u32 level, u16 vport)
 {
-	return __mlx5_create_flow_table(ns, vport, prio, max_fte, level);
+	return __mlx5_create_flow_table(ns, FS_FT_OP_MOD_NORMAL, vport, prio,
+					max_fte, level);
 }
+
+struct mlx5_flow_table *mlx5_create_lag_demux_flow_table(
+					       struct mlx5_flow_namespace *ns,
+					       int prio, u32 level)
+{
+	return __mlx5_create_flow_table(ns, FS_FT_OP_MOD_LAG_DEMUX, 0, prio, 0,
+					level);
+}
+EXPORT_SYMBOL(mlx5_create_lag_demux_flow_table);
 
 struct mlx5_flow_table *mlx5_create_auto_grouped_flow_table(struct mlx5_flow_namespace *ns,
 							    int prio,
