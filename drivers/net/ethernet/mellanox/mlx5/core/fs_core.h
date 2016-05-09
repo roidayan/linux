@@ -53,6 +53,11 @@ enum fs_flow_table_type {
 	FS_FT_SNIFFER_TX	= 0X6,
 };
 
+enum fs_flow_table_op_mod {
+	FS_FT_OP_MOD_NORMAL,
+	FS_FT_OP_MOD_LAG_DEMUX,
+};
+
 enum fs_fte_status {
 	FS_FTE_STATUS_EXISTING = 1UL << 0,
 };
@@ -103,6 +108,7 @@ struct mlx5_flow_table {
 	unsigned int			max_fte;
 	unsigned int			level;
 	enum fs_flow_table_type		type;
+	enum fs_flow_table_op_mod	op_mod;
 	struct {
 		bool			active;
 		unsigned int		required_groups;

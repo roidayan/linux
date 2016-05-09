@@ -97,6 +97,38 @@ static int mlx5_cmd_create_flow_table(struct mlx5_core_dev *dev,
 	return err;
 }
 
+static int mlx5_cmd_create_lag_demux_flow_table(struct mlx5_core_dev *dev,
+						unsigned int level,
+						struct mlx5_flow_table *next_ft,
+						unsigned int *table_id)
+{
+	u32 out[MLX5_ST_SZ_DW(create_flow_table_out)];
+	u32 in[MLX5_ST_SZ_DW(create_flow_table_in)];
+	int err;
+
+	memset(in, 0, sizeof(in));
+
+	MLX5_SET(create_flow_table_in, in, opcode,
+		 MLX5_CMD_OP_CREATE_FLOW_TABLE);
+	MLX5_SET(create_flow_table_in, in, op_mod, 0x1);
+
+	if (next_ft)
+		MLX5_SET(create_flow_table_in, in, lag_master_next_table_id,
+			 next_ft->id);
+
+	MLX5_SET(create_flow_table_in, in, table_type, FS_FT_NIC_RX);
+	MLX5_SET(create_flow_table_in, in, level, level);
+
+	memset(out, 0, sizeof(out));
+	err = mlx5_cmd_exec_check_status(dev, in, sizeof(in), out,
+					 sizeof(out));
+
+	if (!err)
+		*table_id = MLX5_GET(create_flow_table_out, out,
+				     table_id);
+	return err;
+}
+
 static int mlx5_cmd_destroy_flow_table(struct mlx5_core_dev *dev,
 				       struct mlx5_flow_table *ft)
 {
@@ -133,17 +165,32 @@ static int mlx5_cmd_modify_flow_table(struct mlx5_core_dev *dev,
 		 MLX5_CMD_OP_MODIFY_FLOW_TABLE);
 	MLX5_SET(modify_flow_table_in, in, table_type, ft->type);
 	MLX5_SET(modify_flow_table_in, in, table_id, ft->id);
-	if (ft->vport) {
-		MLX5_SET(modify_flow_table_in, in, vport_number, ft->vport);
-		MLX5_SET(modify_flow_table_in, in, other_vport, 1);
-	}
-	MLX5_SET(modify_flow_table_in, in, modify_field_select,
-		 MLX5_MODIFY_FLOW_TABLE_MISS_TABLE_ID);
-	if (next_ft) {
-		MLX5_SET(modify_flow_table_in, in, table_miss_mode, 1);
-		MLX5_SET(modify_flow_table_in, in, table_miss_id, next_ft->id);
+
+	if (ft->op_mod == FS_FT_OP_MOD_LAG_DEMUX) {
+		MLX5_SET(modify_flow_table_in, in, modify_field_select,
+			 MLX5_MODIFY_FLOW_TABLE_LAG_NEXT_TABLE_ID);
+		if (next_ft) {
+			MLX5_SET(modify_flow_table_in, in,
+				 lag_master_next_table_id, next_ft->id);
+		} else {
+			MLX5_SET(modify_flow_table_in, in,
+				 lag_master_next_table_id, 0);
+		}
 	} else {
-		MLX5_SET(modify_flow_table_in, in, table_miss_mode, 0);
+		if (ft->vport) {
+			MLX5_SET(modify_flow_table_in, in, vport_number,
+				 ft->vport);
+			MLX5_SET(modify_flow_table_in, in, other_vport, 1);
+		}
+		MLX5_SET(modify_flow_table_in, in, modify_field_select,
+			 MLX5_MODIFY_FLOW_TABLE_MISS_TABLE_ID);
+		if (next_ft) {
+			MLX5_SET(modify_flow_table_in, in, table_miss_mode, 1);
+			MLX5_SET(modify_flow_table_in, in, table_miss_id,
+				 next_ft->id);
+		} else {
+			MLX5_SET(modify_flow_table_in, in, table_miss_mode, 0);
+		}
 	}
 
 	return mlx5_cmd_exec_check_status(dev, in, sizeof(in), out,
@@ -427,6 +474,14 @@ static int mlx5_cmd_virt_create_flow_table(struct mlx5_core_dev *dev, u16 vport,
 	return 0;
 }
 
+static int mlx5_cmd_virt_create_lag_demux_flow_table(struct mlx5_core_dev *dev,
+						     unsigned int level,
+						     struct mlx5_flow_table *next_ft,
+						     unsigned int *table_id)
+{
+	return 0;
+}
+
 static int mlx5_cmd_virt_destroy_flow_table(struct mlx5_core_dev *dev,
 					    struct mlx5_flow_table *ft)
 {
@@ -482,6 +537,7 @@ static int mlx5_cmd_virt_delete_fte(struct mlx5_core_dev *dev,
 static const struct steering_cmds steering_cmds = {
 	.update_root_ft		= mlx5_cmd_update_root_ft,
 	.create_flow_table	= mlx5_cmd_create_flow_table,
+	.create_lag_demux_flow_table = mlx5_cmd_create_lag_demux_flow_table,
 	.destroy_flow_table	= mlx5_cmd_destroy_flow_table,
 	.modify_flow_table	= mlx5_cmd_modify_flow_table,
 	.create_flow_group	= mlx5_cmd_create_flow_group,
@@ -494,6 +550,7 @@ static const struct steering_cmds steering_cmds = {
 static const struct steering_cmds steering_virt_cmds = {
 	.update_root_ft		= mlx5_cmd_virt_update_root_ft,
 	.create_flow_table	= mlx5_cmd_virt_create_flow_table,
+	.create_lag_demux_flow_table = mlx5_cmd_virt_create_lag_demux_flow_table,
 	.destroy_flow_table	= mlx5_cmd_virt_destroy_flow_table,
 	.modify_flow_table	= mlx5_cmd_virt_modify_flow_table,
 	.create_flow_group	= mlx5_cmd_virt_create_flow_group,

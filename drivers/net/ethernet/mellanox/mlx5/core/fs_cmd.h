@@ -40,6 +40,10 @@ struct steering_cmds {
 				 enum fs_flow_table_type type, unsigned int level,
 				 unsigned int log_size, struct mlx5_flow_table
 				 *next_ft, unsigned int *table_id);
+	int (*create_lag_demux_flow_table)(struct mlx5_core_dev *dev,
+					   unsigned int level,
+					   struct mlx5_flow_table *next_ft,
+					   unsigned int *table_id);
 	int (*destroy_flow_table)(struct mlx5_core_dev *dev,
 				  struct mlx5_flow_table *ft);
 	int (*modify_flow_table)(struct mlx5_core_dev *dev,
