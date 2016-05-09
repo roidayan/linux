@@ -573,6 +573,7 @@ struct mlx5_roce {
 	struct net_device		*netdev;
 	struct notifier_block		nb;
 	struct mlx5_flow_roce_ns	roce_ns;
+	u8				next_port;
 };
 
 struct mlx5_ib_dev {
