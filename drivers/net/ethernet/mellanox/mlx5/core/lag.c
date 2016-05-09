@@ -528,3 +528,26 @@ bool mlx5_lag_is_active(struct mlx5_core_dev *dev)
 }
 EXPORT_SYMBOL(mlx5_lag_is_active);
 
+struct net_device *mlx5_lag_get_roce_netdev(struct mlx5_core_dev *dev)
+{
+	struct net_device *ndev = NULL;
+	struct lag_dev *ldev;
+
+	mutex_lock(&lag_mutex);
+	ldev = mlx5_lag_dev_get(dev);
+	if (ldev && mlx5_lag_is_bonded(ldev)) {
+		if (ldev->tracker.tx_type == NETDEV_LAG_TX_TYPE_ACTIVEBACKUP) {
+			ndev = ldev->tracker.netdev_state[0].tx_enabled ?
+			       ldev->pf[0].netdev : ldev->pf[1].netdev;
+		} else {
+			ndev = ldev->pf[0].netdev;
+		}
+		if (ndev)
+			dev_hold(ndev);
+	}
+	mutex_unlock(&lag_mutex);
+
+	return ndev;
+}
+EXPORT_SYMBOL(mlx5_lag_get_roce_netdev);
+
