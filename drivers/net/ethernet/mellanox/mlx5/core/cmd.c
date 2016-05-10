@@ -571,6 +571,15 @@ const char *mlx5_command_str(int command)
 	case MLX5_CMD_OP_DEALLOC_ENCAP_HEADER:
 		return "DEALLOC_ENCAP_HEADER";
 
+	case MLX5_CMD_OP_SET_FLOW_TABLE_ENTRY:
+		return "SET_FLOW_TABLE_ENTRY";
+
+	case MLX5_CMD_OP_ALLOC_FLOW_COUNTER:
+		return "ALLOC_FLOW_COUNTER";
+
+	case MLX5_CMD_OP_QUERY_FLOW_COUNTER:
+		return "QUERY_FLOW_COUNTER";
+
 	default: return "unknown command opcode";
 	}
 }
