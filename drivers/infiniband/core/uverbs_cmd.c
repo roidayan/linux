@@ -4472,6 +4472,18 @@ int ib_uverbs_ex_query_device(struct ib_uverbs_file *file,
 
 	resp.raw_packet_caps = attr.raw_packet_caps;
 	resp.response_length += sizeof(resp.raw_packet_caps);
+
+	if (ucore->outlen < resp.response_length + sizeof(resp.xrq_caps))
+		goto end;
+
+	resp.xrq_caps.max_tag_size = attr.xrq_caps.max_tag_size;
+	resp.xrq_caps.max_header_size = attr.xrq_caps.max_header_size;
+	resp.xrq_caps.max_priv_size = attr.xrq_caps.max_priv_size;
+	resp.xrq_caps.max_rndv_priv_size = attr.xrq_caps.max_rndv_priv_size;
+	resp.xrq_caps.max_num_tags = attr.xrq_caps.max_num_tags;
+	resp.xrq_caps.capability_flags = attr.xrq_caps.capability_flags;
+	resp.xrq_caps.max_tag_ops = attr.xrq_caps.max_tag_ops;
+	resp.response_length += sizeof(resp.xrq_caps);
 end:
 	err = ib_copy_to_udata(ucore, &resp, resp.response_length);
 	return err;
