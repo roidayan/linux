@@ -300,6 +300,22 @@ int mlx5e_vlan_rx_kill_vid(struct net_device *dev, __always_unused __be16 proto,
 	return 0;
 }
 
+static void mlx5e_vlan_rx_kill_all_vids(struct mlx5e_priv *priv)
+{
+	u16 vid;
+
+	for_each_set_bit(vid, priv->fs.vlan.active_vlans, VLAN_N_VID) {
+		clear_bit(vid, priv->fs.vlan.active_vlans);
+		mlx5e_del_vlan_rule(priv, MLX5E_VLAN_RULE_TYPE_MATCH_VID, vid);
+	}
+}
+
+static void mlx5e_del_vlan_rules(struct mlx5e_priv *priv)
+{
+	mlx5e_del_vlan_rule(priv, MLX5E_VLAN_RULE_TYPE_UNTAGGED, 0);
+	mlx5e_vlan_rx_kill_all_vids(priv);
+}
+
 #define mlx5e_for_each_hash_node(hn, tmp, hash, i) \
 	for (i = 0; i < MLX5E_L2_ADDR_HASH_SIZE; i++) \
 		hlist_for_each_entry_safe(hn, tmp, &hash[i], hlist)
@@ -1120,7 +1136,7 @@ err_destroy_arfs_tables:
 
 void mlx5e_destroy_flow_steering(struct mlx5e_priv *priv)
 {
-	mlx5e_del_vlan_rule(priv, MLX5E_VLAN_RULE_TYPE_UNTAGGED, 0);
+	mlx5e_del_vlan_rules(priv);
 	mlx5e_destroy_vlan_table(priv);
 	mlx5e_destroy_l2_table(priv);
 	mlx5e_destroy_ttc_table(priv);
