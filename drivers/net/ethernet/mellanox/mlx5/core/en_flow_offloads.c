@@ -757,6 +757,7 @@ static void mlx5e_update_flows(struct mlx5e_priv *pf_dev,
 				pf_dev->mdev->priv.eswitch->fdb_table.fdb,
 				flow->flow_index);
 			flow->flow_index = INVALID_FLOW_IX;
+			mlx5_eswitch_del_fc(eswitch, flow->flow_counter_id);
 		}
 	}
 
@@ -811,6 +812,7 @@ static void mlx5e_update_flows(struct mlx5e_priv *pf_dev,
 						flow_context);
 		if (err)
 			pr_warn("Error setting flow\n");
+		mlx5_eswitch_add_fc(eswitch, flow->flow_counter_id);
 	}
 
 	kfree(flow_context);
@@ -886,6 +888,7 @@ int mlx5e_flow_set(struct mlx5_flow_attr *attr,
 		goto alloc_counter_failed;
 	}
 	flow->flow_counter_id = flow_counter_id;
+	attr->sw_flow->hw_flow_counter_id = flow_counter_id;
 
 	match_value = MLX5_ADDR_OF(flow_context, flow_context, match_value);
 	memcpy(match_value, attr->match_v, sizeof(flow->match_v));
@@ -944,7 +947,6 @@ flow_set:
 	if (err)
 		goto flow_set_failed;
 	mlx5_eswitch_add_fc(eswitch, flow_counter_id);
-	attr->sw_flow->hw_flow_counter_id = flow_counter_id;
 
 	pr_debug("%s added sw_flow %p flow index %x\n", __func__,
 		 attr->sw_flow, flow->flow_index);
