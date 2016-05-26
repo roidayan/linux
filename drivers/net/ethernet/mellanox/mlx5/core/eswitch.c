@@ -1400,52 +1400,69 @@ free_out:
 
 int mlx5_eswitch_query_all_fcs(struct mlx5_eswitch *esw)
 {
-	int outlen = MLX5_ST_SZ_BYTES(query_flow_counter_out);
+	int outlen = 0;
 	u32 in[MLX5_ST_SZ_DW(query_flow_counter_in)];
-	struct flow_counter_rec *counter;
 	int err = 0;
-	u32 *out;
-	int id;
-	u64 packets;
-	u64 bytes;
+	u32 *out = NULL;
+	int index;
+	int counter_size = MLX5_ST_SZ_BYTES(traffic_counter);
+	int remaining;
+	int max_id_in_use = READ_ONCE(esw->fc_table.max_id_in_use);
+	int max_bulk = 1 << MLX5_CAP_GEN(esw->dev, log_max_flow_counter_bulk);
+	int queried;
+	int to_query;
 
-	out = mlx5_vzalloc(outlen);
-	if (!out)
-		return -ENOMEM;
+	if (!max_id_in_use)
+		return 0;
 
 	memset(in, 0, sizeof(in));
 	MLX5_SET(query_flow_counter_in, in, opcode,
 		 MLX5_CMD_OP_QUERY_FLOW_COUNTER);
-	MLX5_SET(query_flow_counter_in, in, op_mod, 0);
 
-	for (id = 0; id <= esw->fc_table.max_id_in_use; id++) {
-		counter = &esw->fc_table.counters[id];
-		if (!counter->on)
-			continue;
+	for (queried = 0; queried < max_id_in_use; queried += to_query) {
+		remaining = max_id_in_use - queried;
+		to_query = max_bulk;
+		if (to_query > remaining)
+			to_query = ALIGN(remaining, 4);
 
-		MLX5_SET(query_flow_counter_in, in, flow_counter_id, id);
-
-		memset(out, 0, outlen);
-		err = mlx5_cmd_exec(esw->dev, in, sizeof(in), out, outlen);
-		if (err) {
-			pr_warn("MLX5 E-Switch: failed query flow counter: %d\n",
-				id);
-			continue;
+		if (!out) {
+			outlen = MLX5_ST_SZ_BYTES(query_flow_counter_out) +
+						  to_query * counter_size;
+			out = mlx5_vzalloc(outlen);
+			if (!out)
+				return -ENOMEM;
 		}
 
-		packets = MLX5_GET64(query_flow_counter_out, out,
-				     flow_statistics.packets);
-		bytes = MLX5_GET64(query_flow_counter_out, out,
-				   flow_statistics.octets);
+		MLX5_SET(query_flow_counter_in, in, flow_counter_id, queried);
+		MLX5_SET(query_flow_counter_in, in, num_of_counters, to_query);
+		err = mlx5_cmd_exec_check_status(esw->dev, in, sizeof(in),
+						 out, outlen);
+		if (err) {
+			pr_warn("MLX5 E-Switch: failed query flow counters: %d\n",
+				err);
+			kvfree(out);
+			return -1;
+		}
 
-		/* the counter might have been deleted by now */
-		if (!esw->fc_table.counters[id].on)
-			continue;
+		for (index = 0; index <= to_query; index++) {
+			u64 packets;
+			u64 bytes;
+			struct flow_counter_rec *counter;
 
-		if (packets != counter->packets) {
-			counter->jiffies = jiffies;
-			counter->packets = packets;
-			counter->bytes   = bytes;
+			counter = &esw->fc_table.counters[queried + index];
+			if (!counter->on)
+				continue;
+
+			packets = MLX5_GET64(query_flow_counter_out, out,
+					     flow_statistics[index].packets);
+			bytes = MLX5_GET64(query_flow_counter_out, out,
+					   flow_statistics[index].octets);
+
+			if (packets != counter->packets) {
+				counter->jiffies = jiffies;
+				counter->packets = packets;
+				counter->bytes   = bytes;
+			}
 		}
 	}
 	kvfree(out);

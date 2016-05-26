@@ -818,7 +818,9 @@ struct mlx5_ifc_cmd_hca_cap_bits {
 	u8         reserved_46[0xb];
 	u8         log_max_xrcd[0x5];
 
-	u8         reserved_47[0x20];
+	u8         reserved_47[0x8];
+	u8         log_max_flow_counter_bulk[0x8];
+	u8         max_flow_counter[0x10];
 
 	u8         reserved_48[0x3];
 	u8         log_max_rq[0x5];
@@ -3849,9 +3851,7 @@ struct mlx5_ifc_query_flow_counter_out_bits {
 
 	u8         reserved_1[0x40];
 
-	struct mlx5_ifc_traffic_counter_bits flow_statistics;
-
-	u8         reserved_2[0x700];
+	struct mlx5_ifc_traffic_counter_bits flow_statistics[0];
 };
 
 struct mlx5_ifc_query_flow_counter_in_bits {
@@ -3864,7 +3864,8 @@ struct mlx5_ifc_query_flow_counter_in_bits {
 	u8         reserved_2[0x80];
 
 	u8         clear[0x1];
-	u8         reserved_3[0x1f];
+	u8         reserved_3[0xf];
+	u8         num_of_counters[0x10];
 
 	u8         reserved_4[0x10];
 	u8         flow_counter_id[0x10];
