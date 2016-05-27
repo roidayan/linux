@@ -220,6 +220,7 @@ enum ib_device_cap_flags {
 	IB_DEVICE_ON_DEMAND_PAGING		= (1 << 31),
 	IB_DEVICE_SG_GAPS_REG			= (1ULL << 32),
 	IB_DEVICE_VIRTUAL_FUNCTION		= ((u64)1 << 33),
+	IB_DEVICE_RAW_SCATTER_FCS		= ((u64)1 << 34),
 };
 
 enum ib_signature_prot_cap {
@@ -562,6 +563,7 @@ enum ib_event_type {
 	IB_EVENT_QP_LAST_WQE_REACHED,
 	IB_EVENT_CLIENT_REREGISTER,
 	IB_EVENT_GID_CHANGE,
+	IB_EVENT_WQ_FATAL,
 };
 
 const char *__attribute_const__ ib_event_msg(enum ib_event_type event);
@@ -572,6 +574,7 @@ struct ib_event {
 		struct ib_cq	*cq;
 		struct ib_qp	*qp;
 		struct ib_srq	*srq;
+		struct ib_wq	*wq;
 		u8		port_num;
 	} element;
 	enum ib_event_type	event;
@@ -931,6 +934,13 @@ struct ib_qp_cap {
 	u32	max_send_sge;
 	u32	max_recv_sge;
 	u32	max_inline_data;
+
+	/*
+	 * Maximum number of rdma_rw_ctx structures in flight at a time.
+	 * ib_create_qp() will calculate the right amount of neededed WRs
+	 * and MRs based on this.
+	 */
+	u32	max_rdma_ctxs;
 };
 
 enum ib_sig_type {
@@ -981,6 +991,7 @@ enum ib_qp_create_flags {
 	IB_QP_CREATE_NETIF_QP			= 1 << 5,
 	IB_QP_CREATE_SIGNATURE_EN		= 1 << 6,
 	IB_QP_CREATE_USE_GFP_NOIO		= 1 << 7,
+	IB_QP_CREATE_SCATTER_FCS		= 1 << 8,
 	/* reserve bits 26-31 for low level drivers' internal use */
 	IB_QP_CREATE_RESERVED_START		= 1 << 26,
 	IB_QP_CREATE_RESERVED_END		= 1 << 31,
@@ -1002,7 +1013,12 @@ struct ib_qp_init_attr {
 	enum ib_sig_type	sq_sig_type;
 	enum ib_qp_type		qp_type;
 	enum ib_qp_create_flags	create_flags;
-	u8			port_num; /* special QP types only */
+
+	/*
+	 * Only needed for special QP types, or when using the RW API.
+	 */
+	u8			port_num;
+	struct ib_rwq_ind_table *rwq_ind_tbl;
 };
 
 struct ib_qp_open_attr {
@@ -1311,6 +1327,8 @@ struct ib_ucontext {
 	struct list_head	ah_list;
 	struct list_head	xrcd_list;
 	struct list_head	rule_list;
+	struct list_head	wq_list;
+	struct list_head	rwq_ind_tbl_list;
 	int			closing;
 
 	struct pid             *tgid;
@@ -1416,14 +1434,76 @@ struct ib_srq {
 	} ext;
 };
 
+enum ib_wq_type {
+	IB_WQT_RQ
+};
+
+enum ib_wq_state {
+	IB_WQS_RESET,
+	IB_WQS_RDY,
+	IB_WQS_ERR
+};
+
+struct ib_wq {
+	struct ib_device       *device;
+	struct ib_uobject      *uobject;
+	void		    *wq_context;
+	void		    (*event_handler)(struct ib_event *, void *);
+	struct ib_pd	       *pd;
+	struct ib_cq	       *cq;
+	u32		wq_num;
+	enum ib_wq_state       state;
+	enum ib_wq_type	wq_type;
+	atomic_t		usecnt;
+};
+
+struct ib_wq_init_attr {
+	void		       *wq_context;
+	enum ib_wq_type	wq_type;
+	u32		max_wr;
+	u32		max_sge;
+	struct	ib_cq	       *cq;
+	void		    (*event_handler)(struct ib_event *, void *);
+};
+
+enum ib_wq_attr_mask {
+	IB_WQ_STATE	= 1 << 0,
+	IB_WQ_CUR_STATE	= 1 << 1,
+};
+
+struct ib_wq_attr {
+	enum	ib_wq_state	wq_state;
+	enum	ib_wq_state	curr_wq_state;
+};
+
+struct ib_rwq_ind_table {
+	struct ib_device	*device;
+	struct ib_uobject      *uobject;
+	atomic_t		usecnt;
+	u32		ind_tbl_num;
+	u32		log_ind_tbl_size;
+	struct ib_wq	**ind_tbl;
+};
+
+struct ib_rwq_ind_table_init_attr {
+	u32		log_ind_tbl_size;
+	/* Each entry is a pointer to Receive Work Queue */
+	struct ib_wq	**ind_tbl;
+};
+
 struct ib_qp {
 	struct ib_device       *device;
 	struct ib_pd	       *pd;
 	struct ib_cq	       *send_cq;
 	struct ib_cq	       *recv_cq;
+	spinlock_t		mr_lock;
+	int			mrs_used;
+	struct list_head	rdma_mrs;
+	struct list_head	sig_mrs;
 	struct ib_srq	       *srq;
 	struct ib_xrcd	       *xrcd; /* XRC TGT QPs only */
 	struct list_head	xrcd_list;
+
 	/* count times opened, mcast attaches, flow attaches */
 	atomic_t		usecnt;
 	struct list_head	open_list;
@@ -1433,17 +1513,22 @@ struct ib_qp {
 	void		       *qp_context;
 	u32			qp_num;
 	enum ib_qp_type		qp_type;
+	struct ib_rwq_ind_table *rwq_ind_tbl;
 };
 
 struct ib_mr {
 	struct ib_device  *device;
 	struct ib_pd	  *pd;
-	struct ib_uobject *uobject;
 	u32		   lkey;
 	u32		   rkey;
 	u64		   iova;
 	u32		   length;
 	unsigned int	   page_size;
+	bool		   need_inval;
+	union {
+		struct ib_uobject	*uobject;	/* user */
+		struct list_head	qp_entry;	/* FR */
+	};
 };
 
 struct ib_mw {
@@ -1827,7 +1912,8 @@ struct ib_device {
 					       u32 max_num_sg);
 	int                        (*map_mr_sg)(struct ib_mr *mr,
 						struct scatterlist *sg,
-						int sg_nents);
+						int sg_nents,
+						unsigned int *sg_offset);
 	struct ib_mw *             (*alloc_mw)(struct ib_pd *pd,
 					       enum ib_mw_type type,
 					       struct ib_udata *udata);
@@ -1878,7 +1964,18 @@ struct ib_device {
 						   struct ifla_vf_stats *stats);
 	int			   (*set_vf_guid)(struct ib_device *device, int vf, u8 port, u64 guid,
 						  int type);
-
+	struct ib_wq *		   (*create_wq)(struct ib_pd *pd,
+						struct ib_wq_init_attr *init_attr,
+						struct ib_udata *udata);
+	int			   (*destroy_wq)(struct ib_wq *wq);
+	int			   (*modify_wq)(struct ib_wq *wq,
+						struct ib_wq_attr *attr,
+						u32 wq_attr_mask,
+						struct ib_udata *udata);
+	struct ib_rwq_ind_table *  (*create_rwq_ind_table)(struct ib_device *device,
+							   struct ib_rwq_ind_table_init_attr *init_attr,
+							   struct ib_udata *udata);
+	int                        (*destroy_rwq_ind_table)(struct ib_rwq_ind_table *wq_ind_table);
 	struct ib_dma_mapping_ops   *dma_ops;
 
 	struct module               *owner;
@@ -2315,6 +2412,18 @@ static inline bool rdma_cap_roce_gid_table(const struct ib_device *device,
 {
 	return rdma_protocol_roce(device, port_num) &&
 		device->add_gid && device->del_gid;
+}
+
+/*
+ * Check if the device supports READ W/ INVALIDATE.
+ */
+static inline bool rdma_cap_read_inv(struct ib_device *dev, u32 port_num)
+{
+	/*
+	 * iWarp drivers must support READ W/ INVALIDATE.  No other protocol
+	 * has support for it yet.
+	 */
+	return rdma_protocol_iwarp(dev, port_num);
 }
 
 int ib_query_gid(struct ib_device *device,
@@ -3110,30 +3219,33 @@ int ib_check_mr_status(struct ib_mr *mr, u32 check_mask,
 struct net_device *ib_get_net_dev_by_params(struct ib_device *dev, u8 port,
 					    u16 pkey, const union ib_gid *gid,
 					    const struct sockaddr *addr);
+struct ib_wq *ib_create_wq(struct ib_pd *pd,
+			   struct ib_wq_init_attr *init_attr);
+int ib_destroy_wq(struct ib_wq *wq);
+int ib_modify_wq(struct ib_wq *wq, struct ib_wq_attr *attr,
+		 u32 wq_attr_mask);
+struct ib_rwq_ind_table *ib_create_rwq_ind_table(struct ib_device *device,
+						 struct ib_rwq_ind_table_init_attr*
+						 wq_ind_table_init_attr);
+int ib_destroy_rwq_ind_table(struct ib_rwq_ind_table *wq_ind_table);
 
-int ib_map_mr_sg(struct ib_mr *mr,
-		 struct scatterlist *sg,
-		 int sg_nents,
-		 unsigned int page_size);
+int ib_map_mr_sg(struct ib_mr *mr, struct scatterlist *sg, int sg_nents,
+		 unsigned int *sg_offset, unsigned int page_size);
 
 static inline int
-ib_map_mr_sg_zbva(struct ib_mr *mr,
-		  struct scatterlist *sg,
-		  int sg_nents,
-		  unsigned int page_size)
+ib_map_mr_sg_zbva(struct ib_mr *mr, struct scatterlist *sg, int sg_nents,
+		  unsigned int *sg_offset, unsigned int page_size)
 {
 	int n;
 
-	n = ib_map_mr_sg(mr, sg, sg_nents, page_size);
+	n = ib_map_mr_sg(mr, sg, sg_nents, sg_offset, page_size);
 	mr->iova = 0;
 
 	return n;
 }
 
-int ib_sg_to_pages(struct ib_mr *mr,
-		   struct scatterlist *sgl,
-		   int sg_nents,
-		   int (*set_page)(struct ib_mr *, u64));
+int ib_sg_to_pages(struct ib_mr *mr, struct scatterlist *sgl, int sg_nents,
+		unsigned int *sg_offset, int (*set_page)(struct ib_mr *, u64));
 
 void ib_drain_rq(struct ib_qp *qp);
 void ib_drain_sq(struct ib_qp *qp);
