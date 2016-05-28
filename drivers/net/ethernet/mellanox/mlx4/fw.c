@@ -160,6 +160,7 @@ static void dump_dev_cap_flags2(struct mlx4_dev *dev, u64 flags)
 		[33] = "RoCEv2 support",
 		[34] = "DMFS Sniffer support (UC & MC)",
 		[35] = "QinQ VST mode support",
+		[36] = "QinQ Service VLAN TPID configuration support",
 	};
 	int i;
 
@@ -722,6 +723,7 @@ int mlx4_QUERY_DEV_CAP(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
 #define QUERY_DEV_CAP_D_MPT_ENTRY_SZ_OFFSET	0x92
 #define QUERY_DEV_CAP_BMME_FLAGS_OFFSET		0x94
 #define QUERY_DEV_CAP_CONFIG_DEV_OFFSET		0x94
+#define QUERY_DEV_CAP_SVLAN_TPID_OFFSET		0x95
 #define QUERY_DEV_CAP_PHV_EN_OFFSET		0x96
 #define QUERY_DEV_CAP_RSVD_LKEY_OFFSET		0x98
 #define QUERY_DEV_CAP_MAX_ICM_SZ_OFFSET		0xa0
@@ -935,6 +937,9 @@ int mlx4_QUERY_DEV_CAP(struct mlx4_dev *dev, struct mlx4_dev_cap *dev_cap)
 		dev_cap->flags2 |= MLX4_DEV_CAP_FLAG2_PHV_EN;
 	if (field & 0x40)
 		dev_cap->flags2 |= MLX4_DEV_CAP_FLAG2_SKIP_OUTER_VLAN;
+	MLX4_GET(field, outbox, QUERY_DEV_CAP_SVLAN_TPID_OFFSET);
+	if (field & (1 << 0))
+		dev_cap->flags2 |= MLX4_DEV_CAP_FLAG2_SVLAN_TPID;
 
 	MLX4_GET(dev_cap->reserved_lkey, outbox,
 		 QUERY_DEV_CAP_RSVD_LKEY_OFFSET);
@@ -2278,7 +2283,7 @@ struct mlx4_config_dev {
 	__be16  roce_v2_udp_dport;
 	__be32	roce_flags;
 	__be32	rsvd4[25];
-	__be16	rsvd5;
+	__be16	svlan_tpid;
 	u8	rsvd6;
 	u8	rx_checksum_val;
 };
@@ -2286,6 +2291,7 @@ struct mlx4_config_dev {
 #define MLX4_VXLAN_UDP_DPORT (1 << 0)
 #define MLX4_ROCE_V2_UDP_DPORT BIT(3)
 #define MLX4_DISABLE_RX_PORT BIT(18)
+#define MLX4_SVLAN_TPID BIT(20)
 
 static int mlx4_CONFIG_DEV_set(struct mlx4_dev *dev, struct mlx4_config_dev *config_dev)
 {
@@ -2372,6 +2378,8 @@ int mlx4_config_dev_retrieval(struct mlx4_dev *dev,
 
 	params->vxlan_udp_dport = be16_to_cpu(config_dev.vxlan_udp_dport);
 
+	params->svlan_tpid = be16_to_cpu(config_dev.svlan_tpid);
+
 	return 0;
 }
 EXPORT_SYMBOL_GPL(mlx4_config_dev_retrieval);
@@ -2413,6 +2421,21 @@ int mlx4_config_roce_v2_port(struct mlx4_dev *dev, u16 udp_port)
 	return mlx4_CONFIG_DEV_set(dev, &config_dev);
 }
 EXPORT_SYMBOL_GPL(mlx4_config_roce_v2_port);
+
+int mlx4_config_svlan_tpid(struct mlx4_dev *dev, __be16 svlan_tpid)
+{
+	struct mlx4_config_dev config_dev;
+
+	if (!(dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_SVLAN_TPID))
+		return -ENOTSUPP;
+
+	memset(&config_dev, 0, sizeof(config_dev));
+	config_dev.update_flags    = cpu_to_be32(MLX4_SVLAN_TPID);
+	config_dev.svlan_tpid = svlan_tpid;
+
+	return mlx4_CONFIG_DEV_set(dev, &config_dev);
+}
+EXPORT_SYMBOL_GPL(mlx4_config_svlan_tpid);
 
 int mlx4_virt2phy_port_map(struct mlx4_dev *dev, u32 port1, u32 port2)
 {
