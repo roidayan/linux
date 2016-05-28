@@ -246,6 +246,7 @@ struct mlx4_config_dev_params {
 	u16	vxlan_udp_dport;
 	u8	rx_csum_flags_port_1;
 	u8	rx_csum_flags_port_2;
+	u16	svlan_tpid;
 };
 
 enum mlx4_en_congestion_control_algorithm {
