@@ -138,7 +138,7 @@ struct flow_counter_rec {
 
 struct flow_counters_table {
 	struct flow_counter_rec counters[FLOW_COUNTER_TABLE_SIZE];
-	u16			 max_id_in_use;
+	u16			max_id_in_use;
 };
 
 struct mlx5_eswitch {
@@ -147,11 +147,13 @@ struct mlx5_eswitch {
 	struct mlx5_eswitch_fdb fdb_table;
 	struct hlist_head       mc_table[MLX5_L2_ADDR_HASH_SIZE];
 	struct flow_counters_table fc_table;
+	struct delayed_work     update_flow_counters_work;
 	struct workqueue_struct *work_queue;
 	struct mlx5_vport       *vports;
 	int                     total_vports;
 	int                     enabled_vports;
 	int			state;
+
 };
 
 /* E-Switch API */
@@ -171,7 +173,6 @@ int mlx5_eswitch_get_vport_config(struct mlx5_eswitch *esw,
 int mlx5_eswitch_get_vport_stats(struct mlx5_eswitch *esw,
 				 int vport,
 				 struct ifla_vf_stats *vf_stats);
-int mlx5_eswitch_query_all_fcs(struct mlx5_eswitch *esw);
 int mlx5_eswitch_get_fc_stats(struct mlx5_eswitch *esw, u16 counter_id,
 			      u64 *packets, u64 *bytes, unsigned long *used);
 int mlx5_eswitch_add_fc(struct mlx5_eswitch *esw, u16 counter_id);

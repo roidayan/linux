@@ -44,6 +44,10 @@ int mlx5_flow_offload_group_size_log = MLX5_FLOW_OFFLOAD_GROUP_SIZE_LOG;
 module_param_named(flow_offload_group_size_log, mlx5_flow_offload_group_size_log, int, 0644);
 MODULE_PARM_DESC(flow_offload_group_size_log, "flow_offload_group_size_log: log_2 of the flow offloads group size Default=10");
 
+uint mlx5_eswitch_offload_counters_query_interval = 1000;
+module_param_named(eswitch_offload_counters_query_interval, mlx5_eswitch_offload_counters_query_interval, uint, 0644);
+MODULE_PARM_DESC(eswitch_offload_counters_query_interval, "eswitch_offload_counters_query_interval: Flow Counters query interval in milliseconds Default=1000");
+
 #define UPLINK_VPORT 0xFFFF
 
 #define MLX5_DEBUG_ESWITCH_MASK BIT(3)
@@ -1051,6 +1055,89 @@ static void esw_disable_vport(struct mlx5_eswitch *esw, int vport_num)
 	esw->enabled_vports--;
 }
 
+static int mlx5_eswitch_query_all_fcs(struct mlx5_eswitch *esw)
+{
+	int outlen = 0;
+	u32 in[MLX5_ST_SZ_DW(query_flow_counter_in)];
+	int err = 0;
+	u32 *out = NULL;
+	int index;
+	int counter_size = MLX5_ST_SZ_BYTES(traffic_counter);
+	int remaining;
+	int max_id_in_use = READ_ONCE(esw->fc_table.max_id_in_use);
+	int max_bulk = 1 << MLX5_CAP_GEN(esw->dev, log_max_flow_counter_bulk);
+	int queried;
+	int to_query;
+
+	if (!max_id_in_use)
+		return 0;
+
+	memset(in, 0, sizeof(in));
+	MLX5_SET(query_flow_counter_in, in, opcode,
+		 MLX5_CMD_OP_QUERY_FLOW_COUNTER);
+
+	for (queried = 0; queried < max_id_in_use; queried += to_query) {
+		remaining = max_id_in_use - queried;
+		to_query = max_bulk;
+		if (to_query > remaining)
+			to_query = ALIGN(remaining, 4);
+
+		if (!out) {
+			outlen = MLX5_ST_SZ_BYTES(query_flow_counter_out) +
+						  to_query * counter_size;
+			out = mlx5_vzalloc(outlen);
+			if (!out)
+				return -ENOMEM;
+		}
+
+		MLX5_SET(query_flow_counter_in, in, flow_counter_id, queried);
+		MLX5_SET(query_flow_counter_in, in, num_of_counters, to_query);
+		err = mlx5_cmd_exec_check_status(esw->dev, in, sizeof(in),
+						 out, outlen);
+		if (err) {
+			pr_warn("MLX5 E-Switch: failed query flow counters: %d\n",
+				err);
+			kvfree(out);
+			return -1;
+		}
+
+		for (index = 0; index <= to_query; index++) {
+			u64 packets;
+			u64 bytes;
+			struct flow_counter_rec *counter;
+
+			counter = &esw->fc_table.counters[queried + index];
+			if (!counter->on)
+				continue;
+
+			packets = MLX5_GET64(query_flow_counter_out, out,
+					     flow_statistics[index].packets);
+			bytes = MLX5_GET64(query_flow_counter_out, out,
+					   flow_statistics[index].octets);
+
+			if (packets != counter->packets) {
+				counter->jiffies = jiffies;
+				counter->packets = packets;
+				counter->bytes   = bytes;
+			}
+		}
+	}
+	kvfree(out);
+	return 0;
+}
+
+static void mlx5_eswitch_query_all_fcs_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct mlx5_eswitch *esw = container_of(dwork, struct mlx5_eswitch,
+						update_flow_counters_work);
+	unsigned long next_query =
+		msecs_to_jiffies(mlx5_eswitch_offload_counters_query_interval);
+
+	schedule_delayed_work(dwork, next_query);
+	mlx5_eswitch_query_all_fcs(esw);
+}
+
 /* Public E-Switch API */
 int mlx5_eswitch_enable_sriov(struct mlx5_eswitch *esw, int nvfs, bool flow_offloads)
 {
@@ -1089,6 +1176,7 @@ int mlx5_eswitch_enable_sriov(struct mlx5_eswitch *esw, int nvfs, bool flow_offl
 		}
 
 		err = esw_create_flow_offloads_fdb_table(esw);
+		schedule_delayed_work(&esw->update_flow_counters_work, 0);
 	} else {
 		err = esw_create_fdb_table(esw, nvfs + 1);
 	}
@@ -1129,10 +1217,12 @@ void mlx5_eswitch_disable_sriov(struct mlx5_eswitch *esw)
 		esw_disable_vport(esw, i);
 
 
-	if (esw->state == SRIOV_FLOW_OFFLOADS)
+	if (esw->state == SRIOV_FLOW_OFFLOADS) {
+		cancel_delayed_work_sync(&esw->update_flow_counters_work);
 		esw_destroy_flow_offloads_fdb_table(esw);
-	else
+	} else {
 		esw_destroy_fdb_table(esw);
+	}
 
 	esw->state = SRIOV_DISABLED;
 	/* VPORT 0 (PF) must be enabled back with non-sriov configuration */
@@ -1193,6 +1283,8 @@ int mlx5_eswitch_init(struct mlx5_core_dev *dev)
 			  esw_vport_change_handler);
 		spin_lock_init(&vport->lock);
 	}
+	INIT_DELAYED_WORK(&esw->update_flow_counters_work,
+			  mlx5_eswitch_query_all_fcs_work);
 
 	esw->total_vports = total_vports;
 	esw->enabled_vports = 0;
@@ -1402,77 +1494,6 @@ int mlx5_eswitch_get_vport_stats(struct mlx5_eswitch *esw,
 free_out:
 	kvfree(out);
 	return err;
-}
-
-int mlx5_eswitch_query_all_fcs(struct mlx5_eswitch *esw)
-{
-	int outlen = 0;
-	u32 in[MLX5_ST_SZ_DW(query_flow_counter_in)];
-	int err = 0;
-	u32 *out = NULL;
-	int index;
-	int counter_size = MLX5_ST_SZ_BYTES(traffic_counter);
-	int remaining;
-	int max_id_in_use = READ_ONCE(esw->fc_table.max_id_in_use);
-	int max_bulk = 1 << MLX5_CAP_GEN(esw->dev, log_max_flow_counter_bulk);
-	int queried;
-	int to_query;
-
-	if (!max_id_in_use)
-		return 0;
-
-	memset(in, 0, sizeof(in));
-	MLX5_SET(query_flow_counter_in, in, opcode,
-		 MLX5_CMD_OP_QUERY_FLOW_COUNTER);
-
-	for (queried = 0; queried < max_id_in_use; queried += to_query) {
-		remaining = max_id_in_use - queried;
-		to_query = max_bulk;
-		if (to_query > remaining)
-			to_query = ALIGN(remaining, 4);
-
-		if (!out) {
-			outlen = MLX5_ST_SZ_BYTES(query_flow_counter_out) +
-						  to_query * counter_size;
-			out = mlx5_vzalloc(outlen);
-			if (!out)
-				return -ENOMEM;
-		}
-
-		MLX5_SET(query_flow_counter_in, in, flow_counter_id, queried);
-		MLX5_SET(query_flow_counter_in, in, num_of_counters, to_query);
-		err = mlx5_cmd_exec_check_status(esw->dev, in, sizeof(in),
-						 out, outlen);
-		if (err) {
-			pr_warn("MLX5 E-Switch: failed query flow counters: %d\n",
-				err);
-			kvfree(out);
-			return -1;
-		}
-
-		for (index = 0; index <= to_query; index++) {
-			u64 packets;
-			u64 bytes;
-			struct flow_counter_rec *counter;
-
-			counter = &esw->fc_table.counters[queried + index];
-			if (!counter->on)
-				continue;
-
-			packets = MLX5_GET64(query_flow_counter_out, out,
-					     flow_statistics[index].packets);
-			bytes = MLX5_GET64(query_flow_counter_out, out,
-					   flow_statistics[index].octets);
-
-			if (packets != counter->packets) {
-				counter->jiffies = jiffies;
-				counter->packets = packets;
-				counter->bytes   = bytes;
-			}
-		}
-	}
-	kvfree(out);
-	return 0;
 }
 
 int mlx5_eswitch_get_fc_stats(struct mlx5_eswitch *esw, u16 counter_id,
