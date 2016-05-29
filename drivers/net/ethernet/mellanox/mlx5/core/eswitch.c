@@ -1082,6 +1082,12 @@ int mlx5_eswitch_enable_sriov(struct mlx5_eswitch *esw, int nvfs, bool flow_offl
 			err = -ENOTSUPP;
 			goto abort;
 		}
+		if (!MLX5_CAP_GEN(esw->dev, log_max_flow_counter_bulk)) {
+			esw_warn(esw->dev, "OVS offloads requires support for bulk flow counters query.\n");
+			err = -ENOTSUPP;
+			goto abort;
+		}
+
 		err = esw_create_flow_offloads_fdb_table(esw);
 	} else {
 		err = esw_create_fdb_table(esw, nvfs + 1);
