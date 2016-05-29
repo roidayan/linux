@@ -464,8 +464,6 @@ int mlx5e_rep_create_netdev(struct mlx5e_priv *pf_dev, u32 vport,
 
 	netif_carrier_off(dev);
 
-	SET_NETDEV_DEV(dev, &pf_dev->mdev->pdev->dev);
-
 	err = register_netdevice(dev);
 	printk(KERN_ERR "%s registered netdev %s (%p) for vport %d rep\n", __func__, dev->name, dev, priv->vport);
 	if (err)
