@@ -2298,12 +2298,13 @@ static int mlx4_en_set_vf_mac(struct net_device *dev, int queue, u8 *mac)
 	return mlx4_set_vf_mac(mdev->dev, en_priv->port, queue, mac_u64);
 }
 
-static int mlx4_en_set_vf_vlan(struct net_device *dev, int vf, u16 vlan, u8 qos)
+static int mlx4_en_set_vf_vlan(struct net_device *dev, int vf, u16 vlan,
+			       u8 qos, __be16 proto)
 {
 	struct mlx4_en_priv *en_priv = netdev_priv(dev);
 	struct mlx4_en_dev *mdev = en_priv->mdev;
 
-	return mlx4_set_vf_vlan(mdev->dev, en_priv->port, vf, vlan, qos);
+	return mlx4_set_vf_vlan(mdev->dev, en_priv->port, vf, vlan, qos, proto);
 }
 
 static int mlx4_en_set_vf_rate(struct net_device *dev, int vf, int min_tx_rate,
