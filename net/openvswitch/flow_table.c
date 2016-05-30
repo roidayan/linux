@@ -91,7 +91,9 @@ struct ovs_flow *ovs_flow_alloc(void)
 	flow->id.ufid_len = 0;
 	flow->stats_last_writer = NUMA_NO_NODE;
 	flow->hw_offloaded = 0;
-	flow->hw_sw_dev = NULL;
+	flow->offload_net = NULL;
+	flow->offload_ifindex = 0;
+
 
 	/* Initialize the default stat node. */
 	stats = kmem_cache_alloc_node(flow_stats_cache,

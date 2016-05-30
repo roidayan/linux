@@ -265,8 +265,10 @@ int ovs_hw_flow_insert(struct datapath *dp, struct ovs_flow *flow)
 		if (ovs_identifier_is_ufid(&flow->id))
 			pr_debug("%s ovs flow %p sw_flow %p ID %.8x %.8x %.8x %.8x\n", __func__,
 				flow, &flow->flow, flow->id.ufid[0], flow->id.ufid[1], flow->id.ufid[2], flow->id.ufid[3]);
+
+		flow->offload_ifindex = dev->ifindex;
+		flow->offload_net = ovs_dp_get_net(dp);
 		flow->hw_offloaded = 1;
-		flow->hw_sw_dev = dev;
 	}
 
 	return err;
@@ -289,8 +291,6 @@ int ovs_hw_flow_remove(struct datapath *dp, struct ovs_flow *flow)
 				flow, &flow->flow, flow->id.ufid[0], flow->id.ufid[1], flow->id.ufid[2], flow->id.ufid[3]);
 	}
 
-	dev = flow->hw_sw_dev;
-
 	if (!flow->flow.actions) {
 		err = sw_flow_action_create(dp, &actions, flow->sf_acts);
 		if (err)
@@ -298,14 +298,16 @@ int ovs_hw_flow_remove(struct datapath *dp, struct ovs_flow *flow)
 		flow->flow.actions = actions;
 	}
 
+	rtnl_lock();
+	dev = __dev_get_by_index(ovs_dp_get_net(dp),
+				 flow->offload_ifindex);
 	if (!dev || !dev->switchdev_ops) {
 		printk(KERN_ERR "%s can't offload flow del: in_dev %s\n", __func__, dev? dev->name: "no dev");
 		err = -ENODEV;
 	} else {
-		rtnl_lock();
 		err = switchdev_port_flow_del(dev, &flow->flow);
-		rtnl_unlock();
 	}
+	rtnl_unlock();
 	kfree(flow->flow.actions);
 	flow->flow.actions = NULL;
 	return err;
@@ -341,13 +343,31 @@ int ovs_hw_flow_stats(struct ovs_flow *flow,
 {
 	struct switchdev_stats swd_stats;
 	int err = 0;
+	struct net *offload_net;
+	struct net_device *dev;
 
-	if (!flow->hw_sw_dev) {
-		pr_debug("Offloaded flow without HW Switch dev. %s ovs flow %p sw_flow %p\n",
-			 __func__, flow, &flow->flow);
-		return -1;
+	offload_net = READ_ONCE(flow->offload_net);
+	if (offload_net) {
+		int err = -ENODEV;
+
+		rcu_read_lock();
+		dev = dev_get_by_index_rcu(offload_net,
+					   flow->offload_ifindex);
+		if (!dev) {
+			pr_warn_once("%s: Warning: Can't get device by index\n", __func__);
+			return -ENODEV;
+		}
+		rcu_read_unlock();
+
+		if (err)
+			pr_debug("%s: Error getting HW stats- %x\n",
+				 __func__, err);
+	} else {
+		pr_warn_once("%s: Warning: no offloaded device\n", __func__);
+		return -ENODEV;
 	}
-	err = switchdev_port_flow_stats(flow->hw_sw_dev, &flow->flow,
+
+	err = switchdev_port_flow_stats(dev, &flow->flow,
 					&swd_stats);
 	if (err)
 		return err;
