@@ -883,7 +883,8 @@ int mlx5_register_interface(struct mlx5_interface *intf)
 	mutex_lock(&intf_mutex);
 	list_add_tail(&intf->list, &intf_list);
 	list_for_each_entry(priv, &dev_list, dev_list)
-		mlx5_add_device(intf, priv);
+		if (!mlx5_lag_intf_add(intf, priv))
+			mlx5_add_device(intf, priv);
 	mutex_unlock(&intf_mutex);
 
 	return 0;
