@@ -156,21 +156,21 @@ enum rdma_link_layer {
 };
 
 enum ib_device_cap_flags {
-	IB_DEVICE_RESIZE_MAX_WR			= (1 << 0),
-	IB_DEVICE_BAD_PKEY_CNTR			= (1 << 1),
-	IB_DEVICE_BAD_QKEY_CNTR			= (1 << 2),
-	IB_DEVICE_RAW_MULTI			= (1 << 3),
-	IB_DEVICE_AUTO_PATH_MIG			= (1 << 4),
-	IB_DEVICE_CHANGE_PHY_PORT		= (1 << 5),
-	IB_DEVICE_UD_AV_PORT_ENFORCE		= (1 << 6),
-	IB_DEVICE_CURR_QP_STATE_MOD		= (1 << 7),
-	IB_DEVICE_SHUTDOWN_PORT			= (1 << 8),
-	IB_DEVICE_INIT_TYPE			= (1 << 9),
-	IB_DEVICE_PORT_ACTIVE_EVENT		= (1 << 10),
-	IB_DEVICE_SYS_IMAGE_GUID		= (1 << 11),
-	IB_DEVICE_RC_RNR_NAK_GEN		= (1 << 12),
-	IB_DEVICE_SRQ_RESIZE			= (1 << 13),
-	IB_DEVICE_N_NOTIFY_CQ			= (1 << 14),
+	IB_DEVICE_RESIZE_MAX_WR			= (1ULL << 0),
+	IB_DEVICE_BAD_PKEY_CNTR			= (1ULL << 1),
+	IB_DEVICE_BAD_QKEY_CNTR			= (1ULL << 2),
+	IB_DEVICE_RAW_MULTI			= (1ULL << 3),
+	IB_DEVICE_AUTO_PATH_MIG			= (1ULL << 4),
+	IB_DEVICE_CHANGE_PHY_PORT		= (1ULL << 5),
+	IB_DEVICE_UD_AV_PORT_ENFORCE		= (1ULL << 6),
+	IB_DEVICE_CURR_QP_STATE_MOD		= (1ULL << 7),
+	IB_DEVICE_SHUTDOWN_PORT			= (1ULL << 8),
+	IB_DEVICE_INIT_TYPE			= (1ULL << 9),
+	IB_DEVICE_PORT_ACTIVE_EVENT		= (1ULL << 10),
+	IB_DEVICE_SYS_IMAGE_GUID		= (1ULL << 11),
+	IB_DEVICE_RC_RNR_NAK_GEN		= (1ULL << 12),
+	IB_DEVICE_SRQ_RESIZE			= (1ULL << 13),
+	IB_DEVICE_N_NOTIFY_CQ			= (1ULL << 14),
 
 	/*
 	 * This device supports a per-device lkey or stag that can be
@@ -179,9 +179,9 @@ enum ib_device_cap_flags {
 	 * instead of use the local_dma_lkey flag in the ib_pd structure,
 	 * which will always contain a usable lkey.
 	 */
-	IB_DEVICE_LOCAL_DMA_LKEY		= (1 << 15),
-	IB_DEVICE_RESERVED /* old SEND_W_INV */	= (1 << 16),
-	IB_DEVICE_MEM_WINDOW			= (1 << 17),
+	IB_DEVICE_LOCAL_DMA_LKEY		= (1ULL << 15),
+	IB_DEVICE_RESERVED /* old SEND_W_INV */	= (1ULL << 16),
+	IB_DEVICE_MEM_WINDOW			= (1ULL << 17),
 	/*
 	 * Devices should set IB_DEVICE_UD_IP_SUM if they support
 	 * insertion of UDP and TCP checksum on outgoing UD IPoIB
@@ -189,9 +189,9 @@ enum ib_device_cap_flags {
 	 * incoming messages.  Setting this flag implies that the
 	 * IPoIB driver may set NETIF_F_IP_CSUM for datagram mode.
 	 */
-	IB_DEVICE_UD_IP_CSUM			= (1 << 18),
-	IB_DEVICE_UD_TSO			= (1 << 19),
-	IB_DEVICE_XRC				= (1 << 20),
+	IB_DEVICE_UD_IP_CSUM			= (1ULL << 18),
+	IB_DEVICE_UD_TSO			= (1ULL << 19),
+	IB_DEVICE_XRC				= (1ULL << 20),
 
 	/*
 	 * This device supports the IB "base memory management extension",
@@ -202,25 +202,25 @@ enum ib_device_cap_flags {
 	 * IB_WR_RDMA_READ_WITH_INV verb for RDMA READs that invalidate the
 	 * stag.
 	 */
-	IB_DEVICE_MEM_MGT_EXTENSIONS		= (1 << 21),
-	IB_DEVICE_BLOCK_MULTICAST_LOOPBACK	= (1 << 22),
-	IB_DEVICE_MEM_WINDOW_TYPE_2A		= (1 << 23),
-	IB_DEVICE_MEM_WINDOW_TYPE_2B		= (1 << 24),
-	IB_DEVICE_RC_IP_CSUM			= (1 << 25),
-	IB_DEVICE_RAW_IP_CSUM			= (1 << 26),
+	IB_DEVICE_MEM_MGT_EXTENSIONS		= (1ULL << 21),
+	IB_DEVICE_BLOCK_MULTICAST_LOOPBACK	= (1ULL << 22),
+	IB_DEVICE_MEM_WINDOW_TYPE_2A		= (1ULL << 23),
+	IB_DEVICE_MEM_WINDOW_TYPE_2B		= (1ULL << 24),
+	IB_DEVICE_RC_IP_CSUM			= (1ULL << 25),
+	IB_DEVICE_RAW_IP_CSUM			= (1ULL << 26),
 	/*
 	 * Devices should set IB_DEVICE_CROSS_CHANNEL if they
 	 * support execution of WQEs that involve synchronization
 	 * of I/O operations with single completion queue managed
 	 * by hardware.
 	 */
-	IB_DEVICE_CROSS_CHANNEL		= (1 << 27),
-	IB_DEVICE_MANAGED_FLOW_STEERING		= (1 << 29),
-	IB_DEVICE_SIGNATURE_HANDOVER		= (1 << 30),
-	IB_DEVICE_ON_DEMAND_PAGING		= (1 << 31),
+	IB_DEVICE_CROSS_CHANNEL		= (1ULL << 27),
+	IB_DEVICE_MANAGED_FLOW_STEERING		= (1ULL << 29),
+	IB_DEVICE_SIGNATURE_HANDOVER		= (1ULL << 30),
+	IB_DEVICE_ON_DEMAND_PAGING		= (1ULL << 31),
 	IB_DEVICE_SG_GAPS_REG			= (1ULL << 32),
-	IB_DEVICE_VIRTUAL_FUNCTION		= ((u64)1 << 33),
-	IB_DEVICE_RAW_SCATTER_FCS		= ((u64)1 << 34),
+	IB_DEVICE_VIRTUAL_FUNCTION		= (1ULL << 33),
+	IB_DEVICE_RAW_SCATTER_FCS		= (1ULL << 34),
 };
 
 enum ib_signature_prot_cap {
@@ -403,56 +403,55 @@ enum ib_port_speed {
 	IB_SPEED_EDR	= 32
 };
 
-struct ib_protocol_stats {
-	/* TBD... */
+/**
+ * struct rdma_hw_stats
+ * @timestamp - Used by the core code to track when the last update was
+ * @lifespan - Used by the core code to determine how old the counters
+ *   should be before being updated again.  Stored in jiffies, defaults
+ *   to 10 milliseconds, drivers can override the default be specifying
+ *   their own value during their allocation routine.
+ * @name - Array of pointers to static names used for the counters in
+ *   directory.
+ * @num_counters - How many hardware counters there are.  If name is
+ *   shorter than this number, a kernel oops will result.  Driver authors
+ *   are encouraged to leave BUILD_BUG_ON(ARRAY_SIZE(@name) < num_counters)
+ *   in their code to prevent this.
+ * @value - Array of u64 counters that are accessed by the sysfs code and
+ *   filled in by the drivers get_stats routine
+ */
+struct rdma_hw_stats {
+	unsigned long	timestamp;
+	unsigned long	lifespan;
+	const char * const *names;
+	int		num_counters;
+	u64		value[];
 };
 
-struct iw_protocol_stats {
-	u64	ipInReceives;
-	u64	ipInHdrErrors;
-	u64	ipInTooBigErrors;
-	u64	ipInNoRoutes;
-	u64	ipInAddrErrors;
-	u64	ipInUnknownProtos;
-	u64	ipInTruncatedPkts;
-	u64	ipInDiscards;
-	u64	ipInDelivers;
-	u64	ipOutForwDatagrams;
-	u64	ipOutRequests;
-	u64	ipOutDiscards;
-	u64	ipOutNoRoutes;
-	u64	ipReasmTimeout;
-	u64	ipReasmReqds;
-	u64	ipReasmOKs;
-	u64	ipReasmFails;
-	u64	ipFragOKs;
-	u64	ipFragFails;
-	u64	ipFragCreates;
-	u64	ipInMcastPkts;
-	u64	ipOutMcastPkts;
-	u64	ipInBcastPkts;
-	u64	ipOutBcastPkts;
+#define RDMA_HW_STATS_DEFAULT_LIFESPAN 10
+/**
+ * rdma_alloc_hw_stats_struct - Helper function to allocate dynamic struct
+ *   for drivers.
+ * @names - Array of static const char *
+ * @num_counters - How many elements in array
+ * @lifespan - How many milliseconds between updates
+ */
+static inline struct rdma_hw_stats *rdma_alloc_hw_stats_struct(
+		const char * const *names, int num_counters,
+		unsigned long lifespan)
+{
+	struct rdma_hw_stats *stats;
 
-	u64	tcpRtoAlgorithm;
-	u64	tcpRtoMin;
-	u64	tcpRtoMax;
-	u64	tcpMaxConn;
-	u64	tcpActiveOpens;
-	u64	tcpPassiveOpens;
-	u64	tcpAttemptFails;
-	u64	tcpEstabResets;
-	u64	tcpCurrEstab;
-	u64	tcpInSegs;
-	u64	tcpOutSegs;
-	u64	tcpRetransSegs;
-	u64	tcpInErrs;
-	u64	tcpOutRsts;
-};
+	stats = kzalloc(sizeof(*stats) + num_counters * sizeof(u64),
+			GFP_KERNEL);
+	if (!stats)
+		return NULL;
+	stats->names = names;
+	stats->num_counters = num_counters;
+	stats->lifespan = msecs_to_jiffies(lifespan);
 
-union rdma_protocol_stats {
-	struct ib_protocol_stats	ib;
-	struct iw_protocol_stats	iw;
-};
+	return stats;
+}
+
 
 /* Define bits for the various functionality this port needs to be supported by
  * the core.
@@ -1707,8 +1706,29 @@ struct ib_device {
 
 	struct iw_cm_verbs	     *iwcm;
 
-	int		           (*get_protocol_stats)(struct ib_device *device,
-							 union rdma_protocol_stats *stats);
+	/**
+	 * alloc_hw_stats - Allocate a struct rdma_hw_stats and fill in the
+	 *   driver initialized data.  The struct is kfree()'ed by the sysfs
+	 *   core when the device is removed.  A lifespan of -1 in the return
+	 *   struct tells the core to set a default lifespan.
+	 */
+	struct rdma_hw_stats      *(*alloc_hw_stats)(struct ib_device *device,
+						     u8 port_num);
+	/**
+	 * get_hw_stats - Fill in the counter value(s) in the stats struct.
+	 * @index - The index in the value array we wish to have updated, or
+	 *   num_counters if we want all stats updated
+	 * Return codes -
+	 *   < 0 - Error, no counters updated
+	 *   index - Updated the single counter pointed to by index
+	 *   num_counters - Updated all counters (will reset the timestamp
+	 *     and prevent further calls for lifespan milliseconds)
+	 * Drivers are allowed to update all counters in leiu of just the
+	 *   one given in index at their option
+	 */
+	int		           (*get_hw_stats)(struct ib_device *device,
+						   struct rdma_hw_stats *stats,
+						   u8 port, int index);
 	int		           (*query_device)(struct ib_device *device,
 						   struct ib_device_attr *device_attr,
 						   struct ib_udata *udata);
@@ -1926,6 +1946,8 @@ struct ib_device {
 	u8                           node_type;
 	u8                           phys_port_cnt;
 	struct ib_device_attr        attrs;
+	struct attribute_group	     *hw_stats_ag;
+	struct rdma_hw_stats         *hw_stats;
 
 	/**
 	 * The following mandatory functions are used only at device
