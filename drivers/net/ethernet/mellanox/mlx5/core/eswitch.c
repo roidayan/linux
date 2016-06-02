@@ -1076,8 +1076,8 @@ static int mlx5_eswitch_query_all_fcs(struct mlx5_eswitch *esw)
 	MLX5_SET(query_flow_counter_in, in, opcode,
 		 MLX5_CMD_OP_QUERY_FLOW_COUNTER);
 
-	for (queried = 0; queried < max_id_in_use; queried += to_query) {
-		remaining = max_id_in_use - queried;
+	for (queried = 0; queried <= max_id_in_use; queried += to_query) {
+		remaining = max_id_in_use + 1 - queried;
 		to_query = max_bulk;
 		if (to_query > remaining)
 			to_query = ALIGN(remaining, 4);
@@ -1101,7 +1101,7 @@ static int mlx5_eswitch_query_all_fcs(struct mlx5_eswitch *esw)
 			return -1;
 		}
 
-		for (index = 0; index <= to_query; index++) {
+		for (index = 0; index < to_query; index++) {
 			u64 packets;
 			u64 bytes;
 			struct flow_counter_rec *counter;
