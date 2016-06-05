@@ -1092,6 +1092,12 @@ static int mlx5_eswitch_query_all_fcs(struct mlx5_eswitch *esw)
 
 		MLX5_SET(query_flow_counter_in, in, flow_counter_id, queried);
 		MLX5_SET(query_flow_counter_in, in, num_of_counters, to_query);
+		if (unlikely(to_query == 1)) {
+			if (!esw->fc_table.counters[queried].on)
+				continue;
+			MLX5_SET(query_flow_counter_in, in, num_of_counters, 0);
+		}
+
 		err = mlx5_cmd_exec_check_status(esw->dev, in, sizeof(in),
 						 out, outlen);
 		if (err) {
@@ -1169,11 +1175,9 @@ int mlx5_eswitch_enable_sriov(struct mlx5_eswitch *esw, int nvfs, bool flow_offl
 			err = -ENOTSUPP;
 			goto abort;
 		}
-		if (!MLX5_CAP_GEN(esw->dev, log_max_flow_counter_bulk)) {
-			esw_warn(esw->dev, "OVS offloads requires support for bulk flow counters query.\n");
-			err = -ENOTSUPP;
-			goto abort;
-		}
+
+		if (!MLX5_CAP_GEN(esw->dev, log_max_flow_counter_bulk))
+			esw_warn(esw->dev, "bulk reading of flow counters unsupported, please update your firmware\n");
 
 		err = esw_create_flow_offloads_fdb_table(esw);
 		schedule_delayed_work(&esw->update_flow_counters_work, 0);
