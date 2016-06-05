@@ -275,6 +275,34 @@ struct ib_rss_caps {
 	u32 max_rwq_indirection_table_size;
 };
 
+enum ib_tm_flags {
+	/* The HW supports messages without tag
+	 * sent on QPs attached to a XRQ
+	 */
+	IB_TM_CAP_NO_TAG	    = 1 << 0,
+	/* The HW supports tag matching for rendezvous messages when
+	 * the send arrives after the corresponding receive
+	 */
+	IB_TM_CAP_RNDV		    = 1 << 1,
+};
+
+struct ib_xrq_caps {
+	/* Characteristics of the receive mask (given in bits) */
+	uint32_t max_tag_size;
+	/* The maximum size for the TM header */
+	uint32_t max_header_size;
+	/* The size for the application context field in the XRQ context*/
+	uint32_t max_priv_size;
+	/* Max size of the information passed after the RNDV header */
+	uint32_t max_rndv_priv_size;
+	/* Posted receive maximum list size */
+	uint32_t max_num_tags;
+	/* TM capabilities mask - enumerated below in ib_tm_flags */
+	uint32_t capability_flags;
+	/* Max number of outstanding operations */
+	uint32_t max_tag_ops;
+};
+
 enum ib_cq_creation_flags {
 	IB_CQ_FLAGS_TIMESTAMP_COMPLETION   = 1 << 0,
 	IB_CQ_FLAGS_IGNORE_OVERRUN	   = 1 << 1,
@@ -335,6 +363,7 @@ struct ib_device_attr {
 	struct ib_rss_caps	rss_caps;
 	u32			max_wq_type_rq;
 	u32			raw_packet_caps; /* Use ib_raw_packet_caps enum */
+	struct ib_xrq_caps	xrq_caps;
 };
 
 enum ib_mtu {
