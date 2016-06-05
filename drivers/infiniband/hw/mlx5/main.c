@@ -702,6 +702,19 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 			1 << MLX5_CAP_GEN(dev->mdev, log_max_rq);
 	}
 
+	if (MLX5_CAP_GEN(mdev, tag_matching)) {
+		props->xrq_caps.max_tag_size = MLX5_TM_TAG_SIZE;
+		props->xrq_caps.max_header_size = MLX5_TM_HEADER_SIZE;
+		props->xrq_caps.max_priv_size = MLX5_TM_PRIV_SIZE;
+		props->xrq_caps.max_rndv_priv_size = MLX5_TM_RNDV_PRIV_SIZE;
+		props->xrq_caps.max_num_tags =
+			1 << MLX5_CAP_GEN(mdev, log_tag_matching_list_sz);
+		props->xrq_caps.capability_flags = IB_TM_CAP_NO_TAG |
+						   IB_TM_CAP_RNDV;
+		props->xrq_caps.max_tag_ops =
+			1 << MLX5_CAP_GEN(mdev, log_max_qp_sz);
+	}
+
 	if (field_avail(typeof(resp), cqe_comp_caps, uhw->outlen)) {
 		resp.cqe_comp_caps.max_num =
 			MLX5_CAP_GEN(dev->mdev, cqe_compression) ?
