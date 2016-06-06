@@ -835,6 +835,7 @@ struct netdev_xdp {
 struct xfrmdev_ops {
 	int			(*xdo_dev_state_add) (struct xfrm_state *x);
 	void			(*xdo_dev_state_delete) (struct xfrm_state *x);
+	void			(*xdo_dev_state_free) (struct xfrm_state *x);
 	int			(*xdo_dev_state_update) (struct xfrm_state *x);
 	int			(*xdo_dev_crypto) (struct sk_buff *skb);
 };
