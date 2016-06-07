@@ -110,10 +110,21 @@ u16 mlx5e_select_queue(struct net_device *dev, struct sk_buff *skb,
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
 	int channel_ix = fallback(dev, skb);
-	int up = (netdev_get_num_tc(dev) && skb_vlan_tag_present(skb)) ?
-		 skb->vlan_tci >> VLAN_PRIO_SHIFT : 0;
+	int num_tc = netdev_get_num_tc(dev);
+	int tc = 0;
 
-	return priv->channeltc_to_txq_map[channel_ix][up];
+	if (!num_tc)
+		return channel_ix;
+
+	if (skb_vlan_tag_present(skb)) {
+		int up = skb->vlan_tci >> VLAN_PRIO_SHIFT;
+
+		tc = netdev_get_prio_tc_map(dev, up);
+		channel_ix = reciprocal_scale(channel_ix,
+					      dev->tc_to_txq[tc].count);
+	}
+
+	return priv->channeltc_to_txq_map[channel_ix][tc];
 }
 
 static inline u16 mlx5e_get_inline_hdr_size(struct mlx5e_sq *sq,
