@@ -574,6 +574,9 @@ const char *mlx5_command_str(int command)
 	case MLX5_CMD_OP_SET_FLOW_TABLE_ENTRY:
 		return "SET_FLOW_TABLE_ENTRY";
 
+	case MLX5_CMD_OP_DELETE_FLOW_TABLE_ENTRY:
+		return "DELETE_FLOW_TABLE_ENTRY";
+
 	case MLX5_CMD_OP_ALLOC_FLOW_COUNTER:
 		return "ALLOC_FLOW_COUNTER";
 
