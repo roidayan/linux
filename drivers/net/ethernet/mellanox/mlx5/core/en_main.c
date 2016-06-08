@@ -2483,6 +2483,8 @@ static int mlx5e_set_features(struct net_device *netdev,
 
 	mutex_unlock(&priv->state_lock);
 
+	mutex_unlock(&priv->state_lock);
+
 	return err ? -EINVAL : 0;
 }
 
