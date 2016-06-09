@@ -465,6 +465,31 @@ out:
 
 static void xfrm_replay_timer_handler(unsigned long data);
 
+static struct flow_cache_object *xfrm_state_flo_get(struct flow_cache_object *flo)
+{
+	xfrm_state_hold(container_of(flo, struct xfrm_state, flo));
+
+	return flo;
+}
+
+static int xfrm_state_flo_check(struct flow_cache_object *flo)
+{
+	struct xfrm_state *x = container_of(flo, struct xfrm_state, flo);
+
+	return x->genid == x->cache_genid;
+}
+
+static void xfrm_state_flo_delete(struct flow_cache_object *flo)
+{
+	xfrm_state_put(container_of(flo, struct xfrm_state, flo));
+}
+
+static const struct flow_cache_ops xfrm_state_fc_ops = {
+	.get = xfrm_state_flo_get,
+	.check = xfrm_state_flo_check,
+	.delete = xfrm_state_flo_delete,
+};
+
 struct xfrm_state *xfrm_state_alloc(struct net *net)
 {
 	struct xfrm_state *x;
@@ -493,6 +518,7 @@ struct xfrm_state *xfrm_state_alloc(struct net *net)
 		x->inner_mode = NULL;
 		x->inner_mode_iaf = NULL;
 		spin_lock_init(&x->lock);
+		x->flo.ops = &xfrm_state_fc_ops;
 	}
 	return x;
 }
@@ -1388,6 +1414,7 @@ int xfrm_state_check_expire(struct xfrm_state *x)
 }
 EXPORT_SYMBOL(xfrm_state_check_expire);
 
+
 struct xfrm_state *
 xfrm_state_lookup(struct net *net, u32 mark, const xfrm_address_t *daddr, __be32 spi,
 		  u8 proto, unsigned short family)
@@ -1400,6 +1427,92 @@ xfrm_state_lookup(struct net *net, u32 mark, const xfrm_address_t *daddr, __be32
 	return x;
 }
 EXPORT_SYMBOL(xfrm_state_lookup);
+
+static struct flow_cache_object *
+xfrm_state_cache_lookup(struct net *net, const struct flowi *fl, u16 family, u8 dir,
+			struct flow_cache_object *oldflo, void *ctx)
+{
+	struct xfrm_state *x;
+	const struct flowi4 *fl4;
+	const struct flowi6 *fl6;
+
+	if (oldflo) {
+		x = container_of(oldflo, struct xfrm_state, flo);
+		if (x->genid == x->cache_genid)
+			return oldflo;
+	}
+
+	spin_lock_bh(&net->xfrm.xfrm_state_lock);
+	switch (family) {
+	case AF_INET:
+		fl4 = &fl->u.ip4;
+		x = __xfrm_state_lookup(net, fl4->flowi4_mark, (xfrm_address_t *)&fl4->daddr, fl4->fl4_ipsec_spi, fl4->flowi4_proto, family);
+		break;
+	case AF_INET6:
+		fl6 = &fl->u.ip6;
+		x = __xfrm_state_lookup(net, fl6->flowi6_mark, (xfrm_address_t *)&fl6->daddr, fl6->fl6_ipsec_spi, fl6->flowi6_proto, family);
+		break;
+	default:
+		x = NULL;
+	}
+
+	if (!x)
+		goto err;
+
+	x->cache_genid = x->genid;
+	spin_unlock_bh(&net->xfrm.xfrm_state_lock);
+
+	xfrm_state_hold(x);
+
+	return &x->flo;
+err:
+	spin_unlock_bh(&net->xfrm.xfrm_state_lock);
+	return NULL;
+}
+
+struct xfrm_state *
+xfrm_input_state_lookup(struct net *net, u32 mark, const xfrm_address_t *daddr, __be32 spi,
+			u8 proto, unsigned short family)
+{
+	struct xfrm_state *x;
+	struct flow_cache_object *flo;
+	struct flowi fl;
+	struct flowi4 *fl4;
+	struct flowi6 *fl6;
+
+	memset(&fl, 0, sizeof(fl));
+
+	switch (family) {
+	case AF_INET:
+		fl4 = &fl.u.ip4;
+		fl4->daddr = daddr->a4;
+		fl4->flowi4_proto = proto;
+		fl4->fl4_ipsec_spi = spi;
+		fl4->flowi4_mark = mark;
+		break;
+	case AF_INET6:
+		fl6 = &fl.u.ip6;
+		memcpy(&fl6->daddr, daddr, sizeof(fl6->daddr));
+		fl6->flowi6_proto = proto;
+		fl6->fl6_ipsec_spi = spi;
+		fl6->flowi6_mark = mark;
+		break;
+
+	default:
+		return NULL;
+	}
+
+	flo = flow_cache_lookup(net, &fl, family, FLOW_DIR_IN,
+				xfrm_state_cache_lookup, NULL);
+	if (IS_ERR_OR_NULL(flo))
+		return NULL;
+
+
+	x = container_of(flo, struct xfrm_state, flo);
+
+	return x;
+}
+EXPORT_SYMBOL(xfrm_input_state_lookup);
 
 struct xfrm_state *
 xfrm_state_lookup_byaddr(struct net *net, u32 mark,
@@ -2102,6 +2215,7 @@ int __net_init xfrm_state_init(struct net *net)
 	INIT_HLIST_HEAD(&net->xfrm.state_gc_list);
 	INIT_WORK(&net->xfrm.state_gc_work, xfrm_state_gc_task);
 	spin_lock_init(&net->xfrm.xfrm_state_lock);
+
 	return 0;
 
 out_byspi:
