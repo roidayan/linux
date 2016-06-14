@@ -544,8 +544,30 @@ enum {
 
 struct mlx5e_sniffer;
 
+struct mlx5e_ethtool_rule {
+	struct list_head list;
+	struct ethtool_rx_flow_spec flow_spec;
+	struct mlx5_flow_rule *rule;
+	struct mlx5e_ethtool_table *eth_ft;
+};
+
+struct mlx5e_ethtool_table {
+	struct mlx5_flow_table	*ft;
+	int num_rules;
+};
+
+#define ETHTOOL_NUM_L2_FTS 4
+
+#define MAX_NUM_OF_ETHTOOL_RULES BIT(10)
+struct mlx5e_ethtool_steering {
+	struct mlx5e_ethtool_table	l2_ft[ETHTOOL_NUM_L2_FTS];
+	struct list_head		rules;
+	int tot_num_rules;
+};
+
 struct mlx5e_flow_steering {
 	struct mlx5_flow_namespace      *ns;
+	struct mlx5e_ethtool_steering	ethtool;
 	struct mlx5e_tc_table           tc;
 	struct mlx5e_vlan_table         vlan;
 	struct mlx5e_l2_table           l2;
@@ -684,6 +706,8 @@ int mlx5e_create_flow_steering(struct mlx5e_priv *priv);
 void mlx5e_destroy_flow_steering(struct mlx5e_priv *priv);
 void mlx5e_init_l2_addr(struct mlx5e_priv *priv);
 void mlx5e_destroy_flow_table(struct mlx5e_flow_table *ft);
+void mlx5e_clean_ethtool_steering(struct mlx5e_priv *priv);
+void mlx5e_init_ethtool_steering(struct mlx5e_priv *priv);
 void mlx5e_set_rx_mode_work(struct work_struct *work);
 
 void mlx5e_fill_hwstamp(struct mlx5e_tstamp *clock, u64 timestamp,
