@@ -1081,7 +1081,7 @@ enum ib_qp_attr_mask {
 	IB_QP_DEST_QPN			= (1<<20),
 	IB_QP_RESERVED1			= (1<<21),
 	IB_QP_RESERVED2			= (1<<22),
-	IB_QP_RESERVED3			= (1<<23),
+	IB_QP_FLOW_ENTROPY		= (1<<23),
 	IB_QP_RESERVED4			= (1<<24),
 };
 
@@ -1132,6 +1132,7 @@ struct ib_qp_attr {
 	u8			rnr_retry;
 	u8			alt_port_num;
 	u8			alt_timeout;
+	u32			flow_entropy;
 };
 
 enum ib_wr_opcode {
