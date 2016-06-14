@@ -2302,10 +2302,14 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 		    (ibqp->qp_type == IB_QPT_XRC_INI) ||
 		    (ibqp->qp_type == IB_QPT_XRC_TGT)) {
 			if (mlx5_lag_is_active(dev->mdev)) {
-				write_lock(&dev->roce.netdev_lock);
-				tx_affinity = (dev->roce.next_port++ %
-					       MLX5_MAX_PORTS) + 1;
-				write_unlock(&dev->roce.netdev_lock);
+				if (attr_mask & IB_QP_FLOW_ENTROPY) {
+					tx_affinity = attr->flow_entropy;
+				} else {
+					write_lock(&dev->roce.netdev_lock);
+					tx_affinity = dev->roce.next_port++;
+					write_unlock(&dev->roce.netdev_lock);
+				}
+				tx_affinity = (tx_affinity % MLX5_MAX_PORTS) + 1;
 				context->flags |= cpu_to_be32(tx_affinity << 24);
 			}
 		}
