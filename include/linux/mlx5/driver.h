@@ -994,12 +994,41 @@ enum {
 #define MLX5_DIAG_DUMP_VERSION  1
 
 #define MLX5_DIAG_FLAG_MST	BIT(0)
+#define MLX5_DIAG_FLAG_CHANNELS	BIT(1)
 
 enum mlx5_diag_type {
 	MLX5_DIAG_DRV_VERSION = 0,
 	MLX5_DIAG_DEVICE_NAME,
-	MLX5_DIAG_MST
+	MLX5_DIAG_MST,
+	MLX5_DIAG_SQ,
+	MLX5_DIAG_RQ,
+	MLX5_DIAG_CQ,
+	MLX5_DIAG_EQ,
 };
+
+struct mlx5_diag_wq {
+	u32 wq_type;
+	u32 wqn;
+	u16 pi;
+	u16 ci;
+	u8  wqe_stride;
+	u8  rsvd;
+	u16 size;
+	u32 wqe_num;
+	u32 group_id;
+} __packed;
+
+struct mlx5_diag_eq {
+	u32 type;
+	u32 ci;
+	int size;
+	unsigned int irqn;
+	u8 eqn;
+	int nent;
+	u64 mask;
+	int index;
+	u32 group_id;
+} __packed;
 
 struct mlx5_diag_blk {
 	u32 type;
