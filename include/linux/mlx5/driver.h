@@ -989,4 +989,27 @@ enum {
 	MLX5_TRIGGERED_CMD_COMP = (u64)1 << 32,
 };
 
+/* MLX5 Diagnostics */
+
+#define MLX5_DIAG_DUMP_VERSION 1
+
+enum mlx5_diag_type {
+	MLX5_DIAG_DRV_VERSION = 0,
+	MLX5_DIAG_DEVICE_NAME,
+};
+
+struct mlx5_diag_blk {
+	u32 type;
+	u32 length;
+	char data[0];
+} __packed;
+
+struct mlx5_diag_dump {
+	u32 version;
+	u32 flag;
+	u32 num_blocks;
+	u32 total_length;
+	char dump[0];
+} __packed;
+
 #endif /* MLX5_DRIVER_H */
