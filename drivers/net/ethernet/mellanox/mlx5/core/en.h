@@ -875,4 +875,8 @@ void mlx5e_destroy_netdev(struct mlx5_core_dev *mdev, struct mlx5e_priv *priv);
 struct rtnl_link_stats64 *
 mlx5e_get_stats(struct net_device *dev, struct rtnl_link_stats64 *stats);
 
+int mlx5e_get_dump_flag(struct net_device *netdev, struct ethtool_dump *dump);
+int mlx5e_get_dump_data(struct net_device *netdev, struct ethtool_dump *dump,
+			void *buffer);
+
 #endif /* __MLX5_EN_H__ */
