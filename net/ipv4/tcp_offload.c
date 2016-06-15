@@ -107,6 +107,9 @@ struct sk_buff *tcp_gso_segment(struct sk_buff *skb,
 
 	/* Only first segment might have ooo_okay set */
 	segs->ooo_okay = ooo_okay;
+	if (skb_is_gso(segs) && !(skb_shinfo(segs)->gso_type & SKB_GSO_PARTIAL))
+		mss = (skb_tail_pointer(segs) - skb_transport_header(segs)) +
+		       segs->data_len - thlen;
 
 	delta = htonl(oldlen + (thlen + mss));
 

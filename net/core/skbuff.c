@@ -3078,6 +3078,92 @@ struct sk_buff *skb_segment(struct sk_buff *head_skb,
 	sg = !!(features & NETIF_F_SG);
 	csum = !!can_checksum_protocol(features, proto);
 
+	headroom = skb_headroom(head_skb);
+
+	if (list_skb && net_gso_ok(features, skb_shinfo(head_skb)->gso_type) &&
+	    csum && sg && (mss != GSO_BY_FRAGS) &&
+	    !(features & NETIF_F_GSO_PARTIAL)) {
+		unsigned int lskb_segs;
+		unsigned int delta_segs, delta_len, delta_truesize;
+		struct sk_buff *nskb;
+		delta_segs = delta_len = delta_truesize = 0;
+
+		segs = __alloc_skb(skb_headlen(head_skb) + headroom,
+				   GFP_ATOMIC, skb_alloc_rx_flag(head_skb),
+				   NUMA_NO_NODE);
+		if (unlikely(!segs))
+			return ERR_PTR(-ENOMEM);
+
+		skb_reserve(segs, headroom);
+		skb_put(segs, skb_headlen(head_skb));
+		skb_copy_from_linear_data(head_skb, segs->data, segs->len);
+		copy_skb_header(segs, head_skb);
+
+		if (skb_shinfo(head_skb)->nr_frags) {
+			int i;
+
+			if (skb_orphan_frags(head_skb, GFP_ATOMIC))
+				goto err;
+
+			for (i = 0; i < skb_shinfo(head_skb)->nr_frags; i++) {
+				skb_shinfo(segs)->frags[i] = skb_shinfo(head_skb)->frags[i];
+				skb_frag_ref(head_skb, i);
+			}
+			skb_shinfo(segs)->nr_frags = i;
+		}
+
+		do {
+			nskb = skb_clone(list_skb, GFP_ATOMIC);
+			if (unlikely(!nskb))
+				goto err;
+
+			list_skb = list_skb->next;
+
+			if (!tail)
+				segs->next = nskb;
+			else
+				tail->next = nskb;
+
+			tail = nskb;
+
+			if (skb_cow_head(nskb, doffset + headroom))
+				goto err;
+
+			lskb_segs = nskb->len / mss;
+
+			skb_shinfo(nskb)->gso_size = mss;
+			skb_shinfo(nskb)->gso_type = skb_shinfo(head_skb)->gso_type;
+			skb_shinfo(nskb)->gso_segs = lskb_segs;
+
+
+			delta_segs += lskb_segs;
+			delta_len += nskb->len;
+			delta_truesize += nskb->truesize;
+
+			__skb_push(nskb, doffset);
+
+			skb_release_head_state(nskb);
+			__copy_skb_header(nskb, head_skb);
+
+			skb_headers_offset_update(nskb, skb_headroom(nskb) - headroom);
+			skb_reset_mac_len(nskb);
+
+			skb_copy_from_linear_data_offset(head_skb, -tnl_hlen,
+							 nskb->data - tnl_hlen,
+							 doffset + tnl_hlen);
+
+		} while (list_skb);
+
+		skb_shinfo(segs)->gso_segs -= delta_segs;
+		segs->len = head_skb->len - delta_len;
+		segs->data_len = head_skb->data_len - delta_len;
+		segs->truesize += head_skb->data_len - delta_truesize;
+
+		segs->prev = tail;
+
+		goto out;
+	}
+
 	/* GSO partial only requires that we trim off any excess that
 	 * doesn't fit into an MSS sized block, so take care of that
 	 * now.
@@ -3090,7 +3176,6 @@ struct sk_buff *skb_segment(struct sk_buff *head_skb,
 			partial_segs = 0;
 	}
 
-	headroom = skb_headroom(head_skb);
 	pos = skb_headlen(head_skb);
 
 	do {
@@ -3307,6 +3392,8 @@ perform_csum_check:
 		swap(tail->destructor, head_skb->destructor);
 		swap(tail->sk, head_skb->sk);
 	}
+
+out:
 	return segs;
 
 err:
