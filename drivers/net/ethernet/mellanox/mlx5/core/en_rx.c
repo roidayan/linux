@@ -426,6 +426,9 @@ static int mlx5e_alloc_rx_fragmented_mpwqe(struct mlx5e_rq *rq,
 	u32 dma_offset = mlx5e_get_wqe_mtt_offset(rq->ix, ix) << PAGE_SHIFT;
 	int i;
 
+	if (unlikely(rq->xdp_prog))
+		return -EINVAL;
+
 	wi->umr.dma_info = kmalloc(sizeof(*wi->umr.dma_info) *
 				   MLX5_MPWRQ_PAGES_PER_WQE,
 				   GFP_ATOMIC);
@@ -868,12 +871,35 @@ static inline void mlx5e_mpwqe_fill_rx_skb(struct mlx5e_rq *rq,
 	skb->len  += headlen;
 }
 
+static inline enum xdp_action mlx5e_xdp_handle(struct mlx5e_rq *rq,
+					       struct mlx5_cqe64 *cqe,
+					       struct mlx5e_mpw_info *wi,
+					       struct bpf_prog *xdp_prog,
+					       u16 cqe_bcnt)
+{
+	u32 wqe_offset = mpwrq_get_cqe_stride_index(cqe) *
+			 rq->mpwqe_stride_sz;
+	u32 page_idx = wqe_offset >> PAGE_SHIFT;
+	struct mlx5e_dma_info *dma_info = &wi->dma_info;
+	struct xdp_buff xdp;
+
+	wi->dma_pre_sync(rq->pdev, wi, wqe_offset, cqe_bcnt);
+
+	xdp.data = page_address(&dma_info->page[page_idx]) +
+				(wqe_offset & (PAGE_SIZE - 1));
+
+	xdp.data_end = xdp.data + cqe_bcnt;
+
+	return bpf_prog_run_xdp(xdp_prog, &xdp);
+}
+
 void mlx5e_handle_rx_cqe_mpwrq(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe)
 {
 	u16 cstrides       = mpwrq_get_cqe_consumed_strides(cqe);
 	u16 wqe_id         = be16_to_cpu(cqe->wqe_id);
 	struct mlx5e_mpw_info *wi = &rq->wqe_info[wqe_id];
 	struct mlx5e_rx_wqe  *wqe = mlx5_wq_ll_get_wqe(&rq->wq, wqe_id);
+	struct bpf_prog *xdp_prog = READ_ONCE(rq->xdp_prog);
 	struct sk_buff *skb;
 	u16 cqe_bcnt;
 
@@ -889,6 +915,17 @@ void mlx5e_handle_rx_cqe_mpwrq(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe)
 		goto mpwrq_cqe_out;
 	}
 
+	/* A bpf program gets first chance to drop the packet. It may
+	 * read bytes but not past the end of the frag.
+	 */
+	cqe_bcnt = mpwrq_get_cqe_byte_cnt(cqe);
+
+	if (xdp_prog &&
+	    mlx5e_xdp_handle(rq, cqe, wi, xdp_prog, cqe_bcnt) != XDP_PASS) {
+		rq->stats.xdp_drop++;
+		goto mpwrq_cqe_out;
+	}
+
 	skb = napi_alloc_skb(rq->cq.napi,
 			     ALIGN(MLX5_MPWRQ_SMALL_PACKET_THRESHOLD,
 				   sizeof(long)));
@@ -898,7 +935,6 @@ void mlx5e_handle_rx_cqe_mpwrq(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe)
 	}
 
 	prefetch(skb->data);
-	cqe_bcnt = mpwrq_get_cqe_byte_cnt(cqe);
 
 	mlx5e_mpwqe_fill_rx_skb(rq, cqe, wi, cqe_bcnt, skb);
 	mlx5e_complete_rx_cqe(rq, cqe, cqe_bcnt, skb);

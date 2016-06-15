@@ -34,6 +34,7 @@
 #include <net/pkt_cls.h>
 #include <linux/mlx5/fs.h>
 #include <net/vxlan.h>
+#include <linux/bpf.h>
 #include "en.h"
 #include "en_tc.h"
 #include "eswitch.h"
@@ -143,6 +144,7 @@ static void mlx5e_update_sw_counters(struct mlx5e_priv *priv)
 		s->rx_csum_none	+= rq_stats->csum_none;
 		s->rx_csum_complete += rq_stats->csum_complete;
 		s->rx_csum_unnecessary_inner += rq_stats->csum_unnecessary_inner;
+		s->rx_xdp_drop += rq_stats->xdp_drop;
 		s->rx_wqe_err   += rq_stats->wqe_err;
 		s->rx_mpwqe_filler += rq_stats->mpwqe_filler;
 		s->rx_mpwqe_frag   += rq_stats->mpwqe_frag;
@@ -379,6 +381,10 @@ static int mlx5e_create_rq(struct mlx5e_channel *c,
 	rq->priv    = c->priv;
 	rq->mkey_be = c->mkey_be;
 	rq->umr_mkey_be = cpu_to_be32(c->priv->umr_mkey.key);
+	rq->xdp_prog = priv->xdp_prog;
+
+	if (rq->xdp_prog)
+		bpf_prog_add(rq->xdp_prog, 1);
 
 	return 0;
 
@@ -390,6 +396,9 @@ err_rq_wq_destroy:
 
 static void mlx5e_destroy_rq(struct mlx5e_rq *rq)
 {
+	if (rq->xdp_prog)
+		bpf_prog_put(rq->xdp_prog);
+
 	switch (rq->wq_type) {
 	case MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ:
 		kfree(rq->wqe_info);
@@ -2802,6 +2811,67 @@ static void mlx5e_tx_timeout(struct net_device *dev)
 		schedule_work(&priv->tx_timeout_work);
 }
 
+static int mlx5e_xdp_set(struct net_device *netdev, struct bpf_prog *prog)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+	struct bpf_prog *old_prog;
+	bool was_opened;
+	int i;
+
+	if (priv->params.rq_wq_type != MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ)
+		return -EINVAL;
+
+	mutex_lock(&priv->state_lock);
+
+	was_opened = test_bit(MLX5E_STATE_OPENED, &priv->state);
+
+	if (was_opened)
+		mlx5e_close_locked(netdev);
+
+	if (prog)
+		bpf_prog_add(prog, 1);
+
+	old_prog = xchg(&priv->xdp_prog, prog);
+	if (old_prog)
+		bpf_prog_put(old_prog);
+
+	if (was_opened)
+		mlx5e_open_locked(netdev);
+	else
+		goto state_unlock;
+
+	for (i = 0; i < priv->params.num_channels; i++) {
+		old_prog = xchg(&priv->channel[i]->rq.xdp_prog, prog);
+		if (old_prog)
+			bpf_prog_put(old_prog);
+	}
+
+state_unlock:
+	mutex_unlock(&priv->state_lock);
+
+	return 0;
+}
+
+static bool mlx5e_xdp_attached(struct net_device *dev)
+{
+	struct mlx5e_priv *priv = netdev_priv(dev);
+
+	return priv->xdp_prog ? true : false;
+}
+
+static int mlx5e_xdp(struct net_device *dev, struct netdev_xdp *xdp)
+{
+	switch (xdp->command) {
+	case XDP_SETUP_PROG:
+		return mlx5e_xdp_set(dev, xdp->prog);
+	case XDP_QUERY_PROG:
+		xdp->prog_attached = mlx5e_xdp_attached(dev);
+		return 0;
+	default:
+		return -EINVAL;
+	}
+}
+
 static const struct net_device_ops mlx5e_netdev_ops_basic = {
 	.ndo_open                = mlx5e_open,
 	.ndo_stop                = mlx5e_close,
@@ -2821,6 +2891,7 @@ static const struct net_device_ops mlx5e_netdev_ops_basic = {
 	.ndo_rx_flow_steer	 = mlx5e_rx_flow_steer,
 #endif
 	.ndo_tx_timeout          = mlx5e_tx_timeout,
+	.ndo_xdp		 = mlx5e_xdp,
 };
 
 static const struct net_device_ops mlx5e_netdev_ops_sriov = {
@@ -2852,6 +2923,7 @@ static const struct net_device_ops mlx5e_netdev_ops_sriov = {
 	.ndo_set_vf_link_state   = mlx5e_set_vf_link_state,
 	.ndo_get_vf_stats        = mlx5e_get_vf_stats,
 	.ndo_tx_timeout          = mlx5e_tx_timeout,
+	.ndo_xdp		 = mlx5e_xdp,
 };
 
 static int mlx5e_check_required_hca_cap(struct mlx5_core_dev *mdev)
