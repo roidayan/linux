@@ -58,7 +58,7 @@ static void mlx5e_rep_get_strings(struct net_device *dev,
 	case ETH_SS_STATS:
 		for (i = 0; i < NUM_VPORT_REP_COUNTERS; i++)
 			strcpy(data + (i * ETH_GSTRING_LEN),
-			       sw_stats_desc[i].name);
+			       sw_stats_desc[i].format);
 		break;
 	}
 }
