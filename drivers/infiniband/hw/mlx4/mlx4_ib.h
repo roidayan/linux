@@ -139,7 +139,6 @@ struct mlx4_ib_mr {
 	u32			max_pages;
 	struct mlx4_mr		mmr;
 	struct ib_umem	       *umem;
-	void			*pages_alloc;
 };
 
 struct mlx4_ib_mw {
