@@ -1152,6 +1152,10 @@ static int mlx5_load_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv)
 		goto err_rl;
 	}
 
+	err = mlx5_mst_dump_init(dev);
+	if (err)
+		dev_err(&pdev->dev, "Failed to init mst dump %d\n", err);
+
 #ifdef CONFIG_MLX5_CORE_EN
 	err = mlx5_eswitch_init(dev);
 	if (err) {
@@ -1191,6 +1195,7 @@ err_sriov:
 	mlx5_eswitch_cleanup(dev->priv.eswitch);
 #endif
 err_reg_dev:
+	mlx5_mst_dump_cleanup(dev);
 	mlx5_cleanup_rl_table(dev);
 err_rl:
 	mlx5_cleanup_fs(dev);
@@ -1263,6 +1268,7 @@ static int mlx5_unload_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv)
 	mlx5_eswitch_cleanup(dev->priv.eswitch);
 #endif
 
+	mlx5_mst_dump_cleanup(dev);
 	mlx5_cleanup_rl_table(dev);
 	mlx5_cleanup_fs(dev);
 	mlx5_cleanup_mkey_table(dev);
