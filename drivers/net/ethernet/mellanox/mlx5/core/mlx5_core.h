@@ -105,6 +105,12 @@ u32 mlx5_get_msix_vec(struct mlx5_core_dev *dev, int vecidx);
 struct mlx5_eq *mlx5_eqn2eq(struct mlx5_core_dev *dev, int eqn);
 void mlx5_cq_tasklet_cb(unsigned long data);
 
+int mlx5_mst_dump_init(struct mlx5_core_dev *dev);
+int mlx5_mst_capture(struct mlx5_core_dev *dev);
+u32 mlx5_mst_dump(struct mlx5_core_dev *dev, void *buff, u32 buff_sz);
+void mlx5_mst_free_capture(struct mlx5_core_dev *dev);
+void mlx5_mst_dump_cleanup(struct mlx5_core_dev *dev);
+
 void mlx5e_init(void);
 void mlx5e_cleanup(void);
 
