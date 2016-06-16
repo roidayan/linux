@@ -1460,4 +1460,5 @@ const struct ethtool_ops mlx5e_ethtool_ops = {
 	.set_priv_flags    = mlx5e_set_priv_flags,
 	.get_dump_flag	   = mlx5e_get_dump_flag,
 	.get_dump_data     = mlx5e_get_dump_data,
+	.set_dump          = mlx5e_set_dump,
 };

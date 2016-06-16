@@ -66,14 +66,40 @@ static int mlx5e_diag_fill_driver_version(void *buff)
 	return MLX5_DRV_VER_SZ;
 }
 
+int mlx5e_set_dump(struct net_device *netdev, struct ethtool_dump *dump)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+
+	priv->dump.flag = dump->flag;
+	return 0;
+}
+
 int mlx5e_get_dump_flag(struct net_device *netdev, struct ethtool_dump *dump)
 {
-	dump->version = MLX5_DIAG_DUMP_VERSION;
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+	__u32 extra_len = 0;
 
-	dump->flag = 0;
+	dump->version = MLX5_DIAG_DUMP_VERSION;
+	dump->flag = priv->dump.flag;
+
+	if (dump->flag & MLX5_DIAG_FLAG_MST) {
+		u32 mst_size = mlx5_mst_capture(priv->mdev);
+
+		if (mst_size <= 0) {
+			dump->flag &= ~MLX5_DIAG_FLAG_MST;
+			netdev_warn(priv->netdev,
+				    "Failed to get mst dump, err (%d)\n",
+				    mst_size);
+			mst_size = 0;
+		}
+		priv->dump.mst_size = mst_size;
+		extra_len += mst_size ? DIAG_BLK_SZ(mst_size) : 0;
+	}
+
 	dump->len = sizeof(struct mlx5_diag_dump) +
-		    DIAG_BLK_SZ(MLX5_DRV_VER_SZ) +
-		    DIAG_BLK_SZ(MLX5_DEV_NAME_SZ);
+		    DIAG_BLK_SZ(MLX5_DRV_VER_SZ)  +
+		    DIAG_BLK_SZ(MLX5_DEV_NAME_SZ) +
+		    extra_len;
 	return 0;
 }
 
@@ -102,6 +128,17 @@ int mlx5e_get_dump_data(struct net_device *netdev, struct ethtool_dump *dump,
 	dump_blk->length = mlx5e_diag_fill_device_name(priv, &dump_blk->data);
 	dump_hdr->total_length += DIAG_BLK_SZ(dump_blk->length);
 	dump_hdr->num_blocks++;
+
+	if (priv->dump.flag & MLX5_DIAG_FLAG_MST) {
+		/* Dump mst buffer */
+		dump_blk = DIAG_GET_NEXT_BLK(dump_hdr);
+		dump_blk->type = MLX5_DIAG_MST;
+		dump_blk->length = mlx5_mst_dump(priv->mdev, &dump_blk->data,
+						 priv->dump.mst_size);
+		dump_hdr->total_length += DIAG_BLK_SZ(dump_blk->length);
+		dump_hdr->num_blocks++;
+		dump_hdr->flag |= MLX5_DIAG_FLAG_MST;
+	}
 
 	return 0;
 }
