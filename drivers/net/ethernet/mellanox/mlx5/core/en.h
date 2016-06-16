@@ -655,11 +655,16 @@ struct mlx5e_priv {
 	struct delayed_work        update_stats_work;
 
 	u32                        pflags;
+	struct {
+		__u32              flag;
+		u32                mst_size;
+	} dump;
 	struct mlx5_core_dev      *mdev;
 	struct net_device         *netdev;
 	struct mlx5e_stats         stats;
 	struct mlx5e_tstamp        tstamp;
 	u16 q_counter;
+
 #ifdef CONFIG_MLX5_CORE_EN_DCB
 	struct mlx5e_dcbx          dcbx;
 #endif
@@ -878,5 +883,6 @@ mlx5e_get_stats(struct net_device *dev, struct rtnl_link_stats64 *stats);
 int mlx5e_get_dump_flag(struct net_device *netdev, struct ethtool_dump *dump);
 int mlx5e_get_dump_data(struct net_device *netdev, struct ethtool_dump *dump,
 			void *buffer);
+int mlx5e_set_dump(struct net_device *dev, struct ethtool_dump *dump);
 
 #endif /* __MLX5_EN_H__ */
