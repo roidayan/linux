@@ -593,6 +593,8 @@ struct mlx5e_resources {
 	struct mlx5_core_mkey      mkey;
 };
 
+struct mlx5_mst_dump;
+
 struct mlx5_core_dev {
 	struct pci_dev	       *pdev;
 	/* sync pci state */
@@ -621,6 +623,7 @@ struct mlx5_core_dev {
 #ifdef CONFIG_RFS_ACCEL
 	struct cpu_rmap         *rmap;
 #endif
+	struct mlx5_mst_dump *mst_dump;
 };
 
 struct mlx5_db {
