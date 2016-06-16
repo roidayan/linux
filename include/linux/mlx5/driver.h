@@ -991,11 +991,14 @@ enum {
 
 /* MLX5 Diagnostics */
 
-#define MLX5_DIAG_DUMP_VERSION 1
+#define MLX5_DIAG_DUMP_VERSION  1
+
+#define MLX5_DIAG_FLAG_MST	BIT(0)
 
 enum mlx5_diag_type {
 	MLX5_DIAG_DRV_VERSION = 0,
 	MLX5_DIAG_DEVICE_NAME,
+	MLX5_DIAG_MST
 };
 
 struct mlx5_diag_blk {
