@@ -462,7 +462,6 @@ struct mlx5_ib_mr {
 	struct mlx5_create_mkey_mbox_out out;
 	struct mlx5_core_sig_ctx    *sig;
 	int			live;
-	void			*descs_alloc;
 	int			access_flags; /* Needed for rereg MR */
 };
 
