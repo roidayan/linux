@@ -1393,17 +1393,12 @@ mlx5_alloc_priv_descs(struct ib_device *device,
 		      int desc_size)
 {
 	int size = ndescs * desc_size;
-	int add_size;
 	int ret;
 
-	add_size = max_t(int, MLX5_UMR_ALIGN - ARCH_KMALLOC_MINALIGN, 0);
-
-	mr->descs_alloc = kzalloc(size + add_size, GFP_KERNEL);
-	if (!mr->descs_alloc)
+	mr->descs = (__be64 *)__get_free_pages(GFP_KERNEL | __GFP_ZERO,
+					       get_order(size));
+	if (!mr->descs)
 		return -ENOMEM;
-
-	mr->descs = PTR_ALIGN(mr->descs_alloc, MLX5_UMR_ALIGN);
-
 	mr->desc_map = dma_map_single(device->dma_device, mr->descs,
 				      size, DMA_TO_DEVICE);
 	if (dma_mapping_error(device->dma_device, mr->desc_map)) {
@@ -1413,7 +1408,7 @@ mlx5_alloc_priv_descs(struct ib_device *device,
 
 	return 0;
 err:
-	kfree(mr->descs_alloc);
+	free_pages((unsigned long)mr->descs, get_order(size));
 
 	return ret;
 }
@@ -1427,7 +1422,7 @@ mlx5_free_priv_descs(struct mlx5_ib_mr *mr)
 
 		dma_unmap_single(device->dma_device, mr->desc_map,
 				 size, DMA_TO_DEVICE);
-		kfree(mr->descs_alloc);
+		free_pages((unsigned long)mr->descs, get_order(size));
 		mr->descs = NULL;
 	}
 }
