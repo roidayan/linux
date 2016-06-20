@@ -51,6 +51,8 @@
 #define MLX5_SET_CFG(p, f, v) MLX5_SET(create_flow_group_in, p, f, v)
 
 #define MLX5E_MAX_NUM_TC	8
+#define MLX5E_MAX_UP		8
+#define MLX5E_UP_BITMASK	0xf
 
 #define MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE                0x6
 #define MLX5E_PARAMS_DEFAULT_LOG_SQ_SIZE                0xa
@@ -513,6 +515,7 @@ enum {
 struct mlx5e_priv {
 	/* priv data path fields - start */
 	struct mlx5e_sq            **txq_to_sq_map;
+	u8 up_tc_map[MLX5E_MAX_UP];
 	int channeltc_to_txq_map[MLX5E_MAX_NUM_CHANNELS][MLX5E_MAX_NUM_TC];
 	/* priv data path fields - end */
 
@@ -646,6 +649,9 @@ void mlx5e_build_default_indir_rqt(struct mlx5_core_dev *mdev,
 				   u32 *indirection_rqt, int len,
 				   int num_channels);
 int mlx5e_get_max_linkspeed(struct mlx5_core_dev *mdev, u32 *speed);
+
+int mlx5e_set_up_tc_map(struct net_device *netdev, u8 up, u8 tc);
+u8 mlx5e_get_up_tc_map(struct net_device *netdev, u8 up);
 
 static inline void mlx5e_tx_notify_hw(struct mlx5e_sq *sq,
 				      struct mlx5_wqe_ctrl_seg *ctrl, int bf_sz)
