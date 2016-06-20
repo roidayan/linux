@@ -1673,7 +1673,9 @@ static void mlx5e_netdev_set_tcs(struct net_device *netdev)
 	struct mlx5e_priv *priv = netdev_priv(netdev);
 	int nch = priv->params.num_channels;
 	int ntc = priv->params.num_tc;
-	int tc;
+	int err;
+	u8 tc;
+	u8 up;
 
 	netdev_reset_tc(netdev);
 
@@ -1684,6 +1686,31 @@ static void mlx5e_netdev_set_tcs(struct net_device *netdev)
 
 	for (tc = 0; tc < ntc; tc++)
 		netdev_set_tc_queue(netdev, tc, nch, tc * nch);
+
+	for (up = 0; up < MLX5E_MAX_UP; up++) {
+		err = mlx5_query_port_prio_tc(priv->mdev, up, &tc);
+		if (err)
+			break;
+		mlx5e_set_up_tc_map(netdev, up, tc);
+	}
+}
+
+int mlx5e_set_up_tc_map(struct net_device *netdev, u8 up, u8 tc)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+
+	if (tc >= netdev->num_tc)
+		return -EINVAL;
+
+	priv->up_tc_map[up & MLX5E_UP_BITMASK] = tc;
+	return 0;
+}
+
+u8 mlx5e_get_up_tc_map(struct net_device *netdev, u8 up)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+
+	return priv->up_tc_map[up & MLX5E_UP_BITMASK];
 }
 
 int mlx5e_open_locked(struct net_device *netdev)

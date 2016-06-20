@@ -119,7 +119,7 @@ u16 mlx5e_select_queue(struct net_device *dev, struct sk_buff *skb,
 	if (skb_vlan_tag_present(skb)) {
 		int up = skb->vlan_tci >> VLAN_PRIO_SHIFT;
 
-		tc = netdev_get_prio_tc_map(dev, up);
+		tc = mlx5e_get_up_tc_map(dev, up);
 	}
 
 	channel_ix = reciprocal_scale(channel_ix,

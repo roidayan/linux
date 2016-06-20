@@ -52,6 +52,8 @@
 #define MLX5_SET_CFG(p, f, v) MLX5_SET(create_flow_group_in, p, f, v)
 
 #define MLX5E_MAX_NUM_TC	8
+#define MLX5E_MAX_UP		8
+#define MLX5E_UP_BITMASK	0xf
 
 #define MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE                0x6
 #define MLX5E_PARAMS_DEFAULT_LOG_SQ_SIZE                0xa
@@ -628,6 +630,7 @@ struct mlx5e_priv {
 	struct kobject *ecn_root_kobj;
 	struct mlx5_ecn_ctx ecn_ctx[MLX5_CONG_PROTOCOL_NUM];
 	struct mlx5_ecn_enable_ctx ecn_enable_ctx[MLX5_CONG_PROTOCOL_NUM][8];
+	u8 up_tc_map[MLX5E_MAX_UP];
 };
 
 enum mlx5e_link_mode {
@@ -745,6 +748,9 @@ void mlx5e_set_rx_cq_mode_params(struct mlx5e_params *params,
 
 int mlx5e_sysfs_create(struct net_device *dev);
 void mlx5e_sysfs_remove(struct net_device *dev);
+
+int mlx5e_set_up_tc_map(struct net_device *netdev, u8 up, u8 tc);
+u8 mlx5e_get_up_tc_map(struct net_device *netdev, u8 up);
 
 static inline void mlx5e_tx_notify_hw(struct mlx5e_sq *sq,
 				      struct mlx5_wqe_ctrl_seg *ctrl, int bf_sz)

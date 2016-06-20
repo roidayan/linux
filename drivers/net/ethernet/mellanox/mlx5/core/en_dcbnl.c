@@ -33,8 +33,6 @@
 #include <linux/netdevice.h>
 #include "en.h"
 
-#define MLX5E_MAX_PRIORITY 8
-
 #define MLX5E_100MB (100000)
 #define MLX5E_1GB   (1000000)
 
@@ -109,6 +107,7 @@ int mlx5e_dcbnl_ieee_setets_core(struct mlx5e_priv *priv, struct ieee_ets *ets)
 	u8 tc_group[IEEE_8021QAZ_MAX_TCS];
 	int max_tc = mlx5_max_tc(mdev);
 	int err;
+	u8 up;
 
 	if (!MLX5_CAP_GEN(mdev, ets))
 		return -ENOTSUPP;
@@ -119,6 +118,9 @@ int mlx5e_dcbnl_ieee_setets_core(struct mlx5e_priv *priv, struct ieee_ets *ets)
 	err = mlx5_set_port_prio_tc(mdev, ets->prio_tc);
 	if (err)
 		return err;
+
+	for (up = 0; up < MLX5E_MAX_UP; up++)
+		mlx5e_set_up_tc_map(priv->netdev, up, ets->prio_tc[up]);
 
 	err = mlx5_set_port_tc_group(mdev, tc_group);
 	if (err)
@@ -134,7 +136,7 @@ static int mlx5e_dbcnl_validate_ets(struct ieee_ets *ets)
 
 	/* Validate Priority */
 	for (i = 0; i < IEEE_8021QAZ_MAX_TCS; i++) {
-		if (ets->prio_tc[i] >= MLX5E_MAX_PRIORITY)
+		if (ets->prio_tc[i] >= MLX5E_MAX_UP)
 			return -EINVAL;
 	}
 
