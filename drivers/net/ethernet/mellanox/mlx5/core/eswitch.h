@@ -128,7 +128,7 @@ struct mlx5_eswitch_fdb {
 	void *fdb;
 };
 
-#define FLOW_COUNTER_TABLE_SIZE (1UL << 15)
+#define FLOW_COUNTER_TABLE_SIZE (1UL << 16)
 struct flow_counter_rec {
 	u64		packets;
 	u64		bytes;
