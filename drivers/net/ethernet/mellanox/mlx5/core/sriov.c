@@ -33,11 +33,9 @@
 #include <linux/pci.h>
 #include <linux/module.h>
 #include <linux/mlx5/driver.h>
-#include <linux/mlx5/device.h>
 #include "mlx5_core.h"
 #ifdef CONFIG_MLX5_CORE_EN
 #include "eswitch.h"
-#include <linux/mlx5/vport.h>
 #endif
 
 int mlx5_flow_offload_min_inline_mode = MLX5_INLINE_MODE_L2;
@@ -101,34 +99,15 @@ ex:
 
 static int mlx5_core_sriov_enable(struct pci_dev *pdev, int num_vfs)
 {
-#define NIC_VPORT_CONTEXT_INLINE_MODE 1
 	struct mlx5_core_dev *dev  = pci_get_drvdata(pdev);
 	struct mlx5_core_sriov *sriov = &dev->priv.sriov;
 	int err;
-	int vf;
 
 	kfree(sriov->vfs_ctx);
 	sriov->vfs_ctx = kcalloc(num_vfs, sizeof(*sriov->vfs_ctx), GFP_ATOMIC);
 	if (!sriov->vfs_ctx)
 		return -ENOMEM;
 
-#ifdef CONFIG_MLX5_CORE_EN
-	/* Check that min inline mode is according to
-	 * nic_vport_context configuration
-	 */
-	if (MLX5_CAP_ETH(dev, wqe_inline_mode) ==
-	    NIC_VPORT_CONTEXT_INLINE_MODE) {
-		for (vf = 0; vf < num_vfs; vf++) {
-			err = mlx5_modify_nic_vport_min_inline(dev, vf + 1,
-							       mlx5_flow_offload_min_inline_mode);
-			if (err)
-				mlx5_core_warn(dev, "Fail to modify nic vport min inline mode.\n");
-		}
-	} else {
-		if (mlx5_flow_offload_min_inline_mode != MLX5_INLINE_MODE_L2)
-			mlx5_core_warn(dev, "Cann't modify nic vport min inline mode.\n");
-	}
-#endif
 	sriov->enabled_vfs = num_vfs;
 	err = mlx5_core_create_vfs(pdev, num_vfs);
 	if (err) {

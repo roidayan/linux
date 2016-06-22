@@ -117,25 +117,6 @@ u16 mlx5e_select_queue(struct net_device *dev, struct sk_buff *skb,
 	return priv->channeltc_to_txq_map[channel_ix][tc];
 }
 
-static unsigned int mlx5e_calc_min_inline(enum mlx5_inline_modes mode,
-					  struct sk_buff *skb, u16 max_inline)
-{
-	switch (mode) {
-	case MLX5_INLINE_MODE_NONE:
-		return 0;
-	case MLX5_INLINE_MODE_L2:
-		return min_t(unsigned int, skb_headlen(skb),
-			     ETH_HLEN + VLAN_HLEN);
-	case MLX5_INLINE_MODE_IP:
-		skb_probe_transport_header(skb, ETH_HLEN);
-		return skb_transport_offset(skb);
-	case MLX5_INLINE_MODE_TCP_UDP:
-		return eth_get_headlen(skb->data,
-				       min_t(unsigned int, max_inline, skb_headlen(skb)));
-	}
-	return 0;
-}
-
 static inline u16 mlx5e_get_inline_hdr_size(struct mlx5e_sq *sq,
 					    struct sk_buff *skb, bool bf)
 {
@@ -143,6 +124,8 @@ static inline u16 mlx5e_get_inline_hdr_size(struct mlx5e_sq *sq,
 	 * headers and occur before the data gather.
 	 * Therefore these headers must be copied into the WQE
 	 */
+#define MLX5E_MIN_INLINE ETH_HLEN
+
 	if (bf) {
 		u16 ihs = skb_headlen(skb);
 
@@ -152,7 +135,8 @@ static inline u16 mlx5e_get_inline_hdr_size(struct mlx5e_sq *sq,
 		if (ihs <= sq->max_inline)
 			return skb_headlen(skb);
 	}
-	return mlx5e_calc_min_inline(sq->min_inline_mode, skb, sq->max_inline);
+
+	return MLX5E_MIN_INLINE;
 }
 
 static inline void mlx5e_insert_vlan(void *start, struct sk_buff *skb, u16 ihs)

@@ -30,7 +30,6 @@
  * SOFTWARE.
  */
 
-#include <linux/tcp.h>
 #include "en.h"
 #include "eswitch.h"
 
@@ -772,26 +771,6 @@ static int mlx5e_get_rxnfc(struct net_device *netdev,
 	return err;
 }
 
-static int min_inline_mode2max_bytes(enum mlx5_inline_modes mode)
-{
-/* IPv4/IPv6 header can include also ip options/extended headers */
-#define MAX_IP_HLEN 60
-/* TCP header can include also extended headers */
-#define MAX_TCP_UDP_HLEN 60
-
-	switch (mode) {
-	case MLX5_INLINE_MODE_NONE:
-		return 0;
-	case MLX5_INLINE_MODE_L2:
-		return ETH_HLEN + VLAN_HLEN;
-	case MLX5_INLINE_MODE_IP:
-		return ETH_HLEN + MAX_IP_HLEN;
-	case MLX5_INLINE_MODE_TCP_UDP:
-		return ETH_HLEN + MAX_IP_HLEN + MAX_TCP_UDP_HLEN;
-	}
-	return 0;
-}
-
 static int mlx5e_get_tunable(struct net_device *dev,
 			     const struct ethtool_tunable *tuna,
 			     void *data)
@@ -816,7 +795,6 @@ static int mlx5e_set_tunable(struct net_device *dev,
 			     const void *data)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
-	enum mlx5_inline_modes mode = priv->params.min_inline_mode;
 	struct mlx5_core_dev *mdev = priv->mdev;
 	bool was_opened;
 	u32 val;
@@ -825,11 +803,11 @@ static int mlx5e_set_tunable(struct net_device *dev,
 	switch (tuna->id) {
 	case ETHTOOL_TX_COPYBREAK:
 		val = *(u32 *)data;
-		if (val > mlx5e_get_max_inline_cap(mdev) ||
-		    val < min_inline_mode2max_bytes(mode)) {
+		if (val > mlx5e_get_max_inline_cap(mdev)) {
 			err = -EINVAL;
 			break;
 		}
+
 		mutex_lock(&priv->state_lock);
 
 		was_opened = test_bit(MLX5E_STATE_OPENED, &priv->state);
