@@ -1490,8 +1490,43 @@ struct ib_rwq_ind_table_init_attr {
 	struct ib_wq	**ind_tbl;
 };
 
+enum port_pkey_state {
+	IB_PORT_PKEY_NOT_VALID = 0,
+	IB_PORT_PKEY_VALID = 1,
+	IB_PORT_PKEY_LISTED = 2,
+};
+
+struct ib_qp_security;
+
+struct ib_port_pkey {
+	enum port_pkey_state	state;
+	u16			pkey_index;
+	u8			port_num;
+	struct list_head	qp_list;
+	struct list_head	to_error_list;
+	struct ib_qp_security  *sec;
+};
+
+struct ib_ports_pkeys {
+	struct ib_port_pkey	main;
+	struct ib_port_pkey	alt;
+};
+
 struct ib_qp_security {
-	void *q_security;
+	struct ib_qp	       *qp;
+	struct ib_device       *dev;
+	/* Hold this mutex when changing port and pkey settings. */
+	struct mutex		mutex;
+	struct ib_ports_pkeys  *ports_pkeys;
+	/* A list of all open shared QP handles.  Required to enforce security
+	 * properly for all users of a shared QP.
+	 */
+	struct list_head        shared_qp_list;
+	void                   *q_security;
+	bool			destroying;
+	atomic_t		error_list_count;
+	struct completion	error_complete;
+	int			error_comps_pending;
 };
 
 struct ib_qp {
@@ -1765,6 +1800,12 @@ struct ib_port_immutable {
 	u32                           max_mad_size;
 };
 
+struct ib_port_pkey_list {
+	/* Lock to hold while modifying the list. */
+	spinlock_t		      list_lock;
+	struct list_head	      pkey_list;
+};
+
 struct ib_device {
 	struct device                *dma_device;
 
@@ -1786,6 +1827,8 @@ struct ib_device {
 	struct ib_port_immutable     *port_immutable;
 
 	int			      num_comp_vectors;
+
+	struct ib_port_pkey_list     *port_pkey_list;
 
 	struct iw_cm_verbs	     *iwcm;
 
