@@ -1517,6 +1517,7 @@ struct ib_qp {
 	u32			qp_num;
 	enum ib_qp_type		qp_type;
 	struct ib_rwq_ind_table *rwq_ind_tbl;
+	struct ib_qp_security  *qp_sec;
 };
 
 struct ib_mr {

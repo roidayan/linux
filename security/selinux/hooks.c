@@ -17,6 +17,7 @@
  *	Paul Moore <paul@paul-moore.com>
  *  Copyright (C) 2007 Hitachi Software Engineering Co., Ltd.
  *		       Yuichi Nakamura <ynakam@hitachisoft.jp>
+ *  Copyright (C) 2016 Mellanox Technologies
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License version 2,
@@ -83,6 +84,8 @@
 #include <linux/export.h>
 #include <linux/msg.h>
 #include <linux/shm.h>
+#include <rdma/ib_verbs.h>
+#include <rdma/ib_mad.h>
 
 #include "avc.h"
 #include "objsec.h"
@@ -6015,6 +6018,47 @@ static void selinux_unregister_ib_flush_callback(void)
 	mutex_unlock(&ib_flush_mutex);
 }
 
+static int selinux_ib_qp_alloc_security(struct ib_qp_security *qp_sec)
+{
+	struct ib_security_struct *sec;
+
+	sec = kzalloc(sizeof(*sec), GFP_ATOMIC);
+	if (!sec)
+		return -ENOMEM;
+	sec->sid = current_sid();
+
+	qp_sec->q_security = sec;
+	return 0;
+}
+
+static void selinux_ib_qp_free_security(struct ib_qp_security *qp_sec)
+{
+	struct ib_security_struct *sec = qp_sec->q_security;
+
+	qp_sec->q_security = NULL;
+	kfree(sec);
+}
+
+static int selinux_ib_mad_agent_alloc_security(struct ib_mad_agent *mad_agent)
+{
+	struct ib_security_struct *sec;
+
+	sec = kzalloc(sizeof(*sec), GFP_ATOMIC);
+	if (!sec)
+		return -ENOMEM;
+	sec->sid = current_sid();
+
+	mad_agent->m_security = sec;
+	return 0;
+}
+
+static void selinux_ib_mad_agent_free_security(struct ib_mad_agent *mad_agent)
+{
+	struct ib_security_struct *sec = mad_agent->m_security;
+
+	mad_agent->m_security = NULL;
+	kfree(sec);
+}
 #endif
 
 static struct security_hook_list selinux_hooks[] = {
@@ -6198,11 +6242,20 @@ static struct security_hook_list selinux_hooks[] = {
 	LSM_HOOK_INIT(tun_dev_attach_queue, selinux_tun_dev_attach_queue),
 	LSM_HOOK_INIT(tun_dev_attach, selinux_tun_dev_attach),
 	LSM_HOOK_INIT(tun_dev_open, selinux_tun_dev_open),
+
 #ifdef CONFIG_SECURITY_INFINIBAND
 	LSM_HOOK_INIT(register_ib_flush_callback,
 		      selinux_register_ib_flush_callback),
 	LSM_HOOK_INIT(unregister_ib_flush_callback,
 		      selinux_unregister_ib_flush_callback),
+	LSM_HOOK_INIT(ib_qp_alloc_security,
+		      selinux_ib_qp_alloc_security),
+	LSM_HOOK_INIT(ib_qp_free_security,
+		      selinux_ib_qp_free_security),
+	LSM_HOOK_INIT(ib_mad_agent_alloc_security,
+		      selinux_ib_mad_agent_alloc_security),
+	LSM_HOOK_INIT(ib_mad_agent_free_security,
+		      selinux_ib_mad_agent_free_security),
 #endif
 
 #ifdef CONFIG_SECURITY_NETWORK_XFRM
