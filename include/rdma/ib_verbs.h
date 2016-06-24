@@ -1490,6 +1490,10 @@ struct ib_rwq_ind_table_init_attr {
 	struct ib_wq	**ind_tbl;
 };
 
+struct ib_qp_security {
+	void *q_security;
+};
+
 struct ib_qp {
 	struct ib_device       *device;
 	struct ib_pd	       *pd;
