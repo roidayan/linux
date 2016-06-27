@@ -253,7 +253,7 @@ static void dev_watchdog(unsigned long arg)
 			unsigned int i;
 			unsigned long trans_start;
 
-			for (i = 0; i < dev->num_tx_queues; i++) {
+			for (i = 0; i < dev->real_num_tx_queues; i++) {
 				struct netdev_queue *txq;
 
 				txq = netdev_get_tx_queue(dev, i);
