@@ -41,8 +41,13 @@
  * =======================================
  */
 
+#define UVERBS_ID_GROUP_MASK 0xF000
+#define UVERBS_ID_GROUP_SHIFT 12
+
 enum uverbs_attr_type {
 	UVERBS_ATTR_TYPE_NA,
+	UVERBS_ATTR_TYPE_PTR_IN,
+	UVERBS_ATTR_TYPE_PTR_OUT,
 	UVERBS_ATTR_TYPE_IDR,
 	UVERBS_ATTR_TYPE_FD,
 };
@@ -54,29 +59,106 @@ enum uverbs_obj_access {
 	UVERBS_ACCESS_DESTROY
 };
 
+enum uverbs_attr_spec_flags {
+	UVERBS_ATTR_SPEC_F_MANDATORY	= 1U << 0,
+	/* Support extending attributes by length */
+	UVERBS_ATTR_SPEC_F_MIN_SZ	= 1U << 1,
+};
+
 struct uverbs_attr_spec {
 	enum uverbs_attr_type		type;
-	struct {
-		/*
-		 * higher bits mean the group and lower bits mean
-		 * the type id within the group.
-		 */
-		u16			obj_type;
-		u8			access;
-	} obj;
+	/* a combination of enum uverbs_attr_spec_flags */
+	u8				flags;
+	union {
+		u16				len;
+		struct {
+			/*
+			 * higher bits mean the group and lower bits mean
+			 * the type id within the group.
+			 */
+			u16			obj_type;
+			u8			access;
+		} obj;
+	};
 };
 
 struct uverbs_attr_spec_group {
 	struct uverbs_attr_spec		*attrs;
 	size_t				num_attrs;
+	/* populate at runtime */
+	unsigned long			*mandatory_attrs_bitmask;
+};
+
+struct uverbs_attr_array;
+struct ib_uverbs_file;
+
+enum uverbs_action_flags {
+	/*
+	 * Action marked with this flag creates a context (or root for all
+	 * objects).
+	 */
+	UVERBS_ACTION_FLAG_CREATE_ROOT = 1U << 0,
+};
+
+struct uverbs_action {
+	struct uverbs_attr_spec_group			**attr_groups;
+	size_t						num_groups;
+	size_t						num_child_attrs;
+	/* Combination of bits from enum uverbs_action_flags */
+	u32 flags;
+	int (*handler)(struct ib_device *ib_dev, struct ib_uverbs_file *ufile,
+		       struct uverbs_attr_array *ctx, size_t num);
+};
+
+struct uverbs_action_group {
+	size_t					num_actions;
+	struct uverbs_action			**actions;
+};
+
+struct uverbs_type {
+	size_t					num_groups;
+	const struct uverbs_action_group	**action_groups;
+	const struct uverbs_obj_type		*type_attrs;
+};
+
+struct uverbs_type_group {
+	size_t					num_types;
+	const struct uverbs_type		**types;
+};
+
+struct uverbs_spec_root {
+	const struct uverbs_type_group		**type_groups;
+	size_t					num_groups;
+};
+
+/* =================================================
+ *              Parsing infrastructure
+ * =================================================
+ */
+
+struct uverbs_ptr_attr {
+	void	__user *ptr;
+	u16		len;
 };
 
 struct uverbs_obj_attr {
+	/*
+	 * pointer to the user-space given attribute, in order to write the
+	 * new uobject's id.
+	 */
+	struct ib_uverbs_attr __user	*uattr;
+	/* pointer to the kernel descriptor -> type, access, etc */
+	const struct uverbs_obj_type	*type;
 	struct ib_uobject		*uobject;
+	/* fd or id in idr of this object */
+	int				id;
 };
 
 struct uverbs_attr {
-	struct uverbs_obj_attr	obj_attr;
+	union {
+		struct uverbs_ptr_attr	ptr_attr;
+		struct uverbs_obj_attr	obj_attr;
+	};
 };
 
 struct uverbs_attr_array {

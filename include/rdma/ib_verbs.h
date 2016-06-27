@@ -2245,6 +2245,8 @@ struct ib_device {
 	 */
 	int (*get_port_immutable)(struct ib_device *, u8, struct ib_port_immutable *);
 	void (*get_dev_fw_str)(struct ib_device *, char *str, size_t str_len);
+
+	const struct uverbs_spec_root	     *specs_root;
 };
 
 struct ib_client {
