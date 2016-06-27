@@ -40,6 +40,51 @@
 #include "core_priv.h"
 #include "rdma_core.h"
 
+int uverbs_group_idx(u16 *id, unsigned int ngroups)
+{
+	int ret = (*id & UVERBS_ID_GROUP_MASK) >> UVERBS_ID_GROUP_SHIFT;
+
+	if (ret >= ngroups)
+		return -EINVAL;
+
+	*id &= ~UVERBS_ID_GROUP_MASK;
+	return ret;
+}
+
+const struct uverbs_type *uverbs_get_type(const struct ib_device *ibdev,
+					  uint16_t type)
+{
+	const struct uverbs_spec_root *groups = ibdev->specs_root;
+	const struct uverbs_type_group *types;
+	int ret = uverbs_group_idx(&type, groups->num_groups);
+
+	if (ret < 0)
+		return NULL;
+
+	types = groups->type_groups[ret];
+
+	if (type >= types->num_types)
+		return NULL;
+
+	return types->types[type];
+}
+
+const struct uverbs_action *uverbs_get_action(const struct uverbs_type *type,
+					      uint16_t action)
+{
+	const struct uverbs_action_group *action_group;
+	int ret = uverbs_group_idx(&action, type->num_groups);
+
+	if (ret < 0)
+		return NULL;
+
+	action_group = type->action_groups[ret];
+	if (action >= action_group->num_actions)
+		return NULL;
+
+	return action_group->actions[action];
+}
+
 void uverbs_uobject_get(struct ib_uobject *uobject)
 {
 	kref_get(&uobject->ref);

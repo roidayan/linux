@@ -43,6 +43,11 @@
 #include <rdma/ib_verbs.h>
 #include <linux/mutex.h>
 
+int uverbs_group_idx(u16 *id, unsigned int ngroups);
+const struct uverbs_type *uverbs_get_type(const struct ib_device *ibdev,
+					  uint16_t type);
+const struct uverbs_action *uverbs_get_action(const struct uverbs_type *type,
+					      uint16_t action);
 /*
  * These functions initialize the context and cleanups its uobjects.
  * The context has a list of objects which is protected by a mutex
