@@ -1114,7 +1114,8 @@ int ib_init_ah_from_path(struct ib_device *device, u8 port_num,
 
 		if ((dev_addr.network == RDMA_NETWORK_IPV4 ||
 		     dev_addr.network == RDMA_NETWORK_IPV6) &&
-		    rec->gid_type != IB_GID_TYPE_ROCE_UDP_ENCAP)
+		    (rec->gid_type != IB_GID_TYPE_ROCE_UDP_ENCAP &&
+		     rec->gid_type != IB_GID_TYPE_ROCE_IP_ENCAP))
 			return -EINVAL;
 
 		idev = device->get_netdev(device, port_num);
