@@ -6,6 +6,7 @@
  * Copyright (C) 2001 Networks Associates Technology, Inc <ssmalley@nai.com>
  * Copyright (C) 2001 James Morris <jmorris@intercode.com.au>
  * Copyright (C) 2001 Silicon Graphics, Inc. (Trust Technology Group)
+ * Copyright (C) 2016 Mellanox Techonologies
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -55,6 +56,8 @@ struct msg_queue;
 struct xattr;
 struct xfrm_sec_ctx;
 struct mm_struct;
+struct ib_qp_security;
+struct ib_mad_agent;
 
 /* If capable should audit the security request */
 #define SECURITY_CAP_NOAUDIT 0
@@ -1369,6 +1372,66 @@ static inline int security_tun_dev_open(void *security)
 	return 0;
 }
 #endif	/* CONFIG_SECURITY_NETWORK */
+
+#ifdef CONFIG_SECURITY_INFINIBAND
+int security_ib_qp_pkey_access(u64 subnet_prefix, u16 pkey,
+			       struct ib_qp_security *qp_sec);
+int security_ib_mad_agent_pkey_access(u64 subnet_prefix, u16 pkey,
+				      struct ib_mad_agent *mad_agent);
+int security_ib_end_port_smp(const char *name, u8 port,
+			     struct ib_mad_agent *mad_agent);
+int security_ib_qp_alloc_security(struct ib_qp_security *qp_sec);
+void security_ib_qp_free_security(struct ib_qp_security *qp_sec);
+int security_ib_mad_agent_alloc_security(struct ib_mad_agent *mad_agent);
+void security_ib_mad_agent_free_security(struct ib_mad_agent *mad_agent);
+void security_register_ib_flush_callback(void (*callback)(void));
+void security_unregister_ib_flush_callback(void);
+#else	/* CONFIG_SECURITY_INFINIBAND */
+static inline int security_ib_qp_pkey_access(u64 subnet_prefix, u16 pkey,
+					     struct ib_qp_security *qp_sec)
+{
+	return 0;
+}
+
+static inline int security_ib_mad_agent_pkey_access(u64 subnet_prefix,
+						    u16 pkey,
+						    struct ib_mad_agent *mad_agent)
+{
+	return 0;
+}
+
+static inline int security_ib_end_port_smp(const char *dev_name, u8 port,
+					   struct ib_mad_agent *mad_agent)
+{
+	return 0;
+}
+
+static inline int security_ib_qp_alloc_security(struct ib_qp_security *qp_sec)
+{
+	return 0;
+}
+
+static inline void security_ib_qp_free_security(struct ib_qp_security *qp_sec)
+{
+}
+
+static inline int security_ib_mad_agent_alloc_security(struct ib_mad_agent *mad_agent)
+{
+	return 0;
+}
+
+static inline void security_ib_mad_agent_free_security(struct ib_mad_agent *mad_agent)
+{
+}
+
+static inline void security_register_ib_flush_callback(void (*callback)(void))
+{
+}
+
+static inline void security_unregister_ib_flush_callback(void)
+{
+}
+#endif	/* CONFIG_SECURITY_INFINIBAND */
 
 #ifdef CONFIG_SECURITY_NETWORK_XFRM
 
