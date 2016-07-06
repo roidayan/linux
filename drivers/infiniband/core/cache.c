@@ -53,6 +53,7 @@ struct ib_update_work {
 	struct work_struct work;
 	struct ib_device  *device;
 	u8                 port_num;
+	bool		   enforce_security;
 };
 
 union ib_gid zgid;
@@ -934,6 +935,25 @@ int ib_get_cached_pkey(struct ib_device *device,
 }
 EXPORT_SYMBOL(ib_get_cached_pkey);
 
+int ib_get_cached_subnet_prefix(struct ib_device *device,
+				u8                port_num,
+				u64              *sn_pfx)
+{
+	unsigned long flags;
+	int p = port_num - rdma_start_port(device);
+
+	if (port_num < rdma_start_port(device) ||
+	    port_num > rdma_end_port(device))
+		return -EINVAL;
+
+	read_lock_irqsave(&device->cache.lock, flags);
+	*sn_pfx = device->cache.subnet_prefix_cache[p];
+	read_unlock_irqrestore(&device->cache.lock, flags);
+
+	return 0;
+}
+EXPORT_SYMBOL(ib_get_cached_subnet_prefix);
+
 int ib_find_cached_pkey(struct ib_device *device,
 			u8                port_num,
 			u16               pkey,
@@ -1026,7 +1046,8 @@ int ib_get_cached_lmc(struct ib_device *device,
 EXPORT_SYMBOL(ib_get_cached_lmc);
 
 static void ib_cache_update(struct ib_device *device,
-			    u8                port)
+			    u8                port,
+			    bool	      enforce_security)
 {
 	struct ib_port_attr       *tprops = NULL;
 	struct ib_pkey_cache      *pkey_cache = NULL, *old_pkey_cache;
@@ -1110,7 +1131,14 @@ static void ib_cache_update(struct ib_device *device,
 
 	device->cache.lmc_cache[port - rdma_start_port(device)] = tprops->lmc;
 
+	device->cache.subnet_prefix_cache[port - rdma_start_port(device)] =
+							tprops->subnet_prefix;
 	write_unlock_irq(&device->cache.lock);
+
+	if (enforce_security)
+		ib_security_cache_change(device,
+					 port,
+					 tprops->subnet_prefix);
 
 	kfree(gid_cache);
 	kfree(old_pkey_cache);
@@ -1128,7 +1156,9 @@ static void ib_cache_task(struct work_struct *_work)
 	struct ib_update_work *work =
 		container_of(_work, struct ib_update_work, work);
 
-	ib_cache_update(work->device, work->port_num);
+	ib_cache_update(work->device,
+			work->port_num,
+			work->enforce_security);
 	kfree(work);
 }
 
@@ -1149,6 +1179,12 @@ static void ib_cache_event(struct ib_event_handler *handler,
 			INIT_WORK(&work->work, ib_cache_task);
 			work->device   = event->device;
 			work->port_num = event->element.port_num;
+			if (event->event == IB_EVENT_PKEY_CHANGE ||
+			    event->event == IB_EVENT_GID_CHANGE)
+				work->enforce_security = true;
+			else
+				work->enforce_security = false;
+
 			queue_work(ib_wq, &work->work);
 		}
 	}
@@ -1168,9 +1204,18 @@ int ib_cache_setup_one(struct ib_device *device)
 					  (rdma_end_port(device) -
 					   rdma_start_port(device) + 1),
 					  GFP_KERNEL);
+
+	device->cache.subnet_prefix_cache = kcalloc((rdma_end_port(device) -
+						     rdma_start_port(device) + 1),
+						    sizeof(*device->cache.subnet_prefix_cache),
+						    GFP_KERNEL);
+
 	if (!device->cache.pkey_cache ||
-	    !device->cache.lmc_cache) {
-		pr_warn("Couldn't allocate cache for %s\n", device->name);
+	    !device->cache.lmc_cache ||
+	    !device->cache.subnet_prefix_cache) {
+		kfree(device->cache.pkey_cache);
+		kfree(device->cache.lmc_cache);
+		kfree(device->cache.subnet_prefix_cache);
 		return -ENOMEM;
 	}
 
@@ -1180,7 +1225,7 @@ int ib_cache_setup_one(struct ib_device *device)
 		return err;
 
 	for (p = 0; p <= rdma_end_port(device) - rdma_start_port(device); ++p)
-		ib_cache_update(device, p + rdma_start_port(device));
+		ib_cache_update(device, p + rdma_start_port(device), true);
 
 	INIT_IB_EVENT_HANDLER(&device->cache.event_handler,
 			      device, ib_cache_event);
@@ -1213,6 +1258,7 @@ void ib_cache_release_one(struct ib_device *device)
 	gid_table_release_one(device);
 	kfree(device->cache.pkey_cache);
 	kfree(device->cache.lmc_cache);
+	kfree(device->cache.subnet_prefix_cache);
 }
 
 void ib_cache_cleanup_one(struct ib_device *device)
