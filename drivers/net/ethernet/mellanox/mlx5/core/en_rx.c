@@ -817,6 +817,7 @@ static inline void mlx5e_complete_rx_cqe(struct mlx5e_rq *rq,
 		skb = rx_handler(skb);
 		if (!skb) {
 			rcu_read_unlock();
+			return;
 		}
 	}
 	rcu_read_unlock();
