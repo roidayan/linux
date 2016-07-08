@@ -246,6 +246,7 @@ struct mlx4_config_dev_params {
 	u16	vxlan_udp_dport;
 	u8	rx_csum_flags_port_1;
 	u8	rx_csum_flags_port_2;
+	u16	svlan_tpid;
 };
 
 enum mlx4_en_congestion_control_algorithm {
@@ -309,7 +310,8 @@ int mlx4_get_vf_stats(struct mlx4_dev *dev, int port, int vf_idx,
 		      struct ifla_vf_stats *vf_stats);
 u32 mlx4_comm_get_version(void);
 int mlx4_set_vf_mac(struct mlx4_dev *dev, int port, int vf, u64 mac);
-int mlx4_set_vf_vlan(struct mlx4_dev *dev, int port, int vf, u16 vlan, u8 qos);
+int mlx4_set_vf_vlan(struct mlx4_dev *dev, int port, int vf, u16 vlan,
+		     u8 qos, __be16 proto);
 int mlx4_set_vf_rate(struct mlx4_dev *dev, int port, int vf, int min_tx_rate,
 		     int max_tx_rate);
 int mlx4_set_vf_spoofchk(struct mlx4_dev *dev, int port, int vf, bool setting);
