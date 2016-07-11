@@ -4062,9 +4062,11 @@ static int __uverbs_create_xsrq(struct ib_uverbs_file *file,
 
 		obj->uxrcd = container_of(xrcd_uobj, struct ib_uxrcd_object, uobject);
 		atomic_inc(&obj->uxrcd->refcnt);
+	}
 
-		attr.ext.xrc.cq  = idr_read_cq(cmd->cq_handle, file->ucontext, 0);
-		if (!attr.ext.xrc.cq) {
+	if (ib_srq_has_cq(cmd->srq_type)) {
+		attr.ext.cq  = idr_read_cq(cmd->cq_handle, file->ucontext, 0);
+		if (!attr.ext.cq) {
 			ret = -EINVAL;
 			goto err_put_xrcd;
 		}
@@ -4104,10 +4106,13 @@ static int __uverbs_create_xsrq(struct ib_uverbs_file *file,
 	srq->event_handler = attr.event_handler;
 	srq->srq_context   = attr.srq_context;
 
+	if (ib_srq_has_cq(cmd->srq_type)) {
+		srq->ext.cq       = attr.ext.cq;
+		atomic_inc(&attr.ext.cq->usecnt);
+	}
+
 	if (cmd->srq_type == IB_SRQT_XRC) {
-		srq->ext.xrc.cq   = attr.ext.xrc.cq;
 		srq->ext.xrc.xrcd = attr.ext.xrc.xrcd;
-		atomic_inc(&attr.ext.xrc.cq->usecnt);
 		atomic_inc(&attr.ext.xrc.xrcd->usecnt);
 	}
 
@@ -4132,10 +4137,12 @@ static int __uverbs_create_xsrq(struct ib_uverbs_file *file,
 		goto err_copy;
 	}
 
-	if (cmd->srq_type == IB_SRQT_XRC) {
+	if (cmd->srq_type == IB_SRQT_XRC)
 		put_uobj_read(xrcd_uobj);
-		put_cq_read(attr.ext.xrc.cq);
-	}
+
+	if (ib_srq_has_cq(cmd->srq_type))
+		put_cq_read(attr.ext.cq);
+
 	put_pd_read(pd);
 
 	mutex_lock(&file->mutex);
@@ -4160,8 +4167,8 @@ err_put:
 	put_pd_read(pd);
 
 err_put_cq:
-	if (cmd->srq_type == IB_SRQT_XRC)
-		put_cq_read(attr.ext.xrc.cq);
+	if (ib_srq_has_cq(cmd->srq_type))
+		put_cq_read(attr.ext.cq);
 
 err_put_xrcd:
 	if (cmd->srq_type == IB_SRQT_XRC) {
