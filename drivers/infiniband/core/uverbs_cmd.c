@@ -1880,7 +1880,7 @@ static int create_qp(struct ib_uverbs_file *file,
 			if (cmd->is_srq) {
 				srq = idr_read_srq(cmd->srq_handle,
 						   file->ucontext);
-				if (!srq || srq->srq_type != IB_SRQT_BASIC) {
+				if (!srq || srq->srq_type == IB_SRQT_XRC) {
 					ret = -EINVAL;
 					goto err_put;
 				}
@@ -4053,6 +4053,13 @@ static int __uverbs_create_xsrq(struct ib_uverbs_file *file,
 	init_uobj(&obj->uevent.uobject, cmd->user_handle, file->ucontext, &srq_lock_class);
 	down_write(&obj->uevent.uobject.mutex);
 
+	if (cmd->srq_type == IB_SRQT_TAG_MATCHING) {
+		attr.ext.tag_matching.list_size = cmd->tm_list_size;
+	} else if (cmd->tm_list_size) {
+		ret = -EINVAL;
+		goto err;
+	}
+
 	if (cmd->srq_type == IB_SRQT_XRC) {
 		attr.ext.xrc.xrcd  = idr_read_xrcd(cmd->xrcd_handle, file->ucontext, &xrcd_uobj);
 		if (!attr.ext.xrc.xrcd) {
@@ -4187,7 +4194,7 @@ ssize_t ib_uverbs_create_srq(struct ib_uverbs_file *file,
 			     int out_len)
 {
 	struct ib_uverbs_create_srq      cmd;
-	struct ib_uverbs_create_xsrq     xcmd;
+	struct ib_uverbs_create_xsrq     xcmd = {};
 	struct ib_uverbs_create_srq_resp resp;
 	struct ib_udata                  udata;
 	int ret;
