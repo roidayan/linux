@@ -1845,6 +1845,7 @@ static int mlx4_master_immediate_activate_vlan_qos(struct mlx4_priv *priv,
 
 	if (vp_oper->state.default_vlan == vp_admin->default_vlan &&
 	    vp_oper->state.default_qos == vp_admin->default_qos &&
+	    vp_oper->state.vlan_proto == vp_admin->vlan_proto &&
 	    vp_oper->state.link_state == vp_admin->link_state &&
 	    vp_oper->state.qos_vport == vp_admin->qos_vport)
 		return 0;
@@ -1903,6 +1904,7 @@ static int mlx4_master_immediate_activate_vlan_qos(struct mlx4_priv *priv,
 
 	vp_oper->state.default_vlan = vp_admin->default_vlan;
 	vp_oper->state.default_qos = vp_admin->default_qos;
+	vp_oper->state.vlan_proto = vp_admin->vlan_proto;
 	vp_oper->state.link_state = vp_admin->link_state;
 	vp_oper->state.qos_vport = vp_admin->qos_vport;
 
@@ -1916,6 +1918,7 @@ static int mlx4_master_immediate_activate_vlan_qos(struct mlx4_priv *priv,
 	work->qos_vport = vp_oper->state.qos_vport;
 	work->vlan_id = vp_oper->state.default_vlan;
 	work->vlan_ix = vp_oper->vlan_idx;
+	work->vlan_proto = vp_oper->state.vlan_proto;
 	work->priv = priv;
 	INIT_WORK(&work->work, mlx4_vf_immed_vlan_work_handler);
 	queue_work(priv->mfunc.master.comm_wq, &work->work);
@@ -2006,6 +2009,8 @@ static int mlx4_master_activate_admin_state(struct mlx4_priv *priv, int slave)
 						   vp_admin->default_vlan, &(vp_oper->vlan_idx));
 			if (err) {
 				vp_oper->vlan_idx = NO_INDX;
+				vp_oper->state.default_vlan = MLX4_VGT;
+				vp_oper->state.vlan_proto = htons(ETH_P_8021Q);
 				mlx4_warn(&priv->dev,
 					  "No vlan resources slave %d, port %d\n",
 					  slave, port);
@@ -2382,6 +2387,8 @@ int mlx4_multi_func_init(struct mlx4_dev *dev)
 				admin_vport->qos_vport =
 						MLX4_VPP_DEFAULT_VPORT;
 				oper_vport->qos_vport = MLX4_VPP_DEFAULT_VPORT;
+				admin_vport->vlan_proto = htons(ETH_P_8021Q);
+				oper_vport->vlan_proto = htons(ETH_P_8021Q);
 				vf_oper->vport[port].vlan_idx = NO_INDX;
 				vf_oper->vport[port].mac_idx = NO_INDX;
 				mlx4_set_random_admin_guid(dev, i, port);
@@ -2937,17 +2944,31 @@ int mlx4_set_vf_mac(struct mlx4_dev *dev, int port, int vf, u64 mac)
 EXPORT_SYMBOL_GPL(mlx4_set_vf_mac);
 
 
-int mlx4_set_vf_vlan(struct mlx4_dev *dev, int port, int vf, u16 vlan, u8 qos)
+int mlx4_set_vf_vlan(struct mlx4_dev *dev, int port, int vf, u16 vlan, u8 qos,
+		     __be16 proto)
 {
 	struct mlx4_priv *priv = mlx4_priv(dev);
 	struct mlx4_vport_state *vf_admin;
 	int slave;
+	bool vlan_proto_changed;
 
 	if ((!mlx4_is_master(dev)) ||
 	    !(dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_VLAN_CONTROL))
 		return -EPROTONOSUPPORT;
 
 	if ((vlan > 4095) || (qos > 7))
+		return -EINVAL;
+
+	if (proto == htons(ETH_P_8021AD) &&
+	    !(dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_SVLAN_BY_QP))
+		return -EPROTONOSUPPORT;
+
+	if (proto != htons(ETH_P_8021Q) &&
+	    proto != htons(ETH_P_8021AD))
+		return -EINVAL;
+
+	if ((proto == htons(ETH_P_8021AD)) &&
+	    ((vlan == 0) || (vlan == MLX4_VGT)))
 		return -EINVAL;
 
 	slave = mlx4_get_slave_indx(dev, vf);
@@ -2960,11 +2981,13 @@ int mlx4_set_vf_vlan(struct mlx4_dev *dev, int port, int vf, u16 vlan, u8 qos)
 	if (!mlx4_valid_vf_state_change(dev, port, vf_admin, vlan, qos))
 		return -EPERM;
 
+	vlan_proto_changed = (vf_admin->vlan_proto != proto);
 	if ((0 == vlan) && (0 == qos))
 		vf_admin->default_vlan = MLX4_VGT;
 	else
 		vf_admin->default_vlan = vlan;
 	vf_admin->default_qos = qos;
+	vf_admin->vlan_proto = proto;
 
 	/* If rate was configured prior to VST, we saved the configured rate
 	 * in vf_admin->rate and now, if priority supported we enforce the QoS
@@ -2973,7 +2996,11 @@ int mlx4_set_vf_vlan(struct mlx4_dev *dev, int port, int vf, u16 vlan, u8 qos)
 	    vf_admin->tx_rate)
 		vf_admin->qos_vport = slave;
 
-	if (mlx4_master_immediate_activate_vlan_qos(priv, slave, port))
+	/* Try to activate new vf state without restart,
+	 * this option is not supported while moving to VST QinQ mode
+	 */
+	if ((proto == htons(ETH_P_8021AD) && vlan_proto_changed) ||
+	    mlx4_master_immediate_activate_vlan_qos(priv, slave, port))
 		mlx4_info(dev,
 			  "updating vf %d port %d config will take effect on next VF restart\n",
 			  vf, port);
@@ -3117,6 +3144,7 @@ int mlx4_get_vf_config(struct mlx4_dev *dev, int port, int vf, struct ifla_vf_in
 
 	ivf->vlan		= s_info->default_vlan;
 	ivf->qos		= s_info->default_qos;
+	ivf->vlan_proto		= s_info->vlan_proto;
 
 	if (mlx4_is_vf_vst_and_prio_qos(dev, port, s_info))
 		ivf->max_tx_rate = s_info->tx_rate;
