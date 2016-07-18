@@ -38,6 +38,7 @@
 #include <linux/net_tstamp.h>
 #include <linux/ptp_clock_kernel.h>
 #include <linux/mlx5/driver.h>
+#include <linux/mlx5/en_driver.h>
 #include <linux/mlx5/qp.h>
 #include <linux/mlx5/cq.h>
 #include <linux/mlx5/port.h>
@@ -650,8 +651,7 @@ struct mlx5e_priv {
 	const struct mlx5e_profile *profile;
 	void                      *ppriv;
 
-	struct sk_buff* (*tx_handler)(struct sk_buff *skb) __rcu;
-	struct sk_buff* (*rx_handler)(struct sk_buff *skb) __rcu;
+	struct mlx5e_accel_client_ops *accel_client_ops  __rcu;
 };
 
 enum mlx5e_link_mode {
