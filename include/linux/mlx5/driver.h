@@ -937,6 +937,8 @@ enum {
 struct mlx5_interface {
 	void *			(*add)(struct mlx5_core_dev *dev);
 	void			(*remove)(struct mlx5_core_dev *dev, void *context);
+	int			(*attach)(struct mlx5_core_dev *dev, void *context);
+	void			(*detach)(struct mlx5_core_dev *dev, void *context);
 	void			(*event)(struct mlx5_core_dev *dev, void *context,
 					 enum mlx5_dev_event event, unsigned long param);
 	void *                  (*get_dev)(void *context);
