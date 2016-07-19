@@ -1932,6 +1932,11 @@ static void mlx5_ib_event(struct mlx5_core_dev *dev, void *context,
 		ibev.event = IB_EVENT_CLIENT_REREGISTER;
 		port = (u8)param;
 		break;
+
+	case MLX5_DEV_EVENT_FPGA_ERROR:
+	case MLX5_DEV_EVENT_FPGA_QP_ERROR:
+		/* Uninteresting device event */
+		return;
 	}
 
 	ibev.device	      = &ibdev->ib_dev;
