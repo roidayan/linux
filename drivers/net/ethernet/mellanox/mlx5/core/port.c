@@ -36,6 +36,25 @@
 #include <linux/mlx5/cmd.h>
 #include "mlx5_core.h"
 
+#define PORT_MODULE_EVENT_MODULE_STATUS_MASK 0xF
+#define PORT_MODULE_EVENT_ERROR_TYPE_MASK         0xF
+enum {
+	MLX5_MODULE_STATUS_PLUGGED  = 0x1,
+	MLX5_MODULE_STATUS_UNPLUGGED  = 0x2,
+	MLX5_MODULE_STATUS_ERROR  = 0x3,
+};
+
+enum {
+	MLX5_MODULE_EVENT_ERROR_POWER_BUDGET_EXCEEDED  = 0x0,
+	MLX5_MODULE_EVENT_ERROR_LONG_RANGE_FOR_NON_MLNX_CABLE_MODULE  = 0x1,
+	MLX5_MODULE_EVENT_ERROR_BUS_STUCK  = 0x2,
+	MLX5_MODULE_EVENT_ERROR_NO_EEPROM_RETRY_TIMEOUT  = 0x3,
+	MLX5_MODULE_EVENT_ERROR_ENFORCE_PART_NUMBER_LIST  = 0x4,
+	MLX5_MODULE_EVENT_ERROR_UNKNOWN_IDENTIFIER  = 0x5,
+	MLX5_MODULE_EVENT_ERROR_HIGH_TEMPERATURE  = 0x6,
+	MLX5_MODULE_EVENT_ERROR_BAD_CABLE = 0x7,
+};
+
 int mlx5_core_access_reg(struct mlx5_core_dev *dev, void *data_in,
 			 int size_in, void *data_out, int size_out,
 			 u16 reg_id, int arg, int write)
@@ -808,4 +827,70 @@ void mlx5_query_port_fcs(struct mlx5_core_dev *mdev, bool *supported,
 
 	*supported = !!(MLX5_GET(pcmr_reg, out, fcs_cap));
 	*enabled = !!(MLX5_GET(pcmr_reg, out, fcs_chk));
+}
+
+static const char *mlx5_port_event_error_type_to_string(u8 error_type)
+{
+	switch (error_type) {
+	case MLX5_MODULE_EVENT_ERROR_POWER_BUDGET_EXCEEDED:
+		return "Power Budget Exceeded";
+
+	case MLX5_MODULE_EVENT_ERROR_LONG_RANGE_FOR_NON_MLNX_CABLE_MODULE:
+		return "Long Range for non MLNX cable/module";
+
+	case MLX5_MODULE_EVENT_ERROR_BUS_STUCK:
+		return "Bus stuck(I2C or data shorted)";
+
+	case MLX5_MODULE_EVENT_ERROR_NO_EEPROM_RETRY_TIMEOUT:
+		return "No EEPROM/retry timeout";
+
+	case MLX5_MODULE_EVENT_ERROR_ENFORCE_PART_NUMBER_LIST:
+		return "Enforce part number list";
+
+	case MLX5_MODULE_EVENT_ERROR_UNKNOWN_IDENTIFIER:
+		return "Unknown identifier";
+
+	case MLX5_MODULE_EVENT_ERROR_HIGH_TEMPERATURE:
+		return "High Temperature";
+
+	case MLX5_MODULE_EVENT_ERROR_BAD_CABLE:
+		return "Bad cable (module/cable is shorted)";
+
+	default:
+		return "Unknown error type";
+	}
+}
+
+void mlx5_port_module_event(struct mlx5_core_dev *dev, struct mlx5_eqe *eqe)
+{
+	struct mlx5_eqe_port_module *module_event_eqe;
+	u8 module_status;
+	u8 module_num;
+	u8 error_type;
+
+	module_event_eqe = &eqe->data.port_module;
+	module_num = module_event_eqe->module;
+	module_status = module_event_eqe->module_status &
+			PORT_MODULE_EVENT_MODULE_STATUS_MASK;
+	error_type = module_event_eqe->error_type &
+		     PORT_MODULE_EVENT_ERROR_TYPE_MASK;
+
+	switch (module_status) {
+	case MLX5_MODULE_STATUS_PLUGGED:
+		mlx5_core_info(dev, "Module %u, status: plugged", module_num);
+		break;
+
+	case MLX5_MODULE_STATUS_UNPLUGGED:
+		mlx5_core_info(dev, "Module %u, status: unplugged", module_num);
+		break;
+
+	case MLX5_MODULE_STATUS_ERROR:
+		mlx5_core_info(dev, "Module %u, status: error, %s", module_num,
+			       mlx5_port_event_error_type_to_string(error_type));
+		break;
+
+	default:
+		mlx5_core_info(dev, "Module %u, unknown module status %x",
+			       module_num, module_status);
+	}
 }
