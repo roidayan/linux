@@ -537,6 +537,7 @@ struct ib_mad_agent {
 	u32			flags;
 	u8			port_num;
 	u8			rmpp_version;
+	void			*m_security;
 };
 
 /**
