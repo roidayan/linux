@@ -372,7 +372,7 @@ struct mlx5e_sq_dma {
 enum {
 	MLX5E_SQ_STATE_WAKE_TXQ_ENABLE,
 	MLX5E_SQ_STATE_BF_ENABLE,
-	MLX5E_SQ_STATE_TX_TIMEOUT,
+	MLX5E_SQ_STATE_FLUSH,
 };
 
 struct mlx5e_ico_wqe_info {
