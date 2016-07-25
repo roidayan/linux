@@ -37,7 +37,7 @@
 #include <linux/fs.h>
 #include <linux/slab.h>
 #include <linux/sched.h>
-
+#include <linux/security.h>
 #include <asm/uaccess.h>
 
 #include "uverbs.h"
@@ -1915,6 +1915,10 @@ static int create_qp(struct ib_uverbs_file *file,
 	}
 
 	if (cmd->qp_type != IB_QPT_XRC_TGT) {
+		ret = ib_create_qp_security(qp, device);
+		if (ret)
+			goto err_destroy;
+
 		qp->real_qp	  = qp;
 		qp->device	  = device;
 		qp->pd		  = pd;
@@ -2405,10 +2409,18 @@ ssize_t ib_uverbs_modify_qp(struct ib_uverbs_file *file,
 		ret = ib_resolve_eth_dmac(qp, attr, &cmd.attr_mask);
 		if (ret)
 			goto release_qp;
-		ret = qp->device->modify_qp(qp, attr,
-			modify_qp_mask(qp->qp_type, cmd.attr_mask), &udata);
+
+		ret = ib_security_modify_qp(qp,
+					    attr,
+					    modify_qp_mask(qp->qp_type,
+							   cmd.attr_mask),
+					    &udata);
 	} else {
-		ret = ib_modify_qp(qp, attr, modify_qp_mask(qp->qp_type, cmd.attr_mask));
+		ret = ib_security_modify_qp(qp,
+					    attr,
+					    modify_qp_mask(qp->qp_type,
+							   cmd.attr_mask),
+					    NULL);
 	}
 
 	if (ret)

@@ -44,6 +44,7 @@
 #include <linux/in.h>
 #include <linux/in6.h>
 #include <net/addrconf.h>
+#include <linux/security.h>
 
 #include <rdma/ib_verbs.h>
 #include <rdma/ib_cache.h>
@@ -682,10 +683,18 @@ static struct ib_qp *__ib_open_qp(struct ib_qp *real_qp,
 {
 	struct ib_qp *qp;
 	unsigned long flags;
+	int err;
 
 	qp = kzalloc(sizeof *qp, GFP_KERNEL);
 	if (!qp)
 		return ERR_PTR(-ENOMEM);
+
+	qp->real_qp = real_qp;
+	err = ib_open_shared_qp_security(qp, real_qp->device);
+	if (err) {
+		kfree(qp);
+		return ERR_PTR(err);
+	}
 
 	qp->real_qp = real_qp;
 	atomic_inc(&real_qp->usecnt);
@@ -773,6 +782,10 @@ struct ib_qp *ib_create_qp(struct ib_pd *pd,
 	if (IS_ERR(qp))
 		return qp;
 
+	ret = ib_create_qp_security(qp, device);
+	if (ret)
+		goto destroy_qp;
+
 	qp->device     = device;
 	qp->real_qp    = qp;
 	qp->uobject    = NULL;
@@ -822,6 +835,10 @@ struct ib_qp *ib_create_qp(struct ib_pd *pd,
 	}
 
 	return qp;
+
+destroy_qp:
+	ib_destroy_qp(qp);
+	return ERR_PTR(ret);
 }
 EXPORT_SYMBOL(ib_create_qp);
 
@@ -1222,7 +1239,7 @@ int ib_modify_qp(struct ib_qp *qp,
 	if (ret)
 		return ret;
 
-	return qp->device->modify_qp(qp->real_qp, qp_attr, qp_attr_mask, NULL);
+	return ib_security_modify_qp(qp->real_qp, qp_attr, qp_attr_mask, NULL);
 }
 EXPORT_SYMBOL(ib_modify_qp);
 
@@ -1251,6 +1268,7 @@ int ib_close_qp(struct ib_qp *qp)
 	spin_unlock_irqrestore(&real_qp->device->event_handler_lock, flags);
 
 	atomic_dec(&real_qp->usecnt);
+	ib_close_shared_qp_security(qp->qp_sec);
 	kfree(qp);
 
 	return 0;
@@ -1291,6 +1309,7 @@ int ib_destroy_qp(struct ib_qp *qp)
 	struct ib_cq *scq, *rcq;
 	struct ib_srq *srq;
 	struct ib_rwq_ind_table *ind_tbl;
+	struct ib_qp_security *sec;
 	int ret;
 
 	WARN_ON_ONCE(qp->mrs_used > 0);
@@ -1306,6 +1325,9 @@ int ib_destroy_qp(struct ib_qp *qp)
 	rcq  = qp->recv_cq;
 	srq  = qp->srq;
 	ind_tbl = qp->rwq_ind_tbl;
+	sec  = qp->qp_sec;
+	if (sec)
+		ib_destroy_qp_security_begin(sec);
 
 	if (!qp->uobject)
 		rdma_rw_cleanup_mrs(qp);
@@ -1322,6 +1344,11 @@ int ib_destroy_qp(struct ib_qp *qp)
 			atomic_dec(&srq->usecnt);
 		if (ind_tbl)
 			atomic_dec(&ind_tbl->usecnt);
+		if (sec)
+			ib_destroy_qp_security_end(sec);
+	} else {
+		if (sec)
+			ib_destroy_qp_security_abort(sec);
 	}
 
 	return ret;
