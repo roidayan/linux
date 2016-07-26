@@ -3451,6 +3451,8 @@ void *mlx5e_create_netdev(struct mlx5_core_dev *mdev,
 
 	mlx5e_set_dev_port_mtu(netdev);
 
+	mlx5e_set_dev_port_mtu(netdev);
+
 	err = register_netdev(netdev);
 	if (err) {
 		mlx5_core_err(mdev, "register_netdev failed, %d\n", err);
