@@ -340,6 +340,15 @@ static int esp6_output(struct xfrm_state *x, struct sk_buff *skb)
 			esph->seq_no = htonl(XFRM_SKB_CB(skb)->seq.output.low);
 			esph->spi = x->id.spi;
 
+			if (x->xso.offload_handle &&
+			    x->xso.dev->xfrmdev_ops->xdo_dev_crypto(skb)) {
+				if (skb->sp->flags & SKB_GSO_SEGMENT)
+					esph->seq_no = htonl(skb->sp->seq.low);
+
+				spin_unlock_bh(&x->lock);
+				return 0;
+			}
+
 			tmp = esp_alloc_tmp(aead, nfrags + 2, seqhilen);
 			if (!tmp) {
 				spin_unlock_bh(&x->lock);
@@ -413,6 +422,14 @@ skip_cow:
 	esph->seq_no = htonl(XFRM_SKB_CB(skb)->seq.output.low);
 	esph->spi = x->id.spi;
 
+	if (x->xso.offload_handle &&
+	    x->xso.dev->xfrmdev_ops->xdo_dev_crypto(skb)) {
+		if (skb->sp->flags & SKB_GSO_SEGMENT)
+			esph->seq_no = htonl(skb->sp->seq.low);
+
+		return 0;
+	}
+
 	tmp = esp_alloc_tmp(aead, nfrags, seqhilen);
 	if (!tmp) {
 		err = -ENOMEM;
@@ -426,6 +443,7 @@ skip_cow:
 	dsg = sg;
 
 	esph = esp_output_set_esn(skb, esph, seqhi);
+
 
 	sg_init_table(sg, nfrags);
 	skb_to_sgvec(skb, sg,
@@ -475,6 +493,7 @@ error:
 static int esp_input_done2(struct sk_buff *skb, int err)
 {
 	struct xfrm_state *x = xfrm_input_state(skb);
+	struct xfrm_offload_state *xo = xfrm_offload_input(skb);
 	struct crypto_aead *aead = x->data;
 	int alen = crypto_aead_authsize(aead);
 	int hlen = sizeof(struct ip_esp_hdr) + crypto_aead_ivsize(aead);
@@ -483,9 +502,10 @@ static int esp_input_done2(struct sk_buff *skb, int err)
 	int padlen;
 	u8 nexthdr[2];
 
-	esp_ssg_unref(x, ESP_SKB_CB(skb)->tmp);
-
-	kfree(ESP_SKB_CB(skb)->tmp);
+	if (!(xo->flags & CRYPTO_DONE)) {
+		esp_ssg_unref(x, ESP_SKB_CB(skb)->tmp);
+		kfree(ESP_SKB_CB(skb)->tmp);
+	}
 
 	if (unlikely(err))
 		goto out;
@@ -556,6 +576,18 @@ static void esp_input_done_esn(struct crypto_async_request *base, int err)
 
 	esp_input_restore_header(skb);
 	esp_input_done(base, err);
+}
+
+static int esp6_input_tail(struct xfrm_state *x, struct sk_buff *skb)
+{
+	struct crypto_aead *aead = x->data;
+
+	if (!pskb_may_pull(skb, sizeof(struct ip_esp_hdr) + crypto_aead_ivsize(aead)))
+		return -EINVAL;
+
+	skb->ip_summed = CHECKSUM_NONE;
+
+	return esp_input_done2(skb, 0);
 }
 
 static int esp6_input(struct xfrm_state *x, struct sk_buff *skb)
@@ -939,6 +971,7 @@ static const struct xfrm_type esp6_type = {
 	.destructor	= esp6_destroy,
 	.get_mtu	= esp6_get_mtu,
 	.input		= esp6_input,
+	.input_tail	= esp6_input_tail,
 	.output		= esp6_output,
 	.encap		= esp6_gso_encap,
 	.hdr_offset	= xfrm6_find_1stfragopt,

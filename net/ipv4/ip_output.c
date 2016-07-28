@@ -268,7 +268,7 @@ static int ip_finish_output(struct net *net, struct sock *sk, struct sk_buff *sk
 
 #if defined(CONFIG_NETFILTER) && defined(CONFIG_XFRM)
 	/* Policy lookup after SNAT yielded a new policy */
-	if (skb_dst(skb)->xfrm) {
+	if (skb_dst(skb)->xfrm && !skb_dst(skb)->xfrm->xso.offload_handle) {
 		IPCB(skb)->flags |= IPSKB_REROUTED;
 		return dst_output(net, sk, skb);
 	}

@@ -59,6 +59,21 @@ static int xfrm_output_one(struct sk_buff *skb, int err)
 	if (err <= 0)
 		goto resume;
 
+	secpath_reset(skb);
+
+	if (x->xso.offload_handle) {
+
+		skb->sp = secpath_dup(skb->sp);
+		if (!skb->sp) {
+			XFRM_INC_STATS(net, LINUX_MIB_XFRMOUTERROR);
+			err = -ENOMEM;
+			goto error;
+		}
+
+		skb->sp->xvec[skb->sp->len++] = x;
+		xfrm_state_hold(x);
+	}
+
 	do {
 		err = xfrm_skb_check_space(skb);
 		if (err) {
@@ -102,9 +117,13 @@ static int xfrm_output_one(struct sk_buff *skb, int err)
 		/* Inner headers are invalid now. */
 		skb->encapsulation = 0;
 
-		err = x->type->output(x, skb);
-		if (err == -EINPROGRESS)
-			goto out;
+		if (skb_shinfo(skb)->gso_type & SKB_GSO_ESP) {
+			x->type->encap(x, skb);
+		} else {
+			err = x->type->output(x, skb);
+			if (err == -EINPROGRESS)
+				goto out;
+		}
 
 resume:
 		if (err) {
@@ -200,10 +219,19 @@ static int xfrm_output_gso(struct net *net, struct sock *sk, struct sk_buff *skb
 int xfrm_output(struct sock *sk, struct sk_buff *skb)
 {
 	struct net *net = dev_net(skb_dst(skb)->dev);
+	struct xfrm_state *x = skb_dst(skb)->xfrm;
 	int err;
 
-	if (skb_is_gso(skb))
-		return xfrm_output_gso(net, sk, skb);
+	if (skb_is_gso(skb)) {
+		if (x->xso.offload_handle &&
+		    x->xso.dev->xfrmdev_ops->xdo_dev_crypto(skb)) {
+			skb_shinfo(skb)->gso_type |= SKB_GSO_ESP;
+
+			return xfrm_output2(net, sk, skb);
+		} else {
+			return xfrm_output_gso(net, sk, skb);
+		}
+	}
 
 	if (skb->ip_summed == CHECKSUM_PARTIAL) {
 		err = skb_checksum_help(skb);
