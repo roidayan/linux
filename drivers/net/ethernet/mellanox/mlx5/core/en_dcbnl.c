@@ -54,6 +54,9 @@ static inline bool mlx5e_dcbnl_is_allowed(struct mlx5e_priv *priv)
 	if (dcbx->mode == MLX5E_DCBX_PARAM_VER_OPER_HOST)
 		return true;
 
+	if (priv->pflags & MLX5E_PFLAG_QOS_WITH_DCBX_BY_FW)
+		return true;
+
 	if (mlx5e_dcbnl_set_dcbx_mode(priv, MLX5E_DCBX_PARAM_VER_OPER_HOST))
 		return false;
 
@@ -283,13 +286,32 @@ static int mlx5e_dcbnl_ieee_setpfc(struct net_device *dev,
 
 static u8 mlx5e_dcbnl_getdcbx(struct net_device *dev)
 {
-	return DCB_CAP_DCBX_HOST |
+	struct mlx5e_priv *priv = netdev_priv(dev);
+	struct mlx5e_dcbx *dcbx = &priv->dcbx;
+	u8 mode = 0;
+
+	if (dcbx->mode == MLX5E_DCBX_PARAM_VER_OPER_HOST)
+		mode = DCB_CAP_DCBX_HOST;
+
+	return mode |
 	       DCB_CAP_DCBX_VER_IEEE |
 	       DCB_CAP_DCBX_VER_CEE;
 }
 
 static u8 mlx5e_dcbnl_setdcbx(struct net_device *dev, u8 mode)
 {
+	struct mlx5e_priv *priv = netdev_priv(dev);
+	struct mlx5e_dcbx *dcbx = &priv->dcbx;
+
+	if ((!mode) && MLX5_CAP_GEN(priv->mdev, dcbx)) {
+		/* set dcbx to fw controlled */
+		if (dcbx->mode == MLX5E_DCBX_PARAM_VER_OPER_HOST)
+			if (!mlx5e_dcbnl_set_dcbx_mode(priv, MLX5E_DCBX_PARAM_VER_OPER_AUTO))
+				dcbx->mode = MLX5E_DCBX_PARAM_VER_OPER_AUTO;
+
+		return 0;
+	}
+
 	if (!mlx5e_dcbnl_is_allowed(netdev_priv(dev)))
 		return 1;
 
