@@ -1462,6 +1462,25 @@ static int mlx5e_handle_pflag(struct net_device *netdev,
 	return 0;
 }
 
+#ifdef CONFIG_MLX5_CORE_EN_DCB
+static int qos_with_dcbx_by_fw_handler(struct net_device *netdev, bool enable)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+
+	if (!MLX5_CAP_GEN(priv->mdev, dcbx))
+		return -EPERM;
+
+	if (!enable)
+		return 0;
+
+	/* Not allow to turn on the flag if the dcbx mode is host */
+	if (priv->dcbx.mode == MLX5E_DCBX_PARAM_VER_OPER_HOST)
+		return -EPERM;
+
+	return 0;
+}
+#endif
+
 static int mlx5e_set_priv_flags(struct net_device *netdev, u32 pflags)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
@@ -1472,6 +1491,12 @@ static int mlx5e_set_priv_flags(struct net_device *netdev, u32 pflags)
 	err = mlx5e_handle_pflag(netdev, pflags,
 				 MLX5E_PFLAG_RX_CQE_BASED_MODER,
 				 set_pflag_rx_cqe_based_moder);
+
+#ifdef CONFIG_MLX5_CORE_EN_DCB
+	err  = mlx5e_handle_pflag(netdev, pflags,
+				  MLX5E_PFLAG_QOS_WITH_DCBX_BY_FW,
+				  qos_with_dcbx_by_fw_handler);
+#endif
 
 	mutex_unlock(&priv->state_lock);
 	return err ? -EINVAL : 0;
