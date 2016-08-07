@@ -1022,6 +1022,7 @@ struct sec_path {
 	__u8				proto;
 	__u8				flags;
 #define SKB_GSO_SEGMENT			1
+#define SKB_CRYPTO_OFFLOAD		2
 };
 
 static inline int secpath_exists(struct sk_buff *skb)
