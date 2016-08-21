@@ -36,13 +36,14 @@
 #define POLICYDB_VERSION_DEFAULT_TYPE	28
 #define POLICYDB_VERSION_CONSTRAINT_NAMES	29
 #define POLICYDB_VERSION_XPERMS_IOCTL	30
+#define POLICYDB_VERSION_INFINIBAND		31
 
 /* Range of policy versions we understand*/
 #define POLICYDB_VERSION_MIN   POLICYDB_VERSION_BASE
 #ifdef CONFIG_SECURITY_SELINUX_POLICYDB_VERSION_MAX
 #define POLICYDB_VERSION_MAX	CONFIG_SECURITY_SELINUX_POLICYDB_VERSION_MAX_VALUE
 #else
-#define POLICYDB_VERSION_MAX	POLICYDB_VERSION_XPERMS_IOCTL
+#define POLICYDB_VERSION_MAX	POLICYDB_VERSION_INFINIBAND
 #endif
 
 /* Mask for just the mount related flags */
@@ -178,6 +179,10 @@ int security_get_user_sids(u32 callsid, char *username,
 			   u32 **sids, u32 *nel);
 
 int security_port_sid(u8 protocol, u16 port, u32 *out_sid);
+
+int security_pkey_sid(u64 subnet_prefix, u16 pkey_num, u32 *out_sid);
+
+int security_ib_end_port_sid(const char *dev_name, u8 port, u32 *out_sid);
 
 int security_netif_sid(char *name, u32 *if_sid);
 
