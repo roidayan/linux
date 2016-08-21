@@ -362,12 +362,22 @@ static int __init rxe_module_init(void)
 		return err;
 	}
 
-	err = rxe_net_init();
+	err = rxe_net_ipv4_init();
 	if (err) {
-		pr_err("rxe: unable to init\n");
+		pr_err("rxe: unable to init ipv4 tunnel\n");
 		rxe_cache_exit();
 		return err;
 	}
+
+#if IS_ENABLED(CONFIG_IPV6)
+	err = rxe_net_ipv6_init();
+	if (err) {
+		pr_err("rxe: unable to init ipv6 tunnel\n");
+		rxe_cache_exit();
+		return err;
+	}
+#endif
+
 	pr_info("rxe: loaded\n");
 
 	return 0;
