@@ -17,6 +17,11 @@
  *
  *      Added support for the policy capability bitmap
  *
+ * Update: Mellanox Techonologies
+ *
+ *	Added Infiniband support
+ *
+ * Copyright (C) 2016 Mellanox Techonologies
  * Copyright (C) 2007 Hewlett-Packard Development Company, L.P.
  * Copyright (C) 2004-2005 Trusted Computer Solutions, Inc.
  * Copyright (C) 2003 - 2004 Tresys Technology, LLC
@@ -76,80 +81,85 @@ static struct policydb_compat_info policydb_compat[] = {
 	{
 		.version	= POLICYDB_VERSION_BASE,
 		.sym_num	= SYM_NUM - 3,
-		.ocon_num	= OCON_NUM - 1,
+		.ocon_num	= OCON_NUM - 3,
 	},
 	{
 		.version	= POLICYDB_VERSION_BOOL,
 		.sym_num	= SYM_NUM - 2,
-		.ocon_num	= OCON_NUM - 1,
+		.ocon_num	= OCON_NUM - 3,
 	},
 	{
 		.version	= POLICYDB_VERSION_IPV6,
 		.sym_num	= SYM_NUM - 2,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_NLCLASS,
 		.sym_num	= SYM_NUM - 2,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_MLS,
 		.sym_num	= SYM_NUM,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_AVTAB,
 		.sym_num	= SYM_NUM,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_RANGETRANS,
 		.sym_num	= SYM_NUM,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_POLCAP,
 		.sym_num	= SYM_NUM,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_PERMISSIVE,
 		.sym_num	= SYM_NUM,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_BOUNDARY,
 		.sym_num	= SYM_NUM,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_FILENAME_TRANS,
 		.sym_num	= SYM_NUM,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_ROLETRANS,
 		.sym_num	= SYM_NUM,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_NEW_OBJECT_DEFAULTS,
 		.sym_num	= SYM_NUM,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_DEFAULT_TYPE,
 		.sym_num	= SYM_NUM,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_CONSTRAINT_NAMES,
 		.sym_num	= SYM_NUM,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_XPERMS_IOCTL,
+		.sym_num	= SYM_NUM,
+		.ocon_num	= OCON_NUM - 2,
+	},
+	{
+		.version	= POLICYDB_VERSION_INFINIBAND,
 		.sym_num	= SYM_NUM,
 		.ocon_num	= OCON_NUM,
 	},
@@ -2219,6 +2229,58 @@ static int ocontext_read(struct policydb *p, struct policydb_compat_info *info,
 					goto out;
 				break;
 			}
+			case OCON_PKEY: {
+				rc = next_entry(nodebuf, fp, sizeof(u32) * 6);
+				if (rc)
+					goto out;
+
+				c->u.pkey.subnet_prefix = be64_to_cpu(*((__be64 *)nodebuf));
+				/* The subnet prefix is stored as an IPv6
+				 * address in the policy.
+				 *
+				 * Check that the lower 2 DWORDS are 0.
+				 */
+				if (nodebuf[2] || nodebuf[3]) {
+					rc = -EINVAL;
+					goto out;
+				}
+
+				if (nodebuf[4] > 0xffff ||
+				    nodebuf[5] > 0xffff) {
+					rc = -EINVAL;
+					goto out;
+				}
+
+				c->u.pkey.low_pkey = le32_to_cpu(nodebuf[4]);
+				c->u.pkey.high_pkey = le32_to_cpu(nodebuf[5]);
+
+				rc = context_read_and_validate(&c->context[0],
+							       p,
+							       fp);
+				if (rc)
+					goto out;
+				break;
+			}
+			case OCON_IB_END_PORT:
+				rc = next_entry(buf, fp, sizeof(u32) * 2);
+				if (rc)
+					goto out;
+				len = le32_to_cpu(buf[0]);
+
+				rc = str_read(&c->u.ib_end_port.dev_name, GFP_KERNEL,
+					      fp,
+					      len);
+				if (rc)
+					goto out;
+
+				c->u.ib_end_port.port = le32_to_cpu(buf[1]);
+
+				rc = context_read_and_validate(&c->context[0],
+							       p,
+							       fp);
+				if (rc)
+					goto out;
+				break;
 			}
 		}
 	}
@@ -3141,6 +3203,43 @@ static int ocontext_write(struct policydb *p, struct policydb_compat_info *info,
 				for (j = 0; j < 4; j++)
 					nodebuf[j + 4] = c->u.node6.mask[j]; /* network order */
 				rc = put_entry(nodebuf, sizeof(u32), 8, fp);
+				if (rc)
+					return rc;
+				rc = context_write(p, &c->context[0], fp);
+				if (rc)
+					return rc;
+				break;
+			case OCON_PKEY: {
+				__be64 *sbn_pfx = (__be64 *)nodebuf;
+				*sbn_pfx = cpu_to_be64(c->u.pkey.subnet_prefix);
+
+				/*
+				 * The low order 2 bits were confirmed to be 0
+				 * when the policy was loaded. Write them out
+				 * as zero
+				 */
+				nodebuf[2] = 0;
+				nodebuf[3] = 0;
+
+				nodebuf[4] = cpu_to_le32(c->u.pkey.low_pkey);
+				nodebuf[5] = cpu_to_le32(c->u.pkey.high_pkey);
+
+				rc = put_entry(nodebuf, sizeof(u32), 6, fp);
+				if (rc)
+					return rc;
+				rc = context_write(p, &c->context[0], fp);
+				if (rc)
+					return rc;
+				break;
+			}
+			case OCON_IB_END_PORT:
+				len = strlen(c->u.ib_end_port.dev_name);
+				buf[0] = cpu_to_le32(len);
+				buf[1] = cpu_to_le32(c->u.ib_end_port.port);
+				rc = put_entry(buf, sizeof(u32), 2, fp);
+				if (rc)
+					return rc;
+				rc = put_entry(c->u.ib_end_port.dev_name, 1, len, fp);
 				if (rc)
 					return rc;
 				rc = context_write(p, &c->context[0], fp);
