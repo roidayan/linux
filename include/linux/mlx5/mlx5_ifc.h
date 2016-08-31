@@ -169,6 +169,9 @@ enum {
 	MLX5_CMD_OP_DEALLOC_XRCD                  = 0x80f,
 	MLX5_CMD_OP_ALLOC_TRANSPORT_DOMAIN        = 0x816,
 	MLX5_CMD_OP_DEALLOC_TRANSPORT_DOMAIN      = 0x817,
+	MLX5_CMD_OP_QUERY_DIAGNOSTIC_PARAMS       = 0x819,
+	MLX5_CMD_OP_SET_DIAGNOSTIC_PARAMS         = 0x820,
+	MLX5_CMD_OP_QUERY_DIAGNOSTICS_COUNTERS    = 0x821,
 	MLX5_CMD_OP_QUERY_CONG_STATUS             = 0x822,
 	MLX5_CMD_OP_MODIFY_CONG_STATUS            = 0x823,
 	MLX5_CMD_OP_QUERY_CONG_PARAMS             = 0x824,
@@ -228,6 +231,25 @@ enum {
 	MLX5_CMD_OP_ALLOC_ENCAP_HEADER            = 0x93d,
 	MLX5_CMD_OP_DEALLOC_ENCAP_HEADER          = 0x93e,
 	MLX5_CMD_OP_MAX
+};
+
+struct mlx5_ifc_mbox_out_bits {
+	u8         status[0x8];
+	u8         reserved_at_8[0x18];
+
+	u8         syndrome[0x20];
+
+	u8         reserved_at_40[0x40];
+};
+
+struct mlx5_ifc_mbox_in_bits {
+	u8         opcode[0x10];
+	u8         reserved_at_10[0x10];
+
+	u8         reserved_at_20[0x10];
+	u8         op_mod[0x10];
+
+	u8         reserved_at_40[0x40];
 };
 
 struct mlx5_ifc_flow_table_fields_supported_bits {
