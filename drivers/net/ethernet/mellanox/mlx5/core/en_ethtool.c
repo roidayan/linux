@@ -1534,6 +1534,23 @@ static u32 mlx5e_get_priv_flags(struct net_device *netdev)
 	return priv->params.pflags;
 }
 
+static int mlx5e_get_regs_len(struct net_device *dev)
+{
+	return mlx5e_regs_get_len();
+}
+
+static void mlx5e_get_regs(struct net_device *dev, struct ethtool_regs *regs,
+			   void *buff)
+{
+	mlx5e_regs_get(dev, buff);
+}
+
+static int mlx5e_set_regs(struct net_device *dev, struct ethtool_regs *regs,
+			  u8 *data)
+{
+	return mlx5e_regs_set(dev, data, regs->len);
+}
+
 static int mlx5e_set_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd)
 {
 	int err = 0;
@@ -1587,4 +1604,8 @@ const struct ethtool_ops mlx5e_ethtool_ops = {
 	.get_priv_flags    = mlx5e_get_priv_flags,
 	.set_priv_flags    = mlx5e_set_priv_flags,
 	.self_test         = mlx5e_self_test,
+	.get_regs_len      = mlx5e_get_regs_len,
+	.get_regs          = mlx5e_get_regs,
+	.set_regs          = mlx5e_set_regs,
+
 };
