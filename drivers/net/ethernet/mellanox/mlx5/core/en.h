@@ -659,6 +659,11 @@ struct mlx5e_tir {
 	struct list_head  list;
 };
 
+struct mlx5e_reg {
+	u8  data_in[MLX5_ST_SZ_BYTES(mbox_in)];
+	u8 *data_out;
+};
+
 enum {
 	MLX5E_TC_PRIO = 0,
 	MLX5E_NIC_PRIO
@@ -714,6 +719,7 @@ struct mlx5e_priv {
 	struct mlx5e_stats         stats;
 	struct mlx5e_tstamp        tstamp;
 	u16 q_counter;
+	struct mlx5e_reg          *reg;
 #ifdef CONFIG_MLX5_CORE_EN_DCB
 	struct mlx5e_dcbx          dcbx;
 #endif
@@ -803,6 +809,12 @@ int mlx5e_get_max_linkspeed(struct mlx5_core_dev *mdev, u32 *speed);
 
 void mlx5e_set_rx_cq_mode_params(struct mlx5e_params *params,
 				 u8 cq_period_mode);
+
+struct mlx5e_reg *mlx5e_regs_init(void);
+int mlx5e_regs_set(struct net_device *dev, void *buff, int inlen);
+void mlx5e_regs_get(struct net_device *dev, void *buff);
+int mlx5e_regs_get_len(void);
+void mlx5e_regs_destroy(struct mlx5e_reg *reg);
 
 static inline void mlx5e_tx_notify_hw(struct mlx5e_sq *sq,
 				      struct mlx5_wqe_ctrl_seg *ctrl, int bf_sz)
