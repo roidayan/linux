@@ -14,7 +14,7 @@ mlx5_core-y += fs/cmd.o fs/core.o fs/counters.o
 mlx5_core-$(CONFIG_MLX5_CORE_EN) += en/wq.o en/main.o en/common.o \
 		en/fs.o en/ethtool.o en/tx.o en/rx.o en/rx_am.o \
 		en/txrx.o en/clock.o en/vxlan.o en/tc.o en/arfs.o \
-		en/rep.o en/fs_ethtool.o en/selftest.o
+		en/rep.o en/fs_ethtool.o en/selftest.o en/regs.o
 
 mlx5_core-$(CONFIG_MLX5_CORE_EN) += sriov/eswitch.o sriov/eswitch_offloads.o
 
