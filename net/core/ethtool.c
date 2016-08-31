@@ -1424,6 +1424,34 @@ static int ethtool_get_regs(struct net_device *dev, char __user *useraddr)
 	return ret;
 }
 
+static int ethtool_set_regs(struct net_device *dev, char __user *useraddr)
+{
+	void __user *userbuf = useraddr + offsetof(struct ethtool_regs, data);
+	const struct ethtool_ops *ops = dev->ethtool_ops;
+	struct ethtool_regs regs;
+	int ret = 0;
+	u8 *data;
+
+	if (!ops->set_regs || !ops->get_regs_len)
+		return -EOPNOTSUPP;
+	if (copy_from_user(&regs, useraddr, sizeof(regs)))
+		return -EFAULT;
+
+	data = kmalloc(PAGE_SIZE, GFP_USER);
+	if (!data)
+		return -ENOMEM;
+
+	ret = -EFAULT;
+	if (copy_from_user(data, userbuf, regs.len))
+		goto out;
+
+	ret = ops->set_regs(dev, &regs, data);
+
+out:
+	kfree(data);
+	return ret;
+}
+
 static int ethtool_reset(struct net_device *dev, char __user *useraddr)
 {
 	struct ethtool_value reset;
@@ -2596,6 +2624,9 @@ int dev_ethtool(struct net *net, struct ifreq *ifr)
 		break;
 	case ETHTOOL_GREGS:
 		rc = ethtool_get_regs(dev, useraddr);
+		break;
+	case ETHTOOL_SREGS:
+		rc = ethtool_set_regs(dev, useraddr);
 		break;
 	case ETHTOOL_GWOL:
 		rc = ethtool_get_wol(dev, useraddr);
