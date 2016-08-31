@@ -3701,12 +3701,20 @@ static void mlx5e_nic_init(struct mlx5_core_dev *mdev,
 
 	mlx5e_build_nic_netdev_priv(mdev, netdev, profile, ppriv);
 	mlx5e_build_nic_netdev(netdev);
+
+	priv->reg = mlx5e_regs_init();
+	if (!priv->reg)
+		mlx5_core_warn(mdev, "Failed to allocate mlx5e_reg\n");
+
 	mlx5e_vxlan_init(priv);
 }
 
 static void mlx5e_nic_cleanup(struct mlx5e_priv *priv)
 {
 	mlx5e_vxlan_cleanup(priv);
+
+	if (priv->reg)
+		mlx5e_regs_destroy(priv->reg);
 
 	if (priv->xdp_prog)
 		bpf_prog_put(priv->xdp_prog);
