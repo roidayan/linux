@@ -105,7 +105,7 @@ static void mlx5e_poll_ico_cq(struct mlx5e_cq *cq)
 	sq->cc = sqcc;
 }
 
-bool mlx5e_poll_xdp_tx_cq(struct mlx5e_cq *cq, int napi_budget)
+static inline bool mlx5e_poll_xdp_tx_cq(struct mlx5e_cq *cq)
 {
 	struct mlx5e_sq *sq;
 	u16 sqcc;
@@ -181,10 +181,8 @@ int mlx5e_napi_poll(struct napi_struct *napi, int budget)
 	work_done = mlx5e_poll_rx_cq(&c->rq.cq, budget);
 	busy |= work_done == budget;
 
-	if (c->xdp) {
-		work_done = mlx5e_poll_xdp_tx_cq(&c->xdp_sq.cq, budget);
-		busy |= work_done == budget;
-	}
+	if (c->xdp)
+		busy |= mlx5e_poll_xdp_tx_cq(&c->xdp_sq.cq);
 
 	mlx5e_poll_ico_cq(&c->icosq.cq);
 
