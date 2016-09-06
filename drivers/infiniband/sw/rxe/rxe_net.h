@@ -47,7 +47,8 @@ extern struct rxe_recv_sockets recv_sockets;
 
 struct rxe_dev *rxe_net_add(struct net_device *ndev);
 
-int rxe_net_init(void);
+int rxe_net_ipv4_init(void);
+int rxe_net_ipv6_init(void);
 void rxe_net_exit(void);
 
 #endif /* RXE_NET_H */
