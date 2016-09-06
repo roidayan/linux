@@ -249,8 +249,8 @@ static struct socket *rxe_setup_udp_tunnel(struct net *net, __be16 port,
 	memset(&udp_cfg, 0, sizeof(udp_cfg));
 
 	if (ipv6) {
-		udp_cfg.family = AF_INET6;
-		udp_cfg.ipv6_v6only = 1;
+	udp_cfg.family = AF_INET6;
+	udp_cfg.ipv6_v6only = 1;
 	} else {
 		udp_cfg.family = AF_INET;
 	}
@@ -662,34 +662,46 @@ static struct notifier_block rxe_net_notifier = {
 	.notifier_call = rxe_notify,
 };
 
-int rxe_net_init(void)
+int rxe_net_ipv4_init(void)
 {
 	int err;
 
 	spin_lock_init(&dev_list_lock);
 
-	recv_sockets.sk6 = rxe_setup_udp_tunnel(&init_net,
-			htons(ROCE_V2_UDP_DPORT), true);
-	if (IS_ERR(recv_sockets.sk6)) {
-		recv_sockets.sk6 = NULL;
-		pr_err("rxe: Failed to create IPv6 UDP tunnel\n");
-		return -1;
-	}
-
 	recv_sockets.sk4 = rxe_setup_udp_tunnel(&init_net,
-			htons(ROCE_V2_UDP_DPORT), false);
+						htons(ROCE_V2_UDP_DPORT), false);
 	if (IS_ERR(recv_sockets.sk4)) {
-		rxe_release_udp_tunnel(recv_sockets.sk6);
 		recv_sockets.sk4 = NULL;
-		recv_sockets.sk6 = NULL;
 		pr_err("rxe: Failed to create IPv4 UDP tunnel\n");
 		return -1;
 	}
 
 	err = register_netdevice_notifier(&rxe_net_notifier);
 	if (err) {
-		rxe_release_udp_tunnel(recv_sockets.sk6);
 		rxe_release_udp_tunnel(recv_sockets.sk4);
+		pr_err("rxe: Failed to rigister netdev notifier\n");
+	}
+
+	return err;
+}
+
+int rxe_net_ipv6_init(void)
+{
+	int err;
+
+	spin_lock_init(&dev_list_lock);
+
+	recv_sockets.sk6 = rxe_setup_udp_tunnel(&init_net,
+						htons(ROCE_V2_UDP_DPORT), true);
+	if (IS_ERR(recv_sockets.sk6)) {
+		recv_sockets.sk6 = NULL;
+		pr_err("rxe: Failed to create IPv6 UDP tunnel\n");
+		return -1;
+	}
+
+	err = register_netdevice_notifier(&rxe_net_notifier);
+	if (err) {
+		rxe_release_udp_tunnel(recv_sockets.sk6);
 		pr_err("rxe: Failed to rigister netdev notifier\n");
 	}
 
@@ -698,9 +710,10 @@ int rxe_net_init(void)
 
 void rxe_net_exit(void)
 {
+#if IS_ENABLED(CONFIG_IPV6)
 	if (recv_sockets.sk6)
 		rxe_release_udp_tunnel(recv_sockets.sk6);
-
+#endif
 	if (recv_sockets.sk4)
 		rxe_release_udp_tunnel(recv_sockets.sk4);
 
