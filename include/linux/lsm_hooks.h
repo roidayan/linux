@@ -8,6 +8,7 @@
  * Copyright (C) 2001 Silicon Graphics, Inc. (Trust Technology Group)
  * Copyright (C) 2015 Intel Corporation.
  * Copyright (C) 2015 Casey Schaufler <casey@schaufler-ca.com>
+ * Copyright (C) 2016 Mellanox Techonologies
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -876,6 +877,50 @@
  *	associated with the TUN device's security structure.
  *	@security pointer to the TUN devices's security structure.
  *
+ * Security hooks for Infiniband
+ *
+ * @ib_qp_pkey_access:
+ *	Check permission to access a pkey when modifing a QP.
+ *	@subnet_prefix the subnet prefix of the port being used.
+ *	@pkey the pkey to be accessed.
+ *	@qp_sec pointer to the ib_qp_security structure.
+ * @ib_mad_agent_pkey_access:
+ *	Check permission to access a pkey when transmiting and receiving MADS.
+ *	@subnet_prefix the subnet prefix of the port being used.
+ *	@pkey the pkey to be accessed.
+ *	@mad_agent pointer to the ib_mad_agent structure.
+ * @ib_end_port_smp:
+ *	Check permissions to send and receive SMPs on a end port.
+ *	@dev_name the IB device name (i.e. mlx4_0).
+ *	@port_num the port number.
+ *	@mad_agent pointer to the ib_mad_agent structure.
+ * @ib_qp_alloc_security:
+ *	Allocate and attach a security structure to the qp_sec->q_security
+ *	field. The q_security field is initialized to NULL when the structure
+ *	is allocated.  A separate QP security structure is used instead of the
+ *	QP structure because when a QP is destroyed the memory is freed by the
+ *	hardware driver.  That operation can fail so the security info must be
+ *	maintained until the destroy completes successfully.
+ *	@qp_sec contains the ib_qp_security structure to be modified.
+ *	Return 0 if operation was successful.
+ * @ib_mad_agent_alloc_security:
+ *	Allocate and attach a security structure to the mad_agent->m_security
+ *	field. The m_security field is initialized to NULL when the structure
+ *	is allocated.
+ *	@mad_agent contains the ib_mad_agent structure to be modified.
+ *	Return 0 if operation was successful.
+ * @ib_qp_free_security:
+ *	Deallocate and clear the qp_sec->q_security field.
+ *	@qp_sec contains the ib_qp_security structure to be modified.
+ * @ib_mad_agent_free_security:
+ *	Deallocate and clear the mad_agent->m_security field.
+ *	@mad_agent contains the ib_mad_agent structure to be modified.
+ * @register_ib_flush_callback:
+ *	Provide a way for security modules to notify ib_core of policy changes.
+ *	@callback function pointer to call when policy changes.
+ * @unregister_ib_flush_callback:
+ *	Unregister the callback function.
+ *
  * Security hooks for XFRM operations.
  *
  * @xfrm_policy_alloc_security:
@@ -1579,6 +1624,21 @@ union security_list_options {
 	int (*tun_dev_open)(void *security);
 #endif	/* CONFIG_SECURITY_NETWORK */
 
+#ifdef CONFIG_SECURITY_INFINIBAND
+	int (*ib_qp_pkey_access)(u64 subnet_prefix, u16 pkey,
+				 struct ib_qp_security *qp_sec);
+	int (*ib_mad_agent_pkey_access)(u64 subnet_prefix, u16 pkey,
+					struct ib_mad_agent *mad_agent);
+	int (*ib_end_port_smp)(const char *dev_name, u8 port,
+			       struct ib_mad_agent *mad_agent);
+	int (*ib_qp_alloc_security)(struct ib_qp_security *qp_sec);
+	int (*ib_mad_agent_alloc_security)(struct ib_mad_agent *mad_agent);
+	void (*ib_qp_free_security)(struct ib_qp_security *qp_sec);
+	void (*ib_mad_agent_free_security)(struct ib_mad_agent *mad_agent);
+	void (*register_ib_flush_callback)(void (*callback)(void));
+	void (*unregister_ib_flush_callback)(void);
+#endif	/* CONFIG_SECURITY_INFINIBAND */
+
 #ifdef CONFIG_SECURITY_NETWORK_XFRM
 	int (*xfrm_policy_alloc_security)(struct xfrm_sec_ctx **ctxp,
 					  struct xfrm_user_sec_ctx *sec_ctx,
@@ -1806,6 +1866,17 @@ struct security_hook_heads {
 	struct list_head tun_dev_attach;
 	struct list_head tun_dev_open;
 #endif	/* CONFIG_SECURITY_NETWORK */
+#ifdef CONFIG_SECURITY_INFINIBAND
+	struct list_head ib_qp_pkey_access;
+	struct list_head ib_mad_agent_pkey_access;
+	struct list_head ib_end_port_smp;
+	struct list_head ib_qp_alloc_security;
+	struct list_head ib_qp_free_security;
+	struct list_head ib_mad_agent_alloc_security;
+	struct list_head ib_mad_agent_free_security;
+	struct list_head register_ib_flush_callback;
+	struct list_head unregister_ib_flush_callback;
+#endif	/* CONFIG_SECURITY_INFINIBAND */
 #ifdef CONFIG_SECURITY_NETWORK_XFRM
 	struct list_head xfrm_policy_alloc_security;
 	struct list_head xfrm_policy_clone_security;
