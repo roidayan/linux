@@ -29,5 +29,7 @@ static const char *initial_sid_to_string[] =
     "policy",
     "scmp_packet",
     "devnull",
+    "pkey",
+    "ib_end_port",
 };
 
