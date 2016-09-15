@@ -1863,7 +1863,7 @@ static void get_cqs(enum ib_qp_type qp_type,
 }
 
 static int modify_raw_packet_qp(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
-				u16 operation);
+				u16 operation, u8 lag_tx_affinity);
 
 static void destroy_qp_common(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp)
 {
@@ -1889,7 +1889,7 @@ static void destroy_qp_common(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp)
 						  NULL, &base->mqp);
 		} else {
 			err = modify_raw_packet_qp(dev, qp,
-						   MLX5_CMD_OP_2RST_QP);
+						   MLX5_CMD_OP_2RST_QP, 0);
 		}
 		if (err)
 			mlx5_ib_warn(dev, "mlx5_ib: modify QP 0x%06x to RESET failed\n",
@@ -2145,6 +2145,31 @@ static int modify_raw_packet_eth_prio(struct mlx5_core_dev *dev,
 
 	tisc = MLX5_ADDR_OF(modify_tis_in, in, ctx);
 	MLX5_SET(tisc, tisc, prio, ((sl & 0x7) << 1));
+
+	err = mlx5_core_modify_tis(dev, sq->tisn, in, inlen);
+
+	kvfree(in);
+
+	return err;
+}
+
+static int modify_raw_packet_tx_affinity(struct mlx5_core_dev *dev,
+					 struct mlx5_ib_sq *sq, u8 tx_affinity)
+{
+	void *in;
+	void *tisc;
+	int inlen;
+	int err;
+
+	inlen = MLX5_ST_SZ_BYTES(modify_tis_in);
+	in = mlx5_vzalloc(inlen);
+	if (!in)
+		return -ENOMEM;
+
+	MLX5_SET(modify_tis_in, in, bitmask.lag_tx_port_affinity, 1);
+
+	tisc = MLX5_ADDR_OF(modify_tis_in, in, ctx);
+	MLX5_SET(tisc, tisc, lag_tx_port_affinity, tx_affinity);
 
 	err = mlx5_core_modify_tis(dev, sq->tisn, in, inlen);
 
@@ -2422,7 +2447,7 @@ out:
 }
 
 static int modify_raw_packet_qp(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
-				u16 operation)
+				u16 operation, u8 tx_affinity)
 {
 	struct mlx5_ib_raw_packet_qp *raw_packet_qp = &qp->raw_packet_qp;
 	struct mlx5_ib_rq *rq = &raw_packet_qp->rq;
@@ -2461,8 +2486,16 @@ static int modify_raw_packet_qp(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
 			return err;
 	}
 
-	if (qp->sq.wqe_cnt)
+	if (qp->sq.wqe_cnt) {
+		if (tx_affinity) {
+			err = modify_raw_packet_tx_affinity(dev->mdev, sq,
+							    tx_affinity);
+			if (err)
+				return err;
+		}
+
 		return modify_raw_packet_qp_sq(dev->mdev, sq, sq_state);
+	}
 
 	return 0;
 }
@@ -2520,6 +2553,7 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 	int mlx5_st;
 	int err;
 	u16 op;
+	u8 tx_affinity = 0;
 
 	context = kzalloc(sizeof(*context), GFP_KERNEL);
 	if (!context)
@@ -2546,6 +2580,23 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 		case IB_MIG_ARMED:
 			context->flags |= cpu_to_be32(MLX5_QP_PM_ARMED << 11);
 			break;
+		}
+	}
+
+	if ((cur_state == IB_QPS_RESET) && (new_state == IB_QPS_INIT)) {
+		if ((ibqp->qp_type == IB_QPT_RC) ||
+		    (ibqp->qp_type == IB_QPT_UD &&
+		     !(qp->flags & MLX5_IB_QP_SQPN_QP1)) ||
+		    (ibqp->qp_type == IB_QPT_UC) ||
+		    (ibqp->qp_type == IB_QPT_RAW_PACKET) ||
+		    (ibqp->qp_type == IB_QPT_XRC_INI) ||
+		    (ibqp->qp_type == IB_QPT_XRC_TGT)) {
+			if (mlx5_lag_is_active(dev->mdev)) {
+				tx_affinity = (unsigned)atomic_add_return(1,
+						&dev->roce.next_port) %
+						MLX5_MAX_PORTS + 1;
+				context->flags |= cpu_to_be32(tx_affinity << 24);
+			}
 		}
 	}
 
@@ -2691,7 +2742,7 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 	optpar &= opt_mask[mlx5_cur][mlx5_new][mlx5_st];
 
 	if (qp->ibqp.qp_type == IB_QPT_RAW_PACKET)
-		err = modify_raw_packet_qp(dev, qp, op);
+		err = modify_raw_packet_qp(dev, qp, op, tx_affinity);
 	else
 		err = mlx5_core_qp_modify(dev->mdev, op, optpar, context,
 					  &base->mqp);
@@ -3983,7 +4034,7 @@ int mlx5_ib_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 			   get_fence(fence, wr), next_fence,
 			   mlx5_ib_opcode[wr->opcode]);
 skip_psv:
-		if (0)
+		if (IS_BUILTIN(CONFIG_MLX5_INFINIBAND_VERBOSE))
 			dump_wqe(qp, idx, size);
 	}
 
@@ -4497,6 +4548,28 @@ int mlx5_ib_dealloc_xrcd(struct ib_xrcd *xrcd)
 	return 0;
 }
 
+static void mlx5_ib_wq_event(struct mlx5_core_qp *core_qp, int type)
+{
+	struct mlx5_ib_rwq *rwq = to_mibrwq(core_qp);
+	struct mlx5_ib_dev *dev = to_mdev(rwq->ibwq.device);
+	struct ib_event event;
+
+	if (rwq->ibwq.event_handler) {
+		event.device     = rwq->ibwq.device;
+		event.element.wq = &rwq->ibwq;
+		switch (type) {
+		case MLX5_EVENT_TYPE_WQ_CATAS_ERROR:
+			event.event = IB_EVENT_WQ_FATAL;
+			break;
+		default:
+			mlx5_ib_warn(dev, "Unexpected event type %d on WQ %06x\n", type, core_qp->qpn);
+			return;
+		}
+
+		rwq->ibwq.event_handler(&event, rwq->ibwq.wq_context);
+	}
+}
+
 static int  create_rq(struct mlx5_ib_rwq *rwq, struct ib_pd *pd,
 		      struct ib_wq_init_attr *init_attr)
 {
@@ -4534,7 +4607,7 @@ static int  create_rq(struct mlx5_ib_rwq *rwq, struct ib_pd *pd,
 	MLX5_SET64(wq, wq, dbr_addr, rwq->db.dma);
 	rq_pas0 = (__be64 *)MLX5_ADDR_OF(wq, wq, pas);
 	mlx5_ib_populate_pas(dev, rwq->umem, rwq->page_shift, rq_pas0, 0);
-	err = mlx5_core_create_rq(dev->mdev, in, inlen, &rwq->rqn);
+	err = mlx5_core_create_rq_tracked(dev->mdev, in, inlen, &rwq->core_qp);
 	kvfree(in);
 	return err;
 }
@@ -4650,7 +4723,7 @@ struct ib_wq *mlx5_ib_create_wq(struct ib_pd *pd,
 		return ERR_PTR(-EINVAL);
 	}
 
-	rwq->ibwq.wq_num = rwq->rqn;
+	rwq->ibwq.wq_num = rwq->core_qp.qpn;
 	rwq->ibwq.state = IB_WQS_RESET;
 	if (udata->outlen) {
 		resp.response_length = offsetof(typeof(resp), response_length) +
@@ -4660,10 +4733,12 @@ struct ib_wq *mlx5_ib_create_wq(struct ib_pd *pd,
 			goto err_copy;
 	}
 
+	rwq->core_qp.event = mlx5_ib_wq_event;
+	rwq->ibwq.event_handler = init_attr->event_handler;
 	return &rwq->ibwq;
 
 err_copy:
-	mlx5_core_destroy_rq(dev->mdev, rwq->rqn);
+	mlx5_core_destroy_rq_tracked(dev->mdev, &rwq->core_qp);
 err_user_rq:
 	destroy_user_rq(pd, rwq);
 err:
@@ -4676,7 +4751,7 @@ int mlx5_ib_destroy_wq(struct ib_wq *wq)
 	struct mlx5_ib_dev *dev = to_mdev(wq->device);
 	struct mlx5_ib_rwq *rwq = to_mrwq(wq);
 
-	mlx5_core_destroy_rq(dev->mdev, rwq->rqn);
+	mlx5_core_destroy_rq_tracked(dev->mdev, &rwq->core_qp);
 	destroy_user_rq(wq->pd, rwq);
 	kfree(rwq);
 
@@ -4808,7 +4883,7 @@ int mlx5_ib_modify_wq(struct ib_wq *wq, struct ib_wq_attr *wq_attr,
 	MLX5_SET(modify_rq_in, in, rq_state, curr_wq_state);
 	MLX5_SET(rqc, rqc, state, wq_state);
 
-	err = mlx5_core_modify_rq(dev->mdev, rwq->rqn, in, inlen);
+	err = mlx5_core_modify_rq(dev->mdev, rwq->core_qp.qpn, in, inlen);
 	kvfree(in);
 	if (!err)
 		rwq->ibwq.state = (wq_state == MLX5_RQC_STATE_ERR) ? IB_WQS_ERR : wq_state;

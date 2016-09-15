@@ -17,6 +17,7 @@
  *	Paul Moore <paul@paul-moore.com>
  *  Copyright (C) 2007 Hitachi Software Engineering Co., Ltd.
  *		       Yuichi Nakamura <ynakam@hitachisoft.jp>
+ *  Copyright (C) 2016 Mellanox Technologies
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License version 2,
@@ -83,16 +84,22 @@
 #include <linux/export.h>
 #include <linux/msg.h>
 #include <linux/shm.h>
+#include <rdma/ib_verbs.h>
+#include <rdma/ib_mad.h>
 
 #include "avc.h"
 #include "objsec.h"
 #include "netif.h"
 #include "netnode.h"
 #include "netport.h"
+#include "pkey.h"
 #include "xfrm.h"
 #include "netlabel.h"
 #include "audit.h"
 #include "avc_ss.h"
+
+static void (*ib_flush_callback)(void);
+static DEFINE_MUTEX(ib_flush_mutex);
 
 /* SECMARK reference count */
 static atomic_t selinux_secmark_refcount = ATOMIC_INIT(0);
@@ -159,13 +166,19 @@ static int selinux_peerlbl_enabled(void)
 	return (selinux_policycap_alwaysnetwork || netlbl_enabled() || selinux_xfrm_enabled());
 }
 
-static int selinux_netcache_avc_callback(u32 event)
+static int selinux_cache_avc_callback(u32 event)
 {
 	if (event == AVC_CALLBACK_RESET) {
 		sel_netif_flush();
 		sel_netnode_flush();
 		sel_netport_flush();
 		synchronize_net();
+
+		sel_pkey_flush();
+		mutex_lock(&ib_flush_mutex);
+		if (ib_flush_callback)
+			ib_flush_callback();
+		mutex_unlock(&ib_flush_mutex);
 	}
 	return 0;
 }
@@ -6025,6 +6038,128 @@ static int selinux_key_getsecurity(struct key *key, char **_buffer)
 
 #endif
 
+#ifdef CONFIG_SECURITY_INFINIBAND
+static void selinux_register_ib_flush_callback(void (*callback)(void))
+{
+	mutex_lock(&ib_flush_mutex);
+	ib_flush_callback = callback;
+	mutex_unlock(&ib_flush_mutex);
+}
+
+static void selinux_unregister_ib_flush_callback(void)
+{
+	mutex_lock(&ib_flush_mutex);
+	ib_flush_callback = NULL;
+	mutex_unlock(&ib_flush_mutex);
+}
+
+static int selinux_pkey_access(u64 subnet_prefix, u16 pkey_val, void *security)
+{
+	struct common_audit_data ad;
+	int err;
+	u32 sid = 0;
+	struct ib_security_struct *sec = security;
+	struct lsm_pkey_audit pkey;
+
+	err = sel_pkey_sid(subnet_prefix, pkey_val, &sid);
+
+	if (err)
+		goto out;
+
+	ad.type = LSM_AUDIT_DATA_PKEY;
+	pkey.subnet_prefix = subnet_prefix;
+	pkey.pkey = pkey_val;
+	ad.u.pkey = &pkey;
+	err = avc_has_perm(sec->sid, sid,
+			   SECCLASS_INFINIBAND_PKEY,
+			   INFINIBAND_PKEY__ACCESS, &ad);
+out:
+	return err;
+}
+
+static int selinux_ib_qp_pkey_access(u64 subnet_prefix, u16 pkey_val,
+				     struct ib_qp_security *qp_sec)
+{
+	return selinux_pkey_access(subnet_prefix, pkey_val,
+				   qp_sec->q_security);
+}
+
+static int selinux_ib_mad_agent_pkey_access(u64 subnet_prefix, u16 pkey_val,
+					    struct ib_mad_agent *mad_agent)
+{
+	return selinux_pkey_access(subnet_prefix, pkey_val,
+					mad_agent->m_security);
+}
+
+static int selinux_ib_end_port_smp(const char *dev_name, u8 port,
+				   struct ib_mad_agent *mad_agent)
+{
+	struct common_audit_data ad;
+	int err;
+	u32 sid = 0;
+	struct ib_security_struct *sec = mad_agent->m_security;
+	struct lsm_ib_end_port_audit ib_end_port;
+
+	err = security_ib_end_port_sid(dev_name, port, &sid);
+
+	if (err)
+		goto out;
+
+	ad.type = LSM_AUDIT_DATA_IB_END_PORT;
+	strncpy(ib_end_port.dev_name, dev_name, sizeof(ib_end_port.dev_name));
+	ib_end_port.port = port;
+	ad.u.ib_end_port = &ib_end_port;
+	err = avc_has_perm(sec->sid, sid,
+			   SECCLASS_INFINIBAND_END_PORT,
+			   INFINIBAND_END_PORT__SMP, &ad);
+
+out:
+	return err;
+}
+
+static int selinux_ib_qp_alloc_security(struct ib_qp_security *qp_sec)
+{
+	struct ib_security_struct *sec;
+
+	sec = kzalloc(sizeof(*sec), GFP_ATOMIC);
+	if (!sec)
+		return -ENOMEM;
+	sec->sid = current_sid();
+
+	qp_sec->q_security = sec;
+	return 0;
+}
+
+static void selinux_ib_qp_free_security(struct ib_qp_security *qp_sec)
+{
+	struct ib_security_struct *sec = qp_sec->q_security;
+
+	qp_sec->q_security = NULL;
+	kfree(sec);
+}
+
+static int selinux_ib_mad_agent_alloc_security(struct ib_mad_agent *mad_agent)
+{
+	struct ib_security_struct *sec;
+
+	sec = kzalloc(sizeof(*sec), GFP_ATOMIC);
+	if (!sec)
+		return -ENOMEM;
+	sec->sid = current_sid();
+
+	mad_agent->m_security = sec;
+	return 0;
+}
+
+static void selinux_ib_mad_agent_free_security(struct ib_mad_agent *mad_agent)
+{
+	struct ib_security_struct *sec = mad_agent->m_security;
+
+	mad_agent->m_security = NULL;
+	kfree(sec);
+}
+#endif
+
 static struct security_hook_list selinux_hooks[] = {
 	LSM_HOOK_INIT(binder_set_context_mgr, selinux_binder_set_context_mgr),
 	LSM_HOOK_INIT(binder_transaction, selinux_binder_transaction),
@@ -6207,6 +6342,25 @@ static struct security_hook_list selinux_hooks[] = {
 	LSM_HOOK_INIT(tun_dev_attach, selinux_tun_dev_attach),
 	LSM_HOOK_INIT(tun_dev_open, selinux_tun_dev_open),
 
+#ifdef CONFIG_SECURITY_INFINIBAND
+	LSM_HOOK_INIT(register_ib_flush_callback,
+		      selinux_register_ib_flush_callback),
+	LSM_HOOK_INIT(unregister_ib_flush_callback,
+		      selinux_unregister_ib_flush_callback),
+	LSM_HOOK_INIT(ib_qp_pkey_access, selinux_ib_qp_pkey_access),
+	LSM_HOOK_INIT(ib_mad_agent_pkey_access,
+		      selinux_ib_mad_agent_pkey_access),
+	LSM_HOOK_INIT(ib_end_port_smp, selinux_ib_end_port_smp),
+	LSM_HOOK_INIT(ib_qp_alloc_security,
+		      selinux_ib_qp_alloc_security),
+	LSM_HOOK_INIT(ib_qp_free_security,
+		      selinux_ib_qp_free_security),
+	LSM_HOOK_INIT(ib_mad_agent_alloc_security,
+		      selinux_ib_mad_agent_alloc_security),
+	LSM_HOOK_INIT(ib_mad_agent_free_security,
+		      selinux_ib_mad_agent_free_security),
+#endif
+
 #ifdef CONFIG_SECURITY_NETWORK_XFRM
 	LSM_HOOK_INIT(xfrm_policy_alloc_security, selinux_xfrm_policy_alloc),
 	LSM_HOOK_INIT(xfrm_policy_clone_security, selinux_xfrm_policy_clone),
@@ -6265,9 +6419,11 @@ static __init int selinux_init(void)
 					    0, SLAB_PANIC, NULL);
 	avc_init();
 
+	ib_flush_callback = NULL;
+
 	security_add_hooks(selinux_hooks, ARRAY_SIZE(selinux_hooks));
 
-	if (avc_add_callback(selinux_netcache_avc_callback, AVC_CALLBACK_RESET))
+	if (avc_add_callback(selinux_cache_avc_callback, AVC_CALLBACK_RESET))
 		panic("SELinux: Unable to register AVC netcache callback\n");
 
 	if (selinux_enforcing)
