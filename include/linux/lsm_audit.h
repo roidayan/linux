@@ -21,6 +21,7 @@
 #include <linux/path.h>
 #include <linux/key.h>
 #include <linux/skbuff.h>
+#include <rdma/ib_verbs.h>
 
 struct lsm_network_audit {
 	int netif;
@@ -45,20 +46,32 @@ struct lsm_ioctlop_audit {
 	u16 cmd;
 };
 
+struct lsm_pkey_audit {
+	u64	subnet_prefix;
+	u16	pkey;
+};
+
+struct lsm_ib_end_port_audit {
+	char	dev_name[IB_DEVICE_NAME_MAX];
+	u8	port;
+};
+
 /* Auxiliary data to use in generating the audit record. */
 struct common_audit_data {
 	char type;
-#define LSM_AUDIT_DATA_PATH	1
-#define LSM_AUDIT_DATA_NET	2
-#define LSM_AUDIT_DATA_CAP	3
-#define LSM_AUDIT_DATA_IPC	4
-#define LSM_AUDIT_DATA_TASK	5
-#define LSM_AUDIT_DATA_KEY	6
-#define LSM_AUDIT_DATA_NONE	7
-#define LSM_AUDIT_DATA_KMOD	8
-#define LSM_AUDIT_DATA_INODE	9
-#define LSM_AUDIT_DATA_DENTRY	10
-#define LSM_AUDIT_DATA_IOCTL_OP	11
+#define LSM_AUDIT_DATA_PATH		1
+#define LSM_AUDIT_DATA_NET		2
+#define LSM_AUDIT_DATA_CAP		3
+#define LSM_AUDIT_DATA_IPC		4
+#define LSM_AUDIT_DATA_TASK		5
+#define LSM_AUDIT_DATA_KEY		6
+#define LSM_AUDIT_DATA_NONE		7
+#define LSM_AUDIT_DATA_KMOD		8
+#define LSM_AUDIT_DATA_INODE		9
+#define LSM_AUDIT_DATA_DENTRY		10
+#define LSM_AUDIT_DATA_IOCTL_OP		11
+#define LSM_AUDIT_DATA_PKEY		12
+#define LSM_AUDIT_DATA_IB_END_PORT	13
 	union 	{
 		struct path path;
 		struct dentry *dentry;
@@ -75,6 +88,8 @@ struct common_audit_data {
 #endif
 		char *kmod_name;
 		struct lsm_ioctlop_audit *op;
+		struct lsm_pkey_audit *pkey;
+		struct lsm_ib_end_port_audit *ib_end_port;
 	} u;
 	/* this union contains LSM specific data */
 	union {
