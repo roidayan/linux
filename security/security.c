@@ -4,6 +4,7 @@
  * Copyright (C) 2001 WireX Communications, Inc <chris@wirex.com>
  * Copyright (C) 2001-2002 Greg Kroah-Hartman <greg@kroah.com>
  * Copyright (C) 2001 Networks Associates Technology, Inc <ssmalley@nai.com>
+ * Copyright (C) 2016 Mellanox Technologies
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -1420,6 +1421,67 @@ EXPORT_SYMBOL(security_tun_dev_open);
 
 #endif	/* CONFIG_SECURITY_NETWORK */
 
+#ifdef CONFIG_SECURITY_INFINIBAND
+
+int security_ib_qp_pkey_access(u64 subnet_prefix, u16 pkey,
+			       struct ib_qp_security *qp_sec)
+{
+	return call_int_hook(ib_qp_pkey_access, 0, subnet_prefix, pkey, qp_sec);
+}
+EXPORT_SYMBOL(security_ib_qp_pkey_access);
+
+int security_ib_mad_agent_pkey_access(u64 subnet_prefix, u16 pkey,
+				      struct ib_mad_agent *mad_agent)
+{
+	return call_int_hook(ib_mad_agent_pkey_access, 0, subnet_prefix, pkey, mad_agent);
+}
+EXPORT_SYMBOL(security_ib_mad_agent_pkey_access);
+
+int security_ib_end_port_smp(const char *dev_name, u8 port,
+			     struct ib_mad_agent *mad_agent)
+{
+	return call_int_hook(ib_end_port_smp, 0, dev_name, port, mad_agent);
+}
+EXPORT_SYMBOL(security_ib_end_port_smp);
+
+int security_ib_qp_alloc_security(struct ib_qp_security *qp_sec)
+{
+	return call_int_hook(ib_qp_alloc_security, 0, qp_sec);
+}
+EXPORT_SYMBOL(security_ib_qp_alloc_security);
+
+void security_ib_qp_free_security(struct ib_qp_security *qp_sec)
+{
+	call_void_hook(ib_qp_free_security, qp_sec);
+}
+EXPORT_SYMBOL(security_ib_qp_free_security);
+
+int security_ib_mad_agent_alloc_security(struct ib_mad_agent *mad_agent)
+{
+	return call_int_hook(ib_mad_agent_alloc_security, 0, mad_agent);
+}
+EXPORT_SYMBOL(security_ib_mad_agent_alloc_security);
+
+void security_ib_mad_agent_free_security(struct ib_mad_agent *mad_agent)
+{
+	call_void_hook(ib_mad_agent_free_security, mad_agent);
+}
+EXPORT_SYMBOL(security_ib_mad_agent_free_security);
+
+void security_register_ib_flush_callback(void (*callback)(void))
+{
+	call_void_hook(register_ib_flush_callback, callback);
+}
+EXPORT_SYMBOL(security_register_ib_flush_callback);
+
+void security_unregister_ib_flush_callback(void)
+{
+	call_void_hook(unregister_ib_flush_callback);
+}
+EXPORT_SYMBOL(security_unregister_ib_flush_callback);
+
+#endif	/* CONFIG_SECURITY_INFINIBAND */
+
 #ifdef CONFIG_SECURITY_NETWORK_XFRM
 
 int security_xfrm_policy_alloc(struct xfrm_sec_ctx **ctxp,
@@ -1871,6 +1933,27 @@ struct security_hook_heads security_hook_heads = {
 		LIST_HEAD_INIT(security_hook_heads.tun_dev_attach),
 	.tun_dev_open =	LIST_HEAD_INIT(security_hook_heads.tun_dev_open),
 #endif	/* CONFIG_SECURITY_NETWORK */
+
+#ifdef CONFIG_SECURITY_INFINIBAND
+	.ib_qp_pkey_access =
+		LIST_HEAD_INIT(security_hook_heads.ib_qp_pkey_access),
+	.ib_mad_agent_pkey_access =
+		LIST_HEAD_INIT(security_hook_heads.ib_mad_agent_pkey_access),
+	.ib_end_port_smp = LIST_HEAD_INIT(security_hook_heads.ib_end_port_smp),
+	.ib_qp_alloc_security =
+		LIST_HEAD_INIT(security_hook_heads.ib_qp_alloc_security),
+	.ib_qp_free_security =
+		LIST_HEAD_INIT(security_hook_heads.ib_qp_free_security),
+	.ib_mad_agent_alloc_security =
+		LIST_HEAD_INIT(security_hook_heads.ib_mad_agent_alloc_security),
+	.ib_mad_agent_free_security =
+		LIST_HEAD_INIT(security_hook_heads.ib_mad_agent_free_security),
+	.register_ib_flush_callback =
+		LIST_HEAD_INIT(security_hook_heads.register_ib_flush_callback),
+	.unregister_ib_flush_callback =
+		LIST_HEAD_INIT(security_hook_heads.unregister_ib_flush_callback),
+#endif	/* CONFIG_SECURITY_INFINIBAND */
+
 #ifdef CONFIG_SECURITY_NETWORK_XFRM
 	.xfrm_policy_alloc_security =
 		LIST_HEAD_INIT(security_hook_heads.xfrm_policy_alloc_security),
