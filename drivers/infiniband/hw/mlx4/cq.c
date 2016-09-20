@@ -753,7 +753,7 @@ repoll:
 
 	if (unlikely(is_error)) {
 		mlx4_ib_handle_error_cqe((struct mlx4_err_cqe *) cqe, wc);
-		return 0;
+		goto out;
 	}
 
 	wc->status = IB_WC_SUCCESS;
@@ -864,7 +864,7 @@ repoll:
 			wc->vlan_id = 0xffff;
 		}
 	}
-
+out:
 	return 0;
 }
 
@@ -888,7 +888,6 @@ int mlx4_ib_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *wc)
 	}
 
 	mlx4_cq_set_ci(&cq->mcq);
-
 out:
 	spin_unlock_irqrestore(&cq->lock, flags);
 
