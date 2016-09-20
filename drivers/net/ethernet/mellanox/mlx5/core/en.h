@@ -561,6 +561,7 @@ struct mlx5e_tc_table {
 
 	struct rhashtable_params        ht_params;
 	struct rhashtable               ht;
+	bool                            ht_valid;
 };
 
 struct mlx5e_vlan_table {
