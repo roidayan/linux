@@ -1012,6 +1012,9 @@ int mlx5e_delete_flower(struct mlx5e_priv *priv,
 	struct mlx5e_tc_flow *flow;
 	struct mlx5e_tc_table *tc = &priv->fs.tc;
 
+	if (!tc->ht_valid)
+		return -EINVAL;
+
 	flow = rhashtable_lookup_fast(&tc->ht, &f->cookie,
 				      tc->ht_params);
 	if (!flow)
@@ -1067,9 +1070,13 @@ static const struct rhashtable_params mlx5e_tc_flow_ht_params = {
 int mlx5e_tc_init(struct mlx5e_priv *priv)
 {
 	struct mlx5e_tc_table *tc = &priv->fs.tc;
+	int err;
 
 	tc->ht_params = mlx5e_tc_flow_ht_params;
-	return rhashtable_init(&tc->ht, &tc->ht_params);
+	err = rhashtable_init(&tc->ht, &tc->ht_params);
+	if (!err)
+		tc->ht_valid = true;
+	return err;
 }
 
 static void _mlx5e_tc_del_flow(void *ptr, void *arg)
@@ -1085,7 +1092,10 @@ void mlx5e_tc_cleanup(struct mlx5e_priv *priv)
 {
 	struct mlx5e_tc_table *tc = &priv->fs.tc;
 
-	rhashtable_free_and_destroy(&tc->ht, _mlx5e_tc_del_flow, priv);
+	if (tc->ht_valid) {
+		rhashtable_free_and_destroy(&tc->ht, _mlx5e_tc_del_flow, priv);
+		tc->ht_valid = false;
+	}
 
 	if (!IS_ERR_OR_NULL(tc->t)) {
 		mlx5_destroy_flow_table(tc->t);
