@@ -38,12 +38,14 @@ struct rxrpc_pkt_buffer {
 static size_t rxrpc_fill_out_ack(struct rxrpc_call *call,
 				 struct rxrpc_pkt_buffer *pkt)
 {
+	rxrpc_serial_t serial;
 	rxrpc_seq_t hard_ack, top, seq;
 	int ix;
 	u32 mtu, jmax;
 	u8 *ackp = pkt->acks;
 
 	/* Barrier against rxrpc_input_data(). */
+	serial = call->ackr_serial;
 	hard_ack = READ_ONCE(call->rx_hard_ack);
 	top = smp_load_acquire(&call->rx_top);
 
@@ -51,7 +53,7 @@ static size_t rxrpc_fill_out_ack(struct rxrpc_call *call,
 	pkt->ack.maxSkew	= htons(call->ackr_skew);
 	pkt->ack.firstPacket	= htonl(hard_ack + 1);
 	pkt->ack.previousPacket	= htonl(call->ackr_prev_seq);
-	pkt->ack.serial		= htonl(call->ackr_serial);
+	pkt->ack.serial		= htonl(serial);
 	pkt->ack.reason		= call->ackr_reason;
 	pkt->ack.nAcks		= top - hard_ack;
 
@@ -74,6 +76,9 @@ static size_t rxrpc_fill_out_ack(struct rxrpc_call *call,
 	pkt->ackinfo.maxMTU	= htonl(mtu);
 	pkt->ackinfo.rwind	= htonl(call->rx_winsize);
 	pkt->ackinfo.jumbo_max	= htonl(jmax);
+
+	trace_rxrpc_tx_ack(call, hard_ack + 1, serial, call->ackr_reason,
+			   top - hard_ack);
 
 	*ackp++ = 0;
 	*ackp++ = 0;
@@ -137,6 +142,11 @@ int rxrpc_send_call_packet(struct rxrpc_call *call, u8 type)
 	switch (type) {
 	case RXRPC_PACKET_TYPE_ACK:
 		spin_lock_bh(&call->lock);
+		if (!call->ackr_reason) {
+			spin_unlock_bh(&call->lock);
+			ret = 0;
+			goto out;
+		}
 		n = rxrpc_fill_out_ack(call, pkt);
 		call->ackr_reason = 0;
 
@@ -177,7 +187,7 @@ int rxrpc_send_call_packet(struct rxrpc_call *call, u8 type)
 			     &msg, iov, ioc, len);
 
 	if (ret < 0 && call->state < RXRPC_CALL_COMPLETE) {
-		switch (pkt->whdr.type) {
+		switch (type) {
 		case RXRPC_PACKET_TYPE_ACK:
 			rxrpc_propose_ACK(call, pkt->ack.reason,
 					  ntohs(pkt->ack.maxSkew),
@@ -214,6 +224,15 @@ int rxrpc_send_data_packet(struct rxrpc_connection *conn, struct sk_buff *skb)
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
 	msg.msg_flags = 0;
+
+	if (IS_ENABLED(CONFIG_AF_RXRPC_INJECT_LOSS)) {
+		static int lose;
+		if ((lose++ & 7) == 7) {
+			rxrpc_lose_skb(skb, rxrpc_skb_tx_lost);
+			_leave(" = 0 [lose]");
+			return 0;
+		}
+	}
 
 	/* send the packet with the don't fragment bit set if we currently
 	 * think it's small enough */
@@ -314,7 +333,7 @@ void rxrpc_reject_packets(struct rxrpc_local *local)
 	whdr.type = RXRPC_PACKET_TYPE_ABORT;
 
 	while ((skb = skb_dequeue(&local->reject_queue))) {
-		rxrpc_see_skb(skb);
+		rxrpc_see_skb(skb, rxrpc_skb_rx_seen);
 		sp = rxrpc_skb(skb);
 
 		if (rxrpc_extract_addr_from_skb(&srx, skb) == 0) {
@@ -333,7 +352,7 @@ void rxrpc_reject_packets(struct rxrpc_local *local)
 			kernel_sendmsg(local->socket, &msg, iov, 2, size);
 		}
 
-		rxrpc_free_skb(skb);
+		rxrpc_free_skb(skb, rxrpc_skb_rx_freed);
 	}
 
 	_leave("");

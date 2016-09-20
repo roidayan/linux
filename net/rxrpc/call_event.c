@@ -31,7 +31,7 @@ static void rxrpc_set_timer(struct rxrpc_call *call)
 	_enter("{%ld,%ld,%ld:%ld}",
 	       call->ack_at - now, call->resend_at - now, call->expire_at - now,
 	       call->timer.expires - now);
-	
+
 	read_lock_bh(&call->state_lock);
 
 	if (call->state < RXRPC_CALL_COMPLETE) {
@@ -163,15 +163,14 @@ static void rxrpc_resend(struct rxrpc_call *call)
 	 */
 	now = jiffies;
 	resend_at = now + rxrpc_resend_timeout;
-	seq = cursor + 1;
-	do {
+	for (seq = cursor + 1; before_eq(seq, top); seq++) {
 		ix = seq & RXRPC_RXTX_BUFF_MASK;
 		annotation = call->rxtx_annotations[ix];
 		if (annotation == RXRPC_TX_ANNO_ACK)
 			continue;
 
 		skb = call->rxtx_buffer[ix];
-		rxrpc_see_skb(skb);
+		rxrpc_see_skb(skb, rxrpc_skb_tx_seen);
 		sp = rxrpc_skb(skb);
 
 		if (annotation == RXRPC_TX_ANNO_UNACK) {
@@ -184,8 +183,7 @@ static void rxrpc_resend(struct rxrpc_call *call)
 
 		/* Okay, we need to retransmit a packet. */
 		call->rxtx_annotations[ix] = RXRPC_TX_ANNO_RETRANS;
-		seq++;
-	} while (before_eq(seq, top));
+	}
 
 	call->resend_at = resend_at;
 
@@ -194,15 +192,14 @@ static void rxrpc_resend(struct rxrpc_call *call)
 	 * lock is dropped, it may clear some of the retransmission markers for
 	 * packets that it soft-ACKs.
 	 */
-	seq = cursor + 1;
-	do {
+	for (seq = cursor + 1; before_eq(seq, top); seq++) {
 		ix = seq & RXRPC_RXTX_BUFF_MASK;
 		annotation = call->rxtx_annotations[ix];
 		if (annotation != RXRPC_TX_ANNO_RETRANS)
 			continue;
 
 		skb = call->rxtx_buffer[ix];
-		rxrpc_get_skb(skb);
+		rxrpc_get_skb(skb, rxrpc_skb_tx_got);
 		spin_unlock_bh(&call->lock);
 		sp = rxrpc_skb(skb);
 
@@ -214,7 +211,7 @@ static void rxrpc_resend(struct rxrpc_call *call)
 
 		if (rxrpc_send_data_packet(call->conn, skb) < 0) {
 			call->resend_at = now + 2;
-			rxrpc_free_skb(skb);
+			rxrpc_free_skb(skb, rxrpc_skb_tx_freed);
 			return;
 		}
 
@@ -222,7 +219,7 @@ static void rxrpc_resend(struct rxrpc_call *call)
 			rxrpc_expose_client_call(call);
 		sp->resend_at = now + rxrpc_resend_timeout;
 
-		rxrpc_free_skb(skb);
+		rxrpc_free_skb(skb, rxrpc_skb_tx_freed);
 		spin_lock_bh(&call->lock);
 
 		/* We need to clear the retransmit state, but there are two
@@ -237,8 +234,7 @@ static void rxrpc_resend(struct rxrpc_call *call)
 
 		if (after(call->tx_hard_ack, seq))
 			seq = call->tx_hard_ack;
-		seq++;
-	} while (before_eq(seq, top));
+	}
 
 out_unlock:
 	spin_unlock_bh(&call->lock);

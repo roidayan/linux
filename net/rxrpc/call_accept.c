@@ -85,6 +85,9 @@ static int rxrpc_service_prealloc_one(struct rxrpc_sock *rx,
 		b->conn_backlog[head] = conn;
 		smp_store_release(&b->conn_backlog_head,
 				  (head + 1) & (size - 1));
+
+		trace_rxrpc_conn(conn, rxrpc_conn_new_service,
+				 atomic_read(&conn->usage), here);
 	}
 
 	/* Now it gets complicated, because calls get registered with the
@@ -290,6 +293,7 @@ static struct rxrpc_call *rxrpc_alloc_incoming_call(struct rxrpc_sock *rx,
 		rxrpc_get_local(local);
 		conn->params.local = local;
 		conn->params.peer = peer;
+		rxrpc_see_connection(conn);
 		rxrpc_new_incoming_connection(conn, skb);
 	} else {
 		rxrpc_get_connection(conn);
@@ -363,12 +367,17 @@ found_service:
 		goto out;
 	}
 
+	trace_rxrpc_receive(call, rxrpc_receive_incoming,
+			    sp->hdr.serial, sp->hdr.seq);
+
 	/* Make the call live. */
 	rxrpc_incoming_call(rx, call, skb);
 	conn = call->conn;
 
 	if (rx->notify_new_call)
 		rx->notify_new_call(&rx->sk, call, call->user_call_ID);
+	else
+		sk_acceptq_added(&rx->sk);
 
 	spin_lock(&conn->state_lock);
 	switch (conn->state) {

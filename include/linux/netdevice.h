@@ -924,6 +924,14 @@ struct netdev_xdp {
  *	3. Update dev->stats asynchronously and atomically, and define
  *	   neither operation.
  *
+ * bool (*ndo_has_offload_stats)(int attr_id)
+ *	Return true if this device supports offload stats of this attr_id.
+ *
+ * int (*ndo_get_offload_stats)(int attr_id, const struct net_device *dev,
+ *	void *attr_data)
+ *	Get statistics for offload operations by attr_id. Write it into the
+ *	attr_data pointer.
+ *
  * int (*ndo_vlan_rx_add_vid)(struct net_device *dev, __be16 proto, u16 vid);
  *	If device supports VLAN filtering this function is called when a
  *	VLAN id is registered.
@@ -936,7 +944,8 @@ struct netdev_xdp {
  *
  *	SR-IOV management functions.
  * int (*ndo_set_vf_mac)(struct net_device *dev, int vf, u8* mac);
- * int (*ndo_set_vf_vlan)(struct net_device *dev, int vf, u16 vlan, u8 qos);
+ * int (*ndo_set_vf_vlan)(struct net_device *dev, int vf, u16 vlan,
+ *			  u8 qos, __be16 proto);
  * int (*ndo_set_vf_rate)(struct net_device *dev, int vf, int min_tx_rate,
  *			  int max_tx_rate);
  * int (*ndo_set_vf_spoofchk)(struct net_device *dev, int vf, bool setting);
@@ -1155,6 +1164,10 @@ struct net_device_ops {
 
 	struct rtnl_link_stats64* (*ndo_get_stats64)(struct net_device *dev,
 						     struct rtnl_link_stats64 *storage);
+	bool			(*ndo_has_offload_stats)(int attr_id);
+	int			(*ndo_get_offload_stats)(int attr_id,
+							 const struct net_device *dev,
+							 void *attr_data);
 	struct net_device_stats* (*ndo_get_stats)(struct net_device *dev);
 
 	int			(*ndo_vlan_rx_add_vid)(struct net_device *dev,
@@ -1173,7 +1186,8 @@ struct net_device_ops {
 	int			(*ndo_set_vf_mac)(struct net_device *dev,
 						  int queue, u8 *mac);
 	int			(*ndo_set_vf_vlan)(struct net_device *dev,
-						   int queue, u16 vlan, u8 qos);
+						   int queue, u16 vlan,
+						   u8 qos, __be16 proto);
 	int			(*ndo_set_vf_rate)(struct net_device *dev,
 						   int vf, int min_tx_rate,
 						   int max_tx_rate);
