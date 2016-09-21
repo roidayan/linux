@@ -193,6 +193,7 @@ struct mlx5_esw_offload {
 	struct mlx5_flow_table *ft_offloads;
 	struct mlx5_flow_group *vport_rx_group;
 	struct mlx5_eswitch_rep *vport_reps;
+	DECLARE_HASHTABLE(encap_tbl, 8);
 };
 
 struct mlx5_eswitch {
@@ -258,6 +259,26 @@ enum {
 #define MLX5_FLOW_CONTEXT_ACTION_VLAN_POP  0x40
 #define MLX5_FLOW_CONTEXT_ACTION_VLAN_PUSH 0x80
 
+struct mlx5_encap_info {
+	__be32 daddr;
+	__be32 tun_id;
+	__be16 tp_dst;
+};
+
+struct mlx5_encap_entry {
+	struct hlist_node encap_hlist;
+	struct hlist_node neigh_hlist;
+	struct list_head flows;
+	struct list_head update_encaps_list;
+	u32 encap_id;
+	struct neighbour *n;
+	struct mlx5_encap_info tun_info;
+	unsigned char h_dest[ETH_ALEN];	/* destination eth addr	*/
+
+	struct net_device *out_dev;
+	int tunnel_type;
+};
+
 struct mlx5_esw_flow_attr {
 	struct mlx5_eswitch_rep *in_rep;
 	struct mlx5_eswitch_rep *out_rep;
@@ -265,6 +286,7 @@ struct mlx5_esw_flow_attr {
 	int	action;
 	u16	vlan;
 	bool	vlan_handled;
+	struct mlx5_encap_entry *encap;
 };
 
 int mlx5_eswitch_sqs2vport_start(struct mlx5_eswitch *esw,
