@@ -100,6 +100,7 @@ enum rdma_node_type {
 
 enum {
 	/* set the local administered indication */
+	IB_SA_WELL_KNOWN_GID_PREFIX = 0xfe80000000000000ull,
 	IB_SA_WELL_KNOWN_GUID	= BIT_ULL(57) | 2,
 };
 
