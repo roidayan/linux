@@ -329,6 +329,22 @@ void mlx5_core_event(struct mlx5_core_dev *dev, enum mlx5_dev_event event,
 	spin_unlock_irqrestore(&priv->ctx_lock, flags);
 }
 
+void mlx5_core_page_fault(struct mlx5_core_dev *dev,
+			  struct mlx5_pagefault *pfault)
+{
+	struct mlx5_priv *priv = &dev->priv;
+	struct mlx5_device_context *dev_ctx;
+	unsigned long flags;
+
+	spin_lock_irqsave(&priv->ctx_lock, flags);
+
+	list_for_each_entry(dev_ctx, &priv->ctx_list, list)
+		if (dev_ctx->intf->pfault)
+			dev_ctx->intf->pfault(dev, dev_ctx->context, pfault);
+
+	spin_unlock_irqrestore(&priv->ctx_lock, flags);
+}
+
 void mlx5_dev_list_lock(void)
 {
 	mutex_lock(&mlx5_intf_mutex);

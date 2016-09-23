@@ -699,7 +699,8 @@ static int alloc_comp_eqs(struct mlx5_core_dev *dev)
 		snprintf(name, MLX5_MAX_IRQ_NAME, "mlx5_comp%d", i);
 		err = mlx5_create_map_eq(dev, eq,
 					 i + MLX5_EQ_VEC_COMP_BASE, nent, 0,
-					 name, &dev->priv.uuari.uars[0]);
+					 name, &dev->priv.uuari.uars[0],
+					 MLX5_EQ_TYPE_COMP);
 		if (err) {
 			kfree(eq);
 			goto clean;

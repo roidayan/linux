@@ -1497,9 +1497,6 @@ static int create_qp_common(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 	       &qp->raw_packet_qp.rq.base :
 	       &qp->trans_qp.base;
 
-	if (init_attr->qp_type != IB_QPT_RAW_PACKET)
-		mlx5_ib_odp_create_qp(qp);
-
 	mutex_init(&qp->mutex);
 	spin_lock_init(&qp->sq.lock);
 	spin_lock_init(&qp->rq.lock);
@@ -1894,7 +1891,6 @@ static void destroy_qp_common(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp)
 
 	if (qp->state != IB_QPS_RESET) {
 		if (qp->ibqp.qp_type != IB_QPT_RAW_PACKET) {
-			mlx5_ib_qp_disable_pagefaults(qp);
 			err = mlx5_core_qp_modify(dev->mdev,
 						  MLX5_CMD_OP_2RST_QP, 0,
 						  NULL, &base->mqp);
@@ -2751,16 +2747,6 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 	if (mlx5_st < 0)
 		goto out;
 
-	/* If moving to a reset or error state, we must disable page faults on
-	 * this QP and flush all current page faults. Otherwise a stale page
-	 * fault may attempt to work on this QP after it is reset and moved
-	 * again to RTS, and may cause the driver and the device to get out of
-	 * sync. */
-	if (cur_state != IB_QPS_RESET && cur_state != IB_QPS_ERR &&
-	    (new_state == IB_QPS_RESET || new_state == IB_QPS_ERR) &&
-	    (qp->ibqp.qp_type != IB_QPT_RAW_PACKET))
-		mlx5_ib_qp_disable_pagefaults(qp);
-
 	if (mlx5_cur >= MLX5_QP_NUM_STATE || mlx5_new >= MLX5_QP_NUM_STATE ||
 	    !optab[mlx5_cur][mlx5_new])
 		goto out;
@@ -2785,10 +2771,6 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 
 	if (err)
 		goto out;
-
-	if (cur_state == IB_QPS_RESET && new_state == IB_QPS_INIT &&
-	    (qp->ibqp.qp_type != IB_QPT_RAW_PACKET))
-		mlx5_ib_qp_enable_pagefaults(qp);
 
 	qp->state = new_state;
 
