@@ -430,8 +430,7 @@ static int esw_create_offloads_fdb_table(struct mlx5_eswitch *esw, int nvports)
 	esw_debug(dev, "Create offloads FDB table, log_max_size(%d)\n",
 		  MLX5_CAP_ESW_FLOWTABLE_FDB(dev, log_max_ft_size));
 
-	if (MLX5_CAP_ESW_FLOWTABLE_FDB(dev, encap) &&
-	    MLX5_CAP_ESW_FLOWTABLE_FDB(dev, decap))
+	if (esw->offloads.max_encap != DEVLINK_ESWITCH_ENCAP_NONE)
 		flags |= MLX5_FLOW_TABLE_TUNNEL_EN;
 
 	fdb = mlx5_create_auto_grouped_flow_table(root_ns, FDB_FAST_PATH,
@@ -953,6 +952,47 @@ int mlx5_eswitch_inline_mode_get(struct mlx5_eswitch *esw, int nvfs, u8 *mode)
 	}
 
 	*mode = mlx5_mode;
+	return 0;
+}
+
+int mlx5_devlink_eswitch_max_encap_set(struct devlink *devlink, u8 max_encap)
+{
+	struct mlx5_core_dev *dev = devlink_priv(devlink);
+	struct mlx5_eswitch *esw = dev->priv.eswitch;
+
+	if (!MLX5_CAP_GEN(dev, vport_group_manager))
+		return -EOPNOTSUPP;
+
+	if (esw->mode == SRIOV_NONE)
+		return -EOPNOTSUPP;
+
+	if (max_encap == DEVLINK_ESWITCH_ENCAP_NONE)
+		goto out;
+
+	if (!MLX5_CAP_ESW_FLOWTABLE_FDB(dev, encap) ||
+	    !MLX5_CAP_ESW_FLOWTABLE_FDB(dev, decap))
+		return -EOPNOTSUPP;
+
+	if (max_encap == DEVLINK_ESWITCH_ENCAP_IPV6)
+		return -EOPNOTSUPP;
+
+out:
+	esw->offloads.max_encap = max_encap;
+	return 0;
+}
+
+int mlx5_devlink_eswitch_max_encap_get(struct devlink *devlink, u8 *max_encap)
+{
+	struct mlx5_core_dev *dev = devlink_priv(devlink);
+	struct mlx5_eswitch *esw = dev->priv.eswitch;
+
+	if (!MLX5_CAP_GEN(dev, vport_group_manager))
+		return -EOPNOTSUPP;
+
+	if (esw->mode == SRIOV_NONE)
+		return -EOPNOTSUPP;
+
+	*max_encap = esw->offloads.max_encap;
 	return 0;
 }
 
