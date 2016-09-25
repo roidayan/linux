@@ -1401,6 +1401,7 @@ static int devlink_eswitch_fill(struct sk_buff *msg, struct devlink *devlink,
 	int err = 0;
 	u16 mode;
 	u8 inline_mode;
+	u8 encap;
 
 	hdr = genlmsg_put(msg, portid, seq, &devlink_nl_family, flags, cmd);
 	if (!hdr)
@@ -1423,6 +1424,15 @@ static int devlink_eswitch_fill(struct sk_buff *msg, struct devlink *devlink,
 			goto out;
 		err = nla_put_u8(msg, DEVLINK_ATTR_ESWITCH_INLINE_MODE,
 				 inline_mode);
+		if (err)
+			goto out;
+	}
+
+	if (ops->eswitch_encap_get) {
+		err = ops->eswitch_encap_get(devlink, &encap);
+		if (err)
+			goto out;
+		err = nla_put_u8(msg, DEVLINK_ATTR_ESWITCH_ENCAP, encap);
 		if (err)
 			goto out;
 	}
@@ -1468,6 +1478,7 @@ static int devlink_nl_cmd_eswitch_mode_set_doit(struct sk_buff *skb,
 	const struct devlink_ops *ops = devlink->ops;
 	u16 mode;
 	u8 inline_mode;
+	u8 encap;
 	int err = 0;
 
 	if (!ops)
@@ -1488,6 +1499,15 @@ static int devlink_nl_cmd_eswitch_mode_set_doit(struct sk_buff *skb,
 		inline_mode = nla_get_u8(
 				info->attrs[DEVLINK_ATTR_ESWITCH_INLINE_MODE]);
 		err = ops->eswitch_inline_mode_set(devlink, inline_mode);
+		if (err)
+			return err;
+	}
+
+	if (info->attrs[DEVLINK_ATTR_ESWITCH_ENCAP]) {
+		if (!ops->eswitch_encap_set)
+			return -EOPNOTSUPP;
+		encap = nla_get_u8(info->attrs[DEVLINK_ATTR_ESWITCH_ENCAP]);
+		err = ops->eswitch_encap_set(devlink, encap);
 		if (err)
 			return err;
 	}
