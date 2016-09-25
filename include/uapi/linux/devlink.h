@@ -109,6 +109,12 @@ enum devlink_eswitch_inline_mode {
 	DEVLINK_ESWITCH_INLINE_MODE_TRANSPORT,
 };
 
+enum devlink_eswitch_encap {
+	DEVLINK_ESWITCH_ENCAP_NONE,
+	DEVLINK_ESWITCH_ENCAP_IPV4,
+	DEVLINK_ESWITCH_ENCAP_IPV6,
+};
+
 enum devlink_attr {
 	/* don't change the order or add anything between, this is ABI! */
 	DEVLINK_ATTR_UNSPEC,
@@ -141,6 +147,7 @@ enum devlink_attr {
 	DEVLINK_ATTR_SB_OCC_MAX,		/* u32 */
 	DEVLINK_ATTR_ESWITCH_MODE,		/* u16 */
 	DEVLINK_ATTR_ESWITCH_INLINE_MODE,	/* u8 */
+	DEVLINK_ATTR_ESWITCH_ENCAP,		/* u8 */
 
 	/* add new attributes above here, update the policy in devlink.c */
 
