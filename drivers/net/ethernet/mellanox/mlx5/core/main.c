@@ -1240,6 +1240,8 @@ static const struct devlink_ops mlx5_devlink_ops = {
 	.eswitch_mode_get = mlx5_devlink_eswitch_mode_get,
 	.eswitch_inline_mode_set = mlx5_devlink_eswitch_inline_mode_set,
 	.eswitch_inline_mode_get = mlx5_devlink_eswitch_inline_mode_get,
+	.eswitch_encap_set = mlx5_devlink_eswitch_max_encap_set,
+	.eswitch_encap_get = mlx5_devlink_eswitch_max_encap_get,
 #endif
 };
 
