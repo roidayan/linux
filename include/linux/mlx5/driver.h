@@ -566,10 +566,19 @@ struct mlx5_vf_context {
 	enum port_state_policy	policy;
 };
 
+struct mlx5_sriov_vf {
+	struct mlx5_core_dev   *dev;
+	struct kobject		kobj;
+	int			vf;
+};
+
 struct mlx5_core_sriov {
 	struct mlx5_vf_context	*vfs_ctx;
 	int			num_vfs;
 	int			enabled_vfs;
+	struct kobject		*config;
+	struct kobject		node_guid_kobj;
+	struct mlx5_sriov_vf	*vfs;
 };
 
 struct mlx5_irq_info {

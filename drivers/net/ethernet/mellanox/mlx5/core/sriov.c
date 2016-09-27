@@ -98,6 +98,13 @@ static int mlx5_device_enable_sriov(struct mlx5_core_dev *dev, int num_vfs)
 		return err;
 	}
 
+	err = mlx5_create_vfs_sysfs(dev, num_vfs);
+	if (err) {
+		mlx5_core_warn(dev, "failed to create SRIOV sysfs (%d)\n", err);
+		mlx5_eswitch_disable_sriov(dev->priv.eswitch);
+		return err;
+	}
+
 enable_vfs_hca:
 	for (vf = 0; vf < num_vfs; vf++) {
 		err = mlx5_core_enable_hca(dev, vf + 1);
@@ -144,6 +151,8 @@ static void mlx5_device_disable_sriov(struct mlx5_core_dev *dev)
 	}
 
 out:
+	mlx5_destroy_vfs_sysfs(dev);
+
 	if (MLX5_ESWITCH_MANAGER(dev))
 		mlx5_eswitch_disable_sriov(dev->priv.eswitch);
 
@@ -258,6 +267,7 @@ int mlx5_sriov_init(struct mlx5_core_dev *dev)
 	struct mlx5_core_sriov *sriov = &dev->priv.sriov;
 	struct pci_dev *pdev = dev->pdev;
 	int total_vfs;
+	int err;
 
 	if (!mlx5_core_is_pf(dev))
 		return 0;
@@ -267,6 +277,13 @@ int mlx5_sriov_init(struct mlx5_core_dev *dev)
 	sriov->vfs_ctx = kcalloc(total_vfs, sizeof(*sriov->vfs_ctx), GFP_KERNEL);
 	if (!sriov->vfs_ctx)
 		return -ENOMEM;
+
+	err = mlx5_sriov_sysfs_init(dev);
+	if (err) {
+		mlx5_core_warn(dev, "failed to init SRIOV sysfs (%d)\n", err);
+		kfree(sriov->vfs_ctx);
+		return err;
+	}
 
 	return 0;
 }
@@ -278,5 +295,6 @@ void mlx5_sriov_cleanup(struct mlx5_core_dev *dev)
 	if (!mlx5_core_is_pf(dev))
 		return;
 
+	mlx5_sriov_sysfs_cleanup(dev);
 	kfree(sriov->vfs_ctx);
 }
