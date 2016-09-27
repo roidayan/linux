@@ -190,4 +190,16 @@ int mlx5_set_trust_state(struct mlx5_core_dev *mdev, u8 trust_state);
 int mlx5_query_trust_state(struct mlx5_core_dev *mdev, u8 *trust_state);
 int mlx5_set_dscp2prio(struct mlx5_core_dev *mdev, u8 dscp, u8 prio);
 int mlx5_query_dscp2prio(struct mlx5_core_dev *mdev, u8 *dscp2prio);
+
+int mlx5_core_query_gids(struct mlx5_core_dev *dev, u8 other_vport,
+			 u8 port_num, u16  vf_num, u16 gid_index,
+			 union ib_gid *gid);
+int mlx5_core_query_pkeys(struct mlx5_core_dev *dev, u8 other_vport,
+			  u8 port_num, u16 vf_num, u16 pkey_index,
+			  u16 *pkey);
+int mlx5_core_query_hca_vport_context(struct mlx5_core_dev *dev,
+				      u8 other_vport, u8 port_num,
+				      u16 vf_num,
+				      struct mlx5_hca_vport_context *rep);
+
 #endif /* __MLX5_PORT_H__ */
