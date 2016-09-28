@@ -1331,6 +1331,7 @@ struct ethtool_per_queue_op {
 #define ETHTOOL_PHY_GTUNABLE	0x0000004e /* Get PHY tunable configuration */
 #define ETHTOOL_PHY_STUNABLE	0x0000004f /* Set PHY tunable configuration */
 #define ETHTOOL_SREGS		0x00000050 /* Set NIC registers */
+#define ETHTOOL_GASPD		0x00000051 /* Get port actual speed */
 
 /* compatibility with older code */
 #define SPARC_ETH_GSET		ETHTOOL_GSET
