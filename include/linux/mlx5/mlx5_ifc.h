@@ -3508,7 +3508,8 @@ struct mlx5_ifc_query_vport_state_out_bits {
 
 	u8         reserved_at_40[0x20];
 
-	u8         reserved_at_60[0x18];
+	u8         max_tx_speed[0x10];
+	u8         reserved_at_70[0x8];
 	u8         admin_state[0x4];
 	u8         state[0x4];
 };
@@ -3516,6 +3517,7 @@ struct mlx5_ifc_query_vport_state_out_bits {
 enum {
 	MLX5_QUERY_VPORT_STATE_IN_OP_MOD_VNIC_VPORT  = 0x0,
 	MLX5_QUERY_VPORT_STATE_IN_OP_MOD_ESW_VPORT   = 0x1,
+	MLX5_QUERY_VPORT_STATE_IN_OP_MOD_UPLINK      = 0x2,
 };
 
 struct mlx5_ifc_query_vport_state_in_bits {
