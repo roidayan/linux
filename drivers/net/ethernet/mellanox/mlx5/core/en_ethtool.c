@@ -1571,6 +1571,26 @@ static int mlx5e_set_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd)
 	return err;
 }
 
+static int mlx5e_get_actual_speed(struct net_device *netdev,
+				  struct ethtool_value *edata)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+	struct mlx5_core_dev *mdev = priv->mdev;
+	u16 speed = SPEED_UNKNOWN;
+
+	if (!netif_carrier_ok(netdev))
+		goto out;
+
+	speed = mlx5_query_vport_max_tx_speed(mdev,
+			MLX5_QUERY_VPORT_STATE_IN_OP_MOD_UPLINK, 0) * 100;
+	if (!speed)
+		return -EOPNOTSUPP;
+
+out:
+	edata->data = speed;
+	return 0;
+}
+
 const struct ethtool_ops mlx5e_ethtool_ops = {
 	.get_drvinfo       = mlx5e_get_drvinfo,
 	.get_link          = ethtool_op_get_link,
@@ -1607,5 +1627,5 @@ const struct ethtool_ops mlx5e_ethtool_ops = {
 	.get_regs_len      = mlx5e_get_regs_len,
 	.get_regs          = mlx5e_get_regs,
 	.set_regs          = mlx5e_set_regs,
-
+	.get_actual_speed  = mlx5e_get_actual_speed,
 };
