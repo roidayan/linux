@@ -1051,7 +1051,7 @@ static int rtnl_phys_port_name_fill(struct sk_buff *skb, struct net_device *dev)
 
 	err = dev_get_phys_port_name(dev, name, sizeof(name));
 	if (err) {
-		if (err == -EOPNOTSUPP)
+		if (err == -EOPNOTSUPP || err == -ENODEV)
 			return 0;
 		return err;
 	}
