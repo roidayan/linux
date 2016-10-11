@@ -733,7 +733,7 @@ static int alloc_comp_eqs(struct mlx5_core_dev *dev)
 		snprintf(name, MLX5_MAX_IRQ_NAME, "mlx5_comp%d", i);
 		err = mlx5_create_map_eq(dev, eq,
 					 i + MLX5_EQ_VEC_COMP_BASE, nent, 0,
-					 name, &dev->priv.bfregi.uars[0]);
+					 name);
 		if (err) {
 			kfree(eq);
 			goto clean;
@@ -1073,10 +1073,16 @@ static int mlx5_load_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv,
 		goto err_cleanup_once;
 	}
 
-	err = mlx5_alloc_bfregs(dev, &priv->bfregi);
-	if (err) {
+	dev->priv.uar = mlx5_get_uars_page(dev);
+	if (!dev->priv.uar) {
 		dev_err(&pdev->dev, "Failed allocating uar, aborting\n");
 		goto err_disable_msix;
+	}
+
+	err = mlx5_alloc_bfregs(dev, &priv->bfregi);
+	if (err) {
+		dev_err(&pdev->dev, "Failed allocating uuars, aborting\n");
+		goto err_uar_cleanup;
 	}
 
 	err = mlx5_start_eqs(dev);
@@ -1151,6 +1157,9 @@ err_stop_eqs:
 err_free_uar:
 	mlx5_free_bfregs(dev, &priv->bfregi);
 
+err_uar_cleanup:
+	mlx5_put_uars_page(dev, priv->uar);
+
 err_disable_msix:
 	mlx5_disable_msix(dev);
 
@@ -1210,6 +1219,7 @@ static int mlx5_unload_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv,
 	free_comp_eqs(dev);
 	mlx5_stop_eqs(dev);
 	mlx5_free_bfregs(dev, &priv->bfregi);
+	mlx5_put_uars_page(dev, priv->uar);
 	mlx5_disable_msix(dev);
 	if (cleanup)
 		mlx5_cleanup_once(dev);
@@ -1275,6 +1285,11 @@ static int init_one(struct pci_dev *pdev,
 	spin_lock_init(&priv->ctx_lock);
 	mutex_init(&dev->pci_status_mutex);
 	mutex_init(&dev->intf_state_mutex);
+	mutex_init(&priv->bfregs.reg_head.lock);
+	mutex_init(&priv->bfregs.wc_head.lock);
+	INIT_LIST_HEAD(&priv->bfregs.reg_head.list);
+	INIT_LIST_HEAD(&priv->bfregs.wc_head.list);
+
 	err = mlx5_pci_init(dev, priv);
 	if (err) {
 		dev_err(&pdev->dev, "mlx5_pci_init failed with error code %d\n", err);
