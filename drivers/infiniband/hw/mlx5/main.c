@@ -1032,7 +1032,7 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 	if (req.flags)
 		return ERR_PTR(-EINVAL);
 
-	if (req.total_num_bfregs > MLX5_NAX_BFREGS)
+	if (req.total_num_bfregs > MLX5_MAX_BFREGS)
 		return ERR_PTR(-ENOMEM);
 
 	if (req.total_num_bfregs == 0)
@@ -3061,8 +3061,6 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 	if (mlx5_use_mad_ifc(dev))
 		get_ext_port_caps(dev);
 
-	MLX5_INIT_DOORBELL_LOCK(&dev->uar_lock);
-
 	if (!mlx5_lag_is_active(mdev))
 		name = "mlx5_%d";
 	else
@@ -3238,9 +3236,21 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 	if (err)
 		goto err_odp;
 
+	dev->mdev->priv.uar = mlx5_get_uars_page(dev->mdev);
+	if (!dev->mdev->priv.uar)
+		goto err_q_cnt;
+
+	err = mlx5_alloc_bfreg(dev->mdev, &dev->bfreg, false, false);
+	if (err)
+		goto err_uar_page;
+
+	err = mlx5_alloc_bfreg(dev->mdev, &dev->fp_bfreg, false, true);
+	if (err)
+		goto err_bfreg;
+
 	err = ib_register_device(&dev->ib_dev, NULL);
 	if (err)
-		goto err_q_cnt;
+		goto err_fp_bfreg;
 
 	err = create_umr_res(dev);
 	if (err)
@@ -3262,6 +3272,15 @@ err_umrc:
 
 err_dev:
 	ib_unregister_device(&dev->ib_dev);
+
+err_fp_bfreg:
+	mlx5_free_bfreg(dev->mdev, &dev->fp_bfreg);
+
+err_bfreg:
+	mlx5_free_bfreg(dev->mdev, &dev->bfreg);
+
+err_uar_page:
+	mlx5_put_uars_page(dev->mdev, dev->mdev->priv.uar);
 
 err_q_cnt:
 	mlx5_ib_dealloc_q_counters(dev);
@@ -3294,6 +3313,9 @@ static void mlx5_ib_remove(struct mlx5_core_dev *mdev, void *context)
 
 	mlx5_remove_netdev_notifier(dev);
 	ib_unregister_device(&dev->ib_dev);
+	mlx5_free_bfreg(dev->mdev, &dev->fp_bfreg);
+	mlx5_free_bfreg(dev->mdev, &dev->bfreg);
+	mlx5_put_uars_page(dev->mdev, mdev->priv.uar);
 	mlx5_ib_dealloc_q_counters(dev);
 	destroy_umrc_res(dev);
 	mlx5_ib_odp_remove_one(dev);
