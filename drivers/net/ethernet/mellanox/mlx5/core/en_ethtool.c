@@ -1482,6 +1482,54 @@ static int set_pflag_rx_cqe_based_moder(struct net_device *netdev, bool enable)
 	return err;
 }
 
+static int set_pflag_rx_cqe_compress_auto(struct net_device *netdev,
+					  bool enable)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+	struct mlx5_core_dev *mdev = priv->mdev;
+	bool user = !!(priv->pflags & MLX5E_PFLAG_RX_CQE_COMPRESS_USER);
+	bool cqe_changed = priv->params.rx_cqe_compress_def != user;
+	bool reset = test_bit(MLX5E_STATE_OPENED, &priv->state) && cqe_changed;
+	int err = 0;
+
+	if (!MLX5_CAP_GEN(mdev, cqe_compression))
+		return -ENOTSUPP;
+
+	if (reset)
+		mlx5e_close_locked(netdev);
+
+	priv->params.rx_cqe_compress = enable ? priv->params.rx_cqe_compress_def : user;
+
+	if (reset)
+		err = mlx5e_open_locked(netdev);
+
+	return err;
+}
+
+static int set_pflag_rx_cqe_compress_user(struct net_device *netdev,
+					  bool enable)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+	bool cqe_changed = !(MLX5E_PFLAG_RX_CQE_COMPRESS_AUTO & priv->pflags);
+	struct mlx5_core_dev *mdev = priv->mdev;
+	int err = 0;
+	bool reset;
+
+	if (!MLX5_CAP_GEN(mdev, cqe_compression))
+		return -ENOTSUPP;
+
+	reset = test_bit(MLX5E_STATE_OPENED, &priv->state) && cqe_changed;
+
+	if (reset)
+		mlx5e_close_locked(netdev);
+
+	priv->params.rx_cqe_compress = enable;
+
+	if (reset)
+		err = mlx5e_open_locked(netdev);
+	return err;
+}
+
 static int mlx5e_handle_pflag(struct net_device *netdev,
 			      u32 wanted_flags,
 			      enum mlx5e_priv_flag flag,
@@ -1512,13 +1560,25 @@ static int mlx5e_set_priv_flags(struct net_device *netdev, u32 pflags)
 	int err;
 
 	mutex_lock(&priv->state_lock);
-
 	err = mlx5e_handle_pflag(netdev, pflags,
 				 MLX5E_PFLAG_RX_CQE_BASED_MODER,
 				 set_pflag_rx_cqe_based_moder);
+	if (err)
+		goto out;
 
+	err = mlx5e_handle_pflag(netdev, pflags,
+				 MLX5E_PFLAG_RX_CQE_COMPRESS_AUTO,
+				 set_pflag_rx_cqe_compress_auto);
+	if (err)
+		goto out;
+
+	err = mlx5e_handle_pflag(netdev, pflags,
+				 MLX5E_PFLAG_RX_CQE_COMPRESS_USER,
+				 set_pflag_rx_cqe_compress_user);
+
+out:
 	mutex_unlock(&priv->state_lock);
-	return err ? -EINVAL : 0;
+	return err;
 }
 
 static u32 mlx5e_get_priv_flags(struct net_device *netdev)
