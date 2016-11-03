@@ -526,6 +526,8 @@ ssize_t ib_uverbs_query_port(struct ib_uverbs_file *file,
 	resp.phys_state      = attr.phys_state;
 	resp.link_layer      = rdma_port_get_link_layer(ib_dev,
 							cmd.port_num);
+	/* don't expose to user-space QPTs they don't know */
+	resp.qp_type_cap = attr.qp_type_cap & ~(BIT(IB_QPT_SMI) | BIT(IB_QPT_GSI));
 
 	if (copy_to_user((void __user *) (unsigned long) cmd.response,
 			 &resp, sizeof resp))
