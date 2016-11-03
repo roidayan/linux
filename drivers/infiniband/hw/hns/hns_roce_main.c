@@ -430,6 +430,9 @@ static int hns_roce_query_port(struct ib_device *ib_dev, u8 port_num,
 			IB_PORT_ACTIVE : IB_PORT_DOWN;
 	props->phys_state = (props->state == IB_PORT_ACTIVE) ? 5 : 3;
 
+	/* mark that UD and UC aren't supported */
+	props->qp_type_cap &= ~(BIT(IB_QPT_UD) | BIT(IB_QPT_UC));
+
 	spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
 
 	return 0;

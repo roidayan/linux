@@ -536,6 +536,7 @@ struct ib_port_attr {
 	u8			active_speed;
 	u8                      phys_state;
 	bool			grh_required;
+	u16			qp_type_cap;
 };
 
 enum ib_device_modify_flags {

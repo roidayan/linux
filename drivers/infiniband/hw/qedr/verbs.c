@@ -263,6 +263,8 @@ int qedr_query_port(struct ib_device *ibdev, u8 port, struct ib_port_attr *attr)
 	attr->max_msg_sz = rdma_port->max_msg_size;
 	attr->max_vl_num = 4;
 
+	/* mark that UD and UC aren't supported */
+	attr->qp_type_cap &= ~(BIT(IB_QPT_UD) | BIT(IB_QPT_UC));
 	return 0;
 }
 
