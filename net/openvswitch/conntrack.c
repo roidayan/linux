@@ -739,12 +739,8 @@ static int __ovs_ct_lookup(struct net *net, struct sw_flow_key *key,
 			nf_ct_set(skb, tmpl, IP_CT_NEW);
 		}
 
-		/* Repeat if requested, see nf_iterate(). */
-		do {
-			err = nf_conntrack_in(net, info->family,
-					      NF_INET_PRE_ROUTING, skb);
-		} while (err == NF_REPEAT);
-
+		err = nf_conntrack_in(net, info->family,
+				      NF_INET_PRE_ROUTING, skb);
 		if (err != NF_ACCEPT)
 			return -ENOENT;
 
