@@ -477,7 +477,10 @@ struct mlx5e_rq {
 	int                    ix;
 
 	struct mlx5e_rx_am     am; /* Adaptive Moderation */
+
+	/* XDP */
 	struct bpf_prog       *xdp_prog;
+	struct mlx5e_sq        xdpsq;
 
 	/* control */
 	struct mlx5_wq_ctrl    wq_ctrl;
@@ -497,7 +500,6 @@ enum channel_flags {
 struct mlx5e_channel {
 	/* data path */
 	struct mlx5e_rq            rq;
-	struct mlx5e_sq            xdp_sq;
 	struct mlx5e_sq            sq[MLX5E_MAX_NUM_TC];
 	struct mlx5e_sq            icosq;   /* internal control operations */
 	bool                       xdp;
