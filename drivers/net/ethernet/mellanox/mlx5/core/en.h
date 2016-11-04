@@ -842,6 +842,24 @@ static inline void mlx5e_tx_notify_hw(struct mlx5e_sq *sq,
 	sq->bf_offset ^= sq->bf_buf_size;
 }
 
+static inline void mlx5e_tx_xdp_notify_hw(struct mlx5e_sq *sq,
+					  struct mlx5_wqe_ctrl_seg *ctrl)
+{
+	/* ensure wqe is visible to device before updating doorbell record */
+	dma_wmb();
+
+	*sq->wq.db = cpu_to_be32(sq->pc);
+
+	/* ensure doorbell record is visible to device before ringing the
+	 * doorbell
+	 */
+	wmb();
+
+	mlx5_write64((__be32 *)ctrl, sq->uar_map + MLX5_BF_OFFSET, NULL);
+	/* flush the write-combining mapped buffer */
+	wmb();
+}
+
 static inline void mlx5e_cq_arm(struct mlx5e_cq *cq)
 {
 	struct mlx5_core_cq *mcq;

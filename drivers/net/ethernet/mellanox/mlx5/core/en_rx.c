@@ -637,7 +637,7 @@ static inline void mlx5e_xmit_xdp_doorbell(struct mlx5e_sq *sq)
 	wqe  = mlx5_wq_cyc_get_wqe(wq, pi);
 
 	wqe->ctrl.fm_ce_se = MLX5_WQE_CTRL_CQ_UPDATE;
-	mlx5e_tx_notify_hw(sq, &wqe->ctrl, 0);
+	mlx5e_tx_xdp_notify_hw(sq, &wqe->ctrl);
 }
 
 static inline void mlx5e_xmit_xdp_frame(struct mlx5e_rq *rq,
