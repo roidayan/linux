@@ -649,7 +649,6 @@ static inline void mlx5e_xmit_xdp_frame(struct mlx5e_rq *rq,
 	struct mlx5_wq_cyc       *wq   = &sq->wq;
 	u16                      pi    = sq->pc & wq->sz_m1;
 	struct mlx5e_tx_wqe      *wqe  = mlx5_wq_cyc_get_wqe(wq, pi);
-	struct mlx5e_sq_wqe_info *wi   = &sq->db.xdp.wqe_info[pi];
 
 	struct mlx5_wqe_ctrl_seg *cseg = &wqe->ctrl;
 	struct mlx5_wqe_eth_seg  *eseg = &wqe->eth;
@@ -698,8 +697,6 @@ static inline void mlx5e_xmit_xdp_frame(struct mlx5e_rq *rq,
 	cseg->qpn_ds = cpu_to_be32((sq->sqn << 8) | ds_cnt);
 
 	sq->db.xdp.di[pi] = *di;
-	wi->opcode     = MLX5_OPCODE_SEND;
-	wi->num_wqebbs = MLX5E_XDP_TX_WQEBBS;
 	sq->pc += MLX5E_XDP_TX_WQEBBS;
 
 	sq->db.xdp.doorbell = true;
@@ -1002,7 +999,6 @@ bool mlx5e_poll_xdpsq_cq(struct mlx5e_cq *cq)
 		wqe_counter = be16_to_cpu(cqe->wqe_counter);
 
 		do {
-			struct mlx5e_sq_wqe_info *wi;
 			struct mlx5e_dma_info *di;
 			u16 ci;
 
@@ -1010,14 +1006,8 @@ bool mlx5e_poll_xdpsq_cq(struct mlx5e_cq *cq)
 
 			ci = sqcc & sq->wq.sz_m1;
 			di = &sq->db.xdp.di[ci];
-			wi = &sq->db.xdp.wqe_info[ci];
 
-			if (unlikely(wi->opcode == MLX5_OPCODE_NOP)) {
-				sqcc++;
-				continue;
-			}
-
-			sqcc += wi->num_wqebbs;
+			sqcc += MLX5E_XDP_TX_WQEBBS;
 			/* Recycle RX page */
 			mlx5e_page_release(rq, di, true);
 		} while (!last_wqe);
@@ -1035,21 +1025,13 @@ bool mlx5e_poll_xdpsq_cq(struct mlx5e_cq *cq)
 void mlx5e_free_xdpsq_descs(struct mlx5e_sq *sq)
 {
 	struct mlx5e_rq *rq = container_of(sq, struct mlx5e_rq, xdpsq);
-	struct mlx5e_sq_wqe_info *wi;
 	struct mlx5e_dma_info *di;
 	u16 ci;
 
 	while (sq->cc != sq->pc) {
 		ci = sq->cc & sq->wq.sz_m1;
 		di = &sq->db.xdp.di[ci];
-		wi = &sq->db.xdp.wqe_info[ci];
-
-		if (wi->opcode == MLX5_OPCODE_NOP) {
-			sq->cc++;
-			continue;
-		}
-
-		sq->cc += wi->num_wqebbs;
+		sq->cc += MLX5E_XDP_TX_WQEBBS;
 
 		mlx5e_page_release(rq, di, false);
 	}

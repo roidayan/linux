@@ -348,7 +348,6 @@ struct mlx5e_sq {
 		} txq;
 		struct mlx5e_sq_wqe_info *ico_wqe;
 		struct {
-			struct mlx5e_sq_wqe_info  *wqe_info;
 			struct mlx5e_dma_info     *di;
 			bool                       doorbell;
 		} xdp;

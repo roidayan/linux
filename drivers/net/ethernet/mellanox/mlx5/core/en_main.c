@@ -879,7 +879,6 @@ static void mlx5e_close_rq(struct mlx5e_rq *rq)
 static void mlx5e_free_sq_xdp_db(struct mlx5e_sq *sq)
 {
 	kfree(sq->db.xdp.di);
-	kfree(sq->db.xdp.wqe_info);
 }
 
 static int mlx5e_alloc_sq_xdp_db(struct mlx5e_sq *sq, int numa)
@@ -888,9 +887,7 @@ static int mlx5e_alloc_sq_xdp_db(struct mlx5e_sq *sq, int numa)
 
 	sq->db.xdp.di = kzalloc_node(sizeof(*sq->db.xdp.di) * wq_sz,
 				     GFP_KERNEL, numa);
-	sq->db.xdp.wqe_info = kzalloc_node(sizeof(*sq->db.xdp.wqe_info) * wq_sz,
-					   GFP_KERNEL, numa);
-	if (!sq->db.xdp.di || !sq->db.xdp.wqe_info) {
+	if (!sq->db.xdp.di) {
 		mlx5e_free_sq_xdp_db(sq);
 		return -ENOMEM;
 	}
