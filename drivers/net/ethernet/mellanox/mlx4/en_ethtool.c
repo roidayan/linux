@@ -932,7 +932,7 @@ mlx4_en_set_link_ksettings(struct net_device *dev,
 	mutex_lock(&priv->mdev->state_lock);
 	if (priv->port_up) {
 		en_warn(priv, "Port link mode changed, restarting port...\n");
-		mlx4_en_stop_port(dev, 1);
+		mlx4_en_stop_port(dev);
 		if (mlx4_en_start_port(dev))
 			en_err(priv, "Failed restarting port %d\n", priv->port);
 	}
@@ -1077,7 +1077,7 @@ static int mlx4_en_set_ringparam(struct net_device *dev,
 
 	if (priv->port_up) {
 		port_up = 1;
-		mlx4_en_stop_port(dev, 1);
+		mlx4_en_stop_port(dev);
 	}
 
 	mlx4_en_safe_replace_resources(priv, tmp);
@@ -1205,7 +1205,7 @@ static int mlx4_en_set_rxfh(struct net_device *dev, const u32 *ring_index,
 	mutex_lock(&mdev->state_lock);
 	if (priv->port_up) {
 		port_up = 1;
-		mlx4_en_stop_port(dev, 1);
+		mlx4_en_stop_port(dev);
 	}
 
 	if (ring_index)
@@ -1751,7 +1751,7 @@ static int mlx4_en_set_channels(struct net_device *dev,
 
 	if (priv->port_up) {
 		port_up = 1;
-		mlx4_en_stop_port(dev, 1);
+		mlx4_en_stop_port(dev);
 	}
 
 	mlx4_en_safe_replace_resources(priv, tmp);
