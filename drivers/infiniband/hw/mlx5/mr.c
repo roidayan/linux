@@ -610,6 +610,7 @@ int mlx5_mr_cache_init(struct mlx5_ib_dev *dev)
 	int err;
 	int i;
 
+	mutex_init(&dev->slow_path_mutex);
 	cache->wq = alloc_ordered_workqueue("mkey_cache", WQ_MEM_RECLAIM);
 	if (!cache->wq) {
 		mlx5_ib_warn(dev, "failed to create work queue\n");
@@ -645,6 +646,33 @@ int mlx5_mr_cache_init(struct mlx5_ib_dev *dev)
 	return 0;
 }
 
+static void wait_for_async_commands(struct mlx5_ib_dev *dev)
+{
+	struct mlx5_mr_cache *cache = &dev->cache;
+	struct mlx5_cache_ent *ent;
+	int total = 0;
+	int i;
+	int j;
+
+	for (i = 0; i < MAX_MR_CACHE_ENTRIES; i++) {
+		ent = &cache->ent[i];
+		for (j = 0 ; j < 1000; j++) {
+			if (!ent->pending)
+				break;
+			msleep(50);
+		}
+	}
+	for (i = 0; i < MAX_MR_CACHE_ENTRIES; i++) {
+		ent = &cache->ent[i];
+		total += ent->pending;
+	}
+
+	if (total)
+		mlx5_ib_warn(dev, "aborted while there are %d pending mr requests\n", total);
+	else
+		mlx5_ib_warn(dev, "done with all pending requests\n");
+}
+
 int mlx5_mr_cache_cleanup(struct mlx5_ib_dev *dev)
 {
 	int i;
@@ -658,6 +686,7 @@ int mlx5_mr_cache_cleanup(struct mlx5_ib_dev *dev)
 		clean_keys(dev, i);
 
 	destroy_workqueue(dev->cache.wq);
+	wait_for_async_commands(dev);
 	del_timer_sync(&dev->delay_timer);
 
 	return 0;
@@ -827,7 +856,8 @@ static struct ib_umem *mr_umem_get(struct ib_pd *pd, u64 start, u64 length,
 		return (void *)umem;
 	}
 
-	mlx5_ib_cont_pages(umem, start, npages, page_shift, ncont, order);
+	mlx5_ib_cont_pages(umem, start, MLX5_MKEY_PAGE_SHIFT_MASK, npages,
+			   page_shift, ncont, order);
 	if (!*npages) {
 		mlx5_ib_warn(dev, "avoid zero region\n");
 		ib_umem_release(umem);
@@ -1182,9 +1212,12 @@ struct ib_mr *mlx5_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 		goto error;
 	}
 
-	if (!mr)
+	if (!mr) {
+		mutex_lock(&dev->slow_path_mutex);
 		mr = reg_create(NULL, pd, virt_addr, length, umem, ncont,
 				page_shift, access_flags);
+		mutex_unlock(&dev->slow_path_mutex);
+	}
 
 	if (IS_ERR(mr)) {
 		err = PTR_ERR(mr);
