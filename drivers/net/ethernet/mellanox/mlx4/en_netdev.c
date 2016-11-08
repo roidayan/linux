@@ -1741,8 +1741,7 @@ int mlx4_en_start_port(struct net_device *dev)
 		napi_schedule(&priv->rx_cq[i]->napi);
 
 	netif_tx_start_all_queues(dev);
-	netif_device_attach(dev);
-
+	netif_carrier_on(dev);
 	return 0;
 
 tx_err:
@@ -1767,7 +1766,7 @@ cq_err:
 }
 
 
-void mlx4_en_stop_port(struct net_device *dev, int detach)
+void mlx4_en_stop_port(struct net_device *dev)
 {
 	struct mlx4_en_priv *priv = netdev_priv(dev);
 	struct mlx4_en_dev *mdev = priv->mdev;
@@ -1785,12 +1784,7 @@ void mlx4_en_stop_port(struct net_device *dev, int detach)
 	mlx4_CLOSE_PORT(mdev->dev, priv->port);
 
 	/* Synchronize with tx routine */
-	netif_tx_lock_bh(dev);
-	if (detach)
-		netif_device_detach(dev);
-	netif_tx_stop_all_queues(dev);
-	netif_tx_unlock_bh(dev);
-
+	netif_carrier_off(dev);
 	netif_tx_disable(dev);
 
 	/* Set port as not active */
@@ -1903,7 +1897,7 @@ static void mlx4_en_restart(struct work_struct *work)
 	rtnl_lock();
 	mutex_lock(&mdev->state_lock);
 	if (priv->port_up) {
-		mlx4_en_stop_port(dev, 1);
+		mlx4_en_stop_port(dev);
 		if (mlx4_en_start_port(dev))
 			en_err(priv, "Failed restarting port %d\n", priv->port);
 	}
@@ -1987,7 +1981,7 @@ static int mlx4_en_close(struct net_device *dev)
 
 	mutex_lock(&mdev->state_lock);
 
-	mlx4_en_stop_port(dev, 0);
+	mlx4_en_stop_port(dev);
 	netif_carrier_off(dev);
 
 	mutex_unlock(&mdev->state_lock);
@@ -2202,7 +2196,6 @@ void mlx4_en_destroy_netdev(struct net_device *dev)
 
 	if (!shutdown)
 		free_netdev(dev);
-	dev->ethtool_ops = NULL;
 }
 
 static int mlx4_en_change_mtu(struct net_device *dev, int new_mtu)
@@ -2232,7 +2225,7 @@ static int mlx4_en_change_mtu(struct net_device *dev, int new_mtu)
 			 * the port */
 			en_dbg(DRV, priv, "Change MTU called with card down!?\n");
 		} else {
-			mlx4_en_stop_port(dev, 1);
+			mlx4_en_stop_port(dev);
 			err = mlx4_en_start_port(dev);
 			if (err) {
 				en_err(priv, "Failed restarting port:%d\n",
@@ -2688,7 +2681,7 @@ static int mlx4_xdp_set(struct net_device *dev, struct bpf_prog *prog)
 	mutex_lock(&mdev->state_lock);
 	if (priv->port_up) {
 		port_up = 1;
-		mlx4_en_stop_port(dev, 1);
+		mlx4_en_stop_port(dev);
 	}
 
 	priv->xdp_ring_num = xdp_ring_num;
@@ -3407,7 +3400,7 @@ int mlx4_en_reset_config(struct net_device *dev,
 
 	if (priv->port_up) {
 		port_up = 1;
-		mlx4_en_stop_port(dev, 1);
+		mlx4_en_stop_port(dev);
 	}
 
 	en_warn(priv, "Changing device configuration rx filter(%x) rx vlan(%x)\n",
