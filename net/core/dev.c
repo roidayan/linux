@@ -6607,6 +6607,8 @@ int dev_get_phys_port_id(struct net_device *dev,
 
 	if (!ops->ndo_get_phys_port_id)
 		return -EOPNOTSUPP;
+	if (!netif_device_present(dev))
+		return -ENODEV;
 	return ops->ndo_get_phys_port_id(dev, ppid);
 }
 EXPORT_SYMBOL(dev_get_phys_port_id);
@@ -6626,6 +6628,8 @@ int dev_get_phys_port_name(struct net_device *dev,
 
 	if (!ops->ndo_get_phys_port_name)
 		return -EOPNOTSUPP;
+	if (!netif_device_present(dev))
+		return -ENODEV;
 	return ops->ndo_get_phys_port_name(dev, name, len);
 }
 EXPORT_SYMBOL(dev_get_phys_port_name);
