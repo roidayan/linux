@@ -982,10 +982,10 @@ static int mlx5e_sq_get_max_wqebbs(u8 sq_type)
 	return MLX5_SEND_WQE_MAX_WQEBBS;
 }
 
-static int mlx5e_create_sq(struct mlx5e_channel *c,
-			   int tc,
-			   struct mlx5e_sq_param *param,
-			   struct mlx5e_sq *sq)
+static int mlx5e_alloc_sq(struct mlx5e_channel *c,
+			  int tc,
+			  struct mlx5e_sq_param *param,
+			  struct mlx5e_sq *sq)
 {
 	struct mlx5e_priv *priv = c->priv;
 	struct mlx5_core_dev *mdev = priv->mdev;
@@ -1052,7 +1052,7 @@ err_unmap_free_uar:
 	return err;
 }
 
-static void mlx5e_destroy_sq(struct mlx5e_sq *sq)
+static void mlx5e_free_sq(struct mlx5e_sq *sq)
 {
 	struct mlx5e_channel *c = sq->channel;
 	struct mlx5e_priv *priv = c->priv;
@@ -1062,7 +1062,7 @@ static void mlx5e_destroy_sq(struct mlx5e_sq *sq)
 	mlx5_unmap_free_uar(priv->mdev, &sq->uar);
 }
 
-static int mlx5e_enable_sq(struct mlx5e_sq *sq, struct mlx5e_sq_param *param)
+static int mlx5e_create_sq(struct mlx5e_sq *sq, struct mlx5e_sq_param *param)
 {
 	struct mlx5e_channel *c = sq->channel;
 	struct mlx5e_priv *priv = c->priv;
@@ -1141,7 +1141,7 @@ static int mlx5e_modify_sq(struct mlx5e_sq *sq, int curr_state,
 	return err;
 }
 
-static void mlx5e_disable_sq(struct mlx5e_sq *sq)
+static void mlx5e_destroy_sq(struct mlx5e_sq *sq)
 {
 	struct mlx5e_channel *c = sq->channel;
 	struct mlx5e_priv *priv = c->priv;
@@ -1159,19 +1159,19 @@ static int mlx5e_open_sq(struct mlx5e_channel *c,
 {
 	int err;
 
-	err = mlx5e_create_sq(c, tc, param, sq);
+	err = mlx5e_alloc_sq(c, tc, param, sq);
 	if (err)
 		return err;
 
-	err = mlx5e_enable_sq(sq, param);
+	err = mlx5e_create_sq(sq, param);
 	if (err)
-		goto err_destroy_sq;
+		goto err_free_sq;
 
 	set_bit(MLX5E_SQ_STATE_ENABLED, &sq->state);
 	err = mlx5e_modify_sq(sq, MLX5_SQC_STATE_RST, MLX5_SQC_STATE_RDY,
 			      false, 0);
 	if (err)
-		goto err_disable_sq;
+		goto err_destroy_sq;
 
 	if (sq->txq) {
 		netdev_tx_reset_queue(sq->txq);
@@ -1180,11 +1180,11 @@ static int mlx5e_open_sq(struct mlx5e_channel *c,
 
 	return 0;
 
-err_disable_sq:
-	clear_bit(MLX5E_SQ_STATE_ENABLED, &sq->state);
-	mlx5e_disable_sq(sq);
 err_destroy_sq:
+	clear_bit(MLX5E_SQ_STATE_ENABLED, &sq->state);
 	mlx5e_destroy_sq(sq);
+err_free_sq:
+	mlx5e_free_sq(sq);
 
 	return err;
 }
@@ -1215,9 +1215,9 @@ static void mlx5e_close_sq(struct mlx5e_sq *sq)
 		}
 	}
 
-	mlx5e_disable_sq(sq);
-	mlx5e_free_sq_descs(sq);
 	mlx5e_destroy_sq(sq);
+	mlx5e_free_sq_descs(sq);
+	mlx5e_free_sq(sq);
 }
 
 static int mlx5e_create_cq(struct mlx5e_channel *c,
