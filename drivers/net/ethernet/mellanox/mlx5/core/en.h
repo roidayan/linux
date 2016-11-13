@@ -847,9 +847,6 @@ void mlx5e_notify_hw(struct mlx5_wq_cyc *wq, u16 pc,
 	wmb();
 
 	mlx5_write64((__be32 *)ctrl, uar_map + MLX5_BF_OFFSET, NULL);
-
-	/* flush the write-combining mapped buffer */
-	wmb();
 }
 
 static inline void

@@ -989,9 +989,9 @@ static int mlx5e_create_sq(struct mlx5e_channel *c,
 {
 	struct mlx5e_priv *priv = c->priv;
 	struct mlx5_core_dev *mdev = priv->mdev;
-
 	void *sqc = param->sqc;
 	void *sqc_wq = MLX5_ADDR_OF(sqc, sqc, wq);
+	bool bf;
 	int err;
 
 	sq->type      = param->type;
@@ -1001,7 +1001,8 @@ static int mlx5e_create_sq(struct mlx5e_channel *c,
 	sq->channel   = c;
 	sq->tc        = tc;
 
-	err = mlx5_alloc_map_uar(mdev, &sq->uar, !!MLX5_CAP_GEN(mdev, bf));
+	bf = sq->type == MLX5E_SQ_TXQ ? !!MLX5_CAP_GEN(mdev, bf) : false;
+	err = mlx5_alloc_map_uar(mdev, &sq->uar, bf);
 	if (err)
 		return err;
 
