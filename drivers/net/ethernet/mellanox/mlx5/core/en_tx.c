@@ -53,7 +53,7 @@ static inline void mlx5e_tx_dma_unmap(struct device *pdev,
 	}
 }
 
-static inline void mlx5e_dma_push(struct mlx5e_sq *sq,
+static inline void mlx5e_dma_push(struct mlx5e_txqsq *sq,
 				  dma_addr_t addr,
 				  u32 size,
 				  enum mlx5e_dma_map_type map_type)
@@ -66,12 +66,12 @@ static inline void mlx5e_dma_push(struct mlx5e_sq *sq,
 	sq->dma_fifo_pc++;
 }
 
-static inline struct mlx5e_sq_dma *mlx5e_dma_get(struct mlx5e_sq *sq, u32 i)
+static inline struct mlx5e_sq_dma *mlx5e_dma_get(struct mlx5e_txqsq *sq, u32 i)
 {
 	return &sq->db.txq.dma_fifo[i & sq->dma_fifo_mask];
 }
 
-static void mlx5e_dma_unmap_wqe_err(struct mlx5e_sq *sq, u8 num_dma)
+static void mlx5e_dma_unmap_wqe_err(struct mlx5e_txqsq *sq, u8 num_dma)
 {
 	int i;
 
@@ -107,7 +107,7 @@ u16 mlx5e_select_queue(struct net_device *dev, struct sk_buff *skb,
 }
 
 static inline int
-mlx5e_skb_l2_header_offset(struct mlx5e_sq *sq, struct sk_buff *skb)
+mlx5e_skb_l2_header_offset(struct mlx5e_txqsq *sq, struct sk_buff *skb)
 {
 #define MLX5E_MIN_INLINE (ETH_HLEN + VLAN_HLEN)
 #define LLC_HDR_INLINE_LEN 3
@@ -122,7 +122,7 @@ mlx5e_skb_l2_header_offset(struct mlx5e_sq *sq, struct sk_buff *skb)
 }
 
 static inline int
-mlx5e_skb_l3_header_offset(struct mlx5e_sq *sq, struct sk_buff *skb)
+mlx5e_skb_l3_header_offset(struct mlx5e_txqsq *sq, struct sk_buff *skb)
 {
 	struct flow_keys keys;
 
@@ -135,7 +135,7 @@ mlx5e_skb_l3_header_offset(struct mlx5e_sq *sq, struct sk_buff *skb)
 }
 
 static inline unsigned int
-mlx5e_calc_min_inline(struct mlx5e_sq *sq, struct sk_buff *skb, bool vlan_present)
+mlx5e_calc_min_inline(struct mlx5e_txqsq *sq, struct sk_buff *skb, bool vlan_present)
 {
 	enum mlx5_inline_modes mode = sq->min_inline_mode;
 	int hlen;
@@ -162,7 +162,7 @@ mlx5e_calc_min_inline(struct mlx5e_sq *sq, struct sk_buff *skb, bool vlan_presen
 	}
 }
 
-static inline u16 mlx5e_get_inline_hdr_size(struct mlx5e_sq *sq,
+static inline u16 mlx5e_get_inline_hdr_size(struct mlx5e_txqsq *sq,
 					    struct sk_buff *skb,
 					    bool vlan_present, bool bf)
 {
@@ -206,7 +206,7 @@ static inline void mlx5e_insert_vlan(void *start, struct sk_buff *skb, u16 ihs,
 	mlx5e_tx_skb_pull_inline(skb_data, skb_len, cpy2_sz);
 }
 
-static netdev_tx_t mlx5e_sq_xmit(struct mlx5e_sq *sq, struct sk_buff *skb)
+static netdev_tx_t mlx5e_sq_xmit(struct mlx5e_txqsq *sq, struct sk_buff *skb)
 {
 	struct mlx5_wq_cyc       *wq   = &sq->wq;
 
@@ -388,21 +388,21 @@ dma_unmap_wqe_err:
 netdev_tx_t mlx5e_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
-	struct mlx5e_sq *sq = priv->txq_to_sq_map[skb_get_queue_mapping(skb)];
+	struct mlx5e_txqsq *sq = priv->txq_to_sq_map[skb_get_queue_mapping(skb)];
 
 	return mlx5e_sq_xmit(sq, skb);
 }
 
 bool mlx5e_poll_tx_cq(struct mlx5e_cq *cq, int napi_budget)
 {
-	struct mlx5e_sq *sq;
+	struct mlx5e_txqsq *sq;
 	u32 dma_fifo_cc;
 	u32 nbytes;
 	u16 npkts;
 	u16 sqcc;
 	int i;
 
-	sq = container_of(cq, struct mlx5e_sq, cq);
+	sq = container_of(cq, struct mlx5e_txqsq, cq);
 
 	if (unlikely(!test_bit(MLX5E_SQ_STATE_ENABLED, &sq->state)))
 		return false;
@@ -490,7 +490,7 @@ bool mlx5e_poll_tx_cq(struct mlx5e_cq *cq, int napi_budget)
 	return (i == MLX5E_TX_CQ_POLL_BUDGET);
 }
 
-static void mlx5e_free_txq_sq_descs(struct mlx5e_sq *sq)
+void mlx5e_free_txqsq_descs(struct mlx5e_txqsq *sq)
 {
 	struct mlx5e_tx_wqe_info *wi;
 	struct sk_buff *skb;
@@ -516,17 +516,5 @@ static void mlx5e_free_txq_sq_descs(struct mlx5e_sq *sq)
 
 		dev_kfree_skb_any(skb);
 		sq->cc += wi->num_wqebbs;
-	}
-}
-
-void mlx5e_free_sq_descs(struct mlx5e_sq *sq)
-{
-	switch (sq->type) {
-	case MLX5E_SQ_TXQ:
-		mlx5e_free_txq_sq_descs(sq);
-		break;
-	case MLX5E_SQ_XDP:
-		mlx5e_free_xdpsq_descs(sq);
-		break;
 	}
 }
