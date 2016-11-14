@@ -60,15 +60,15 @@ static inline void mlx5e_dma_push(struct mlx5e_txqsq *sq,
 {
 	u32 i = sq->dma_fifo_pc & sq->dma_fifo_mask;
 
-	sq->db.txq.dma_fifo[i].addr = addr;
-	sq->db.txq.dma_fifo[i].size = size;
-	sq->db.txq.dma_fifo[i].type = map_type;
+	sq->db.dma_fifo[i].addr = addr;
+	sq->db.dma_fifo[i].size = size;
+	sq->db.dma_fifo[i].type = map_type;
 	sq->dma_fifo_pc++;
 }
 
 static inline struct mlx5e_sq_dma *mlx5e_dma_get(struct mlx5e_txqsq *sq, u32 i)
 {
-	return &sq->db.txq.dma_fifo[i & sq->dma_fifo_mask];
+	return &sq->db.dma_fifo[i & sq->dma_fifo_mask];
 }
 
 static void mlx5e_dma_unmap_wqe_err(struct mlx5e_txqsq *sq, u8 num_dma)
@@ -212,7 +212,7 @@ static netdev_tx_t mlx5e_sq_xmit(struct mlx5e_txqsq *sq, struct sk_buff *skb)
 
 	u16 pi = sq->pc & wq->sz_m1;
 	struct mlx5e_tx_wqe      *wqe  = mlx5_wq_cyc_get_wqe(wq, pi);
-	struct mlx5e_tx_wqe_info *wi   = &sq->db.txq.wqe_info[pi];
+	struct mlx5e_tx_wqe_info *wi   = &sq->db.wqe_info[pi];
 
 	struct mlx5_wqe_ctrl_seg *cseg = &wqe->ctrl;
 	struct mlx5_wqe_eth_seg  *eseg = &wqe->eth;
@@ -335,7 +335,7 @@ static netdev_tx_t mlx5e_sq_xmit(struct mlx5e_txqsq *sq, struct sk_buff *skb)
 	cseg->opmod_idx_opcode = cpu_to_be32((sq->pc << 8) | opcode);
 	cseg->qpn_ds           = cpu_to_be32((sq->sqn << 8) | ds_cnt);
 
-	sq->db.txq.skb[pi] = skb;
+	sq->db.skb[pi] = skb;
 
 	wi->num_wqebbs = DIV_ROUND_UP(ds_cnt, MLX5_SEND_WQEBB_NUM_DS);
 	sq->pc += wi->num_wqebbs;
@@ -364,7 +364,7 @@ static netdev_tx_t mlx5e_sq_xmit(struct mlx5e_txqsq *sq, struct sk_buff *skb)
 
 	/* fill sq edge with nops to avoid wqe wrap around */
 	while ((pi = (sq->pc & wq->sz_m1)) > sq->edge) {
-		sq->db.txq.skb[pi] = NULL;
+		sq->db.skb[pi] = NULL;
 		mlx5e_post_nop(&sq->wq, sq->sqn, &sq->pc);
 		sq->stats.nop++;
 	}
@@ -440,8 +440,8 @@ bool mlx5e_poll_tx_cq(struct mlx5e_cq *cq, int napi_budget)
 			last_wqe = (sqcc == wqe_counter);
 
 			ci = sqcc & sq->wq.sz_m1;
-			skb = sq->db.txq.skb[ci];
-			wi = &sq->db.txq.wqe_info[ci];
+			skb = sq->db.skb[ci];
+			wi = &sq->db.wqe_info[ci];
 
 			if (unlikely(!skb)) { /* nop */
 				sqcc++;
@@ -499,8 +499,8 @@ void mlx5e_free_txqsq_descs(struct mlx5e_txqsq *sq)
 
 	while (sq->cc != sq->pc) {
 		ci = sq->cc & sq->wq.sz_m1;
-		skb = sq->db.txq.skb[ci];
-		wi = &sq->db.txq.wqe_info[ci];
+		skb = sq->db.skb[ci];
+		wi = &sq->db.wqe_info[ci];
 
 		if (!skb) { /* nop */
 			sq->cc++;

@@ -880,16 +880,16 @@ static void mlx5e_close_rq(struct mlx5e_rq *rq)
 
 static void mlx5e_free_xdpsq_db(struct mlx5e_xdpsq *sq)
 {
-	kfree(sq->db.xdp.di);
+	kfree(sq->db.di);
 }
 
 static int mlx5e_alloc_xdpsq_db(struct mlx5e_xdpsq *sq, int numa)
 {
 	int wq_sz = mlx5_wq_cyc_get_size(&sq->wq);
 
-	sq->db.xdp.di = kzalloc_node(sizeof(*sq->db.xdp.di) * wq_sz,
+	sq->db.di = kzalloc_node(sizeof(*sq->db.di) * wq_sz,
 				     GFP_KERNEL, numa);
-	if (!sq->db.xdp.di) {
+	if (!sq->db.di) {
 		mlx5e_free_xdpsq_db(sq);
 		return -ENOMEM;
 	}
@@ -1024,9 +1024,9 @@ static void mlx5e_free_icosq(struct mlx5e_icosq *sq)
 
 static void mlx5e_free_txqsq_db(struct mlx5e_txqsq *sq)
 {
-	kfree(sq->db.txq.wqe_info);
-	kfree(sq->db.txq.dma_fifo);
-	kfree(sq->db.txq.skb);
+	kfree(sq->db.wqe_info);
+	kfree(sq->db.dma_fifo);
+	kfree(sq->db.skb);
 }
 
 static int mlx5e_alloc_txqsq_db(struct mlx5e_txqsq *sq, int numa)
@@ -1034,13 +1034,13 @@ static int mlx5e_alloc_txqsq_db(struct mlx5e_txqsq *sq, int numa)
 	int wq_sz = mlx5_wq_cyc_get_size(&sq->wq);
 	int df_sz = wq_sz * MLX5_SEND_WQEBB_NUM_DS;
 
-	sq->db.txq.skb = kzalloc_node(wq_sz * sizeof(*sq->db.txq.skb),
+	sq->db.skb = kzalloc_node(wq_sz * sizeof(*sq->db.skb),
 				      GFP_KERNEL, numa);
-	sq->db.txq.dma_fifo = kzalloc_node(df_sz * sizeof(*sq->db.txq.dma_fifo),
+	sq->db.dma_fifo = kzalloc_node(df_sz * sizeof(*sq->db.dma_fifo),
 					   GFP_KERNEL, numa);
-	sq->db.txq.wqe_info = kzalloc_node(wq_sz * sizeof(*sq->db.txq.wqe_info),
+	sq->db.wqe_info = kzalloc_node(wq_sz * sizeof(*sq->db.wqe_info),
 					   GFP_KERNEL, numa);
-	if (!sq->db.txq.skb || !sq->db.txq.dma_fifo || !sq->db.txq.wqe_info) {
+	if (!sq->db.skb || !sq->db.dma_fifo || !sq->db.wqe_info) {
 		mlx5e_free_txqsq_db(sq);
 		return -ENOMEM;
 	}
@@ -1305,7 +1305,7 @@ static void mlx5e_close_txqsq(struct mlx5e_txqsq *sq)
 	if (mlx5e_wqc_has_room_for(&sq->wq, sq->cc, sq->pc, 1)) {
 		struct mlx5e_tx_wqe *nop;
 
-		sq->db.txq.skb[(sq->pc & sq->wq.sz_m1)] = NULL;
+		sq->db.skb[(sq->pc & sq->wq.sz_m1)] = NULL;
 		nop = mlx5e_post_nop(&sq->wq, sq->sqn, &sq->pc);
 		mlx5e_tx_notify_hw(sq, &nop->ctrl, 0);
 	}
