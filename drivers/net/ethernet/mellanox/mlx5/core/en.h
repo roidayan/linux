@@ -219,6 +219,7 @@ struct mlx5e_params {
 	bool rx_am_enabled;
 	u32 lro_timeout;
 	u32 pflags;
+	u32 tx_rates[MLX5E_MAX_NUM_SQS];
 };
 
 #ifdef CONFIG_MLX5_CORE_EN_DCB
@@ -747,7 +748,6 @@ struct mlx5e_priv {
 	struct mlx5e_rqt           indir_rqt;
 	struct mlx5e_tir           indir_tir[MLX5E_NUM_INDIR_TIRS];
 	struct mlx5e_tir           direct_tir[MLX5E_MAX_NUM_CHANNELS];
-	u32                        tx_rates[MLX5E_MAX_NUM_SQS];
 
 	struct mlx5e_flow_steering fs;
 	struct mlx5e_vxlan_db      vxlan;
