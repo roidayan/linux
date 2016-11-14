@@ -329,12 +329,10 @@ struct mlx5e_txqsq {
 	struct mlx5e_cq            cq;
 
 	/* write@xmit, read@completion */
-	union {
-		struct {
-			struct sk_buff           **skb;
-			struct mlx5e_sq_dma       *dma_fifo;
-			struct mlx5e_tx_wqe_info  *wqe_info;
-		} txq;
+	struct {
+		struct sk_buff           **skb;
+		struct mlx5e_sq_dma       *dma_fifo;
+		struct mlx5e_tx_wqe_info  *wqe_info;
 	} db;
 
 	/* read only */
@@ -368,11 +366,9 @@ struct mlx5e_xdpsq {
 	struct mlx5e_cq            cq;
 
 	/* write@xmit, read@completion */
-	union {
-		struct {
-			struct mlx5e_dma_info     *di;
-			bool                       doorbell;
-		} xdp;
+	struct {
+		struct mlx5e_dma_info     *di;
+		bool                       doorbell;
 	} db;
 
 	/* read only */
@@ -403,7 +399,7 @@ struct mlx5e_icosq {
 	struct mlx5e_cq            cq;
 
 	/* write@xmit, read@completion */
-	union {
+	struct {
 		struct mlx5e_sq_wqe_info *ico_wqe;
 	} db;
 
