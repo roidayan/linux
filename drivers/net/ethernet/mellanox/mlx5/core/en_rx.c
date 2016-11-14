@@ -668,10 +668,10 @@ static inline bool mlx5e_xmit_xdp_frame(struct mlx5e_rq *rq,
 	}
 
 	if (unlikely(!mlx5e_wqc_has_room_for(&sq->wq, sq->cc, sq->pc, 1))) {
-		if (sq->db.xdp.doorbell) {
+		if (sq->db.doorbell) {
 			/* SQ is full, ring doorbell */
 			mlx5e_xmit_xdp_doorbell(sq);
-			sq->db.xdp.doorbell = false;
+			sq->db.doorbell = false;
 		}
 		rq->stats.xdp_tx_full++;
 		mlx5e_page_release(rq, di, true);
@@ -699,10 +699,10 @@ static inline bool mlx5e_xmit_xdp_frame(struct mlx5e_rq *rq,
 
 	cseg->opmod_idx_opcode = cpu_to_be32((sq->pc << 8) | MLX5_OPCODE_SEND);
 
-	sq->db.xdp.di[pi] = *di;
+	sq->db.di[pi] = *di;
 	sq->pc++;
 
-	sq->db.xdp.doorbell = true;
+	sq->db.doorbell = true;
 	rq->stats.xdp_tx++;
 	return true;
 }
@@ -963,9 +963,9 @@ int mlx5e_poll_rx_cq(struct mlx5e_cq *cq, int budget)
 		rq->handle_rx_cqe(rq, cqe);
 	}
 
-	if (xdpsq->db.xdp.doorbell) {
+	if (xdpsq->db.doorbell) {
 		mlx5e_xmit_xdp_doorbell(xdpsq);
-		xdpsq->db.xdp.doorbell = false;
+		xdpsq->db.doorbell = false;
 	}
 
 	mlx5_cqwq_update_db_record(&cq->wq);
@@ -1015,7 +1015,7 @@ bool mlx5e_poll_xdpsq_cq(struct mlx5e_cq *cq)
 			last_wqe = (sqcc == wqe_counter);
 
 			ci = sqcc & sq->wq.sz_m1;
-			di = &sq->db.xdp.di[ci];
+			di = &sq->db.di[ci];
 
 			sqcc++;
 			/* Recycle RX page */
@@ -1040,7 +1040,7 @@ void mlx5e_free_xdpsq_descs(struct mlx5e_xdpsq *sq)
 
 	while (sq->cc != sq->pc) {
 		ci = sq->cc & sq->wq.sz_m1;
-		di = &sq->db.xdp.di[ci];
+		di = &sq->db.di[ci];
 		sq->cc++;
 
 		mlx5e_page_release(rq, di, false);
