@@ -483,23 +483,24 @@ static inline bool napi_reschedule(struct napi_struct *napi)
 	return false;
 }
 
-void __napi_complete(struct napi_struct *n);
-void napi_complete_done(struct napi_struct *n, int work_done);
+bool __napi_complete(struct napi_struct *n);
+bool napi_complete_done(struct napi_struct *n, int work_done);
 /**
  *	napi_complete - NAPI processing complete
  *	@n: napi context
  *
  * Mark NAPI processing as complete.
  * Consider using napi_complete_done() instead.
+ * Return false if device should avoid rearming interrupts.
  */
-static inline void _napi_complete(struct napi_struct *n)
+static inline bool _napi_complete(struct napi_struct *n)
 {
 	return napi_complete_done(n, 0);
 }
 
 /* RHEL has napi_complete in KABI so we need to keep it for binary
  * modules. Newly compiled modules will use inlined function. */
-void napi_complete(struct napi_struct *n);
+bool napi_complete(struct napi_struct *n);
 #define napi_complete _napi_complete
 
 /**
