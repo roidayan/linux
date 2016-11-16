@@ -177,13 +177,15 @@ enum mlx5e_priv_flag {
 	MLX5E_PFLAG_RX_CQE_BASED_MODER = (1 << 0),
 };
 
-#define MLX5E_SET_PRIV_FLAG(priv, pflag, enable)    \
-	do {                                        \
-		if (enable)                         \
-			priv->pflags |= pflag;      \
-		else                                \
-			priv->pflags &= ~pflag;     \
+#define MLX5E_SET_PFLAG(priv, pflag, enable)			\
+	do {							\
+		if (enable)					\
+			(priv)->params.pflags |= (pflag);	\
+		else						\
+			(priv)->params.pflags &= ~(pflag);	\
 	} while (0)
+
+#define MLX5E_GET_PFLAG(priv, pflag) (!!((priv)->params.pflags & (pflag)))
 
 #ifdef CONFIG_MLX5_CORE_EN_DCB
 #define MLX5E_MAX_BW_ALLOC 100 /* Max percentage of BW allocation */
@@ -221,6 +223,7 @@ struct mlx5e_params {
 #endif
 	bool rx_am_enabled;
 	u32 lro_timeout;
+	u32 pflags;
 };
 
 struct mlx5e_tstamp {
@@ -684,7 +687,6 @@ struct mlx5e_priv {
 	struct work_struct         tx_timeout_work;
 	struct delayed_work        update_stats_work;
 
-	u32                        pflags;
 	struct mlx5_core_dev      *mdev;
 	struct net_device         *netdev;
 	struct mlx5e_stats         stats;
