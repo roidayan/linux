@@ -1447,7 +1447,7 @@ static struct pci_driver mlx5_core_driver = {
 static void mlx5_core_verify_params(void)
 {
 	if (prof_sel >= ARRAY_SIZE(profile)) {
-		pr_warn("mlx5_core: WARNING: Invalid module parameter prof_sel %d, vlaid range 0-%lu, changing back to default(%d)\n",
+		pr_warn("mlx5_core: WARNING: Invalid module parameter prof_sel %d, vlaid range 0-%u, changing back to default(%d)\n",
 			prof_sel,
 			ARRAY_SIZE(profile) - 1,
 			MLX5_DEFAULT_PROF);
