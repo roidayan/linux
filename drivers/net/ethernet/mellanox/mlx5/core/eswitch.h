@@ -200,6 +200,8 @@ struct mlx5_esw_offload {
 	struct mlx5_flow_group *vport_rx_group;
 	struct mlx5_eswitch_rep *vport_reps;
 	DECLARE_HASHTABLE(encap_tbl, 8);
+	u8 inline_mode;
+	u8 max_encap;
 };
 
 struct mlx5_eswitch {
@@ -309,6 +311,11 @@ void mlx5_eswitch_sqs2vport_stop(struct mlx5_eswitch *esw,
 
 int mlx5_devlink_eswitch_mode_set(struct devlink *devlink, u16 mode);
 int mlx5_devlink_eswitch_mode_get(struct devlink *devlink, u16 *mode);
+int mlx5_devlink_eswitch_inline_mode_set(struct devlink *devlink, u8 mode);
+int mlx5_devlink_eswitch_inline_mode_get(struct devlink *devlink, u8 *mode);
+int mlx5_eswitch_inline_mode_get(struct mlx5_eswitch *esw, int nvfs, u8 *mode);
+int mlx5_devlink_eswitch_max_encap_set(struct devlink *devlink, u8 max_encap);
+int mlx5_devlink_eswitch_max_encap_get(struct devlink *devlink, u8 *max_encap);
 void mlx5_eswitch_register_vport_rep(struct mlx5_eswitch *esw,
 				     int vport_index,
 				     struct mlx5_eswitch_rep *rep);

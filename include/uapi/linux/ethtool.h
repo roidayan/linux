@@ -1330,6 +1330,7 @@ struct ethtool_per_queue_op {
 #define ETHTOOL_SLINKSETTINGS	0x0000004d /* Set ethtool_link_settings */
 #define ETHTOOL_PHY_GTUNABLE	0x0000004e /* Get PHY tunable configuration */
 #define ETHTOOL_PHY_STUNABLE	0x0000004f /* Set PHY tunable configuration */
+#define ETHTOOL_SREGS		0x00000050 /* Set NIC registers */
 
 /* compatibility with older code */
 #define SPARC_ETH_GSET		ETHTOOL_GSET
