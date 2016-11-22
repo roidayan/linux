@@ -387,7 +387,6 @@ struct mlx5e_xdpsq {
 
 	/* control path */
 	struct mlx5_wq_ctrl        wq_ctrl;
-	struct mlx5_uar            uar;
 	struct mlx5e_channel      *channel;
 } ____cacheline_aligned_in_smp;
 
@@ -420,7 +419,6 @@ struct mlx5e_icosq {
 
 	/* control path */
 	struct mlx5_wq_ctrl        wq_ctrl;
-	struct mlx5_uar            uar;
 	struct mlx5e_channel      *channel;
 } ____cacheline_aligned_in_smp;
 

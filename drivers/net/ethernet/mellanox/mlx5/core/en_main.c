@@ -914,17 +914,13 @@ static int mlx5e_alloc_xdpsq(struct mlx5e_channel *c,
 		MLX5_CAP_ETH(mdev, wqe_inline_mode) == MLX5_CAP_INLINE_MODE_NOT_REQUIRED ?
 		MLX5_INLINE_MODE_NONE : MLX5_INLINE_MODE_L2;
 
-	/* TODO: one uar for all XDP SQs */
-	err = mlx5_alloc_map_uar(mdev, &sq->uar, false);
-	if (err)
-		return err;
-	sq->uar_map = sq->uar.map;
+	sq->uar_map = mdev->mlx5e_res.uar.map;
 
 	param->wq.db_numa_node = cpu_to_node(c->cpu);
 	err = mlx5_wq_cyc_create(mdev, &param->wq, sqc_wq, &sq->wq,
 				 &sq->wq_ctrl);
 	if (err)
-		goto err_unmap_free_uar;
+		return err;
 	sq->wq.db = &sq->wq.db[MLX5_SND_DBR];
 
 	err = mlx5e_alloc_xdpsq_db(sq, cpu_to_node(c->cpu));
@@ -936,20 +932,13 @@ static int mlx5e_alloc_xdpsq(struct mlx5e_channel *c,
 err_sq_wq_destroy:
 	mlx5_wq_destroy(&sq->wq_ctrl);
 
-err_unmap_free_uar:
-	mlx5_unmap_free_uar(mdev, &sq->uar);
-
 	return err;
 }
 
 static void mlx5e_free_xdpsq(struct mlx5e_xdpsq *sq)
 {
-	struct mlx5e_channel *c = sq->channel;
-	struct mlx5e_priv *priv = c->priv;
-
 	mlx5e_free_xdpsq_db(sq);
 	mlx5_wq_destroy(&sq->wq_ctrl);
-	mlx5_unmap_free_uar(priv->mdev, &sq->uar);
 }
 
 static void mlx5e_free_icosq_db(struct mlx5e_icosq *sq)
@@ -983,16 +972,13 @@ static int mlx5e_alloc_icosq(struct mlx5e_channel *c,
 	sq->mkey_be   = c->mkey_be;
 	sq->channel   = c;
 
-	err = mlx5_alloc_map_uar(mdev, &sq->uar, false);
-	if (err)
-		return err;
-	sq->uar_map = sq->uar.map;
+	sq->uar_map = mdev->mlx5e_res.uar.map;
 
 	param->wq.db_numa_node = cpu_to_node(c->cpu);
 	err = mlx5_wq_cyc_create(mdev, &param->wq, sqc_wq, &sq->wq,
 				 &sq->wq_ctrl);
 	if (err)
-		goto err_unmap_free_uar;
+		return err;
 	sq->wq.db = &sq->wq.db[MLX5_SND_DBR];
 
 	err = mlx5e_alloc_icosq_db(sq, cpu_to_node(c->cpu));
@@ -1006,20 +992,13 @@ static int mlx5e_alloc_icosq(struct mlx5e_channel *c,
 err_sq_wq_destroy:
 	mlx5_wq_destroy(&sq->wq_ctrl);
 
-err_unmap_free_uar:
-	mlx5_unmap_free_uar(mdev, &sq->uar);
-
 	return err;
 }
 
 static void mlx5e_free_icosq(struct mlx5e_icosq *sq)
 {
-	struct mlx5e_channel *c = sq->channel;
-	struct mlx5e_priv *priv = c->priv;
-
 	mlx5e_free_icosq_db(sq);
 	mlx5_wq_destroy(&sq->wq_ctrl);
-	mlx5_unmap_free_uar(priv->mdev, &sq->uar);
 }
 
 static void mlx5e_free_txqsq_db(struct mlx5e_txqsq *sq)
@@ -1328,6 +1307,8 @@ static int mlx5e_open_icosq(struct mlx5e_channel *c,
 			    struct mlx5e_icosq *sq)
 {
 	struct mlx5e_create_sq_param csp = {0};
+	struct mlx5e_priv *priv = c->priv;
+	struct mlx5_core_dev *mdev = priv->mdev;
 	int err;
 
 	err = mlx5e_alloc_icosq(c, tc, param, sq);
@@ -1336,7 +1317,7 @@ static int mlx5e_open_icosq(struct mlx5e_channel *c,
 
 	csp.cqn             = sq->cq.mcq.cqn;
 	csp.wq_ctrl         = &sq->wq_ctrl;
-	csp.uar             = &sq->uar;
+	csp.uar             = &mdev->mlx5e_res.uar;
 	csp.min_inline_mode = param->min_inline_mode;
 	set_bit(MLX5E_SQ_STATE_ENABLED, &sq->state);
 	err = mlx5e_create_sq_rdy(c->priv, param, &csp, &sq->sqn);
@@ -1370,6 +1351,7 @@ static int mlx5e_open_xdpsq(struct mlx5e_channel *c,
 	unsigned int ds_cnt = MLX5E_XDP_TX_DS_COUNT;
 	struct mlx5e_create_sq_param csp = {0};
 	struct mlx5e_priv *priv = c->priv;
+	struct mlx5_core_dev *mdev = priv->mdev;
 	unsigned int inline_hdr_sz = 0;
 	int err;
 	int i;
@@ -1382,7 +1364,7 @@ static int mlx5e_open_xdpsq(struct mlx5e_channel *c,
 	csp.tisn            = priv->tisn[0]; /* tc = 0 */
 	csp.cqn             = sq->cq.mcq.cqn;
 	csp.wq_ctrl         = &sq->wq_ctrl;
-	csp.uar             = &sq->uar;
+	csp.uar             = &mdev->mlx5e_res.uar;
 	csp.min_inline_mode = sq->min_inline_mode;
 	set_bit(MLX5E_SQ_STATE_ENABLED, &sq->state);
 	err = mlx5e_create_sq_rdy(c->priv, param, &csp, &sq->sqn);
@@ -1463,7 +1445,7 @@ static int mlx5e_create_cq(struct mlx5e_channel *c,
 	mcq->comp       = mlx5e_completion_event;
 	mcq->event      = mlx5e_cq_error_event;
 	mcq->irqn       = irqn;
-	mcq->uar        = &mdev->mlx5e_res.cq_uar;
+	mcq->uar        = &mdev->mlx5e_res.uar;
 
 	for (i = 0; i < mlx5_cqwq_get_size(&cq->wq); i++) {
 		struct mlx5_cqe64 *cqe = mlx5_cqwq_get_wqe(&cq->wq, i);
@@ -1923,7 +1905,7 @@ static void mlx5e_build_common_cq_param(struct mlx5e_priv *priv,
 {
 	void *cqc = param->cqc;
 
-	MLX5_SET(cqc, cqc, uar_page, priv->mdev->mlx5e_res.cq_uar.index);
+	MLX5_SET(cqc, cqc, uar_page, priv->mdev->mlx5e_res.uar.index);
 }
 
 static void mlx5e_build_rx_cq_param(struct mlx5e_priv *priv,
@@ -2538,7 +2520,7 @@ static int mlx5e_create_drop_cq(struct mlx5e_priv *priv,
 	mcq->comp       = mlx5e_completion_event;
 	mcq->event      = mlx5e_cq_error_event;
 	mcq->irqn       = irqn;
-	mcq->uar        = &mdev->mlx5e_res.cq_uar;
+	mcq->uar        = &mdev->mlx5e_res.uar;
 
 	cq->priv = priv;
 

@@ -627,7 +627,7 @@ struct mlx5_td {
 };
 
 struct mlx5e_resources {
-	struct mlx5_uar            cq_uar;
+	struct mlx5_uar            uar;
 	u32                        pdn;
 	struct mlx5_td             td;
 	struct mlx5_core_mkey      mkey;
