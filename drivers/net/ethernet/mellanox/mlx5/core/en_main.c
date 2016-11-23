@@ -84,7 +84,8 @@ static void mlx5e_set_rq_type_params(struct mlx5e_priv *priv, u8 rq_type)
 	switch (priv->params.rq_wq_type) {
 	case MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ:
 		priv->params.log_rq_size = MLX5E_PARAMS_DEFAULT_LOG_RQ_SIZE_MPW;
-		priv->params.mpwqe_log_stride_sz = priv->params.rx_cqe_compress ?
+		priv->params.mpwqe_log_stride_sz =
+			MLX5E_GET_PFLAG(priv, MLX5E_PFLAG_RX_CQE_COMPRESS) ?
 			MLX5_MPWRQ_LOG_STRIDE_SIZE_CQE_COMPRESS :
 			MLX5_MPWRQ_LOG_STRIDE_SIZE;
 		priv->params.mpwqe_log_num_strides = MLX5_MPWRQ_LOG_WQE_SZ -
@@ -101,7 +102,7 @@ static void mlx5e_set_rq_type_params(struct mlx5e_priv *priv, u8 rq_type)
 		       priv->params.rq_wq_type == MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ,
 		       BIT(priv->params.log_rq_size),
 		       BIT(priv->params.mpwqe_log_stride_sz),
-		       priv->params.rx_cqe_compress_admin);
+		       MLX5E_GET_PFLAG(priv, MLX5E_PFLAG_RX_CQE_COMPRESS));
 }
 
 static void mlx5e_set_rq_priv_params(struct mlx5e_priv *priv)
@@ -468,16 +469,6 @@ static void mlx5e_rq_free_mpwqe_info(struct mlx5e_rq *rq)
 	}
 	kfree(rq->mpwqe.mtt_no_align);
 	kfree(rq->mpwqe.info);
-}
-
-static bool mlx5e_is_vf_vport_rep(struct mlx5e_priv *priv)
-{
-	struct mlx5_eswitch_rep *rep = (struct mlx5_eswitch_rep *)priv->ppriv;
-
-	if (rep && rep->vport != FDB_UPLINK_VPORT)
-		return true;
-
-	return false;
 }
 
 static int mlx5e_create_rq(struct mlx5e_channel *c,
@@ -967,7 +958,7 @@ static int mlx5e_create_sq(struct mlx5e_channel *c,
 	sq->bf_buf_size = (1 << MLX5_CAP_GEN(mdev, log_bf_reg_size)) / 2;
 	sq->max_inline  = param->max_inline;
 	sq->min_inline_mode =
-		MLX5_CAP_ETH(mdev, wqe_inline_mode) == MLX5E_INLINE_MODE_VPORT_CONTEXT ?
+		MLX5_CAP_ETH(mdev, wqe_inline_mode) == MLX5_CAP_INLINE_MODE_VPORT_CONTEXT ?
 		param->min_inline_mode : 0;
 
 	err = mlx5e_alloc_sq_db(sq, cpu_to_node(c->cpu));
@@ -1674,7 +1665,7 @@ static void mlx5e_build_rx_cq_param(struct mlx5e_priv *priv,
 	}
 
 	MLX5_SET(cqc, cqc, log_cq_size, log_cq_size);
-	if (priv->params.rx_cqe_compress) {
+	if (MLX5E_GET_PFLAG(priv, MLX5E_PFLAG_RX_CQE_COMPRESS)) {
 		MLX5_SET(cqc, cqc, mini_cqe_res_format, MLX5_CQE_FORMAT_CSUM);
 		MLX5_SET(cqc, cqc, cqe_comp_en, 1);
 	}
@@ -2146,7 +2137,7 @@ int mlx5e_open_locked(struct net_device *netdev)
 		goto err_clear_state_opened_flag;
 	}
 
-	err = mlx5e_refresh_tirs_self_loopback_enable(priv->mdev);
+	err = mlx5e_refresh_tirs_self_loopback(priv->mdev, false);
 	if (err) {
 		netdev_err(netdev, "%s: mlx5e_refresh_tirs_self_loopback_enable failed, %d\n",
 			   __func__, err);
@@ -2664,7 +2655,7 @@ mqprio:
 	return mlx5e_setup_tc(dev, tc->tc);
 }
 
-struct rtnl_link_stats64 *
+static struct rtnl_link_stats64 *
 mlx5e_get_stats(struct net_device *dev, struct rtnl_link_stats64 *stats)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
@@ -2672,13 +2663,20 @@ mlx5e_get_stats(struct net_device *dev, struct rtnl_link_stats64 *stats)
 	struct mlx5e_vport_stats *vstats = &priv->stats.vport;
 	struct mlx5e_pport_stats *pstats = &priv->stats.pport;
 
-	stats->rx_packets = sstats->rx_packets;
-	stats->rx_bytes   = sstats->rx_bytes;
-	stats->tx_packets = sstats->tx_packets;
-	stats->tx_bytes   = sstats->tx_bytes;
+	if (mlx5e_is_uplink_rep(priv)) {
+		stats->rx_packets = PPORT_802_3_GET(pstats, a_frames_received_ok);
+		stats->rx_bytes   = PPORT_802_3_GET(pstats, a_octets_received_ok);
+		stats->tx_packets = PPORT_802_3_GET(pstats, a_frames_transmitted_ok);
+		stats->tx_bytes   = PPORT_802_3_GET(pstats, a_octets_transmitted_ok);
+	} else {
+		stats->rx_packets = sstats->rx_packets;
+		stats->rx_bytes   = sstats->rx_bytes;
+		stats->tx_packets = sstats->tx_packets;
+		stats->tx_bytes   = sstats->tx_bytes;
+		stats->tx_dropped = sstats->tx_queue_dropped;
+	}
 
 	stats->rx_dropped = priv->stats.qcnt.rx_out_of_buffer;
-	stats->tx_dropped = sstats->tx_queue_dropped;
 
 	stats->rx_length_errors =
 		PPORT_802_3_GET(pstats, a_in_range_length_errors) +
@@ -3290,6 +3288,8 @@ static const struct net_device_ops mlx5e_netdev_ops_sriov = {
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller     = mlx5e_netpoll,
 #endif
+	.ndo_has_offload_stats	 = mlx5e_has_offload_stats,
+	.ndo_get_offload_stats	 = mlx5e_get_offload_stats,
 };
 
 static int mlx5e_check_required_hca_cap(struct mlx5_core_dev *mdev)
@@ -3418,14 +3418,13 @@ static void mlx5e_query_min_inline(struct mlx5_core_dev *mdev,
 				   u8 *min_inline_mode)
 {
 	switch (MLX5_CAP_ETH(mdev, wqe_inline_mode)) {
-	case MLX5E_INLINE_MODE_L2:
+	case MLX5_CAP_INLINE_MODE_L2:
 		*min_inline_mode = MLX5_INLINE_MODE_L2;
 		break;
-	case MLX5E_INLINE_MODE_VPORT_CONTEXT:
-		mlx5_query_nic_vport_min_inline(mdev,
-						min_inline_mode);
+	case MLX5_CAP_INLINE_MODE_VPORT_CONTEXT:
+		mlx5_query_nic_vport_min_inline(mdev, 0, min_inline_mode);
 		break;
-	case MLX5_INLINE_MODE_NOT_REQUIRED:
+	case MLX5_CAP_INLINE_MODE_NOT_REQUIRED:
 		*min_inline_mode = MLX5_INLINE_MODE_NONE;
 		break;
 	}
@@ -3467,17 +3466,16 @@ static void mlx5e_build_nic_netdev_priv(struct mlx5_core_dev *mdev,
 	priv->params.log_sq_size = MLX5E_PARAMS_DEFAULT_LOG_SQ_SIZE;
 
 	/* set CQE compression */
-	priv->params.rx_cqe_compress_admin = false;
+	priv->params.rx_cqe_compress_def = false;
 	if (MLX5_CAP_GEN(mdev, cqe_compression) &&
 	    MLX5_CAP_GEN(mdev, vport_group_manager)) {
 		mlx5e_get_max_linkspeed(mdev, &link_speed);
 		mlx5e_get_pci_bw(mdev, &pci_bw);
 		mlx5_core_dbg(mdev, "Max link speed = %d, PCI BW = %d\n",
 			      link_speed, pci_bw);
-		priv->params.rx_cqe_compress_admin =
+		priv->params.rx_cqe_compress_def =
 			cqe_compress_heuristic(link_speed, pci_bw);
 	}
-	priv->params.rx_cqe_compress = priv->params.rx_cqe_compress_admin;
 
 	mlx5e_set_rq_priv_params(priv);
 	if (priv->params.rq_wq_type == MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ)
@@ -3508,9 +3506,9 @@ static void mlx5e_build_nic_netdev_priv(struct mlx5_core_dev *mdev,
 		SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
 
 	/* Initialize pflags */
-	MLX5E_SET_PRIV_FLAG(priv, MLX5E_PFLAG_RX_CQE_BASED_MODER,
-			    priv->params.rx_cq_period_mode == MLX5_CQ_PERIOD_MODE_START_FROM_CQE);
-
+	MLX5E_SET_PFLAG(priv, MLX5E_PFLAG_RX_CQE_BASED_MODER,
+			priv->params.rx_cq_period_mode == MLX5_CQ_PERIOD_MODE_START_FROM_CQE);
+	MLX5E_SET_PFLAG(priv, MLX5E_PFLAG_RX_CQE_COMPRESS, priv->params.rx_cqe_compress_def);
 #ifdef CONFIG_MLX5_CORE_EN_DCB
 	mlx5e_ets_init(priv);
 #endif
@@ -3693,6 +3691,11 @@ static void mlx5e_nic_init(struct mlx5_core_dev *mdev,
 
 	mlx5e_build_nic_netdev_priv(mdev, netdev, profile, ppriv);
 	mlx5e_build_nic_netdev(netdev);
+
+	priv->reg = mlx5e_regs_init();
+	if (!priv->reg)
+		mlx5_core_warn(mdev, "Failed to allocate mlx5e_reg\n");
+
 	mlx5e_vxlan_init(priv);
 }
 
@@ -3702,6 +3705,9 @@ static void mlx5e_nic_cleanup(struct mlx5e_priv *priv)
 	struct mlx5_eswitch *esw = mdev->priv.eswitch;
 
 	mlx5e_vxlan_cleanup(priv);
+
+	if (priv->reg)
+		mlx5e_regs_destroy(priv->reg);
 
 	if (MLX5_CAP_GEN(mdev, vport_group_manager))
 		mlx5_eswitch_unregister_vport_rep(esw, 0);
