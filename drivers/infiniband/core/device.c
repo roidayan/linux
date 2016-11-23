@@ -643,6 +643,31 @@ void ib_dispatch_event(struct ib_event *event)
 }
 EXPORT_SYMBOL(ib_dispatch_event);
 
+static void get_port_qp_types(const struct ib_device *device, u8 port_num,
+			      struct ib_port_attr *port_attr)
+{
+	if (rdma_cap_ib_smi(device, port_num))
+		port_attr->qp_type_cap |= BIT(IB_QPT_SMI);
+
+	if (rdma_cap_ib_cm(device, port_num))
+		port_attr->qp_type_cap |= BIT(IB_QPT_GSI);
+
+	if (rdma_ib_or_roce(device, port_num)) {
+		port_attr->qp_type_cap |= (BIT(IB_QPT_RC) | BIT(IB_QPT_UD) | BIT(IB_QPT_UC));
+		if (device->attrs.device_cap_flags & IB_DEVICE_XRC)
+			port_attr->qp_type_cap |= (BIT(IB_QPT_XRC_INI) | BIT(IB_QPT_XRC_TGT));
+	}
+
+	if (rdma_protocol_iwarp(device, port_num))
+		port_attr->qp_type_cap |= BIT(IB_QPT_RC);
+
+	if (rdma_protocol_raw_packet(device, port_num))
+		port_attr->qp_type_cap |= BIT(IB_QPT_RAW_PACKET);
+
+	if (rdma_protocol_usnic(device, port_num))
+		port_attr->qp_type_cap |= BIT(IB_QPT_UD);
+}
+
 /**
  * ib_query_port - Query IB port attributes
  * @device:Device to query
@@ -663,6 +688,9 @@ int ib_query_port(struct ib_device *device,
 		return -EINVAL;
 
 	memset(port_attr, 0, sizeof(*port_attr));
+
+	get_port_qp_types(device, port_num, port_attr);
+
 	err = device->query_port(device, port_num, port_attr);
 	if (err || port_attr->subnet_prefix)
 		return err;
