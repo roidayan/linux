@@ -403,7 +403,7 @@ static int hns_roce_query_port(struct ib_device *ib_dev, u8 port_num,
 	assert(port_num > 0);
 	port = port_num - 1;
 
-	memset(props, 0, sizeof(*props));
+	/* props being zeroed by the caller, avoid zeroing it here */
 
 	props->max_mtu = hr_dev->caps.max_mtu;
 	props->gid_tbl_len = hr_dev->caps.gid_table_len[port];
@@ -429,6 +429,9 @@ static int hns_roce_query_port(struct ib_device *ib_dev, u8 port_num,
 	props->state = (netif_running(net_dev) && netif_carrier_ok(net_dev)) ?
 			IB_PORT_ACTIVE : IB_PORT_DOWN;
 	props->phys_state = (props->state == IB_PORT_ACTIVE) ? 5 : 3;
+
+	/* mark that UD and UC aren't supported */
+	props->qp_type_cap &= ~(BIT(IB_QPT_UD) | BIT(IB_QPT_UC));
 
 	spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
 
@@ -572,14 +575,15 @@ static int hns_roce_port_immutable(struct ib_device *ib_dev, u8 port_num,
 	struct ib_port_attr attr;
 	int ret;
 
-	ret = hns_roce_query_port(ib_dev, port_num, &attr);
+	immutable->core_cap_flags = RDMA_CORE_PORT_IBA_ROCE;
+
+	ret = ib_query_port(ib_dev, port_num, &attr);
 	if (ret)
 		return ret;
 
 	immutable->pkey_tbl_len = attr.pkey_tbl_len;
 	immutable->gid_tbl_len = attr.gid_tbl_len;
 
-	immutable->core_cap_flags = RDMA_CORE_PORT_IBA_ROCE;
 	immutable->max_mad_size = IB_MGMT_MAD_SIZE;
 
 	return 0;
