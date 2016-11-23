@@ -280,6 +280,7 @@ struct ib_srq *mlx5_ib_create_srq(struct ib_pd *pd,
 	mlx5_ib_dbg(dev, "desc_size 0x%x, req wr 0x%x, srq size 0x%x, max_gs 0x%x, max_avail_gather 0x%x\n",
 		    desc_size, init_attr->attr.max_wr, srq->msrq.max, srq->msrq.max_gs,
 		    srq->msrq.max_avail_gather);
+	in.type = init_attr->srq_type;
 
 	in.type = init_attr->srq_type;
 
