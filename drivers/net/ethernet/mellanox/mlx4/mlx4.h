@@ -741,6 +741,7 @@ struct mlx4_catas_err {
 
 #define MLX4_MAX_MAC_NUM	128
 #define MLX4_MAC_TABLE_SIZE	(MLX4_MAX_MAC_NUM << 3)
+#define MLX4_VF_MAC_QUOTA	2
 
 struct mlx4_mac_table {
 	__be64			entries[MLX4_MAX_MAC_NUM];
