@@ -533,24 +533,29 @@ static ssize_t config_show(struct mlx5_sriov_vf *g, struct vf_attributes *oa,
 			   char *buf)
 {
 	struct mlx5_core_dev *dev = g->dev;
-	struct ifla_vf_info ivi;
+	struct mlx5_eswitch *esw = dev->priv.eswitch;
+	struct mlx5_vport_info *ivi;
+	int vport = g->vf + 1;
 	char *p = buf;
-	int err;
 
-	memset(&ivi, 0, sizeof(ivi));
-	err = mlx5_eswitch_get_vport_config(dev->priv.eswitch, g->vf + 1, &ivi);
-	if (err)
+	if (!esw && MLX5_CAP_GEN(esw->dev, vport_group_manager) && mlx5_core_is_pf(esw->dev))
+		return -EPERM;
+	if (!(vport >= 0 && vport < esw->total_vports))
 		return -EINVAL;
 
-	p += _sprintf(p, buf, "VF         : %d\n", ivi.vf);
-	p += _sprintf(p, buf, "MAC        : %pM\n", ivi.mac);
-	p += _sprintf(p, buf, "VLAN       : %d\n", ivi.vlan);
-	p += _sprintf(p, buf, "QoS        : %d\n", ivi.qos);
-	p += _sprintf(p, buf, "SpoofCheck : %s\n", ivi.spoofchk ? "ON" : "OFF");
-	p += _sprintf(p, buf, "Trust      : %s\n", ivi.trusted ? "ON" : "OFF");
-	p += _sprintf(p, buf, "LinkState  : %s\n", policy_str(ivi.linkstate));
-	p += _sprintf(p, buf, "MinTxRate  : %d\n", ivi.min_tx_rate);
-	p += _sprintf(p, buf, "MaxTxRate  : %d\n", ivi.max_tx_rate);
+	mutex_lock(&esw->state_lock);
+	ivi = &esw->vports[vport].info;
+	p += _sprintf(p, buf, "VF         : %d\n", g->vf);
+	p += _sprintf(p, buf, "MAC        : %pM\n", ivi->mac);
+	p += _sprintf(p, buf, "VLAN       : %d\n", ivi->vlan);
+	p += _sprintf(p, buf, "QoS        : %d\n", ivi->qos);
+	p += _sprintf(p, buf, "SpoofCheck : %s\n", ivi->spoofchk ? "ON" : "OFF");
+	p += _sprintf(p, buf, "Trust      : %s\n", ivi->trusted ? "ON" : "OFF");
+	p += _sprintf(p, buf, "LinkState  : %s\n", policy_str(ivi->link_state));
+	p += _sprintf(p, buf, "MinTxRate  : %d\n", ivi->min_rate);
+	p += _sprintf(p, buf, "MaxTxRate  : %d\n", ivi->max_rate);
+	mutex_unlock(&esw->state_lock);
+
 	return (ssize_t)(p - buf);
 }
 
