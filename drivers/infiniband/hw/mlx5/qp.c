@@ -351,6 +351,29 @@ static int calc_send_wqe(struct ib_qp_init_attr *attr)
 		return ALIGN(max_t(int, inl_size, size), MLX5_SEND_WQE_BB);
 }
 
+static int get_send_sge(struct ib_qp_init_attr *attr, int wqe_size)
+{
+	int max_sge;
+
+	if (attr->qp_type == IB_QPT_RC)
+		max_sge = (min_t(int, wqe_size, 512) -
+			   sizeof(struct mlx5_wqe_ctrl_seg) -
+			   sizeof(struct mlx5_wqe_raddr_seg)) /
+			sizeof(struct mlx5_wqe_data_seg);
+	else if (attr->qp_type == IB_QPT_XRC_INI)
+		max_sge = (min_t(int, wqe_size, 512) -
+			   sizeof(struct mlx5_wqe_ctrl_seg) -
+			   sizeof(struct mlx5_wqe_xrc_seg) -
+			   sizeof(struct mlx5_wqe_raddr_seg)) /
+			sizeof(struct mlx5_wqe_data_seg);
+	else
+		max_sge = (wqe_size - sq_overhead(attr)) /
+			sizeof(struct mlx5_wqe_data_seg);
+
+	return min_t(int, max_sge, wqe_size - sq_overhead(attr) /
+		     sizeof(struct mlx5_wqe_data_seg));
+}
+
 static int calc_sq_size(struct mlx5_ib_dev *dev, struct ib_qp_init_attr *attr,
 			struct mlx5_ib_qp *qp)
 {
@@ -387,7 +410,11 @@ static int calc_sq_size(struct mlx5_ib_dev *dev, struct ib_qp_init_attr *attr,
 		return -ENOMEM;
 	}
 	qp->sq.wqe_shift = ilog2(MLX5_SEND_WQE_BB);
-	qp->sq.max_gs = attr->cap.max_send_sge;
+	qp->sq.max_gs = get_send_sge(attr, wqe_size);
+	if (qp->sq.max_gs < attr->cap.max_send_sge)
+		return -ENOMEM;
+
+	attr->cap.max_send_sge = qp->sq.max_gs;
 	qp->sq.max_post = wq_size / wqe_size;
 	attr->cap.max_send_wr = qp->sq.max_post;
 
@@ -647,7 +674,7 @@ static int mlx5_ib_umem_get(struct mlx5_ib_dev *dev,
 		return PTR_ERR(*umem);
 	}
 
-	mlx5_ib_cont_pages(*umem, addr, npages, page_shift, ncont, NULL);
+	mlx5_ib_cont_pages(*umem, addr, 0, npages, page_shift, ncont, NULL);
 
 	err = mlx5_ib_get_buf_offset(addr, *page_shift, offset);
 	if (err) {
@@ -700,7 +727,7 @@ static int create_user_rq(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 		return err;
 	}
 
-	mlx5_ib_cont_pages(rwq->umem, ucmd->buf_addr, &npages, &page_shift,
+	mlx5_ib_cont_pages(rwq->umem, ucmd->buf_addr, 0, &npages, &page_shift,
 			   &ncont, NULL);
 	err = mlx5_ib_get_buf_offset(ucmd->buf_addr, page_shift,
 				     &rwq->rq_page_offset);
@@ -3067,10 +3094,10 @@ static void set_linv_umr_seg(struct mlx5_wqe_umr_ctrl_seg *umr)
 {
 	memset(umr, 0, sizeof(*umr));
 	umr->mkey_mask = cpu_to_be64(MLX5_MKEY_MASK_FREE);
-	umr->flags = 1 << 7;
+	umr->flags = MLX5_UMR_INLINE;
 }
 
-static __be64 get_umr_reg_mr_mask(void)
+static __be64 get_umr_reg_mr_mask(int atomic)
 {
 	u64 result;
 
@@ -3083,8 +3110,10 @@ static __be64 get_umr_reg_mr_mask(void)
 		 MLX5_MKEY_MASK_KEY		|
 		 MLX5_MKEY_MASK_RR		|
 		 MLX5_MKEY_MASK_RW		|
-		 MLX5_MKEY_MASK_A		|
 		 MLX5_MKEY_MASK_FREE;
+
+	if (atomic)
+		result |= MLX5_MKEY_MASK_A;
 
 	return cpu_to_be64(result);
 }
@@ -3146,7 +3175,7 @@ static __be64 get_umr_update_pd_mask(void)
 }
 
 static void set_reg_umr_segment(struct mlx5_wqe_umr_ctrl_seg *umr,
-				struct ib_send_wr *wr)
+				struct ib_send_wr *wr, int atomic)
 {
 	struct mlx5_umr_wr *umrwr = umr_wr(wr);
 
@@ -3171,7 +3200,7 @@ static void set_reg_umr_segment(struct mlx5_wqe_umr_ctrl_seg *umr,
 		if (wr->send_flags & MLX5_IB_SEND_UMR_UPDATE_PD)
 			umr->mkey_mask |= get_umr_update_pd_mask();
 		if (!umr->mkey_mask)
-			umr->mkey_mask = get_umr_reg_mr_mask();
+			umr->mkey_mask = get_umr_reg_mr_mask(atomic);
 	} else {
 		umr->mkey_mask = get_umr_unreg_mr_mask();
 	}
@@ -4024,7 +4053,7 @@ int mlx5_ib_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 			}
 			qp->sq.wr_data[idx] = MLX5_IB_WR_UMR;
 			ctrl->imm = cpu_to_be32(umr_wr(wr)->mkey);
-			set_reg_umr_segment(seg, wr);
+			set_reg_umr_segment(seg, wr, !!(MLX5_CAP_GEN(mdev, atomic)));
 			seg += sizeof(struct mlx5_wqe_umr_ctrl_seg);
 			size += sizeof(struct mlx5_wqe_umr_ctrl_seg) / 16;
 			if (unlikely((seg == qend)))
