@@ -271,6 +271,38 @@ struct ib_rss_caps {
 	u32 max_rwq_indirection_table_size;
 };
 
+enum {
+	/* The HW supports messages without tag
+	 * sent on QPs attached to a XRQ
+	 */
+	IBV_NO_TAG	     = 1 << 0,
+	/* The HW supports tag matching for EAGER messages when
+	 * the send arrives after the corresponding receive
+	 */
+	IBV_EAGER_EXPECTED   = 1 << 1,
+	/* The HW supports tag matching for EAGER messages when
+	 * the send arrives before the corresponding receive
+	 */
+	IBV_EAGER_UNEXPECTED = 1 << 2,
+	/* The HW supports tag matching for RANDEZVOUS messages when
+	 * the send arrives after the corresponding receive (for RC QPs)
+	 */
+	IBV_RNDV_EXPECTED_RC = 1 << 3,
+	/* The HW supports tag matching for RANDEZVOUS messages when
+	 * the send arrives before the corresponding receive
+	 */
+	IBV_RNDV_UNEXPECTED  = 1 << 5,
+};
+
+struct ib_xrq_caps {
+	uint32_t max_unexpected_tags;
+	uint32_t tag_mask_length;
+	uint32_t header_size;
+	uint32_t app_context_size;
+	uint32_t max_match_list;
+	uint32_t capability_flags;
+};
+
 enum ib_cq_creation_flags {
 	IB_CQ_FLAGS_TIMESTAMP_COMPLETION   = 1 << 0,
 	IB_CQ_FLAGS_IGNORE_OVERRUN	   = 1 << 1,
@@ -330,6 +362,7 @@ struct ib_device_attr {
 	uint64_t		hca_core_clock; /* in KHZ */
 	struct ib_rss_caps	rss_caps;
 	u32			max_wq_type_rq;
+	struct ib_xrq_caps	xrq_caps;
 };
 
 enum ib_mtu {
@@ -485,6 +518,8 @@ static inline struct rdma_hw_stats *rdma_alloc_hw_stats_struct(
 #define RDMA_CORE_CAP_PROT_ROCE         0x00200000
 #define RDMA_CORE_CAP_PROT_IWARP        0x00400000
 #define RDMA_CORE_CAP_PROT_ROCE_UDP_ENCAP 0x00800000
+#define RDMA_CORE_CAP_PROT_RAW_PACKET   0x01000000
+#define RDMA_CORE_CAP_PROT_USNIC        0x02000000
 
 #define RDMA_CORE_PORT_IBA_IB          (RDMA_CORE_CAP_PROT_IB  \
 					| RDMA_CORE_CAP_IB_MAD \
@@ -508,6 +543,10 @@ static inline struct rdma_hw_stats *rdma_alloc_hw_stats_struct(
 #define RDMA_CORE_PORT_INTEL_OPA       (RDMA_CORE_PORT_IBA_IB  \
 					| RDMA_CORE_CAP_OPA_MAD)
 
+#define RDMA_CORE_PORT_RAW_PACKET	(RDMA_CORE_CAP_PROT_RAW_PACKET)
+
+#define RDMA_CORE_PORT_USNIC		(RDMA_CORE_CAP_PROT_USNIC)
+
 struct ib_port_attr {
 	u64			subnet_prefix;
 	enum ib_port_state	state;
@@ -530,6 +569,7 @@ struct ib_port_attr {
 	u8			active_speed;
 	u8                      phys_state;
 	bool			grh_required;
+	u16			qp_type_cap;
 };
 
 enum ib_device_modify_flags {
@@ -913,8 +953,15 @@ enum ib_cq_notify_flags {
 
 enum ib_srq_type {
 	IB_SRQT_BASIC,
-	IB_SRQT_XRC
+	IB_SRQT_XRC,
+	IB_SRQT_TAG_MATCHING,
 };
+
+static inline bool ib_srq_has_cq(enum ib_srq_type srq_type)
+{
+	return srq_type == IB_SRQT_XRC ||
+	       srq_type == IB_SRQT_TAG_MATCHING;
+}
 
 enum ib_srq_attr_mask {
 	IB_SRQ_MAX_WR	= 1 << 0,
@@ -938,6 +985,11 @@ struct ib_srq_init_attr {
 			struct ib_xrcd *xrcd;
 			struct ib_cq   *cq;
 		} xrc;
+
+		struct {
+			struct ib_cq   *cq;
+			u32		list_size;
+		} tag_matching;
 	} ext;
 };
 
@@ -1102,6 +1154,9 @@ enum ib_qp_attr_mask {
 	IB_QP_RESERVED2			= (1<<22),
 	IB_QP_RESERVED3			= (1<<23),
 	IB_QP_RESERVED4			= (1<<24),
+	IB_QP_ATTR_LEGACY_MAX		= (1<<25),
+	IB_QP_RATE_LIMIT		= (1<<25),
+	IB_QP_ATTR_MAX			= (1<<26),
 };
 
 enum ib_qp_state {
@@ -1151,6 +1206,7 @@ struct ib_qp_attr {
 	u8			rnr_retry;
 	u8			alt_port_num;
 	u8			alt_timeout;
+	u32			rate_limit;
 };
 
 enum ib_wr_opcode {
@@ -1445,12 +1501,14 @@ struct ib_srq {
 	enum ib_srq_type	srq_type;
 	atomic_t		usecnt;
 
-	union {
-		struct {
-			struct ib_xrcd *xrcd;
-			struct ib_cq   *cq;
-			u32		srq_num;
-		} xrc;
+	struct {
+		struct ib_cq   *cq;
+		union {
+			struct {
+				struct ib_xrcd *xrcd;
+				u32		srq_num;
+			} xrc;
+		};
 	} ext;
 };
 
@@ -1592,17 +1650,19 @@ enum ib_flow_attr_type {
 /* Supported steering header types */
 enum ib_flow_spec_type {
 	/* L2 headers*/
-	IB_FLOW_SPEC_ETH	= 0x20,
-	IB_FLOW_SPEC_IB		= 0x22,
+	IB_FLOW_SPEC_ETH		= 0x20,
+	IB_FLOW_SPEC_IB			= 0x22,
 	/* L3 header*/
-	IB_FLOW_SPEC_IPV4	= 0x30,
-	IB_FLOW_SPEC_IPV6	= 0x31,
+	IB_FLOW_SPEC_IPV4		= 0x30,
+	IB_FLOW_SPEC_IPV6		= 0x31,
 	/* L4 headers*/
-	IB_FLOW_SPEC_TCP	= 0x40,
-	IB_FLOW_SPEC_UDP	= 0x41
+	IB_FLOW_SPEC_TCP		= 0x40,
+	IB_FLOW_SPEC_UDP		= 0x41,
+	IB_FLOW_SPEC_VXLAN_TUNNEL	= 0x50,
+	IB_FLOW_SPEC_INNER		= 0x100,
 };
 #define IB_FLOW_SPEC_LAYER_MASK	0xF0
-#define IB_FLOW_SPEC_SUPPORT_LAYERS 4
+#define IB_FLOW_SPEC_SUPPORT_LAYERS 8
 
 /* Flow steering rule priority is set according to it's domain.
  * Lower domain value means higher priority.
@@ -1630,7 +1690,7 @@ struct ib_flow_eth_filter {
 };
 
 struct ib_flow_spec_eth {
-	enum ib_flow_spec_type	  type;
+	u32			  type;
 	u16			  size;
 	struct ib_flow_eth_filter val;
 	struct ib_flow_eth_filter mask;
@@ -1644,7 +1704,7 @@ struct ib_flow_ib_filter {
 };
 
 struct ib_flow_spec_ib {
-	enum ib_flow_spec_type	 type;
+	u32			 type;
 	u16			 size;
 	struct ib_flow_ib_filter val;
 	struct ib_flow_ib_filter mask;
@@ -1669,7 +1729,7 @@ struct ib_flow_ipv4_filter {
 };
 
 struct ib_flow_spec_ipv4 {
-	enum ib_flow_spec_type	   type;
+	u32			   type;
 	u16			   size;
 	struct ib_flow_ipv4_filter val;
 	struct ib_flow_ipv4_filter mask;
@@ -1687,7 +1747,7 @@ struct ib_flow_ipv6_filter {
 };
 
 struct ib_flow_spec_ipv6 {
-	enum ib_flow_spec_type	   type;
+	u32			   type;
 	u16			   size;
 	struct ib_flow_ipv6_filter val;
 	struct ib_flow_ipv6_filter mask;
@@ -1701,15 +1761,30 @@ struct ib_flow_tcp_udp_filter {
 };
 
 struct ib_flow_spec_tcp_udp {
-	enum ib_flow_spec_type	      type;
+	u32			      type;
 	u16			      size;
 	struct ib_flow_tcp_udp_filter val;
 	struct ib_flow_tcp_udp_filter mask;
 };
 
+struct ib_flow_tunnel_filter {
+	__be32	tunnel_id;
+	u8	real_sz[0];
+};
+
+/* ib_flow_spec_tunnel describes the Vxlan tunnel
+ * the tunnel_id from val has the vni value
+ */
+struct ib_flow_spec_tunnel {
+	u32			      type;
+	u16			      size;
+	struct ib_flow_tunnel_filter  val;
+	struct ib_flow_tunnel_filter  mask;
+};
+
 union ib_flow_spec {
 	struct {
-		enum ib_flow_spec_type	type;
+		u32			type;
 		u16			size;
 	};
 	struct ib_flow_spec_eth		eth;
@@ -1717,6 +1792,7 @@ union ib_flow_spec {
 	struct ib_flow_spec_ipv4        ipv4;
 	struct ib_flow_spec_tcp_udp	tcp_udp;
 	struct ib_flow_spec_ipv6        ipv6;
+	struct ib_flow_spec_tunnel      tunnel;
 };
 
 struct ib_flow_attr {
@@ -1933,7 +2009,8 @@ struct ib_device {
 					       struct ib_udata *udata);
 	int                        (*dealloc_pd)(struct ib_pd *pd);
 	struct ib_ah *             (*create_ah)(struct ib_pd *pd,
-						struct ib_ah_attr *ah_attr);
+						struct ib_ah_attr *ah_attr,
+						struct ib_udata *udata);
 	int                        (*modify_ah)(struct ib_ah *ah,
 						struct ib_ah_attr *ah_attr);
 	int                        (*query_ah)(struct ib_ah *ah,
@@ -2284,6 +2361,16 @@ static inline bool rdma_ib_or_roce(const struct ib_device *device, u8 port_num)
 {
 	return rdma_protocol_ib(device, port_num) ||
 		rdma_protocol_roce(device, port_num);
+}
+
+static inline bool rdma_protocol_raw_packet(const struct ib_device *device, u8 port_num)
+{
+	return device->port_immutable[port_num].core_cap_flags & RDMA_CORE_CAP_PROT_RAW_PACKET;
+}
+
+static inline bool rdma_protocol_usnic(const struct ib_device *device, u8 port_num)
+{
+	return device->port_immutable[port_num].core_cap_flags & RDMA_CORE_CAP_PROT_USNIC;
 }
 
 /**
@@ -3357,4 +3444,7 @@ int ib_sg_to_pages(struct ib_mr *mr, struct scatterlist *sgl, int sg_nents,
 void ib_drain_rq(struct ib_qp *qp);
 void ib_drain_sq(struct ib_qp *qp);
 void ib_drain_qp(struct ib_qp *qp);
+
+int ib_resolve_eth_dmac(struct ib_device *device,
+			struct ib_ah_attr *ah_attr);
 #endif /* IB_VERBS_H */

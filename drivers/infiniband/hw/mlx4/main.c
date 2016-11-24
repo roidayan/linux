@@ -737,7 +737,7 @@ int __mlx4_ib_query_port(struct ib_device *ibdev, u8 port,
 {
 	int err;
 
-	memset(props, 0, sizeof *props);
+	/* props being zeroed by the caller, avoid zeroing it here */
 
 	err = mlx4_ib_port_link_layer(ibdev, port) == IB_LINK_LAYER_INFINIBAND ?
 		ib_link_query_port(ibdev, port, props, netw_view) :
@@ -1010,7 +1010,7 @@ static int mlx4_ib_modify_port(struct ib_device *ibdev, u8 port, int mask,
 
 	mutex_lock(&mdev->cap_mask_mutex);
 
-	err = mlx4_ib_query_port(ibdev, port, &attr);
+	err = ib_query_port(ibdev, port, &attr);
 	if (err)
 		goto out;
 
@@ -2523,24 +2523,27 @@ static int mlx4_port_immutable(struct ib_device *ibdev, u8 port_num,
 	struct mlx4_ib_dev *mdev = to_mdev(ibdev);
 	int err;
 
-	err = mlx4_ib_query_port(ibdev, port_num, &attr);
-	if (err)
-		return err;
-
-	immutable->pkey_tbl_len = attr.pkey_tbl_len;
-	immutable->gid_tbl_len = attr.gid_tbl_len;
-
 	if (mlx4_ib_port_link_layer(ibdev, port_num) == IB_LINK_LAYER_INFINIBAND) {
 		immutable->core_cap_flags = RDMA_CORE_PORT_IBA_IB;
+		immutable->max_mad_size = IB_MGMT_MAD_SIZE;
 	} else {
 		if (mdev->dev->caps.flags & MLX4_DEV_CAP_FLAG_IBOE)
 			immutable->core_cap_flags = RDMA_CORE_PORT_IBA_ROCE;
 		if (mdev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_ROCE_V1_V2)
 			immutable->core_cap_flags = RDMA_CORE_PORT_IBA_ROCE |
 				RDMA_CORE_PORT_IBA_ROCE_UDP_ENCAP;
+		immutable->core_cap_flags |= RDMA_CORE_PORT_RAW_PACKET;
+		if (immutable->core_cap_flags & (RDMA_CORE_PORT_IBA_ROCE |
+		    RDMA_CORE_PORT_IBA_ROCE_UDP_ENCAP))
+			immutable->max_mad_size = IB_MGMT_MAD_SIZE;
 	}
 
-	immutable->max_mad_size = IB_MGMT_MAD_SIZE;
+	err = ib_query_port(ibdev, port_num, &attr);
+	if (err)
+		return err;
+
+	immutable->pkey_tbl_len = attr.pkey_tbl_len;
+	immutable->gid_tbl_len = attr.gid_tbl_len;
 
 	return 0;
 }
@@ -2814,11 +2817,8 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 			kmalloc(BITS_TO_LONGS(ibdev->steer_qpn_count) *
 				sizeof(long),
 				GFP_KERNEL);
-		if (!ibdev->ib_uc_qpns_bitmap) {
-			dev_err(&dev->persist->pdev->dev,
-				"bit map alloc failed\n");
+		if (!ibdev->ib_uc_qpns_bitmap)
 			goto err_steer_qp_release;
-		}
 
 		bitmap_zero(ibdev->ib_uc_qpns_bitmap, ibdev->steer_qpn_count);
 
@@ -3055,15 +3055,12 @@ static void do_slave_init(struct mlx4_ib_dev *ibdev, int slave, int do_init)
 	first_port = find_first_bit(actv_ports.ports, dev->caps.num_ports);
 
 	dm = kcalloc(ports, sizeof(*dm), GFP_ATOMIC);
-	if (!dm) {
-		pr_err("failed to allocate memory for tunneling qp update\n");
+	if (!dm)
 		return;
-	}
 
 	for (i = 0; i < ports; i++) {
 		dm[i] = kmalloc(sizeof (struct mlx4_ib_demux_work), GFP_ATOMIC);
 		if (!dm[i]) {
-			pr_err("failed to allocate memory for tunneling qp update work struct\n");
 			while (--i >= 0)
 				kfree(dm[i]);
 			goto out;
@@ -3223,8 +3220,6 @@ void mlx4_sched_ib_sl2vl_update_work(struct mlx4_ib_dev *ibdev,
 		ew->port = port;
 		ew->ib_dev = ibdev;
 		queue_work(wq, &ew->work);
-	} else {
-		pr_err("failed to allocate memory for sl2vl update work\n");
 	}
 }
 
@@ -3284,10 +3279,8 @@ static void mlx4_ib_event(struct mlx4_dev *dev, void *ibdev_ptr,
 
 	case MLX4_DEV_EVENT_PORT_MGMT_CHANGE:
 		ew = kmalloc(sizeof *ew, GFP_ATOMIC);
-		if (!ew) {
-			pr_err("failed to allocate memory for events work\n");
+		if (!ew)
 			break;
-		}
 
 		INIT_WORK(&ew->work, handle_port_mgmt_change_event);
 		memcpy(&ew->ib_eqe, eqe, sizeof *eqe);
