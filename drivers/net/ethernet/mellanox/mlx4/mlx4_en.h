@@ -533,6 +533,7 @@ struct mlx4_en_priv {
 	struct mlx4_en_dev *mdev;
 	struct mlx4_en_port_profile *prof;
 	struct net_device *dev;
+	struct net_device_ops dev_ops;
 	unsigned long active_vlans[BITS_TO_LONGS(VLAN_N_VID)];
 	struct mlx4_en_port_state port_state;
 	spinlock_t stats_lock;
