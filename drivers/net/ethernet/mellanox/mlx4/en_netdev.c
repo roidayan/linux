@@ -1126,6 +1126,12 @@ static void mlx4_en_do_uc_filter(struct mlx4_en_priv *priv,
 			}
 			mac = mlx4_mac_to_u64(ha->addr);
 			memcpy(entry->mac, ha->addr, ETH_ALEN);
+
+			if (!mlx4_is_available_mac(mdev->dev, priv->port)) {
+				mlx4_warn(mdev, "Cannot add mac:%pM, no free macs.\n", &mac);
+				break;
+			}
+
 			err = mlx4_register_mac(mdev->dev, priv->port, mac);
 			if (err < 0) {
 				en_err(priv, "Failed registering MAC %pM on port %d: %d\n",
@@ -2807,7 +2813,7 @@ static int mlx4_xdp(struct net_device *dev, struct netdev_xdp *xdp)
 	}
 }
 
-static const struct net_device_ops mlx4_netdev_ops = {
+static const struct net_device_ops mlx4_netdev_base_ops = {
 	.ndo_open		= mlx4_en_open,
 	.ndo_stop		= mlx4_en_close,
 	.ndo_start_xmit		= mlx4_en_xmit,
@@ -2821,43 +2827,6 @@ static const struct net_device_ops mlx4_netdev_ops = {
 	.ndo_tx_timeout		= mlx4_en_tx_timeout,
 	.ndo_vlan_rx_add_vid	= mlx4_en_vlan_rx_add_vid,
 	.ndo_vlan_rx_kill_vid	= mlx4_en_vlan_rx_kill_vid,
-#ifdef CONFIG_NET_POLL_CONTROLLER
-	.ndo_poll_controller	= mlx4_en_netpoll,
-#endif
-	.ndo_set_features	= mlx4_en_set_features,
-	.ndo_fix_features	= mlx4_en_fix_features,
-	.ndo_setup_tc		= __mlx4_en_setup_tc,
-#ifdef CONFIG_RFS_ACCEL
-	.ndo_rx_flow_steer	= mlx4_en_filter_rfs,
-#endif
-	.ndo_get_phys_port_id	= mlx4_en_get_phys_port_id,
-	.ndo_udp_tunnel_add	= mlx4_en_add_vxlan_port,
-	.ndo_udp_tunnel_del	= mlx4_en_del_vxlan_port,
-	.ndo_features_check	= mlx4_en_features_check,
-	.ndo_set_tx_maxrate	= mlx4_en_set_tx_maxrate,
-	.ndo_xdp		= mlx4_xdp,
-};
-
-static const struct net_device_ops mlx4_netdev_ops_master = {
-	.ndo_open		= mlx4_en_open,
-	.ndo_stop		= mlx4_en_close,
-	.ndo_start_xmit		= mlx4_en_xmit,
-	.ndo_select_queue	= mlx4_en_select_queue,
-	.ndo_get_stats64	= mlx4_en_get_stats64,
-	.ndo_set_rx_mode	= mlx4_en_set_rx_mode,
-	.ndo_set_mac_address	= mlx4_en_set_mac,
-	.ndo_validate_addr	= eth_validate_addr,
-	.ndo_change_mtu		= mlx4_en_change_mtu,
-	.ndo_tx_timeout		= mlx4_en_tx_timeout,
-	.ndo_vlan_rx_add_vid	= mlx4_en_vlan_rx_add_vid,
-	.ndo_vlan_rx_kill_vid	= mlx4_en_vlan_rx_kill_vid,
-	.ndo_set_vf_mac		= mlx4_en_set_vf_mac,
-	.ndo_set_vf_vlan	= mlx4_en_set_vf_vlan,
-	.ndo_set_vf_rate	= mlx4_en_set_vf_rate,
-	.ndo_set_vf_spoofchk	= mlx4_en_set_vf_spoofchk,
-	.ndo_set_vf_link_state	= mlx4_en_set_vf_link_state,
-	.ndo_get_vf_stats       = mlx4_en_get_vf_stats,
-	.ndo_get_vf_config	= mlx4_en_get_vf_config,
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller	= mlx4_en_netpoll,
 #endif
@@ -3134,6 +3103,22 @@ void mlx4_en_set_stats_bitmap(struct mlx4_dev *dev,
 	last_i += NUM_XDP_STATS;
 }
 
+static void mlx4_en_set_netdev_ops(struct mlx4_en_priv *priv)
+{
+	if (mlx4_is_master(priv->mdev->dev)) {
+		priv->dev_ops.ndo_set_vf_mac = mlx4_en_set_vf_mac;
+		priv->dev_ops.ndo_set_vf_vlan = mlx4_en_set_vf_vlan;
+		priv->dev_ops.ndo_set_vf_rate = mlx4_en_set_vf_rate;
+		priv->dev_ops.ndo_set_vf_spoofchk = mlx4_en_set_vf_spoofchk;
+		priv->dev_ops.ndo_set_vf_link_state = mlx4_en_set_vf_link_state;
+		priv->dev_ops.ndo_get_vf_stats = mlx4_en_get_vf_stats,
+		priv->dev_ops.ndo_get_vf_config = mlx4_en_get_vf_config;
+		priv->dev_ops.ndo_do_ioctl = mlx4_en_ioctl;
+	}
+
+	priv->dev->netdev_ops = &priv->dev_ops;
+}
+
 int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
 			struct mlx4_en_port_profile *prof)
 {
@@ -3160,6 +3145,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
 	priv = netdev_priv(dev);
 	memset(priv, 0, sizeof(struct mlx4_en_priv));
 	priv->counter_index = MLX4_SINK_COUNTER_INDEX(mdev->dev);
+	priv->dev_ops = mlx4_netdev_base_ops;
 	spin_lock_init(&priv->stats_lock);
 	INIT_WORK(&priv->rx_mode_task, mlx4_en_do_set_rx_mode);
 	INIT_WORK(&priv->watchdog_task, mlx4_en_restart);
@@ -3282,10 +3268,8 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
 	/*
 	 * Initialize netdev entry points
 	 */
-	if (mlx4_is_master(priv->mdev->dev))
-		dev->netdev_ops = &mlx4_netdev_ops_master;
-	else
-		dev->netdev_ops = &mlx4_netdev_ops;
+	mlx4_en_set_netdev_ops(priv);
+
 	dev->watchdog_timeo = MLX4_EN_WATCHDOG_TIMEOUT;
 	netif_set_real_num_tx_queues(dev, priv->tx_ring_num[TX]);
 	netif_set_real_num_rx_queues(dev, priv->rx_ring_num);
