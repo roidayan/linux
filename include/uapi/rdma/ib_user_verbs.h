@@ -276,7 +276,7 @@ struct ib_uverbs_query_port_resp {
 	__u8  active_speed;
 	__u8  phys_state;
 	__u8  link_layer;
-	__u8  reserved[2];
+	__u16 qp_type_cap;
 };
 
 struct ib_uverbs_alloc_pd {
