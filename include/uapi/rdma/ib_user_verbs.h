@@ -37,6 +37,7 @@
 #define IB_USER_VERBS_H
 
 #include <linux/types.h>
+#include <rdma/ib_verbs.h>
 
 /*
  * Increment this value if any changes that break userspace ABI
@@ -93,6 +94,7 @@ enum {
 	IB_USER_VERBS_EX_CMD_QUERY_DEVICE = IB_USER_VERBS_CMD_QUERY_DEVICE,
 	IB_USER_VERBS_EX_CMD_CREATE_CQ = IB_USER_VERBS_CMD_CREATE_CQ,
 	IB_USER_VERBS_EX_CMD_CREATE_QP = IB_USER_VERBS_CMD_CREATE_QP,
+	IB_USER_VERBS_EX_CMD_MODIFY_QP = IB_USER_VERBS_CMD_MODIFY_QP,
 	IB_USER_VERBS_EX_CMD_CREATE_FLOW = IB_USER_VERBS_CMD_THRESHOLD,
 	IB_USER_VERBS_EX_CMD_DESTROY_FLOW,
 	IB_USER_VERBS_EX_CMD_CREATE_WQ,
@@ -235,6 +237,38 @@ struct ib_uverbs_rss_caps {
 	__u32 reserved;
 };
 
+enum {
+	/* The HW supports messages without tag
+	 * sent on QPs attached to a XRQ
+	 */
+	IB_NO_TAG	     = 1 << 0,
+	/* The HW supports tag matching for EAGER messages when
+	 * the send arrives after the corresponding receive
+	 */
+	IB_EAGER_EXPECTED   = 1 << 1,
+	/* The HW supports tag matching for EAGER messages when
+	 * the send arrives before the corresponding receive
+	 */
+	IB_EAGER_UNEXPECTED = 1 << 2,
+	/* The HW supports tag matching for RANDEZVOUS messages when
+	 * the send arrives after the corresponding receive (for RC QPs)
+	 */
+	IB_RNDV_EXPECTED    = 1 << 3,
+	/* The HW supports tag matching for RANDEZVOUS messages when
+	 * the send arrives before the corresponding receive
+	 */
+	IB_RNDV_UNEXPECTED  = 1 << 5,
+};
+
+struct ib_uverbs_tm_caps {
+	__u32 max_unexpected_tags;
+	__u32 tag_mask_length;
+	__u32 header_size;
+	__u32 app_context_size;
+	__u32 max_match_list;
+	__u32 capability_flags;
+};
+
 struct ib_uverbs_ex_query_device_resp {
 	struct ib_uverbs_query_device_resp base;
 	__u32 comp_mask;
@@ -246,6 +280,7 @@ struct ib_uverbs_ex_query_device_resp {
 	struct ib_uverbs_rss_caps rss_caps;
 	__u32  max_wq_type_rq;
 	__u32 reserved;
+	struct ib_uverbs_tm_caps xrq_caps;
 };
 
 struct ib_uverbs_query_port {
@@ -276,7 +311,7 @@ struct ib_uverbs_query_port_resp {
 	__u8  active_speed;
 	__u8  phys_state;
 	__u8  link_layer;
-	__u8  reserved[2];
+	__u16 qp_type_cap;
 };
 
 struct ib_uverbs_alloc_pd {
@@ -545,6 +580,14 @@ enum {
 	IB_UVERBS_CREATE_QP_SUP_COMP_MASK = IB_UVERBS_CREATE_QP_MASK_IND_TABLE,
 };
 
+enum {
+	IB_USER_LEGACY_LAST_QP_ATTR_MASK = IB_QP_DEST_QPN
+};
+
+enum {
+	IB_USER_LAST_QP_ATTR_MASK = IB_QP_RATE_LIMIT
+};
+
 struct ib_uverbs_ex_create_qp {
 	__u64 user_handle;
 	__u32 pd_handle;
@@ -684,7 +727,18 @@ struct ib_uverbs_modify_qp {
 	__u64 driver_data[0];
 };
 
+struct ib_uverbs_ex_modify_qp {
+	struct ib_uverbs_modify_qp base;
+	__u32	rate_limit;
+	__u32	reserved;
+};
+
 struct ib_uverbs_modify_qp_resp {
+};
+
+struct ib_uverbs_ex_modify_qp_resp {
+	__u32  comp_mask;
+	__u32  response_length;
 };
 
 struct ib_uverbs_destroy_qp {
@@ -908,6 +962,23 @@ struct ib_uverbs_flow_spec_ipv6 {
 	struct ib_uverbs_flow_ipv6_filter mask;
 };
 
+struct ib_uverbs_flow_tunnel_filter {
+	__be32 tunnel_id;
+};
+
+struct ib_uverbs_flow_spec_tunnel {
+	union {
+		struct ib_uverbs_flow_spec_hdr hdr;
+		struct {
+			__u32 type;
+			__u16 size;
+			__u16 reserved;
+		};
+	};
+	struct ib_uverbs_flow_tunnel_filter val;
+	struct ib_uverbs_flow_tunnel_filter mask;
+};
+
 struct ib_uverbs_flow_attr {
 	__u32 type;
 	__u16 size;
@@ -957,7 +1028,7 @@ struct ib_uverbs_create_xsrq {
 	__u32 max_wr;
 	__u32 max_sge;
 	__u32 srq_limit;
-	__u32 reserved;
+	__u32 tm_list_size;
 	__u32 xrcd_handle;
 	__u32 cq_handle;
 	__u64 driver_data[0];

@@ -330,7 +330,7 @@ int usnic_ib_query_port(struct ib_device *ibdev, u8 port,
 
 	mutex_lock(&us_ibdev->usdev_lock);
 	__ethtool_get_link_ksettings(us_ibdev->netdev, &cmd);
-	memset(props, 0, sizeof(*props));
+	/* props being zeroed by the caller, avoid zeroing it here */
 
 	props->lid = 0;
 	props->lmc = 1;
@@ -738,7 +738,9 @@ int usnic_ib_mmap(struct ib_ucontext *context,
 
 /* In ib callbacks section -  Start of stub funcs */
 struct ib_ah *usnic_ib_create_ah(struct ib_pd *pd,
-					struct ib_ah_attr *ah_attr)
+				 struct ib_ah_attr *ah_attr,
+				 struct ib_udata *udata)
+
 {
 	usnic_dbg("\n");
 	return ERR_PTR(-EPERM);
