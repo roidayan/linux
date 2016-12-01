@@ -3124,8 +3124,10 @@ static int kern_spec_to_ib_spec(struct ib_uverbs_flow_spec *kern_spec,
 	kern_spec_val = (void *)kern_spec +
 		sizeof(struct ib_uverbs_flow_spec_hdr);
 	kern_spec_mask = kern_spec_val + kern_filter_sz;
+	if (ib_spec->type == (IB_FLOW_SPEC_INNER | IB_FLOW_SPEC_VXLAN_TUNNEL))
+		return -EINVAL;
 
-	switch (ib_spec->type) {
+	switch (ib_spec->type & ~IB_FLOW_SPEC_INNER) {
 	case IB_FLOW_SPEC_ETH:
 		ib_filter_sz = offsetof(struct ib_flow_eth_filter, real_sz);
 		actual_filter_sz = spec_filter_size(kern_spec_mask,
@@ -3174,6 +3176,21 @@ static int kern_spec_to_ib_spec(struct ib_uverbs_flow_spec *kern_spec,
 		ib_spec->size = sizeof(struct ib_flow_spec_tcp_udp);
 		memcpy(&ib_spec->tcp_udp.val, kern_spec_val, actual_filter_sz);
 		memcpy(&ib_spec->tcp_udp.mask, kern_spec_mask, actual_filter_sz);
+		break;
+	case IB_FLOW_SPEC_VXLAN_TUNNEL:
+		ib_filter_sz = offsetof(struct ib_flow_tunnel_filter, real_sz);
+		actual_filter_sz = spec_filter_size(kern_spec_mask,
+						    kern_filter_sz,
+						    ib_filter_sz);
+		if (actual_filter_sz <= 0)
+			return -EINVAL;
+		ib_spec->tunnel.size = sizeof(struct ib_flow_spec_tunnel);
+		memcpy(&ib_spec->tunnel.val, kern_spec_val, actual_filter_sz);
+		memcpy(&ib_spec->tunnel.mask, kern_spec_mask, actual_filter_sz);
+
+		if ((ntohl(ib_spec->tunnel.mask.tunnel_id)) >= BIT(24) ||
+		    (ntohl(ib_spec->tunnel.val.tunnel_id)) >= BIT(24))
+			return -EINVAL;
 		break;
 	default:
 		return -EINVAL;
