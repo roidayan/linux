@@ -485,6 +485,8 @@ static inline struct rdma_hw_stats *rdma_alloc_hw_stats_struct(
 #define RDMA_CORE_CAP_PROT_ROCE         0x00200000
 #define RDMA_CORE_CAP_PROT_IWARP        0x00400000
 #define RDMA_CORE_CAP_PROT_ROCE_UDP_ENCAP 0x00800000
+#define RDMA_CORE_CAP_PROT_RAW_PACKET   0x01000000
+#define RDMA_CORE_CAP_PROT_USNIC        0x02000000
 
 #define RDMA_CORE_PORT_IBA_IB          (RDMA_CORE_CAP_PROT_IB  \
 					| RDMA_CORE_CAP_IB_MAD \
@@ -508,6 +510,10 @@ static inline struct rdma_hw_stats *rdma_alloc_hw_stats_struct(
 #define RDMA_CORE_PORT_INTEL_OPA       (RDMA_CORE_PORT_IBA_IB  \
 					| RDMA_CORE_CAP_OPA_MAD)
 
+#define RDMA_CORE_PORT_RAW_PACKET	(RDMA_CORE_CAP_PROT_RAW_PACKET)
+
+#define RDMA_CORE_PORT_USNIC		(RDMA_CORE_CAP_PROT_USNIC)
+
 struct ib_port_attr {
 	u64			subnet_prefix;
 	enum ib_port_state	state;
@@ -530,6 +536,7 @@ struct ib_port_attr {
 	u8			active_speed;
 	u8                      phys_state;
 	bool			grh_required;
+	u16			qp_type_cap;
 };
 
 enum ib_device_modify_flags {
@@ -1592,17 +1599,19 @@ enum ib_flow_attr_type {
 /* Supported steering header types */
 enum ib_flow_spec_type {
 	/* L2 headers*/
-	IB_FLOW_SPEC_ETH	= 0x20,
-	IB_FLOW_SPEC_IB		= 0x22,
+	IB_FLOW_SPEC_ETH		= 0x20,
+	IB_FLOW_SPEC_IB			= 0x22,
 	/* L3 header*/
-	IB_FLOW_SPEC_IPV4	= 0x30,
-	IB_FLOW_SPEC_IPV6	= 0x31,
+	IB_FLOW_SPEC_IPV4		= 0x30,
+	IB_FLOW_SPEC_IPV6		= 0x31,
 	/* L4 headers*/
-	IB_FLOW_SPEC_TCP	= 0x40,
-	IB_FLOW_SPEC_UDP	= 0x41
+	IB_FLOW_SPEC_TCP		= 0x40,
+	IB_FLOW_SPEC_UDP		= 0x41,
+	IB_FLOW_SPEC_VXLAN_TUNNEL	= 0x50,
+	IB_FLOW_SPEC_INNER		= 0x100,
 };
 #define IB_FLOW_SPEC_LAYER_MASK	0xF0
-#define IB_FLOW_SPEC_SUPPORT_LAYERS 4
+#define IB_FLOW_SPEC_SUPPORT_LAYERS 8
 
 /* Flow steering rule priority is set according to it's domain.
  * Lower domain value means higher priority.
@@ -1630,7 +1639,7 @@ struct ib_flow_eth_filter {
 };
 
 struct ib_flow_spec_eth {
-	enum ib_flow_spec_type	  type;
+	u32			  type;
 	u16			  size;
 	struct ib_flow_eth_filter val;
 	struct ib_flow_eth_filter mask;
@@ -1644,7 +1653,7 @@ struct ib_flow_ib_filter {
 };
 
 struct ib_flow_spec_ib {
-	enum ib_flow_spec_type	 type;
+	u32			 type;
 	u16			 size;
 	struct ib_flow_ib_filter val;
 	struct ib_flow_ib_filter mask;
@@ -1669,7 +1678,7 @@ struct ib_flow_ipv4_filter {
 };
 
 struct ib_flow_spec_ipv4 {
-	enum ib_flow_spec_type	   type;
+	u32			   type;
 	u16			   size;
 	struct ib_flow_ipv4_filter val;
 	struct ib_flow_ipv4_filter mask;
@@ -1687,7 +1696,7 @@ struct ib_flow_ipv6_filter {
 };
 
 struct ib_flow_spec_ipv6 {
-	enum ib_flow_spec_type	   type;
+	u32			   type;
 	u16			   size;
 	struct ib_flow_ipv6_filter val;
 	struct ib_flow_ipv6_filter mask;
@@ -1701,15 +1710,30 @@ struct ib_flow_tcp_udp_filter {
 };
 
 struct ib_flow_spec_tcp_udp {
-	enum ib_flow_spec_type	      type;
+	u32			      type;
 	u16			      size;
 	struct ib_flow_tcp_udp_filter val;
 	struct ib_flow_tcp_udp_filter mask;
 };
 
+struct ib_flow_tunnel_filter {
+	__be32	tunnel_id;
+	u8	real_sz[0];
+};
+
+/* ib_flow_spec_tunnel describes the Vxlan tunnel
+ * the tunnel_id from val has the vni value
+ */
+struct ib_flow_spec_tunnel {
+	u32			      type;
+	u16			      size;
+	struct ib_flow_tunnel_filter  val;
+	struct ib_flow_tunnel_filter  mask;
+};
+
 union ib_flow_spec {
 	struct {
-		enum ib_flow_spec_type	type;
+		u32			type;
 		u16			size;
 	};
 	struct ib_flow_spec_eth		eth;
@@ -1717,6 +1741,7 @@ union ib_flow_spec {
 	struct ib_flow_spec_ipv4        ipv4;
 	struct ib_flow_spec_tcp_udp	tcp_udp;
 	struct ib_flow_spec_ipv6        ipv6;
+	struct ib_flow_spec_tunnel      tunnel;
 };
 
 struct ib_flow_attr {
@@ -1933,7 +1958,8 @@ struct ib_device {
 					       struct ib_udata *udata);
 	int                        (*dealloc_pd)(struct ib_pd *pd);
 	struct ib_ah *             (*create_ah)(struct ib_pd *pd,
-						struct ib_ah_attr *ah_attr);
+						struct ib_ah_attr *ah_attr,
+						struct ib_udata *udata);
 	int                        (*modify_ah)(struct ib_ah *ah,
 						struct ib_ah_attr *ah_attr);
 	int                        (*query_ah)(struct ib_ah *ah,
@@ -2284,6 +2310,16 @@ static inline bool rdma_ib_or_roce(const struct ib_device *device, u8 port_num)
 {
 	return rdma_protocol_ib(device, port_num) ||
 		rdma_protocol_roce(device, port_num);
+}
+
+static inline bool rdma_protocol_raw_packet(const struct ib_device *device, u8 port_num)
+{
+	return device->port_immutable[port_num].core_cap_flags & RDMA_CORE_CAP_PROT_RAW_PACKET;
+}
+
+static inline bool rdma_protocol_usnic(const struct ib_device *device, u8 port_num)
+{
+	return device->port_immutable[port_num].core_cap_flags & RDMA_CORE_CAP_PROT_USNIC;
 }
 
 /**
@@ -3357,4 +3393,7 @@ int ib_sg_to_pages(struct ib_mr *mr, struct scatterlist *sgl, int sg_nents,
 void ib_drain_rq(struct ib_qp *qp);
 void ib_drain_sq(struct ib_qp *qp);
 void ib_drain_qp(struct ib_qp *qp);
+
+int ib_resolve_eth_dmac(struct ib_device *device,
+			struct ib_ah_attr *ah_attr);
 #endif /* IB_VERBS_H */
