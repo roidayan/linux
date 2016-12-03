@@ -1126,6 +1126,12 @@ static void mlx4_en_do_uc_filter(struct mlx4_en_priv *priv,
 			}
 			mac = mlx4_mac_to_u64(ha->addr);
 			memcpy(entry->mac, ha->addr, ETH_ALEN);
+
+			if (!mlx4_is_available_mac(mdev->dev, priv->port)) {
+				mlx4_warn(mdev, "Cannot add mac:%pM, no free macs.\n", &mac);
+				break;
+			}
+
 			err = mlx4_register_mac(mdev->dev, priv->port, mac);
 			if (err < 0) {
 				en_err(priv, "Failed registering MAC %pM on port %d: %d\n",
@@ -1809,8 +1815,12 @@ void mlx4_en_stop_port(struct net_device *dev, int detach)
 
 	netif_tx_disable(dev);
 
+	spin_lock_bh(&priv->stats_lock);
+	mlx4_en_fold_software_stats(dev);
 	/* Set port as not active */
 	priv->port_up = false;
+	spin_unlock_bh(&priv->stats_lock);
+
 	priv->counter_index = MLX4_SINK_COUNTER_INDEX(mdev->dev);
 
 	/* Promsicuous mode */
