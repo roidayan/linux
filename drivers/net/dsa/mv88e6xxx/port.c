@@ -304,6 +304,30 @@ int mv88e6390x_port_set_speed(struct mv88e6xxx_chip *chip, int port, int speed)
 	return mv88e6xxx_port_set_speed(chip, port, speed, true, true);
 }
 
+/* Offset 0x02: Pause Control
+ *
+ * Do not limit the period of time that this port can be paused for by
+ * the remote end or the period of time that this port can pause the
+ * remote end.
+ */
+int mv88e6097_port_pause_config(struct mv88e6xxx_chip *chip, int port)
+{
+	return mv88e6xxx_port_write(chip, port, PORT_PAUSE_CTRL, 0x0000);
+}
+
+int mv88e6390_port_pause_config(struct mv88e6xxx_chip *chip, int port)
+{
+	int err;
+
+	err = mv88e6xxx_port_write(chip, port, PORT_PAUSE_CTRL,
+				   PORT_FLOW_CTRL_LIMIT_IN | 0);
+	if (err)
+		return err;
+
+	return mv88e6xxx_port_write(chip, port, PORT_PAUSE_CTRL,
+				    PORT_FLOW_CTRL_LIMIT_OUT | 0);
+}
+
 /* Offset 0x04: Port Control Register */
 
 static const char * const mv88e6xxx_port_state_names[] = {
@@ -333,6 +357,116 @@ int mv88e6xxx_port_set_state(struct mv88e6xxx_chip *chip, int port, u8 state)
 		   mv88e6xxx_port_state_names[state]);
 
 	return 0;
+}
+
+int mv88e6xxx_port_set_egress_mode(struct mv88e6xxx_chip *chip, int port,
+				   u16 mode)
+{
+	int err;
+	u16 reg;
+
+	err = mv88e6xxx_port_read(chip, port, PORT_CONTROL, &reg);
+	if (err)
+		return err;
+
+	reg &= ~PORT_CONTROL_EGRESS_MASK;
+	reg |= mode;
+
+	return mv88e6xxx_port_write(chip, port, PORT_CONTROL, reg);
+}
+
+int mv88e6085_port_set_frame_mode(struct mv88e6xxx_chip *chip, int port,
+				  enum mv88e6xxx_frame_mode mode)
+{
+	int err;
+	u16 reg;
+
+	err = mv88e6xxx_port_read(chip, port, PORT_CONTROL, &reg);
+	if (err)
+		return err;
+
+	reg &= ~PORT_CONTROL_FRAME_MODE_DSA;
+
+	switch (mode) {
+	case MV88E6XXX_FRAME_MODE_NORMAL:
+		reg |= PORT_CONTROL_FRAME_MODE_NORMAL;
+		break;
+	case MV88E6XXX_FRAME_MODE_DSA:
+		reg |= PORT_CONTROL_FRAME_MODE_DSA;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return mv88e6xxx_port_write(chip, port, PORT_CONTROL, reg);
+}
+
+int mv88e6351_port_set_frame_mode(struct mv88e6xxx_chip *chip, int port,
+				  enum mv88e6xxx_frame_mode mode)
+{
+	int err;
+	u16 reg;
+
+	err = mv88e6xxx_port_read(chip, port, PORT_CONTROL, &reg);
+	if (err)
+		return err;
+
+	reg &= ~PORT_CONTROL_FRAME_MASK;
+
+	switch (mode) {
+	case MV88E6XXX_FRAME_MODE_NORMAL:
+		reg |= PORT_CONTROL_FRAME_MODE_NORMAL;
+		break;
+	case MV88E6XXX_FRAME_MODE_DSA:
+		reg |= PORT_CONTROL_FRAME_MODE_DSA;
+		break;
+	case MV88E6XXX_FRAME_MODE_PROVIDER:
+		reg |= PORT_CONTROL_FRAME_MODE_PROVIDER;
+		break;
+	case MV88E6XXX_FRAME_MODE_ETHERTYPE:
+		reg |= PORT_CONTROL_FRAME_ETHER_TYPE_DSA;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return mv88e6xxx_port_write(chip, port, PORT_CONTROL, reg);
+}
+
+int mv88e6085_port_set_egress_unknowns(struct mv88e6xxx_chip *chip, int port,
+				       bool on)
+{
+	int err;
+	u16 reg;
+
+	err = mv88e6xxx_port_read(chip, port, PORT_CONTROL, &reg);
+	if (err)
+		return err;
+
+	if (on)
+		reg |= PORT_CONTROL_FORWARD_UNKNOWN;
+	else
+		reg &= ~PORT_CONTROL_FORWARD_UNKNOWN;
+
+	return mv88e6xxx_port_write(chip, port, PORT_CONTROL, reg);
+}
+
+int mv88e6351_port_set_egress_unknowns(struct mv88e6xxx_chip *chip, int port,
+				       bool on)
+{
+	int err;
+	u16 reg;
+
+	err = mv88e6xxx_port_read(chip, port, PORT_CONTROL, &reg);
+	if (err)
+		return err;
+
+	if (on)
+		reg |= PORT_CONTROL_EGRESS_ALL_UNKNOWN_DA;
+	else
+		reg &= ~PORT_CONTROL_EGRESS_ALL_UNKNOWN_DA;
+
+	return mv88e6xxx_port_write(chip, port, PORT_CONTROL, reg);
 }
 
 /* Offset 0x05: Port Control 1 */
@@ -493,6 +627,103 @@ int mv88e6xxx_port_set_8021q_mode(struct mv88e6xxx_chip *chip, int port,
 
 	netdev_dbg(chip->ds->ports[port].netdev, "802.1QMode set to %s\n",
 		   mv88e6xxx_port_8021q_mode_names[mode]);
+
+	return 0;
+}
+
+int mv88e6165_port_jumbo_config(struct mv88e6xxx_chip *chip, int port)
+{
+	u16 reg;
+	int err;
+
+	err = mv88e6xxx_port_read(chip, port, PORT_CONTROL_2, &reg);
+	if (err)
+		return err;
+
+	reg |= PORT_CONTROL_2_JUMBO_10240;
+
+	return mv88e6xxx_port_write(chip, port, PORT_CONTROL_2, reg);
+}
+
+/* Offset 0x09: Port Rate Control */
+
+int mv88e6095_port_egress_rate_limiting(struct mv88e6xxx_chip *chip, int port)
+{
+	return mv88e6xxx_port_write(chip, port, PORT_RATE_CONTROL, 0x0000);
+}
+
+int mv88e6097_port_egress_rate_limiting(struct mv88e6xxx_chip *chip, int port)
+{
+	return mv88e6xxx_port_write(chip, port, PORT_RATE_CONTROL, 0x0001);
+}
+
+/* Offset 0x0f: Port Ether type */
+
+int mv88e6351_port_set_ether_type(struct mv88e6xxx_chip *chip, int port,
+				  u16 etype)
+{
+	return mv88e6xxx_port_write(chip, port, PORT_ETH_TYPE, etype);
+}
+
+/* Offset 0x18: Port IEEE Priority Remapping Registers [0-3]
+ * Offset 0x19: Port IEEE Priority Remapping Registers [4-7]
+ */
+
+int mv88e6095_port_tag_remap(struct mv88e6xxx_chip *chip, int port)
+{
+	int err;
+
+	/* Use a direct priority mapping for all IEEE tagged frames */
+	err = mv88e6xxx_port_write(chip, port, PORT_TAG_REGMAP_0123, 0x3210);
+	if (err)
+		return err;
+
+	return mv88e6xxx_port_write(chip, port, PORT_TAG_REGMAP_4567, 0x7654);
+}
+
+static int mv88e6xxx_port_ieeepmt_write(struct mv88e6xxx_chip *chip,
+					int port, u16 table,
+					u8 pointer, u16 data)
+{
+	u16 reg;
+
+	reg = PORT_IEEE_PRIO_MAP_TABLE_UPDATE |
+		table |
+		(pointer << PORT_IEEE_PRIO_MAP_TABLE_POINTER_SHIFT) |
+		data;
+
+	return mv88e6xxx_port_write(chip, port, PORT_IEEE_PRIO_MAP_TABLE, reg);
+}
+
+int mv88e6390_port_tag_remap(struct mv88e6xxx_chip *chip, int port)
+{
+	int err, i;
+
+	for (i = 0; i <= 7; i++) {
+		err = mv88e6xxx_port_ieeepmt_write(
+			chip, port, PORT_IEEE_PRIO_MAP_TABLE_INGRESS_PCP,
+			i, (i | i << 4));
+		if (err)
+			return err;
+
+		err = mv88e6xxx_port_ieeepmt_write(
+			chip, port, PORT_IEEE_PRIO_MAP_TABLE_EGRESS_GREEN_PCP,
+			i, i);
+		if (err)
+			return err;
+
+		err = mv88e6xxx_port_ieeepmt_write(
+			chip, port, PORT_IEEE_PRIO_MAP_TABLE_EGRESS_YELLOW_PCP,
+			i, i);
+		if (err)
+			return err;
+
+		err = mv88e6xxx_port_ieeepmt_write(
+			chip, port, PORT_IEEE_PRIO_MAP_TABLE_EGRESS_AVB_PCP,
+			i, i);
+		if (err)
+			return err;
+	}
 
 	return 0;
 }
