@@ -199,6 +199,8 @@ int ipoib_vlan_delete(struct net_device *pdev, unsigned short pkey)
 			unregister_netdevice(priv->dev);
 			list_del(&priv->list);
 			dev = priv->dev;
+			/*interface in the middle of destruction*/
+			set_bit(IPOIB_FLAG_GOING_DOWN, &priv->flags);
 			break;
 		}
 	}
