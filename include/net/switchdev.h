@@ -207,7 +207,8 @@ void switchdev_port_fwd_mark_set(struct net_device *dev,
 				 bool joining);
 
 bool switchdev_port_same_parent_id(struct net_device *a,
-				   struct net_device *b);
+				   struct net_device *b,
+				   u32 flags);
 #else
 
 static inline void switchdev_deferred_process(void)
@@ -308,7 +309,8 @@ static inline int switchdev_port_fdb_dump(struct sk_buff *skb,
 }
 
 static inline bool switchdev_port_same_parent_id(struct net_device *a,
-						 struct net_device *b)
+						 struct net_device *b,
+						 u32 flags)
 {
 	return false;
 }
