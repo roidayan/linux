@@ -183,7 +183,8 @@ void switchdev_port_fwd_mark_set(struct net_device *dev,
 				 bool joining);
 
 bool switchdev_port_same_parent_id(struct net_device *a,
-				   struct net_device *b);
+				   struct net_device *b,
+				   u32 flags);
 
 #define SWITCHDEV_SET_OPS(netdev, ops) ((netdev)->switchdev_ops = (ops))
 #else
@@ -234,7 +235,8 @@ static inline int call_switchdev_notifiers(unsigned long val,
 }
 
 static inline bool switchdev_port_same_parent_id(struct net_device *a,
-						 struct net_device *b)
+						 struct net_device *b,
+						 u32 flags)
 {
 	return false;
 }
