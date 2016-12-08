@@ -299,6 +299,9 @@ static void mlx5e_update_pcie_counters(struct mlx5e_priv *priv)
 	void *out;
 	u32 *in;
 
+	if (!MLX5_MCAM_FEATURE_CAP(mdev, MLX5_MCAM_MPCNT_PERF_GROUP_BIT))
+		return;
+
 	in = mlx5_vzalloc(sz);
 	if (!in)
 		return;

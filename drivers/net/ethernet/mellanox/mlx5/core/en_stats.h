@@ -375,7 +375,9 @@ static const struct counter_desc sq_stats_desc[] = {
 #define NUM_PPORT_802_3_COUNTERS	ARRAY_SIZE(pport_802_3_stats_desc)
 #define NUM_PPORT_2863_COUNTERS		ARRAY_SIZE(pport_2863_stats_desc)
 #define NUM_PPORT_2819_COUNTERS		ARRAY_SIZE(pport_2819_stats_desc)
-#define NUM_PCIE_PERF_COUNTERS		ARRAY_SIZE(pcie_perf_stats_desc)
+#define NUM_PCIE_PERF_COUNTERS(priv) \
+	(ARRAY_SIZE(pcie_perf_stats_desc) * \
+	 MLX5_MCAM_FEATURE_CAP(priv->mdev, MLX5_MCAM_MPCNT_PERF_GROUP_BIT))
 #define NUM_PPORT_PER_PRIO_TRAFFIC_COUNTERS \
 	ARRAY_SIZE(pport_per_prio_traffic_stats_desc)
 #define NUM_PPORT_PER_PRIO_PFC_COUNTERS \
@@ -385,7 +387,7 @@ static const struct counter_desc sq_stats_desc[] = {
 					 NUM_PPORT_2819_COUNTERS  + \
 					 NUM_PPORT_PER_PRIO_TRAFFIC_COUNTERS * \
 					 NUM_PPORT_PRIO)
-#define NUM_PCIE_COUNTERS		NUM_PCIE_PERF_COUNTERS
+#define NUM_PCIE_COUNTERS(priv)		NUM_PCIE_PERF_COUNTERS(priv)
 #define NUM_RQ_STATS			ARRAY_SIZE(rq_stats_desc)
 #define NUM_SQ_STATS			ARRAY_SIZE(sq_stats_desc)
 
