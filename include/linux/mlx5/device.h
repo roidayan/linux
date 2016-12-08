@@ -1057,6 +1057,18 @@ enum mlx5_mcam_feature_groups {
 #define MLX5_CAP_QOS(mdev, cap)\
 	MLX5_GET(qos_cap, mdev->hca_caps_cur[MLX5_CAP_QOS], cap)
 
+#define MLX5_PCAM_ADDR(mdev, fld) \
+	(unsigned long *)MLX5_ADDR_OF(pcam_reg, mdev->caps.pcam, feature_cap_mask)
+
+#define MLX5_PCAM_FEATURE_CAP(mdev, bit) \
+	test_bit(bit, MLX5_PCAM_ADDR(mdev, feature_cap_mask))
+
+#define MLX5_MCAM_ADDR(mdev, fld) \
+	(unsigned long *)MLX5_ADDR_OF(mcam_reg, mdev->caps.mcam, mng_feature_cap_mask)
+
+#define MLX5_MCAM_FEATURE_CAP(mdev, bit) \
+	test_bit(bit, MLX5_MCAM_ADDR(mdev, mng_feature_cap_mask))
+
 enum {
 	MLX5_CMD_STAT_OK			= 0x0,
 	MLX5_CMD_STAT_INT_ERR			= 0x1,
