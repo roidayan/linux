@@ -526,6 +526,8 @@ ssize_t ib_uverbs_query_port(struct ib_uverbs_file *file,
 	resp.phys_state      = attr.phys_state;
 	resp.link_layer      = rdma_port_get_link_layer(ib_dev,
 							cmd.port_num);
+	/* don't expose to user-space QPTs they don't know */
+	resp.qp_type_cap = attr.qp_type_cap & ~(BIT(IB_QPT_SMI) | BIT(IB_QPT_GSI));
 
 	if (copy_to_user((void __user *) (unsigned long) cmd.response,
 			 &resp, sizeof resp))
@@ -2402,9 +2404,11 @@ ssize_t ib_uverbs_modify_qp(struct ib_uverbs_file *file,
 	attr->alt_ah_attr.port_num 	    = cmd.alt_dest.port_num;
 
 	if (qp->real_qp == qp) {
-		ret = ib_resolve_eth_dmac(qp, attr, &cmd.attr_mask);
-		if (ret)
-			goto release_qp;
+		if (cmd.attr_mask & IB_QP_AV) {
+			ret = ib_resolve_eth_dmac(qp->device, &attr->ah_attr);
+			if (ret)
+				goto release_qp;
+		}
 		ret = qp->device->modify_qp(qp, attr,
 			modify_qp_mask(qp->qp_type, cmd.attr_mask), &udata);
 	} else {
@@ -2875,12 +2879,17 @@ ssize_t ib_uverbs_create_ah(struct ib_uverbs_file *file,
 	struct ib_ah			*ah;
 	struct ib_ah_attr		attr;
 	int ret;
+	struct ib_udata                   udata;
 
 	if (out_len < sizeof resp)
 		return -ENOSPC;
 
 	if (copy_from_user(&cmd, buf, sizeof cmd))
 		return -EFAULT;
+
+	INIT_UDATA(&udata, buf + sizeof(cmd),
+		   (unsigned long)cmd.response + sizeof(resp),
+		   in_len - sizeof(cmd), out_len - sizeof(resp));
 
 	uobj = kmalloc(sizeof *uobj, GFP_KERNEL);
 	if (!uobj)
@@ -2908,12 +2917,16 @@ ssize_t ib_uverbs_create_ah(struct ib_uverbs_file *file,
 	memset(&attr.dmac, 0, sizeof(attr.dmac));
 	memcpy(attr.grh.dgid.raw, cmd.attr.grh.dgid, 16);
 
-	ah = ib_create_ah(pd, &attr);
+	ah = pd->device->create_ah(pd, &attr, &udata);
+
 	if (IS_ERR(ah)) {
 		ret = PTR_ERR(ah);
 		goto err_put;
 	}
 
+	ah->device  = pd->device;
+	ah->pd      = pd;
+	atomic_inc(&pd->usecnt);
 	ah->uobject  = uobj;
 	uobj->object = ah;
 
@@ -3124,8 +3137,10 @@ static int kern_spec_to_ib_spec(struct ib_uverbs_flow_spec *kern_spec,
 	kern_spec_val = (void *)kern_spec +
 		sizeof(struct ib_uverbs_flow_spec_hdr);
 	kern_spec_mask = kern_spec_val + kern_filter_sz;
+	if (ib_spec->type == (IB_FLOW_SPEC_INNER | IB_FLOW_SPEC_VXLAN_TUNNEL))
+		return -EINVAL;
 
-	switch (ib_spec->type) {
+	switch (ib_spec->type & ~IB_FLOW_SPEC_INNER) {
 	case IB_FLOW_SPEC_ETH:
 		ib_filter_sz = offsetof(struct ib_flow_eth_filter, real_sz);
 		actual_filter_sz = spec_filter_size(kern_spec_mask,
@@ -3174,6 +3189,21 @@ static int kern_spec_to_ib_spec(struct ib_uverbs_flow_spec *kern_spec,
 		ib_spec->size = sizeof(struct ib_flow_spec_tcp_udp);
 		memcpy(&ib_spec->tcp_udp.val, kern_spec_val, actual_filter_sz);
 		memcpy(&ib_spec->tcp_udp.mask, kern_spec_mask, actual_filter_sz);
+		break;
+	case IB_FLOW_SPEC_VXLAN_TUNNEL:
+		ib_filter_sz = offsetof(struct ib_flow_tunnel_filter, real_sz);
+		actual_filter_sz = spec_filter_size(kern_spec_mask,
+						    kern_filter_sz,
+						    ib_filter_sz);
+		if (actual_filter_sz <= 0)
+			return -EINVAL;
+		ib_spec->tunnel.size = sizeof(struct ib_flow_spec_tunnel);
+		memcpy(&ib_spec->tunnel.val, kern_spec_val, actual_filter_sz);
+		memcpy(&ib_spec->tunnel.mask, kern_spec_mask, actual_filter_sz);
+
+		if ((ntohl(ib_spec->tunnel.mask.tunnel_id)) >= BIT(24) ||
+		    (ntohl(ib_spec->tunnel.val.tunnel_id)) >= BIT(24))
+			return -EINVAL;
 		break;
 	default:
 		return -EINVAL;

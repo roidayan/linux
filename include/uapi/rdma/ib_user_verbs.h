@@ -276,7 +276,7 @@ struct ib_uverbs_query_port_resp {
 	__u8  active_speed;
 	__u8  phys_state;
 	__u8  link_layer;
-	__u8  reserved[2];
+	__u16 qp_type_cap;
 };
 
 struct ib_uverbs_alloc_pd {
@@ -906,6 +906,23 @@ struct ib_uverbs_flow_spec_ipv6 {
 	};
 	struct ib_uverbs_flow_ipv6_filter val;
 	struct ib_uverbs_flow_ipv6_filter mask;
+};
+
+struct ib_uverbs_flow_tunnel_filter {
+	__be32 tunnel_id;
+};
+
+struct ib_uverbs_flow_spec_tunnel {
+	union {
+		struct ib_uverbs_flow_spec_hdr hdr;
+		struct {
+			__u32 type;
+			__u16 size;
+			__u16 reserved;
+		};
+	};
+	struct ib_uverbs_flow_tunnel_filter val;
+	struct ib_uverbs_flow_tunnel_filter mask;
 };
 
 struct ib_uverbs_flow_attr {
