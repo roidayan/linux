@@ -1783,56 +1783,6 @@ struct mlx5_ifc_pcie_perf_cntrs_grp_data_layout_bits {
 	u8         reserved_at_140[0x680];
 };
 
-struct mlx5_ifc_pcie_tas_cntrs_grp_data_layout_bits {
-	u8         life_time_counter_high[0x20];
-
-	u8         life_time_counter_low[0x20];
-
-	u8         time_to_boot_image_start[0x20];
-
-	u8         time_to_link_image[0x20];
-
-	u8         calibration_time[0x20];
-
-	u8         time_to_first_perst[0x20];
-
-	u8         time_to_detect_state[0x20];
-
-	u8         time_to_l0[0x20];
-
-	u8         time_to_crs_en[0x20];
-
-	u8         time_to_plastic_image_start[0x20];
-
-	u8         time_to_iron_image_start[0x20];
-
-	u8         perst_handler[0x20];
-
-	u8         times_in_l1[0x20];
-
-	u8         times_in_l23[0x20];
-
-	u8         dl_down[0x20];
-
-	u8         config_cycle1usec[0x20];
-
-	u8         config_cycle2to7usec[0x20];
-
-	u8         config_cycle_8to15usec[0x20];
-
-	u8         config_cycle_16_to_63usec[0x20];
-
-	u8         config_cycle_64usec[0x20];
-
-	u8         correctable_err_msg_sent[0x20];
-
-	u8         non_fatal_err_msg_sent[0x20];
-
-	u8         fatal_err_msg_sent[0x20];
-
-	u8         reserved_at_2e0[0x4e0];
-};
-
 struct mlx5_ifc_cmd_inter_comp_event_bits {
 	u8         command_completion_vector[0x20];
 
@@ -2999,7 +2949,6 @@ union mlx5_ifc_eth_cntrs_grp_data_layout_auto_bits {
 
 union mlx5_ifc_pcie_cntrs_grp_data_layout_auto_bits {
 	struct mlx5_ifc_pcie_perf_cntrs_grp_data_layout_bits pcie_perf_cntrs_grp_data_layout;
-	struct mlx5_ifc_pcie_tas_cntrs_grp_data_layout_bits pcie_tas_cntrs_grp_data_layout;
 	u8         reserved_at_0[0x7c0];
 };
 
