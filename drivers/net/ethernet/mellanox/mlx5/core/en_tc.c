@@ -441,11 +441,11 @@ static int __parse_cls_flower(struct mlx5e_priv *priv,
 			MLX5_SET(fte_match_set_lyr_2_4, headers_c, vlan_tag, 1);
 			MLX5_SET(fte_match_set_lyr_2_4, headers_v, vlan_tag, 1);
 
-			MLX5_SET(fte_match_set_lyr_2_4, headers_c, first_vid, mask->vlan_id);
-			MLX5_SET(fte_match_set_lyr_2_4, headers_v, first_vid, key->vlan_id);
+			MLX5_SET(fte_match_set_lyr_2_4, headers_c, first_vid, (u16)mask->vlan_id);
+			MLX5_SET(fte_match_set_lyr_2_4, headers_v, first_vid, (u16)key->vlan_id);
 
-			MLX5_SET(fte_match_set_lyr_2_4, headers_c, first_prio, mask->vlan_priority);
-			MLX5_SET(fte_match_set_lyr_2_4, headers_v, first_prio, key->vlan_priority);
+			MLX5_SET(fte_match_set_lyr_2_4, headers_c, first_prio, (u8)mask->vlan_priority);
+			MLX5_SET(fte_match_set_lyr_2_4, headers_v, first_prio, (u8)key->vlan_priority);
 		}
 	}
 
