@@ -963,6 +963,22 @@ enum mlx5_cap_type {
 	MLX5_CAP_NUM
 };
 
+enum mlx5_pcam_reg_groups {
+	MLX5_PCAM_REGS_5000_TO_507F                 = 0x0,
+};
+
+enum mlx5_pcam_feature_groups {
+	MLX5_PCAM_FEATURE_ENHANCED_FEATURES         = 0x0,
+};
+
+enum mlx5_mcam_reg_groups {
+	MLX5_MCAM_REGS_FIRST_128                    = 0x0,
+};
+
+enum mlx5_mcam_feature_groups {
+	MLX5_MCAM_FEATURE_ENHANCED_FEATURES         = 0x0,
+};
+
 /* GET Dev Caps macros */
 #define MLX5_CAP_GEN(mdev, cap) \
 	MLX5_GET(cmd_hca_cap, mdev->hca_caps_cur[MLX5_CAP_GENERAL], cap)
@@ -1091,6 +1107,15 @@ enum {
 
 enum {
 	MLX5_PCIE_PERFORMANCE_COUNTERS_GROUP       = 0x0,
+};
+
+enum {
+	MLX5_PCAM_PPCNT_PHY_STATISTICAL_GROUP_BIT      = 0x0,
+	MLX5_PCAM_PPCNT_DISCARD_GROUP_BIT              = 0x1,
+};
+
+enum {
+	MLX5_MCAM_MPCNT_PERF_GROUP_BIT                 = 0x0,
 };
 
 static inline u16 mlx5_to_sw_pkey_sz(int pkey_sz)
