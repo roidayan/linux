@@ -281,25 +281,14 @@ static const struct counter_desc pport_per_prio_pfc_stats_desc[] = {
 #define PCIE_PERF_GET(pcie_stats, c) \
 	MLX5_GET(mpcnt_reg, pcie_stats->pcie_perf_counters, \
 		 counter_set.pcie_perf_cntrs_grp_data_layout.c)
-#define PCIE_TAS_OFF(c) \
-	MLX5_BYTE_OFF(mpcnt_reg, counter_set.pcie_tas_cntrs_grp_data_layout.c)
-#define PCIE_TAS_GET(pcie_stats, c) \
-	MLX5_GET(mpcnt_reg, pcie_stats->pcie_tas_counters, \
-		 counter_set.pcie_tas_cntrs_grp_data_layout.c)
 
 struct mlx5e_pcie_stats {
 	__be64 pcie_perf_counters[MLX5_ST_SZ_QW(mpcnt_reg)];
-	__be64 pcie_tas_counters[MLX5_ST_SZ_QW(mpcnt_reg)];
 };
 
 static const struct counter_desc pcie_perf_stats_desc[] = {
 	{ "rx_pci_signal_integrity", PCIE_PERF_OFF(rx_errors) },
 	{ "tx_pci_signal_integrity", PCIE_PERF_OFF(tx_errors) },
-};
-
-static const struct counter_desc pcie_tas_stats_desc[] = {
-	{ "tx_pci_transport_nonfatal_msg", PCIE_TAS_OFF(non_fatal_err_msg_sent) },
-	{ "tx_pci_transport_fatal_msg", PCIE_TAS_OFF(fatal_err_msg_sent) },
 };
 
 struct mlx5e_rq_stats {
@@ -387,7 +376,6 @@ static const struct counter_desc sq_stats_desc[] = {
 #define NUM_PPORT_2863_COUNTERS		ARRAY_SIZE(pport_2863_stats_desc)
 #define NUM_PPORT_2819_COUNTERS		ARRAY_SIZE(pport_2819_stats_desc)
 #define NUM_PCIE_PERF_COUNTERS		ARRAY_SIZE(pcie_perf_stats_desc)
-#define NUM_PCIE_TAS_COUNTERS		ARRAY_SIZE(pcie_tas_stats_desc)
 #define NUM_PPORT_PER_PRIO_TRAFFIC_COUNTERS \
 	ARRAY_SIZE(pport_per_prio_traffic_stats_desc)
 #define NUM_PPORT_PER_PRIO_PFC_COUNTERS \
@@ -397,7 +385,7 @@ static const struct counter_desc sq_stats_desc[] = {
 					 NUM_PPORT_2819_COUNTERS  + \
 					 NUM_PPORT_PER_PRIO_TRAFFIC_COUNTERS * \
 					 NUM_PPORT_PRIO)
-#define NUM_PCIE_COUNTERS		(NUM_PCIE_PERF_COUNTERS + NUM_PCIE_TAS_COUNTERS)
+#define NUM_PCIE_COUNTERS		NUM_PCIE_PERF_COUNTERS
 #define NUM_RQ_STATS			ARRAY_SIZE(rq_stats_desc)
 #define NUM_SQ_STATS			ARRAY_SIZE(sq_stats_desc)
 
