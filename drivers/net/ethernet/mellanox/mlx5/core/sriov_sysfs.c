@@ -118,7 +118,7 @@ static ssize_t port_store(struct mlx5_sriov_vf *g, struct vf_attributes *oa,
 
 	in->field_select = MLX5_HCA_VPORT_SEL_PORT_GUID;
 	in->port_guid = guid;
-	err = mlx5_core_modify_hca_vport_context(dev, 1, 1, g->vf, in);
+	err = mlx5_core_modify_hca_vport_context(dev, 1, 1, g->vf + 1, in);
 	kfree(in);
 	if (err)
 		return err;
@@ -202,7 +202,7 @@ static int modify_hca_node_guid(struct mlx5_core_dev *dev, u16 vf,
 
 	in->field_select = MLX5_HCA_VPORT_SEL_NODE_GUID;
 	in->node_guid = node_guid;
-	err = mlx5_core_modify_hca_vport_context(dev, 1, 1, vf, in);
+	err = mlx5_core_modify_hca_vport_context(dev, 1, 1, vf + 1, in);
 	kfree(in);
 
 	return err;
@@ -320,7 +320,7 @@ static ssize_t policy_store(struct mlx5_sriov_vf *g, struct vf_attributes *oa,
 
 	in->policy = policy;
 	in->field_select = MLX5_HCA_VPORT_SEL_STATE_POLICY;
-	err = mlx5_core_modify_hca_vport_context(dev, 1, 1, g->vf, in);
+	err = mlx5_core_modify_hca_vport_context(dev, 1, 1, g->vf + 1, in);
 	kfree(in);
 	if (err)
 		return err;
