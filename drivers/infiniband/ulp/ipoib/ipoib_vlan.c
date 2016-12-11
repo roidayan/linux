@@ -196,7 +196,6 @@ int ipoib_vlan_delete(struct net_device *pdev, unsigned short pkey)
 	list_for_each_entry_safe(priv, tpriv, &ppriv->child_intfs, list) {
 		if (priv->pkey == pkey &&
 		    priv->child_type == IPOIB_LEGACY_CHILD) {
-			unregister_netdevice(priv->dev);
 			list_del(&priv->list);
 			dev = priv->dev;
 			/*interface in the middle of destruction*/
@@ -205,6 +204,11 @@ int ipoib_vlan_delete(struct net_device *pdev, unsigned short pkey)
 		}
 	}
 	up_write(&ppriv->vlan_rwsem);
+
+	if (dev) {
+		ipoib_dbg(ppriv, "delete child vlan %s\n", dev->name);
+		unregister_netdevice(dev);
+	}
 
 	rtnl_unlock();
 
