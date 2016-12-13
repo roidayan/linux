@@ -493,7 +493,8 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
 		priv->tx_wr.wr.send_flags &= ~IB_SEND_IP_CSUM;
 
 		ipoib_flush_paths(dev);
-		rtnl_lock();
+		if (!rtnl_trylock())
+			return -EBUSY;
 		return 0;
 	}
 
@@ -503,7 +504,8 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
 		dev_set_mtu(dev, min(priv->mcast_mtu, dev->mtu));
 		rtnl_unlock();
 		ipoib_flush_paths(dev);
-		rtnl_lock();
+		if (!rtnl_trylock())
+			return -EBUSY;
 		return 0;
 	}
 
