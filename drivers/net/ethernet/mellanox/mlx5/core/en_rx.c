@@ -631,12 +631,16 @@ static inline void mlx5e_complete_rx_cqe(struct mlx5e_rq *rq,
 static inline void mlx5e_xmit_xdp_doorbell(struct mlx5e_xdpsq *sq)
 {
 	struct mlx5_wq_cyc *wq = &sq->wq;
+	struct mlx5_wqe_ctrl_seg *ctrl;
 	struct mlx5e_tx_wqe *wqe;
 	u16 pi = (sq->pc - 1) & wq->sz_m1; /* last pi */
 
 	wqe  = mlx5_wq_cyc_get_wqe(wq, pi);
+	ctrl = &wqe->ctrl;
+	if (unlikely(ctrl->fm_ce_se & MLX5_WQE_CTRL_CQ_UPDATE))
+		return;
 
-	mlx5e_notify_hw(wq, sq->pc, sq->uar_map, &wqe->ctrl);
+	mlx5e_notify_hw(wq, sq->pc, sq->uar_map, ctrl);
 }
 
 static inline void mlx5e_xmit_xdp_frame(struct mlx5e_rq *rq,
@@ -657,11 +661,7 @@ static inline void mlx5e_xmit_xdp_frame(struct mlx5e_rq *rq,
 	unsigned int dma_len = len;
 
 	if (unlikely(!mlx5e_wqc_has_room_for(&sq->wq, sq->cc, sq->pc, 1))) {
-		if (sq->db.doorbell) {
-			/* SQ is full, ring doorbell */
-			mlx5e_xmit_xdp_doorbell(sq);
-			sq->db.doorbell = false;
-		}
+		mlx5e_xmit_xdp_doorbell(sq);
 		rq->stats.xdp_tx_full++;
 		mlx5e_page_release(rq, di, true);
 		return;
@@ -692,9 +692,6 @@ static inline void mlx5e_xmit_xdp_frame(struct mlx5e_rq *rq,
 
 	sq->db.di[pi] = *di;
 	sq->pc++;
-
-	sq->db.doorbell = true;
-	rq->stats.xdp_tx++;
 }
 
 /* returns true if packet was consumed by xdp */
@@ -921,6 +918,7 @@ int mlx5e_poll_rx_cq(struct mlx5e_cq *cq, int budget)
 {
 	struct mlx5e_rq *rq = container_of(cq, struct mlx5e_rq, cq);
 	struct mlx5e_xdpsq *xdpsq = &rq->xdpsq;
+	u16 xdppc = xdpsq->pc;
 	int work_done = 0;
 
 	if (unlikely(!test_bit(MLX5E_RQ_STATE_ENABLED, &rq->state)))
@@ -947,9 +945,9 @@ int mlx5e_poll_rx_cq(struct mlx5e_cq *cq, int budget)
 		rq->handle_rx_cqe(rq, cqe);
 	}
 
-	if (xdpsq->db.doorbell) {
+	if (xdpsq->pc != xdppc) {
+		rq->stats.xdp_tx += (((xdpsq->pc - 1) - xdppc) & xdpsq->wq.sz_m1) + 1;
 		mlx5e_xmit_xdp_doorbell(xdpsq);
-		xdpsq->db.doorbell = false;
 	}
 
 	mlx5_cqwq_update_db_record(&cq->wq);

@@ -372,7 +372,6 @@ struct mlx5e_xdpsq {
 	/* write@xmit, read@completion */
 	struct {
 		struct mlx5e_dma_info     *di;
-		bool                       doorbell;
 	} db;
 
 	/* read only */
