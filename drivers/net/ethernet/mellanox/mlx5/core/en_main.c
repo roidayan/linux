@@ -2046,53 +2046,6 @@ static void mlx5e_close_channels(struct mlx5e_priv *priv)
 	chs->size = 0;
 }
 
-static int mlx5e_rx_hash_fn(int hfunc)
-{
-	return (hfunc == ETH_RSS_HASH_TOP) ?
-	       MLX5_RX_HASH_FN_TOEPLITZ :
-	       MLX5_RX_HASH_FN_INVERTED_XOR8;
-}
-
-static int mlx5e_bits_invert(unsigned long a, int size)
-{
-	int inv = 0;
-	int i;
-
-	for (i = 0; i < size; i++)
-		inv |= (test_bit(size - i - 1, &a) ? 1 : 0) << i;
-
-	return inv;
-}
-
-static void mlx5e_fill_indir_rqt_rqns(struct mlx5e_priv *priv, void *rqtc)
-{
-	int i;
-
-	for (i = 0; i < MLX5E_INDIR_RQT_SIZE; i++) {
-		int ix = i;
-		u32 rqn;
-
-		if (priv->params.rss_hfunc == ETH_RSS_HASH_XOR)
-			ix = mlx5e_bits_invert(i, MLX5E_LOG_INDIR_RQT_SIZE);
-
-		ix = priv->params.indirection_rqt[ix];
-		rqn = test_bit(MLX5E_STATE_OPENED, &priv->state) ?
-				priv->channels.c[ix]->rq.rqn :
-				priv->drop_rq.rqn;
-		MLX5_SET(rqtc, rqtc, rq_num[i], rqn);
-	}
-}
-
-static void mlx5e_fill_direct_rqt_rqn(struct mlx5e_priv *priv, void *rqtc,
-				      int ix)
-{
-	u32 rqn = test_bit(MLX5E_STATE_OPENED, &priv->state) ?
-			priv->channels.c[ix]->rq.rqn :
-			priv->drop_rq.rqn;
-
-	MLX5_SET(rqtc, rqtc, rq_num[0], rqn);
-}
-
 static int
 mlx5e_create_rqt(struct mlx5e_priv *priv, int sz, struct mlx5e_rqt *rqt)
 {
@@ -2159,7 +2112,44 @@ err_destroy_rqts:
 	return err;
 }
 
-int mlx5e_redirect_rqt(struct mlx5e_priv *priv, u32 rqtn, int sz, int ix)
+static int mlx5e_rx_hash_fn(int hfunc)
+{
+	return (hfunc == ETH_RSS_HASH_TOP) ?
+	       MLX5_RX_HASH_FN_TOEPLITZ :
+	       MLX5_RX_HASH_FN_INVERTED_XOR8;
+}
+
+static int mlx5e_bits_invert(unsigned long a, int size)
+{
+	int inv = 0;
+	int i;
+
+	for (i = 0; i < size; i++)
+		inv |= (test_bit(size - i - 1, &a) ? 1 : 0) << i;
+
+	return inv;
+}
+
+static void mlx5e_fill_rqt_rqns(struct mlx5e_priv *priv, void *rqtc,
+				int sz, struct redirect_rqt_param rrp)
+{
+	int i;
+
+	for (i = 0; i < sz; i++) {
+		int ix = i;
+		u32 rqn;
+
+		if (rrp.rss && rrp.rss_hfunc == ETH_RSS_HASH_XOR)
+			ix = mlx5e_bits_invert(i, MLX5E_LOG_INDIR_RQT_SIZE);
+
+		ix = priv->params.indirection_rqt[ix];
+		rqn = rrp.rss ? rrp.channels->c[ix]->rq.rqn : rrp.rqn;
+		MLX5_SET(rqtc, rqtc, rq_num[i], rqn);
+	}
+}
+
+int mlx5e_redirect_rqt(struct mlx5e_priv *priv, u32 rqtn, int sz,
+		       struct redirect_rqt_param rrp)
 {
 	struct mlx5_core_dev *mdev = priv->mdev;
 	void *rqtc;
@@ -2175,36 +2165,67 @@ int mlx5e_redirect_rqt(struct mlx5e_priv *priv, u32 rqtn, int sz, int ix)
 	rqtc = MLX5_ADDR_OF(modify_rqt_in, in, ctx);
 
 	MLX5_SET(rqtc, rqtc, rqt_actual_size, sz);
-	if (sz > 1) /* RSS */
-		mlx5e_fill_indir_rqt_rqns(priv, rqtc);
-	else
-		mlx5e_fill_direct_rqt_rqn(priv, rqtc, ix);
-
 	MLX5_SET(modify_rqt_in, in, bitmask.rqn_list, 1);
-
+	mlx5e_fill_rqt_rqns(priv, rqtc, sz, rrp);
 	err = mlx5_core_modify_rqt(mdev, rqtn, in, inlen);
 
 	kvfree(in);
-
 	return err;
 }
 
-static void mlx5e_redirect_rqts(struct mlx5e_priv *priv)
+static u32 get_direct_rqn(struct mlx5e_priv *priv, int ix,
+			  struct redirect_rqt_param rrp)
+{
+	if (!rrp.rss)
+		return rrp.rqn;
+
+	return ix < rrp.channels->size ?
+		rrp.channels->c[ix]->rq.rqn : priv->drop_rq.rqn;
+}
+
+static void mlx5e_redirect_rqts(struct mlx5e_priv *priv, struct redirect_rqt_param rrp)
 {
 	u32 rqtn;
 	int ix;
 
 	if (priv->indir_rqt.enabled) {
+		/* RSS RQ table */
 		rqtn = priv->indir_rqt.rqtn;
-		mlx5e_redirect_rqt(priv, rqtn, MLX5E_INDIR_RQT_SIZE, 0);
+		mlx5e_redirect_rqt(priv, rqtn, MLX5E_INDIR_RQT_SIZE, rrp);
 	}
 
-	for (ix = 0; ix < priv->params.num_channels; ix++) {
+	for (ix = 0; ix < priv->profile->max_nch(priv->mdev); ix++) {
+		struct redirect_rqt_param direct_rrp;
+
+		/* Direct RQ Tables */
 		if (!priv->direct_tir[ix].rqt.enabled)
 			continue;
+
+		direct_rrp.rss = false;
+		direct_rrp.rqn = get_direct_rqn(priv, ix, rrp);
 		rqtn = priv->direct_tir[ix].rqt.rqtn;
-		mlx5e_redirect_rqt(priv, rqtn, 1, ix);
+		mlx5e_redirect_rqt(priv, rqtn, 1, direct_rrp);
 	}
+}
+
+static void mlx5e_redirect_rqts_to_channels(struct mlx5e_priv *priv,
+					    struct mlx5e_channels *chs)
+{
+	struct redirect_rqt_param rrp;
+
+	rrp.rss       = true;
+	rrp.rss_hfunc = priv->params.rss_hfunc;
+	rrp.channels  = chs;
+	mlx5e_redirect_rqts(priv, rrp);
+}
+
+static void mlx5e_redirect_rqts_to_drop(struct mlx5e_priv *priv)
+{
+	struct redirect_rqt_param drop_rrp;
+
+	drop_rrp.rss = false;
+	drop_rrp.rqn = priv->drop_rq.rqn;
+	mlx5e_redirect_rqts(priv, drop_rrp);
 }
 
 static void mlx5e_build_tir_ctx_lro(void *tirc, struct mlx5e_priv *priv)
@@ -2473,7 +2494,7 @@ int mlx5e_open_locked(struct net_device *netdev)
 		goto err_close_channels;
 	}
 
-	mlx5e_redirect_rqts(priv);
+	mlx5e_redirect_rqts_to_channels(priv, &priv->channels);
 	mlx5e_update_carrier(priv);
 	mlx5e_timestamp_init(priv);
 
@@ -2524,7 +2545,7 @@ int mlx5e_close_locked(struct net_device *netdev)
 
 	mlx5e_timestamp_cleanup(priv);
 	netif_carrier_off(priv->netdev);
-	mlx5e_redirect_rqts(priv);
+	mlx5e_redirect_rqts_to_drop(priv);
 	mlx5e_close_channels(priv);
 
 	return 0;
