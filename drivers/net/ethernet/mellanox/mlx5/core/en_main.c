@@ -1391,9 +1391,9 @@ static void mlx5e_close_xdpsq(struct mlx5e_xdpsq *sq)
 	mlx5e_free_xdpsq(sq);
 }
 
-static int mlx5e_create_cq(struct mlx5e_channel *c,
-			   struct mlx5e_cq_param *param,
-			   struct mlx5e_cq *cq)
+static int mlx5e_alloc_cq(struct mlx5e_channel *c,
+			  struct mlx5e_cq_param *param,
+			  struct mlx5e_cq *cq)
 {
 	struct mlx5e_priv *priv = c->priv;
 	struct mlx5_core_dev *mdev = priv->mdev;
@@ -1438,12 +1438,12 @@ static int mlx5e_create_cq(struct mlx5e_channel *c,
 	return 0;
 }
 
-static void mlx5e_destroy_cq(struct mlx5e_cq *cq)
+static void mlx5e_free_cq(struct mlx5e_cq *cq)
 {
 	mlx5_cqwq_destroy(&cq->wq_ctrl);
 }
 
-static int mlx5e_enable_cq(struct mlx5e_cq *cq, struct mlx5e_cq_param *param)
+static int mlx5e_create_cq(struct mlx5e_cq *cq, struct mlx5e_cq_param *param)
 {
 	struct mlx5e_priv *priv = cq->priv;
 	struct mlx5_core_dev *mdev = priv->mdev;
@@ -1490,7 +1490,7 @@ static int mlx5e_enable_cq(struct mlx5e_cq *cq, struct mlx5e_cq_param *param)
 	return 0;
 }
 
-static void mlx5e_disable_cq(struct mlx5e_cq *cq)
+static void mlx5e_destroy_cq(struct mlx5e_cq *cq)
 {
 	struct mlx5e_priv *priv = cq->priv;
 	struct mlx5_core_dev *mdev = priv->mdev;
@@ -1507,13 +1507,13 @@ static int mlx5e_open_cq(struct mlx5e_channel *c,
 	struct mlx5e_priv *priv = c->priv;
 	struct mlx5_core_dev *mdev = priv->mdev;
 
-	err = mlx5e_create_cq(c, param, cq);
+	err = mlx5e_alloc_cq(c, param, cq);
 	if (err)
 		return err;
 
-	err = mlx5e_enable_cq(cq, param);
+	err = mlx5e_create_cq(cq, param);
 	if (err)
-		goto err_destroy_cq;
+		goto err_free_cq;
 
 	if (MLX5_CAP_GEN(mdev, cq_moderation))
 		mlx5_core_modify_cq_moderation(mdev, &cq->mcq,
@@ -1521,16 +1521,16 @@ static int mlx5e_open_cq(struct mlx5e_channel *c,
 					       moderation.pkts);
 	return 0;
 
-err_destroy_cq:
-	mlx5e_destroy_cq(cq);
+err_free_cq:
+	mlx5e_free_cq(cq);
 
 	return err;
 }
 
 static void mlx5e_close_cq(struct mlx5e_cq *cq)
 {
-	mlx5e_disable_cq(cq);
 	mlx5e_destroy_cq(cq);
+	mlx5e_free_cq(cq);
 }
 
 static int mlx5e_get_cpu(struct mlx5e_priv *priv, int ix)
@@ -2568,9 +2568,9 @@ static int mlx5e_alloc_drop_rq(struct mlx5e_priv *priv,
 	return 0;
 }
 
-static int mlx5e_create_drop_cq(struct mlx5e_priv *priv,
-				struct mlx5e_cq *cq,
-				struct mlx5e_cq_param *param)
+static int mlx5e_alloc_drop_cq(struct mlx5e_priv *priv,
+			       struct mlx5e_cq *cq,
+			       struct mlx5e_cq_param *param)
 {
 	struct mlx5_core_dev *mdev = priv->mdev;
 	struct mlx5_core_cq *mcq = &cq->mcq;
@@ -2612,17 +2612,17 @@ static int mlx5e_open_drop_rq(struct mlx5e_priv *priv)
 	memset(&rq_param, 0, sizeof(rq_param));
 	mlx5e_build_drop_rq_param(&rq_param);
 
-	err = mlx5e_create_drop_cq(priv, cq, &cq_param);
+	err = mlx5e_alloc_drop_cq(priv, cq, &cq_param);
 	if (err)
 		return err;
 
-	err = mlx5e_enable_cq(cq, &cq_param);
+	err = mlx5e_create_cq(cq, &cq_param);
 	if (err)
-		goto err_destroy_cq;
+		goto err_free_cq;
 
 	err = mlx5e_alloc_drop_rq(priv, rq, &rq_param);
 	if (err)
-		goto err_disable_cq;
+		goto err_destroy_cq;
 
 	err = mlx5e_create_rq(rq, &rq_param);
 	if (err)
@@ -2633,11 +2633,11 @@ static int mlx5e_open_drop_rq(struct mlx5e_priv *priv)
 err_free_rq:
 	mlx5e_free_rq(&priv->drop_rq);
 
-err_disable_cq:
-	mlx5e_disable_cq(&priv->drop_rq.cq);
-
 err_destroy_cq:
 	mlx5e_destroy_cq(&priv->drop_rq.cq);
+
+err_free_cq:
+	mlx5e_free_cq(&priv->drop_rq.cq);
 
 	return err;
 }
@@ -2646,8 +2646,8 @@ static void mlx5e_close_drop_rq(struct mlx5e_priv *priv)
 {
 	mlx5e_destroy_rq(&priv->drop_rq);
 	mlx5e_free_rq(&priv->drop_rq);
-	mlx5e_disable_cq(&priv->drop_rq.cq);
 	mlx5e_destroy_cq(&priv->drop_rq.cq);
+	mlx5e_free_cq(&priv->drop_rq.cq);
 }
 
 static int mlx5e_create_tis(struct mlx5e_priv *priv, int tc)
