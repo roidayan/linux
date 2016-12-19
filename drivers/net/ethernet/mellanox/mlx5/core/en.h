@@ -842,9 +842,19 @@ void mlx5e_disable_vlan_filter(struct mlx5e_priv *priv);
 
 int mlx5e_modify_channels_vsd(struct mlx5e_channels *chs, bool vsd);
 
-int mlx5e_redirect_rqt(struct mlx5e_priv *priv, u32 rqtn, int sz, int ix);
 void mlx5e_build_indir_tir_ctx_hash(struct mlx5e_priv *priv, void *tirc,
 				    enum mlx5e_traffic_types tt);
+struct redirect_rqt_param {
+	bool rss;
+	u8 rss_hfunc;
+	union {
+		u32 rqn;
+		struct mlx5e_channels *channels;
+	};
+};
+
+int mlx5e_redirect_rqt(struct mlx5e_priv *priv, u32 rqtn, int sz,
+		       struct redirect_rqt_param rrp);
 
 int mlx5e_open_locked(struct net_device *netdev);
 int mlx5e_close_locked(struct net_device *netdev);
