@@ -1030,12 +1030,23 @@ static int mlx5e_set_rxfh(struct net_device *dev, const u32 *indir,
 
 	mutex_lock(&priv->state_lock);
 
+	if (hfunc != ETH_RSS_HASH_NO_CHANGE)
+		priv->params.rss_hfunc = hfunc;
+
 	if (indir) {
 		u32 rqtn = priv->indir_rqt.rqtn;
 
 		memcpy(priv->params.indirection_rqt, indir,
 		       sizeof(priv->params.indirection_rqt));
-		mlx5e_redirect_rqt(priv, rqtn, MLX5E_INDIR_RQT_SIZE, 0);
+
+		if (test_bit(MLX5E_STATE_OPENED, &priv->state)) {
+			struct redirect_rqt_param rrp;
+
+			rrp.rss = true;
+			rrp.rss_hfunc = priv->params.rss_hfunc;
+			rrp.channels  = &priv->channels;
+			mlx5e_redirect_rqt(priv, rqtn, MLX5E_INDIR_RQT_SIZE, rrp);
+		}
 	}
 
 	if (hfunc != ETH_RSS_HASH_NO_CHANGE &&
