@@ -535,9 +535,9 @@ static int mlx5e_create_rq_umr_mkey(struct mlx5e_rq *rq)
 	return mlx5e_create_umr_mkey(priv, num_mtts, PAGE_SHIFT, &rq->umr_mkey);
 }
 
-static int mlx5e_create_rq(struct mlx5e_channel *c,
-			   struct mlx5e_rq_param *param,
-			   struct mlx5e_rq *rq)
+static int mlx5e_alloc_rq(struct mlx5e_channel *c,
+			  struct mlx5e_rq_param *param,
+			  struct mlx5e_rq *rq)
 {
 	struct mlx5e_priv *priv = c->priv;
 	struct mlx5_core_dev *mdev = priv->mdev;
@@ -670,7 +670,7 @@ err_rq_wq_destroy:
 	return err;
 }
 
-static void mlx5e_destroy_rq(struct mlx5e_rq *rq)
+static void mlx5e_free_rq(struct mlx5e_rq *rq)
 {
 	int i;
 
@@ -695,7 +695,7 @@ static void mlx5e_destroy_rq(struct mlx5e_rq *rq)
 	mlx5_wq_destroy(&rq->wq_ctrl);
 }
 
-static int mlx5e_enable_rq(struct mlx5e_rq *rq, struct mlx5e_rq_param *param)
+static int mlx5e_create_rq(struct mlx5e_rq *rq, struct mlx5e_rq_param *param)
 {
 	struct mlx5e_priv *priv = rq->priv;
 	struct mlx5_core_dev *mdev = priv->mdev;
@@ -794,7 +794,7 @@ static int mlx5e_modify_rq_vsd(struct mlx5e_rq *rq, bool vsd)
 	return err;
 }
 
-static void mlx5e_disable_rq(struct mlx5e_rq *rq)
+static void mlx5e_destroy_rq(struct mlx5e_rq *rq)
 {
 	mlx5_core_destroy_rq(rq->priv->mdev, rq->rqn);
 }
@@ -846,18 +846,18 @@ static int mlx5e_open_rq(struct mlx5e_channel *c,
 	struct mlx5e_tx_wqe *nopwqe;
 	int err;
 
-	err = mlx5e_create_rq(c, param, rq);
+	err = mlx5e_alloc_rq(c, param, rq);
 	if (err)
 		return err;
 
-	err = mlx5e_enable_rq(rq, param);
+	err = mlx5e_create_rq(rq, param);
 	if (err)
-		goto err_destroy_rq;
+		goto err_free_rq;
 
 	set_bit(MLX5E_RQ_STATE_ENABLED, &rq->state);
 	err = mlx5e_modify_rq_state(rq, MLX5_RQC_STATE_RST, MLX5_RQC_STATE_RDY);
 	if (err)
-		goto err_disable_rq;
+		goto err_destroy_rq;
 
 	if (param->am_enabled)
 		set_bit(MLX5E_RQ_STATE_AM, &c->rq.state);
@@ -868,11 +868,11 @@ static int mlx5e_open_rq(struct mlx5e_channel *c,
 	mlx5e_notify_hw(&sq->wq, sq->pc, sq->uar_map, &nopwqe->ctrl);
 	return 0;
 
-err_disable_rq:
-	clear_bit(MLX5E_RQ_STATE_ENABLED, &rq->state);
-	mlx5e_disable_rq(rq);
 err_destroy_rq:
+	clear_bit(MLX5E_RQ_STATE_ENABLED, &rq->state);
 	mlx5e_destroy_rq(rq);
+err_free_rq:
+	mlx5e_free_rq(rq);
 
 	return err;
 }
@@ -883,9 +883,9 @@ static void mlx5e_close_rq(struct mlx5e_rq *rq)
 	napi_synchronize(&rq->channel->napi); /* prevent mlx5e_post_rx_wqes */
 	cancel_work_sync(&rq->am.work);
 
-	mlx5e_disable_rq(rq);
-	mlx5e_free_rx_descs(rq);
 	mlx5e_destroy_rq(rq);
+	mlx5e_free_rx_descs(rq);
+	mlx5e_free_rq(rq);
 }
 
 static void mlx5e_free_xdpsq_db(struct mlx5e_xdpsq *sq)
@@ -2542,9 +2542,9 @@ int mlx5e_close(struct net_device *netdev)
 	return err;
 }
 
-static int mlx5e_create_drop_rq(struct mlx5e_priv *priv,
-				struct mlx5e_rq *rq,
-				struct mlx5e_rq_param *param)
+static int mlx5e_alloc_drop_rq(struct mlx5e_priv *priv,
+			       struct mlx5e_rq *rq,
+			       struct mlx5e_rq_param *param)
 {
 	struct mlx5_core_dev *mdev = priv->mdev;
 	void *rqc = param->rqc;
@@ -2615,18 +2615,18 @@ static int mlx5e_open_drop_rq(struct mlx5e_priv *priv)
 	if (err)
 		goto err_destroy_cq;
 
-	err = mlx5e_create_drop_rq(priv, rq, &rq_param);
+	err = mlx5e_alloc_drop_rq(priv, rq, &rq_param);
 	if (err)
 		goto err_disable_cq;
 
-	err = mlx5e_enable_rq(rq, &rq_param);
+	err = mlx5e_create_rq(rq, &rq_param);
 	if (err)
-		goto err_destroy_rq;
+		goto err_free_rq;
 
 	return 0;
 
-err_destroy_rq:
-	mlx5e_destroy_rq(&priv->drop_rq);
+err_free_rq:
+	mlx5e_free_rq(&priv->drop_rq);
 
 err_disable_cq:
 	mlx5e_disable_cq(&priv->drop_rq.cq);
@@ -2639,8 +2639,8 @@ err_destroy_cq:
 
 static void mlx5e_close_drop_rq(struct mlx5e_priv *priv)
 {
-	mlx5e_disable_rq(&priv->drop_rq);
 	mlx5e_destroy_rq(&priv->drop_rq);
+	mlx5e_free_rq(&priv->drop_rq);
 	mlx5e_disable_cq(&priv->drop_rq.cq);
 	mlx5e_destroy_cq(&priv->drop_rq.cq);
 }
