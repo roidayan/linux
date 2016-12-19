@@ -2093,14 +2093,15 @@ static void mlx5e_fill_direct_rqt_rqn(struct mlx5e_priv *priv, void *rqtc,
 	MLX5_SET(rqtc, rqtc, rq_num[0], rqn);
 }
 
-static int mlx5e_create_rqt(struct mlx5e_priv *priv, int sz,
-			    int ix, struct mlx5e_rqt *rqt)
+static int
+mlx5e_create_rqt(struct mlx5e_priv *priv, int sz, struct mlx5e_rqt *rqt)
 {
 	struct mlx5_core_dev *mdev = priv->mdev;
 	void *rqtc;
 	int inlen;
 	int err;
 	u32 *in;
+	int i;
 
 	inlen = MLX5_ST_SZ_BYTES(create_rqt_in) + sizeof(u32) * sz;
 	in = mlx5_vzalloc(inlen);
@@ -2112,10 +2113,8 @@ static int mlx5e_create_rqt(struct mlx5e_priv *priv, int sz,
 	MLX5_SET(rqtc, rqtc, rqt_actual_size, sz);
 	MLX5_SET(rqtc, rqtc, rqt_max_size, sz);
 
-	if (sz > 1) /* RSS */
-		mlx5e_fill_indir_rqt_rqns(priv, rqtc);
-	else
-		mlx5e_fill_direct_rqt_rqn(priv, rqtc, ix);
+	for (i = 0; i < sz; i++)
+		MLX5_SET(rqtc, rqtc, rq_num[i], priv->drop_rq.rqn);
 
 	err = mlx5_core_create_rqt(mdev, in, inlen, &rqt->rqtn);
 	if (!err)
@@ -2135,7 +2134,7 @@ static int mlx5e_create_indirect_rqts(struct mlx5e_priv *priv)
 {
 	struct mlx5e_rqt *rqt = &priv->indir_rqt;
 
-	return mlx5e_create_rqt(priv, MLX5E_INDIR_RQT_SIZE, 0, rqt);
+	return mlx5e_create_rqt(priv, MLX5E_INDIR_RQT_SIZE, rqt);
 }
 
 int mlx5e_create_direct_rqts(struct mlx5e_priv *priv)
@@ -2146,7 +2145,7 @@ int mlx5e_create_direct_rqts(struct mlx5e_priv *priv)
 
 	for (ix = 0; ix < priv->profile->max_nch(priv->mdev); ix++) {
 		rqt = &priv->direct_tir[ix].rqt;
-		err = mlx5e_create_rqt(priv, 1 /*size */, ix, rqt);
+		err = mlx5e_create_rqt(priv, 1 /*size */, rqt);
 		if (err)
 			goto err_destroy_rqts;
 	}
