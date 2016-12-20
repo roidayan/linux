@@ -1041,11 +1041,6 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 	if (req.comp_mask || req.reserved0 || req.reserved1 || req.reserved2)
 		return ERR_PTR(-EOPNOTSUPP);
 
-	if (reqlen > sizeof(req) &&
-	    !ib_is_udata_cleared(udata, sizeof(req),
-				 reqlen - sizeof(req)))
-		return ERR_PTR(-EOPNOTSUPP);
-
 	req.total_num_bfregs = ALIGN(req.total_num_bfregs,
 				    MLX5_NON_FP_BFREGS_PER_UAR);
 	if (req.num_low_latency_bfregs > req.total_num_bfregs - 1)
