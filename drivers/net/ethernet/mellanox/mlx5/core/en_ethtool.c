@@ -461,7 +461,6 @@ static int mlx5e_set_ringparam(struct net_device *dev,
 	u32 rx_pending_wqes;
 	u32 min_rq_size;
 	u32 max_rq_size;
-	u16 min_rx_wqes;
 	u8 log_rq_size;
 	u8 log_sq_size;
 	u32 num_mtts;
@@ -521,11 +520,9 @@ static int mlx5e_set_ringparam(struct net_device *dev,
 
 	log_rq_size = order_base_2(rx_pending_wqes);
 	log_sq_size = order_base_2(param->tx_pending);
-	min_rx_wqes = mlx5_min_rx_wqes(rq_wq_type, rx_pending_wqes);
 
 	if (log_rq_size == priv->params.log_rq_size &&
-	    log_sq_size == priv->params.log_sq_size &&
-	    min_rx_wqes == priv->params.min_rx_wqes)
+	    log_sq_size == priv->params.log_sq_size)
 		return 0;
 
 	mutex_lock(&priv->state_lock);
@@ -536,7 +533,6 @@ static int mlx5e_set_ringparam(struct net_device *dev,
 
 	priv->params.log_rq_size = log_rq_size;
 	priv->params.log_sq_size = log_sq_size;
-	priv->params.min_rx_wqes = min_rx_wqes;
 
 	if (was_opened)
 		err = mlx5e_open_locked(dev);

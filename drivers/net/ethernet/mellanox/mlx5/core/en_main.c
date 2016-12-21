@@ -103,8 +103,6 @@ void mlx5e_set_rq_type_params(struct mlx5e_priv *priv, u8 rq_type)
 		priv->params.lro_wqe_sz -= MLX5_RX_HEADROOM +
 			SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
 	}
-	priv->params.min_rx_wqes = mlx5_min_rx_wqes(priv->params.rq_wq_type,
-					       BIT(priv->params.log_rq_size));
 
 	mlx5_core_info(priv->mdev,
 		       "MLX5E: StrdRq(%d) RqSz(%ld) StrdSz(%ld) RxCqeCmprss(%d)\n",
@@ -812,9 +810,10 @@ static int mlx5e_wait_for_min_rx_wqes(struct mlx5e_rq *rq)
 	struct mlx5e_channel *c = rq->channel;
 	struct mlx5e_priv *priv = c->priv;
 	struct mlx5_wq_ll *wq = &rq->wq;
+	u16 min_wqes = mlx5_min_rx_wqes(rq->wq_type, wq->sz_m1 + 1);
 
 	while (time_before(jiffies, exp_time)) {
-		if (wq->cur_sz >= priv->params.min_rx_wqes)
+		if (wq->cur_sz >= min_wqes)
 			return 0;
 
 		msleep(20);

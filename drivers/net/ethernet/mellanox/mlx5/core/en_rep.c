@@ -416,9 +416,6 @@ static void mlx5e_build_rep_netdev_priv(struct mlx5_core_dev *mdev,
 	priv->params.rq_wq_type = MLX5_WQ_TYPE_LINKED_LIST;
 	priv->params.log_rq_size = MLX5E_PARAMS_MINIMUM_LOG_RQ_SIZE;
 
-	priv->params.min_rx_wqes = mlx5_min_rx_wqes(priv->params.rq_wq_type,
-					    BIT(priv->params.log_rq_size));
-
 	priv->params.rx_am_enabled = MLX5_CAP_GEN(mdev, cq_moderation);
 	mlx5e_set_rx_cq_mode_params(&priv->params, cq_period_mode);
 
