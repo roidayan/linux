@@ -702,6 +702,12 @@ int ipoib_ib_dev_open(struct net_device *dev)
 	struct ipoib_dev_priv *priv = netdev_priv(dev);
 	int ret;
 
+	if (test_bit(IPOIB_FLAG_GOING_DOWN, &priv->flags)) {
+		ipoib_warn(priv, "%s was called for device: %s which is going to be deleted\n",
+			   __func__, dev->name);
+		return -1;
+	}
+
 	ipoib_pkey_dev_check_presence(dev);
 
 	if (!test_bit(IPOIB_PKEY_ASSIGNED, &priv->flags)) {
@@ -1106,8 +1112,11 @@ static void __ipoib_ib_dev_flush(struct ipoib_dev_priv *priv,
 	 * Flush any child interfaces too -- they might be up even if
 	 * the parent is down.
 	 */
-	list_for_each_entry(cpriv, &priv->child_intfs, list)
-		__ipoib_ib_dev_flush(cpriv, level, nesting + 1);
+	list_for_each_entry(cpriv, &priv->child_intfs, list) {
+		/* trigger event only on child that is not going to be deleted */
+		if (!test_bit(IPOIB_FLAG_GOING_DOWN, &cpriv->flags))
+			__ipoib_ib_dev_flush(cpriv, level, nesting + 1);
+	}
 
 	up_read(&priv->vlan_rwsem);
 
