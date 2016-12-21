@@ -174,7 +174,7 @@ static int mlx5_query_port_roce(struct ib_device *device, u8 port_num,
 	enum ib_mtu ndev_ib_mtu;
 	u16 qkey_viol_cntr;
 
-	memset(props, 0, sizeof(*props));
+	/* props being zeroed by the caller, avoid zeroing it here */
 
 	props->port_cap_flags  |= IB_PORT_CM_SUP;
 	props->port_cap_flags  |= IB_PORT_IP_BASED_GIDS;
@@ -830,7 +830,7 @@ static int mlx5_query_hca_port(struct ib_device *ibdev, u8 port,
 		goto out;
 	}
 
-	memset(props, 0, sizeof(*props));
+	/* props being zeroed by the caller, avoid zeroing it here */
 
 	err = mlx5_query_hca_vport_context(mdev, 0, port, 0, rep);
 	if (err)
@@ -978,7 +978,7 @@ static int mlx5_ib_modify_port(struct ib_device *ibdev, u8 port, int mask,
 
 	mutex_lock(&dev->cap_mask_mutex);
 
-	err = mlx5_ib_query_port(ibdev, port, &attr);
+	err = ib_query_port(ibdev, port, &attr);
 	if (err)
 		goto out;
 
@@ -1112,11 +1112,18 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 	context->ibucontext.invalidate_range = &mlx5_ib_invalidate_range;
 #endif
 
+	context->upd_xlt_page = __get_free_page(GFP_KERNEL);
+	if (!context->upd_xlt_page) {
+		err = -ENOMEM;
+		goto out_uars;
+	}
+	mutex_init(&context->upd_xlt_page_mutex);
+
 	if (MLX5_CAP_GEN(dev->mdev, log_max_transport_domain)) {
 		err = mlx5_core_alloc_transport_domain(dev->mdev,
 						       &context->tdn);
 		if (err)
-			goto out_uars;
+			goto out_page;
 	}
 
 	INIT_LIST_HEAD(&context->vma_private_list);
@@ -1168,6 +1175,10 @@ out_td:
 	if (MLX5_CAP_GEN(dev->mdev, log_max_transport_domain))
 		mlx5_core_dealloc_transport_domain(dev->mdev, context->tdn);
 
+out_page:
+	free_page(context->upd_xlt_page);
+
+
 out_uars:
 	for (i--; i >= 0; i--)
 		mlx5_cmd_free_uar(dev->mdev, uars[i].index);
@@ -1194,6 +1205,8 @@ static int mlx5_ib_dealloc_ucontext(struct ib_ucontext *ibcontext)
 
 	if (MLX5_CAP_GEN(dev->mdev, log_max_transport_domain))
 		mlx5_core_dealloc_transport_domain(dev->mdev, context->tdn);
+
+	free_page(context->upd_xlt_page);
 
 	for (i = 0; i < uuari->num_uars; i++) {
 		if (mlx5_cmd_free_uar(dev->mdev, uuari->uars[i].index))
@@ -1570,6 +1583,7 @@ static void set_tos(void *outer_c, void *outer_v, u8 mask, u8 val)
 #define LAST_IPV6_FIELD traffic_class
 #define LAST_TCP_UDP_FIELD src_port
 #define LAST_TUNNEL_FIELD tunnel_id
+#define LAST_FLOW_TAG_FIELD tag_id
 
 /* Field is the last supported field */
 #define FIELDS_NOT_SUPPORTED(filter, field)\
@@ -1580,7 +1594,7 @@ static void set_tos(void *outer_c, void *outer_v, u8 mask, u8 val)
 		   sizeof(filter.field))
 
 static int parse_flow_attr(u32 *match_c, u32 *match_v,
-			   const union ib_flow_spec *ib_spec)
+			   const union ib_flow_spec *ib_spec, u32 *tag_id)
 {
 	void *misc_params_c = MLX5_ADDR_OF(fte_match_param, match_c,
 					   misc_parameters);
@@ -1772,6 +1786,15 @@ static int parse_flow_attr(u32 *match_c, u32 *match_v,
 		MLX5_SET(fte_match_set_misc, misc_params_v, vxlan_vni,
 			 ntohl(ib_spec->tunnel.val.tunnel_id));
 		break;
+	case IB_FLOW_SPEC_ACTION_TAG:
+		if (FIELDS_NOT_SUPPORTED(ib_spec->flow_tag,
+					 LAST_FLOW_TAG_FIELD))
+			return -ENOTSUPP;
+		if (ib_spec->flow_tag.tag_id >= BIT(24))
+			return -EINVAL;
+
+		*tag_id = ib_spec->flow_tag.tag_id;
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -1955,6 +1978,7 @@ static struct mlx5_ib_flow_handler *create_flow_rule(struct mlx5_ib_dev *dev,
 	struct mlx5_flow_spec *spec;
 	const void *ib_flow = (const void *)flow_attr + sizeof(*flow_attr);
 	unsigned int spec_index;
+	u32 flow_tag = MLX5_FS_DEFAULT_FLOW_TAG;
 	int err = 0;
 
 	if (!is_valid_attr(flow_attr))
@@ -1971,7 +1995,7 @@ static struct mlx5_ib_flow_handler *create_flow_rule(struct mlx5_ib_dev *dev,
 
 	for (spec_index = 0; spec_index < flow_attr->num_of_specs; spec_index++) {
 		err = parse_flow_attr(spec->match_criteria,
-				      spec->match_value, ib_flow);
+				      spec->match_value, ib_flow, &flow_tag);
 		if (err < 0)
 			goto free;
 
@@ -1981,7 +2005,16 @@ static struct mlx5_ib_flow_handler *create_flow_rule(struct mlx5_ib_dev *dev,
 	spec->match_criteria_enable = get_match_criteria_enable(spec->match_criteria);
 	flow_act.action = dst ? MLX5_FLOW_CONTEXT_ACTION_FWD_DEST :
 		MLX5_FLOW_CONTEXT_ACTION_FWD_NEXT_PRIO;
-	flow_act.flow_tag = MLX5_FS_DEFAULT_FLOW_TAG;
+
+	if (flow_tag != MLX5_FS_DEFAULT_FLOW_TAG &&
+	   (flow_attr->type == IB_FLOW_ATTR_ALL_DEFAULT ||
+	   flow_attr->type == IB_FLOW_ATTR_MC_DEFAULT)) {
+		mlx5_ib_warn(dev, "Flow tag %u and attribute type %x isn't allowed in leftovers\n",
+			     flow_tag, flow_attr->type);
+		err = -EINVAL;
+		goto free;
+	}
+	flow_act.flow_tag = flow_tag;
 	handler->rule = mlx5_add_flow_rules(ft, spec,
 					    &flow_act,
 					    dst, 1);
@@ -2482,6 +2515,7 @@ static int get_port_caps(struct mlx5_ib_dev *dev)
 	}
 
 	for (port = 1; port <= MLX5_CAP_GEN(dev->mdev, num_ports); port++) {
+		memset(pprops, 0, sizeof(struct ib_port_attr));
 		err = mlx5_ib_query_port(&dev->ib_dev, port, pprops);
 		if (err) {
 			mlx5_ib_warn(dev, "query_port %d failed %d\n",
@@ -2776,11 +2810,13 @@ static u32 get_core_cap_flags(struct ib_device *ibdev)
 	if (ll == IB_LINK_LAYER_INFINIBAND)
 		return RDMA_CORE_PORT_IBA_IB;
 
+	ret = RDMA_CORE_PORT_RAW_PACKET;
+
 	if (!(l3_type_cap & MLX5_ROCE_L3_TYPE_IPV4_CAP))
-		return 0;
+		return ret;
 
 	if (!(l3_type_cap & MLX5_ROCE_L3_TYPE_IPV6_CAP))
-		return 0;
+		return ret;
 
 	if (roce_version_cap & MLX5_ROCE_VERSION_1_CAP)
 		ret |= RDMA_CORE_PORT_IBA_ROCE;
@@ -2799,7 +2835,9 @@ static int mlx5_port_immutable(struct ib_device *ibdev, u8 port_num,
 	enum rdma_link_layer ll = mlx5_ib_port_link_layer(ibdev, port_num);
 	int err;
 
-	err = mlx5_ib_query_port(ibdev, port_num, &attr);
+	immutable->core_cap_flags = get_core_cap_flags(ibdev);
+
+	err = ib_query_port(ibdev, port_num, &attr);
 	if (err)
 		return err;
 
@@ -3307,6 +3345,9 @@ static struct mlx5_interface mlx5_ib_interface = {
 	.add            = mlx5_ib_add,
 	.remove         = mlx5_ib_remove,
 	.event          = mlx5_ib_event,
+#ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
+	.pfault		= mlx5_ib_pfault,
+#endif
 	.protocol	= MLX5_INTERFACE_PROTOCOL_IB,
 };
 
@@ -3317,25 +3358,14 @@ static int __init mlx5_ib_init(void)
 	if (deprecated_prof_sel != 2)
 		pr_warn("prof_sel is deprecated for mlx5_ib, set it for mlx5_core\n");
 
-	err = mlx5_ib_odp_init();
-	if (err)
-		return err;
-
 	err = mlx5_register_interface(&mlx5_ib_interface);
-	if (err)
-		goto clean_odp;
 
-	return err;
-
-clean_odp:
-	mlx5_ib_odp_cleanup();
 	return err;
 }
 
 static void __exit mlx5_ib_cleanup(void)
 {
 	mlx5_unregister_interface(&mlx5_ib_interface);
-	mlx5_ib_odp_cleanup();
 }
 
 module_init(mlx5_ib_init);
