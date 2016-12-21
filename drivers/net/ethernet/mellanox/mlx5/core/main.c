@@ -418,11 +418,11 @@ static int mlx5_core_get_caps_mode(struct mlx5_core_dev *dev,
 
 	switch (cap_mode) {
 	case HCA_CAP_OPMOD_GET_MAX:
-		memcpy(dev->hca_caps_max[cap_type], hca_caps,
+		memcpy(dev->caps.hca_max[cap_type], hca_caps,
 		       MLX5_UN_SZ_BYTES(hca_cap_union));
 		break;
 	case HCA_CAP_OPMOD_GET_CUR:
-		memcpy(dev->hca_caps_cur[cap_type], hca_caps,
+		memcpy(dev->caps.hca_cur[cap_type], hca_caps,
 		       MLX5_UN_SZ_BYTES(hca_cap_union));
 		break;
 	default:
@@ -513,7 +513,7 @@ static int handle_hca_cap(struct mlx5_core_dev *dev)
 
 	set_hca_cap = MLX5_ADDR_OF(set_hca_cap_in, set_ctx,
 				   capability);
-	memcpy(set_hca_cap, dev->hca_caps_cur[MLX5_CAP_GENERAL],
+	memcpy(set_hca_cap, dev->caps.hca_cur[MLX5_CAP_GENERAL],
 	       MLX5_ST_SZ_BYTES(cmd_hca_cap));
 
 	mlx5_core_dbg(dev, "Current Pkey table size %d Setting new size %d\n",
@@ -531,6 +531,12 @@ static int handle_hca_cap(struct mlx5_core_dev *dev)
 	MLX5_SET(cmd_hca_cap, set_hca_cap, cmdif_checksum, 0);
 
 	MLX5_SET(cmd_hca_cap, set_hca_cap, log_uar_page_sz, PAGE_SHIFT - 12);
+
+	if (MLX5_CAP_GEN_MAX(dev, cache_line_128byte))
+		MLX5_SET(cmd_hca_cap,
+			 set_hca_cap,
+			 cache_line_128byte,
+			 cache_line_size() == 128 ? 1 : 0);
 
 	err = set_caps(dev, set_ctx, set_sz,
 		       MLX5_SET_HCA_CAP_OP_MOD_GENERAL_DEVICE);
@@ -595,7 +601,6 @@ static int mlx5_irq_set_affinity_hint(struct mlx5_core_dev *mdev, int i)
 	struct mlx5_priv *priv  = &mdev->priv;
 	struct msix_entry *msix = priv->msix_arr;
 	int irq                 = msix[i + MLX5_EQ_VEC_COMP_BASE].vector;
-	int numa_node           = priv->numa_node;
 	int err;
 
 	if (!zalloc_cpumask_var(&priv->irq_info[i].mask, GFP_KERNEL)) {
@@ -603,7 +608,7 @@ static int mlx5_irq_set_affinity_hint(struct mlx5_core_dev *mdev, int i)
 		return -ENOMEM;
 	}
 
-	cpumask_set_cpu(cpumask_local_spread(i, numa_node),
+	cpumask_set_cpu(cpumask_local_spread(i, priv->numa_node),
 			priv->irq_info[i].mask);
 
 	err = irq_set_affinity_hint(irq, priv->irq_info[i].mask);
@@ -1325,9 +1330,7 @@ static int init_one(struct pci_dev *pdev,
 		goto clean_health;
 	}
 
-	err = request_module_nowait(MLX5_IB_MOD);
-	if (err)
-		pr_info("failed request module on %s\n", MLX5_IB_MOD);
+	request_module_nowait(MLX5_IB_MOD);
 
 	err = devlink_register(devlink, &pdev->dev);
 	if (err)

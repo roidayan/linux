@@ -53,6 +53,7 @@
 #include <linux/in.h>
 #include <linux/etherdevice.h>
 #include <linux/mlx5/fs.h>
+#include <linux/mlx5/vport.h>
 #include "mlx5_ib.h"
 
 #define DRIVER_NAME "mlx5_ib"
@@ -1133,6 +1134,11 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 	resp.tot_uuars = req.total_num_uuars;
 	resp.num_ports = MLX5_CAP_GEN(dev->mdev, num_ports);
 
+	if (mlx5_ib_port_link_layer(ibdev, 1) == IB_LINK_LAYER_ETHERNET) {
+		mlx5_query_min_inline(dev->mdev, &resp.eth_min_inline);
+		resp.eth_min_inline++;
+	}
+
 	if (field_avail(typeof(resp), cqe_version, udata->outlen))
 		resp.response_length += sizeof(resp.cqe_version);
 
@@ -1636,9 +1642,9 @@ static int parse_flow_attr(u32 *match_c, u32 *match_v,
 
 		if (ib_spec->eth.mask.vlan_tag) {
 			MLX5_SET(fte_match_set_lyr_2_4, headers_c,
-				 vlan_tag, 1);
+				 cvlan_tag, 1);
 			MLX5_SET(fte_match_set_lyr_2_4, headers_v,
-				 vlan_tag, 1);
+				 cvlan_tag, 1);
 
 			MLX5_SET(fte_match_set_lyr_2_4, headers_c,
 				 first_vid, ntohs(ib_spec->eth.mask.vlan_tag));
