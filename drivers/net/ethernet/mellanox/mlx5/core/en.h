@@ -213,7 +213,6 @@ struct mlx5e_params {
 	bool rx_cqe_compress_def;
 	struct mlx5e_cq_moder rx_cq_moderation;
 	struct mlx5e_cq_moder tx_cq_moderation;
-	u16 min_rx_wqes;
 	bool lro_en;
 	u32 lro_wqe_sz;
 	u16 tx_max_inline;
