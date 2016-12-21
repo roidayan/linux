@@ -1112,11 +1112,18 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 	context->ibucontext.invalidate_range = &mlx5_ib_invalidate_range;
 #endif
 
+	context->upd_xlt_page = __get_free_page(GFP_KERNEL);
+	if (!context->upd_xlt_page) {
+		err = -ENOMEM;
+		goto out_uars;
+	}
+	mutex_init(&context->upd_xlt_page_mutex);
+
 	if (MLX5_CAP_GEN(dev->mdev, log_max_transport_domain)) {
 		err = mlx5_core_alloc_transport_domain(dev->mdev,
 						       &context->tdn);
 		if (err)
-			goto out_uars;
+			goto out_page;
 	}
 
 	INIT_LIST_HEAD(&context->vma_private_list);
@@ -1168,6 +1175,10 @@ out_td:
 	if (MLX5_CAP_GEN(dev->mdev, log_max_transport_domain))
 		mlx5_core_dealloc_transport_domain(dev->mdev, context->tdn);
 
+out_page:
+	free_page(context->upd_xlt_page);
+
+
 out_uars:
 	for (i--; i >= 0; i--)
 		mlx5_cmd_free_uar(dev->mdev, uars[i].index);
@@ -1194,6 +1205,8 @@ static int mlx5_ib_dealloc_ucontext(struct ib_ucontext *ibcontext)
 
 	if (MLX5_CAP_GEN(dev->mdev, log_max_transport_domain))
 		mlx5_core_dealloc_transport_domain(dev->mdev, context->tdn);
+
+	free_page(context->upd_xlt_page);
 
 	for (i = 0; i < uuari->num_uars; i++) {
 		if (mlx5_cmd_free_uar(dev->mdev, uuari->uars[i].index))
@@ -3307,6 +3320,9 @@ static struct mlx5_interface mlx5_ib_interface = {
 	.add            = mlx5_ib_add,
 	.remove         = mlx5_ib_remove,
 	.event          = mlx5_ib_event,
+#ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
+	.pfault		= mlx5_ib_pfault,
+#endif
 	.protocol	= MLX5_INTERFACE_PROTOCOL_IB,
 };
 
@@ -3317,25 +3333,14 @@ static int __init mlx5_ib_init(void)
 	if (deprecated_prof_sel != 2)
 		pr_warn("prof_sel is deprecated for mlx5_ib, set it for mlx5_core\n");
 
-	err = mlx5_ib_odp_init();
-	if (err)
-		return err;
-
 	err = mlx5_register_interface(&mlx5_ib_interface);
-	if (err)
-		goto clean_odp;
 
-	return err;
-
-clean_odp:
-	mlx5_ib_odp_cleanup();
 	return err;
 }
 
 static void __exit mlx5_ib_cleanup(void)
 {
 	mlx5_unregister_interface(&mlx5_ib_interface);
-	mlx5_ib_odp_cleanup();
 }
 
 module_init(mlx5_ib_init);
