@@ -2461,11 +2461,16 @@ static void get_ext_port_caps(struct mlx5_ib_dev *dev)
 
 static int get_port_caps(struct mlx5_ib_dev *dev)
 {
+	struct mlx5_hca_vport_context *vport_ctx = NULL;
 	struct ib_device_attr *dprops = NULL;
 	struct ib_port_attr *pprops = NULL;
 	int err = -ENOMEM;
 	int port;
 	struct ib_udata uhw = {.inlen = 0, .outlen = 0};
+
+	vport_ctx = kmalloc(sizeof(*vport_ctx), GFP_KERNEL);
+	if (!vport_ctx)
+		goto out;
 
 	pprops = kmalloc(sizeof(*pprops), GFP_KERNEL);
 	if (!pprops)
@@ -2488,6 +2493,25 @@ static int get_port_caps(struct mlx5_ib_dev *dev)
 				     port, err);
 			break;
 		}
+
+
+		dev->mdev->port_caps[port - 1].has_smi = false;
+
+		if (MLX5_CAP_GEN(dev->mdev, port_type) == MLX5_CAP_PORT_TYPE_IB) {
+			if (MLX5_CAP_GEN(dev->mdev, ib_virt)) {
+				err = mlx5_query_hca_vport_context(dev->mdev, 0, port,
+								   0, vport_ctx);
+				if (err) {
+					mlx5_ib_warn(dev, "query_hca_vport_context for port=%d failed %d\n",
+						     port, err);
+					break;
+				}
+				dev->mdev->port_caps[port - 1].has_smi = vport_ctx->has_smi;
+			} else {
+				dev->mdev->port_caps[port - 1].has_smi = true;
+			}
+		}
+
 		dev->mdev->port_caps[port - 1].pkey_table_len =
 						dprops->max_pkeys;
 		dev->mdev->port_caps[port - 1].gid_table_len =
@@ -2497,6 +2521,7 @@ static int get_port_caps(struct mlx5_ib_dev *dev)
 	}
 
 out:
+	kfree(vport_ctx);
 	kfree(pprops);
 	kfree(dprops);
 
