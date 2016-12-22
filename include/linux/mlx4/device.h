@@ -47,7 +47,7 @@
 #define DEFAULT_UAR_PAGE_SHIFT  12
 
 #define MAX_MSIX_P_PORT		17
-#define MAX_MSIX		64
+#define MAX_MSIX		1024
 #define MIN_MSIX_P_PORT		5
 #define MLX4_IS_LEGACY_EQ_MODE(dev_cap) ((dev_cap).num_comp_vectors < \
 					 (dev_cap).num_ports * MIN_MSIX_P_PORT)
@@ -1492,6 +1492,8 @@ int mlx4_phys_to_slave_port(struct mlx4_dev *dev, int slave, int port);
 int mlx4_get_base_gid_ix(struct mlx4_dev *dev, int slave, int port);
 
 int mlx4_config_vxlan_port(struct mlx4_dev *dev, __be16 udp_port);
+int mlx4_get_port_free_macs(struct mlx4_dev *mdev, int port);
+bool mlx4_is_available_mac(struct mlx4_dev *mdev, int port);
 int mlx4_disable_rx_port_check(struct mlx4_dev *dev, bool dis);
 int mlx4_config_roce_v2_port(struct mlx4_dev *dev, u16 udp_port);
 int mlx4_virt2phy_port_map(struct mlx4_dev *dev, u32 port1, u32 port2);
@@ -1537,8 +1539,13 @@ enum mlx4_ptys_proto {
 	MLX4_PTYS_EN = 1<<2,
 };
 
+enum mlx4_ptys_flags {
+	MLX4_PTYS_AN_DISABLE_CAP   = 1<<5,
+	MLX4_PTYS_AN_DISABLE_ADMIN = 1<<6,
+};
+
 struct mlx4_ptys_reg {
-	u8 resrvd1;
+	u8 flags;
 	u8 local_port;
 	u8 resrvd2;
 	u8 proto_mask;
