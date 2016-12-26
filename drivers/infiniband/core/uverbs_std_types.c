@@ -256,3 +256,22 @@ DECLARE_UVERBS_TYPE(uverbs_type_pd,
 		    /* 2 is used in order to free the PD after MRs */
 		    &UVERBS_TYPE_ALLOC_IDR(2, uverbs_free_pd));
 
+DECLARE_UVERBS_TYPE(uverbs_type_device, NULL);
+
+DECLARE_UVERBS_TYPES(uverbs_common_types,
+		     ADD_UVERBS_TYPE(UVERBS_TYPE_DEVICE, uverbs_type_device),
+		     ADD_UVERBS_TYPE(UVERBS_TYPE_PD, uverbs_type_pd),
+		     ADD_UVERBS_TYPE(UVERBS_TYPE_MR, uverbs_type_mr),
+		     ADD_UVERBS_TYPE(UVERBS_TYPE_COMP_CHANNEL, uverbs_type_comp_channel),
+		     ADD_UVERBS_TYPE(UVERBS_TYPE_CQ, uverbs_type_cq),
+		     ADD_UVERBS_TYPE(UVERBS_TYPE_QP, uverbs_type_qp),
+		     ADD_UVERBS_TYPE(UVERBS_TYPE_AH, uverbs_type_ah),
+		     ADD_UVERBS_TYPE(UVERBS_TYPE_MW, uverbs_type_mw),
+		     ADD_UVERBS_TYPE(UVERBS_TYPE_SRQ, uverbs_type_srq),
+		     ADD_UVERBS_TYPE(UVERBS_TYPE_FLOW, uverbs_type_flow),
+		     ADD_UVERBS_TYPE(UVERBS_TYPE_WQ, uverbs_type_wq),
+		     ADD_UVERBS_TYPE(UVERBS_TYPE_RWQ_IND_TBL,
+				     uverbs_type_rwq_ind_table),
+		     ADD_UVERBS_TYPE(UVERBS_TYPE_XRCD, uverbs_type_xrcd),
+);
+EXPORT_SYMBOL(uverbs_common_types);
