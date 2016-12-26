@@ -72,6 +72,7 @@ enum {
 			       (1ull << MLX5_EVENT_TYPE_PORT_CHANGE)	    | \
 			       (1ull << MLX5_EVENT_TYPE_SRQ_CATAS_ERROR)    | \
 			       (1ull << MLX5_EVENT_TYPE_SRQ_LAST_WQE)	    | \
+			       (1ull << MLX5_EVENT_TYPE_PPS_EVENT)	    | \
 			       (1ull << MLX5_EVENT_TYPE_SRQ_RQ_LIMIT))
 
 struct map_eq_in {
@@ -154,6 +155,8 @@ static const char *eqe_type_str(u8 type)
 		return "MLX5_EVENT_TYPE_PAGE_REQUEST";
 	case MLX5_EVENT_TYPE_PAGE_FAULT:
 		return "MLX5_EVENT_TYPE_PAGE_FAULT";
+	case MLX5_EVENT_TYPE_PPS_EVENT:
+		return "MLX5_EVENT_TYPE_PPS_EVENT";
 	default:
 		return "Unrecognized event";
 	}
@@ -470,6 +473,10 @@ static irqreturn_t mlx5_eq_int(int irq, void *eq_ptr)
 			mlx5_port_module_event(dev, eqe);
 			break;
 
+		case MLX5_EVENT_TYPE_PPS_EVENT:
+			if (dev->event)
+				dev->event(dev, MLX5_DEV_EVENT_PPS, (unsigned long)eqe);
+			break;
 		default:
 			mlx5_core_warn(dev, "Unhandled event 0x%x on EQ 0x%x\n",
 				       eqe->type, eq->eqn);

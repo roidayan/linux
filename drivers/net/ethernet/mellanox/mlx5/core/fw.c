@@ -91,6 +91,20 @@ out:
 }
 EXPORT_SYMBOL(mlx5_core_query_vendor_id);
 
+static int mlx5_get_pcam_reg(struct mlx5_core_dev *dev)
+{
+	return mlx5_query_pcam_reg(dev, dev->caps.pcam,
+				   MLX5_PCAM_FEATURE_ENHANCED_FEATURES,
+				   MLX5_PCAM_REGS_5000_TO_507F);
+}
+
+static int mlx5_get_mcam_reg(struct mlx5_core_dev *dev)
+{
+	return mlx5_query_mcam_reg(dev, dev->caps.mcam,
+				   MLX5_MCAM_FEATURE_ENHANCED_FEATURES,
+				   MLX5_MCAM_REGS_FIRST_128);
+}
+
 int mlx5_query_hca_caps(struct mlx5_core_dev *dev)
 {
 	int err;
@@ -150,6 +164,18 @@ int mlx5_query_hca_caps(struct mlx5_core_dev *dev)
 
 	if (MLX5_CAP_GEN(dev, qos)) {
 		err = mlx5_core_get_caps(dev, MLX5_CAP_QOS);
+		if (err)
+			return err;
+	}
+
+	if (MLX5_CAP_GEN(dev, pcam_reg)) {
+		err = mlx5_get_pcam_reg(dev);
+		if (err)
+			return err;
+	}
+
+	if (MLX5_CAP_GEN(dev, mcam_reg)) {
+		err = mlx5_get_mcam_reg(dev);
 		if (err)
 			return err;
 	}
