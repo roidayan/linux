@@ -41,12 +41,60 @@
  * =======================================
  */
 
+enum uverbs_attr_type {
+	UVERBS_ATTR_TYPE_NA,
+	UVERBS_ATTR_TYPE_IDR,
+	UVERBS_ATTR_TYPE_FD,
+};
+
 enum uverbs_obj_access {
 	UVERBS_ACCESS_READ,
 	UVERBS_ACCESS_WRITE,
 	UVERBS_ACCESS_NEW,
 	UVERBS_ACCESS_DESTROY
 };
+
+struct uverbs_attr_spec {
+	enum uverbs_attr_type		type;
+	struct {
+		/*
+		 * higher bits mean the group and lower bits mean
+		 * the type id within the group.
+		 */
+		u16			obj_type;
+		u8			access;
+	} obj;
+};
+
+struct uverbs_attr_spec_group {
+	struct uverbs_attr_spec		*attrs;
+	size_t				num_attrs;
+};
+
+struct uverbs_obj_attr {
+	struct ib_uobject		*uobject;
+};
+
+struct uverbs_attr {
+	struct uverbs_obj_attr	obj_attr;
+};
+
+struct uverbs_attr_array {
+	/* if bit i is set, it means attrs[i] contains valid information */
+	unsigned long *valid_bitmap;
+	size_t num_attrs;
+	/*
+	 * arrays of attributes, each element corresponds to the specification
+	 * of the attribute in the same index.
+	 */
+	struct uverbs_attr *attrs;
+};
+
+static inline bool uverbs_is_valid(const struct uverbs_attr_array *attr_array,
+				   unsigned int idx)
+{
+	return test_bit(idx, attr_array->valid_bitmap);
+}
 
 #endif
 
