@@ -35,6 +35,23 @@
 
 #include <rdma/uverbs_types.h>
 
+enum uverbs_common_types {
+	UVERBS_TYPE_DEVICE, /* No instances of DEVICE are allowed */
+	UVERBS_TYPE_PD,
+	UVERBS_TYPE_COMP_CHANNEL,
+	UVERBS_TYPE_CQ,
+	UVERBS_TYPE_QP,
+	UVERBS_TYPE_SRQ,
+	UVERBS_TYPE_AH,
+	UVERBS_TYPE_MR,
+	UVERBS_TYPE_MW,
+	UVERBS_TYPE_FLOW,
+	UVERBS_TYPE_XRCD,
+	UVERBS_TYPE_RWQ_IND_TBL,
+	UVERBS_TYPE_WQ,
+	UVERBS_TYPE_LAST,
+};
+
 extern const struct uverbs_type uverbs_type_comp_channel;
 extern const struct uverbs_type uverbs_type_cq;
 extern const struct uverbs_type uverbs_type_qp;
@@ -47,6 +64,8 @@ extern const struct uverbs_type uverbs_type_mr;
 extern const struct uverbs_type uverbs_type_mw;
 extern const struct uverbs_type uverbs_type_pd;
 extern const struct uverbs_type uverbs_type_xrcd;
+extern const struct uverbs_type uverbs_type_device;
+extern const struct uverbs_type_group uverbs_common_types;
 
 static inline struct ib_uobject *__uobj_get(const struct uverbs_obj_type *type,
 					    bool write,

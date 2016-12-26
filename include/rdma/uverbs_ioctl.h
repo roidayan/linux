@@ -135,6 +135,17 @@ struct uverbs_spec_root {
 	const struct uverbs_type name = {				\
 		.type_attrs = _type_attrs,				\
 	}
+#define _UVERBS_TYPE_SZ(...)						\
+	(sizeof((const struct uverbs_type *[]){__VA_ARGS__}) /	\
+	 sizeof(const struct uverbs_type *))
+#define ADD_UVERBS_TYPE(type_idx, type_ptr)				\
+	[type_idx] = ((const struct uverbs_type * const)&(type_ptr))
+#define UVERBS_TYPES(...)  ((const struct uverbs_type_group)		\
+	{.num_types = _UVERBS_TYPE_SZ(__VA_ARGS__),			\
+	 .types = (const struct uverbs_type *[]){__VA_ARGS__} })
+#define DECLARE_UVERBS_TYPES(name, ...)				\
+	const struct uverbs_type_group name = UVERBS_TYPES(__VA_ARGS__)
+
 /* =================================================
  *              Parsing infrastructure
  * =================================================
