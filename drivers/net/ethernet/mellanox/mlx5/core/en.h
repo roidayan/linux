@@ -858,6 +858,15 @@ int mlx5e_redirect_rqt(struct mlx5e_priv *priv, u32 rqtn, int sz,
 
 int mlx5e_open_locked(struct net_device *netdev);
 int mlx5e_close_locked(struct net_device *netdev);
+
+int mlx5e_open_channels(struct mlx5e_priv *priv,
+			struct mlx5e_params *params,
+			struct mlx5e_channels *chs);
+void mlx5e_close_channels(struct mlx5e_channels *chs);
+void mlx5e_switch_priv_channels(struct mlx5e_priv *priv,
+				struct mlx5e_channels *new_channles,
+				struct mlx5e_params *new_params);
+
 void mlx5e_build_default_indir_rqt(struct mlx5_core_dev *mdev,
 				   u32 *indirection_rqt, int len,
 				   int num_channels);
