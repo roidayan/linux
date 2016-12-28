@@ -155,17 +155,15 @@ static inline u32 mlx5e_decompress_cqes_start(struct mlx5e_rq *rq,
 	return mlx5e_decompress_cqes_cont(rq, cq, 1, budget_rem) - 1;
 }
 
-void mlx5e_modify_rx_cqe_compression(struct mlx5e_priv *priv, bool val)
+void mlx5e_modify_rx_cqe_compression_locked(struct mlx5e_priv *priv, bool val)
 {
 	bool was_opened;
 
 	if (!MLX5_CAP_GEN(priv->mdev, cqe_compression))
 		return;
 
-	mutex_lock(&priv->state_lock);
-
 	if (MLX5E_GET_PFLAG(priv, MLX5E_PFLAG_RX_CQE_COMPRESS) == val)
-		goto unlock;
+		return;
 
 	was_opened = test_bit(MLX5E_STATE_OPENED, &priv->state);
 	if (was_opened)
@@ -176,8 +174,6 @@ void mlx5e_modify_rx_cqe_compression(struct mlx5e_priv *priv, bool val)
 	if (was_opened)
 		mlx5e_open_locked(priv->netdev);
 
-unlock:
-	mutex_unlock(&priv->state_lock);
 }
 
 #define RQ_PAGE_SIZE(rq) ((1 << rq->buff.page_order) << PAGE_SHIFT)
@@ -659,9 +655,9 @@ static inline void mlx5e_xmit_xdp_frame(struct mlx5e_rq *rq,
 	struct mlx5_wqe_eth_seg  *eseg = &wqe->eth;
 	struct mlx5_wqe_data_seg *dseg;
 
-	dma_addr_t dma_addr  = di->addr + data_offset + MLX5E_XDP_MIN_INLINE;
-	unsigned int dma_len = len - MLX5E_XDP_MIN_INLINE;
-	void *data           = page_address(di->page) + data_offset;
+	unsigned int ds_cnt  = MLX5E_XDP_TX_DS_COUNT;
+	dma_addr_t dma_addr  = di->addr + data_offset;
+	unsigned int dma_len = len;
 
 	if (unlikely(!mlx5e_sq_has_room_for(sq, MLX5E_XDP_TX_WQEBBS))) {
 		if (sq->db.xdp.doorbell) {
@@ -679,11 +675,19 @@ static inline void mlx5e_xmit_xdp_frame(struct mlx5e_rq *rq,
 
 	memset(wqe, 0, sizeof(*wqe));
 
-	/* copy the inline part */
-	memcpy(eseg->inline_hdr_start, data, MLX5E_XDP_MIN_INLINE);
-	eseg->inline_hdr_sz = cpu_to_be16(MLX5E_XDP_MIN_INLINE);
+	dseg = (struct mlx5_wqe_data_seg *)eseg + 1;
+	/* copy the inline part if required */
+	if (sq->min_inline_mode != MLX5_INLINE_MODE_NONE) {
+		void *data = page_address(di->page) + data_offset;
 
-	dseg = (struct mlx5_wqe_data_seg *)cseg + (MLX5E_XDP_TX_DS_COUNT - 1);
+		memcpy(eseg->inline_hdr.start, data, MLX5E_XDP_MIN_INLINE);
+		eseg->inline_hdr.sz = cpu_to_be16(MLX5E_XDP_MIN_INLINE);
+		dma_len  -= MLX5E_XDP_MIN_INLINE;
+		dma_addr += MLX5E_XDP_MIN_INLINE;
+
+		ds_cnt   += MLX5E_XDP_IHS_DS_COUNT;
+		dseg++;
+	}
 
 	/* write the dma part */
 	dseg->addr       = cpu_to_be64(dma_addr);
@@ -691,7 +695,7 @@ static inline void mlx5e_xmit_xdp_frame(struct mlx5e_rq *rq,
 	dseg->lkey       = sq->mkey_be;
 
 	cseg->opmod_idx_opcode = cpu_to_be32((sq->pc << 8) | MLX5_OPCODE_SEND);
-	cseg->qpn_ds = cpu_to_be32((sq->sqn << 8) | MLX5E_XDP_TX_DS_COUNT);
+	cseg->qpn_ds = cpu_to_be32((sq->sqn << 8) | ds_cnt);
 
 	sq->db.xdp.di[pi] = *di;
 	wi->opcode     = MLX5_OPCODE_SEND;

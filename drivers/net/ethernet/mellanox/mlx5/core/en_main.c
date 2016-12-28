@@ -31,6 +31,7 @@
  */
 
 #include <net/tc_act/tc_gact.h>
+#include <linux/crash_dump.h>
 #include <net/pkt_cls.h>
 #include <linux/mlx5/fs.h>
 #include <net/vxlan.h>
@@ -83,7 +84,9 @@ static void mlx5e_set_rq_type_params(struct mlx5e_priv *priv, u8 rq_type)
 	priv->params.rq_wq_type = rq_type;
 	switch (priv->params.rq_wq_type) {
 	case MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ:
-		priv->params.log_rq_size = MLX5E_PARAMS_DEFAULT_LOG_RQ_SIZE_MPW;
+		priv->params.log_rq_size = is_kdump_kernel() ?
+			MLX5E_PARAMS_MINIMUM_LOG_RQ_SIZE_MPW :
+			MLX5E_PARAMS_DEFAULT_LOG_RQ_SIZE_MPW;
 		priv->params.mpwqe_log_stride_sz =
 			MLX5E_GET_PFLAG(priv, MLX5E_PFLAG_RX_CQE_COMPRESS) ?
 			MLX5_MPWRQ_LOG_STRIDE_SIZE_CQE_COMPRESS :
@@ -92,7 +95,9 @@ static void mlx5e_set_rq_type_params(struct mlx5e_priv *priv, u8 rq_type)
 			priv->params.mpwqe_log_stride_sz;
 		break;
 	default: /* MLX5_WQ_TYPE_LINKED_LIST */
-		priv->params.log_rq_size = MLX5E_PARAMS_DEFAULT_LOG_RQ_SIZE;
+		priv->params.log_rq_size = is_kdump_kernel() ?
+			MLX5E_PARAMS_MINIMUM_LOG_RQ_SIZE :
+			MLX5E_PARAMS_DEFAULT_LOG_RQ_SIZE;
 	}
 	priv->params.min_rx_wqes = mlx5_min_rx_wqes(priv->params.rq_wq_type,
 					       BIT(priv->params.log_rq_size));
@@ -208,6 +213,7 @@ static void mlx5e_update_sw_counters(struct mlx5e_priv *priv)
 			s->tx_queue_dropped	+= sq_stats->dropped;
 			s->tx_xmit_more		+= sq_stats->xmit_more;
 			s->tx_csum_partial_inner += sq_stats->csum_partial_inner;
+			s->tx_no_l3_header	+= sq_stats->no_l3_header;
 			tx_offload_none		+= sq_stats->csum_none;
 		}
 	}
@@ -998,9 +1004,7 @@ static int mlx5e_create_sq(struct mlx5e_channel *c,
 
 	sq->bf_buf_size = (1 << MLX5_CAP_GEN(mdev, log_bf_reg_size)) / 2;
 	sq->max_inline  = param->max_inline;
-	sq->min_inline_mode =
-		MLX5_CAP_ETH(mdev, wqe_inline_mode) == MLX5_CAP_INLINE_MODE_VPORT_CONTEXT ?
-		param->min_inline_mode : 0;
+	sq->min_inline_mode = param->min_inline_mode;
 
 	err = mlx5e_alloc_sq_db(sq, cpu_to_node(c->cpu));
 	if (err)
@@ -1064,7 +1068,10 @@ static int mlx5e_enable_sq(struct mlx5e_sq *sq, struct mlx5e_sq_param *param)
 	MLX5_SET(sqc,  sqc, tis_num_0, param->type == MLX5E_SQ_ICO ?
 				       0 : priv->tisn[sq->tc]);
 	MLX5_SET(sqc,  sqc, cqn,		sq->cq.mcq.cqn);
-	MLX5_SET(sqc,  sqc, min_wqe_inline_mode, sq->min_inline_mode);
+
+	if (MLX5_CAP_ETH(mdev, wqe_inline_mode) == MLX5_CAP_INLINE_MODE_VPORT_CONTEXT)
+		MLX5_SET(sqc,  sqc, min_wqe_inline_mode, sq->min_inline_mode);
+
 	MLX5_SET(sqc,  sqc, state,		MLX5_SQC_STATE_RST);
 	MLX5_SET(sqc,  sqc, tis_lst_sz, param->type == MLX5E_SQ_ICO ? 0 : 1);
 
@@ -1482,6 +1489,14 @@ static int mlx5e_set_tx_maxrate(struct net_device *dev, int index, u32 rate)
 	return err;
 }
 
+static inline int mlx5e_get_max_num_channels(struct mlx5_core_dev *mdev)
+{
+	return is_kdump_kernel() ?
+		MLX5E_MIN_NUM_CHANNELS :
+		min_t(int, mdev->priv.eq_table.num_comp_vectors,
+		      MLX5E_MAX_NUM_CHANNELS);
+}
+
 static int mlx5e_open_channel(struct mlx5e_priv *priv, int ix,
 			      struct mlx5e_channel_param *cparam,
 			      struct mlx5e_channel **cp)
@@ -1766,8 +1781,7 @@ static void mlx5e_build_xdpsq_param(struct mlx5e_priv *priv,
 	MLX5_SET(wq, wq, log_wq_sz,     priv->params.log_sq_size);
 
 	param->max_inline = priv->params.tx_max_inline;
-	/* FOR XDP SQs will support only L2 inline mode */
-	param->min_inline_mode = MLX5_INLINE_MODE_NONE;
+	param->min_inline_mode = priv->params.tx_min_inline_mode;
 	param->type = MLX5E_SQ_XDP;
 }
 
@@ -2996,11 +3010,8 @@ static int mlx5e_set_vf_rate(struct net_device *dev, int vf, int min_tx_rate,
 	struct mlx5e_priv *priv = netdev_priv(dev);
 	struct mlx5_core_dev *mdev = priv->mdev;
 
-	if (min_tx_rate)
-		return -EOPNOTSUPP;
-
 	return mlx5_eswitch_set_vport_rate(mdev->priv.eswitch, vf + 1,
-					   max_tx_rate);
+					   max_tx_rate, min_tx_rate);
 }
 
 static int mlx5_vport_link2ifla(u8 esw_link)
@@ -3474,7 +3485,9 @@ static void mlx5e_build_nic_netdev_priv(struct mlx5_core_dev *mdev,
 	priv->params.lro_timeout =
 		mlx5e_choose_lro_timeout(mdev, MLX5E_DEFAULT_LRO_TIMEOUT);
 
-	priv->params.log_sq_size = MLX5E_PARAMS_DEFAULT_LOG_SQ_SIZE;
+	priv->params.log_sq_size = is_kdump_kernel() ?
+		MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE :
+		MLX5E_PARAMS_DEFAULT_LOG_SQ_SIZE;
 
 	/* set CQE compression */
 	priv->params.rx_cqe_compress_def = false;
@@ -3501,6 +3514,10 @@ static void mlx5e_build_nic_netdev_priv(struct mlx5_core_dev *mdev,
 		MLX5E_PARAMS_DEFAULT_TX_CQ_MODERATION_PKTS;
 	priv->params.tx_max_inline         = mlx5e_get_max_inline_cap(mdev);
 	mlx5_query_min_inline(mdev, &priv->params.tx_min_inline_mode);
+	if (priv->params.tx_min_inline_mode == MLX5_INLINE_MODE_NONE
+	    && !MLX5_CAP_ETH(mdev, wqe_vlan_insert))
+		priv->params.tx_min_inline_mode = MLX5_INLINE_MODE_L2;
+
 	priv->params.num_tc                = 1;
 	priv->params.rss_hfunc             = ETH_RSS_HASH_XOR;
 
@@ -3663,6 +3680,11 @@ static void mlx5e_nic_init(struct mlx5_core_dev *mdev,
 
 	mlx5e_build_nic_netdev_priv(mdev, netdev, profile, ppriv);
 	mlx5e_build_nic_netdev(netdev);
+
+	priv->reg = mlx5e_regs_init();
+	if (!priv->reg)
+		mlx5_core_warn(mdev, "Failed to allocate mlx5e_reg\n");
+
 	mlx5e_vxlan_init(priv);
 }
 
@@ -3672,6 +3694,9 @@ static void mlx5e_nic_cleanup(struct mlx5e_priv *priv)
 	struct mlx5_eswitch *esw = mdev->priv.eswitch;
 
 	mlx5e_vxlan_cleanup(priv);
+
+	if (priv->reg)
+		mlx5e_regs_destroy(priv->reg);
 
 	if (MLX5_CAP_GEN(mdev, vport_group_manager))
 		mlx5_eswitch_unregister_vport_rep(esw, 0);

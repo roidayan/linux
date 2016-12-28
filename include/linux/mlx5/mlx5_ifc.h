@@ -169,6 +169,9 @@ enum {
 	MLX5_CMD_OP_DEALLOC_XRCD                  = 0x80f,
 	MLX5_CMD_OP_ALLOC_TRANSPORT_DOMAIN        = 0x816,
 	MLX5_CMD_OP_DEALLOC_TRANSPORT_DOMAIN      = 0x817,
+	MLX5_CMD_OP_QUERY_DIAGNOSTIC_PARAMS       = 0x819,
+	MLX5_CMD_OP_SET_DIAGNOSTIC_PARAMS         = 0x820,
+	MLX5_CMD_OP_QUERY_DIAGNOSTICS_COUNTERS    = 0x821,
 	MLX5_CMD_OP_QUERY_CONG_STATUS             = 0x822,
 	MLX5_CMD_OP_MODIFY_CONG_STATUS            = 0x823,
 	MLX5_CMD_OP_QUERY_CONG_PARAMS             = 0x824,
@@ -228,6 +231,25 @@ enum {
 	MLX5_CMD_OP_ALLOC_ENCAP_HEADER            = 0x93d,
 	MLX5_CMD_OP_DEALLOC_ENCAP_HEADER          = 0x93e,
 	MLX5_CMD_OP_MAX
+};
+
+struct mlx5_ifc_mbox_out_bits {
+	u8         status[0x8];
+	u8         reserved_at_8[0x18];
+
+	u8         syndrome[0x20];
+
+	u8         reserved_at_40[0x40];
+};
+
+struct mlx5_ifc_mbox_in_bits {
+	u8         opcode[0x10];
+	u8         reserved_at_10[0x10];
+
+	u8         reserved_at_20[0x10];
+	u8         op_mod[0x10];
+
+	u8         reserved_at_40[0x40];
 };
 
 struct mlx5_ifc_flow_table_fields_supported_bits {
@@ -547,7 +569,9 @@ struct mlx5_ifc_e_switch_cap_bits {
 struct mlx5_ifc_qos_cap_bits {
 	u8         packet_pacing[0x1];
 	u8         esw_scheduling[0x1];
-	u8         reserved_at_2[0x1e];
+	u8         esw_bw_share[0x1];
+	u8         esw_rate_limit[0x1];
+	u8         reserved_at_4[0x1c];
 
 	u8         reserved_at_20[0x20];
 
@@ -575,7 +599,8 @@ struct mlx5_ifc_per_protocol_networking_offload_caps_bits {
 	u8         lro_cap[0x1];
 	u8         lro_psh_flag[0x1];
 	u8         lro_time_stamp[0x1];
-	u8         reserved_at_5[0x3];
+	u8         reserved_at_5[0x2];
+	u8         wqe_vlan_insert[0x1];
 	u8         self_lb_en_modifiable[0x1];
 	u8         reserved_at_9[0x2];
 	u8         max_lso_cap[0x5];
@@ -3454,7 +3479,8 @@ struct mlx5_ifc_query_vport_state_out_bits {
 
 	u8         reserved_at_40[0x20];
 
-	u8         reserved_at_60[0x18];
+	u8         max_tx_speed[0x10];
+	u8         reserved_at_70[0x8];
 	u8         admin_state[0x4];
 	u8         state[0x4];
 };
@@ -3462,6 +3488,7 @@ struct mlx5_ifc_query_vport_state_out_bits {
 enum {
 	MLX5_QUERY_VPORT_STATE_IN_OP_MOD_VNIC_VPORT  = 0x0,
 	MLX5_QUERY_VPORT_STATE_IN_OP_MOD_ESW_VPORT   = 0x1,
+	MLX5_QUERY_VPORT_STATE_IN_OP_MOD_UPLINK      = 0x2,
 };
 
 struct mlx5_ifc_query_vport_state_in_bits {
