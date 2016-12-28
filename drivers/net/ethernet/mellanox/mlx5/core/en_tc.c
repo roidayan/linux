@@ -181,7 +181,11 @@ static void mlx5e_tc_del_flow(struct mlx5e_priv *priv,
 		mlx5_fc_destroy(priv->mdev, counter);
 	}
 
-	if (esw && esw->mode == SRIOV_OFFLOADS) {
+	if (esw && esw->mode == SRIOV_OFFLOADS && flow->attr) {
+		/**
+		 * flow->attr is null for flows allocated when esw was in
+		 * legacy mode.
+		 **/
 		mlx5_eswitch_del_vlan_action(esw, flow->attr);
 		if (flow->attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP)
 			mlx5e_detach_encap(priv, flow);
@@ -1218,7 +1222,6 @@ int mlx5e_delete_flower(struct mlx5e_priv *priv,
 	rhashtable_remove_fast(&tc->ht, &flow->node, tc->ht_params);
 
 	mlx5e_tc_del_flow(priv, flow);
-
 
 	kfree(flow);
 
