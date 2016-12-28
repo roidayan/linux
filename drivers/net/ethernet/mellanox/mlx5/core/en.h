@@ -259,6 +259,7 @@ struct mlx5e_tstamp {
 	struct mlx5_core_dev      *mdev;
 	struct ptp_clock          *ptp;
 	struct ptp_clock_info      ptp_info;
+	u8                        *pps_pin_caps;
 };
 
 enum {
@@ -465,7 +466,6 @@ struct mlx5e_sq {
 	/* read only */
 	struct mlx5_wq_cyc         wq;
 	u32                        dma_fifo_mask;
-	void __iomem              *uar_map;
 	struct netdev_queue       *txq;
 	u32                        sqn;
 	u16                        bf_buf_size;
@@ -479,7 +479,7 @@ struct mlx5e_sq {
 
 	/* control path */
 	struct mlx5_wq_ctrl        wq_ctrl;
-	struct mlx5_uar            uar;
+	struct mlx5_sq_bfreg	   bfreg;
 	struct mlx5e_channel      *channel;
 	int                        tc;
 	u32                        rate_limit;
@@ -568,8 +568,9 @@ struct mlx5e_vlan_table {
 	unsigned long active_vlans[BITS_TO_LONGS(VLAN_N_VID)];
 	struct mlx5_flow_handle	*active_vlans_rule[VLAN_N_VID];
 	struct mlx5_flow_handle	*untagged_rule;
-	struct mlx5_flow_handle	*any_vlan_rule;
-	bool		filter_disabled;
+	struct mlx5_flow_handle	*any_cvlan_rule;
+	struct mlx5_flow_handle	*any_svlan_rule;
+	bool			filter_disabled;
 };
 
 struct mlx5e_l2_table {
@@ -777,6 +778,8 @@ void mlx5e_fill_hwstamp(struct mlx5e_tstamp *clock, u64 timestamp,
 			struct skb_shared_hwtstamps *hwts);
 void mlx5e_timestamp_init(struct mlx5e_priv *priv);
 void mlx5e_timestamp_cleanup(struct mlx5e_priv *priv);
+void mlx5e_pps_event_handler(struct mlx5e_priv *priv,
+			     struct ptp_clock_event *event);
 int mlx5e_hwstamp_set(struct net_device *dev, struct ifreq *ifr);
 int mlx5e_hwstamp_get(struct net_device *dev, struct ifreq *ifr);
 void mlx5e_modify_rx_cqe_compression(struct mlx5e_priv *priv, bool val);
@@ -806,7 +809,7 @@ void mlx5e_set_rx_cq_mode_params(struct mlx5e_params *params,
 static inline void mlx5e_tx_notify_hw(struct mlx5e_sq *sq,
 				      struct mlx5_wqe_ctrl_seg *ctrl, int bf_sz)
 {
-	u16 ofst = MLX5_BF_OFFSET + sq->bf_offset;
+	u16 ofst = sq->bf_offset;
 
 	/* ensure wqe is visible to device before updating doorbell record */
 	dma_wmb();
@@ -818,9 +821,9 @@ static inline void mlx5e_tx_notify_hw(struct mlx5e_sq *sq,
 	 */
 	wmb();
 	if (bf_sz)
-		__iowrite64_copy(sq->uar_map + ofst, ctrl, bf_sz);
+		__iowrite64_copy(sq->bfreg.map + ofst, ctrl, bf_sz);
 	else
-		mlx5_write64((__be32 *)ctrl, sq->uar_map + ofst, NULL);
+		mlx5_write64((__be32 *)ctrl, sq->bfreg.map + ofst);
 	/* flush the write-combining mapped buffer */
 	wmb();
 
@@ -832,7 +835,7 @@ static inline void mlx5e_cq_arm(struct mlx5e_cq *cq)
 	struct mlx5_core_cq *mcq;
 
 	mcq = &cq->mcq;
-	mlx5_cq_arm(mcq, MLX5_CQ_DB_REQ_NOT, mcq->uar->map, NULL, cq->wq.cc);
+	mlx5_cq_arm(mcq, MLX5_CQ_DB_REQ_NOT, mcq->uar->map, cq->wq.cc);
 }
 
 static inline u32 mlx5e_get_wqe_mtt_offset(struct mlx5e_rq *rq, u16 wqe_ix)
