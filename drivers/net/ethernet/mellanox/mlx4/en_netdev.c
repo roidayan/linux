@@ -1129,6 +1129,12 @@ static void mlx4_en_do_uc_filter(struct mlx4_en_priv *priv,
 			}
 			mac = mlx4_mac_to_u64(ha->addr);
 			memcpy(entry->mac, ha->addr, ETH_ALEN);
+
+			if (!mlx4_is_available_mac(mdev->dev, priv->port)) {
+				mlx4_warn(mdev, "Cannot add mac:%pM, no free macs.\n", &mac);
+				break;
+			}
+
 			err = mlx4_register_mac(mdev->dev, priv->port, mac);
 			if (err < 0) {
 				en_err(priv, "Failed registering MAC %pM on port %d: %d\n",
@@ -1638,7 +1644,8 @@ int mlx4_en_start_port(struct net_device *dev)
 
 	/* Configure tx cq's and rings */
 	for (t = 0 ; t < MLX4_EN_NUM_TX_TYPES; t++) {
-		u8 num_tx_rings_p_up = t == TX ? priv->num_tx_rings_p_up : 1;
+		u8 num_tx_rings_p_up = t == TX ?
+			priv->num_tx_rings_p_up : priv->tx_ring_num[t];
 
 		for (i = 0; i < priv->tx_ring_num[t]; i++) {
 			/* Configure cq */
