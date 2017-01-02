@@ -61,6 +61,16 @@ u8 mlx5_query_vport_state(struct mlx5_core_dev *mdev, u8 opmod, u16 vport)
 }
 EXPORT_SYMBOL_GPL(mlx5_query_vport_state);
 
+u16 mlx5_query_vport_max_tx_speed(struct mlx5_core_dev *mdev, u8 opmod,
+				  u16 vport)
+{
+	u32 out[MLX5_ST_SZ_DW(query_vport_state_out)] = {0};
+
+	_mlx5_query_vport_state(mdev, opmod, vport, out, sizeof(out));
+
+	return MLX5_GET(query_vport_state_out, out, max_tx_speed);
+}
+
 u8 mlx5_query_vport_admin_state(struct mlx5_core_dev *mdev, u8 opmod, u16 vport)
 {
 	u32 out[MLX5_ST_SZ_DW(query_vport_state_out)] = {0};
@@ -126,6 +136,23 @@ int mlx5_query_nic_vport_min_inline(struct mlx5_core_dev *mdev,
 	return err;
 }
 EXPORT_SYMBOL_GPL(mlx5_query_nic_vport_min_inline);
+
+void mlx5_query_min_inline(struct mlx5_core_dev *mdev,
+			   u8 *min_inline_mode)
+{
+	switch (MLX5_CAP_ETH(mdev, wqe_inline_mode)) {
+	case MLX5_CAP_INLINE_MODE_L2:
+		*min_inline_mode = MLX5_INLINE_MODE_L2;
+		break;
+	case MLX5_CAP_INLINE_MODE_VPORT_CONTEXT:
+		mlx5_query_nic_vport_min_inline(mdev, 0, min_inline_mode);
+		break;
+	case MLX5_CAP_INLINE_MODE_NOT_REQUIRED:
+		*min_inline_mode = MLX5_INLINE_MODE_NONE;
+		break;
+	}
+}
+EXPORT_SYMBOL_GPL(mlx5_query_min_inline);
 
 int mlx5_modify_nic_vport_min_inline(struct mlx5_core_dev *mdev,
 				     u16 vport, u8 min_inline)
