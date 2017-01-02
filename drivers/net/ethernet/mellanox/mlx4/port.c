@@ -39,6 +39,7 @@
 
 #include "mlx4.h"
 #include "mlx4_stats.h"
+#include "fw.h"
 
 #define MLX4_MAC_VALID		(1ull << 63)
 
@@ -50,9 +51,38 @@
 #define MLX4_STATS_ERROR_COUNTERS_MASK		0x1ffc30ULL
 #define MLX4_STATS_PORT_COUNTERS_MASK		0x1fe00000ULL
 
-#define MLX4_FLAG_V_IGNORE_FCS_MASK		0x2
+#define MLX4_FLAG_V_IGNORE_FCS_MASK		BIT(1)
+#define MLX4_FLAG_V_USER_MTU_MASK		BIT(5)
 #define MLX4_IGNORE_FCS_MASK			0x1
 #define MLX4_TC_MAX_NUMBER			8
+
+static void mlx4_inc_port_macs(struct mlx4_dev *mdev, int port)
+{
+	struct mlx4_port_info *info = &mlx4_priv(mdev)->port[port];
+
+	mutex_lock(&info->mac_table.mutex);
+	info->mac_table.total++;
+	mutex_unlock(&info->mac_table.mutex);
+	mlx4_info(mdev, "%s added mac for port: %d, now: %d\n",
+		  __func__, port, info->mac_table.total);
+}
+
+static void mlx4_dec_port_macs(struct mlx4_dev *mdev, int port)
+{
+	struct mlx4_port_info *info = &mlx4_priv(mdev)->port[port];
+
+	if (!info->mac_table.total) {
+		mlx4_warn(mdev, "No current macs for port: %d\n", port);
+		return;
+	}
+
+	mutex_lock(&info->mac_table.mutex);
+	info->mac_table.total--;
+	mutex_unlock(&info->mac_table.mutex);
+
+	mlx4_info(mdev, "%s removed mac, port: %d, now: %d\n",
+		  __func__, port, info->mac_table.total);
+}
 
 void mlx4_init_mac_table(struct mlx4_dev *dev, struct mlx4_mac_table *table)
 {
@@ -340,6 +370,8 @@ int mlx4_register_mac(struct mlx4_dev *dev, u8 port, u64 mac)
 	int err = -EINVAL;
 
 	if (mlx4_is_mfunc(dev)) {
+		u32 p_l;
+
 		if (!(dev->flags & MLX4_FLAG_OLD_REG_MAC)) {
 			err = mlx4_cmd_imm(dev, mac, &out_param,
 					   ((u32) port) << 8 | (u32) RES_MAC,
@@ -358,8 +390,13 @@ int mlx4_register_mac(struct mlx4_dev *dev, u8 port, u64 mac)
 		if (err)
 			return err;
 
-		return get_param_l(&out_param);
+		p_l = get_param_l(&out_param);
+		/* update vf table, the master updated via __register_mac */
+		if (p_l && mlx4_is_slave(dev))
+			mlx4_inc_port_macs(dev, port);
+		return p_l;
 	}
+
 	return __mlx4_register_mac(dev, port, mac);
 }
 EXPORT_SYMBOL_GPL(mlx4_register_mac);
@@ -459,6 +496,11 @@ void mlx4_unregister_mac(struct mlx4_dev *dev, u8 port, u64 mac)
 					    RES_OP_RESERVE_AND_MAP, MLX4_CMD_FREE_RES,
 					    MLX4_CMD_TIME_CLASS_A, MLX4_CMD_WRAPPED);
 		}
+
+		/* update vf mac table */
+		if (mlx4_is_slave(dev))
+			mlx4_dec_port_macs(dev, port);
+
 		return;
 	}
 	__mlx4_unregister_mac(dev, port, mac);
@@ -1269,8 +1311,10 @@ static int mlx4_common_set_port(struct mlx4_dev *dev, int slave, u32 in_mod,
 	is_eth = op_mod;
 	port_info = &priv->port[port];
 
-	/* Slaves cannot perform SET_PORT operations except changing MTU */
+	/* Slaves cannot perform SET_PORT operations except changing MTU and USER_MTU */
 	if (is_eth) {
+		u16 user_mtu, prev_user_mtu;
+
 		if (slave != dev->caps.function &&
 		    in_modifier != MLX4_SET_PORT_GENERAL &&
 		    in_modifier != MLX4_SET_PORT_GID_TABLE) {
@@ -1316,8 +1360,28 @@ static int mlx4_common_set_port(struct mlx4_dev *dev, int slave, u32 in_mod,
 					    master->slave_state[i].mtu[port]);
 				}
 			}
-
 			gen_context->mtu = cpu_to_be16(master->max_mtu[port]);
+
+			/* User Mtu is configured as the max USER_MTU among all
+			 * the functions on the port.
+			 */
+			user_mtu = be16_to_cpu(gen_context->user_mtu);
+			user_mtu = min_t(int, user_mtu, dev->caps.eth_mtu_cap[port]);
+			prev_user_mtu = slave_st->user_mtu[port];
+			slave_st->user_mtu[port] = user_mtu;
+			if (user_mtu > master->max_user_mtu[port])
+				master->max_user_mtu[port] = user_mtu;
+			if (user_mtu < prev_user_mtu &&
+			    prev_user_mtu == master->max_user_mtu[port]) {
+				slave_st->user_mtu[port] = user_mtu;
+				master->max_user_mtu[port] = user_mtu;
+				for (i = 0; i < dev->num_slaves; i++)
+					master->max_user_mtu[port] =
+						max_t(u16, master->max_user_mtu[port],
+						      master->slave_state[i].user_mtu[port]);
+			}
+			gen_context->user_mtu = cpu_to_be16(master->max_user_mtu[port]);
+
 			/* Slave cannot change Global Pause configuration */
 			if (slave != mlx4_master_func_num(dev) &&
 			    ((gen_context->pptx != master->pptx) ||
@@ -1608,6 +1672,30 @@ int mlx4_SET_PORT_qpn_calc(struct mlx4_dev *dev, u8 port, u32 base_qpn,
 }
 EXPORT_SYMBOL(mlx4_SET_PORT_qpn_calc);
 
+int mlx4_SET_PORT_user_mtu(struct mlx4_dev *dev, u8 port, u16 user_mtu)
+{
+	struct mlx4_cmd_mailbox *mailbox;
+	struct mlx4_set_port_general_context *context;
+	u32 in_mod;
+	int err;
+
+	mailbox = mlx4_alloc_cmd_mailbox(dev);
+	if (IS_ERR(mailbox))
+		return PTR_ERR(mailbox);
+	context = mailbox->buf;
+	context->flags2 |= MLX4_FLAG_V_USER_MTU_MASK;
+	context->user_mtu = cpu_to_be16(user_mtu);
+
+	in_mod = MLX4_SET_PORT_GENERAL << 8 | port;
+	err = mlx4_cmd(dev, mailbox->dma, in_mod, MLX4_SET_PORT_ETH_OPCODE,
+		       MLX4_CMD_SET_PORT, MLX4_CMD_TIME_CLASS_B,
+		       MLX4_CMD_WRAPPED);
+
+	mlx4_free_cmd_mailbox(dev, mailbox);
+	return err;
+}
+EXPORT_SYMBOL(mlx4_SET_PORT_user_mtu);
+
 int mlx4_SET_PORT_fcs_check(struct mlx4_dev *dev, u8 port, u8 ignore_fcs_value)
 {
 	struct mlx4_cmd_mailbox *mailbox;
@@ -1619,7 +1707,7 @@ int mlx4_SET_PORT_fcs_check(struct mlx4_dev *dev, u8 port, u8 ignore_fcs_value)
 	if (IS_ERR(mailbox))
 		return PTR_ERR(mailbox);
 	context = mailbox->buf;
-	context->v_ignore_fcs |= MLX4_FLAG_V_IGNORE_FCS_MASK;
+	context->flags2 |= MLX4_FLAG_V_IGNORE_FCS_MASK;
 	if (ignore_fcs_value)
 		context->ignore_fcs |= MLX4_IGNORE_FCS_MASK;
 	else
@@ -2016,3 +2104,58 @@ int mlx4_max_tc(struct mlx4_dev *dev)
 	return num_tc;
 }
 EXPORT_SYMBOL(mlx4_max_tc);
+
+static int mlx4_get_port_reserved_mac_num(struct mlx4_dev *mdev, int port)
+{
+	struct mlx4_priv *priv = mlx4_priv(mdev);
+	struct resource_allocator *res_alloc;
+	int reserved;
+
+	if (mlx4_is_slave(mdev))
+		return 0;
+
+	res_alloc = &priv->mfunc.master.res_tracker.res_alloc[RES_MAC];
+
+	reserved = (port > 0) ? res_alloc->res_port_rsvd[port - 1] :
+		res_alloc->res_reserved;
+
+	return reserved;
+}
+
+static int mlx4_get_port_max_macs(struct mlx4_dev *mdev, int port)
+{
+	struct mlx4_port_info *info = &mlx4_priv(mdev)->port[port];
+
+	/* The maximum value should considers the reserved macs for the vfs */
+	return info->mac_table.max - mlx4_get_port_reserved_mac_num(mdev, port);
+}
+
+static int mlx4_get_port_total_macs(struct mlx4_dev *mdev, int port)
+{
+	struct mlx4_port_info *info = &mlx4_priv(mdev)->port[port];
+
+	return info->mac_table.total;
+}
+
+int mlx4_get_port_free_macs(struct mlx4_dev *mdev, int port)
+{
+	/* slave will get the free macs (log2) from its master */
+	if (mlx4_is_slave(mdev)) {
+		struct mlx4_port_cap port_cap;
+
+		mlx4_QUERY_PORT(mdev, port, &port_cap);
+		return (1 << port_cap.log_max_macs);
+	}
+
+	return (mlx4_get_port_max_macs(mdev, port) -
+		mlx4_get_port_total_macs(mdev, port));
+}
+EXPORT_SYMBOL(mlx4_get_port_free_macs);
+
+bool mlx4_is_available_mac(struct mlx4_dev *mdev, int port)
+{
+	int free_macs = mlx4_get_port_free_macs(mdev, port);
+
+	return free_macs >= MLX4_VF_MAC_QUOTA;
+}
+EXPORT_SYMBOL(mlx4_is_available_mac);

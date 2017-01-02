@@ -1129,6 +1129,12 @@ static void mlx4_en_do_uc_filter(struct mlx4_en_priv *priv,
 			}
 			mac = mlx4_mac_to_u64(ha->addr);
 			memcpy(entry->mac, ha->addr, ETH_ALEN);
+
+			if (!mlx4_is_available_mac(mdev->dev, priv->port)) {
+				mlx4_warn(mdev, "Cannot add mac:%pM, no free macs.\n", &mac);
+				break;
+			}
+
 			err = mlx4_register_mac(mdev->dev, priv->port, mac);
 			if (err < 0) {
 				en_err(priv, "Failed registering MAC %pM on port %d: %d\n",
@@ -1697,6 +1703,14 @@ int mlx4_en_start_port(struct net_device *dev)
 		       priv->port, err);
 		goto tx_err;
 	}
+
+	err = mlx4_SET_PORT_user_mtu(mdev->dev, priv->port, dev->mtu);
+	if (err) {
+		en_err(priv, "Failed to pass user MTU(%d) to Firmware for port %d, with error %d\n",
+		       dev->mtu, priv->port, err);
+		goto tx_err;
+	}
+
 	/* Set default qp number */
 	err = mlx4_SET_PORT_qpn_calc(mdev->dev, priv->port, priv->base_qpn, 0);
 	if (err) {
