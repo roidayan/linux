@@ -70,6 +70,7 @@ struct mlx5e_sw_stats {
 	u64 rx_xdp_tx_full;
 	u64 tx_csum_partial;
 	u64 tx_csum_partial_inner;
+	u64 tx_no_l3_header;
 	u64 tx_queue_stopped;
 	u64 tx_queue_wake;
 	u64 tx_queue_dropped;
@@ -108,6 +109,7 @@ static const struct counter_desc sw_stats_desc[] = {
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_xdp_tx_full) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_csum_partial) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_csum_partial_inner) },
+	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_no_l3_header) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_queue_stopped) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_queue_wake) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_queue_dropped) },
@@ -201,6 +203,12 @@ static const struct counter_desc vport_stats_desc[] = {
 #define PPORT_2819_GET(pstats, c) \
 	MLX5_GET64(ppcnt_reg, pstats->RFC_2819_counters, \
 		   counter_set.eth_2819_cntrs_grp_data_layout.c##_high)
+#define PPORT_PHY_STATISTICAL_OFF(c) \
+	MLX5_BYTE_OFF(ppcnt_reg, \
+		      counter_set.phys_layer_statistical_cntrs.c##_high)
+#define PPORT_PHY_STATISTICAL_GET(pstats, c) \
+	MLX5_GET64(ppcnt_reg, pstats->phy_statistical_counters, \
+		   counter_set.phys_layer_statistical_cntrs.c##_high)
 #define PPORT_PER_PRIO_OFF(c) \
 	MLX5_BYTE_OFF(ppcnt_reg, \
 		      counter_set.eth_per_prio_grp_data_layout.c##_high)
@@ -215,6 +223,7 @@ struct mlx5e_pport_stats {
 	__be64 RFC_2819_counters[MLX5_ST_SZ_QW(ppcnt_reg)];
 	__be64 per_prio_counters[NUM_PPORT_PRIO][MLX5_ST_SZ_QW(ppcnt_reg)];
 	__be64 phy_counters[MLX5_ST_SZ_QW(ppcnt_reg)];
+	__be64 phy_statistical_counters[MLX5_ST_SZ_QW(ppcnt_reg)];
 };
 
 static const struct counter_desc pport_802_3_stats_desc[] = {
@@ -260,6 +269,11 @@ static const struct counter_desc pport_2819_stats_desc[] = {
 	{ "rx_8192_to_10239_bytes_phy", PPORT_2819_OFF(ether_stats_pkts8192to10239octets) },
 };
 
+static const struct counter_desc pport_phy_statistical_stats_desc[] = {
+	{ "rx_symbol_errors_phy", PPORT_PHY_STATISTICAL_OFF(phy_symbol_errors) },
+	{ "rx_corrected_bits_phy", PPORT_PHY_STATISTICAL_OFF(phy_corrected_bits) },
+};
+
 static const struct counter_desc pport_per_prio_traffic_stats_desc[] = {
 	{ "rx_prio%d_bytes", PPORT_PER_PRIO_OFF(rx_octets) },
 	{ "rx_prio%d_packets", PPORT_PER_PRIO_OFF(rx_frames) },
@@ -281,25 +295,14 @@ static const struct counter_desc pport_per_prio_pfc_stats_desc[] = {
 #define PCIE_PERF_GET(pcie_stats, c) \
 	MLX5_GET(mpcnt_reg, pcie_stats->pcie_perf_counters, \
 		 counter_set.pcie_perf_cntrs_grp_data_layout.c)
-#define PCIE_TAS_OFF(c) \
-	MLX5_BYTE_OFF(mpcnt_reg, counter_set.pcie_tas_cntrs_grp_data_layout.c)
-#define PCIE_TAS_GET(pcie_stats, c) \
-	MLX5_GET(mpcnt_reg, pcie_stats->pcie_tas_counters, \
-		 counter_set.pcie_tas_cntrs_grp_data_layout.c)
 
 struct mlx5e_pcie_stats {
 	__be64 pcie_perf_counters[MLX5_ST_SZ_QW(mpcnt_reg)];
-	__be64 pcie_tas_counters[MLX5_ST_SZ_QW(mpcnt_reg)];
 };
 
 static const struct counter_desc pcie_perf_stats_desc[] = {
 	{ "rx_pci_signal_integrity", PCIE_PERF_OFF(rx_errors) },
 	{ "tx_pci_signal_integrity", PCIE_PERF_OFF(tx_errors) },
-};
-
-static const struct counter_desc pcie_tas_stats_desc[] = {
-	{ "tx_pci_transport_nonfatal_msg", PCIE_TAS_OFF(non_fatal_err_msg_sent) },
-	{ "tx_pci_transport_fatal_msg", PCIE_TAS_OFF(fatal_err_msg_sent) },
 };
 
 struct mlx5e_rq_stats {
@@ -359,6 +362,7 @@ struct mlx5e_sq_stats {
 	u64 nop;
 	/* less likely accessed in data path */
 	u64 csum_none;
+	u64 no_l3_header;
 	u64 stopped;
 	u64 wake;
 	u64 dropped;
@@ -374,6 +378,7 @@ static const struct counter_desc sq_stats_desc[] = {
 	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, csum_partial_inner) },
 	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, nop) },
 	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, csum_none) },
+	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, no_l3_header) },
 	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, stopped) },
 	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, wake) },
 	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, dropped) },
@@ -386,18 +391,23 @@ static const struct counter_desc sq_stats_desc[] = {
 #define NUM_PPORT_802_3_COUNTERS	ARRAY_SIZE(pport_802_3_stats_desc)
 #define NUM_PPORT_2863_COUNTERS		ARRAY_SIZE(pport_2863_stats_desc)
 #define NUM_PPORT_2819_COUNTERS		ARRAY_SIZE(pport_2819_stats_desc)
-#define NUM_PCIE_PERF_COUNTERS		ARRAY_SIZE(pcie_perf_stats_desc)
-#define NUM_PCIE_TAS_COUNTERS		ARRAY_SIZE(pcie_tas_stats_desc)
+#define NUM_PPORT_PHY_STATISTICAL_COUNTERS(priv) \
+	(ARRAY_SIZE(pport_phy_statistical_stats_desc) * \
+	 MLX5_CAP_PCAM_FEATURE(priv->mdev, ppcnt_statistical_group))
+#define NUM_PCIE_PERF_COUNTERS(priv) \
+	(ARRAY_SIZE(pcie_perf_stats_desc) * \
+	 MLX5_CAP_MCAM_FEATURE(priv->mdev, pcie_performance_group))
 #define NUM_PPORT_PER_PRIO_TRAFFIC_COUNTERS \
 	ARRAY_SIZE(pport_per_prio_traffic_stats_desc)
 #define NUM_PPORT_PER_PRIO_PFC_COUNTERS \
 	ARRAY_SIZE(pport_per_prio_pfc_stats_desc)
-#define NUM_PPORT_COUNTERS		(NUM_PPORT_802_3_COUNTERS + \
+#define NUM_PPORT_COUNTERS(priv)	(NUM_PPORT_802_3_COUNTERS + \
 					 NUM_PPORT_2863_COUNTERS  + \
 					 NUM_PPORT_2819_COUNTERS  + \
+					 NUM_PPORT_PHY_STATISTICAL_COUNTERS(priv) + \
 					 NUM_PPORT_PER_PRIO_TRAFFIC_COUNTERS * \
 					 NUM_PPORT_PRIO)
-#define NUM_PCIE_COUNTERS		(NUM_PCIE_PERF_COUNTERS + NUM_PCIE_TAS_COUNTERS)
+#define NUM_PCIE_COUNTERS(priv)		NUM_PCIE_PERF_COUNTERS(priv)
 #define NUM_RQ_STATS			ARRAY_SIZE(rq_stats_desc)
 #define NUM_SQ_STATS			ARRAY_SIZE(sq_stats_desc)
 
@@ -406,8 +416,8 @@ struct mlx5e_stats {
 	struct mlx5e_qcounter_stats qcnt;
 	struct mlx5e_vport_stats vport;
 	struct mlx5e_pport_stats pport;
-	struct mlx5e_pcie_stats pcie;
 	struct rtnl_link_stats64 vf_vport;
+	struct mlx5e_pcie_stats pcie;
 };
 
 static const struct counter_desc mlx5e_pme_status_desc[] = {
