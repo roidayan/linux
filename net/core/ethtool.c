@@ -1424,6 +1424,34 @@ static int ethtool_get_regs(struct net_device *dev, char __user *useraddr)
 	return ret;
 }
 
+static int ethtool_set_regs(struct net_device *dev, char __user *useraddr)
+{
+	void __user *userbuf = useraddr + offsetof(struct ethtool_regs, data);
+	const struct ethtool_ops *ops = dev->ethtool_ops;
+	struct ethtool_regs regs;
+	int ret = 0;
+	u8 *data;
+
+	if (!ops->set_regs || !ops->get_regs_len)
+		return -EOPNOTSUPP;
+	if (copy_from_user(&regs, useraddr, sizeof(regs)))
+		return -EFAULT;
+
+	data = kmalloc(PAGE_SIZE, GFP_USER);
+	if (!data)
+		return -ENOMEM;
+
+	ret = -EFAULT;
+	if (copy_from_user(data, userbuf, regs.len))
+		goto out;
+
+	ret = ops->set_regs(dev, &regs, data);
+
+out:
+	kfree(data);
+	return ret;
+}
+
 static int ethtool_reset(struct net_device *dev, char __user *useraddr)
 {
 	struct ethtool_value reset;
@@ -1524,6 +1552,25 @@ static int ethtool_get_link(struct net_device *dev, char __user *useraddr)
 
 	if (copy_to_user(useraddr, &edata, sizeof(edata)))
 		return -EFAULT;
+	return 0;
+}
+
+static int ethtool_get_actual_speed(struct net_device *dev,
+				    char __user *useraddr)
+{
+	struct ethtool_value edata = { .cmd = ETHTOOL_GASPD };
+	int err;
+
+	if (!dev->ethtool_ops->get_actual_speed)
+		return -EOPNOTSUPP;
+
+	err = dev->ethtool_ops->get_actual_speed(dev, &edata);
+	if (err)
+		return err;
+
+	if (copy_to_user(useraddr, &edata, sizeof(edata)))
+		return -EFAULT;
+
 	return 0;
 }
 
@@ -2540,6 +2587,7 @@ int dev_ethtool(struct net *net, struct ifreq *ifr)
 	case ETHTOOL_GDRVINFO:
 	case ETHTOOL_GMSGLVL:
 	case ETHTOOL_GLINK:
+	case ETHTOOL_GASPD:
 	case ETHTOOL_GCOALESCE:
 	case ETHTOOL_GRINGPARAM:
 	case ETHTOOL_GPAUSEPARAM:
@@ -2597,6 +2645,9 @@ int dev_ethtool(struct net *net, struct ifreq *ifr)
 	case ETHTOOL_GREGS:
 		rc = ethtool_get_regs(dev, useraddr);
 		break;
+	case ETHTOOL_SREGS:
+		rc = ethtool_set_regs(dev, useraddr);
+		break;
 	case ETHTOOL_GWOL:
 		rc = ethtool_get_wol(dev, useraddr);
 		break;
@@ -2622,6 +2673,9 @@ int dev_ethtool(struct net *net, struct ifreq *ifr)
 		break;
 	case ETHTOOL_GLINK:
 		rc = ethtool_get_link(dev, useraddr);
+		break;
+	case ETHTOOL_GASPD:
+		rc = ethtool_get_actual_speed(dev, useraddr);
 		break;
 	case ETHTOOL_GEEPROM:
 		rc = ethtool_get_eeprom(dev, useraddr);

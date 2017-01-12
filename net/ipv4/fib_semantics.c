@@ -1434,7 +1434,7 @@ int fib_sync_down_dev(struct net_device *dev, unsigned long event, bool force)
 }
 
 /* Must be invoked inside of an RCU protected region.  */
-void fib_select_default(const struct flowi4 *flp, struct fib_result *res)
+static void fib_select_default(const struct flowi4 *flp, struct fib_result *res)
 {
 	struct fib_info *fi = NULL, *last_resort = NULL;
 	struct hlist_head *fa_head = res->fa_head;
@@ -1618,8 +1618,13 @@ void fib_select_multipath(struct fib_result *res, int hash)
 void fib_select_path(struct net *net, struct fib_result *res,
 		     struct flowi4 *fl4, int mp_hash)
 {
+	bool oif_check;
+
+	oif_check = (fl4->flowi4_oif == 0 ||
+		     fl4->flowi4_flags & FLOWI_FLAG_SKIP_NH_OIF);
+
 #ifdef CONFIG_IP_ROUTE_MULTIPATH
-	if (res->fi->fib_nhs > 1 && fl4->flowi4_oif == 0) {
+	if (res->fi->fib_nhs > 1 && oif_check) {
 		if (mp_hash < 0)
 			mp_hash = get_hash_from_flowi4(fl4) >> 1;
 
@@ -1629,7 +1634,7 @@ void fib_select_path(struct net *net, struct fib_result *res,
 #endif
 	if (!res->prefixlen &&
 	    res->table->tb_num_default > 1 &&
-	    res->type == RTN_UNICAST && !fl4->flowi4_oif)
+	    res->type == RTN_UNICAST && oif_check)
 		fib_select_default(fl4, res);
 
 	if (!fl4->saddr)

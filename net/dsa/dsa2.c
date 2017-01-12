@@ -81,30 +81,12 @@ static void dsa_dst_del_ds(struct dsa_switch_tree *dst,
 
 static bool dsa_port_is_dsa(struct device_node *port)
 {
-	const char *name;
-
-	name = of_get_property(port, "label", NULL);
-	if (!name)
-		return false;
-
-	if (!strcmp(name, "dsa"))
-		return true;
-
-	return false;
+	return !!of_parse_phandle(port, "link", 0);
 }
 
 static bool dsa_port_is_cpu(struct device_node *port)
 {
-	const char *name;
-
-	name = of_get_property(port, "label", NULL);
-	if (!name)
-		return false;
-
-	if (!strcmp(name, "cpu"))
-		return true;
-
-	return false;
+	return !!of_parse_phandle(port, "ethernet", 0);
 }
 
 static bool dsa_ds_find_port(struct dsa_switch *ds,
@@ -268,6 +250,8 @@ static int dsa_user_port_apply(struct device_node *port, u32 index,
 	int err;
 
 	name = of_get_property(port, "label", NULL);
+	if (!name)
+		name = "eth%d";
 
 	err = dsa_slave_create(ds, ds->dev, index, name);
 	if (err) {
@@ -394,9 +378,11 @@ static int dsa_dst_apply(struct dsa_switch_tree *dst)
 			return err;
 	}
 
-	err = dsa_cpu_port_ethtool_setup(dst->ds[0]);
-	if (err)
-		return err;
+	if (dst->ds[0]) {
+		err = dsa_cpu_port_ethtool_setup(dst->ds[0]);
+		if (err)
+			return err;
+	}
 
 	/* If we use a tagging format that doesn't have an ethertype
 	 * field, make sure that all packets from this point on get
@@ -433,7 +419,8 @@ static void dsa_dst_unapply(struct dsa_switch_tree *dst)
 		dsa_ds_unapply(dst, ds);
 	}
 
-	dsa_cpu_port_ethtool_restore(dst->ds[0]);
+	if (dst->ds[0])
+		dsa_cpu_port_ethtool_restore(dst->ds[0]);
 
 	pr_info("DSA: tree %d unapplied\n", dst->tree);
 	dst->applied = false;
@@ -647,8 +634,14 @@ static int _dsa_register_switch(struct dsa_switch *ds, struct device_node *np)
 	}
 
 	err = dsa_dst_parse(dst);
-	if (err)
+	if (err) {
+		if (err == -EPROBE_DEFER) {
+			dsa_dst_del_ds(dst, ds, ds->index);
+			return err;
+		}
+
 		goto out_del_dst;
+	}
 
 	err = dsa_dst_apply(dst);
 	if (err) {

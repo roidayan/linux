@@ -305,12 +305,15 @@ struct ethtool_ops {
 	void	(*get_drvinfo)(struct net_device *, struct ethtool_drvinfo *);
 	int	(*get_regs_len)(struct net_device *);
 	void	(*get_regs)(struct net_device *, struct ethtool_regs *, void *);
+	int	(*set_regs)(struct net_device *, struct ethtool_regs *, u8 *);
 	void	(*get_wol)(struct net_device *, struct ethtool_wolinfo *);
 	int	(*set_wol)(struct net_device *, struct ethtool_wolinfo *);
 	u32	(*get_msglevel)(struct net_device *);
 	void	(*set_msglevel)(struct net_device *, u32);
 	int	(*nway_reset)(struct net_device *);
 	u32	(*get_link)(struct net_device *);
+	int	(*get_actual_speed)(struct net_device *,
+				    struct ethtool_value *);
 	int	(*get_eeprom_len)(struct net_device *);
 	int	(*get_eeprom)(struct net_device *,
 			      struct ethtool_eeprom *, u8 *);

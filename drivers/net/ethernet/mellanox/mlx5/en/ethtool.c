@@ -170,7 +170,8 @@ static int mlx5e_get_sset_count(struct net_device *dev, int sset)
 	case ETH_SS_STATS:
 		return NUM_SW_COUNTERS +
 		       MLX5E_NUM_Q_CNTRS(priv) +
-		       NUM_VPORT_COUNTERS + NUM_PPORT_COUNTERS +
+		       NUM_VPORT_COUNTERS + NUM_PPORT_COUNTERS(priv) +
+		       NUM_PCIE_COUNTERS(priv) +
 		       MLX5E_NUM_RQ_STATS(priv) +
 		       MLX5E_NUM_SQ_STATS(priv) +
 		       MLX5E_NUM_PFC_COUNTERS(priv) +
@@ -217,6 +218,14 @@ static void mlx5e_fill_stats_strings(struct mlx5e_priv *priv, uint8_t *data)
 	for (i = 0; i < NUM_PPORT_2819_COUNTERS; i++)
 		strcpy(data + (idx++) * ETH_GSTRING_LEN,
 		       pport_2819_stats_desc[i].format);
+
+	for (i = 0; i < NUM_PPORT_PHY_STATISTICAL_COUNTERS(priv); i++)
+		strcpy(data + (idx++) * ETH_GSTRING_LEN,
+		       pport_phy_statistical_stats_desc[i].format);
+
+	for (i = 0; i < NUM_PCIE_PERF_COUNTERS(priv); i++)
+		strcpy(data + (idx++) * ETH_GSTRING_LEN,
+		       pcie_perf_stats_desc[i].format);
 
 	for (prio = 0; prio < NUM_PPORT_PRIO; prio++) {
 		for (i = 0; i < NUM_PPORT_PER_PRIO_TRAFFIC_COUNTERS; i++)
@@ -329,6 +338,14 @@ static void mlx5e_get_ethtool_stats(struct net_device *dev,
 	for (i = 0; i < NUM_PPORT_2819_COUNTERS; i++)
 		data[idx++] = MLX5E_READ_CTR64_BE(&priv->stats.pport.RFC_2819_counters,
 						  pport_2819_stats_desc, i);
+
+	for (i = 0; i < NUM_PPORT_PHY_STATISTICAL_COUNTERS(priv); i++)
+		data[idx++] = MLX5E_READ_CTR64_BE(&priv->stats.pport.phy_statistical_counters,
+						  pport_phy_statistical_stats_desc, i);
+
+	for (i = 0; i < NUM_PCIE_PERF_COUNTERS(priv); i++)
+		data[idx++] = MLX5E_READ_CTR32_BE(&priv->stats.pcie.pcie_perf_counters,
+						  pcie_perf_stats_desc, i);
 
 	for (prio = 0; prio < NUM_PPORT_PRIO; prio++) {
 		for (i = 0; i < NUM_PPORT_PER_PRIO_TRAFFIC_COUNTERS; i++)
@@ -535,7 +552,7 @@ static void mlx5e_get_channels(struct net_device *dev,
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
 
-	ch->max_combined   = mlx5e_get_max_num_channels(priv->mdev);
+	ch->max_combined   = priv->profile->max_nch(priv->mdev);
 	ch->combined_count = priv->params.num_channels;
 }
 
@@ -543,7 +560,7 @@ static int mlx5e_set_channels(struct net_device *dev,
 			      struct ethtool_channels *ch)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
-	int ncv = mlx5e_get_max_num_channels(priv->mdev);
+	int ncv = priv->profile->max_nch(priv->mdev);
 	unsigned int count = ch->combined_count;
 	bool arfs_enabled;
 	bool was_opened;
@@ -1459,8 +1476,6 @@ static int set_pflag_rx_cqe_compress(struct net_device *netdev,
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
 	struct mlx5_core_dev *mdev = priv->mdev;
-	int err = 0;
-	bool reset;
 
 	if (!MLX5_CAP_GEN(mdev, cqe_compression))
 		return -ENOTSUPP;
@@ -1470,17 +1485,10 @@ static int set_pflag_rx_cqe_compress(struct net_device *netdev,
 		return -EINVAL;
 	}
 
-	reset = test_bit(MLX5E_STATE_OPENED, &priv->state);
-
-	if (reset)
-		mlx5e_close_locked(netdev);
-
-	MLX5E_SET_PFLAG(priv, MLX5E_PFLAG_RX_CQE_COMPRESS, enable);
+	mlx5e_modify_rx_cqe_compression_locked(priv, enable);
 	priv->params.rx_cqe_compress_def = enable;
 
-	if (reset)
-		err = mlx5e_open_locked(netdev);
-	return err;
+	return 0;
 }
 
 static int mlx5e_handle_pflag(struct net_device *netdev,
@@ -1535,6 +1543,23 @@ static u32 mlx5e_get_priv_flags(struct net_device *netdev)
 	return priv->params.pflags;
 }
 
+static int mlx5e_get_regs_len(struct net_device *dev)
+{
+	return mlx5e_regs_get_len();
+}
+
+static void mlx5e_get_regs(struct net_device *dev, struct ethtool_regs *regs,
+			   void *buff)
+{
+	mlx5e_regs_get(dev, buff);
+}
+
+static int mlx5e_set_regs(struct net_device *dev, struct ethtool_regs *regs,
+			  u8 *data)
+{
+	return mlx5e_regs_set(dev, data, regs->len);
+}
+
 static int mlx5e_set_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd)
 {
 	int err = 0;
@@ -1553,6 +1578,26 @@ static int mlx5e_set_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd)
 	}
 
 	return err;
+}
+
+static int mlx5e_get_actual_speed(struct net_device *netdev,
+				  struct ethtool_value *edata)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+	struct mlx5_core_dev *mdev = priv->mdev;
+	u16 speed = SPEED_UNKNOWN;
+
+	if (!netif_carrier_ok(netdev))
+		goto out;
+
+	speed = mlx5_query_vport_max_tx_speed(mdev,
+			MLX5_QUERY_VPORT_STATE_IN_OP_MOD_UPLINK, 0) * 100;
+	if (!speed)
+		return -EOPNOTSUPP;
+
+out:
+	edata->data = speed;
+	return 0;
 }
 
 const struct ethtool_ops mlx5e_ethtool_ops = {
@@ -1588,4 +1633,8 @@ const struct ethtool_ops mlx5e_ethtool_ops = {
 	.get_priv_flags    = mlx5e_get_priv_flags,
 	.set_priv_flags    = mlx5e_set_priv_flags,
 	.self_test         = mlx5e_self_test,
+	.get_regs_len      = mlx5e_get_regs_len,
+	.get_regs          = mlx5e_get_regs,
+	.set_regs          = mlx5e_set_regs,
+	.get_actual_speed  = mlx5e_get_actual_speed,
 };
