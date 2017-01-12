@@ -61,7 +61,6 @@ enum {
 	MLX5_HEADER_TYPE_NVGRE = 0x1,
 };
 
-#define MLX5E_TC_TABLE_NUM_ENTRIES 1024
 #define MLX5E_TC_TABLE_NUM_GROUPS 4
 
 static struct mlx5_flow_handle *
@@ -93,10 +92,15 @@ mlx5e_tc_add_nic_flow(struct mlx5e_priv *priv,
 	}
 
 	if (IS_ERR_OR_NULL(priv->fs.tc.t)) {
+		int tc_tbl_size;
+
+		tc_tbl_size = min_t(int, MLX5_CAP_GEN(dev, max_flow_counter) * MLX5E_TC_TABLE_NUM_GROUPS,
+				    BIT(MLX5_CAP_FLOWTABLE_NIC_RX(dev, log_max_ft_size)));
+
 		priv->fs.tc.t =
 			mlx5_create_auto_grouped_flow_table(priv->fs.ns,
 							    MLX5E_TC_PRIO,
-							    MLX5E_TC_TABLE_NUM_ENTRIES,
+							    tc_tbl_size,
 							    MLX5E_TC_TABLE_NUM_GROUPS,
 							    0, 0);
 		if (IS_ERR(priv->fs.tc.t)) {
