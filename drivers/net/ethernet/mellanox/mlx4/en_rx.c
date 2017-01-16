@@ -1087,7 +1087,7 @@ xdp_drop_no_cnt:
 					       timestamp);
 		}
 
-		napi_gro_receive(&cq->napi, skb);
+		netif_receive_skb(skb);
 next:
 		for (nr = 0; nr < priv->num_frags; nr++)
 			mlx4_en_free_frag(priv, frags, nr);
