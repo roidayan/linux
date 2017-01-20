@@ -35,6 +35,7 @@
 
 #include <linux/kernel.h>
 #include <linux/sched.h>
+#include <linux/refcount.h>
 #include <rdma/ib_verbs.h>
 #include <rdma/ib_smi.h>
 #include <linux/mlx5/driver.h>
@@ -654,6 +655,10 @@ struct mlx5_ib_dev {
 	struct mlx5_ib_port	*port;
 	struct mlx5_sq_bfreg     bfreg;
 	struct mlx5_sq_bfreg     fp_bfreg;
+
+	/* protect the user_td */
+	struct mutex             lb_mutex;
+	refcount_t               user_td;
 };
 
 static inline struct mlx5_ib_cq *to_mibcq(struct mlx5_core_cq *mcq)
