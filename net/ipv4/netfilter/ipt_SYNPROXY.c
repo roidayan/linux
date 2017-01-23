@@ -55,8 +55,7 @@ synproxy_send_tcp(const struct sk_buff *skb, struct sk_buff *nskb,
 		goto free_nskb;
 
 	if (nfct) {
-		nskb->nfct = nfct;
-		nskb->nfctinfo = ctinfo;
+		nf_ct_set(nskb, (struct nf_conn *)nfct, ctinfo);
 		nf_conntrack_get(nfct);
 	}
 

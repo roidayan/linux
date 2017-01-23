@@ -481,7 +481,6 @@ static struct nft_expr_type nft_ct_type __read_mostly = {
 	.maxattr	= NFTA_CT_MAX,
 	.owner		= THIS_MODULE,
 };
-
 static int __init nft_ct_module_init(void)
 {
 	BUILD_BUG_ON(NF_CT_LABELS_MAX_SIZE > NFT_REG_SIZE);
