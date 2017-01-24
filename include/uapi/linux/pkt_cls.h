@@ -10,6 +10,8 @@
 #define AT_EGRESS	0x2
 #endif
 
+#define TC_COOKIE_MAX_SIZE 16
+
 /* Action attributes */
 enum {
 	TCA_ACT_UNSPEC,
@@ -18,6 +20,7 @@ enum {
 	TCA_ACT_INDEX,
 	TCA_ACT_STATS,
 	TCA_ACT_PAD,
+	TCA_ACT_COOKIE,
 	__TCA_ACT_MAX
 };
 
