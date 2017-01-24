@@ -57,7 +57,7 @@ struct mlx5e_tc_flow {
 	u64			cookie;
 	u8			flags;
 	struct mlx5_flow_handle *rule;
-	struct mlx5_esw_flow_attr *attr;
+	struct mlx5_esw_flow_attr esw_attr[0];
 };
 
 enum {
@@ -172,10 +172,10 @@ static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
 {
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 
-	mlx5_eswitch_del_offloaded_rule(esw, flow->rule, flow->attr);
+	mlx5_eswitch_del_offloaded_rule(esw, flow->rule, flow->esw_attr);
 
-	if (flow->attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP)
-		mlx5e_detach_encap(priv, flow->attr);
+	if (flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP)
+		mlx5e_detach_encap(priv, flow->esw_attr);
 }
 
 static void mlx5e_detach_encap(struct mlx5e_priv *priv,
@@ -1065,7 +1065,7 @@ out_err:
 static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 				struct mlx5e_tc_flow *flow)
 {
-	struct mlx5_esw_flow_attr *attr = flow->attr;
+	struct mlx5_esw_flow_attr *attr = flow->esw_attr;
 	struct ip_tunnel_info *info = NULL;
 	const struct tc_action *a;
 	LIST_HEAD(actions);
@@ -1104,7 +1104,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 							 out_dev, attr);
 				if (err)
 					return err;
-				list_add(&flow->attr->encap_list, &attr->encap->flows);
+				list_add(&flow->esw_attr->encap_list, &attr->encap->flows);
 				attr->action |= MLX5_FLOW_CONTEXT_ACTION_ENCAP |
 					MLX5_FLOW_CONTEXT_ACTION_FWD_DEST |
 					MLX5_FLOW_CONTEXT_ACTION_COUNT;
@@ -1181,11 +1181,10 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv, __be16 protocol,
 		goto err_free;
 
 	if (flow->flags & MLX5E_TC_FLOW_ESWITCH) {
-		flow->attr  = (struct mlx5_esw_flow_attr *)(flow + 1);
 		err = parse_tc_fdb_actions(priv, f->exts, flow);
 		if (err < 0)
 			goto err_free;
-		flow->rule = mlx5e_tc_add_fdb_flow(priv, spec, flow->attr);
+		flow->rule = mlx5e_tc_add_fdb_flow(priv, spec, flow->esw_attr);
 	} else {
 		err = parse_tc_nic_actions(priv, f->exts, &action, &flow_tag);
 		if (err < 0)
