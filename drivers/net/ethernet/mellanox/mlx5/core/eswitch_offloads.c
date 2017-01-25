@@ -52,6 +52,7 @@ mlx5_eswitch_add_offloaded_rule(struct mlx5_eswitch *esw,
 	struct mlx5_flow_act flow_act = {0};
 	struct mlx5_fc *counter = NULL;
 	struct mlx5_flow_handle *rule;
+	bool encap, mod_hdr;
 	void *misc;
 	int err, i = 0;
 
@@ -61,6 +62,14 @@ mlx5_eswitch_add_offloaded_rule(struct mlx5_eswitch *esw,
 	err = mlx5_eswitch_add_vlan_action(esw, attr);
 	if (err)
 		return ERR_PTR(err);
+
+	/* currently encap and modify header are mutual exclusive */
+	encap = !!(attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP);
+	mod_hdr = !!(attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR);
+	if (encap && mod_hdr) {
+		rule = ERR_PTR(-EOPNOTSUPP);
+		goto err_encap_mod_hdr;
+	}
 
 	/* per flow vlan pop/push is emulated, don't set that into the firmware */
 	flow_act.action = attr->action & ~(MLX5_FLOW_CONTEXT_ACTION_VLAN_PUSH | MLX5_FLOW_CONTEXT_ACTION_VLAN_POP);
@@ -92,8 +101,11 @@ mlx5_eswitch_add_offloaded_rule(struct mlx5_eswitch *esw,
 	if (flow_act.action & MLX5_FLOW_CONTEXT_ACTION_DECAP)
 		spec->match_criteria_enable |= MLX5_MATCH_INNER_HEADERS;
 
-	if (attr->encap)
+	if (encap)
 		flow_act.encap_id = attr->encap->encap_id;
+
+	if (mod_hdr)
+		flow_act.modify_id = attr->modify_header_id;
 
 	rule = mlx5_add_flow_rules((struct mlx5_flow_table *)esw->fdb_table.fdb,
 				   spec, &flow_act, dest, i);
@@ -106,6 +118,7 @@ mlx5_eswitch_add_offloaded_rule(struct mlx5_eswitch *esw,
 
 err_add_rule:
 	mlx5_fc_destroy(esw->dev, counter);
+err_encap_mod_hdr:
 err_counter_alloc:
 	mlx5_eswitch_del_vlan_action(esw, attr);
 

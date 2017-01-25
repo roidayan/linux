@@ -309,6 +309,7 @@ struct mlx5_esw_flow_attr {
 	bool	vlan_handled;
 	struct list_head	encap_list; /* flows sharing the same encap */
 	struct mlx5_encap_entry *encap;
+	u32	modify_header_id;
 };
 
 int mlx5_eswitch_sqs2vport_start(struct mlx5_eswitch *esw,
