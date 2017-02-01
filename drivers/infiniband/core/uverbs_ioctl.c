@@ -358,3 +358,61 @@ out:
 
 	return err;
 }
+
+static void uverbs_initialize_action(struct uverbs_action *action)
+{
+	size_t attr_group_idx;
+
+	for (attr_group_idx = 0; attr_group_idx < action->num_groups;
+	     attr_group_idx++) {
+		struct uverbs_attr_spec_group *attr_group =
+			action->attr_groups[attr_group_idx];
+		size_t attr_idx;
+
+		if (!attr_group)
+			continue;
+		action->num_child_attrs += attr_group->num_attrs;
+		for (attr_idx = 0; attr_idx < attr_group->num_attrs;
+		     attr_idx++) {
+			struct uverbs_attr_spec *attr =
+				&attr_group->attrs[attr_idx];
+
+			if (attr->flags & UVERBS_ATTR_SPEC_F_MANDATORY)
+				set_bit(attr_idx,
+					attr_group->mandatory_attrs_bitmask);
+		}
+	}
+}
+
+void uverbs_initialize_type_group(const struct uverbs_type_group *type_group)
+{
+	size_t type_idx;
+
+	for (type_idx = 0; type_idx < type_group->num_types; type_idx++) {
+		const struct uverbs_type *type = type_group->types[type_idx];
+		size_t action_group_idx;
+
+		if (!type)
+			continue;
+		for (action_group_idx = 0;
+		     action_group_idx < type->num_groups;
+		     action_group_idx++) {
+			const struct uverbs_action_group *action_group =
+				type->action_groups[action_group_idx];
+			size_t action_idx;
+
+			if (!action_group)
+				continue;
+			for (action_idx = 0;
+			     action_idx < action_group->num_actions;
+			     action_idx++) {
+				struct uverbs_action *action =
+					action_group->actions[action_idx];
+
+				if (!action)
+					continue;
+				uverbs_initialize_action(action);
+			}
+		}
+	}
+}
