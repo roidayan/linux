@@ -142,6 +142,10 @@ struct mlx5_flow_act {
 	u32 encap_id;
 };
 
+#define MLX5_DECLARE_FLOW_ACT(name) \
+	struct mlx5_flow_act name = {MLX5_FLOW_CONTEXT_ACTION_FWD_DEST,\
+				     MLX5_FS_DEFAULT_FLOW_TAG, 0}
+
 /* Single destination per rule.
  * Group ID is implied by the match criteria.
  */
@@ -162,5 +166,4 @@ struct mlx5_fc *mlx5_fc_create(struct mlx5_core_dev *dev, bool aging);
 void mlx5_fc_destroy(struct mlx5_core_dev *dev, struct mlx5_fc *counter);
 void mlx5_fc_query_cached(struct mlx5_fc *counter,
 			  u64 *bytes, u64 *packets, u64 *lastuse);
-
 #endif
