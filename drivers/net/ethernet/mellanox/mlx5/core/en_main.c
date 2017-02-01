@@ -1453,11 +1453,10 @@ static void mlx5e_close_xdpsq(struct mlx5e_xdpsq *sq)
 	mlx5e_free_xdpsq(sq);
 }
 
-static int mlx5e_alloc_cq(struct mlx5e_channel *c,
-			  struct mlx5e_cq_param *param,
-			  struct mlx5e_cq *cq)
+static int mlx5e_alloc_cq_common(struct mlx5e_priv *priv,
+				 struct mlx5e_cq_param *param,
+				 struct mlx5e_cq *cq)
 {
-	struct mlx5e_priv *priv = c->priv;
 	struct mlx5_core_dev *mdev = priv->mdev;
 	struct mlx5_core_cq *mcq = &cq->mcq;
 	int eqn_not_used;
@@ -1465,18 +1464,12 @@ static int mlx5e_alloc_cq(struct mlx5e_channel *c,
 	int err;
 	u32 i;
 
-	param->wq.buf_numa_node = cpu_to_node(c->cpu);
-	param->wq.db_numa_node  = cpu_to_node(c->cpu);
-	param->eq_ix   = c->ix;
-
 	err = mlx5_cqwq_create(mdev, &param->wq, param->cqc, &cq->wq,
 			       &cq->wq_ctrl);
 	if (err)
 		return err;
 
 	mlx5_vector2eqn(mdev, param->eq_ix, &eqn_not_used, &irqn);
-
-	cq->napi        = &c->napi;
 
 	mcq->cqe_sz     = 64;
 	mcq->set_ci_db  = cq->wq_ctrl.db.db;
@@ -1494,10 +1487,27 @@ static int mlx5e_alloc_cq(struct mlx5e_channel *c,
 		cqe->op_own = 0xf1;
 	}
 
-	cq->channel = c;
 	cq->priv = priv;
 
 	return 0;
+}
+
+static int mlx5e_alloc_cq(struct mlx5e_channel *c,
+			  struct mlx5e_cq_param *param,
+			  struct mlx5e_cq *cq)
+{
+	struct mlx5e_priv *priv = c->priv;
+	int err;
+
+	param->wq.buf_numa_node = cpu_to_node(c->cpu);
+	param->wq.db_numa_node  = cpu_to_node(c->cpu);
+	param->eq_ix   = c->ix;
+
+	err = mlx5e_alloc_cq_common(priv, param, cq);
+	cq->napi = &c->napi;
+	cq->channel = c;
+
+	return err;
 }
 
 static void mlx5e_free_cq(struct mlx5e_cq *cq)
@@ -2746,32 +2756,7 @@ static int mlx5e_alloc_drop_cq(struct mlx5e_priv *priv,
 			       struct mlx5e_cq *cq,
 			       struct mlx5e_cq_param *param)
 {
-	struct mlx5_core_dev *mdev = priv->mdev;
-	struct mlx5_core_cq *mcq = &cq->mcq;
-	int eqn_not_used;
-	unsigned int irqn;
-	int err;
-
-	err = mlx5_cqwq_create(mdev, &param->wq, param->cqc, &cq->wq,
-			       &cq->wq_ctrl);
-	if (err)
-		return err;
-
-	mlx5_vector2eqn(mdev, param->eq_ix, &eqn_not_used, &irqn);
-
-	mcq->cqe_sz     = 64;
-	mcq->set_ci_db  = cq->wq_ctrl.db.db;
-	mcq->arm_db     = cq->wq_ctrl.db.db + 1;
-	*mcq->set_ci_db = 0;
-	*mcq->arm_db    = 0;
-	mcq->vector     = param->eq_ix;
-	mcq->comp       = mlx5e_completion_event;
-	mcq->event      = mlx5e_cq_error_event;
-	mcq->irqn       = irqn;
-
-	cq->priv = priv;
-
-	return 0;
+	return mlx5e_alloc_cq_common(priv, param, cq);
 }
 
 static int mlx5e_open_drop_rq(struct mlx5e_priv *priv)
