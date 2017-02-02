@@ -38,6 +38,8 @@
 #include <net/devlink.h>
 #include <net/ip_tunnels.h>
 #include <linux/mlx5/device.h>
+#include <linux/rhashtable.h>
+
 
 #define MLX5_MAX_UC_PER_VPORT(dev) \
 	(1 << MLX5_CAP_GEN(dev, log_max_current_uc_list))
@@ -180,6 +182,15 @@ struct mlx5_esw_sq {
 	struct list_head	 list;
 };
 
+struct mlx5_neigh_update {
+	struct rhashtable       neigh_ht;
+	/* Save the neigh hash entries in a list in addition to the hash table
+	 * (neigh_ht). In order to iterate easily over the neigh entries.
+	 * Used for stats query.
+	 */
+	struct list_head	neigh_list;
+};
+
 struct mlx5_eswitch_rep {
 	int		       (*load)(struct mlx5_eswitch *esw,
 				       struct mlx5_eswitch_rep *rep);
@@ -193,6 +204,7 @@ struct mlx5_eswitch_rep {
 	struct list_head       vport_sqs_list;
 	u16		       vlan;
 	u32		       vlan_refcount;
+	struct mlx5_neigh_update neigh_update;
 	bool		       valid;
 };
 
@@ -281,6 +293,25 @@ enum {
 
 #define MLX5_FLOW_CONTEXT_ACTION_VLAN_POP  0x40
 #define MLX5_FLOW_CONTEXT_ACTION_VLAN_PUSH 0x80
+
+struct mlx5_neigh {
+	struct net_device *neigh_dev;
+	union {
+		__be32	v4;
+		struct in6_addr v6;
+	} dst_ip;
+};
+
+struct mlx5_neigh_hash_entry {
+	struct rhash_head rhash_node;
+	struct mlx5_neigh m_neigh;
+
+	/* Save the neigh hash entry in a list on the representor in
+	 * addition to the hash table. In order to iterate easily over the
+	 * neighbour entries. Used for stats query.
+	 */
+	struct list_head neigh_list;
+};
 
 struct mlx5_encap_entry {
 	struct hlist_node encap_hlist;
