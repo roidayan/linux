@@ -206,16 +206,6 @@ int mlx5e_add_sqs_fwd_rules(struct mlx5e_priv *priv)
 	return err;
 }
 
-int mlx5e_nic_rep_load(struct mlx5_eswitch *esw, struct mlx5_eswitch_rep *rep)
-{
-	struct net_device *netdev = rep->netdev;
-	struct mlx5e_priv *priv = netdev_priv(netdev);
-
-	if (test_bit(MLX5E_STATE_OPENED, &priv->state))
-		return mlx5e_add_sqs_fwd_rules(priv);
-	return 0;
-}
-
 void mlx5e_remove_sqs_fwd_rules(struct mlx5e_priv *priv)
 {
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
@@ -224,11 +214,83 @@ void mlx5e_remove_sqs_fwd_rules(struct mlx5e_priv *priv)
 	mlx5_eswitch_sqs2vport_stop(esw, rep);
 }
 
+
+static const struct rhashtable_params mlx5e_neigh_ht_params = {
+	.head_offset = offsetof(struct mlx5_encap_entry, rhlist_node),
+	.key_offset = offsetof(struct mlx5_encap_entry, n_entry),
+	.key_len = sizeof(struct mlx5_neigh_entry),
+	.automatic_shrinking = true,
+};
+
+static int mlx5e_rep_neigh_init(struct mlx5_eswitch_rep *rep)
+{
+	struct mlx5_neigh_update *neigh_update = &rep->neigh_update;
+
+	INIT_LIST_HEAD(&neigh_update->neigh_list);
+	return rhltable_init(&neigh_update->neigh_ht, &mlx5e_neigh_ht_params);
+}
+
+static void mlx5e_rep_neigh_cleanup(struct mlx5_eswitch_rep *rep)
+{
+	struct mlx5_neigh_update *neigh_update = &rep->neigh_update;
+
+	rhltable_destroy(&neigh_update->neigh_ht);
+}
+
+int mlx5e_rep_insert_neigh_entry(struct mlx5e_priv *priv,
+				 struct mlx5_encap_entry *e)
+{
+	struct mlx5_eswitch_rep *rep = priv->ppriv;
+	int err;
+
+	err = rhltable_insert(&rep->neigh_update.neigh_ht, &e->rhlist_node,
+			      mlx5e_neigh_ht_params);
+	if (err)
+		return err;
+
+	list_add(&e->neigh_list, &rep->neigh_update.neigh_list);
+	return err;
+}
+
+void mlx5e_rep_remove_neigh_entry(struct mlx5e_priv *priv,
+				  struct mlx5_encap_entry *e)
+{
+	struct mlx5_eswitch_rep *rep = priv->ppriv;
+
+	list_del(&e->neigh_list);
+	rhltable_remove(&rep->neigh_update.neigh_ht, &e->rhlist_node,
+			mlx5e_neigh_ht_params);
+}
+
+int mlx5e_nic_rep_load(struct mlx5_eswitch *esw, struct mlx5_eswitch_rep *rep)
+{
+	struct net_device *netdev = rep->netdev;
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+	int err;
+
+	if (test_bit(MLX5E_STATE_OPENED, &priv->state)) {
+		err = mlx5e_add_sqs_fwd_rules(priv);
+		if (err)
+			return err;
+	}
+
+	err = mlx5e_rep_neigh_init(rep);
+	if (err)
+		goto err_remove_sqs;
+	return 0;
+
+err_remove_sqs:
+	mlx5e_remove_sqs_fwd_rules(priv);
+	return err;
+}
+
 void mlx5e_nic_rep_unload(struct mlx5_eswitch *esw,
 			  struct mlx5_eswitch_rep *rep)
 {
 	struct net_device *netdev = rep->netdev;
 	struct mlx5e_priv *priv = netdev_priv(netdev);
+
+	mlx5e_rep_neigh_cleanup(rep);
 
 	if (test_bit(MLX5E_STATE_OPENED, &priv->state))
 		mlx5e_remove_sqs_fwd_rules(priv);
@@ -572,14 +634,24 @@ int mlx5e_vport_rep_load(struct mlx5_eswitch *esw,
 		goto err_destroy_netdev;
 	}
 
-	err = register_netdev(netdev);
+	err = mlx5e_rep_neigh_init(rep);
 	if (err) {
-		pr_warn("Failed to register representor netdev for vport %d\n",
+		pr_warn("Failed to initialized neighbours handling for vport %d\n",
 			rep->vport);
 		goto err_detach_netdev;
 	}
 
+	err = register_netdev(netdev);
+	if (err) {
+		pr_warn("Failed to register representor netdev for vport %d\n",
+			rep->vport);
+		goto err_neigh_cleanup;
+	}
+
 	return 0;
+
+err_neigh_cleanup:
+	mlx5e_rep_neigh_cleanup(rep);
 
 err_detach_netdev:
 	mlx5e_detach_netdev(esw->dev, netdev);
@@ -597,6 +669,7 @@ void mlx5e_vport_rep_unload(struct mlx5_eswitch *esw,
 	struct net_device *netdev = rep->netdev;
 
 	unregister_netdev(netdev);
+	mlx5e_rep_neigh_cleanup(rep);
 	mlx5e_detach_netdev(esw->dev, netdev);
 	mlx5e_destroy_netdev(esw->dev, netdev_priv(netdev));
 }

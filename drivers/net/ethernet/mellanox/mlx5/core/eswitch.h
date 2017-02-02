@@ -38,6 +38,8 @@
 #include <net/devlink.h>
 #include <net/ip_tunnels.h>
 #include <linux/mlx5/device.h>
+#include <linux/rhashtable.h>
+
 
 #define MLX5_MAX_UC_PER_VPORT(dev) \
 	(1 << MLX5_CAP_GEN(dev, log_max_current_uc_list))
@@ -180,6 +182,11 @@ struct mlx5_esw_sq {
 	struct list_head	 list;
 };
 
+struct mlx5_neigh_update {
+	struct rhltable		neigh_ht;
+	struct list_head	neigh_list;
+};
+
 struct mlx5_eswitch_rep {
 	int		       (*load)(struct mlx5_eswitch *esw,
 				       struct mlx5_eswitch_rep *rep);
@@ -194,6 +201,7 @@ struct mlx5_eswitch_rep {
 	u16		       vlan;
 	u32		       vlan_refcount;
 	bool		       valid;
+	struct mlx5_neigh_update neigh_update;
 };
 
 struct mlx5_esw_offload {
@@ -282,7 +290,18 @@ enum {
 #define MLX5_FLOW_CONTEXT_ACTION_VLAN_POP  0x40
 #define MLX5_FLOW_CONTEXT_ACTION_VLAN_PUSH 0x80
 
+struct mlx5_neigh_entry {
+	struct net_device *neigh_dev;
+	union {
+		__be32	v4;
+		struct in6_addr v6;
+	} dst_ip;
+};
+
 struct mlx5_encap_entry {
+	struct rhlist_head rhlist_node;
+	struct list_head neigh_list;
+	struct mlx5_neigh_entry n_entry;
 	struct hlist_node encap_hlist;
 	struct list_head flows;
 	u32 encap_id;
