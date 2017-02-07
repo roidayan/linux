@@ -2542,14 +2542,29 @@ static void mlx5e_build_channels_tx_maps(struct mlx5e_priv *priv)
 
 static void mlx5e_activate_priv_channels(struct mlx5e_priv *priv)
 {
+	int err;
+
 	mlx5e_build_channels_tx_maps(priv);
 	mlx5e_activate_channels(&priv->channels);
 	netif_tx_start_all_queues(priv->netdev);
+
+	if (MLX5_CAP_GEN(priv->mdev, vport_group_manager)) {
+		err = mlx5e_add_sqs_fwd_rules(priv);
+		if (err)
+			netdev_warn(priv->netdev, "Failed to add SQs FWD rules %d\n", err);
+	}
+
 	mlx5e_wait_channels_min_rx_wqes(&priv->channels);
+	mlx5e_redirect_rqts_to_channels(priv, &priv->channels);
 }
 
 static void mlx5e_deactivate_priv_channels(struct mlx5e_priv *priv)
 {
+	mlx5e_redirect_rqts_to_drop(priv);
+
+	if (MLX5_CAP_GEN(priv->mdev, vport_group_manager))
+		mlx5e_remove_sqs_fwd_rules(priv);
+
 	/* FIXME: This is a W/A only for tx timeout watch dog false alarm when
 	 * polling for inactive tx queues.
 	 */
@@ -2561,7 +2576,6 @@ static void mlx5e_deactivate_priv_channels(struct mlx5e_priv *priv)
 int mlx5e_open_locked(struct net_device *netdev)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
-	struct mlx5_core_dev *mdev = priv->mdev;
 	int num_txqs;
 	int err;
 
@@ -2579,22 +2593,14 @@ int mlx5e_open_locked(struct net_device *netdev)
 
 	mlx5e_refresh_tirs(priv, false);
 	mlx5e_activate_priv_channels(priv);
-	mlx5e_redirect_rqts_to_channels(priv, &priv->channels);
 	mlx5e_update_carrier(priv);
 	mlx5e_timestamp_init(priv);
 
 	if (priv->profile->update_stats)
 		queue_delayed_work(priv->wq, &priv->update_stats_work, 0);
 
-	if (MLX5_CAP_GEN(mdev, vport_group_manager)) {
-		err = mlx5e_add_sqs_fwd_rules(priv);
-		if (err)
-			goto err_close_channels;
-	}
 	return 0;
 
-err_close_channels:
-	mlx5e_close_channels(&priv->channels);
 err_clear_state_opened_flag:
 	clear_bit(MLX5E_STATE_OPENED, &priv->state);
 	return err;
@@ -2615,7 +2621,6 @@ int mlx5e_open(struct net_device *netdev)
 int mlx5e_close_locked(struct net_device *netdev)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
-	struct mlx5_core_dev *mdev = priv->mdev;
 
 	/* May already be CLOSED in case a previous configuration operation
 	 * (e.g RX/TX queue size change) that involves close&open failed.
@@ -2625,12 +2630,8 @@ int mlx5e_close_locked(struct net_device *netdev)
 
 	clear_bit(MLX5E_STATE_OPENED, &priv->state);
 
-	if (MLX5_CAP_GEN(mdev, vport_group_manager))
-		mlx5e_remove_sqs_fwd_rules(priv);
-
 	mlx5e_timestamp_cleanup(priv);
 	netif_carrier_off(priv->netdev);
-	mlx5e_redirect_rqts_to_drop(priv);
 	mlx5e_deactivate_priv_channels(priv);
 	mlx5e_close_channels(&priv->channels);
 
