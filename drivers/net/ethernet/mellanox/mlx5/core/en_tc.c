@@ -751,7 +751,7 @@ static int mlx5e_route_lookup_ipv6(struct mlx5e_priv *priv,
 	*out_ttl = ip6_dst_hoplimit(dst);
 
 	/* if the egress device isn't on the same HW e-switch, we use the uplink */
-	if (!switchdev_port_same_parent_id(priv->netdev, dst->dev))
+	if (!switchdev_port_same_parent_id(priv->netdev, dst->dev, SWITCHDEV_F_NO_RECURSE))
 		*out_dev = mlx5_eswitch_get_uplink_netdev(esw);
 	else
 		*out_dev = dst->dev;
