@@ -3110,26 +3110,38 @@ typedef int (*mlx5e_feature_handler)(struct net_device *netdev, bool enable);
 static int set_feature_lro(struct net_device *netdev, bool enable)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
-	bool was_opened = test_bit(MLX5E_STATE_OPENED, &priv->state);
-	int err;
+	struct mlx5e_channels new_channels = {};
+	struct mlx5e_params   new_params   = {};
+	int err = 0;
+	bool reset;
 
 	mutex_lock(&priv->state_lock);
 
-	if (was_opened && (priv->params.rq_wq_type == MLX5_WQ_TYPE_LINKED_LIST))
-		mlx5e_close_locked(priv->netdev);
+	reset = (priv->params.rq_wq_type == MLX5_WQ_TYPE_LINKED_LIST);
+	reset = reset && test_bit(MLX5E_STATE_OPENED, &priv->state);
 
-	priv->params.lro_en = enable;
+	new_params = priv->params;
+	new_params.lro_en = enable;
+
+	if (!reset) {
+		priv->params = new_params;
+		goto modify_tirs;
+	}
+
+	err = mlx5e_open_channels(priv, &new_params, &new_channels);
+	if (err)
+		goto out;
+
+	mlx5e_switch_priv_channels(priv, &new_channels, &new_params);
+
+modify_tirs:
 	err = mlx5e_modify_tirs_lro(priv);
 	if (err) {
 		netdev_err(netdev, "lro modify failed, %d\n", err);
 		priv->params.lro_en = !enable;
 	}
-
-	if (was_opened && (priv->params.rq_wq_type == MLX5_WQ_TYPE_LINKED_LIST))
-		mlx5e_open_locked(priv->netdev);
-
+out:
 	mutex_unlock(&priv->state_lock);
-
 	return err;
 }
 
