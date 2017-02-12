@@ -1481,10 +1481,11 @@ static int set_pflag_rx_cqe_based_moder(struct net_device *netdev, bool enable)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
 	struct mlx5_core_dev *mdev = priv->mdev;
+	struct mlx5e_channels new_channels = {};
+	struct mlx5e_params   new_params   = {};
 	bool rx_mode_changed;
 	u8 rx_cq_period_mode;
 	int err = 0;
-	bool reset;
 
 	rx_cq_period_mode = enable ?
 		MLX5_CQ_PERIOD_MODE_START_FROM_CQE :
@@ -1498,16 +1499,21 @@ static int set_pflag_rx_cqe_based_moder(struct net_device *netdev, bool enable)
 	if (!rx_mode_changed)
 		return 0;
 
-	reset = test_bit(MLX5E_STATE_OPENED, &priv->state);
-	if (reset)
-		mlx5e_close_locked(netdev);
+	new_params = priv->params;
 
-	mlx5e_set_rx_cq_mode_params(&priv->params, rx_cq_period_mode);
+	mlx5e_set_rx_cq_mode_params(&new_params, rx_cq_period_mode);
 
-	if (reset)
-		err = mlx5e_open_locked(netdev);
+	if (!test_bit(MLX5E_STATE_OPENED, &priv->state)) {
+		priv->params = new_params;
+		return 0;
+	}
 
-	return err;
+	err = mlx5e_open_channels(priv, &new_params, &new_channels);
+	if (err)
+		return err;
+
+	mlx5e_switch_priv_channels(priv, &new_channels, &new_params);
+	return 0;
 }
 
 static int set_pflag_rx_cqe_compress(struct net_device *netdev,
