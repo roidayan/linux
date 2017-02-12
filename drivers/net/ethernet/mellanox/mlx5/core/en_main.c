@@ -2972,7 +2972,8 @@ int mlx5e_modify_channels_vsd(struct mlx5e_channels *chs, bool vsd)
 static int mlx5e_setup_tc(struct net_device *netdev, u8 tc)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
-	bool was_opened;
+	struct mlx5e_channels new_channels = {};
+	struct mlx5e_params   new_params   = {};
 	int err = 0;
 
 	if (tc && tc != MLX5E_MAX_NUM_TC)
@@ -2980,17 +2981,21 @@ static int mlx5e_setup_tc(struct net_device *netdev, u8 tc)
 
 	mutex_lock(&priv->state_lock);
 
-	was_opened = test_bit(MLX5E_STATE_OPENED, &priv->state);
-	if (was_opened)
-		mlx5e_close_locked(priv->netdev);
+	new_params = priv->params;
+	new_params.num_tc = tc ? tc : 1;
 
-	priv->params.num_tc = tc ? tc : 1;
+	if (test_bit(MLX5E_STATE_OPENED, &priv->state)) {
+		priv->params = new_params;
+		goto out;
+	}
 
-	if (was_opened)
-		err = mlx5e_open_locked(priv->netdev);
+	err = mlx5e_open_channels(priv, &new_params, &new_channels);
+	if (err)
+		goto out;
 
+	mlx5e_switch_priv_channels(priv, &new_channels, &new_params);
+out:
 	mutex_unlock(&priv->state_lock);
-
 	return err;
 }
 
