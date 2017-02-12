@@ -456,8 +456,9 @@ static int mlx5e_set_ringparam(struct net_device *dev,
 			       struct ethtool_ringparam *param)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
-	bool was_opened;
 	int rq_wq_type = priv->params.rq_wq_type;
+	struct mlx5e_channels new_channels = {};
+	struct mlx5e_params   new_params   = {};
 	u32 rx_pending_wqes;
 	u32 min_rq_size;
 	u32 max_rq_size;
@@ -527,16 +528,22 @@ static int mlx5e_set_ringparam(struct net_device *dev,
 
 	mutex_lock(&priv->state_lock);
 
-	was_opened = test_bit(MLX5E_STATE_OPENED, &priv->state);
-	if (was_opened)
-		mlx5e_close_locked(dev);
+	new_params = priv->params;
+	new_params.log_rq_size = log_rq_size;
+	new_params.log_sq_size = log_sq_size;
 
-	priv->params.log_rq_size = log_rq_size;
-	priv->params.log_sq_size = log_sq_size;
+	if (!test_bit(MLX5E_STATE_OPENED, &priv->state)) {
+		priv->params = new_params;
+		goto unlock;
+	}
 
-	if (was_opened)
-		err = mlx5e_open_locked(dev);
+	err = mlx5e_open_channels(priv, &new_params, &new_channels);
+	if (err)
+		goto unlock;
 
+	mlx5e_switch_priv_channels(priv, &new_channels, &new_params);
+
+unlock:
 	mutex_unlock(&priv->state_lock);
 
 	return err;
