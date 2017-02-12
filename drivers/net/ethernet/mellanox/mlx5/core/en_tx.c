@@ -464,6 +464,8 @@ void mlx5e_free_txqsq_descs(struct mlx5e_txqsq *sq)
 			mlx5e_tx_dma_unmap(sq->pdev, dma);
 		}
 
+		/* Update dql but keep txq stopped */
+		dql_completed(&sq->txq->dql, wi->num_bytes);
 		dev_kfree_skb_any(skb);
 		sq->cc += wi->num_wqebbs;
 	}
