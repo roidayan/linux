@@ -631,41 +631,15 @@ static int mlx5e_get_coalesce(struct net_device *netdev,
 	return 0;
 }
 
-static int mlx5e_set_coalesce(struct net_device *netdev,
-			      struct ethtool_coalesce *coal)
+static void
+mlx5e_set_priv_channels_coalesce(struct mlx5e_priv *priv, struct ethtool_coalesce *coal)
 {
-	struct mlx5e_priv *priv    = netdev_priv(netdev);
 	struct mlx5_core_dev *mdev = priv->mdev;
-	struct mlx5e_channels *chs;
-	struct mlx5e_channel *c;
-	bool restart =
-		!!coal->use_adaptive_rx_coalesce != priv->params.rx_am_enabled;
-	bool was_opened;
-	int err = 0;
 	int tc;
 	int i;
 
-	if (!MLX5_CAP_GEN(mdev, cq_moderation))
-		return -EOPNOTSUPP;
-
-	mutex_lock(&priv->state_lock);
-
-	was_opened = test_bit(MLX5E_STATE_OPENED, &priv->state);
-	if (was_opened && restart) {
-		mlx5e_close_locked(netdev);
-		priv->params.rx_am_enabled = !!coal->use_adaptive_rx_coalesce;
-	}
-
-	priv->params.tx_cq_moderation.usec = coal->tx_coalesce_usecs;
-	priv->params.tx_cq_moderation.pkts = coal->tx_max_coalesced_frames;
-	priv->params.rx_cq_moderation.usec = coal->rx_coalesce_usecs;
-	priv->params.rx_cq_moderation.pkts = coal->rx_max_coalesced_frames;
-
-	if (!was_opened || restart)
-		goto out;
-	chs = &priv->channels;
-	for (i = 0; i < chs->size; ++i) {
-		c = chs->c[i];
+	for (i = 0; i < priv->channels.size; ++i) {
+		struct mlx5e_channel *c = priv->channels.c[i];
 
 		for (tc = 0; tc < c->num_tc; tc++) {
 			mlx5_core_modify_cq_moderation(mdev,
@@ -678,11 +652,51 @@ static int mlx5e_set_coalesce(struct net_device *netdev,
 					       coal->rx_coalesce_usecs,
 					       coal->rx_max_coalesced_frames);
 	}
+}
+
+static int mlx5e_set_coalesce(struct net_device *netdev,
+			      struct ethtool_coalesce *coal)
+{
+	struct mlx5e_priv *priv    = netdev_priv(netdev);
+	struct mlx5_core_dev *mdev = priv->mdev;
+	struct mlx5e_channels new_channels = {};
+	struct mlx5e_params   new_params   = {};
+	int err = 0;
+	bool reset;
+
+	if (!MLX5_CAP_GEN(mdev, cq_moderation))
+		return -EOPNOTSUPP;
+
+	mutex_lock(&priv->state_lock);
+	new_params = priv->params;
+
+	new_params.tx_cq_moderation.usec = coal->tx_coalesce_usecs;
+	new_params.tx_cq_moderation.pkts = coal->tx_max_coalesced_frames;
+	new_params.rx_cq_moderation.usec = coal->rx_coalesce_usecs;
+	new_params.rx_cq_moderation.pkts = coal->rx_max_coalesced_frames;
+	new_params.rx_am_enabled         = !!coal->use_adaptive_rx_coalesce;
+
+	if (!test_bit(MLX5E_STATE_OPENED, &priv->state)) {
+		priv->params = new_params;
+		goto out;
+	}
+	/* we are opened */
+
+	reset = !!coal->use_adaptive_rx_coalesce != priv->params.rx_am_enabled;
+	if (!reset) {
+		mlx5e_set_priv_channels_coalesce(priv, coal);
+		priv->params = new_params;
+		goto out;
+	}
+
+	/* open fresh channels with new coal parameters */
+	err = mlx5e_open_channels(priv, &new_params, &new_channels);
+	if (err)
+		goto out;
+
+	mlx5e_switch_priv_channels(priv, &new_channels, &new_params);
 
 out:
-	if (was_opened && restart)
-		err = mlx5e_open_locked(netdev);
-
 	mutex_unlock(&priv->state_lock);
 	return err;
 }
