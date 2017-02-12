@@ -3242,7 +3242,8 @@ static int mlx5e_set_features(struct net_device *netdev,
 static int mlx5e_change_mtu(struct net_device *netdev, int new_mtu)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
-	bool was_opened;
+	struct mlx5e_channels new_channels = {};
+	int curr_mtu;
 	int err = 0;
 	bool reset;
 
@@ -3252,18 +3253,27 @@ static int mlx5e_change_mtu(struct net_device *netdev, int new_mtu)
 		(priv->params.rq_wq_type !=
 		 MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ);
 
-	was_opened = test_bit(MLX5E_STATE_OPENED, &priv->state);
-	if (was_opened && reset)
-		mlx5e_close_locked(netdev);
+	reset = reset && test_bit(MLX5E_STATE_OPENED, &priv->state);
 
+	curr_mtu    = netdev->mtu;
 	netdev->mtu = new_mtu;
+
+	if (!reset) {
+		mlx5e_set_dev_port_mtu(netdev);
+		goto out;
+	}
+
+	err = mlx5e_open_channels(priv, &priv->params, &new_channels);
+	if (err) {
+		netdev->mtu = curr_mtu;
+		goto out;
+	}
+
 	mlx5e_set_dev_port_mtu(netdev);
+	mlx5e_switch_priv_channels(priv, &new_channels, &priv->params);
 
-	if (was_opened && reset)
-		err = mlx5e_open_locked(netdev);
-
+out:
 	mutex_unlock(&priv->state_lock);
-
 	return err;
 }
 
