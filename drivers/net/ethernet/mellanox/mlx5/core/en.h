@@ -182,15 +182,15 @@ enum mlx5e_priv_flag {
 	MLX5E_PFLAG_RX_CQE_COMPRESS = (1 << 1),
 };
 
-#define MLX5E_SET_PFLAG(priv, pflag, enable)			\
+#define MLX5E_SET_PFLAG(pflags, pflag, enable)			\
 	do {							\
 		if (enable)					\
-			(priv)->params.pflags |= (pflag);	\
+			pflags |= (pflag);			\
 		else						\
-			(priv)->params.pflags &= ~(pflag);	\
+			pflags &= ~(pflag);			\
 	} while (0)
 
-#define MLX5E_GET_PFLAG(priv, pflag) (!!((priv)->params.pflags & (pflag)))
+#define MLX5E_GET_PFLAG(pflags, pflag) (!!(pflags & (pflag)))
 
 #ifdef CONFIG_MLX5_CORE_EN_DCB
 #define MLX5E_MAX_BW_ALLOC 100 /* Max percentage of BW allocation */
@@ -831,7 +831,7 @@ void mlx5e_pps_event_handler(struct mlx5e_priv *priv,
 			     struct ptp_clock_event *event);
 int mlx5e_hwstamp_set(struct net_device *dev, struct ifreq *ifr);
 int mlx5e_hwstamp_get(struct net_device *dev, struct ifreq *ifr);
-void mlx5e_modify_rx_cqe_compression_locked(struct mlx5e_priv *priv, bool val);
+int mlx5e_modify_rx_cqe_compression_locked(struct mlx5e_priv *priv, bool val);
 
 int mlx5e_vlan_rx_add_vid(struct net_device *dev, __always_unused __be16 proto,
 			  u16 vid);
@@ -874,7 +874,7 @@ int mlx5e_get_max_linkspeed(struct mlx5_core_dev *mdev, u32 *speed);
 
 void mlx5e_set_rx_cq_mode_params(struct mlx5e_params *params,
 				 u8 cq_period_mode);
-void mlx5e_set_rq_type_params(struct mlx5e_priv *priv, u8 rq_type);
+void mlx5e_set_rq_type_params(struct mlx5_core_dev *mdev, struct mlx5e_params *params);
 
 static inline
 struct mlx5e_tx_wqe *mlx5e_post_nop(struct mlx5_wq_cyc *wq, u32 sqn, u16 *pc)
