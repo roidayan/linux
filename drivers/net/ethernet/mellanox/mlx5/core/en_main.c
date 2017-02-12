@@ -2542,10 +2542,20 @@ static void mlx5e_build_channels_tx_maps(struct mlx5e_priv *priv)
 
 static void mlx5e_activate_priv_channels(struct mlx5e_priv *priv)
 {
+	int num_txqs = priv->channels.size * priv->params.num_tc;
+	struct net_device *netdev = priv->netdev;
 	int err;
 
+	mlx5e_netdev_set_tcs(netdev);
+	if (netdev->real_num_tx_queues != num_txqs)
+		netif_set_real_num_tx_queues(netdev, num_txqs);
+	if (netdev->real_num_rx_queues != priv->channels.size)
+		netif_set_real_num_rx_queues(netdev, priv->channels.size);
+
 	mlx5e_build_channels_tx_maps(priv);
+
 	mlx5e_activate_channels(&priv->channels);
+
 	netif_tx_start_all_queues(priv->netdev);
 
 	if (MLX5_CAP_GEN(priv->mdev, vport_group_manager)) {
@@ -2576,16 +2586,9 @@ static void mlx5e_deactivate_priv_channels(struct mlx5e_priv *priv)
 int mlx5e_open_locked(struct net_device *netdev)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
-	int num_txqs;
 	int err;
 
 	set_bit(MLX5E_STATE_OPENED, &priv->state);
-
-	mlx5e_netdev_set_tcs(netdev);
-
-	num_txqs = priv->params.num_channels * priv->params.num_tc;
-	netif_set_real_num_tx_queues(netdev, num_txqs);
-	netif_set_real_num_rx_queues(netdev, priv->params.num_channels);
 
 	err = mlx5e_open_channels(priv, &priv->params, &priv->channels);
 	if (err)
