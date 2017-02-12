@@ -156,25 +156,31 @@ static inline u32 mlx5e_decompress_cqes_start(struct mlx5e_rq *rq,
 	return mlx5e_decompress_cqes_cont(rq, cq, 1, budget_rem) - 1;
 }
 
-void mlx5e_modify_rx_cqe_compression_locked(struct mlx5e_priv *priv, bool val)
+int mlx5e_modify_rx_cqe_compression_locked(struct mlx5e_priv *priv, bool new_val)
 {
-	bool was_opened;
+	bool curr_val = MLX5E_GET_PFLAG(priv, MLX5E_PFLAG_RX_CQE_COMPRESS);
+	struct mlx5e_channels new_channels = {};
+	int err = 0;
 
 	if (!MLX5_CAP_GEN(priv->mdev, cqe_compression))
-		return;
+		return new_val ? -EOPNOTSUPP : 0;
 
-	if (MLX5E_GET_PFLAG(priv, MLX5E_PFLAG_RX_CQE_COMPRESS) == val)
-		return;
+	if (curr_val == new_val)
+		return 0;
 
-	was_opened = test_bit(MLX5E_STATE_OPENED, &priv->state);
-	if (was_opened)
-		mlx5e_close_locked(priv->netdev);
+	MLX5E_SET_PFLAG(priv, MLX5E_PFLAG_RX_CQE_COMPRESS, new_val);
 
-	MLX5E_SET_PFLAG(priv, MLX5E_PFLAG_RX_CQE_COMPRESS, val);
+	if (!test_bit(MLX5E_STATE_OPENED, &priv->state))
+		return 0;
 
-	if (was_opened)
-		mlx5e_open_locked(priv->netdev);
+	err = mlx5e_open_channels(priv, &priv->params, &new_channels);
+	if (err) {
+		MLX5E_SET_PFLAG(priv, MLX5E_PFLAG_RX_CQE_COMPRESS, curr_val);
+		return err;
+	}
 
+	mlx5e_switch_priv_channels(priv, &new_channels, &priv->params);
+	return 0;
 }
 
 #define RQ_PAGE_SIZE(rq) ((1 << rq->buff.page_order) << PAGE_SHIFT)
