@@ -1147,9 +1147,12 @@ static int mlx5e_set_tunable(struct net_device *dev,
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
 	struct mlx5_core_dev *mdev = priv->mdev;
-	bool was_opened;
-	u32 val;
+	struct mlx5e_channels new_channels = {};
+	struct mlx5e_params   new_params   = {};
 	int err = 0;
+	u32 val;
+
+	mutex_lock(&priv->state_lock);
 
 	switch (tuna->id) {
 	case ETHTOOL_TX_COPYBREAK:
@@ -1159,24 +1162,26 @@ static int mlx5e_set_tunable(struct net_device *dev,
 			break;
 		}
 
-		mutex_lock(&priv->state_lock);
+		new_params = priv->params;
+		new_params.tx_max_inline = val;
 
-		was_opened = test_bit(MLX5E_STATE_OPENED, &priv->state);
-		if (was_opened)
-			mlx5e_close_locked(dev);
+		if (!test_bit(MLX5E_STATE_OPENED, &priv->state)) {
+			priv->params = new_params;
+			break;
+		}
 
-		priv->params.tx_max_inline = val;
+		err = mlx5e_open_channels(priv, &new_params, &new_channels);
+		if (err)
+			break;
+		mlx5e_switch_priv_channels(priv, &new_channels, &new_params);
 
-		if (was_opened)
-			err = mlx5e_open_locked(dev);
-
-		mutex_unlock(&priv->state_lock);
 		break;
 	default:
 		err = -EINVAL;
 		break;
 	}
 
+	mutex_unlock(&priv->state_lock);
 	return err;
 }
 
