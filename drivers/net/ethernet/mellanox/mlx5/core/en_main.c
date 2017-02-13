@@ -457,15 +457,15 @@ static int mlx5e_rq_alloc_mpwqe_info(struct mlx5e_rq *rq,
 		goto err_out;
 
 	/* We allocate more than mtt_sz as we will align the pointer */
-	rq->mpwqe.mtt_no_align = kzalloc_node(mtt_alloc * wq_sz, GFP_KERNEL,
+	rq->mpwqe_mtt_no_align = kzalloc_node(mtt_alloc * wq_sz, GFP_KERNEL,
 					cpu_to_node(c->cpu));
-	if (unlikely(!rq->mpwqe.mtt_no_align))
+	if (unlikely(!rq->mpwqe_mtt_no_align))
 		goto err_free_wqe_info;
 
 	for (i = 0; i < wq_sz; i++) {
 		struct mlx5e_mpw_info *wi = &rq->mpwqe.info[i];
 
-		wi->umr.mtt = PTR_ALIGN(rq->mpwqe.mtt_no_align + i * mtt_alloc,
+		wi->umr.mtt = PTR_ALIGN(rq->mpwqe_mtt_no_align + i * mtt_alloc,
 					MLX5_UMR_ALIGN);
 		wi->umr.mtt_addr = dma_map_single(c->pdev, wi->umr.mtt, mtt_sz,
 						  PCI_DMA_TODEVICE);
@@ -484,7 +484,7 @@ err_unmap_mtts:
 		dma_unmap_single(c->pdev, wi->umr.mtt_addr, mtt_sz,
 				 PCI_DMA_TODEVICE);
 	}
-	kfree(rq->mpwqe.mtt_no_align);
+	kfree(rq->mpwqe_mtt_no_align);
 err_free_wqe_info:
 	kfree(rq->mpwqe.info);
 
@@ -504,7 +504,7 @@ static void mlx5e_rq_free_mpwqe_info(struct mlx5e_rq *rq)
 		dma_unmap_single(rq->pdev, wi->umr.mtt_addr, mtt_sz,
 				 PCI_DMA_TODEVICE);
 	}
-	kfree(rq->mpwqe.mtt_no_align);
+	kfree(rq->mpwqe_mtt_no_align);
 	kfree(rq->mpwqe.info);
 }
 
@@ -593,7 +593,7 @@ static int mlx5e_alloc_rq(struct mlx5e_channel *c,
 	}
 
 	rq->buff.map_dir = rq->xdp_prog ? DMA_BIDIRECTIONAL : DMA_FROM_DEVICE;
-	rq->rx_headroom = params->rq_headroom;
+	rq->buff.headroom = params->rq_headroom;
 
 	switch (rq->wq_type) {
 	case MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ:
@@ -615,10 +615,10 @@ static int mlx5e_alloc_rq(struct mlx5e_channel *c,
 			goto err_rq_wq_destroy;
 		}
 
-		rq->mpwqe_stride_sz = BIT(params->mpwqe_log_stride_sz);
-		rq->mpwqe_num_strides = BIT(params->mpwqe_log_num_strides);
+		rq->mpwqe.stride_sz = BIT(params->mpwqe_log_stride_sz);
+		rq->mpwqe.num_strides = BIT(params->mpwqe_log_num_strides);
 
-		rq->buff.wqe_sz = rq->mpwqe_stride_sz * rq->mpwqe_num_strides;
+		rq->buff.wqe_sz = rq->mpwqe.stride_sz * rq->mpwqe.num_strides;
 		byte_count = rq->buff.wqe_sz;
 
 		err = mlx5e_create_rq_umr_mkey(mdev, rq);
@@ -665,7 +665,7 @@ static int mlx5e_alloc_rq(struct mlx5e_channel *c,
 		byte_count = rq->buff.wqe_sz;
 
 		/* calc the required page order */
-		rq->wqe.frag_sz = MLX5_SKB_FRAG_SZ(rq->rx_headroom + byte_count);
+		rq->wqe.frag_sz = MLX5_SKB_FRAG_SZ(rq->buff.headroom + byte_count);
 		npages = DIV_ROUND_UP(rq->wqe.frag_sz, PAGE_SIZE);
 		rq->buff.page_order = order_base_2(npages);
 
