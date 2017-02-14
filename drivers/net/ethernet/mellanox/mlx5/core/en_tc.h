@@ -46,6 +46,11 @@ int mlx5e_delete_flower(struct mlx5e_priv *priv,
 int mlx5e_stats_flower(struct mlx5e_priv *priv,
 		       struct tc_cls_flower_offload *f);
 
+int mlx5e_add_encap_flows(struct mlx5e_priv *priv,
+			  struct mlx5_encap_entry *e);
+void mlx5e_del_encap_flows(struct mlx5e_priv *priv,
+			   struct mlx5_encap_entry *e);
+
 static inline int mlx5e_tc_num_filters(struct mlx5e_priv *priv)
 {
 	return atomic_read(&priv->fs.tc.ht.nelems);
