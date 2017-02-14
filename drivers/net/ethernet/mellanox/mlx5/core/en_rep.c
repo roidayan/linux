@@ -354,7 +354,9 @@ static int mlx5e_rep_netevent_event(struct notifier_block *nb,
 	struct mlx5e_priv *priv = netdev_priv(netdev);
 	struct mlx5e_neigh_hash_entry *nhe = NULL;
 	struct mlx5e_neigh m_neigh = {};
+	struct neigh_parms *p;
 	struct neighbour *n;
+	bool found = false;
 
 	switch (event) {
 	case NETEVENT_NEIGH_UPDATE:
@@ -395,6 +397,39 @@ static int mlx5e_rep_netevent_event(struct notifier_block *nb,
 			neigh_release(n);
 		}
 		spin_unlock_bh(&neigh_update->encap_lock);
+		break;
+
+	case NETEVENT_DELAY_PROBE_TIME_UPDATE:
+		p = ptr;
+
+		/* We check the device is present since we don't care about
+		 * changes in the default table, we only care about changes
+		 * done per device delay prob time parameter.
+		 */
+		if (!p->dev || (p->tbl != ipv6_stub->nd_tbl && p->tbl != &arp_tbl))
+			return NOTIFY_DONE;
+
+		/* We are in atomic context and can't take RTNL mutex,
+		 * so use spin_lock_bh to walk the neigh list and look for
+		 * the relevant device. bh is used since netevent can be
+		 * called from a softirq context.
+		 */
+		spin_lock_bh(&neigh_update->encap_lock);
+		list_for_each_entry(nhe, &neigh_update->neigh_list, neigh_list) {
+			if (p->dev == nhe->m_neigh.dev) {
+				found = true;
+				break;
+			}
+		}
+		spin_unlock_bh(&neigh_update->encap_lock);
+		if (!found)
+			return NOTIFY_DONE;
+
+		neigh_update->min_interval = min_t(unsigned long,
+						   NEIGH_VAR(p, DELAY_PROBE_TIME),
+						   neigh_update->min_interval);
+		mlx5_fc_update_sampling_interval(priv->mdev,
+						 neigh_update->min_interval);
 		break;
 	}
 	return NOTIFY_DONE;
