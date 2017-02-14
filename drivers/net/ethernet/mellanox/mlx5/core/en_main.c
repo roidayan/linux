@@ -81,6 +81,7 @@ static bool mlx5e_check_fragmented_striding_rq_cap(struct mlx5_core_dev *mdev)
 static void mlx5e_set_rq_type_params(struct mlx5e_priv *priv, u8 rq_type)
 {
 	priv->params.rq_wq_type = rq_type;
+	priv->params.lro_wqe_sz = MLX5E_PARAMS_DEFAULT_LRO_WQE_SZ;
 	switch (priv->params.rq_wq_type) {
 	case MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ:
 		priv->params.log_rq_size = MLX5E_PARAMS_DEFAULT_LOG_RQ_SIZE_MPW;
@@ -93,6 +94,9 @@ static void mlx5e_set_rq_type_params(struct mlx5e_priv *priv, u8 rq_type)
 		break;
 	default: /* MLX5_WQ_TYPE_LINKED_LIST */
 		priv->params.log_rq_size = MLX5E_PARAMS_DEFAULT_LOG_RQ_SIZE;
+		/* Extra room needed for build_skb */
+		priv->params.lro_wqe_sz -= MLX5_RX_HEADROOM +
+			SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
 	}
 	priv->params.min_rx_wqes = mlx5_min_rx_wqes(priv->params.rq_wq_type,
 					       BIT(priv->params.log_rq_size));
@@ -2022,8 +2026,23 @@ static void mlx5e_build_tir_ctx_lro(void *tirc, struct mlx5e_priv *priv)
 	MLX5_SET(tirc, tirc, lro_timeout_period_usecs, priv->params.lro_timeout);
 }
 
-void mlx5e_build_tir_ctx_hash(void *tirc, struct mlx5e_priv *priv)
+void mlx5e_build_indir_tir_ctx_hash(struct mlx5e_priv *priv, void *tirc,
+				    enum mlx5e_traffic_types tt)
 {
+	void *hfso = MLX5_ADDR_OF(tirc, tirc, rx_hash_field_selector_outer);
+
+#define MLX5_HASH_IP            (MLX5_HASH_FIELD_SEL_SRC_IP   |\
+				 MLX5_HASH_FIELD_SEL_DST_IP)
+
+#define MLX5_HASH_IP_L4PORTS    (MLX5_HASH_FIELD_SEL_SRC_IP   |\
+				 MLX5_HASH_FIELD_SEL_DST_IP   |\
+				 MLX5_HASH_FIELD_SEL_L4_SPORT |\
+				 MLX5_HASH_FIELD_SEL_L4_DPORT)
+
+#define MLX5_HASH_IP_IPSEC_SPI  (MLX5_HASH_FIELD_SEL_SRC_IP   |\
+				 MLX5_HASH_FIELD_SEL_DST_IP   |\
+				 MLX5_HASH_FIELD_SEL_IPSEC_SPI)
+
 	MLX5_SET(tirc, tirc, rx_hash_fn,
 		 mlx5e_rx_hash_fn(priv->params.rss_hfunc));
 	if (priv->params.rss_hfunc == ETH_RSS_HASH_TOP) {
@@ -2034,6 +2053,88 @@ void mlx5e_build_tir_ctx_hash(void *tirc, struct mlx5e_priv *priv)
 
 		MLX5_SET(tirc, tirc, rx_hash_symmetric, 1);
 		memcpy(rss_key, priv->params.toeplitz_hash_key, len);
+	}
+
+	switch (tt) {
+	case MLX5E_TT_IPV4_TCP:
+		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
+			 MLX5_L3_PROT_TYPE_IPV4);
+		MLX5_SET(rx_hash_field_select, hfso, l4_prot_type,
+			 MLX5_L4_PROT_TYPE_TCP);
+		MLX5_SET(rx_hash_field_select, hfso, selected_fields,
+			 MLX5_HASH_IP_L4PORTS);
+		break;
+
+	case MLX5E_TT_IPV6_TCP:
+		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
+			 MLX5_L3_PROT_TYPE_IPV6);
+		MLX5_SET(rx_hash_field_select, hfso, l4_prot_type,
+			 MLX5_L4_PROT_TYPE_TCP);
+		MLX5_SET(rx_hash_field_select, hfso, selected_fields,
+			 MLX5_HASH_IP_L4PORTS);
+		break;
+
+	case MLX5E_TT_IPV4_UDP:
+		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
+			 MLX5_L3_PROT_TYPE_IPV4);
+		MLX5_SET(rx_hash_field_select, hfso, l4_prot_type,
+			 MLX5_L4_PROT_TYPE_UDP);
+		MLX5_SET(rx_hash_field_select, hfso, selected_fields,
+			 MLX5_HASH_IP_L4PORTS);
+		break;
+
+	case MLX5E_TT_IPV6_UDP:
+		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
+			 MLX5_L3_PROT_TYPE_IPV6);
+		MLX5_SET(rx_hash_field_select, hfso, l4_prot_type,
+			 MLX5_L4_PROT_TYPE_UDP);
+		MLX5_SET(rx_hash_field_select, hfso, selected_fields,
+			 MLX5_HASH_IP_L4PORTS);
+		break;
+
+	case MLX5E_TT_IPV4_IPSEC_AH:
+		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
+			 MLX5_L3_PROT_TYPE_IPV4);
+		MLX5_SET(rx_hash_field_select, hfso, selected_fields,
+			 MLX5_HASH_IP_IPSEC_SPI);
+		break;
+
+	case MLX5E_TT_IPV6_IPSEC_AH:
+		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
+			 MLX5_L3_PROT_TYPE_IPV6);
+		MLX5_SET(rx_hash_field_select, hfso, selected_fields,
+			 MLX5_HASH_IP_IPSEC_SPI);
+		break;
+
+	case MLX5E_TT_IPV4_IPSEC_ESP:
+		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
+			 MLX5_L3_PROT_TYPE_IPV4);
+		MLX5_SET(rx_hash_field_select, hfso, selected_fields,
+			 MLX5_HASH_IP_IPSEC_SPI);
+		break;
+
+	case MLX5E_TT_IPV6_IPSEC_ESP:
+		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
+			 MLX5_L3_PROT_TYPE_IPV6);
+		MLX5_SET(rx_hash_field_select, hfso, selected_fields,
+			 MLX5_HASH_IP_IPSEC_SPI);
+		break;
+
+	case MLX5E_TT_IPV4:
+		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
+			 MLX5_L3_PROT_TYPE_IPV4);
+		MLX5_SET(rx_hash_field_select, hfso, selected_fields,
+			 MLX5_HASH_IP);
+		break;
+
+	case MLX5E_TT_IPV6:
+		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
+			 MLX5_L3_PROT_TYPE_IPV6);
+		MLX5_SET(rx_hash_field_select, hfso, selected_fields,
+			 MLX5_HASH_IP);
+		break;
+	default:
+		WARN_ONCE(true, "%s: bad traffic type!\n", __func__);
 	}
 }
 
@@ -2404,110 +2505,13 @@ void mlx5e_cleanup_nic_tx(struct mlx5e_priv *priv)
 static void mlx5e_build_indir_tir_ctx(struct mlx5e_priv *priv, u32 *tirc,
 				      enum mlx5e_traffic_types tt)
 {
-	void *hfso = MLX5_ADDR_OF(tirc, tirc, rx_hash_field_selector_outer);
-
 	MLX5_SET(tirc, tirc, transport_domain, priv->mdev->mlx5e_res.td.tdn);
-
-#define MLX5_HASH_IP            (MLX5_HASH_FIELD_SEL_SRC_IP   |\
-				 MLX5_HASH_FIELD_SEL_DST_IP)
-
-#define MLX5_HASH_IP_L4PORTS    (MLX5_HASH_FIELD_SEL_SRC_IP   |\
-				 MLX5_HASH_FIELD_SEL_DST_IP   |\
-				 MLX5_HASH_FIELD_SEL_L4_SPORT |\
-				 MLX5_HASH_FIELD_SEL_L4_DPORT)
-
-#define MLX5_HASH_IP_IPSEC_SPI  (MLX5_HASH_FIELD_SEL_SRC_IP   |\
-				 MLX5_HASH_FIELD_SEL_DST_IP   |\
-				 MLX5_HASH_FIELD_SEL_IPSEC_SPI)
 
 	mlx5e_build_tir_ctx_lro(tirc, priv);
 
 	MLX5_SET(tirc, tirc, disp_type, MLX5_TIRC_DISP_TYPE_INDIRECT);
 	MLX5_SET(tirc, tirc, indirect_table, priv->indir_rqt.rqtn);
-	mlx5e_build_tir_ctx_hash(tirc, priv);
-
-	switch (tt) {
-	case MLX5E_TT_IPV4_TCP:
-		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
-			 MLX5_L3_PROT_TYPE_IPV4);
-		MLX5_SET(rx_hash_field_select, hfso, l4_prot_type,
-			 MLX5_L4_PROT_TYPE_TCP);
-		MLX5_SET(rx_hash_field_select, hfso, selected_fields,
-			 MLX5_HASH_IP_L4PORTS);
-		break;
-
-	case MLX5E_TT_IPV6_TCP:
-		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
-			 MLX5_L3_PROT_TYPE_IPV6);
-		MLX5_SET(rx_hash_field_select, hfso, l4_prot_type,
-			 MLX5_L4_PROT_TYPE_TCP);
-		MLX5_SET(rx_hash_field_select, hfso, selected_fields,
-			 MLX5_HASH_IP_L4PORTS);
-		break;
-
-	case MLX5E_TT_IPV4_UDP:
-		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
-			 MLX5_L3_PROT_TYPE_IPV4);
-		MLX5_SET(rx_hash_field_select, hfso, l4_prot_type,
-			 MLX5_L4_PROT_TYPE_UDP);
-		MLX5_SET(rx_hash_field_select, hfso, selected_fields,
-			 MLX5_HASH_IP_L4PORTS);
-		break;
-
-	case MLX5E_TT_IPV6_UDP:
-		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
-			 MLX5_L3_PROT_TYPE_IPV6);
-		MLX5_SET(rx_hash_field_select, hfso, l4_prot_type,
-			 MLX5_L4_PROT_TYPE_UDP);
-		MLX5_SET(rx_hash_field_select, hfso, selected_fields,
-			 MLX5_HASH_IP_L4PORTS);
-		break;
-
-	case MLX5E_TT_IPV4_IPSEC_AH:
-		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
-			 MLX5_L3_PROT_TYPE_IPV4);
-		MLX5_SET(rx_hash_field_select, hfso, selected_fields,
-			 MLX5_HASH_IP_IPSEC_SPI);
-		break;
-
-	case MLX5E_TT_IPV6_IPSEC_AH:
-		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
-			 MLX5_L3_PROT_TYPE_IPV6);
-		MLX5_SET(rx_hash_field_select, hfso, selected_fields,
-			 MLX5_HASH_IP_IPSEC_SPI);
-		break;
-
-	case MLX5E_TT_IPV4_IPSEC_ESP:
-		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
-			 MLX5_L3_PROT_TYPE_IPV4);
-		MLX5_SET(rx_hash_field_select, hfso, selected_fields,
-			 MLX5_HASH_IP_IPSEC_SPI);
-		break;
-
-	case MLX5E_TT_IPV6_IPSEC_ESP:
-		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
-			 MLX5_L3_PROT_TYPE_IPV6);
-		MLX5_SET(rx_hash_field_select, hfso, selected_fields,
-			 MLX5_HASH_IP_IPSEC_SPI);
-		break;
-
-	case MLX5E_TT_IPV4:
-		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
-			 MLX5_L3_PROT_TYPE_IPV4);
-		MLX5_SET(rx_hash_field_select, hfso, selected_fields,
-			 MLX5_HASH_IP);
-		break;
-
-	case MLX5E_TT_IPV6:
-		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
-			 MLX5_L3_PROT_TYPE_IPV6);
-		MLX5_SET(rx_hash_field_select, hfso, selected_fields,
-			 MLX5_HASH_IP);
-		break;
-	default:
-		WARN_ONCE(true,
-			  "mlx5e_build_indir_tir_ctx: bad traffic type!\n");
-	}
+	mlx5e_build_indir_tir_ctx_hash(priv, tirc, tt);
 }
 
 static void mlx5e_build_direct_tir_ctx(struct mlx5e_priv *priv, u32 *tirc,
@@ -3331,7 +3335,7 @@ static const struct net_device_ops mlx5e_netdev_ops_sriov = {
 static int mlx5e_check_required_hca_cap(struct mlx5_core_dev *mdev)
 {
 	if (MLX5_CAP_GEN(mdev, port_type) != MLX5_CAP_PORT_TYPE_ETH)
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 	if (!MLX5_CAP_GEN(mdev, eth_net_offloads) ||
 	    !MLX5_CAP_GEN(mdev, nic_flow_table) ||
 	    !MLX5_CAP_ETH(mdev, csum_cap) ||
@@ -3343,7 +3347,7 @@ static int mlx5e_check_required_hca_cap(struct mlx5_core_dev *mdev)
 			       < 3) {
 		mlx5_core_warn(mdev,
 			       "Not creating net device, some required device capabilities are missing\n");
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 	}
 	if (!MLX5_CAP_ETH(mdev, self_lb_en_modifiable))
 		mlx5_core_warn(mdev, "Self loop back prevention is not supported\n");
@@ -3517,12 +3521,6 @@ static void mlx5e_build_nic_netdev_priv(struct mlx5_core_dev *mdev,
 	mlx5e_build_default_indir_rqt(mdev, priv->params.indirection_rqt,
 				      MLX5E_INDIR_RQT_SIZE, profile->max_nch(mdev));
 
-	priv->params.lro_wqe_sz =
-		MLX5E_PARAMS_DEFAULT_LRO_WQE_SZ -
-		/* Extra room needed for build_skb */
-		MLX5_RX_HEADROOM -
-		SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
-
 	/* Initialize pflags */
 	MLX5E_SET_PFLAG(priv, MLX5E_PFLAG_RX_CQE_BASED_MODER,
 			priv->params.rx_cq_period_mode == MLX5_CQ_PERIOD_MODE_START_FROM_CQE);
@@ -3675,13 +3673,7 @@ static void mlx5e_nic_init(struct mlx5_core_dev *mdev,
 
 static void mlx5e_nic_cleanup(struct mlx5e_priv *priv)
 {
-	struct mlx5_core_dev *mdev = priv->mdev;
-	struct mlx5_eswitch *esw = mdev->priv.eswitch;
-
 	mlx5e_vxlan_cleanup(priv);
-
-	if (MLX5_CAP_GEN(mdev, vport_group_manager))
-		mlx5_eswitch_unregister_vport_rep(esw, 0);
 
 	if (priv->xdp_prog)
 		bpf_prog_put(priv->xdp_prog);
@@ -3807,9 +3799,14 @@ static void mlx5e_nic_enable(struct mlx5e_priv *priv)
 
 static void mlx5e_nic_disable(struct mlx5e_priv *priv)
 {
+	struct mlx5_core_dev *mdev = priv->mdev;
+	struct mlx5_eswitch *esw = mdev->priv.eswitch;
+
 	queue_work(priv->wq, &priv->set_rx_mode_work);
+	if (MLX5_CAP_GEN(mdev, vport_group_manager))
+		mlx5_eswitch_unregister_vport_rep(esw, 0);
 	mlx5e_disable_async_events(priv);
-	mlx5_lag_remove(priv->mdev);
+	mlx5_lag_remove(mdev);
 }
 
 static const struct mlx5e_profile mlx5e_nic_profile = {
@@ -3941,6 +3938,19 @@ static void mlx5e_register_vport_rep(struct mlx5_core_dev *mdev)
 	}
 }
 
+static void mlx5e_unregister_vport_rep(struct mlx5_core_dev *mdev)
+{
+	struct mlx5_eswitch *esw = mdev->priv.eswitch;
+	int total_vfs = MLX5_TOTAL_VPORTS(mdev);
+	int vport;
+
+	if (!MLX5_CAP_GEN(mdev, vport_group_manager))
+		return;
+
+	for (vport = 1; vport < total_vfs; vport++)
+		mlx5_eswitch_unregister_vport_rep(esw, vport);
+}
+
 void mlx5e_detach_netdev(struct mlx5_core_dev *mdev, struct net_device *netdev)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
@@ -3987,6 +3997,7 @@ static int mlx5e_attach(struct mlx5_core_dev *mdev, void *vpriv)
 		return err;
 	}
 
+	mlx5e_register_vport_rep(mdev);
 	return 0;
 }
 
@@ -3998,6 +4009,7 @@ static void mlx5e_detach(struct mlx5_core_dev *mdev, void *vpriv)
 	if (!netif_device_present(netdev))
 		return;
 
+	mlx5e_unregister_vport_rep(mdev);
 	mlx5e_detach_netdev(mdev, netdev);
 	mlx5e_destroy_mdev_resources(mdev);
 }
@@ -4015,8 +4027,6 @@ static void *mlx5e_add(struct mlx5_core_dev *mdev)
 	err = mlx5e_check_required_hca_cap(mdev);
 	if (err)
 		return NULL;
-
-	mlx5e_register_vport_rep(mdev);
 
 	if (MLX5_CAP_GEN(mdev, vport_group_manager))
 		ppriv = &esw->offloads.vport_reps[0];
@@ -4069,13 +4079,7 @@ void mlx5e_destroy_netdev(struct mlx5_core_dev *mdev, struct mlx5e_priv *priv)
 
 static void mlx5e_remove(struct mlx5_core_dev *mdev, void *vpriv)
 {
-	struct mlx5_eswitch *esw = mdev->priv.eswitch;
-	int total_vfs = MLX5_TOTAL_VPORTS(mdev);
 	struct mlx5e_priv *priv = vpriv;
-	int vport;
-
-	for (vport = 1; vport < total_vfs; vport++)
-		mlx5_eswitch_unregister_vport_rep(esw, vport);
 
 	unregister_netdev(priv->netdev);
 	mlx5e_detach(mdev, vpriv);

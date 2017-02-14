@@ -514,8 +514,11 @@ void mlx4_en_recover_from_oom(struct mlx4_en_priv *priv)
 		return;
 
 	for (ring = 0; ring < priv->rx_ring_num; ring++) {
-		if (mlx4_en_is_ring_empty(priv->rx_ring[ring]))
+		if (mlx4_en_is_ring_empty(priv->rx_ring[ring])) {
+			local_bh_disable();
 			napi_reschedule(&priv->rx_cq[ring]->napi);
+			local_bh_enable();
+		}
 	}
 }
 
@@ -1087,7 +1090,7 @@ xdp_drop_no_cnt:
 					       timestamp);
 		}
 
-		napi_gro_receive(&cq->napi, skb);
+		netif_receive_skb(skb);
 next:
 		for (nr = 0; nr < priv->num_frags; nr++)
 			mlx4_en_free_frag(priv, frags, nr);
