@@ -110,14 +110,10 @@ mlx5_eswitch_del_offloaded_rule(struct mlx5_eswitch *esw,
 {
 	struct mlx5_fc *counter = NULL;
 
-	if (!IS_ERR(rule)) {
-		counter = mlx5_flow_rule_counter(rule);
-		mlx5_del_flow_rules(rule);
-		mlx5_fc_destroy(esw->dev, counter);
-		esw->offloads.num_flows--;
-	}
-
-	mlx5_eswitch_del_vlan_action(esw, attr);
+	counter = mlx5_flow_rule_counter(rule);
+	mlx5_del_flow_rules(rule);
+	mlx5_fc_destroy(esw->dev, counter);
+	esw->offloads.num_flows--;
 }
 
 static int esw_set_global_vlan_pop(struct mlx5_eswitch *esw, u8 val)
