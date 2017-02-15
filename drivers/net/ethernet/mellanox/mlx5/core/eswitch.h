@@ -300,6 +300,7 @@ struct mlx5_esw_flow_attr {
 	int	action;
 	u16	vlan;
 	bool	vlan_handled;
+	struct list_head	encap_list; /* flows sharing the same encap */
 	struct mlx5_encap_entry *encap;
 };
 
