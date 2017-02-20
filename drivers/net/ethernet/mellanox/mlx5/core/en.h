@@ -841,8 +841,6 @@ int mlx5e_vlan_rx_kill_vid(struct net_device *dev, __always_unused __be16 proto,
 void mlx5e_enable_vlan_filter(struct mlx5e_priv *priv);
 void mlx5e_disable_vlan_filter(struct mlx5e_priv *priv);
 
-int mlx5e_modify_channels_vsd(struct mlx5e_channels *chs, bool vsd);
-
 void mlx5e_build_indir_tir_ctx_hash(struct mlx5e_priv *priv, void *tirc,
 				    enum mlx5e_traffic_types tt);
 struct redirect_rqt_param {
