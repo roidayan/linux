@@ -48,6 +48,7 @@ struct mlx5e_rq_param {
 
 	u8                      rq_wq_type;
 	bool                    vlan_strip_disable;
+	bool                    scatter_fcs_en;
 	bool                    lro_en;
 	u32                     lro_wqe_sz;
 	u8                      rx_cq_period_mode;
@@ -736,6 +737,7 @@ static int mlx5e_create_rq(struct mlx5e_rq *rq, struct mlx5e_rq_param *param)
 	MLX5_SET(rqc,  rqc, cqn,		rq->cq.mcq.cqn);
 	MLX5_SET(rqc,  rqc, state,		MLX5_RQC_STATE_RST);
 	MLX5_SET(rqc,  rqc, vsd,                param->vlan_strip_disable);
+	MLX5_SET(rqc,  rqc, scatter_fcs,        param->scatter_fcs_en);
 	MLX5_SET(wq,   wq,  log_wq_pg_sz,	rq->wq_ctrl.buf.page_shift -
 						MLX5_ADAPTER_PAGE_SHIFT);
 	MLX5_SET64(wq, wq,  dbr_addr,		rq->wq_ctrl.db.dma);
@@ -771,6 +773,37 @@ static int mlx5e_modify_rq_state(struct mlx5e_rq *rq, int curr_state,
 
 	MLX5_SET(modify_rq_in, in, rq_state, curr_state);
 	MLX5_SET(rqc, rqc, state, next_state);
+
+	err = mlx5_core_modify_rq(mdev, rq->rqn, in, inlen);
+
+	kvfree(in);
+
+	return err;
+}
+
+static int mlx5e_modify_rq_scatter_fcs(struct mlx5e_rq *rq, bool enable)
+{
+	struct mlx5e_channel *c = rq->channel;
+	struct mlx5e_priv *priv = c->priv;
+	struct mlx5_core_dev *mdev = priv->mdev;
+
+	void *in;
+	void *rqc;
+	int inlen;
+	int err;
+
+	inlen = MLX5_ST_SZ_BYTES(modify_rq_in);
+	in = mlx5_vzalloc(inlen);
+	if (!in)
+		return -ENOMEM;
+
+	rqc = MLX5_ADDR_OF(modify_rq_in, in, ctx);
+
+	MLX5_SET(modify_rq_in, in, rq_state, MLX5_RQC_STATE_RDY);
+	MLX5_SET64(modify_rq_in, in, modify_bitmask,
+		   MLX5_MODIFY_RQ_IN_MODIFY_BITMASK_SCATTER_FCS);
+	MLX5_SET(rqc, rqc, scatter_fcs, enable);
+	MLX5_SET(rqc, rqc, state, MLX5_RQC_STATE_RDY);
 
 	err = mlx5_core_modify_rq(mdev, rq->rqn, in, inlen);
 
@@ -1851,6 +1884,7 @@ static void mlx5e_build_rq_param(struct mlx5e_priv *priv,
 
 	param->rq_wq_type            = params->rq_wq_type;
 	param->vlan_strip_disable    = params->vlan_strip_disable;
+	param->scatter_fcs_en        = params->scatter_fcs_en;
 	param->rx_cq_period_mode     = params->rx_cq_period_mode;
 	param->lro_en                = params->lro_en;
 	param->lro_wqe_sz            = params->lro_wqe_sz;
@@ -2955,6 +2989,20 @@ void mlx5e_destroy_direct_tirs(struct mlx5e_priv *priv)
 		mlx5e_destroy_tir(priv->mdev, &priv->direct_tir[i]);
 }
 
+static int mlx5e_modify_channels_scatter_fcs(struct mlx5e_channels *chs, bool enable)
+{
+	int err = 0;
+	int i;
+
+	for (i = 0; i < chs->size; i++) {
+		err = mlx5e_modify_rq_scatter_fcs(&chs->c[i]->rq, enable);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
 int mlx5e_modify_channels_vsd(struct mlx5e_channels *chs, bool vsd)
 {
 	int err = 0;
@@ -3178,6 +3226,23 @@ static int set_feature_rx_all(struct net_device *netdev, bool enable)
 	return mlx5_set_port_fcs(mdev, !enable);
 }
 
+static int set_feature_rx_fcs(struct net_device *netdev, bool enable)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+	int err;
+
+	mutex_lock(&priv->state_lock);
+
+	priv->params.scatter_fcs_en = enable;
+	err = mlx5e_modify_channels_scatter_fcs(&priv->channels, enable);
+	if (err)
+		priv->params.scatter_fcs_en = !enable;
+
+	mutex_unlock(&priv->state_lock);
+
+	return err;
+}
+
 static int set_feature_rx_vlan(struct net_device *netdev, bool enable)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
@@ -3251,6 +3316,8 @@ static int mlx5e_set_features(struct net_device *netdev,
 				    set_feature_tc_num_filters);
 	err |= mlx5e_handle_feature(netdev, features, NETIF_F_RXALL,
 				    set_feature_rx_all);
+	err |= mlx5e_handle_feature(netdev, features, NETIF_F_RXFCS,
+				    set_feature_rx_fcs);
 	err |= mlx5e_handle_feature(netdev, features, NETIF_F_HW_VLAN_CTAG_RX,
 				    set_feature_rx_vlan);
 #ifdef CONFIG_RFS_ACCEL
@@ -3958,12 +4025,18 @@ static void mlx5e_build_nic_netdev(struct net_device *netdev)
 	if (fcs_supported)
 		netdev->hw_features |= NETIF_F_RXALL;
 
+	if (MLX5_CAP_ETH(mdev, scatter_fcs))
+		netdev->hw_features |= NETIF_F_RXFCS;
+
 	netdev->features          = netdev->hw_features;
 	if (!priv->params.lro_en)
 		netdev->features  &= ~NETIF_F_LRO;
 
 	if (fcs_enabled)
 		netdev->features  &= ~NETIF_F_RXALL;
+
+	if (!priv->params.scatter_fcs_en)
+		netdev->features  &= ~NETIF_F_RXFCS;
 
 #define FT_CAP(f) MLX5_CAP_FLOWTABLE(mdev, flow_table_properties_nic_receive.f)
 	if (FT_CAP(flow_modify_en) &&
