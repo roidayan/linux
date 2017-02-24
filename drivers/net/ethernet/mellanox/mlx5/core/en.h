@@ -909,6 +909,7 @@ int mlx5e_rep_insert_neigh_entry(struct mlx5e_priv *priv,
 void mlx5e_rep_remove_neigh_entry(struct mlx5e_priv *priv,
 				  struct mlx5_encap_entry *e);
 void mlx5e_rep_neigh_update(struct work_struct *work);
+void mlx5e_rep_queue_neigh_stats_work(struct mlx5e_priv *priv);
 void mlx5e_encap_destroy(struct mlx5_encap_entry *e);
 
 #define mlx5e_encap_hold(e)	refcount_inc(&(e)->refcnt)

@@ -43,6 +43,7 @@
 #include <net/tc_act/tc_vlan.h>
 #include <net/tc_act/tc_tunnel_key.h>
 #include <net/vxlan.h>
+#include <net/arp.h>
 #include "en.h"
 #include "en_tc.h"
 #include "eswitch.h"
@@ -180,6 +181,8 @@ int mlx5e_add_encap_flows(struct mlx5e_priv *priv,
 		return err;
 
 	e->flags |= MLX5_ENCAP_ENTRY_VALID;
+	mlx5e_rep_queue_neigh_stats_work(priv);
+
 	list_for_each_entry(flow ,&e->flows, encap) {
 		flow->rule = mlx5e_tc_add_fdb_flow(priv,
 						   flow->attr->encap_spec,
@@ -216,6 +219,40 @@ void mlx5e_del_encap_flows(struct mlx5e_priv *priv,
 		e->flags &= ~MLX5_ENCAP_ENTRY_VALID;
 		mlx5_encap_dealloc(priv->mdev, e->encap_id);
 	}
+}
+
+void mlx5e_query_neigh_flow_counters(struct mlx5_encap_entry *e)
+{
+	struct mlx5_neigh_entry *n_entry = &e->n_entry;
+	u64 bytes, packets, lastuse = 0;
+	struct mlx5e_tc_flow *flow;
+	struct mlx5_fc *counter;
+	struct neigh_table *tbl;
+	bool used_neigh = false;
+	struct neighbour *n;
+
+	if (n_entry->family == AF_INET)
+		tbl = &arp_tbl;
+	else if (n_entry->family == AF_INET6)
+		tbl = ipv6_stub->nd_tbl;
+	else
+		return;
+	/* find the relevant neigh according to the cached device and dst ip pair */
+	n = neigh_lookup(tbl, &n_entry->dst_ip, n_entry->neigh_dev);
+	if (!n)
+		return;
+
+	list_for_each_entry(flow ,&e->flows, encap) {
+		counter = mlx5_flow_rule_counter(flow->rule);
+		mlx5_fc_query_cached(counter, &bytes, &packets, &lastuse);
+		if (time_after((unsigned long)lastuse, e->lastuse)) {
+			e->lastuse = lastuse;
+			used_neigh = true;
+		}
+	}
+	if (used_neigh)
+		neigh_event_send(n, NULL);
+	neigh_release(n);
 }
 
 static void mlx5e_detach_encap(struct mlx5e_priv *priv,
@@ -950,6 +987,7 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 		goto out;
 
 	e->n_entry.neigh_dev = n->dev;
+	e->n_entry.family = n->ops->family;
 	memcpy(&e->n_entry.dst_ip, n->primary_key, n->tbl->key_len);
 	e->out_dev = out_dev;
 
@@ -990,8 +1028,10 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 
 	err = mlx5_encap_alloc(priv->mdev, e->tunnel_type,
 			       encap_size, encap_header, &e->encap_id);
-	if (!err)
+	if (!err) {
 		e->flags |= MLX5_ENCAP_ENTRY_VALID;
+		mlx5e_rep_queue_neigh_stats_work(netdev_priv(out_dev));
+	}
 out:
 	if (n)
 		neigh_release(n);
@@ -1036,6 +1076,7 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 		goto out;
 
 	e->n_entry.neigh_dev = n->dev;
+	e->n_entry.family = n->ops->family;
 	memcpy(&e->n_entry.dst_ip, n->primary_key, n->tbl->key_len);
 	e->out_dev = out_dev;
 
@@ -1080,8 +1121,10 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 
 	err = mlx5_encap_alloc(priv->mdev, e->tunnel_type,
 			       encap_size, encap_header, &e->encap_id);
-	if (!err)
+	if (!err) {
 		e->flags |= MLX5_ENCAP_ENTRY_VALID;
+		mlx5e_rep_queue_neigh_stats_work(netdev_priv(out_dev));
+	}
 out:
 	if (n)
 		neigh_release(n);

@@ -188,6 +188,8 @@ struct mlx5_neigh_update {
 	/* protect lookup/remove operations */
 	spinlock_t              encap_lock;
 	struct notifier_block   netevent_nb;
+	struct delayed_work     neigh_stats_work;
+	unsigned long           min_interval; /* jiffies */
 };
 
 struct mlx5_eswitch_rep {
@@ -299,6 +301,7 @@ struct mlx5_neigh_entry {
 		__be32	v4;
 		struct in6_addr v6;
 	} dst_ip;
+	int family;
 };
 
 enum {
@@ -335,6 +338,11 @@ struct mlx5_encap_entry {
 	char *encap_header;
 	int encap_size;
 	struct work_struct neigh_update_work;
+	/* save the last time offloaded trafic pass over one of this encap
+	 * entry flows. use it to periodically update the neigh 'used' value
+	 * and avoid neigh deleting by the kernel
+	 */
+	unsigned long lastuse;
 };
 
 struct mlx5_esw_flow_attr {

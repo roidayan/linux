@@ -50,6 +50,7 @@ int mlx5e_add_encap_flows(struct mlx5e_priv *priv,
 			  struct mlx5_encap_entry *e);
 void mlx5e_del_encap_flows(struct mlx5e_priv *priv,
 			   struct mlx5_encap_entry *e);
+void mlx5e_query_neigh_flow_counters(struct mlx5_encap_entry *e);
 
 static inline int mlx5e_tc_num_filters(struct mlx5e_priv *priv)
 {
