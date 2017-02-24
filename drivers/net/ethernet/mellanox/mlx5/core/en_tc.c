@@ -43,6 +43,7 @@
 #include <net/tc_act/tc_vlan.h>
 #include <net/tc_act/tc_tunnel_key.h>
 #include <net/vxlan.h>
+#include <net/arp.h>
 #include "en.h"
 #include "en_tc.h"
 #include "eswitch.h"
@@ -181,6 +182,8 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 	}
 
 	e->flags |= MLX5_ENCAP_ENTRY_VALID;
+	mlx5e_rep_queue_neigh_stats_work(priv);
+
 	list_for_each_entry(flow ,&e->flows, encap) {
 		flow->rule = mlx5e_tc_add_fdb_flow(priv,
 						   flow->attr->encap_spec,
@@ -213,6 +216,54 @@ void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
 	if (e->flags & MLX5_ENCAP_ENTRY_VALID) {
 		e->flags &= ~MLX5_ENCAP_ENTRY_VALID;
 		mlx5_encap_dealloc(priv->mdev, e->encap_id);
+	}
+}
+
+void mlx5e_tc_update_neigh_used_value(struct mlx5_neigh_hash_entry *nhe)
+{
+	struct mlx5_neigh *m_neigh = &nhe->m_neigh;
+	u64 bytes, packets, lastuse = 0;
+	struct mlx5e_tc_flow *flow;
+	struct mlx5_encap_entry *e;
+	struct mlx5_fc *counter;
+	struct neigh_table *tbl;
+	bool neigh_used = false;
+	struct neighbour *n;
+
+	if (m_neigh->family == AF_INET)
+		tbl = &arp_tbl;
+	else if (m_neigh->family == AF_INET6)
+		tbl = ipv6_stub->nd_tbl;
+	else
+		return;
+
+	list_for_each_entry(e, &nhe->encap_list, encap_list) {
+		if (!(e->flags & MLX5_ENCAP_ENTRY_VALID))
+			continue;
+		list_for_each_entry(flow ,&e->flows, encap) {
+			if (flow->flags & MLX5E_TC_FLOW_OFFLOADED) {
+				counter = mlx5_flow_rule_counter(flow->rule);
+				mlx5_fc_query_cached(counter, &bytes, &packets, &lastuse);
+				if (time_after((unsigned long)lastuse, nhe->reported_lastuse)) {
+					neigh_used = true;
+					break;
+				}
+			}
+		}
+	}
+
+	if (neigh_used) {
+		nhe->reported_lastuse = jiffies;
+
+		/* find the relevant neigh according to the cached device and dst ip pair */
+		n = neigh_lookup(tbl, &m_neigh->dst_ip, m_neigh->neigh_dev);
+		if (!n) {
+			WARN(1, "The neighbour already freed\n");
+			return;
+		}
+
+		neigh_event_send(n, NULL);
+		neigh_release(n);
 	}
 }
 
@@ -953,6 +1004,7 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 	 * entry in the neigh hash table when a user deletes a rule
 	 */
 	e->m_neigh.neigh_dev = n->dev;
+	e->m_neigh.family = n->ops->family;
 	memcpy(&e->m_neigh.dst_ip, n->primary_key, n->tbl->key_len);
 	e->out_dev = out_dev;
 
@@ -997,6 +1049,7 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 		goto destroy_neigh_entry;
 
 	e->flags |= MLX5_ENCAP_ENTRY_VALID;
+	mlx5e_rep_queue_neigh_stats_work(netdev_priv(out_dev));
 	neigh_release(n);
 	return err;
 
@@ -1054,6 +1107,7 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 	 * entry in the neigh hash table when a user deletes a rule
 	 */
 	e->m_neigh.neigh_dev = n->dev;
+	e->m_neigh.family = n->ops->family;
 	memcpy(&e->m_neigh.dst_ip, n->primary_key, n->tbl->key_len);
 	e->out_dev = out_dev;
 
@@ -1099,6 +1153,7 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 		goto destroy_neigh_entry;
 
 	e->flags |= MLX5_ENCAP_ENTRY_VALID;
+	mlx5e_rep_queue_neigh_stats_work(netdev_priv(out_dev));
 	neigh_release(n);
 	return err;
 
