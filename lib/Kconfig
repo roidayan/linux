@@ -550,4 +550,10 @@ config STACKDEPOT
 config SBITMAP
 	bool
 
+config PARMAN
+	tristate "parman" if COMPILE_TEST
+
+config PRIME_NUMBERS
+	tristate
+
 endmenu

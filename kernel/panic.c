@@ -188,7 +188,7 @@ void panic(const char *fmt, ...)
 	 * Bypass the panic_cpu check and call __crash_kexec directly.
 	 */
 	if (!_crash_kexec_post_notifiers) {
-		printk_nmi_flush_on_panic();
+		printk_safe_flush_on_panic();
 		__crash_kexec(NULL);
 
 		/*
@@ -213,7 +213,7 @@ void panic(const char *fmt, ...)
 	atomic_notifier_call_chain(&panic_notifier_list, 0, buf);
 
 	/* Call flush even twice. It tries harder with a single online CPU */
-	printk_nmi_flush_on_panic();
+	printk_safe_flush_on_panic();
 	kmsg_dump(KMSG_DUMP_PANIC);
 
 	/*
@@ -249,7 +249,7 @@ void panic(const char *fmt, ...)
 		 * Delay timeout seconds before rebooting the machine.
 		 * We can't use the "normal" timers since we just panicked.
 		 */
-		pr_emerg("Rebooting in %d seconds..", panic_timeout);
+		pr_emerg("Rebooting in %d seconds..\n", panic_timeout);
 
 		for (i = 0; i < panic_timeout * 1000; i += PANIC_TIMER_STEP) {
 			touch_nmi_watchdog();
@@ -355,7 +355,7 @@ const char *print_tainted(void)
 		for (i = 0; i < TAINT_FLAGS_COUNT; i++) {
 			const struct taint_flag *t = &taint_flags[i];
 			*s++ = test_bit(i, &tainted_mask) ?
-					t->true : t->false;
+					t->c_true : t->c_false;
 		}
 		*s = 0;
 	} else
