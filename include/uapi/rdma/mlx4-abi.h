@@ -105,4 +105,16 @@ struct mlx4_ib_create_qp {
 	__u8	reserved;
 };
 
+struct mlx4_ib_create_wq {
+	__u64	buf_addr;
+	__u64	db_addr;
+	__u32   comp_mask;
+	__u32   reserved;
+};
+
+struct mlx4_ib_modify_wq {
+	__u32	comp_mask;
+	__u32	reserved;
+};
+
 #endif /* MLX4_ABI_USER_H */
