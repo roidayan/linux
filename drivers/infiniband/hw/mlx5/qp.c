@@ -4943,6 +4943,30 @@ int mlx5_ib_modify_wq(struct ib_wq *wq, struct ib_wq_attr *wq_attr,
 		wq_state = MLX5_RQC_STATE_ERR;
 	MLX5_SET(modify_rq_in, in, rq_state, curr_wq_state);
 	MLX5_SET(rqc, rqc, state, wq_state);
+	if (wq_attr_mask & IB_WQ_FLAGS) {
+		if (wq_attr->flags_mask & IB_WQ_FLAGS_CVLAN_STRIPPING) {
+			if (!(MLX5_CAP_GEN(dev->mdev, eth_net_offloads) &&
+			      MLX5_CAP_ETH(dev->mdev, vlan_cap))) {
+				mlx5_ib_dbg(dev, "VLAN offloads are not supported\n");
+				err = -EOPNOTSUPP;
+				goto out;
+			}
+			MLX5_SET64(modify_rq_in, in, modify_bitmask,
+				   MLX5_MODIFY_RQ_IN_MODIFY_BITMASK_VSD);
+			MLX5_SET(rqc, rqc, vsd,
+				 (wq_attr->flags & IB_WQ_FLAGS_CVLAN_STRIPPING) ? 0 : 1);
+		}
+	}
+
+	if (curr_wq_state == IB_WQS_RESET && wq_state == IB_WQS_RDY) {
+		if (MLX5_CAP_GEN(dev->mdev, modify_rq_counter_set_id)) {
+			MLX5_SET64(modify_rq_in, in, modify_bitmask,
+				   MLX5_MODIFY_RQ_IN_MODIFY_BITMASK_RQ_COUNTER_SET_ID);
+			MLX5_SET(rqc, rqc, counter_set_id, dev->port->q_cnts.set_id);
+		} else
+			pr_info_once("%s: Receive WQ counters are not supported on current FW\n",
+				     dev->ib_dev.name);
+	}
 
 	if (wq_attr_mask & IB_WQ_FLAGS) {
 		if (wq_attr->flags_mask & IB_WQ_FLAGS_CVLAN_STRIPPING) {
