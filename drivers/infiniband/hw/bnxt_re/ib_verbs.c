@@ -3063,16 +3063,12 @@ struct ib_mr *bnxt_re_reg_user_mr(struct ib_pd *ib_pd, u64 start, u64 length,
 	pbl_tbl_orig = pbl_tbl;
 
 	page_shift = ilog2(umem->page_size);
-	if (umem->hugetlb) {
-		dev_err(rdev_to_dev(rdev), "umem hugetlb not supported!");
-		rc = -EFAULT;
-		goto fail;
-	}
 	if (umem->page_size != PAGE_SIZE) {
 		dev_err(rdev_to_dev(rdev), "umem page size unsupported!");
 		rc = -EFAULT;
 		goto fail;
 	}
+
 	/* Map umem buf ptrs to the PBL */
 	for_each_sg(umem->sg_head.sgl, sg, umem->nmap, entry) {
 		pages = sg_dma_len(sg) >> page_shift;

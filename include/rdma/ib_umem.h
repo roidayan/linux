@@ -46,7 +46,6 @@ struct ib_umem {
 	unsigned long		address;
 	int			page_size;
 	int                     writable;
-	int                     hugetlb;
 	struct work_struct	work;
 	struct pid             *pid;
 	struct mm_struct       *mm;

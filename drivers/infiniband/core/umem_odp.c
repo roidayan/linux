@@ -325,7 +325,6 @@ int ib_umem_odp_get(struct ib_ucontext *context, struct ib_umem *umem)
 		goto out_mm;
 	}
 
-	umem->hugetlb = 0;
 	umem->odp_data = kzalloc(sizeof(*umem->odp_data), GFP_KERNEL);
 	if (!umem->odp_data) {
 		ret_val = -ENOMEM;
