@@ -156,26 +156,35 @@ static inline u32 mlx5e_decompress_cqes_start(struct mlx5e_rq *rq,
 	return mlx5e_decompress_cqes_cont(rq, cq, 1, budget_rem) - 1;
 }
 
-void mlx5e_modify_rx_cqe_compression_locked(struct mlx5e_priv *priv, bool val)
+int mlx5e_modify_rx_cqe_compression_locked(struct mlx5e_priv *priv, bool new_val)
 {
-	bool was_opened;
+	bool curr_val = MLX5E_GET_PFLAG(priv->params.pflags, MLX5E_PFLAG_RX_CQE_COMPRESS);
+	struct mlx5e_channels new_channels = {};
+	struct mlx5e_params   new_params   = {};
+	int err = 0;
 
 	if (!MLX5_CAP_GEN(priv->mdev, cqe_compression))
-		return;
+		return new_val ? -EOPNOTSUPP : 0;
 
-	if (MLX5E_GET_PFLAG(priv, MLX5E_PFLAG_RX_CQE_COMPRESS) == val)
-		return;
+	if (curr_val == new_val)
+		return 0;
 
-	was_opened = test_bit(MLX5E_STATE_OPENED, &priv->state);
-	if (was_opened)
-		mlx5e_close_locked(priv->netdev);
+	new_params = priv->params;
+	MLX5E_SET_PFLAG(new_params.pflags, MLX5E_PFLAG_RX_CQE_COMPRESS, new_val);
+	mlx5e_set_rq_type_params(priv->mdev, &new_params);
 
-	MLX5E_SET_PFLAG(priv, MLX5E_PFLAG_RX_CQE_COMPRESS, val);
-	mlx5e_set_rq_type_params(priv, priv->params.rq_wq_type);
+	if (!test_bit(MLX5E_STATE_OPENED, &priv->state)) {
+		priv->params = new_params;
+		return 0;
+	}
 
-	if (was_opened)
-		mlx5e_open_locked(priv->netdev);
+	err = mlx5e_open_channels(priv, &new_params, &new_channels);
+	if (err) {
+		return err;
+	}
 
+	mlx5e_switch_priv_channels(priv, &new_channels, &new_params);
+	return 0;
 }
 
 #define RQ_PAGE_SIZE(rq) ((1 << rq->buff.page_order) << PAGE_SHIFT)
@@ -331,7 +340,7 @@ mlx5e_copy_skb_header_mpwqe(struct device *pdev,
 static inline void mlx5e_post_umr_wqe(struct mlx5e_rq *rq, u16 ix)
 {
 	struct mlx5e_mpw_info *wi = &rq->mpwqe.info[ix];
-	struct mlx5e_sq *sq = &rq->channel->icosq;
+	struct mlx5e_icosq *sq = &rq->channel->icosq;
 	struct mlx5_wq_cyc *wq = &sq->wq;
 	struct mlx5e_umr_wqe *wqe;
 	u8 num_wqebbs = DIV_ROUND_UP(sizeof(*wqe), MLX5_SEND_WQE_BB);
@@ -341,7 +350,7 @@ static inline void mlx5e_post_umr_wqe(struct mlx5e_rq *rq, u16 ix)
 	while ((pi = (sq->pc & wq->sz_m1)) > sq->edge) {
 		sq->db.ico_wqe[pi].opcode = MLX5_OPCODE_NOP;
 		sq->db.ico_wqe[pi].num_wqebbs = 1;
-		mlx5e_send_nop(sq, false);
+		mlx5e_post_nop(wq, sq->sqn, &sq->pc);
 	}
 
 	wqe = mlx5_wq_cyc_get_wqe(wq, pi);
@@ -353,7 +362,7 @@ static inline void mlx5e_post_umr_wqe(struct mlx5e_rq *rq, u16 ix)
 	sq->db.ico_wqe[pi].opcode = MLX5_OPCODE_UMR;
 	sq->db.ico_wqe[pi].num_wqebbs = num_wqebbs;
 	sq->pc += num_wqebbs;
-	mlx5e_tx_notify_hw(sq, &wqe->ctrl, 0);
+	mlx5e_notify_hw(&sq->wq, sq->pc, sq->uar_map, &wqe->ctrl);
 }
 
 static int mlx5e_alloc_rx_umr_mpwqe(struct mlx5e_rq *rq,
@@ -633,32 +642,33 @@ static inline void mlx5e_complete_rx_cqe(struct mlx5e_rq *rq,
 	mlx5e_build_rx_skb(cqe, cqe_bcnt, rq, skb);
 }
 
-static inline void mlx5e_xmit_xdp_doorbell(struct mlx5e_sq *sq)
+static inline void mlx5e_xmit_xdp_doorbell(struct mlx5e_xdpsq *sq)
 {
 	struct mlx5_wq_cyc *wq = &sq->wq;
+	struct mlx5_wqe_ctrl_seg *ctrl;
 	struct mlx5e_tx_wqe *wqe;
-	u16 pi = (sq->pc - MLX5E_XDP_TX_WQEBBS) & wq->sz_m1; /* last pi */
+	u16 pi = (sq->pc - 1) & wq->sz_m1; /* last pi */
 
 	wqe  = mlx5_wq_cyc_get_wqe(wq, pi);
+	ctrl = &wqe->ctrl;
+	if (unlikely(ctrl->fm_ce_se & MLX5_WQE_CTRL_CQ_UPDATE))
+		return;
 
-	wqe->ctrl.fm_ce_se = MLX5_WQE_CTRL_CQ_UPDATE;
-	mlx5e_tx_notify_hw(sq, &wqe->ctrl, 0);
+	mlx5e_notify_hw(wq, sq->pc, sq->uar_map, ctrl);
 }
 
 static inline bool mlx5e_xmit_xdp_frame(struct mlx5e_rq *rq,
 					struct mlx5e_dma_info *di,
 					const struct xdp_buff *xdp)
 {
-	struct mlx5e_sq          *sq   = &rq->channel->xdp_sq;
+	struct mlx5e_xdpsq       *sq   = &rq->xdpsq;
 	struct mlx5_wq_cyc       *wq   = &sq->wq;
-	u16                      pi    = sq->pc & wq->sz_m1;
+	u16                       pi   = sq->pc & wq->sz_m1;
 	struct mlx5e_tx_wqe      *wqe  = mlx5_wq_cyc_get_wqe(wq, pi);
-	struct mlx5e_sq_wqe_info *wi   = &sq->db.xdp.wqe_info[pi];
 
 	struct mlx5_wqe_ctrl_seg *cseg = &wqe->ctrl;
 	struct mlx5_wqe_eth_seg  *eseg = &wqe->eth;
 	struct mlx5_wqe_data_seg *dseg;
-	u8 ds_cnt = MLX5E_XDP_TX_DS_COUNT;
 
 	ptrdiff_t data_offset = xdp->data - xdp->data_hard_start;
 	dma_addr_t dma_addr  = di->addr + data_offset;
@@ -671,48 +681,36 @@ static inline bool mlx5e_xmit_xdp_frame(struct mlx5e_rq *rq,
 		return false;
 	}
 
-	if (unlikely(!mlx5e_sq_has_room_for(sq, MLX5E_XDP_TX_WQEBBS))) {
-		if (sq->db.xdp.doorbell) {
-			/* SQ is full, ring doorbell */
-			mlx5e_xmit_xdp_doorbell(sq);
-			sq->db.xdp.doorbell = false;
-		}
+	if (unlikely(!mlx5e_wqc_has_room_for(&sq->wq, sq->cc, sq->pc, 1))) {
+		mlx5e_xmit_xdp_doorbell(sq);
 		rq->stats.xdp_tx_full++;
 		mlx5e_page_release(rq, di, true);
 		return false;
 	}
 
-	dma_sync_single_for_device(sq->pdev, dma_addr, dma_len,
-				   PCI_DMA_TODEVICE);
+	dma_sync_single_for_device(sq->pdev, dma_addr, dma_len, PCI_DMA_TODEVICE);
 
-	memset(wqe, 0, sizeof(*wqe));
+	cseg->fm_ce_se = 0;
 
 	dseg = (struct mlx5_wqe_data_seg *)eseg + 1;
+
 	/* copy the inline part if required */
 	if (sq->min_inline_mode != MLX5_INLINE_MODE_NONE) {
 		memcpy(eseg->inline_hdr.start, xdp->data, MLX5E_XDP_MIN_INLINE);
 		eseg->inline_hdr.sz = cpu_to_be16(MLX5E_XDP_MIN_INLINE);
 		dma_len  -= MLX5E_XDP_MIN_INLINE;
 		dma_addr += MLX5E_XDP_MIN_INLINE;
-
-		ds_cnt   += MLX5E_XDP_IHS_DS_COUNT;
 		dseg++;
 	}
 
 	/* write the dma part */
 	dseg->addr       = cpu_to_be64(dma_addr);
 	dseg->byte_count = cpu_to_be32(dma_len);
-	dseg->lkey       = sq->mkey_be;
 
 	cseg->opmod_idx_opcode = cpu_to_be32((sq->pc << 8) | MLX5_OPCODE_SEND);
-	cseg->qpn_ds = cpu_to_be32((sq->sqn << 8) | ds_cnt);
 
-	sq->db.xdp.di[pi] = *di;
-	wi->opcode     = MLX5_OPCODE_SEND;
-	wi->num_wqebbs = MLX5E_XDP_TX_WQEBBS;
-	sq->pc += MLX5E_XDP_TX_WQEBBS;
-
-	sq->db.xdp.doorbell = true;
+	sq->db.di[pi] = *di;
+	sq->pc++;
 	rq->stats.xdp_tx++;
 	return true;
 }
@@ -946,7 +944,8 @@ mpwrq_cqe_out:
 int mlx5e_poll_rx_cq(struct mlx5e_cq *cq, int budget)
 {
 	struct mlx5e_rq *rq = container_of(cq, struct mlx5e_rq, cq);
-	struct mlx5e_sq *xdp_sq = &rq->channel->xdp_sq;
+	struct mlx5e_xdpsq *xdpsq = &rq->xdpsq;
+	u16 xdppc = xdpsq->pc;
 	int work_done = 0;
 
 	if (unlikely(!test_bit(MLX5E_RQ_STATE_ENABLED, &rq->state)))
@@ -973,10 +972,8 @@ int mlx5e_poll_rx_cq(struct mlx5e_cq *cq, int budget)
 		rq->handle_rx_cqe(rq, cqe);
 	}
 
-	if (xdp_sq->db.xdp.doorbell) {
-		mlx5e_xmit_xdp_doorbell(xdp_sq);
-		xdp_sq->db.xdp.doorbell = false;
-	}
+	if (xdpsq->pc != xdppc)
+		mlx5e_xmit_xdp_doorbell(xdpsq);
 
 	mlx5_cqwq_update_db_record(&cq->wq);
 
@@ -984,4 +981,75 @@ int mlx5e_poll_rx_cq(struct mlx5e_cq *cq, int budget)
 	wmb();
 
 	return work_done;
+}
+
+bool mlx5e_poll_xdpsq_cq(struct mlx5e_cq *cq)
+{
+	struct mlx5e_xdpsq *sq;
+	struct mlx5e_rq *rq;
+	u16 sqcc;
+	int i;
+
+	sq = container_of(cq, struct mlx5e_xdpsq, cq);
+
+	if (unlikely(!test_bit(MLX5E_SQ_STATE_ENABLED, &sq->state)))
+		return false;
+
+	rq = container_of(sq, struct mlx5e_rq, xdpsq);
+
+	/* sq->cc must be updated only after mlx5_cqwq_update_db_record(),
+	 * otherwise a cq overrun may occur
+	 */
+	sqcc = sq->cc;
+
+	for (i = 0; i < MLX5E_TX_CQ_POLL_BUDGET; i++) {
+		struct mlx5_cqe64 *cqe;
+		u16 wqe_counter;
+		bool last_wqe;
+
+		cqe = mlx5e_get_cqe(cq);
+		if (!cqe)
+			break;
+
+		mlx5_cqwq_pop(&cq->wq);
+
+		wqe_counter = be16_to_cpu(cqe->wqe_counter);
+
+		do {
+			struct mlx5e_dma_info *di;
+			u16 ci;
+
+			last_wqe = (sqcc == wqe_counter);
+
+			ci = sqcc & sq->wq.sz_m1;
+			di = &sq->db.di[ci];
+
+			sqcc++;
+			/* Recycle RX page */
+			mlx5e_page_release(rq, di, true);
+		} while (!last_wqe);
+	}
+
+	mlx5_cqwq_update_db_record(&cq->wq);
+
+	/* ensure cq space is freed before enabling more cqes */
+	wmb();
+
+	sq->cc = sqcc;
+	return (i == MLX5E_TX_CQ_POLL_BUDGET);
+}
+
+void mlx5e_free_xdpsq_descs(struct mlx5e_xdpsq *sq)
+{
+	struct mlx5e_rq *rq = container_of(sq, struct mlx5e_rq, xdpsq);
+	struct mlx5e_dma_info *di;
+	u16 ci;
+
+	while (sq->cc != sq->pc) {
+		ci = sq->cc & sq->wq.sz_m1;
+		di = &sq->db.di[ci];
+		sq->cc++;
+
+		mlx5e_page_release(rq, di, false);
+	}
 }
