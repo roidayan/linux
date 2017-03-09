@@ -98,6 +98,7 @@ static ssize_t port_store(struct mlx5_sriov_vf *g, struct vf_attributes *oa,
 			  const char *buf, size_t count)
 {
 	struct mlx5_core_dev *dev = g->dev;
+	struct mlx5_vf_context *vfs_ctx = dev->priv.sriov.vfs_ctx;
 	struct mlx5_hca_vport_context *in;
 	u64 guid = 0;
 	int err;
@@ -122,6 +123,8 @@ static ssize_t port_store(struct mlx5_sriov_vf *g, struct vf_attributes *oa,
 	kfree(in);
 	if (err)
 		return err;
+
+	vfs_ctx[g->vf].port_guid = guid;
 
 	return count;
 }
@@ -193,6 +196,7 @@ static ssize_t node_show(struct mlx5_sriov_vf *g, struct vf_attributes *oa,
 static int modify_hca_node_guid(struct mlx5_core_dev *dev, u16 vf,
 				u64 node_guid)
 {
+	struct mlx5_vf_context *vfs_ctx = dev->priv.sriov.vfs_ctx;
 	struct mlx5_hca_vport_context *in;
 	int err;
 
@@ -203,6 +207,8 @@ static int modify_hca_node_guid(struct mlx5_core_dev *dev, u16 vf,
 	in->field_select = MLX5_HCA_VPORT_SEL_NODE_GUID;
 	in->node_guid = node_guid;
 	err = mlx5_core_modify_hca_vport_context(dev, 1, 1, vf + 1, in);
+	if (!err)
+		vfs_ctx[vf].node_guid = node_guid;
 	kfree(in);
 
 	return err;
@@ -306,6 +312,7 @@ static ssize_t policy_store(struct mlx5_sriov_vf *g, struct vf_attributes *oa,
 			    const char *buf, size_t count)
 {
 	struct mlx5_core_dev *dev = g->dev;
+	struct mlx5_vf_context *vfs_ctx = dev->priv.sriov.vfs_ctx;
 	struct mlx5_hca_vport_context *in;
 	enum port_state_policy policy;
 	int err;
@@ -324,6 +331,8 @@ static ssize_t policy_store(struct mlx5_sriov_vf *g, struct vf_attributes *oa,
 	kfree(in);
 	if (err)
 		return err;
+
+	vfs_ctx[g->vf].policy = policy;
 
 	return count;
 }
