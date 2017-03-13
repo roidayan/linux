@@ -269,6 +269,19 @@ static unsigned long get_next_poll_jiffies(void)
 	return next;
 }
 
+void mlx5_trigger_health_work(struct mlx5_core_dev *dev)
+{
+	struct mlx5_core_health *health = &dev->priv.health;
+
+	spin_lock(&health->wq_lock);
+	if (!test_bit(MLX5_DROP_NEW_HEALTH_WORK, &health->flags))
+		queue_work(health->wq, &health->work);
+	else
+		dev_err(&dev->pdev->dev,
+			"new health works are not permitted at this stage\n");
+	spin_unlock(&health->wq_lock);
+}
+
 static void poll_health(unsigned long data)
 {
 	struct mlx5_core_dev *dev = (struct mlx5_core_dev *)data;
@@ -297,13 +310,7 @@ static void poll_health(unsigned long data)
 	if (in_fatal(dev) && !health->sick) {
 		health->sick = true;
 		print_health_info(dev);
-		spin_lock(&health->wq_lock);
-		if (!test_bit(MLX5_DROP_NEW_HEALTH_WORK, &health->flags))
-			queue_work(health->wq, &health->work);
-		else
-			dev_err(&dev->pdev->dev,
-				"new health works are not permitted at this stage\n");
-		spin_unlock(&health->wq_lock);
+		mlx5_trigger_health_work(dev);
 	}
 }
 
