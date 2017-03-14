@@ -137,11 +137,9 @@ static void mlx5e_tc_del_nic_flow(struct mlx5e_priv *priv,
 {
 	struct mlx5_fc *counter = NULL;
 
-	if (!IS_ERR(flow->rule)) {
-		counter = mlx5_flow_rule_counter(flow->rule);
-		mlx5_del_flow_rules(flow->rule);
-		mlx5_fc_destroy(priv->mdev, counter);
-	}
+	counter = mlx5_flow_rule_counter(flow->rule);
+	mlx5_del_flow_rules(flow->rule);
+	mlx5_fc_destroy(priv->mdev, counter);
 
 	if (!mlx5e_tc_num_filters(priv) && (priv->fs.tc.t)) {
 		mlx5_destroy_flow_table(priv->fs.tc.t);
@@ -149,18 +147,25 @@ static void mlx5e_tc_del_nic_flow(struct mlx5e_priv *priv,
 	}
 }
 
+static void mlx5e_detach_encap(struct mlx5e_priv *priv,
+			       struct mlx5_esw_flow_attr *attr);
+
 static struct mlx5_flow_handle *
 mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 		      struct mlx5_flow_spec *spec,
 		      struct mlx5_esw_flow_attr *attr)
 {
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
+	struct mlx5_flow_handle *rule;
 
-	return mlx5_eswitch_add_offloaded_rule(esw, spec, attr);
+	rule = mlx5_eswitch_add_offloaded_rule(esw, spec, attr);
+
+	if (IS_ERR(rule) &&
+	    attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP)
+		mlx5e_detach_encap(priv, attr);
+
+	return rule;
 }
-
-static void mlx5e_detach_encap(struct mlx5e_priv *priv,
-			       struct mlx5_esw_flow_attr *attr);
 
 static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
 				  struct mlx5e_tc_flow *flow)
@@ -1190,7 +1195,7 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv, __be16 protocol,
 
 	if (IS_ERR(flow->rule)) {
 		err = PTR_ERR(flow->rule);
-		goto err_del_rule;
+		goto err_free;
 	}
 
 	err = rhashtable_insert_fast(&tc->ht, &flow->node,
