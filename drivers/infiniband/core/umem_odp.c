@@ -326,9 +326,6 @@ int ib_umem_odp_get(struct ib_ucontext *context, struct ib_umem *umem,
 			return -EINVAL;
 		h = hstate_vma(vma);
 		umem->page_shift = huge_page_shift(h);
-		umem->hugetlb = 1;
-	} else {
-		umem->hugetlb = 0;
 	}
 
 	/* Prevent creating ODP MRs in child processes */
