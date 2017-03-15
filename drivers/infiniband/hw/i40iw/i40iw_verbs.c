@@ -1850,7 +1850,7 @@ static struct ib_mr *i40iw_reg_user_mr(struct ib_pd *pd,
 	iwmr->page_size = region->page_size;
 	iwmr->page_msk = PAGE_MASK;
 
-	if (region->hugetlb && (req.reg_type == IW_MEMREG_TYPE_MEM))
+	if (req.reg_type == IW_MEMREG_TYPE_MEM)
 		i40iw_set_hugetlb_values(start, iwmr);
 
 	region_length = region->length + (start & (iwmr->page_size - 1));
