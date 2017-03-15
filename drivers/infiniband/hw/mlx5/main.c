@@ -2061,8 +2061,8 @@ enum flow_table_type {
 	MLX5_IB_FT_TX
 };
 
-#define MLX5_FS_MAX_TYPES	 10
-#define MLX5_FS_MAX_ENTRIES	 32000UL
+#define MLX5_FS_MAX_TYPES	 6
+#define MLX5_FS_MAX_ENTRIES	 BIT(16)
 static struct mlx5_ib_flow_prio *get_flow_table(struct mlx5_ib_dev *dev,
 						struct ib_flow_attr *flow_attr,
 						enum flow_table_type ft_type)
@@ -2071,11 +2071,14 @@ static struct mlx5_ib_flow_prio *get_flow_table(struct mlx5_ib_dev *dev,
 	struct mlx5_flow_namespace *ns = NULL;
 	struct mlx5_ib_flow_prio *prio;
 	struct mlx5_flow_table *ft;
+	int max_table_size;
 	int num_entries;
 	int num_groups;
 	int priority;
 	int err = 0;
 
+	max_table_size = BIT(MLX5_CAP_FLOWTABLE_NIC_RX(dev->mdev,
+						       log_max_ft_size));
 	if (flow_attr->type == IB_FLOW_ATTR_NORMAL) {
 		if (flow_is_multicast_only(flow_attr) &&
 		    !dont_trap)
@@ -2113,6 +2116,9 @@ static struct mlx5_ib_flow_prio *get_flow_table(struct mlx5_ib_dev *dev,
 
 	if (!ns)
 		return ERR_PTR(-ENOTSUPP);
+
+	if (num_entries > max_table_size)
+		return ERR_PTR(-ENOMEM);
 
 	ft = prio->flow_table;
 	if (!ft) {
@@ -2348,7 +2354,7 @@ static struct ib_flow *mlx5_ib_create_flow(struct ib_qp *qp,
 	int err;
 
 	if (flow_attr->priority > MLX5_IB_FLOW_LAST_PRIO)
-		return ERR_PTR(-ENOSPC);
+		return ERR_PTR(-ENOMEM);
 
 	if (domain != IB_FLOW_DOMAIN_USER ||
 	    flow_attr->port > MLX5_CAP_GEN(dev->mdev, num_ports) ||
