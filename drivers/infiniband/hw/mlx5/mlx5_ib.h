@@ -107,6 +107,13 @@ enum {
 	MLX5_CQE_VERSION_V1,
 };
 
+enum {
+	MLX5_TM_TAG_SIZE		= 64,
+	MLX5_TM_HEADER_SIZE		= 48,
+	MLX5_TM_PRIV_SIZE		= 4,
+	MLX5_TM_RNDV_PRIV_SIZE		= 16,
+};
+
 struct mlx5_ib_vma_private_data {
 	struct list_head list;
 	struct vm_area_struct *vma;

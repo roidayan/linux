@@ -236,6 +236,23 @@ struct ib_uverbs_rss_caps {
 	__u32 reserved;
 };
 
+struct ib_uverbs_tm_caps {
+	/* Characteristics of the receive mask (given in bits) */
+	__u32 max_tag_size;
+	/* The maximum size for the TM header */
+	__u32 max_header_size;
+	/* The size for the application context field in the XRQ context*/
+	__u32 max_priv_size;
+	/* Max size of the information passed after the RNDV header */
+	__u32 max_rndv_priv_size;
+	/* Posted receive maximum list size */
+	__u32 max_num_tags;
+	/* TM capabilities mask - enumerated below in ibv_tm_flags */
+	__u32 capability_flags;
+	/* Max number of outstanding operations */
+	__u32 max_tag_ops;
+};
+
 struct ib_uverbs_ex_query_device_resp {
 	struct ib_uverbs_query_device_resp base;
 	__u32 comp_mask;
@@ -247,6 +264,7 @@ struct ib_uverbs_ex_query_device_resp {
 	struct ib_uverbs_rss_caps rss_caps;
 	__u32  max_wq_type_rq;
 	__u32 raw_packet_caps;
+	struct ib_uverbs_tm_caps xrq_caps;
 };
 
 struct ib_uverbs_query_port {
@@ -1024,7 +1042,7 @@ struct ib_uverbs_create_xsrq {
 	__u32 max_wr;
 	__u32 max_sge;
 	__u32 srq_limit;
-	__u32 reserved;
+	__u32 tm_list_size;
 	__u32 xrcd_handle;
 	__u32 cq_handle;
 	__u64 driver_data[0];
