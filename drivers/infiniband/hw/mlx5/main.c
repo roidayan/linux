@@ -1726,6 +1726,7 @@ static void set_tos(void *outer_c, void *outer_v, u8 mask, u8 val)
 #define LAST_TCP_UDP_FIELD src_port
 #define LAST_TUNNEL_FIELD tunnel_id
 #define LAST_FLOW_TAG_FIELD tag_id
+#define LAST_DROP_FIELD size
 
 /* Field is the last supported field */
 #define FIELDS_NOT_SUPPORTED(filter, field)\
@@ -1736,7 +1737,8 @@ static void set_tos(void *outer_c, void *outer_v, u8 mask, u8 val)
 		   sizeof(filter.field))
 
 static int parse_flow_attr(u32 *match_c, u32 *match_v,
-			   const union ib_flow_spec *ib_spec, u32 *tag_id)
+			   const union ib_flow_spec *ib_spec,
+			   u32 *tag_id, bool *is_drop)
 {
 	void *misc_params_c = MLX5_ADDR_OF(fte_match_param, match_c,
 					   misc_parameters);
@@ -1937,6 +1939,12 @@ static int parse_flow_attr(u32 *match_c, u32 *match_v,
 
 		*tag_id = ib_spec->flow_tag.tag_id;
 		break;
+	case IB_FLOW_SPEC_ACTION_DROP:
+		if (FIELDS_NOT_SUPPORTED(ib_spec->drop,
+					 LAST_DROP_FIELD))
+			return -EOPNOTSUPP;
+		*is_drop = true;
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -2118,10 +2126,13 @@ static struct mlx5_ib_flow_handler *create_flow_rule(struct mlx5_ib_dev *dev,
 	struct mlx5_ib_flow_handler *handler;
 	struct mlx5_flow_act flow_act = {0};
 	struct mlx5_flow_spec *spec;
+	struct mlx5_flow_destination *rule_dst = dst;
 	const void *ib_flow = (const void *)flow_attr + sizeof(*flow_attr);
 	unsigned int spec_index;
 	u32 flow_tag = MLX5_FS_DEFAULT_FLOW_TAG;
+	bool is_drop = false;
 	int err = 0;
+	int dest_num = 1;
 
 	if (!is_valid_attr(flow_attr))
 		return ERR_PTR(-EINVAL);
@@ -2137,7 +2148,8 @@ static struct mlx5_ib_flow_handler *create_flow_rule(struct mlx5_ib_dev *dev,
 
 	for (spec_index = 0; spec_index < flow_attr->num_of_specs; spec_index++) {
 		err = parse_flow_attr(spec->match_criteria,
-				      spec->match_value, ib_flow, &flow_tag);
+				      spec->match_value,
+				      ib_flow, &flow_tag, &is_drop);
 		if (err < 0)
 			goto free;
 
@@ -2145,8 +2157,14 @@ static struct mlx5_ib_flow_handler *create_flow_rule(struct mlx5_ib_dev *dev,
 	}
 
 	spec->match_criteria_enable = get_match_criteria_enable(spec->match_criteria);
-	flow_act.action = dst ? MLX5_FLOW_CONTEXT_ACTION_FWD_DEST :
-		MLX5_FLOW_CONTEXT_ACTION_FWD_NEXT_PRIO;
+	if (is_drop) {
+		flow_act.action = MLX5_FLOW_CONTEXT_ACTION_DROP;
+		rule_dst = NULL;
+		dest_num = 0;
+	} else {
+		flow_act.action = dst ? MLX5_FLOW_CONTEXT_ACTION_FWD_DEST :
+		    MLX5_FLOW_CONTEXT_ACTION_FWD_NEXT_PRIO;
+	}
 
 	if (flow_tag != MLX5_FS_DEFAULT_FLOW_TAG &&
 	    (flow_attr->type == IB_FLOW_ATTR_ALL_DEFAULT ||
@@ -2159,7 +2177,7 @@ static struct mlx5_ib_flow_handler *create_flow_rule(struct mlx5_ib_dev *dev,
 	flow_act.flow_tag = flow_tag;
 	handler->rule = mlx5_add_flow_rules(ft, spec,
 					    &flow_act,
-					    dst, 1);
+					    rule_dst, dest_num);
 
 	if (IS_ERR(handler->rule)) {
 		err = PTR_ERR(handler->rule);
