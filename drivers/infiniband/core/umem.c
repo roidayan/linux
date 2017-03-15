@@ -34,9 +34,9 @@
 
 #include <linux/mm.h>
 #include <linux/dma-mapping.h>
-#include <linux/sched.h>
+#include <linux/sched/signal.h>
+#include <linux/sched/mm.h>
 #include <linux/export.h>
-#include <linux/hugetlb.h>
 #include <linux/slab.h>
 #include <rdma/ib_umem_odp.h>
 
@@ -84,7 +84,6 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
 {
 	struct ib_umem *umem;
 	struct page **page_list;
-	struct vm_area_struct **vma_list;
 	unsigned long locked;
 	unsigned long lock_limit;
 	unsigned long cur_base;
@@ -114,11 +113,11 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
 	if (!umem)
 		return ERR_PTR(-ENOMEM);
 
-	umem->context   = context;
-	umem->length    = size;
-	umem->address   = addr;
-	umem->page_size = PAGE_SIZE;
-	umem->pid       = get_task_pid(current, PIDTYPE_PID);
+	umem->context    = context;
+	umem->length     = size;
+	umem->address    = addr;
+	umem->page_shift = PAGE_SHIFT;
+	umem->pid	 = get_task_pid(current, PIDTYPE_PID);
 	/*
 	 * We ask for writable memory if any of the following
 	 * access flags are set.  "Local write" and "remote write"
@@ -132,7 +131,7 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
 
 	if (access & IB_ACCESS_ON_DEMAND) {
 		put_pid(umem->pid);
-		ret = ib_umem_odp_get(context, umem);
+		ret = ib_umem_odp_get(context, umem, access);
 		if (ret) {
 			kfree(umem);
 			return ERR_PTR(ret);
@@ -142,23 +141,12 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
 
 	umem->odp_data = NULL;
 
-	/* We assume the memory is from hugetlb until proved otherwise */
-	umem->hugetlb   = 1;
-
 	page_list = (struct page **) __get_free_page(GFP_KERNEL);
 	if (!page_list) {
 		put_pid(umem->pid);
 		kfree(umem);
 		return ERR_PTR(-ENOMEM);
 	}
-
-	/*
-	 * if we can't alloc the vma_list, it's not so bad;
-	 * just assume the memory is not hugetlb memory
-	 */
-	vma_list = (struct vm_area_struct **) __get_free_page(GFP_KERNEL);
-	if (!vma_list)
-		umem->hugetlb = 0;
 
 	npages = ib_umem_num_pages(umem);
 
@@ -193,7 +181,7 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
 		ret = get_user_pages(cur_base,
 				     min_t(unsigned long, npages,
 					   PAGE_SIZE / sizeof (struct page *)),
-				     gup_flags, page_list, vma_list);
+				     gup_flags, page_list, NULL);
 
 		if (ret < 0)
 			goto out;
@@ -202,12 +190,8 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
 		cur_base += ret * PAGE_SIZE;
 		npages   -= ret;
 
-		for_each_sg(sg_list_start, sg, ret, i) {
-			if (vma_list && !is_vm_hugetlb_page(vma_list[i]))
-				umem->hugetlb = 0;
-
+		for_each_sg(sg_list_start, sg, ret, i)
 			sg_set_page(sg, page_list[i], PAGE_SIZE, 0);
-		}
 
 		/* preparing for next loop */
 		sg_list_start = sg;
@@ -236,8 +220,6 @@ out:
 		current->mm->pinned_vm = locked;
 
 	up_write(&current->mm->mmap_sem);
-	if (vma_list)
-		free_page((unsigned long) vma_list);
 	free_page((unsigned long) page_list);
 
 	return ret < 0 ? ERR_PTR(ret) : umem;
@@ -314,7 +296,6 @@ EXPORT_SYMBOL(ib_umem_release);
 
 int ib_umem_page_count(struct ib_umem *umem)
 {
-	int shift;
 	int i;
 	int n;
 	struct scatterlist *sg;
@@ -322,11 +303,9 @@ int ib_umem_page_count(struct ib_umem *umem)
 	if (umem->odp_data)
 		return ib_umem_num_pages(umem);
 
-	shift = ilog2(umem->page_size);
-
 	n = 0;
 	for_each_sg(umem->sg_head.sgl, sg, umem->nmap, i)
-		n += sg_dma_len(sg) >> shift;
+		n += sg_dma_len(sg) >> umem->page_shift;
 
 	return n;
 }

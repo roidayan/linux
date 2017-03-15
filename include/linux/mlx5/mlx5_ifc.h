@@ -2027,7 +2027,8 @@ struct mlx5_ifc_qpc_bits {
 	u8         state[0x4];
 	u8         lag_tx_port_affinity[0x4];
 	u8         st[0x8];
-	u8         reserved_at_10[0x3];
+	u8         hca_sq_owner[0x1];
+	u8         reserved_at_11[0x2];
 	u8         pm_state[0x2];
 	u8         reserved_at_15[0x7];
 	u8         end_padding_mode[0x2];
@@ -2965,7 +2966,7 @@ struct mlx5_ifc_xrqc_bits {
 
 	struct mlx5_ifc_tag_matching_topology_context_bits tag_matching_topology_context;
 
-	u8         reserved_at_180[0x880];
+	u8         reserved_at_180[0x280];
 
 	struct mlx5_ifc_wq_bits wq;
 };
@@ -4623,17 +4624,17 @@ struct mlx5_ifc_query_cong_statistics_out_bits {
 
 	u8         reserved_at_40[0x40];
 
-	u8         cur_flows[0x20];
+	u8         rp_cur_flows[0x20];
 
 	u8         sum_flows[0x20];
 
-	u8         cnp_ignored_high[0x20];
+	u8         rp_cnp_ignored_high[0x20];
 
-	u8         cnp_ignored_low[0x20];
+	u8         rp_cnp_ignored_low[0x20];
 
-	u8         cnp_handled_high[0x20];
+	u8         rp_cnp_handled_high[0x20];
 
-	u8         cnp_handled_low[0x20];
+	u8         rp_cnp_handled_low[0x20];
 
 	u8         reserved_at_140[0x100];
 
@@ -4643,13 +4644,13 @@ struct mlx5_ifc_query_cong_statistics_out_bits {
 
 	u8         accumulators_period[0x20];
 
-	u8         ecn_marked_roce_packets_high[0x20];
+	u8         np_ecn_marked_roce_packets_high[0x20];
 
-	u8         ecn_marked_roce_packets_low[0x20];
+	u8         np_ecn_marked_roce_packets_low[0x20];
 
-	u8         cnps_sent_high[0x20];
+	u8         np_cnps_sent_high[0x20];
 
-	u8         cnps_sent_low[0x20];
+	u8         np_cnps_sent_low[0x20];
 
 	u8         reserved_at_320[0x560];
 };

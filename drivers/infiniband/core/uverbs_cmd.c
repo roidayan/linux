@@ -1880,7 +1880,7 @@ static int create_qp(struct ib_uverbs_file *file,
 			if (cmd->is_srq) {
 				srq = idr_read_srq(cmd->srq_handle,
 						   file->ucontext);
-				if (!srq || srq->srq_type != IB_SRQT_BASIC) {
+				if (!srq || srq->srq_type == IB_SRQT_XRC) {
 					ret = -EINVAL;
 					goto err_put;
 				}
@@ -3227,6 +3227,13 @@ static int kern_spec_to_ib_spec_action(struct ib_uverbs_flow_spec *kern_spec,
 		ib_spec->flow_tag.size = sizeof(struct ib_flow_spec_action_tag);
 		ib_spec->flow_tag.tag_id = kern_spec->flow_tag.tag_id;
 		break;
+	case IB_FLOW_SPEC_ACTION_DROP:
+		if (kern_spec->drop.size !=
+		    sizeof(struct ib_uverbs_flow_spec_action_drop))
+			return -EINVAL;
+
+		ib_spec->drop.size = sizeof(struct ib_flow_spec_action_drop);
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -4053,6 +4060,13 @@ static int __uverbs_create_xsrq(struct ib_uverbs_file *file,
 	init_uobj(&obj->uevent.uobject, cmd->user_handle, file->ucontext, &srq_lock_class);
 	down_write(&obj->uevent.uobject.mutex);
 
+	if (cmd->srq_type == IB_SRQT_TAG_MATCHING) {
+		attr.ext.tag_matching.list_size = cmd->tm_list_size;
+	} else if (cmd->tm_list_size) {
+		ret = -EINVAL;
+		goto err;
+	}
+
 	if (cmd->srq_type == IB_SRQT_XRC) {
 		attr.ext.xrc.xrcd  = idr_read_xrcd(cmd->xrcd_handle, file->ucontext, &xrcd_uobj);
 		if (!attr.ext.xrc.xrcd) {
@@ -4062,9 +4076,11 @@ static int __uverbs_create_xsrq(struct ib_uverbs_file *file,
 
 		obj->uxrcd = container_of(xrcd_uobj, struct ib_uxrcd_object, uobject);
 		atomic_inc(&obj->uxrcd->refcnt);
+	}
 
-		attr.ext.xrc.cq  = idr_read_cq(cmd->cq_handle, file->ucontext, 0);
-		if (!attr.ext.xrc.cq) {
+	if (ib_srq_has_cq(cmd->srq_type)) {
+		attr.ext.cq  = idr_read_cq(cmd->cq_handle, file->ucontext, 0);
+		if (!attr.ext.cq) {
 			ret = -EINVAL;
 			goto err_put_xrcd;
 		}
@@ -4104,10 +4120,13 @@ static int __uverbs_create_xsrq(struct ib_uverbs_file *file,
 	srq->event_handler = attr.event_handler;
 	srq->srq_context   = attr.srq_context;
 
+	if (ib_srq_has_cq(cmd->srq_type)) {
+		srq->ext.cq       = attr.ext.cq;
+		atomic_inc(&attr.ext.cq->usecnt);
+	}
+
 	if (cmd->srq_type == IB_SRQT_XRC) {
-		srq->ext.xrc.cq   = attr.ext.xrc.cq;
 		srq->ext.xrc.xrcd = attr.ext.xrc.xrcd;
-		atomic_inc(&attr.ext.xrc.cq->usecnt);
 		atomic_inc(&attr.ext.xrc.xrcd->usecnt);
 	}
 
@@ -4132,10 +4151,12 @@ static int __uverbs_create_xsrq(struct ib_uverbs_file *file,
 		goto err_copy;
 	}
 
-	if (cmd->srq_type == IB_SRQT_XRC) {
+	if (cmd->srq_type == IB_SRQT_XRC)
 		put_uobj_read(xrcd_uobj);
-		put_cq_read(attr.ext.xrc.cq);
-	}
+
+	if (ib_srq_has_cq(cmd->srq_type))
+		put_cq_read(attr.ext.cq);
+
 	put_pd_read(pd);
 
 	mutex_lock(&file->mutex);
@@ -4160,8 +4181,8 @@ err_put:
 	put_pd_read(pd);
 
 err_put_cq:
-	if (cmd->srq_type == IB_SRQT_XRC)
-		put_cq_read(attr.ext.xrc.cq);
+	if (ib_srq_has_cq(cmd->srq_type))
+		put_cq_read(attr.ext.cq);
 
 err_put_xrcd:
 	if (cmd->srq_type == IB_SRQT_XRC) {
@@ -4180,7 +4201,7 @@ ssize_t ib_uverbs_create_srq(struct ib_uverbs_file *file,
 			     int out_len)
 {
 	struct ib_uverbs_create_srq      cmd;
-	struct ib_uverbs_create_xsrq     xcmd;
+	struct ib_uverbs_create_xsrq     xcmd = {};
 	struct ib_uverbs_create_srq_resp resp;
 	struct ib_udata                  udata;
 	int ret;
@@ -4458,6 +4479,18 @@ int ib_uverbs_ex_query_device(struct ib_uverbs_file *file,
 
 	resp.raw_packet_caps = attr.raw_packet_caps;
 	resp.response_length += sizeof(resp.raw_packet_caps);
+
+	if (ucore->outlen < resp.response_length + sizeof(resp.xrq_caps))
+		goto end;
+
+	resp.xrq_caps.max_tag_size = attr.xrq_caps.max_tag_size;
+	resp.xrq_caps.max_header_size = attr.xrq_caps.max_header_size;
+	resp.xrq_caps.max_priv_size = attr.xrq_caps.max_priv_size;
+	resp.xrq_caps.max_rndv_priv_size = attr.xrq_caps.max_rndv_priv_size;
+	resp.xrq_caps.max_num_tags = attr.xrq_caps.max_num_tags;
+	resp.xrq_caps.capability_flags = attr.xrq_caps.capability_flags;
+	resp.xrq_caps.max_tag_ops = attr.xrq_caps.max_tag_ops;
+	resp.response_length += sizeof(resp.xrq_caps);
 end:
 	err = ib_copy_to_udata(ucore, &resp, resp.response_length);
 	return err;

@@ -107,6 +107,13 @@ enum {
 	MLX5_CQE_VERSION_V1,
 };
 
+enum {
+	MLX5_TM_TAG_SIZE		= 64,
+	MLX5_TM_HEADER_SIZE		= 48,
+	MLX5_TM_PRIV_SIZE		= 4,
+	MLX5_TM_RNDV_PRIV_SIZE		= 16,
+};
+
 struct mlx5_ib_vma_private_data {
 	struct list_head list;
 	struct vm_area_struct *vma;
@@ -513,6 +520,7 @@ struct mlx5_ib_mr {
 struct mlx5_ib_mw {
 	struct ib_mw		ibmw;
 	struct mlx5_core_mkey	mmkey;
+	int			ndescs;
 };
 
 struct mlx5_ib_umr_context {
@@ -595,15 +603,16 @@ struct mlx5_ib_resources {
 	struct mutex	mutex;
 };
 
-struct mlx5_ib_q_counters {
+struct mlx5_ib_counters {
 	const char **names;
 	size_t *offsets;
-	u32 num_counters;
+	u32 num_q_counters;
+	u32 num_cong_counters;
 	u16 set_id;
 };
 
 struct mlx5_ib_port {
-	struct mlx5_ib_q_counters q_cnts;
+	struct mlx5_ib_counters cnts;
 };
 
 struct mlx5_roce {
