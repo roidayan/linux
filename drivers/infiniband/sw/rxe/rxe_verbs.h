@@ -403,6 +403,7 @@ struct rxe_dev {
 
 	struct rxe_port		port;
 	struct list_head	list;
+	struct crypto_shash	*tfm;
 };
 
 static inline struct rxe_dev *to_rdev(struct ib_device *dev)
