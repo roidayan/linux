@@ -1193,7 +1193,7 @@ vxlan_encap_offload_err:
 	e->tunnel_type = tunnel_type;
 	INIT_LIST_HEAD(&e->flows);
 	INIT_WORK(&e->neigh_update_work, mlx5e_rep_neigh_update);
-	refcount_set(&e->refcnt, 1);
+	atomic_set(&e->refcnt, 1);
 
 	if (family == AF_INET)
 		err = mlx5e_create_encap_header_ipv4(priv, mirred_dev, e);

@@ -324,7 +324,7 @@ struct mlx5_encap_entry {
 	 * refcount is needed to avoid encap entry removal by TC, while it's
 	 * used by the neigh notifaction call.
 	 */
-	refcount_t refcnt;
+	atomic_t refcnt;
 	/* valid only when the neigh reference is taken during
 	 * neigh_update_work workqueue callback.
 	 */

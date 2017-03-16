@@ -912,11 +912,11 @@ void mlx5e_rep_neigh_update(struct work_struct *work);
 void mlx5e_rep_queue_neigh_stats_work(struct mlx5e_priv *priv);
 void mlx5e_encap_destroy(struct mlx5_encap_entry *e);
 
-#define mlx5e_encap_hold(e)	refcount_inc(&(e)->refcnt)
+#define mlx5e_encap_hold(e)	atomic_inc(&(e)->refcnt)
 
 static inline void mlx5e_encap_release(struct mlx5_encap_entry *e)
 {
-	if (refcount_dec_and_test(&e->refcnt))
+	if (atomic_dec_and_test(&e->refcnt))
 		mlx5e_encap_destroy(e);
 }
 
