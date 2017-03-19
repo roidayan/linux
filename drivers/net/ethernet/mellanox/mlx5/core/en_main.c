@@ -2500,7 +2500,7 @@ static void mlx5e_build_channels_tx_maps(struct mlx5e_priv *priv)
 	}
 }
 
-static void mlx5e_activate_priv_channels(struct mlx5e_priv *priv)
+void mlx5e_activate_priv_channels(struct mlx5e_priv *priv)
 {
 	int num_txqs = priv->channels.num * priv->channels.params.num_tc;
 	struct net_device *netdev = priv->netdev;
@@ -2522,7 +2522,7 @@ static void mlx5e_activate_priv_channels(struct mlx5e_priv *priv)
 	mlx5e_redirect_rqts_to_channels(priv, &priv->channels);
 }
 
-static void mlx5e_deactivate_priv_channels(struct mlx5e_priv *priv)
+void mlx5e_deactivate_priv_channels(struct mlx5e_priv *priv)
 {
 	mlx5e_redirect_rqts_to_drop(priv);
 
