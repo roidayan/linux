@@ -128,6 +128,88 @@ void mlx5e_build_ptys2ethtool_map(void)
 				       ETHTOOL_LINK_MODE_50000baseKR2_Full_BIT);
 }
 
+static const struct {
+	u16 pddr;
+	u32 ethtool;
+} pddr2ethtool_table[] = {
+	{
+		.pddr    = MLX5_LINK_NO_ISSUE_OBSERVED,
+		.ethtool = ETHTOOL_LINK_NO_ISSUE,
+	},
+	{
+		.pddr    = MLX5_LINK_PORT_CLOSED,
+		.ethtool = ETHTOOL_LINK_ADMIN_DOWN,
+	},
+	{
+		.pddr    = MLX5_LINK_AN_FAILURE,
+		.ethtool = ETHTOOL_LINK_AN_FAILED,
+	},
+	{
+		.pddr    = MLX5_LINK_TRAINING_FAILURE,
+		.ethtool = ETHTOOL_LINK_TRAINING_FAILED,
+	},
+	{
+		.pddr    = MLX5_LINK_REMOTE_FAULT_INDICATION,
+		.ethtool = ETHTOOL_LINK_RMT_FAULT,
+	},
+	{
+		.pddr    = MLX5_LINK_BAD_SIGNAL_INTEGRITY,
+		.ethtool = ETHTOOL_LINK_BAD_SIGNAL_INTEGRITY,
+	},
+	{
+		.pddr    = MLX5_LINK_CABLE_COMPLIANCE_CODE_MISMATCH,
+		.ethtool = ETHTOOL_LINK_CABLE_MISMATCH,
+	},
+	{
+		.pddr    = MLX5_LINK_INTERNAL_ERR,
+		.ethtool = ETHTOOL_LINK_INTERNAL_ERR,
+	},
+	{
+		.pddr    = MLX5_LINK_INFO_NOT_AVAIL,
+		.ethtool = ETHTOOL_LINK_REASON_UNKNOWN,
+	},
+	{
+		.pddr    = MLX5_LINK_CABLE_UNPLUGGED,
+		.ethtool = ETHTOOL_LINK_CABLE_UNPLUGGED,
+	},
+	{
+		.pddr    = MLX5_LINK_LONG_RANGE_FOR_NON_MLX_CABLE,
+		.ethtool = ETHTOOL_LINK_UNSUPP_MODULE,
+	},
+	{
+		.pddr    = MLX5_LINK_BUS_STUCK,
+		.ethtool = ETHTOOL_LINK_I2C_BUS_ERR,
+	},
+	{
+		.pddr    = MLX5_LINK_UNSUPP_EEPROM,
+		.ethtool = ETHTOOL_LINK_UNSUPP_EEPROM,
+	},
+	{
+		.pddr    = MLX5_LINK_MODULE_TEMP_SHUTDOWN,
+		.ethtool = ETHTOOL_LINK_OVERTEMP,
+	},
+	{
+		.pddr    = MLX5_LINK_POWER_BUDGET_EXCEEDED,
+		.ethtool = ETHTOOL_LINK_PWR_BUDGET_EXC,
+	},
+	{
+		.pddr    = MLX5_LINK_MNG_FORCED_DOWN,
+		.ethtool = ETHTOOL_LINK_MODULE_ADMIN_DOWN,
+	},
+};
+
+static u32 mlx5e_pddr2ethtool(u16 pddr)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(pddr2ethtool_table); i++) {
+		if (pddr2ethtool_table[i].pddr == pddr)
+			return pddr2ethtool_table[i].ethtool;
+	}
+
+	return ETHTOOL_LINK_VENDOR_SPECIFIC;
+}
+
 static unsigned long mlx5e_query_pfc_combined(struct mlx5e_priv *priv)
 {
 	struct mlx5_core_dev *mdev = priv->mdev;
@@ -1711,6 +1793,30 @@ static int mlx5e_set_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd)
 	return err;
 }
 
+static int mlx5e_get_link_down_reason(struct net_device *netdev,
+				      struct ethtool_link_down_reason *ldr)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+	u16 monitor_opcode;
+	int err;
+
+	if (!netif_running(netdev)) {
+		ldr->reason = ETHTOOL_LINK_NETDEV_CARRIER_DOWN;
+		return 0;
+	}
+
+	err = mlx5_query_pddr_troubleshooting_info(priv->mdev,
+						   &monitor_opcode, NULL);
+	if (err)
+		return err;
+
+	ldr->reason = mlx5e_pddr2ethtool(monitor_opcode);
+	if (ldr->reason == ETHTOOL_LINK_VENDOR_SPECIFIC)
+		ldr->vendor_reason = monitor_opcode;
+
+	return 0;
+}
+
 const struct ethtool_ops mlx5e_ethtool_ops = {
 	.get_drvinfo       = mlx5e_get_drvinfo,
 	.get_link          = ethtool_op_get_link,
@@ -1744,4 +1850,5 @@ const struct ethtool_ops mlx5e_ethtool_ops = {
 	.get_priv_flags    = mlx5e_get_priv_flags,
 	.set_priv_flags    = mlx5e_set_priv_flags,
 	.self_test         = mlx5e_self_test,
+	.get_link_down_reason = mlx5e_get_link_down_reason,
 };
