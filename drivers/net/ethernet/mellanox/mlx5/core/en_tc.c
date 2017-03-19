@@ -264,10 +264,12 @@ static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
 {
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 
-	mlx5_eswitch_del_offloaded_rule(esw, flow->rule, flow->attr);
-
-	if (flow->flags & MLX5E_TC_FLOW_OFFLOADED)
+	if (flow->flags & MLX5E_TC_FLOW_OFFLOADED) {
 		flow->flags &= ~MLX5E_TC_FLOW_OFFLOADED;
+		mlx5_eswitch_del_offloaded_rule(esw, flow->rule, flow->attr);
+	}
+
+	mlx5_eswitch_del_vlan_action(esw, flow->attr);
 
 	if (flow->attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP)
 		mlx5e_detach_encap(priv, flow);
