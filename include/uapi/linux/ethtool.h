@@ -550,6 +550,13 @@ struct ethtool_pauseparam {
 
 #define ETH_GSTRING_LEN		32
 
+struct ethtool_link_down_reason {
+	__u32	cmd;
+	__u32	reason;
+	__u32	vendor_reason;
+	__u32	reserved[4];
+};
+
 /**
  * enum ethtool_stringset - string set ID
  * @ETH_SS_TEST: Self-test result names, for use with %ETHTOOL_TEST
@@ -1331,6 +1338,8 @@ struct ethtool_per_queue_op {
 #define ETHTOOL_PHY_GTUNABLE	0x0000004e /* Get PHY tunable configuration */
 #define ETHTOOL_PHY_STUNABLE	0x0000004f /* Set PHY tunable configuration */
 
+#define ETHTOOL_GLINK_DOWN_RSN	0x00000050 /* Get link down reason */
+
 /* compatibility with older code */
 #define SPARC_ETH_GSET		ETHTOOL_GSET
 #define SPARC_ETH_SSET		ETHTOOL_SSET
@@ -1764,4 +1773,28 @@ struct ethtool_link_settings {
 	 * __u32 map_lp_advertising[link_mode_masks_nwords];
 	 */
 };
+
+enum {
+	ETHTOOL_LINK_VENDOR_SPECIFIC = -1, /* Vendor specific issue provided in vendor_reason */
+	ETHTOOL_LINK_NO_ISSUE, /* No issue observed with link */
+	ETHTOOL_LINK_REASON_UNKNOWN, /* Unknown reason */
+	ETHTOOL_LINK_NETDEV_CARRIER_DOWN, /* Netdev carrier is down */
+	ETHTOOL_LINK_ADMIN_DOWN, /* Admin down */
+	ETHTOOL_LINK_AN_FAILED, /* Auto negotiation failed */
+	ETHTOOL_LINK_TRAINING_FAILED, /* Link training failed */
+	ETHTOOL_LINK_RMT_FAULT, /* Remote fault indication */
+	ETHTOOL_LINK_BAD_SIGNAL_INTEGRITY, /* Bad signal integrity */
+	ETHTOOL_LINK_CABLE_MISMATCH, /* Cable protocol mismatch */
+	ETHTOOL_LINK_INTERNAL_ERR, /* Internal error */
+	ETHTOOL_LINK_CABLE_UNPLUGGED, /* Cable unplugged */
+	ETHTOOL_LINK_UNSUPP_MODULE, /* Unsupported module */
+	ETHTOOL_LINK_I2C_BUS_ERR, /* I2C bus error */
+	ETHTOOL_LINK_UNSUPP_EEPROM, /* Unsupported EEPROM */
+	ETHTOOL_LINK_OVERTEMP, /* Over temperature */
+	ETHTOOL_LINK_PWR_BUDGET_EXC, /* Power budget exceeded */
+	ETHTOOL_LINK_MODULE_ADMIN_DOWN, /* Module admin down */
+
+	ETHTOOL_LINK_REASONS_COUNT
+};
+
 #endif /* _UAPI_LINUX_ETHTOOL_H */
