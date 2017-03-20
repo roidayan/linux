@@ -34,6 +34,8 @@
 #include <linux/mlx5/fs.h>
 #include <net/switchdev.h>
 #include <net/pkt_cls.h>
+#include <net/netevent.h>
+#include <net/arp.h>
 
 #include "eswitch.h"
 #include "en.h"
@@ -214,6 +216,136 @@ void mlx5e_remove_sqs_fwd_rules(struct mlx5e_priv *priv)
 	mlx5_eswitch_sqs2vport_stop(esw, rep);
 }
 
+static void mlx5e_rep_neigh_entry_hold(struct mlx5_neigh_hash_entry *nhe)
+{
+	refcount_inc(&nhe->refcnt);
+}
+
+static void mlx5e_rep_neigh_entry_release(struct mlx5_neigh_hash_entry *nhe)
+{
+	if (refcount_dec_and_test(&nhe->refcnt))
+		kfree(nhe);
+}
+
+static void mlx5e_rep_update_flows(struct mlx5e_priv *priv,
+				   struct mlx5_encap_entry *e,
+				   bool neigh_connected,
+				   unsigned char ha[ETH_ALEN])
+{
+	struct ethhdr *eth = (struct ethhdr *)e->encap_header;
+
+	ASSERT_RTNL();
+
+	if ((!neigh_connected && (e->flags & MLX5_ENCAP_ENTRY_VALID)) ||
+	    !ether_addr_equal(e->h_dest, ha))
+		mlx5e_tc_encap_flows_del(priv, e);
+
+	if (neigh_connected && !(e->flags & MLX5_ENCAP_ENTRY_VALID)) {
+		ether_addr_copy(e->h_dest, ha);
+		ether_addr_copy(eth->h_dest, ha);
+
+		mlx5e_tc_encap_flows_add(priv, e);
+	}
+}
+
+void mlx5e_rep_neigh_update(struct work_struct *work)
+{
+	struct mlx5_neigh_hash_entry *nhe =
+		container_of(work, struct mlx5_neigh_hash_entry, neigh_update_work);
+	struct neighbour *n = nhe->n;
+	struct mlx5_encap_entry *e;
+	unsigned char ha[ETH_ALEN];
+	struct mlx5e_priv *priv;
+	bool neigh_connected;
+	bool encap_connected;
+	u8 nud_state, dead;
+
+	rtnl_lock();
+
+	/* If these parameters are changed after we release the lock,
+	 * we'll receive another event letting us know about it.
+	 * We use this lock to avoid inconsistency between the neigh validity
+	 * and it's hw address.
+	 */
+	read_lock_bh(&n->lock);
+	memcpy(ha, n->ha, ETH_ALEN);
+	nud_state = n->nud_state;
+	dead = n->dead;
+	read_unlock_bh(&n->lock);
+
+	neigh_connected = (nud_state & NUD_VALID) && !dead;
+
+	list_for_each_entry(e, &nhe->encap_list, encap_list) {
+		encap_connected = !!(e->flags & MLX5_ENCAP_ENTRY_VALID);
+		priv = netdev_priv(e->out_dev);
+
+		if (encap_connected != neigh_connected ||
+		    !ether_addr_equal(e->h_dest, ha))
+			mlx5e_rep_update_flows(priv, e, neigh_connected, ha);
+	}
+	mlx5e_rep_neigh_entry_release(nhe);
+	rtnl_unlock();
+	neigh_release(n);
+}
+
+static struct mlx5_neigh_hash_entry *
+mlx5e_rep_neigh_entry_lookup(struct mlx5e_priv *priv,
+			     struct mlx5_neigh *m_neigh);
+
+static int mlx5e_rep_netevent_event(struct notifier_block *nb,
+				    unsigned long event, void *ptr)
+{
+	struct mlx5_eswitch_rep *rep = container_of(nb, struct mlx5_eswitch_rep,
+						    neigh_update.netevent_nb);
+	struct mlx5_neigh_update *neigh_update = &rep->neigh_update;
+	struct net_device *netdev = rep->netdev;
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+	struct mlx5_neigh_hash_entry *nhe = NULL;
+	struct mlx5_neigh m_neigh = {};
+	struct neighbour *n;
+
+	switch (event) {
+	case NETEVENT_NEIGH_UPDATE:
+		n = ptr;
+
+		if (n->tbl != ipv6_stub->nd_tbl && n->tbl != &arp_tbl)
+			return NOTIFY_DONE;
+
+		m_neigh.neigh_dev = n->dev;
+		memcpy(&m_neigh.dst_ip, n->primary_key, n->tbl->key_len);
+
+		/* We are in atomic context and can't take RTNL mutex, so use
+		 * spin_lock_bh to lookup the neigh table. bh is used since
+		 * netevent can be called from a softirq context.
+		 */
+		spin_lock_bh(&neigh_update->encap_lock);
+		nhe = mlx5e_rep_neigh_entry_lookup(priv, &m_neigh);
+		if (!nhe) {
+			spin_unlock_bh(&neigh_update->encap_lock);
+			return NOTIFY_DONE;
+		}
+
+		/* This assignment is valid as long as the the neigh reference
+		 * is taken
+		 */
+		nhe->n = n;
+
+		/* Take a reference to ensure the neighbour and mlx5 encap
+		 * entry won't be destructed until we drop the reference in
+		 * delayed work.
+		 */
+		neigh_hold(n);
+		mlx5e_rep_neigh_entry_hold(nhe);
+
+		if (!queue_work(priv->wq, &nhe->neigh_update_work)) {
+			mlx5e_rep_neigh_entry_release(nhe);
+			neigh_release(n);
+		}
+		spin_unlock_bh(&neigh_update->encap_lock);
+		break;
+	}
+	return NOTIFY_DONE;
+}
 
 static const struct rhashtable_params mlx5e_neigh_ht_params = {
 	.head_offset = offsetof(struct mlx5_neigh_hash_entry, rhash_node),
@@ -225,15 +357,31 @@ static const struct rhashtable_params mlx5e_neigh_ht_params = {
 static int mlx5e_rep_neigh_init(struct mlx5_eswitch_rep *rep)
 {
 	struct mlx5_neigh_update *neigh_update = &rep->neigh_update;
+	int err;
+
+	err = rhashtable_init(&neigh_update->neigh_ht, &mlx5e_neigh_ht_params);
+	if (err)
+		return err;
 
 	INIT_LIST_HEAD(&neigh_update->neigh_list);
-	return rhashtable_init(&neigh_update->neigh_ht, &mlx5e_neigh_ht_params);
+	spin_lock_init(&neigh_update->encap_lock);
+
+	rep->neigh_update.netevent_nb.notifier_call = mlx5e_rep_netevent_event;
+	err = register_netevent_notifier(&rep->neigh_update.netevent_nb);
+	if (err)
+		goto out_err;
+	return 0;
+
+out_err:
+	rhashtable_destroy(&neigh_update->neigh_ht);
+	return err;
 }
 
 static void mlx5e_rep_neigh_cleanup(struct mlx5_eswitch_rep *rep)
 {
 	struct mlx5_neigh_update *neigh_update = &rep->neigh_update;
 
+	unregister_netevent_notifier(&neigh_update->netevent_nb);
 	rhashtable_destroy(&neigh_update->neigh_ht);
 }
 
@@ -259,13 +407,19 @@ static void mlx5e_rep_neigh_entry_remove(struct mlx5e_priv *priv,
 {
 	struct mlx5_eswitch_rep *rep = priv->ppriv;
 
+	spin_lock_bh(&rep->neigh_update.encap_lock);
+
 	list_del(&nhe->neigh_list);
 
 	rhashtable_remove_fast(&rep->neigh_update.neigh_ht,
 			       &nhe->rhash_node,
 			       mlx5e_neigh_ht_params);
+	spin_unlock_bh(&rep->neigh_update.encap_lock);
 }
 
+/* This function must only be called under RTNL lock or under the
+ * representor's encap_lock in case RTNL mutex can't be held.
+ */
 static struct mlx5_neigh_hash_entry *
 mlx5e_rep_neigh_entry_lookup(struct mlx5e_priv *priv,
 			     struct mlx5_neigh *m_neigh)
@@ -274,6 +428,55 @@ mlx5e_rep_neigh_entry_lookup(struct mlx5e_priv *priv,
 	struct mlx5_neigh_update *neigh_update = &rep->neigh_update;
 
 	return rhashtable_lookup_fast(&neigh_update->neigh_ht, m_neigh, mlx5e_neigh_ht_params);
+}
+
+int mlx5e_rep_neigh_entry_create(struct mlx5e_priv *priv,
+				 struct mlx5_encap_entry *e)
+{
+	struct mlx5_neigh_hash_entry *nhe;
+	int err;
+
+	nhe = mlx5e_rep_neigh_entry_lookup(priv, &e->m_neigh);
+	if (!nhe) {
+		nhe = kzalloc(sizeof(*nhe), GFP_KERNEL);
+		if (!nhe)
+			return -ENOMEM;
+
+		memcpy(&nhe->m_neigh, &e->m_neigh, sizeof(e->m_neigh));
+		INIT_WORK(&nhe->neigh_update_work, mlx5e_rep_neigh_update);
+		INIT_LIST_HEAD(&nhe->encap_list);
+		refcount_set(&nhe->refcnt, 1);
+
+		err = mlx5e_rep_neigh_entry_insert(priv, nhe);
+		if (err)
+			goto out_free;
+	}
+	list_add(&e->encap_list, &nhe->encap_list);
+	return 0;
+
+out_free:
+	kfree(nhe);
+	return err;
+}
+
+void mlx5e_rep_neigh_entry_destroy(struct mlx5e_priv *priv,
+				   struct mlx5_encap_entry *e)
+{
+	struct mlx5_neigh_hash_entry *nhe;
+
+	list_del(&e->encap_list);
+	nhe = mlx5e_rep_neigh_entry_lookup(priv, &e->m_neigh);
+
+	/* The neigh hash entry must be removed from the hash table regardless
+	 * of the reference count value, so it won't be found by the next
+	 * neigh notification call. The neigh hash entry reference count is
+	 * incremented only during creation and neigh notification calls and
+	 * protects from freeing the nhe struct.
+	 */
+	if (list_empty(&nhe->encap_list)) {
+		mlx5e_rep_neigh_entry_remove(netdev_priv(e->out_dev), nhe);
+		mlx5e_rep_neigh_entry_release(nhe);
+	}
 }
 
 int mlx5e_nic_rep_load(struct mlx5_eswitch *esw, struct mlx5_eswitch_rep *rep)

@@ -143,6 +143,7 @@ static void mlx5e_tc_del_nic_flow(struct mlx5e_priv *priv,
 	struct mlx5_fc *counter = NULL;
 
 	if (flow->flags & MLX5E_TC_FLOW_OFFLOADED) {
+		flow->flags &= ~MLX5E_TC_FLOW_OFFLOADED;
 		counter = mlx5_flow_rule_counter(flow->rule);
 		mlx5_del_flow_rules(flow->rule);
 		mlx5_fc_destroy(priv->mdev, counter);
@@ -164,6 +165,57 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	return mlx5_eswitch_add_offloaded_rule(esw, spec, attr);
 }
 
+void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
+			      struct mlx5_encap_entry *e)
+{
+	struct mlx5e_tc_flow *flow;
+	int err;
+
+	err = mlx5_encap_alloc(priv->mdev, e->tunnel_type,
+			       e->encap_size, e->encap_header,
+			       &e->encap_id);
+	if (err) {
+		mlx5_core_warn(priv->mdev, "Failed to offload cached encapsulation header, %d\n",
+			       err);
+		return;
+	}
+
+	e->flags |= MLX5_ENCAP_ENTRY_VALID;
+	list_for_each_entry(flow ,&e->flows, encap) {
+		flow->rule = mlx5e_tc_add_fdb_flow(priv,
+						   flow->attr->encap_spec,
+						   flow->attr);
+		if (IS_ERR(flow->rule)) {
+			err = PTR_ERR(flow->rule);
+			mlx5_core_warn(priv->mdev, "Failed to update cached encapsulation flow, %d\n",
+				       err);
+			continue;
+		}
+		flow->flags |= MLX5E_TC_FLOW_OFFLOADED;
+	}
+}
+
+void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
+			      struct mlx5_encap_entry *e)
+{
+	struct mlx5e_tc_flow *flow;
+	struct mlx5_fc *counter;
+
+	list_for_each_entry(flow ,&e->flows, encap) {
+		if (flow->flags & MLX5E_TC_FLOW_OFFLOADED) {
+			flow->flags &= ~MLX5E_TC_FLOW_OFFLOADED;
+			counter = mlx5_flow_rule_counter(flow->rule);
+			mlx5_del_flow_rules(flow->rule);
+			mlx5_fc_destroy(priv->mdev, counter);
+		}
+	}
+
+	if (e->flags & MLX5_ENCAP_ENTRY_VALID) {
+		e->flags &= ~MLX5_ENCAP_ENTRY_VALID;
+		mlx5_encap_dealloc(priv->mdev, e->encap_id);
+	}
+}
+
 static void mlx5e_detach_encap(struct mlx5e_priv *priv,
 			       struct mlx5_esw_flow_attr *attr);
 
@@ -173,12 +225,15 @@ static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 
 	if (flow->flags & MLX5E_TC_FLOW_OFFLOADED) {
+		flow->flags &= ~MLX5E_TC_FLOW_OFFLOADED;
 		mlx5_eswitch_del_offloaded_rule(esw, flow->rule, flow->attr);
 		mlx5_eswitch_del_vlan_action(esw, flow->attr);
 	}
 
-	if (flow->attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP)
+	if (flow->attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP) {
 		mlx5e_detach_encap(priv, flow->attr);
+		kvfree(flow->attr->encap_spec);
+	}
 }
 
 static void mlx5e_detach_encap(struct mlx5e_priv *priv,
@@ -191,11 +246,13 @@ static void mlx5e_detach_encap(struct mlx5e_priv *priv,
 		struct mlx5_encap_entry *e;
 
 		e = list_entry(next, struct mlx5_encap_entry, flows);
-		if (e->n) {
+		mlx5e_rep_neigh_entry_destroy(netdev_priv(e->out_dev), e);
+
+		if (e->flags & MLX5_ENCAP_ENTRY_VALID)
 			mlx5_encap_dealloc(priv->mdev, e->encap_id);
-			neigh_release(e->n);
-		}
+
 		hlist_del_rcu(&e->encap_hlist);
+		kfree(e->encap_header);
 		kfree(e);
 	}
 }
@@ -892,19 +949,26 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 	if (err)
 		goto out;
 
+	/* used by mlx5e_detach_encap to lookup a neigh hash table
+	 * entry in the neigh hash table when a user deletes a rule
+	 */
+	e->m_neigh.neigh_dev = n->dev;
+	memcpy(&e->m_neigh.dst_ip, n->primary_key, n->tbl->key_len);
+	e->out_dev = out_dev;
+
+	/* It's importent to add the neigh to the hash table before checking
+	 * the neigh validity state. So if we'll get a notification, in case the
+	 * neigh changes it's validity state, we would find the relevant neigh
+	 * in the hash.
+	 */
+	err = mlx5e_rep_neigh_entry_create(netdev_priv(out_dev), e);
+	if (err)
+		goto out;
+
 	read_lock_bh(&n->lock);
 	nud_state = n->nud_state;
 	ether_addr_copy(e->h_dest, n->ha);
 	read_unlock_bh(&n->lock);
-
-	if (!(nud_state & NUD_VALID)) {
-		pr_warn("%s: can't offload, neighbour to %pI4 invalid\n", __func__, &fl4.daddr);
-		err = -EOPNOTSUPP;
-		goto out;
-	}
-
-	e->n = n;
-	e->out_dev = out_dev;
 
 	switch (e->tunnel_type) {
 	case MLX5_HEADER_TYPE_VXLAN:
@@ -916,15 +980,32 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 		break;
 	default:
 		err = -EOPNOTSUPP;
-		goto out;
+		goto destroy_neigh_entry;
+	}
+	e->encap_size = encap_size;
+	e->encap_header = encap_header;
+
+	if (!(nud_state & NUD_VALID)) {
+		neigh_event_send(n, NULL);
+		neigh_release(n);
+		return -EAGAIN;
 	}
 
 	err = mlx5_encap_alloc(priv->mdev, e->tunnel_type,
 			       encap_size, encap_header, &e->encap_id);
+	if (err)
+		goto destroy_neigh_entry;
+
+	e->flags |= MLX5_ENCAP_ENTRY_VALID;
+	neigh_release(n);
+	return err;
+
+destroy_neigh_entry:
+	mlx5e_rep_neigh_entry_destroy(netdev_priv(e->out_dev), e);
 out:
-	if (err && n)
-		neigh_release(n);
 	kfree(encap_header);
+	if (n)
+		neigh_release(n);
 	return err;
 }
 
@@ -933,6 +1014,7 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 					  struct mlx5_encap_entry *e)
 
 {
+	int ipv6_encap_size = VXLAN_HLEN + sizeof(struct ipv6hdr) + ETH_HLEN;
 	int max_encap_size = MLX5_CAP_ESW(priv->mdev, max_encap_header_size);
 	struct ip_tunnel_key *tun_key = &e->tun_info.key;
 	int encap_size, err, ttl = 0;
@@ -941,6 +1023,9 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 	struct flowi6 fl6 = {};
 	char *encap_header;
 	u8 nud_state;
+
+	if (max_encap_size < ipv6_encap_size)
+		return -EOPNOTSUPP;
 
 	encap_header = kzalloc(max_encap_size, GFP_KERNEL);
 	if (!encap_header)
@@ -965,19 +1050,26 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 	if (err)
 		goto out;
 
+	/* used by mlx5e_detach_encap to lookup a neigh hash table
+	 * entry in the neigh hash table when a user deletes a rule
+	 */
+	e->m_neigh.neigh_dev = n->dev;
+	memcpy(&e->m_neigh.dst_ip, n->primary_key, n->tbl->key_len);
+	e->out_dev = out_dev;
+
+	/* It's importent to add the neigh to the hash table before checking
+	 * the neigh validity state. So if we'll get a notification, in case the
+	 * neigh changes it's validity state, we would find the relevant neigh
+	 * in the hash.
+	 */
+	err = mlx5e_rep_neigh_entry_create(netdev_priv(out_dev), e);
+	if (err)
+		goto out;
+
 	read_lock_bh(&n->lock);
 	nud_state = n->nud_state;
 	ether_addr_copy(e->h_dest, n->ha);
 	read_unlock_bh(&n->lock);
-
-	if (!(nud_state & NUD_VALID)) {
-		pr_warn("%s: can't offload, neighbour to %pI6 invalid\n", __func__, &fl6.daddr);
-		err = -EOPNOTSUPP;
-		goto out;
-	}
-
-	e->n = n;
-	e->out_dev = out_dev;
 
 	switch (e->tunnel_type) {
 	case MLX5_HEADER_TYPE_VXLAN:
@@ -989,15 +1081,33 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 		break;
 	default:
 		err = -EOPNOTSUPP;
-		goto out;
+		goto destroy_neigh_entry;
+	}
+
+	e->encap_size = encap_size;
+	e->encap_header = encap_header;
+
+	if (!(nud_state & NUD_VALID)) {
+		neigh_event_send(n, NULL);
+		neigh_release(n);
+		return -EAGAIN;
 	}
 
 	err = mlx5_encap_alloc(priv->mdev, e->tunnel_type,
 			       encap_size, encap_header, &e->encap_id);
+	if (err)
+		goto destroy_neigh_entry;
+
+	e->flags |= MLX5_ENCAP_ENTRY_VALID;
+	neigh_release(n);
+	return err;
+
+destroy_neigh_entry:
+	mlx5e_rep_neigh_entry_destroy(netdev_priv(e->out_dev), e);
 out:
-	if (err && n)
-		neigh_release(n);
 	kfree(encap_header);
+	if (n)
+		neigh_release(n);
 	return err;
 }
 
@@ -1049,7 +1159,10 @@ vxlan_encap_offload_err:
 
 	if (found) {
 		attr->encap = e;
-		return 0;
+		if (e->flags & MLX5_ENCAP_ENTRY_VALID)
+			return 0;
+		else
+			return -EAGAIN;
 	}
 
 	e = kzalloc(sizeof(*e), GFP_KERNEL);
@@ -1065,7 +1178,7 @@ vxlan_encap_offload_err:
 	else if (family == AF_INET6)
 		err = mlx5e_create_encap_header_ipv6(priv, mirred_dev, e);
 
-	if (err)
+	if (err && err != -EAGAIN)
 		goto out_err;
 
 	attr->encap = e;
@@ -1079,14 +1192,15 @@ out_err:
 }
 
 static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
-				struct mlx5e_tc_flow *flow)
+				struct mlx5e_tc_flow *flow,
+				struct mlx5_flow_spec *spec)
 {
 	struct mlx5_esw_flow_attr *attr = flow->attr;
 	struct ip_tunnel_info *info = NULL;
 	const struct tc_action *a;
 	LIST_HEAD(actions);
 	bool encap = false;
-	int err;
+	int err = 0;
 
 	if (tc_no_actions(exts))
 		return -EINVAL;
@@ -1119,7 +1233,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 			} else if (encap) {
 				err = mlx5e_attach_encap(priv, info,
 							 out_dev, attr);
-				if (err)
+				if (err && err != -EAGAIN)
 					return err;
 				list_add(&flow->attr->encap_list, &attr->encap->flows);
 				attr->action |= MLX5_FLOW_CONTEXT_ACTION_ENCAP |
@@ -1127,6 +1241,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 					MLX5_FLOW_CONTEXT_ACTION_COUNT;
 				out_priv = netdev_priv(attr->encap->out_dev);
 				attr->out_rep = out_priv->ppriv;
+				attr->encap_spec = spec;
 			} else {
 				pr_err("devices %s %s not on same switch HW, can't offload forwarding\n",
 				       priv->netdev->name, out_dev->name);
@@ -1164,7 +1279,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 
 		return -EINVAL;
 	}
-	return 0;
+	return err;
 }
 
 int mlx5e_configure_flower(struct mlx5e_priv *priv, __be16 protocol,
@@ -1201,9 +1316,9 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv, __be16 protocol,
 
 	if (flow->flags & MLX5E_TC_FLOW_ESWITCH) {
 		flow->attr  = (struct mlx5_esw_flow_attr *)(flow + 1);
-		err = parse_tc_fdb_actions(priv, f->exts, flow);
+		err = parse_tc_fdb_actions(priv, f->exts, flow, spec);
 		if (err < 0)
-			goto err_free;
+			goto err_handle_encap_flow;
 		flow->rule = mlx5e_tc_add_fdb_flow(priv, spec, flow->attr);
 	} else {
 		err = parse_tc_nic_actions(priv, f->exts, &action, &flow_tag);
@@ -1223,15 +1338,26 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv, __be16 protocol,
 	if (err)
 		goto err_del_rule;
 
-	goto out;
+	if (!(flow->attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP))
+		kvfree(spec);
+	return err;
 
 err_del_rule:
 	mlx5e_tc_del_flow(priv, flow);
 
+err_handle_encap_flow:
+	if (err == -EAGAIN) {
+		err = rhashtable_insert_fast(&tc->ht, &flow->node,
+					     tc->ht_params);
+		if (err)
+			mlx5e_tc_del_flow(priv, flow);
+		else
+			return 0;
+	}
+
 err_free:
-	kfree(flow);
-out:
 	kvfree(spec);
+	kfree(flow);
 	return err;
 }
 
@@ -1249,7 +1375,6 @@ int mlx5e_delete_flower(struct mlx5e_priv *priv,
 	rhashtable_remove_fast(&tc->ht, &flow->node, tc->ht_params);
 
 	mlx5e_tc_del_flow(priv, flow);
-
 
 	kfree(flow);
 

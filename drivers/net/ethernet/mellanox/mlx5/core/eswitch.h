@@ -189,6 +189,9 @@ struct mlx5_neigh_update {
 	 * Used for stats query.
 	 */
 	struct list_head	neigh_list;
+	/* protect lookup/remove operations */
+	spinlock_t              encap_lock;
+	struct notifier_block   netevent_nb;
 };
 
 struct mlx5_eswitch_rep {
@@ -311,18 +314,44 @@ struct mlx5_neigh_hash_entry {
 	 * neighbour entries. Used for stats query.
 	 */
 	struct list_head neigh_list;
+
+	/* encap list sharing the same neigh */
+	struct list_head encap_list;
+
+	/* valid only when the neigh reference is taken during
+	 * neigh_update_work workqueue callback.
+	 */
+	struct neighbour *n;
+	struct work_struct neigh_update_work;
+
+	/* neigh hash entry can be deleted only when the refcount is zero.
+	 * refcount is needed to avoid neigh hash entry removal by TC, while it's
+	 * used by the neigh notifaction call.
+	 */
+	refcount_t refcnt;
+};
+
+enum {
+	/* set when the encap entry is successfully offloaded into HW */
+	MLX5_ENCAP_ENTRY_VALID     = BIT(0),
 };
 
 struct mlx5_encap_entry {
+	/* neigh hash entry list of encaps sharing the same neigh */
+	struct list_head encap_list;
+	struct mlx5_neigh m_neigh;
+	/* a node of the eswitch encap hash table which keeping all the encap entries */
 	struct hlist_node encap_hlist;
 	struct list_head flows;
 	u32 encap_id;
-	struct neighbour *n;
 	struct ip_tunnel_info tun_info;
 	unsigned char h_dest[ETH_ALEN];	/* destination eth addr	*/
 
 	struct net_device *out_dev;
 	int tunnel_type;
+	u8 flags;
+	char *encap_header;
+	int encap_size;
 };
 
 struct mlx5_esw_flow_attr {
@@ -334,6 +363,7 @@ struct mlx5_esw_flow_attr {
 	bool	vlan_handled;
 	struct list_head	encap_list; /* flows sharing the same encap */
 	struct mlx5_encap_entry *encap;
+	struct mlx5_flow_spec *encap_spec;
 };
 
 int mlx5_eswitch_sqs2vport_start(struct mlx5_eswitch *esw,

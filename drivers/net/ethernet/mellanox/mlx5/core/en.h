@@ -904,6 +904,14 @@ int mlx5e_attr_get(struct net_device *dev, struct switchdev_attr *attr);
 void mlx5e_handle_rx_cqe_rep(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe);
 void mlx5e_update_hw_rep_counters(struct mlx5e_priv *priv);
 
+struct mlx5_encap_entry;
+struct mlx5_neigh_hash_entry;
+int mlx5e_rep_neigh_entry_create(struct mlx5e_priv *priv,
+				 struct mlx5_encap_entry *e);
+void mlx5e_rep_neigh_entry_destroy(struct mlx5e_priv *priv,
+				   struct mlx5_encap_entry *e);
+void mlx5e_rep_neigh_update(struct work_struct *work);
+
 int mlx5e_create_direct_rqts(struct mlx5e_priv *priv);
 void mlx5e_destroy_rqt(struct mlx5e_priv *priv, struct mlx5e_rqt *rqt);
 int mlx5e_create_direct_tirs(struct mlx5e_priv *priv);
