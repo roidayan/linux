@@ -259,12 +259,12 @@ static void mlx5e_rep_neigh_stats_work(struct work_struct *work)
 
 static void mlx5e_rep_neigh_entry_hold(struct mlx5_neigh_hash_entry *nhe)
 {
-	refcount_inc(&nhe->refcnt);
+	atomic_inc(&nhe->refcnt);
 }
 
 static void mlx5e_rep_neigh_entry_release(struct mlx5_neigh_hash_entry *nhe)
 {
-	if (refcount_dec_and_test(&nhe->refcnt))
+	if (atomic_dec_and_test(&nhe->refcnt))
 		kfree(nhe);
 }
 
@@ -524,7 +524,7 @@ int mlx5e_rep_neigh_entry_create(struct mlx5e_priv *priv,
 		memcpy(&nhe->m_neigh, &e->m_neigh, sizeof(e->m_neigh));
 		INIT_WORK(&nhe->neigh_update_work, mlx5e_rep_neigh_update);
 		INIT_LIST_HEAD(&nhe->encap_list);
-		refcount_set(&nhe->refcnt, 1);
+		atomic_set(&nhe->refcnt, 1);
 
 		err = mlx5e_rep_neigh_entry_insert(priv, nhe);
 		if (err)

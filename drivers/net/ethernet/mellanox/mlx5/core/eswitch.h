@@ -331,7 +331,7 @@ struct mlx5_neigh_hash_entry {
 	 * refcount is needed to avoid neigh hash entry removal by TC, while it's
 	 * used by the neigh notifaction call.
 	 */
-	refcount_t refcnt;
+	atomic_t refcnt;
 
 	/* Save the last reported time offloaded trafic pass over one of the
 	 * neigh hash entry flows. Use it to periodically update the neigh
