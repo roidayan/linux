@@ -59,6 +59,7 @@ struct mlx5e_tc_flow {
 	u64			cookie;
 	u8			flags;
 	struct mlx5_flow_handle *rule;
+	struct list_head	encap; /* flows sharing the same encap */
 	struct mlx5_esw_flow_attr *attr;
 };
 
@@ -268,7 +269,7 @@ void mlx5e_tc_update_neigh_used_value(struct mlx5_neigh_hash_entry *nhe)
 }
 
 static void mlx5e_detach_encap(struct mlx5e_priv *priv,
-			       struct mlx5_esw_flow_attr *attr);
+			       struct mlx5e_tc_flow *flow);
 
 static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
 				  struct mlx5e_tc_flow *flow)
@@ -282,17 +283,17 @@ static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
 	}
 
 	if (flow->attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP) {
-		mlx5e_detach_encap(priv, flow->attr);
+		mlx5e_detach_encap(priv, flow);
 		kvfree(flow->attr->encap_spec);
 	}
 }
 
 static void mlx5e_detach_encap(struct mlx5e_priv *priv,
-			       struct mlx5_esw_flow_attr *attr)
+			       struct mlx5e_tc_flow *flow)
 {
-	struct list_head *next = attr->encap_list.next;
+	struct list_head *next = flow->encap.next;
 
-	list_del(&attr->encap_list);
+	list_del(&flow->encap);
 	if (list_empty(next)) {
 		struct mlx5_encap_entry *e;
 
@@ -1290,7 +1291,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 							 out_dev, attr);
 				if (err && err != -EAGAIN)
 					return err;
-				list_add(&flow->attr->encap_list, &attr->encap->flows);
+				list_add(&flow->encap, &attr->encap->flows);
 				attr->action |= MLX5_FLOW_CONTEXT_ACTION_ENCAP |
 					MLX5_FLOW_CONTEXT_ACTION_FWD_DEST |
 					MLX5_FLOW_CONTEXT_ACTION_COUNT;
