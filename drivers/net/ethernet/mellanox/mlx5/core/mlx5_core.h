@@ -175,6 +175,12 @@ int mlx5_encap_alloc(struct mlx5_core_dev *dev,
 		     void *encap_header,
 		     u32 *encap_id);
 void mlx5_encap_dealloc(struct mlx5_core_dev *dev, u32 encap_id);
+void mlx5_core_reserved_gids_init(struct mlx5_core_dev *dev);
+void mlx5_core_reserved_gids_cleanup(struct mlx5_core_dev *dev);
+int mlx5_core_reserve_gids(struct mlx5_core_dev *dev, unsigned int count);
+void mlx5_core_unreserve_gids(struct mlx5_core_dev *dev, unsigned int count);
+int mlx5_core_reserved_gid_alloc(struct mlx5_core_dev *dev, int *gid_index);
+void mlx5_core_reserved_gid_free(struct mlx5_core_dev *dev, int gid_index);
 
 int mlx5_modify_header_alloc(struct mlx5_core_dev *dev,
 			     u8 namespace, u8 num_actions,

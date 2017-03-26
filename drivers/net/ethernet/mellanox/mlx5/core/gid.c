@@ -32,7 +32,91 @@
 
 #include <linux/mlx5/driver.h>
 #include <linux/etherdevice.h>
+#include <linux/idr.h>
 #include "mlx5_core.h"
+
+void mlx5_core_reserved_gids_init(struct mlx5_core_dev *dev)
+{
+	unsigned int tblsz = MLX5_CAP_ROCE(dev, roce_address_table_size);
+
+	ida_init(&dev->mlx5_roce.reserved_gids.ida);
+	dev->mlx5_roce.reserved_gids.start = tblsz;
+	dev->mlx5_roce.reserved_gids.count = 0;
+}
+
+void mlx5_core_reserved_gids_cleanup(struct mlx5_core_dev *dev)
+{
+	WARN_ON(!ida_is_empty(&dev->mlx5_roce.reserved_gids.ida));
+	dev->mlx5_roce.reserved_gids.start = 0;
+	dev->mlx5_roce.reserved_gids.count = 0;
+	ida_destroy(&dev->mlx5_roce.reserved_gids.ida);
+}
+
+int mlx5_core_reserve_gids(struct mlx5_core_dev *dev, unsigned int count)
+{
+	if (test_bit(MLX5_INTERFACE_STATE_UP, &dev->intf_state)) {
+		mlx5_core_err(dev, "Cannot reserve GIDs when interfaces are up\n");
+		return -EPERM;
+	}
+	if (dev->mlx5_roce.reserved_gids.start < count) {
+		mlx5_core_warn(dev, "GID table exhausted attempting to reserve %d more GIDs\n",
+			       count);
+		return -ENOMEM;
+	}
+	if (dev->mlx5_roce.reserved_gids.count + count > MLX5_MAX_RESERVED_GIDS) {
+		mlx5_core_warn(dev, "Unable to reserve %d more GIDs\n", count);
+		return -ENOMEM;
+	}
+
+	dev->mlx5_roce.reserved_gids.start -= count;
+	dev->mlx5_roce.reserved_gids.count += count;
+	mlx5_core_dbg(dev, "Reserved %u GIDs starting at %u\n",
+		      dev->mlx5_roce.reserved_gids.count,
+		      dev->mlx5_roce.reserved_gids.start);
+	return 0;
+}
+
+void mlx5_core_unreserve_gids(struct mlx5_core_dev *dev, unsigned int count)
+{
+	WARN(test_bit(MLX5_INTERFACE_STATE_UP, &dev->intf_state), "Unreserving GIDs when interfaces are up");
+	WARN(count > dev->mlx5_roce.reserved_gids.count, "Unreserving %u GIDs when only %u reserved",
+	     count, dev->mlx5_roce.reserved_gids.count);
+
+	dev->mlx5_roce.reserved_gids.start += count;
+	dev->mlx5_roce.reserved_gids.count -= count;
+	mlx5_core_dbg(dev, "%u GIDs starting at %u left reserved\n",
+		      dev->mlx5_roce.reserved_gids.count,
+		      dev->mlx5_roce.reserved_gids.start);
+}
+
+int mlx5_core_reserved_gid_alloc(struct mlx5_core_dev *dev, int *gid_index)
+{
+	int end = dev->mlx5_roce.reserved_gids.start +
+		  dev->mlx5_roce.reserved_gids.count;
+	int index = 0;
+
+	index = ida_simple_get(&dev->mlx5_roce.reserved_gids.ida,
+			       dev->mlx5_roce.reserved_gids.start, end,
+			       GFP_KERNEL);
+	if (index < 0)
+		return index;
+
+	mlx5_core_dbg(dev, "Allodating reserved GID %u\n", index);
+	*gid_index = index;
+	return 0;
+}
+
+void mlx5_core_reserved_gid_free(struct mlx5_core_dev *dev, int gid_index)
+{
+	mlx5_core_dbg(dev, "Freeing reserved GID %u\n", gid_index);
+	ida_simple_remove(&dev->mlx5_roce.reserved_gids.ida, gid_index);
+}
+
+unsigned int mlx5_core_reserved_gids_count(struct mlx5_core_dev *dev)
+{
+	return dev->mlx5_roce.reserved_gids.count;
+}
+EXPORT_SYMBOL_GPL(mlx5_core_reserved_gids_count);
 
 int mlx5_core_roce_gid_set(struct mlx5_core_dev *dev, unsigned int index,
 			   u8 roce_version, u8 roce_l3_type, const u8 *gid,
