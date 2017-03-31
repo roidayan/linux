@@ -42,8 +42,9 @@ static void mlx5e_get_drvinfo(struct net_device *dev,
 	strlcpy(drvinfo->version, DRIVER_VERSION " (" DRIVER_RELDATE ")",
 		sizeof(drvinfo->version));
 	snprintf(drvinfo->fw_version, sizeof(drvinfo->fw_version),
-		 "%d.%d.%d",
-		 fw_rev_maj(mdev), fw_rev_min(mdev), fw_rev_sub(mdev));
+		 "%d.%d.%04d (%.16s)",
+		 fw_rev_maj(mdev), fw_rev_min(mdev), fw_rev_sub(mdev),
+		 mdev->board_id);
 	strlcpy(drvinfo->bus_info, pci_name(mdev->pdev),
 		sizeof(drvinfo->bus_info));
 }
@@ -1064,8 +1065,12 @@ static int mlx5e_set_rxfh(struct net_device *dev, const u32 *indir,
 			u32 rqtn = priv->indir_rqt.rqtn;
 			struct mlx5e_redirect_rqt_param rrp = {
 				.is_rss = true,
-				.rss.hfunc = priv->channels.params.rss_hfunc,
-				.rss.channels  = &priv->channels
+				{
+					.rss = {
+						.hfunc = priv->channels.params.rss_hfunc,
+						.channels  = &priv->channels,
+					},
+				},
 			};
 
 			mlx5e_redirect_rqt(priv, rqtn, MLX5E_INDIR_RQT_SIZE, rrp);
