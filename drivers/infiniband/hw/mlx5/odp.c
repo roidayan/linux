@@ -47,6 +47,7 @@
 #define MLX5_IMR_MTT_ENTRIES BIT_ULL(MLX5_IMR_MTT_BITS)
 #define MLX5_IMR_MTT_SIZE BIT_ULL(MLX5_IMR_MTT_SHIFT)
 #define MLX5_IMR_MTT_MASK (~(MLX5_IMR_MTT_SIZE - 1))
+#define MLX5_IMR_MTT_CACHE_ENTRY (MLX5_IMR_MTT_BITS - 2)
 
 #define MLX5_KSM_PAGE_SHIFT MLX5_IMR_MTT_SHIFT
 
@@ -314,6 +315,7 @@ static struct mlx5_ib_mr *implicit_mr_alloc(struct ib_pd *pd,
 
 	mr = mlx5_mr_cache_alloc(dev, ksm ? MLX5_IMR_KSM_CACHE_ENTRY :
 					    MLX5_IMR_MTT_CACHE_ENTRY);
+	BUILD_BUG_ON(MLX5_IMR_MTT_CACHE_ENTRY > MAX_UMR_CACHE_ENTRY);
 
 	if (IS_ERR(mr))
 		return mr;
@@ -1183,15 +1185,6 @@ void mlx5_odp_init_mr_cache_entry(struct mlx5_cache_ent *ent)
 		return;
 
 	switch (ent->order - 2) {
-	case MLX5_IMR_MTT_CACHE_ENTRY:
-		ent->page = PAGE_SHIFT;
-		ent->xlt = MLX5_IMR_MTT_ENTRIES *
-			   sizeof(struct mlx5_mtt) /
-			   MLX5_IB_UMR_OCTOWORD;
-		ent->access_mode = MLX5_MKC_ACCESS_MODE_MTT;
-		ent->limit = 0;
-		break;
-
 	case MLX5_IMR_KSM_CACHE_ENTRY:
 		ent->page = MLX5_KSM_PAGE_SHIFT;
 		ent->xlt = mlx5_imr_ksm_entries *
