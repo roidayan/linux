@@ -1336,6 +1336,7 @@ enum ib_access_flags {
 	IB_ACCESS_MW_BIND	= (1<<4),
 	IB_ZERO_BASED		= (1<<5),
 	IB_ACCESS_ON_DEMAND     = (1<<6),
+	IB_ACCESS_HUGETLB	= (1<<7),
 };
 
 /*
@@ -1357,6 +1358,17 @@ struct ib_fmr_attr {
 
 struct ib_umem;
 
+enum rdma_remove_reason {
+	/* Userspace requested uobject deletion. Call could fail */
+	RDMA_REMOVE_DESTROY,
+	/* Context deletion. This call should delete the actual object itself */
+	RDMA_REMOVE_CLOSE,
+	/* Driver is being hot-unplugged. This call should delete the actual object itself */
+	RDMA_REMOVE_DRIVER_REMOVE,
+	/* Context is being cleaned-up, but commit was just completed */
+	RDMA_REMOVE_DURING_CLEANUP,
+};
+
 struct ib_rdmacg_object {
 #ifdef CONFIG_CGROUP_RDMA
 	struct rdma_cgroup	*cg;		/* owner rdma cgroup */
@@ -1365,18 +1377,15 @@ struct ib_rdmacg_object {
 
 struct ib_ucontext {
 	struct ib_device       *device;
-	struct list_head	pd_list;
-	struct list_head	mr_list;
-	struct list_head	mw_list;
-	struct list_head	cq_list;
-	struct list_head	qp_list;
-	struct list_head	srq_list;
-	struct list_head	ah_list;
-	struct list_head	xrcd_list;
-	struct list_head	rule_list;
-	struct list_head	wq_list;
-	struct list_head	rwq_ind_tbl_list;
+	struct ib_uverbs_file  *ufile;
 	int			closing;
+
+	/* locking the uobjects_list */
+	struct mutex		uobjects_lock;
+	struct list_head	uobjects;
+	/* protects cleanup process from other actions */
+	struct rw_semaphore	cleanup_rwsem;
+	enum rdma_remove_reason cleanup_reason;
 
 	struct pid             *tgid;
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
@@ -1407,9 +1416,16 @@ struct ib_uobject {
 	struct ib_rdmacg_object	cg_obj;		/* rdmacg object */
 	int			id;		/* index into kernel idr */
 	struct kref		ref;
-	struct rw_semaphore	mutex;		/* protects .live */
+	atomic_t		usecnt;		/* protects exclusive access */
 	struct rcu_head		rcu;		/* kfree_rcu() overhead */
-	int			live;
+
+	const struct uverbs_obj_type *type;
+};
+
+struct ib_uobject_file {
+	struct ib_uobject	uobj;
+	/* ufile contains the lock between context release and file close */
+	struct ib_uverbs_file	*ufile;
 };
 
 struct ib_udata {
@@ -1662,6 +1678,7 @@ enum ib_flow_spec_type {
 	IB_FLOW_SPEC_INNER		= 0x100,
 	/* Actions */
 	IB_FLOW_SPEC_ACTION_TAG         = 0x1000,
+	IB_FLOW_SPEC_ACTION_DROP        = 0x1001,
 };
 #define IB_FLOW_SPEC_LAYER_MASK	0xF0
 #define IB_FLOW_SPEC_SUPPORT_LAYERS 8
@@ -1790,6 +1807,11 @@ struct ib_flow_spec_action_tag {
 	u32                           tag_id;
 };
 
+struct ib_flow_spec_action_drop {
+	enum ib_flow_spec_type	      type;
+	u16			      size;
+};
+
 union ib_flow_spec {
 	struct {
 		u32			type;
@@ -1802,6 +1824,7 @@ union ib_flow_spec {
 	struct ib_flow_spec_ipv6        ipv6;
 	struct ib_flow_spec_tunnel      tunnel;
 	struct ib_flow_spec_action_tag  flow_tag;
+	struct ib_flow_spec_action_drop drop;
 };
 
 struct ib_flow_attr {
@@ -1863,6 +1886,9 @@ struct ib_port_immutable {
 };
 
 struct ib_device {
+	/* Do not access @dma_device directly from ULP nor from HW drivers. */
+	struct device                *dma_device;
+
 	char                          name[IB_DEVICE_NAME_MAX];
 
 	struct list_head              event_handler_list;
@@ -3007,7 +3033,7 @@ static inline int ib_req_ncomp_notif(struct ib_cq *cq, int wc_cnt)
  */
 static inline int ib_dma_mapping_error(struct ib_device *dev, u64 dma_addr)
 {
-	return dma_mapping_error(&dev->dev, dma_addr);
+	return dma_mapping_error(dev->dma_device, dma_addr);
 }
 
 /**
@@ -3021,7 +3047,7 @@ static inline u64 ib_dma_map_single(struct ib_device *dev,
 				    void *cpu_addr, size_t size,
 				    enum dma_data_direction direction)
 {
-	return dma_map_single(&dev->dev, cpu_addr, size, direction);
+	return dma_map_single(dev->dma_device, cpu_addr, size, direction);
 }
 
 /**
@@ -3035,7 +3061,7 @@ static inline void ib_dma_unmap_single(struct ib_device *dev,
 				       u64 addr, size_t size,
 				       enum dma_data_direction direction)
 {
-	dma_unmap_single(&dev->dev, addr, size, direction);
+	dma_unmap_single(dev->dma_device, addr, size, direction);
 }
 
 /**
@@ -3052,7 +3078,7 @@ static inline u64 ib_dma_map_page(struct ib_device *dev,
 				  size_t size,
 					 enum dma_data_direction direction)
 {
-	return dma_map_page(&dev->dev, page, offset, size, direction);
+	return dma_map_page(dev->dma_device, page, offset, size, direction);
 }
 
 /**
@@ -3066,7 +3092,7 @@ static inline void ib_dma_unmap_page(struct ib_device *dev,
 				     u64 addr, size_t size,
 				     enum dma_data_direction direction)
 {
-	dma_unmap_page(&dev->dev, addr, size, direction);
+	dma_unmap_page(dev->dma_device, addr, size, direction);
 }
 
 /**
@@ -3080,7 +3106,7 @@ static inline int ib_dma_map_sg(struct ib_device *dev,
 				struct scatterlist *sg, int nents,
 				enum dma_data_direction direction)
 {
-	return dma_map_sg(&dev->dev, sg, nents, direction);
+	return dma_map_sg(dev->dma_device, sg, nents, direction);
 }
 
 /**
@@ -3094,7 +3120,7 @@ static inline void ib_dma_unmap_sg(struct ib_device *dev,
 				   struct scatterlist *sg, int nents,
 				   enum dma_data_direction direction)
 {
-	dma_unmap_sg(&dev->dev, sg, nents, direction);
+	dma_unmap_sg(dev->dma_device, sg, nents, direction);
 }
 
 static inline int ib_dma_map_sg_attrs(struct ib_device *dev,
@@ -3102,7 +3128,8 @@ static inline int ib_dma_map_sg_attrs(struct ib_device *dev,
 				      enum dma_data_direction direction,
 				      unsigned long dma_attrs)
 {
-	return dma_map_sg_attrs(&dev->dev, sg, nents, direction, dma_attrs);
+	return dma_map_sg_attrs(dev->dma_device, sg, nents, direction,
+				dma_attrs);
 }
 
 static inline void ib_dma_unmap_sg_attrs(struct ib_device *dev,
@@ -3110,7 +3137,7 @@ static inline void ib_dma_unmap_sg_attrs(struct ib_device *dev,
 					 enum dma_data_direction direction,
 					 unsigned long dma_attrs)
 {
-	dma_unmap_sg_attrs(&dev->dev, sg, nents, direction, dma_attrs);
+	dma_unmap_sg_attrs(dev->dma_device, sg, nents, direction, dma_attrs);
 }
 /**
  * ib_sg_dma_address - Return the DMA address from a scatter/gather entry
@@ -3152,7 +3179,7 @@ static inline void ib_dma_sync_single_for_cpu(struct ib_device *dev,
 					      size_t size,
 					      enum dma_data_direction dir)
 {
-	dma_sync_single_for_cpu(&dev->dev, addr, size, dir);
+	dma_sync_single_for_cpu(dev->dma_device, addr, size, dir);
 }
 
 /**
@@ -3167,7 +3194,7 @@ static inline void ib_dma_sync_single_for_device(struct ib_device *dev,
 						 size_t size,
 						 enum dma_data_direction dir)
 {
-	dma_sync_single_for_device(&dev->dev, addr, size, dir);
+	dma_sync_single_for_device(dev->dma_device, addr, size, dir);
 }
 
 /**
@@ -3182,7 +3209,7 @@ static inline void *ib_dma_alloc_coherent(struct ib_device *dev,
 					   dma_addr_t *dma_handle,
 					   gfp_t flag)
 {
-	return dma_alloc_coherent(&dev->dev, size, dma_handle, flag);
+	return dma_alloc_coherent(dev->dma_device, size, dma_handle, flag);
 }
 
 /**
@@ -3196,7 +3223,7 @@ static inline void ib_dma_free_coherent(struct ib_device *dev,
 					size_t size, void *cpu_addr,
 					dma_addr_t dma_handle)
 {
-	dma_free_coherent(&dev->dev, size, cpu_addr, dma_handle);
+	dma_free_coherent(dev->dma_device, size, cpu_addr, dma_handle);
 }
 
 /**
