@@ -315,7 +315,7 @@ static struct mlx5_ib_mr *implicit_mr_alloc(struct ib_pd *pd,
 
 	mr = mlx5_mr_cache_alloc(dev, ksm ? MLX5_IMR_KSM_CACHE_ENTRY :
 					    MLX5_IMR_MTT_CACHE_ENTRY);
-	BUILD_BUG_ON(MLX5_IMR_MTT_CACHE_ENTRY > MAX_UMR_CACHE_ENTRY);
+	BUILD_BUG_ON(MLX5_IMR_MTT_CACHE_ENTRY > MR_CACHE_LAST_MTT_ENTRY);
 
 	if (IS_ERR(mr))
 		return mr;
