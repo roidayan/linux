@@ -3910,6 +3910,14 @@ int ib_uverbs_ex_query_device(struct ib_uverbs_file *file,
 	resp.tm_caps.max_sge		= attr.tm_caps.max_sge;
 	resp.tm_caps.flags		= attr.tm_caps.flags;
 	resp.response_length += sizeof(resp.tm_caps);
+
+	if (ucore->outlen < resp.response_length +
+		sizeof(resp.max_counter_sets) + sizeof(resp.reserved))
+		goto end;
+
+	resp.max_counter_sets = attr.max_counter_sets;
+	resp.response_length += sizeof(resp.max_counter_sets) +
+			 sizeof(resp.reserved);
 end:
 	err = ib_copy_to_udata(ucore, &resp, resp.response_length);
 	return err;
