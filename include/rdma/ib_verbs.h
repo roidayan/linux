@@ -361,6 +361,7 @@ struct ib_device_attr {
 	u32			max_wq_type_rq;
 	u32			raw_packet_caps; /* Use ib_raw_packet_caps enum */
 	struct ib_tm_caps	tm_caps;
+	u16			max_counter_sets;
 };
 
 enum ib_mtu {
