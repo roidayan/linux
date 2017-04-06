@@ -618,6 +618,39 @@ struct mlx5_roce {
 	atomic_t		next_port;
 };
 
+struct mlx5_ib_dbg_param {
+	int			offset;
+	struct mlx5_ib_dev	*dev;
+	struct dentry		*dentry;
+};
+
+enum mlx5_ib_dbg_cc_types {
+	MLX5_IB_DBG_CC_RP_CLAMP_TGT_RATE,
+	MLX5_IB_DBG_CC_RP_CLAMP_TGT_RATE_ATI,
+	MLX5_IB_DBG_CC_RP_TIME_RESET,
+	MLX5_IB_DBG_CC_RP_BYTE_RESET,
+	MLX5_IB_DBG_CC_RP_THRESHOLD,
+	MLX5_IB_DBG_CC_RP_AI_RATE,
+	MLX5_IB_DBG_CC_RP_HAI_RATE,
+	MLX5_IB_DBG_CC_RP_MIN_DEC_FAC,
+	MLX5_IB_DBG_CC_RP_MIN_RATE,
+	MLX5_IB_DBG_CC_RP_RATE_TO_SET_ON_FIRST_CNP,
+	MLX5_IB_DBG_CC_RP_DCE_TCP_G,
+	MLX5_IB_DBG_CC_RP_DCE_TCP_RTT,
+	MLX5_IB_DBG_CC_RP_RATE_REDUCE_MONITOR_PERIOD,
+	MLX5_IB_DBG_CC_RP_INITIAL_ALPHA_VALUE,
+	MLX5_IB_DBG_CC_RP_GD,
+	MLX5_IB_DBG_CC_NP_CNP_DSCP,
+	MLX5_IB_DBG_CC_NP_CNP_PRIO_MODE,
+	MLX5_IB_DBG_CC_NP_CNP_PRIO,
+	MLX5_IB_DBG_CC_MAX,
+};
+
+struct mlx5_ib_dbg_cc_params {
+	struct dentry			*root;
+	struct mlx5_ib_dbg_param	params[MLX5_IB_DBG_CC_MAX];
+};
+
 struct mlx5_ib_dev {
 	struct ib_device		ib_dev;
 	struct mlx5_core_dev		*mdev;
@@ -659,6 +692,7 @@ struct mlx5_ib_dev {
 	/* protect the user_td */
 	struct mutex             lb_mutex;
 	u32                      user_td;
+	struct mlx5_ib_dbg_cc_params *dbg_cc_params;
 };
 
 static inline struct mlx5_ib_cq *to_mibcq(struct mlx5_core_cq *mcq)
@@ -907,6 +941,9 @@ __be16 mlx5_get_roce_udp_sport(struct mlx5_ib_dev *dev, u8 port_num,
 			       int index);
 int mlx5_get_roce_gid_type(struct mlx5_ib_dev *dev, u8 port_num,
 			   int index, enum ib_gid_type *gid_type);
+
+void mlx5_ib_cleanup_cong_debugfs(struct mlx5_ib_dev *dev);
+int mlx5_ib_init_cong_debugfs(struct mlx5_ib_dev *dev);
 
 /* GSI QP helper functions */
 struct ib_qp *mlx5_ib_gsi_create_qp(struct ib_pd *pd,
