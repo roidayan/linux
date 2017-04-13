@@ -104,6 +104,7 @@ enum {
 };
 
 enum {
+	MLX5_REG_QPTS            = 0x4002,
 	MLX5_REG_QETCR		 = 0x4005,
 	MLX5_REG_QTCT		 = 0x400a,
 	MLX5_REG_QCAM            = 0x4019,
@@ -134,6 +135,12 @@ enum {
 	MLX5_REG_MTPPS		 = 0x9053,
 	MLX5_REG_MTPPSE		 = 0x9054,
 	MLX5_REG_MCAM		 = 0x907f,
+};
+
+enum mlx5_qpts_trust_mode {
+	MLX5_QPTS_TRUST_PORT,
+	MLX5_QPTS_TRUST_PCP,
+	MLX5_QPTS_TRUST_DSCP,
 };
 
 enum mlx5_dcbx_oper_mode {
