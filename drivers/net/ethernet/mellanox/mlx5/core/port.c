@@ -604,6 +604,36 @@ int mlx5_set_port_dcbx_param(struct mlx5_core_dev *mdev, u32 *in)
 				    sizeof(out), MLX5_REG_DCBX_PARAM, 0, 1);
 }
 
+int mlx5_set_port_trust_state(struct mlx5_core_dev *mdev, u8 trust_state)
+{
+	u32 in[MLX5_ST_SZ_DW(qpts_reg)] = {};
+	u32 out[MLX5_ST_SZ_DW(qpts_reg)] = {};
+	int err;
+
+	MLX5_SET(qpts_reg, in, local_port, 1);
+	MLX5_SET(qpts_reg, in, trust_state, trust_state);
+
+	err = mlx5_core_access_reg(mdev, in, sizeof(in), out,
+				   sizeof(out), MLX5_REG_QPTS, 0, 1);
+	return err;
+}
+
+int mlx5_query_port_trust_state(struct mlx5_core_dev *mdev, u8 *trust_state)
+{
+	u32 in[MLX5_ST_SZ_DW(qpts_reg)] = {};
+	u32 out[MLX5_ST_SZ_DW(qpts_reg)] = {};
+	int err;
+
+	MLX5_SET(qpts_reg, in, local_port, 1);
+
+	err = mlx5_core_access_reg(mdev, in, sizeof(in), out,
+				   sizeof(out), MLX5_REG_QPTS, 0, 0);
+	if (!err)
+		*trust_state = MLX5_GET(qpts_reg, out, trust_state);
+
+	return err;
+}
+
 int mlx5_set_port_prio_tc(struct mlx5_core_dev *mdev, u8 *prio_tc)
 {
 	u32 in[MLX5_ST_SZ_DW(qtct_reg)] = {0};

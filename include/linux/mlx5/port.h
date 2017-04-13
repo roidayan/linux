@@ -153,6 +153,9 @@ int mlx5_query_port_pfc(struct mlx5_core_dev *dev, u8 *pfc_en_tx,
 
 int mlx5_max_tc(struct mlx5_core_dev *mdev);
 
+int mlx5_set_port_trust_state(struct mlx5_core_dev *mdev, u8 trust_state);
+int mlx5_query_port_trust_state(struct mlx5_core_dev *mdev, u8 *trust_state);
+
 int mlx5_set_port_prio_tc(struct mlx5_core_dev *mdev, u8 *prio_tc);
 int mlx5_query_port_prio_tc(struct mlx5_core_dev *mdev,
 			    u8 prio, u8 *tc);
