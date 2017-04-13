@@ -285,6 +285,54 @@ static int mlx5e_dcbnl_ieee_setpfc(struct net_device *dev,
 	return ret;
 }
 
+static int mlx5e_dcbnl_gettrust(struct net_device *dev,
+				struct dcbnl_trust *trust)
+{
+	struct mlx5e_priv *priv = netdev_priv(dev);
+	u8 mode;
+	int err;
+
+	if (!MLX5_CAP_GEN(priv->mdev, qcam_reg) ||
+	    !MLX5_CAP_QCAM_REG(priv->mdev, qpts))
+		return -EOPNOTSUPP;
+
+	err =  mlx5_query_port_trust_state(priv->mdev, &mode);
+	if (err)
+		goto out;
+
+	if (mode == MLX5_QPTS_TRUST_PORT)
+		trust->mode = DCB_TRUST_MODE_PORT;
+	else if (mode == MLX5_QPTS_TRUST_PCP)
+		trust->mode = DCB_TRUST_MODE_PCP;
+	else if (mode == MLX5_QPTS_TRUST_DSCP)
+		trust->mode = DCB_TRUST_MODE_DSCP;
+	else
+		err = -EINVAL;
+out:
+	return err;
+}
+
+static int mlx5e_dcbnl_settrust(struct net_device *dev,
+				struct dcbnl_trust *trust)
+{
+	struct mlx5e_priv *priv = netdev_priv(dev);
+	u8 mode;
+
+	if (!MLX5_CAP_GEN(priv->mdev, qcam_reg) ||
+	    !MLX5_CAP_QCAM_REG(priv->mdev, qpts))
+		return -EOPNOTSUPP;
+
+	/* Currently only pcp and dscp are supported */
+	if (trust->mode == DCB_TRUST_MODE_PCP)
+		mode = MLX5_QPTS_TRUST_PCP;
+	else if (trust->mode == DCB_TRUST_MODE_DSCP)
+		mode = MLX5_QPTS_TRUST_DSCP;
+	else
+		return -EINVAL;
+
+	return mlx5_set_port_trust_state(priv->mdev, mode);
+}
+
 static u8 mlx5e_dcbnl_getdcbx(struct net_device *dev)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
@@ -687,6 +735,8 @@ const struct dcbnl_rtnl_ops mlx5e_dcbnl_ops = {
 	.ieee_setpfc	= mlx5e_dcbnl_ieee_setpfc,
 	.getdcbx	= mlx5e_dcbnl_getdcbx,
 	.setdcbx	= mlx5e_dcbnl_setdcbx,
+	.dcbnl_gettrust = mlx5e_dcbnl_gettrust,
+	.dcbnl_settrust = mlx5e_dcbnl_settrust,
 
 /* CEE interfaces */
 	.setall         = mlx5e_dcbnl_setall,
