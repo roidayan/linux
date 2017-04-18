@@ -42,6 +42,11 @@
  * This header defines the in-kernel API for Innova FPGA client drivers.
  */
 
+enum mlx5_fpga_access_type {
+	MLX5_FPGA_ACCESS_TYPE_I2C = 0x0,
+	MLX5_FPGA_ACCESS_TYPE_DONTCARE = 0x0,
+};
+
 struct mlx5_fpga_conn;
 struct mlx5_fpga_device;
 
@@ -144,5 +149,56 @@ void mlx5_fpga_sbu_conn_destroy(struct mlx5_fpga_conn *conn);
  */
 int mlx5_fpga_sbu_conn_sendmsg(struct mlx5_fpga_conn *conn,
 			       struct mlx5_fpga_dma_buf *buf);
+
+/**
+ * mlx5_fpga_mem_read() - Read from FPGA memory address space
+ * @fdev: The FPGA device
+ * @size: Size of chunk to read, in bytes
+ * @addr: Starting address to read from, in FPGA address space
+ * @buf: Buffer to read into
+ * @access_type: Method for reading
+ *
+ * Reads from the specified address into the specified buffer.
+ * The address may point to configuration space or to DDR.
+ * Large reads may be performed internally as several non-atomic operations.
+ * This function may sleep, so should not be called from atomic contexts.
+ *
+ * Return: 0 if successful, or an error value otherwise.
+ */
+int mlx5_fpga_mem_read(struct mlx5_fpga_device *fdev, size_t size, u64 addr,
+		       void *buf, enum mlx5_fpga_access_type access_type);
+
+/**
+ * mlx5_fpga_mem_write() - Write to FPGA memory address space
+ * @fdev: The FPGA device
+ * @size: Size of chunk to write, in bytes
+ * @addr: Starting address to write to, in FPGA address space
+ * @buf: Buffer which contains data to write
+ * @access_type: Method for writing
+ *
+ * Writes the specified buffer data to FPGA memory at the specified address.
+ * The address may point to configuration space or to DDR.
+ * Large writes may be performed internally as several non-atomic operations.
+ * This function may sleep, so should not be called from atomic contexts.
+ *
+ * Return: 0 if successful, or an error value otherwise.
+ */
+int mlx5_fpga_mem_write(struct mlx5_fpga_device *fdev, size_t size, u64 addr,
+			void *buf, enum mlx5_fpga_access_type access_type);
+
+/**
+ * mlx5_fpga_get_sbu_caps() - Read the SBU capabilities
+ * @fdev: The FPGA device
+ * @size: Size of the buffer to read into
+ * @buf: Buffer to read the capabilities into
+ *
+ * Reads the FPGA SBU capabilities into the specified buffer.
+ * The format of the capabilities buffer is SBU-dependent.
+ *
+ * Return: 0 if successful
+ *         -EINVAL if the buffer is not large enough to contain SBU caps
+ *         or any other error value otherwise.
+ */
+int mlx5_fpga_get_sbu_caps(struct mlx5_fpga_device *fdev, int size, void *buf);
 
 #endif /* MLX5_FPGA_SDK_H */
