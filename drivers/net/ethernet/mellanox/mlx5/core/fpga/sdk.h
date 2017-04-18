@@ -103,4 +103,46 @@ struct mlx5_fpga_conn_attr {
 	void *cb_arg;
 };
 
+/**
+ * mlx5_fpga_sbu_conn_create() - Initialize a new FPGA SBU connection
+ * @fdev: The FPGA device
+ * @attr: Attributes of the new connection
+ *
+ * Sets up a new FPGA SBU connection with the specified attributes.
+ * The receive callback function may be called for incoming messages even
+ * before this function returns.
+ *
+ * The caller must eventually destroy the connection by calling
+ * mlx5_fpga_sbu_conn_destroy.
+ *
+ * Return: A new connection, or ERR_PTR() error value otherwise.
+ */
+struct mlx5_fpga_conn *
+mlx5_fpga_sbu_conn_create(struct mlx5_fpga_device *fdev,
+			  struct mlx5_fpga_conn_attr *attr);
+
+/**
+ * mlx5_fpga_sbu_conn_destroy() - Destroy an FPGA SBU connection
+ * @conn: The FPGA SBU connection to destroy
+ *
+ * Cleans up an FPGA SBU connection which was previously created with
+ * mlx5_fpga_sbu_conn_create.
+ */
+void mlx5_fpga_sbu_conn_destroy(struct mlx5_fpga_conn *conn);
+
+/**
+ * mlx5_fpga_sbu_conn_sendmsg() - Queue the transmission of a packet
+ * @fdev: An FPGA SBU connection
+ * @buf: The packet buffer
+ *
+ * Queues a packet for transmission over an FPGA SBU connection.
+ * The buffer should not be modified or freed until completion.
+ * Upon completion, the buf's complete() callback is invoked, indicating the
+ * success or error status of the transmission.
+ *
+ * Return: 0 if successful, or an error value otherwise.
+ */
+int mlx5_fpga_sbu_conn_sendmsg(struct mlx5_fpga_conn *conn,
+			       struct mlx5_fpga_dma_buf *buf);
+
 #endif /* MLX5_FPGA_SDK_H */
