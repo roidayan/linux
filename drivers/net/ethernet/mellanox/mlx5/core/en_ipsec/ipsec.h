@@ -73,6 +73,13 @@ static inline void mlx5e_ipsec_build_netdev(struct mlx5e_priv *priv)
 {
 }
 
+static inline bool mlx5e_ipsec_feature_check(struct sk_buff *skb,
+					     struct net_device *netdev,
+					     netdev_features_t features)
+{
+	return false;
+}
+
 #endif
 
 #endif	/* __MLX5E_IPSEC_H__ */

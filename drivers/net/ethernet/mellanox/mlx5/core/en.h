@@ -368,6 +368,9 @@ struct mlx5e_txqsq {
 	struct mlx5e_tstamp       *tstamp;
 	__be32                     mkey_be;
 	unsigned long              state;
+#ifdef CONFIG_MLX5_EN_IPSEC
+	bool                       ipsec;
+#endif
 
 	/* control path */
 	struct mlx5_wq_ctrl        wq_ctrl;

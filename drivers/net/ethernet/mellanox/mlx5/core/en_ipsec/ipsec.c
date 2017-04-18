@@ -394,10 +394,26 @@ void mlx5e_ipsec_device_cleanup(struct mlx5e_priv *priv)
 	priv->ipsec = NULL;
 }
 
+static bool mlx5e_ipsec_offload_ok(struct sk_buff *skb, struct xfrm_state *x)
+{
+	if (x->props.family == AF_INET) {
+		/* Offload with IPv4 options is not supported yet */
+		if (ip_hdr(skb)->ihl > 5)
+			return false;
+	} else {
+		/* Offload with IPv6 extension headers is not support yet */
+		if (ipv6_ext_hdr(ipv6_hdr(skb)->nexthdr))
+			return false;
+	}
+
+	return true;
+}
+
 static const struct xfrmdev_ops mlx5e_ipsec_xfrmdev_ops = {
 	.xdo_dev_state_add	= mlx5e_xfrm_add_state,
 	.xdo_dev_state_delete	= mlx5e_xfrm_del_state,
 	.xdo_dev_state_free	= mlx5e_xfrm_free_state,
+	.xdo_dev_offload_ok	= mlx5e_ipsec_offload_ok,
 };
 
 void mlx5e_ipsec_build_netdev(struct mlx5e_priv *priv)
