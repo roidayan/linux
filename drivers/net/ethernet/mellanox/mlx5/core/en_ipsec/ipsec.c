@@ -442,4 +442,15 @@ void mlx5e_ipsec_build_netdev(struct mlx5e_priv *priv)
 
 	netdev->features |= NETIF_F_HW_ESP_TX_CSUM;
 	netdev->hw_enc_features |= NETIF_F_HW_ESP_TX_CSUM;
+
+	if (!(mlx5_core_ipsec_device_caps(mdev) & MLX5_CORE_IPSEC_LSO) ||
+	    !MLX5_CAP_ETH(mdev, swp_lso)) {
+		mlx5_core_dbg(mdev, "ESP LSO not supported\n");
+		return;
+	}
+
+	mlx5_core_dbg(mdev, "ESP GSO capability turned on\n");
+	netdev->features |= NETIF_F_GSO_ESP;
+	netdev->hw_features |= NETIF_F_GSO_ESP;
+	netdev->hw_enc_features |= NETIF_F_GSO_ESP;
 }

@@ -53,6 +53,7 @@ struct mlx5e_ipsec_dev {
 	u64 stats[MLX5E_IPSEC_STATS_COUNT];
 };
 
+void mlx5e_ipsec_build_inverse_table(void);
 int mlx5e_ipsec_device_init(struct mlx5e_priv *priv);
 void mlx5e_ipsec_device_cleanup(struct mlx5e_priv *priv);
 void mlx5e_ipsec_build_netdev(struct mlx5e_priv *priv);
@@ -66,6 +67,10 @@ struct xfrm_state *mlx5e_ipsec_sadb_rx_lookup(struct mlx5e_ipsec_dev *dev,
 					      unsigned int handle);
 
 #else
+
+static inline void mlx5e_ipsec_build_inverse_table(void)
+{
+}
 
 static inline int mlx5e_ipsec_device_init(struct mlx5e_priv *priv)
 {

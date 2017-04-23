@@ -33,6 +33,7 @@
 
 #include <crypto/aead.h>
 #include <net/xfrm.h>
+#include <net/esp.h>
 
 #include "en_ipsec/rxtx.h"
 #include "en_ipsec/ipsec.h"
@@ -71,6 +72,16 @@ struct mlx5e_ipsec_metadata {
 	/* packet type ID field	*/
 	__be16 ethertype;
 } __packed;
+
+#define MAX_LSO_MSS 2048
+
+/* Pre-calculated (Q0.16) fixed-point inverse 1/x function */
+static __be16 mlx5e_ipsec_inverse_table[MAX_LSO_MSS];
+
+static inline __be16 mlx5e_ipsec_mss_inv(struct sk_buff *skb)
+{
+	return mlx5e_ipsec_inverse_table[skb_shinfo(skb)->gso_size];
+}
 
 static struct mlx5e_ipsec_metadata *mlx5e_ipsec_add_metadata(struct sk_buff *skb)
 {
@@ -184,8 +195,34 @@ static void mlx5e_ipsec_set_metadata(struct sk_buff *skb,
 				     struct mlx5e_ipsec_metadata *mdata,
 				     struct xfrm_offload *xo)
 {
-	mdata->syndrome = MLX5E_IPSEC_TX_SYNDROME_OFFLOAD;
+	struct ip_esp_hdr *esph;
+	struct tcphdr *tcph;
+
+	if (skb_is_gso(skb)) {
+		/* Add LSO metadata indication */
+		esph = ip_esp_hdr(skb);
+		tcph = inner_tcp_hdr(skb);
+		netdev_dbg(skb->dev, "   Offloading GSO packet outer L3 %u; L4 %u; Inner L3 %u; L4 %u\n",
+			   skb->network_header,
+			   skb->transport_header,
+			   skb->inner_network_header,
+			   skb->inner_transport_header);
+		netdev_dbg(skb->dev, "   Offloading GSO packet of len %u; mss %u; TCP sp %u dp %u seq 0x%x ESP seq 0x%x\n",
+			   skb->len, skb_shinfo(skb)->gso_size,
+			   ntohs(tcph->source), ntohs(tcph->dest),
+			   ntohl(tcph->seq), ntohl(esph->seq_no));
+		mdata->syndrome = MLX5E_IPSEC_TX_SYNDROME_OFFLOAD_WITH_LSO_TCP;
+		mdata->content.tx.mss_inv = mlx5e_ipsec_mss_inv(skb);
+		mdata->content.tx.seq = htons(ntohl(tcph->seq) & 0xFFFF);
+	} else {
+		mdata->syndrome = MLX5E_IPSEC_TX_SYNDROME_OFFLOAD;
+	}
 	mdata->content.tx.esp_next_proto = xo->proto;
+
+	netdev_dbg(skb->dev, "   TX metadata syndrome %u proto %u mss_inv %04x seq %04x\n",
+		   mdata->syndrome, mdata->content.tx.esp_next_proto,
+		   ntohs(mdata->content.tx.mss_inv),
+		   ntohs(mdata->content.tx.seq));
 }
 
 struct sk_buff *mlx5e_ipsec_handle_tx_skb(struct mlx5e_tx_wqe *wqe,
@@ -222,8 +259,9 @@ struct sk_buff *mlx5e_ipsec_handle_tx_skb(struct mlx5e_tx_wqe *wqe,
 		goto drop;
 	}
 
-	if (mlx5e_ipsec_remove_trailer(skb, x))
-		goto drop;
+	if (!skb_is_gso(skb))
+		if (mlx5e_ipsec_remove_trailer(skb, x))
+			goto drop;
 	mdata = mlx5e_ipsec_add_metadata(skb);
 	if (IS_ERR(mdata)) {
 		netdev_warn(skb->dev, "insert_metadata failed: %ld\n",
@@ -339,4 +377,16 @@ bool mlx5e_ipsec_feature_check(struct sk_buff *skb, struct net_device *netdev,
 			return true;
 	}
 	return false;
+}
+
+void mlx5e_ipsec_build_inverse_table(void)
+{
+	u16 mss_inv;
+	u32 mss;
+
+	mlx5e_ipsec_inverse_table[1] = htons(0xFFFF);
+	for (mss = 2; mss < MAX_LSO_MSS; mss++) {
+		mss_inv = ((1ULL << 32) / mss) >> 16;
+		mlx5e_ipsec_inverse_table[mss] = htons(mss_inv);
+	}
 }
