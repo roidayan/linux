@@ -305,6 +305,7 @@ static void mlx5e_get_ethtool_stats(struct net_device *dev,
 	struct mlx5_priv *mlx5_priv;
 	int i, j, tc, prio, idx = 0;
 	unsigned long pfc_combined;
+	bool global_pause;
 
 	if (!data)
 		return;
@@ -313,8 +314,11 @@ static void mlx5e_get_ethtool_stats(struct net_device *dev,
 	if (test_bit(MLX5E_STATE_OPENED, &priv->state))
 		mlx5e_update_stats(priv);
 	channels = &priv->channels;
+	pfc_combined = mlx5e_query_pfc_combined(priv);
+	global_pause = mlx5e_query_global_pause_combined(priv);
 	mutex_unlock(&priv->state_lock);
 
+	read_lock(&priv->stats_lock);
 	for (i = 0; i < NUM_SW_COUNTERS; i++)
 		data[idx++] = MLX5E_READ_CTR64_CPU(&priv->stats.sw,
 						   sw_stats_desc, i);
@@ -353,7 +357,6 @@ static void mlx5e_get_ethtool_stats(struct net_device *dev,
 						 pport_per_prio_traffic_stats_desc, i);
 	}
 
-	pfc_combined = mlx5e_query_pfc_combined(priv);
 	for_each_set_bit(prio, &pfc_combined, NUM_PPORT_PRIO) {
 		for (i = 0; i < NUM_PPORT_PER_PRIO_PFC_COUNTERS; i++) {
 			data[idx++] = MLX5E_READ_CTR64_BE(&priv->stats.pport.per_prio_counters[prio],
@@ -361,7 +364,7 @@ static void mlx5e_get_ethtool_stats(struct net_device *dev,
 		}
 	}
 
-	if (mlx5e_query_global_pause_combined(priv)) {
+	if (global_pause) {
 		for (i = 0; i < NUM_PPORT_PER_PRIO_PFC_COUNTERS; i++) {
 			data[idx++] = MLX5E_READ_CTR64_BE(&priv->stats.pport.per_prio_counters[0],
 							  pport_per_prio_pfc_stats_desc, i);
@@ -379,7 +382,7 @@ static void mlx5e_get_ethtool_stats(struct net_device *dev,
 						   mlx5e_pme_error_desc, i);
 
 	if (!test_bit(MLX5E_STATE_OPENED, &priv->state))
-		return;
+		goto out;
 
 	/* per channel counters */
 	for (i = 0; i < channels->num; i++)
@@ -393,6 +396,9 @@ static void mlx5e_get_ethtool_stats(struct net_device *dev,
 			for (j = 0; j < NUM_SQ_STATS; j++)
 				data[idx++] = MLX5E_READ_CTR64_CPU(&channels->c[i]->sq[tc].stats,
 								   sq_stats_desc, j);
+
+out:
+	read_unlock(&priv->stats_lock);
 }
 
 static u32 mlx5e_rx_wqes_to_packets(struct mlx5e_priv *priv, int rq_wq_type,
