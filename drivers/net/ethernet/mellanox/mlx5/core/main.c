@@ -57,6 +57,7 @@
 #include "eswitch.h"
 #endif
 #include "fpga/core.h"
+#include "ipsec_sadb.h"
 
 MODULE_AUTHOR("Eli Cohen <eli@mellanox.com>");
 MODULE_DESCRIPTION("Mellanox Connect-IB, ConnectX-4 core driver");
@@ -1158,6 +1159,11 @@ static int mlx5_load_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv,
 		dev_err(&pdev->dev, "fpga device start failed %d\n", err);
 		goto err_fpga_start;
 	}
+	err = mlx5_core_ipsec_device_init(dev);
+	if (err) {
+		dev_err(&pdev->dev, "IPSec device start failed %d\n", err);
+		goto err_ipsec_start;
+	}
 
 	if (mlx5_device_registered(dev)) {
 		mlx5_attach_device(dev);
@@ -1177,6 +1183,8 @@ out:
 	return 0;
 
 err_reg_dev:
+	mlx5_core_ipsec_device_cleanup(dev);
+err_ipsec_start:
 	mlx5_fpga_device_stop(dev);
 
 err_fpga_start:
@@ -1256,6 +1264,7 @@ static int mlx5_unload_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv,
 	if (mlx5_device_registered(dev))
 		mlx5_detach_device(dev);
 
+	mlx5_core_ipsec_device_cleanup(dev);
 	mlx5_fpga_device_stop(dev);
 
 	mlx5_sriov_detach(dev);
