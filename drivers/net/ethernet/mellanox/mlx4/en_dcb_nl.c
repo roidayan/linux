@@ -238,7 +238,7 @@ static u8 mlx4_en_dcbnl_set_state(struct net_device *dev, u8 state)
 		priv->flags &= ~MLX4_EN_FLAG_DCB_ENABLED;
 	}
 
-	if (mlx4_en_setup_tc(dev, num_tcs))
+	if (mlx4_en_alloc_tx_queue_per_tc(dev, num_tcs))
 		return 1;
 
 	return 0;
@@ -472,7 +472,7 @@ static u8 mlx4_en_dcbnl_setdcbx(struct net_device *dev, u8 mode)
 			goto err;
 		if (mlx4_en_dcbnl_ieee_setpfc(dev, &pfc))
 			goto err;
-		if (mlx4_en_setup_tc(dev, 0))
+		if (mlx4_en_alloc_tx_queue_per_tc(dev, 0))
 			goto err;
 	}
 
