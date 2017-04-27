@@ -278,6 +278,26 @@ struct ib_rss_caps {
 	u32 max_rwq_indirection_table_size;
 };
 
+/*
+ * Out of order data placement capability bits.
+ * Out of order data placement means, if HCA receives RDMA packets in
+ * out of order manner, their data placement can be done at the desired
+ * memory destination given in the packet(s). This is applicable
+ * to RDMA read and write operations.
+ * Send queue work requests are still completed in-order regardless of their
+ * data placement order at local or remote end.
+ */
+enum ib_ooo_transport_caps {
+	IB_OOO_RW_DATA_PLACEMENT	= (1 << 0),
+};
+
+struct ib_ooo_caps {
+	u32 rc_caps;
+	u32 xrc_caps;
+	u32 ud_caps;
+	u32 uc_caps;
+};
+
 enum ib_cq_creation_flags {
 	IB_CQ_FLAGS_TIMESTAMP_COMPLETION   = 1 << 0,
 	IB_CQ_FLAGS_IGNORE_OVERRUN	   = 1 << 1,
@@ -338,6 +358,7 @@ struct ib_device_attr {
 	struct ib_rss_caps	rss_caps;
 	u32			max_wq_type_rq;
 	u32			raw_packet_caps; /* Use ib_raw_packet_caps enum */
+	struct ib_ooo_caps	ooo_caps;
 };
 
 enum ib_mtu {
@@ -1157,6 +1178,7 @@ enum ib_qp_attr_mask {
 	IB_QP_RESERVED3			= (1<<23),
 	IB_QP_RESERVED4			= (1<<24),
 	IB_QP_RATE_LIMIT		= (1<<25),
+	IB_QP_OOO_RW_DATA_PLACEMENT	= (1 << 26),
 };
 
 enum ib_qp_state {
