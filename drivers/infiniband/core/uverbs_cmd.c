@@ -3766,6 +3766,15 @@ ssize_t ib_uverbs_destroy_srq(struct ib_uverbs_file *file,
 	return in_len;
 }
 
+static void copy_ooo_caps(struct ib_uverbs_ooo_caps *uverb_caps,
+			  struct ib_ooo_caps *attr_caps)
+{
+	uverb_caps->rc_caps = attr_caps->rc_caps;
+	uverb_caps->xrc_caps = attr_caps->xrc_caps;
+	uverb_caps->ud_caps = attr_caps->ud_caps;
+	uverb_caps->uc_caps = attr_caps->uc_caps;
+}
+
 int ib_uverbs_ex_query_device(struct ib_uverbs_file *file,
 			      struct ib_device *ib_dev,
 			      struct ib_udata *ucore,
@@ -3854,6 +3863,13 @@ int ib_uverbs_ex_query_device(struct ib_uverbs_file *file,
 
 	resp.raw_packet_caps = attr.raw_packet_caps;
 	resp.response_length += sizeof(resp.raw_packet_caps);
+
+	if (ucore->outlen < resp.response_length + sizeof(resp.ooo_caps))
+		goto end;
+
+	copy_ooo_caps(&resp.ooo_caps, &attr.ooo_caps);
+	resp.response_length += sizeof(resp.ooo_caps);
+
 end:
 	err = ib_copy_to_udata(ucore, &resp, resp.response_length);
 	return err;
