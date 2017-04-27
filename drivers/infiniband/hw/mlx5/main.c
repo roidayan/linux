@@ -572,6 +572,16 @@ static int mlx5_query_node_desc(struct mlx5_ib_dev *dev, char *node_desc)
 				    MLX5_REG_NODE_DESC, 0, 0);
 }
 
+static void mlx5_ib_fill_ooo_caps(struct mlx5_ib_dev *dev,
+				  struct ib_ooo_caps *caps)
+{
+	if (MLX5_CAP_GEN(dev->mdev, multi_path_rc_rdma))
+		caps->rc_caps |= IB_OOO_RW_DATA_PLACEMENT;
+
+	if (MLX5_CAP_GEN(dev->mdev, multi_path_xrc_rdma))
+		caps->xrc_caps |= IB_OOO_RW_DATA_PLACEMENT;
+}
+
 static int mlx5_ib_query_device(struct ib_device *ibdev,
 				struct ib_device_attr *props,
 				struct ib_udata *uhw)
@@ -764,6 +774,8 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 		props->max_wq_type_rq =
 			1 << MLX5_CAP_GEN(dev->mdev, log_max_rq);
 	}
+
+	mlx5_ib_fill_ooo_caps(dev, &props->ooo_caps);
 
 	if (field_avail(typeof(resp), cqe_comp_caps, uhw->outlen)) {
 		resp.cqe_comp_caps.max_num =

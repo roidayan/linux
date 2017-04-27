@@ -54,6 +54,10 @@ enum {
 	MLX5_IB_SQ_STRIDE	= 6,
 };
 
+enum {
+	MLX5_QP_OOO_ATTR	= 25,
+};
+
 static const u32 mlx5_ib_opcode[] = {
 	[IB_WR_SEND]				= MLX5_OPCODE_SEND,
 	[IB_WR_LSO]				= MLX5_OPCODE_LSO,
@@ -2809,6 +2813,27 @@ static int __mlx5_ib_modify_qp(struct ib_qp *ibqp,
 
 	if (qp->flags & MLX5_IB_QP_SQPN_QP1)
 		context->deth_sqpn = cpu_to_be32(1);
+
+	if (attr_mask & IB_QP_OOO_RW_DATA_PLACEMENT) {
+		if (ibqp->qp_type == IB_QPT_RC) {
+			if (MLX5_CAP_GEN(dev->mdev, multi_path_rc_rdma)) {
+				context->flags_pd |=
+					cpu_to_be32(1 << MLX5_QP_OOO_ATTR);
+			} else {
+				err = -EINVAL;
+				goto out;
+			}
+		} else if (ibqp->qp_type == IB_QPT_XRC_INI ||
+			   ibqp->qp_type == IB_QPT_XRC_TGT) {
+			if (MLX5_CAP_GEN(dev->mdev, multi_path_xrc_rdma)) {
+				context->flags_pd |=
+					cpu_to_be32(1 << MLX5_QP_OOO_ATTR);
+			} else {
+				err = -EINVAL;
+				goto out;
+			}
+		}
+	}
 
 	mlx5_cur = to_mlx5_state(cur_state);
 	mlx5_new = to_mlx5_state(new_state);
