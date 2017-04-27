@@ -601,6 +601,9 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 		return -EINVAL;
 
 	memset(props, 0, sizeof(*props));
+	props->max_counter_sets =
+			dev->counter_sets.max_counter_sets;
+
 	err = mlx5_query_system_image_guid(ibdev,
 					   &props->sys_image_guid);
 	if (err)
