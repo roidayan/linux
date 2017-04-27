@@ -2403,7 +2403,8 @@ struct rtable *__ip_route_output_key_hash(struct net *net, struct flowi4 *fl4,
 		}
 
 		/* L3 master device is the loopback for that domain */
-		dev_out = l3mdev_master_dev_rcu(dev_out) ? : net->loopback_dev;
+		dev_out = l3mdev_master_dev_rcu(FIB_RES_DEV(res)) ? :
+			net->loopback_dev;
 		fl4->flowi4_oif = dev_out->ifindex;
 		flags |= RTCF_LOCAL;
 		goto make_route;
@@ -2629,7 +2630,8 @@ nla_put_failure:
 	return -EMSGSIZE;
 }
 
-static int inet_rtm_getroute(struct sk_buff *in_skb, struct nlmsghdr *nlh)
+static int inet_rtm_getroute(struct sk_buff *in_skb, struct nlmsghdr *nlh,
+			     struct netlink_ext_ack *extack)
 {
 	struct net *net = sock_net(in_skb->sk);
 	struct rtmsg *rtm;
@@ -2646,7 +2648,7 @@ static int inet_rtm_getroute(struct sk_buff *in_skb, struct nlmsghdr *nlh)
 	kuid_t uid;
 
 	err = nlmsg_parse(nlh, sizeof(*rtm), tb, RTA_MAX, rtm_ipv4_policy,
-			  NULL);
+			  extack);
 	if (err < 0)
 		goto errout;
 

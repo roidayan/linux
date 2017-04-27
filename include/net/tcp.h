@@ -1004,7 +1004,7 @@ void tcp_rate_skb_sent(struct sock *sk, struct sk_buff *skb);
 void tcp_rate_skb_delivered(struct sock *sk, struct sk_buff *skb,
 			    struct rate_sample *rs);
 void tcp_rate_gen(struct sock *sk, u32 delivered, u32 lost,
-		  struct skb_mstamp *now, struct rate_sample *rs);
+		  struct rate_sample *rs);
 void tcp_rate_check_app_limited(struct sock *sk);
 
 /* These functions determine how the current flow behaves in respect of SACK
@@ -1506,6 +1506,12 @@ struct tcp_fastopen_context {
 	struct rcu_head		rcu;
 };
 
+extern unsigned int sysctl_tcp_fastopen_blackhole_timeout;
+void tcp_fastopen_active_disable(struct sock *sk);
+bool tcp_fastopen_active_should_disable(struct sock *sk);
+void tcp_fastopen_active_disable_ofo_check(struct sock *sk);
+void tcp_fastopen_active_timeout_reset(void);
+
 /* Latencies incurred by various limits for a sender. They are
  * chronograph-like stats that are mutually exclusive.
  */
@@ -1847,10 +1853,9 @@ void tcp_v4_init(void);
 void tcp_init(void);
 
 /* tcp_recovery.c */
-extern void tcp_rack_mark_lost(struct sock *sk, const struct skb_mstamp *now);
+extern void tcp_rack_mark_lost(struct sock *sk);
 extern void tcp_rack_advance(struct tcp_sock *tp, u8 sacked, u32 end_seq,
-			     const struct skb_mstamp *xmit_time,
-			     const struct skb_mstamp *ack_time);
+			     const struct skb_mstamp *xmit_time);
 extern void tcp_rack_reo_timeout(struct sock *sk);
 
 /*
