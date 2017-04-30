@@ -35,9 +35,10 @@
 #include <linux/mlx5/fs.h>
 #include <net/vxlan.h>
 #include <linux/bpf.h>
+#include "eswitch.h"
 #include "en.h"
 #include "en_tc.h"
-#include "eswitch.h"
+#include "en_rep.h"
 #include "vxlan.h"
 
 struct mlx5e_rq_param {
@@ -165,6 +166,13 @@ unlock:
 	rtnl_unlock();
 }
 
+#define MLX5E_STATS_WRITE(priv, name, s)                            \
+	do {                                                        \
+		write_lock(&(priv)->stats_lock);                    \
+		memcpy(&(priv)->stats.name, (s), sizeof(*(s)));     \
+		write_unlock(&(priv)->stats_lock);                  \
+	} while (0)
+
 static void mlx5e_update_sw_counters(struct mlx5e_priv *priv)
 {
 	struct mlx5e_sw_stats temp, *s = &temp;
@@ -221,17 +229,21 @@ static void mlx5e_update_sw_counters(struct mlx5e_priv *priv)
 	s->tx_csum_partial = s->tx_packets - tx_offload_none - s->tx_csum_partial_inner;
 	s->rx_csum_unnecessary = s->rx_packets - s->rx_csum_none - s->rx_csum_complete;
 
+	read_lock(&priv->stats_lock);
 	s->link_down_events_phy = MLX5_GET(ppcnt_reg,
 				priv->stats.pport.phy_counters,
 				counter_set.phys_layer_cntrs.link_down_events);
-	memcpy(&priv->stats.sw, s, sizeof(*s));
+	read_unlock(&priv->stats_lock);
+
+	MLX5E_STATS_WRITE(priv, sw, s);
 }
 
 static void mlx5e_update_vport_counters(struct mlx5e_priv *priv)
 {
 	int outlen = MLX5_ST_SZ_BYTES(query_vport_counter_out);
-	u32 *out = (u32 *)priv->stats.vport.query_vport_out;
 	u32 in[MLX5_ST_SZ_DW(query_vport_counter_in)] = {0};
+	struct mlx5e_vport_stats          vstats;
+	u32 *out = (u32 *)vstats.query_vport_out;
 	struct mlx5_core_dev *mdev = priv->mdev;
 
 	MLX5_SET(query_vport_counter_in, in, opcode,
@@ -240,19 +252,22 @@ static void mlx5e_update_vport_counters(struct mlx5e_priv *priv)
 	MLX5_SET(query_vport_counter_in, in, other_vport, 0);
 
 	mlx5_cmd_exec(mdev, in, sizeof(in), out, outlen);
+
+	MLX5E_STATS_WRITE(priv, vport, &vstats);
 }
 
 static void mlx5e_update_pport_counters(struct mlx5e_priv *priv)
 {
-	struct mlx5e_pport_stats *pstats = &priv->stats.pport;
 	struct mlx5_core_dev *mdev = priv->mdev;
 	int sz = MLX5_ST_SZ_BYTES(ppcnt_reg);
-	int prio;
+	struct mlx5e_pport_stats *pstats;
 	void *out;
+	int prio;
 	u32 *in;
 
-	in = mlx5_vzalloc(sz);
-	if (!in)
+	in     = mlx5_vzalloc(sz);
+	pstats = mlx5_vzalloc(sizeof(*pstats));
+	if (!in || !pstats)
 		goto free_out;
 
 	MLX5_SET(ppcnt_reg, in, local_port, 1);
@@ -287,26 +302,31 @@ static void mlx5e_update_pport_counters(struct mlx5e_priv *priv)
 				     MLX5_REG_PPCNT, 0, 0);
 	}
 
+	MLX5E_STATS_WRITE(priv, pport, pstats);
+
 free_out:
 	kvfree(in);
+	kvfree(pstats);
 }
 
 static void mlx5e_update_q_counter(struct mlx5e_priv *priv)
 {
-	struct mlx5e_qcounter_stats *qcnt = &priv->stats.qcnt;
+	struct mlx5e_qcounter_stats qcnt;
 
 	if (!priv->q_counter)
 		return;
 
 	mlx5_core_query_out_of_buffer(priv->mdev, priv->q_counter,
-				      &qcnt->rx_out_of_buffer);
+				      &qcnt.rx_out_of_buffer);
+
+	MLX5E_STATS_WRITE(priv, qcnt, &qcnt);
 }
 
 static void mlx5e_update_pcie_counters(struct mlx5e_priv *priv)
 {
-	struct mlx5e_pcie_stats *pcie_stats = &priv->stats.pcie;
 	struct mlx5_core_dev *mdev = priv->mdev;
 	int sz = MLX5_ST_SZ_BYTES(mpcnt_reg);
+	struct mlx5e_pcie_stats pcie_stats;
 	void *out;
 	u32 *in;
 
@@ -317,9 +337,11 @@ static void mlx5e_update_pcie_counters(struct mlx5e_priv *priv)
 	if (!in)
 		return;
 
-	out = pcie_stats->pcie_perf_counters;
+	out = pcie_stats.pcie_perf_counters;
 	MLX5_SET(mpcnt_reg, in, grp, MLX5_PCIE_PERFORMANCE_COUNTERS_GROUP);
 	mlx5_core_access_reg(mdev, in, sz, out, sz, MLX5_REG_MPCNT, 0, 0);
+
+	MLX5E_STATS_WRITE(priv, pcie, &pcie_stats);
 
 	kvfree(in);
 }
@@ -2651,6 +2673,8 @@ int mlx5e_open(struct net_device *netdev)
 
 	mutex_lock(&priv->state_lock);
 	err = mlx5e_open_locked(netdev);
+	if (!err)
+		mlx5_set_port_admin_status(priv->mdev, MLX5_PORT_UP);
 	mutex_unlock(&priv->state_lock);
 
 	return err;
@@ -2685,6 +2709,7 @@ int mlx5e_close(struct net_device *netdev)
 		return -ENODEV;
 
 	mutex_lock(&priv->state_lock);
+	mlx5_set_port_admin_status(priv->mdev, MLX5_PORT_DOWN);
 	err = mlx5e_close_locked(netdev);
 	mutex_unlock(&priv->state_lock);
 
@@ -3029,6 +3054,7 @@ mlx5e_get_stats(struct net_device *dev, struct rtnl_link_stats64 *stats)
 	struct mlx5e_vport_stats *vstats = &priv->stats.vport;
 	struct mlx5e_pport_stats *pstats = &priv->stats.pport;
 
+	read_lock(&priv->stats_lock);
 	if (mlx5e_is_uplink_rep(priv)) {
 		stats->rx_packets = PPORT_802_3_GET(pstats, a_frames_received_ok);
 		stats->rx_bytes   = PPORT_802_3_GET(pstats, a_octets_received_ok);
@@ -3063,7 +3089,7 @@ mlx5e_get_stats(struct net_device *dev, struct rtnl_link_stats64 *stats)
 	 */
 	stats->multicast =
 		VPORT_COUNTER_GET(vstats, received_eth_multicast.packets);
-
+	read_unlock(&priv->stats_lock);
 }
 
 static void mlx5e_set_rx_mode(struct net_device *dev)
@@ -3784,6 +3810,12 @@ static bool cqe_compress_heuristic(u32 link_speed, u32 pci_bw)
 		(pci_bw < 40000) && (pci_bw < link_speed));
 }
 
+static bool hw_lro_heuristic(u32 link_speed, u32 pci_bw)
+{
+	return !(link_speed && pci_bw &&
+		 (pci_bw <= 16000) && (pci_bw < link_speed));
+}
+
 void mlx5e_set_rx_cq_mode_params(struct mlx5e_params *params, u8 cq_period_mode)
 {
 	params->rx_cq_period_mode = cq_period_mode;
@@ -3828,6 +3860,11 @@ void mlx5e_build_nic_params(struct mlx5_core_dev *mdev,
 	params->num_channels = max_channels;
 	params->num_tc       = 1;
 
+	mlx5e_get_max_linkspeed(mdev, &link_speed);
+	mlx5e_get_pci_bw(mdev, &pci_bw);
+	mlx5_core_dbg(mdev, "Max link speed = %d, PCI BW = %d\n",
+		      link_speed, pci_bw);
+
 	/* SQ */
 	params->log_sq_size = is_kdump_kernel() ?
 		MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE :
@@ -3836,13 +3873,9 @@ void mlx5e_build_nic_params(struct mlx5_core_dev *mdev,
 	/* set CQE compression */
 	params->rx_cqe_compress_def = false;
 	if (MLX5_CAP_GEN(mdev, cqe_compression) &&
-	     MLX5_CAP_GEN(mdev, vport_group_manager)) {
-		mlx5e_get_max_linkspeed(mdev, &link_speed);
-		mlx5e_get_pci_bw(mdev, &pci_bw);
-		mlx5_core_dbg(mdev, "Max link speed = %d, PCI BW = %d\n",
-			       link_speed, pci_bw);
+	     MLX5_CAP_GEN(mdev, vport_group_manager))
 		params->rx_cqe_compress_def = cqe_compress_heuristic(link_speed, pci_bw);
-	}
+
 	MLX5E_SET_PFLAG(params, MLX5E_PFLAG_RX_CQE_COMPRESS, params->rx_cqe_compress_def);
 
 	/* RQ */
@@ -3851,7 +3884,7 @@ void mlx5e_build_nic_params(struct mlx5_core_dev *mdev,
 	/* HW LRO */
 	/* TODO: && MLX5_CAP_ETH(mdev, lro_cap) */
 	if (params->rq_wq_type == MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ)
-		params->lro_en = true;
+		params->lro_en = hw_lro_heuristic(link_speed, pci_bw);
 	params->lro_timeout = mlx5e_choose_lro_timeout(mdev, MLX5E_DEFAULT_LRO_TIMEOUT);
 
 	/* CQ moderation params */
@@ -3893,6 +3926,7 @@ static void mlx5e_build_nic_netdev_priv(struct mlx5_core_dev *mdev,
 	mlx5e_build_nic_params(mdev, &priv->channels.params, profile->max_nch(mdev));
 
 	mutex_init(&priv->state_lock);
+	rwlock_init(&priv->stats_lock);
 
 	INIT_WORK(&priv->update_carrier_work, mlx5e_update_carrier_work);
 	INIT_WORK(&priv->set_rx_mode_work, mlx5e_set_rx_mode_work);
@@ -4123,51 +4157,17 @@ static int mlx5e_init_nic_tx(struct mlx5e_priv *priv)
 	return 0;
 }
 
-static void mlx5e_register_vport_rep(struct mlx5_core_dev *mdev)
-{
-	struct mlx5_eswitch *esw = mdev->priv.eswitch;
-	int total_vfs = MLX5_TOTAL_VPORTS(mdev);
-	int vport;
-	u8 mac[ETH_ALEN];
-
-	if (!MLX5_CAP_GEN(mdev, vport_group_manager))
-		return;
-
-	mlx5_query_nic_vport_mac_address(mdev, 0, mac);
-
-	for (vport = 1; vport < total_vfs; vport++) {
-		struct mlx5_eswitch_rep rep;
-
-		rep.load = mlx5e_vport_rep_load;
-		rep.unload = mlx5e_vport_rep_unload;
-		rep.vport = vport;
-		ether_addr_copy(rep.hw_id, mac);
-		mlx5_eswitch_register_vport_rep(esw, vport, &rep);
-	}
-}
-
-static void mlx5e_unregister_vport_rep(struct mlx5_core_dev *mdev)
-{
-	struct mlx5_eswitch *esw = mdev->priv.eswitch;
-	int total_vfs = MLX5_TOTAL_VPORTS(mdev);
-	int vport;
-
-	if (!MLX5_CAP_GEN(mdev, vport_group_manager))
-		return;
-
-	for (vport = 1; vport < total_vfs; vport++)
-		mlx5_eswitch_unregister_vport_rep(esw, vport);
-}
-
 static void mlx5e_nic_enable(struct mlx5e_priv *priv)
 {
 	struct net_device *netdev = priv->netdev;
 	struct mlx5_core_dev *mdev = priv->mdev;
-	struct mlx5_eswitch *esw = mdev->priv.eswitch;
-	struct mlx5_eswitch_rep rep;
 	u16 max_mtu;
 
 	mlx5e_init_l2_addr(priv);
+
+	/* Marking the link as currently not needed by the Driver */
+	if (!netif_running(netdev))
+		mlx5_set_port_admin_status(mdev, MLX5_PORT_DOWN);
 
 	/* MTU range: 68 - hw-specific max */
 	netdev->min_mtu = ETH_MIN_MTU;
@@ -4179,16 +4179,8 @@ static void mlx5e_nic_enable(struct mlx5e_priv *priv)
 
 	mlx5e_enable_async_events(priv);
 
-	if (MLX5_CAP_GEN(mdev, vport_group_manager)) {
-		mlx5_query_nic_vport_mac_address(mdev, 0, rep.hw_id);
-		rep.load = mlx5e_nic_rep_load;
-		rep.unload = mlx5e_nic_rep_unload;
-		rep.vport = FDB_UPLINK_VPORT;
-		rep.netdev = netdev;
-		mlx5_eswitch_register_vport_rep(esw, 0, &rep);
-	}
-
-	mlx5e_register_vport_rep(mdev);
+	if (MLX5_CAP_GEN(mdev, vport_group_manager))
+		mlx5e_register_vport_reps(priv);
 
 	if (netdev->reg_state != NETREG_REGISTERED)
 		return;
@@ -4212,7 +4204,6 @@ static void mlx5e_nic_enable(struct mlx5e_priv *priv)
 static void mlx5e_nic_disable(struct mlx5e_priv *priv)
 {
 	struct mlx5_core_dev *mdev = priv->mdev;
-	struct mlx5_eswitch *esw = mdev->priv.eswitch;
 
 	rtnl_lock();
 	if (netif_running(priv->netdev))
@@ -4221,9 +4212,10 @@ static void mlx5e_nic_disable(struct mlx5e_priv *priv)
 	rtnl_unlock();
 
 	queue_work(priv->wq, &priv->set_rx_mode_work);
-	mlx5e_unregister_vport_rep(mdev);
+
 	if (MLX5_CAP_GEN(mdev, vport_group_manager))
-		mlx5_eswitch_unregister_vport_rep(esw, 0);
+		mlx5e_unregister_vport_reps(priv);
+
 	mlx5e_disable_async_events(priv);
 	mlx5_lag_remove(mdev);
 }
@@ -4394,7 +4386,7 @@ static void *mlx5e_add(struct mlx5_core_dev *mdev)
 {
 	struct mlx5_eswitch *esw = mdev->priv.eswitch;
 	int total_vfs = MLX5_TOTAL_VPORTS(mdev);
-	void *ppriv = NULL;
+	struct mlx5e_rep_priv *rpriv = NULL;
 	void *priv;
 	int vport;
 	int err;
@@ -4404,10 +4396,17 @@ static void *mlx5e_add(struct mlx5_core_dev *mdev)
 	if (err)
 		return NULL;
 
-	if (MLX5_CAP_GEN(mdev, vport_group_manager))
-		ppriv = &esw->offloads.vport_reps[0];
+	if (MLX5_CAP_GEN(mdev, vport_group_manager)) {
+		rpriv = kzalloc(sizeof(*rpriv), GFP_KERNEL);
+		if (!rpriv) {
+			mlx5_core_warn(mdev,
+				       "Not creating net device, Failed to alloc rep priv data\n");
+			return NULL;
+		}
+		rpriv->rep = &esw->offloads.vport_reps[0];
+	}
 
-	netdev = mlx5e_create_netdev(mdev, &mlx5e_nic_profile, ppriv);
+	netdev = mlx5e_create_netdev(mdev, &mlx5e_nic_profile, rpriv);
 	if (!netdev) {
 		mlx5_core_err(mdev, "mlx5e_create_netdev failed\n");
 		goto err_unregister_reps;
@@ -4439,16 +4438,19 @@ err_unregister_reps:
 	for (vport = 1; vport < total_vfs; vport++)
 		mlx5_eswitch_unregister_vport_rep(esw, vport);
 
+	kfree(rpriv);
 	return NULL;
 }
 
 static void mlx5e_remove(struct mlx5_core_dev *mdev, void *vpriv)
 {
 	struct mlx5e_priv *priv = vpriv;
+	void *ppriv = priv->ppriv;
 
 	unregister_netdev(priv->netdev);
 	mlx5e_detach(mdev, vpriv);
 	mlx5e_destroy_netdev(priv);
+	kfree(ppriv);
 }
 
 static void *mlx5e_get_netdev(void *vpriv)
