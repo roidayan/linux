@@ -76,8 +76,6 @@ int mlx5_cmd_update_root_ft(struct mlx5_core_dev *dev,
 
 int mlx5_cmd_fc_alloc(struct mlx5_core_dev *dev, u32 *id);
 int mlx5_cmd_fc_free(struct mlx5_core_dev *dev, u32 id);
-int mlx5_cmd_fc_query(struct mlx5_core_dev *dev, u32 id,
-		      u64 *packets, u64 *bytes);
 
 struct mlx5_cmd_fc_bulk;
 
