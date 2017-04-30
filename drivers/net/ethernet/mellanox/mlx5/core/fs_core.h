@@ -131,29 +131,6 @@ struct mlx5_flow_table {
 	struct rhltable			fgs_hash;
 };
 
-struct mlx5_fc_cache {
-	u64 packets;
-	u64 bytes;
-	u64 lastuse;
-};
-
-struct mlx5_fc {
-	struct rb_node node;
-	struct list_head list;
-
-	/* last{packets,bytes} members are used when calculating the delta since
-	 * last reading
-	 */
-	u64 lastpackets;
-	u64 lastbytes;
-
-	u32 id;
-	bool deleted;
-	bool aging;
-
-	struct mlx5_fc_cache cache ____cacheline_aligned_in_smp;
-};
-
 struct mlx5_ft_underlay_qp {
 	struct list_head list;
 	u32 qpn;
