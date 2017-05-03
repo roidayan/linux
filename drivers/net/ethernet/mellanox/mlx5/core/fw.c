@@ -137,7 +137,8 @@ int mlx5_query_hca_caps(struct mlx5_core_dev *dev)
 			return err;
 	}
 
-	if (MLX5_CAP_GEN(dev, nic_flow_table)) {
+	if (MLX5_CAP_GEN(dev, nic_flow_table) ||
+	    MLX5_CAP_GEN(dev, ipoib_enhanced_offloads)) {
 		err = mlx5_core_get_caps(dev, MLX5_CAP_FLOW_TABLE);
 		if (err)
 			return err;
@@ -193,4 +194,32 @@ int mlx5_cmd_teardown_hca(struct mlx5_core_dev *dev)
 
 	MLX5_SET(teardown_hca_in, in, opcode, MLX5_CMD_OP_TEARDOWN_HCA);
 	return mlx5_cmd_exec(dev, in, sizeof(in), out, sizeof(out));
+}
+
+int mlx5_cmd_panic_teardown_hca(struct mlx5_core_dev *dev)
+{
+	u32 out[MLX5_ST_SZ_DW(teardown_hca_out)] = {0};
+	u32 in[MLX5_ST_SZ_DW(teardown_hca_in)] = {0};
+	int panic_state;
+	int ret;
+
+	if (!MLX5_CAP_GEN(dev, panic_teardown)) {
+		mlx5_core_dbg(dev, "panic teardown is not supported in the firmware\n");
+		return -ENOTSUPP;
+	}
+
+	MLX5_SET(teardown_hca_in, in, opcode, MLX5_CMD_OP_TEARDOWN_HCA);
+	MLX5_SET(teardown_hca_in, in, profile, MLX5_TEARDOWN_HCA_IN_PROFILE_PANIC_CLOSE);
+
+	ret = mlx5_cmd_exec_polling(dev, in, sizeof(in), out, sizeof(out));
+	if (ret)
+		return ret;
+
+	panic_state = MLX5_GET(teardown_hca_out, out, panic_state);
+	if (panic_state == MLX5_TEARDOWN_HCA_OUT_PANIC_STATE_FAIL) {
+		mlx5_core_err(dev, "teardown with panic mode failed\n");
+		return -EIO;
+	}
+
+	return 0;
 }
