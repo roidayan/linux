@@ -789,6 +789,45 @@ int mlx5_query_port_wol(struct mlx5_core_dev *mdev, u8 *wol_mode)
 }
 EXPORT_SYMBOL_GPL(mlx5_query_port_wol);
 
+static int mlx5_query_pddr(struct mlx5_core_dev *mdev,
+			   int page_select, u32 *out, int outlen)
+{
+	u32 in[MLX5_ST_SZ_DW(pddr_reg)] = {0};
+
+	if (!MLX5_CAP_PCAM_REG(mdev, pddr))
+		return -EOPNOTSUPP;
+
+	MLX5_SET(pddr_reg, in, local_port, 1);
+	MLX5_SET(pddr_reg, in, page_select, page_select);
+
+	return mlx5_core_access_reg(mdev, in, sizeof(in), out, outlen, MLX5_REG_PDDR, 0, 0);
+}
+
+int mlx5_query_pddr_troubleshooting_info(struct mlx5_core_dev *mdev,
+					 u16 *monitor_opcode,
+					 u8 *status_message)
+{
+	int outlen = MLX5_ST_SZ_BYTES(pddr_reg);
+	u32 out[MLX5_ST_SZ_DW(pddr_reg)] = {0};
+	int err;
+
+	err = mlx5_query_pddr(mdev, MLX5_PDDR_TROUBLESHOOTING_INFO_PAGE,
+			      out, outlen);
+	if (err)
+		return err;
+
+	if (monitor_opcode)
+		*monitor_opcode = MLX5_GET(pddr_reg, out,
+					   page_data.troubleshooting_info_page.status_opcode.monitor_opcodes);
+
+	if (status_message)
+		memcpy(status_message,
+		       MLX5_ADDR_OF(pddr_reg, out, page_data.troubleshooting_info_page.status_message),
+		       ETH_GSTRING_LEN);
+
+	return 0;
+}
+
 static int mlx5_query_ports_check(struct mlx5_core_dev *mdev, u32 *out,
 				  int outlen)
 {
