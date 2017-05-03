@@ -927,7 +927,7 @@ static int offload_pedit_fields(struct pedit_headers *masks,
 	struct pedit_headers *set_masks, *add_masks, *set_vals, *add_vals;
 	int i, action_size, nactions, max_actions, first, last;
 	void *s_masks_p, *a_masks_p, *vals_p;
-	u32 s_mask, a_mask, val;
+	u32 s_mask, a_mask;
 	struct mlx5_fields *f;
 	u8 cmd, field_bsize;
 	unsigned long mask;
@@ -944,9 +944,15 @@ static int offload_pedit_fields(struct pedit_headers *masks,
 	nactions = 0;
 
 	for (i = 0; i < ARRAY_SIZE(fields); i++) {
+		__be32 val_be32 = 0;
+		__be16 val_be16 = 0;
+		u32 val_u32 = 0;
+
 		f = &fields[i];
 		/* avoid seeing bits set from previous iterations */
-		s_mask = a_mask = mask = val = 0;
+		s_mask = 0;
+		a_mask = 0;
+		mask = 0;
 
 		s_masks_p = (void *)set_masks + f->offset;
 		a_masks_p = (void *)add_masks + f->offset;
@@ -981,8 +987,6 @@ static int offload_pedit_fields(struct pedit_headers *masks,
 			memset(a_masks_p, 0, f->size);
 		}
 
-		memcpy(&val, vals_p, f->size);
-
 		field_bsize = f->size * BITS_PER_BYTE;
 		first = find_first_bit(&mask, field_bsize);
 		last  = find_last_bit(&mask, field_bsize);
@@ -1001,12 +1005,16 @@ static int offload_pedit_fields(struct pedit_headers *masks,
 			MLX5_SET(set_action_in, action, length, field_bsize);
 		}
 
-		if (field_bsize == 32)
-			MLX5_SET(set_action_in, action, data, ntohl(val));
-		else if (field_bsize == 16)
-			MLX5_SET(set_action_in, action, data, ntohs(val));
-		else if (field_bsize == 8)
-			MLX5_SET(set_action_in, action, data, val);
+		if (field_bsize == 32) {
+			memcpy(&val_be32, vals_p, f->size);
+			MLX5_SET(set_action_in, action, data, ntohl(val_be32));
+		} else if (field_bsize == 16) {
+			memcpy(&val_be16, vals_p, f->size);
+			MLX5_SET(set_action_in, action, data, ntohs(val_be16));
+		} else if (field_bsize == 8) {
+			memcpy(&val_u32, vals_p, f->size);
+			MLX5_SET(set_action_in, action, data, val_u32);
+		}
 
 		action += action_size;
 		nactions++;
