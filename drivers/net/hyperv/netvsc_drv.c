@@ -861,7 +861,7 @@ static void netvsc_init_settings(struct net_device *dev)
 	struct net_device_context *ndc = netdev_priv(dev);
 
 	ndc->speed = SPEED_UNKNOWN;
-	ndc->duplex = DUPLEX_UNKNOWN;
+	ndc->duplex = DUPLEX_FULL;
 }
 
 static int netvsc_get_link_ksettings(struct net_device *dev,
@@ -943,7 +943,7 @@ static void netvsc_get_stats64(struct net_device *net,
 			       struct rtnl_link_stats64 *t)
 {
 	struct net_device_context *ndev_ctx = netdev_priv(net);
-	struct netvsc_device *nvdev = rcu_dereference(ndev_ctx->nvdev);
+	struct netvsc_device *nvdev = rcu_dereference_rtnl(ndev_ctx->nvdev);
 	int i;
 
 	if (!nvdev)
