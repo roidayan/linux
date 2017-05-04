@@ -87,6 +87,7 @@
 #include <linux/compiler.h>
 #include <linux/sysctl.h>
 #include <linux/kcov.h>
+#include <linux/livepatch.h>
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -1438,6 +1439,7 @@ static void rt_mutex_init_task(struct task_struct *p)
 #ifdef CONFIG_RT_MUTEXES
 	p->pi_waiters = RB_ROOT;
 	p->pi_waiters_leftmost = NULL;
+	p->pi_top_task = NULL;
 	p->pi_blocked_on = NULL;
 #endif
 }
@@ -1796,6 +1798,8 @@ static __latent_entropy struct task_struct *copy_process(
 		p->real_parent = current;
 		p->parent_exec_id = current->self_exec_id;
 	}
+
+	klp_copy_process(p);
 
 	spin_lock(&current->sighand->siglock);
 
@@ -2351,6 +2355,8 @@ SYSCALL_DEFINE1(unshare, unsigned long, unshare_flags)
 			new_cred = NULL;
 		}
 	}
+
+	perf_event_namespaces(current);
 
 bad_unshare_cleanup_cred:
 	if (new_cred)
