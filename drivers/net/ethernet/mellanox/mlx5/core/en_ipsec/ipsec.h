@@ -41,6 +41,7 @@
 #include <linux/idr.h>
 
 #define MLX5E_IPSEC_SADB_RX_BITS 10
+#define MLX5E_IPSEC_STATS_COUNT 14
 
 struct mlx5e_priv;
 
@@ -49,11 +50,17 @@ struct mlx5e_ipsec_dev {
 	DECLARE_HASHTABLE(sadb_rx, MLX5E_IPSEC_SADB_RX_BITS);
 	spinlock_t sadb_rx_lock; /* Protects sadb_rx and halloc */
 	struct ida halloc;
+	u64 stats[MLX5E_IPSEC_STATS_COUNT];
 };
 
 int mlx5e_ipsec_device_init(struct mlx5e_priv *priv);
 void mlx5e_ipsec_device_cleanup(struct mlx5e_priv *priv);
 void mlx5e_ipsec_build_netdev(struct mlx5e_priv *priv);
+
+int mlx5e_ipsec_get_count(struct mlx5e_priv *priv);
+int mlx5e_ipsec_get_strings(struct mlx5e_priv *priv, uint8_t *data);
+void mlx5e_ipsec_update_stats(struct mlx5e_priv *priv);
+int mlx5e_ipsec_get_stats(struct mlx5e_priv *priv, u64 *data);
 
 struct xfrm_state *mlx5e_ipsec_sadb_rx_lookup(struct mlx5e_ipsec_dev *dev,
 					      unsigned int handle);
@@ -73,11 +80,24 @@ static inline void mlx5e_ipsec_build_netdev(struct mlx5e_priv *priv)
 {
 }
 
-static inline bool mlx5e_ipsec_feature_check(struct sk_buff *skb,
-					     struct net_device *netdev,
-					     netdev_features_t features)
+static inline int mlx5e_ipsec_get_count(struct mlx5e_priv *priv)
 {
-	return false;
+	return 0;
+}
+
+static inline int mlx5e_ipsec_get_strings(struct mlx5e_priv *priv,
+					  uint8_t *data)
+{
+	return 0;
+}
+
+static inline void mlx5e_ipsec_update_stats(struct mlx5e_priv *priv)
+{
+}
+
+static inline int mlx5e_ipsec_get_stats(struct mlx5e_priv *priv, u64 *data)
+{
+	return 0;
 }
 
 #endif
