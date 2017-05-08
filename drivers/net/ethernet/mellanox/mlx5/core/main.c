@@ -56,6 +56,7 @@
 #ifdef CONFIG_MLX5_CORE_EN
 #include "eswitch.h"
 #endif
+#include "fpga/core.h"
 
 MODULE_AUTHOR("Eli Cohen <eli@mellanox.com>");
 MODULE_DESCRIPTION("Mellanox Connect-IB, ConnectX-4 core driver");
@@ -1113,10 +1114,16 @@ static int mlx5_load_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv,
 		goto err_disable_msix;
 	}
 
+	err = mlx5_fpga_device_init(dev);
+	if (err) {
+		dev_err(&pdev->dev, "fpga device init failed %d\n", err);
+		goto err_put_uars;
+	}
+
 	err = mlx5_start_eqs(dev);
 	if (err) {
 		dev_err(&pdev->dev, "Failed to start pages and async EQs\n");
-		goto err_put_uars;
+		goto err_fpga_init;
 	}
 
 	err = alloc_comp_eqs(dev);
@@ -1145,6 +1152,12 @@ static int mlx5_load_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv,
 	if (err) {
 		dev_err(&pdev->dev, "sriov init failed %d\n", err);
 		goto err_sriov;
+	}
+
+	err = mlx5_fpga_device_start(dev);
+	if (err) {
+		dev_err(&pdev->dev, "fpga device start failed %d\n", err);
+		goto err_reg_dev;
 	}
 
 	if (mlx5_device_registered(dev)) {
@@ -1181,6 +1194,9 @@ err_affinity_hints:
 
 err_stop_eqs:
 	mlx5_stop_eqs(dev);
+
+err_fpga_init:
+	mlx5_fpga_device_cleanup(dev);
 
 err_put_uars:
 	mlx5_put_uars_page(dev, priv->uar);
@@ -1246,6 +1262,7 @@ static int mlx5_unload_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv,
 	mlx5_irq_clear_affinity_hints(dev);
 	free_comp_eqs(dev);
 	mlx5_stop_eqs(dev);
+	mlx5_fpga_device_cleanup(dev);
 	mlx5_put_uars_page(dev, priv->uar);
 	mlx5_disable_msix(dev);
 	if (cleanup)
@@ -1280,6 +1297,8 @@ static const struct devlink_ops mlx5_devlink_ops = {
 	.eswitch_mode_get = mlx5_devlink_eswitch_mode_get,
 	.eswitch_inline_mode_set = mlx5_devlink_eswitch_inline_mode_set,
 	.eswitch_inline_mode_get = mlx5_devlink_eswitch_inline_mode_get,
+	.eswitch_encap_mode_set = mlx5_devlink_eswitch_encap_mode_set,
+	.eswitch_encap_mode_get = mlx5_devlink_eswitch_encap_mode_get,
 #endif
 };
 
@@ -1406,7 +1425,7 @@ static pci_ers_result_t mlx5_pci_err_detected(struct pci_dev *pdev,
 
 	dev_info(&pdev->dev, "%s was called\n", __func__);
 
-	mlx5_enter_error_state(dev);
+	mlx5_enter_error_state(dev, false);
 	mlx5_unload_one(dev, priv, false);
 	/* In case of kernel call drain the health wq */
 	if (state) {
@@ -1493,15 +1512,43 @@ static const struct pci_error_handlers mlx5_err_handler = {
 	.resume		= mlx5_pci_resume
 };
 
+static int mlx5_try_fast_unload(struct mlx5_core_dev *dev)
+{
+	int ret;
+
+	if (!MLX5_CAP_GEN(dev, panic_teardown)) {
+		mlx5_core_dbg(dev, "panic teardown is not supported in the firmware\n");
+		return -ENOTSUPP;
+	}
+
+	if (dev->state == MLX5_DEVICE_STATE_INTERNAL_ERROR) {
+		mlx5_core_dbg(dev, "Device in internal error state, giving up\n");
+		return -EAGAIN;
+	}
+
+	ret = mlx5_cmd_panic_teardown_hca(dev);
+	if (ret) {
+		mlx5_core_dbg(dev, "Firmware couldn't do fast unload error: %d\n", ret);
+		return ret;
+	}
+
+	mlx5_enter_error_state(dev, true);
+
+	return 0;
+}
+
 static void shutdown(struct pci_dev *pdev)
 {
 	struct mlx5_core_dev *dev  = pci_get_drvdata(pdev);
 	struct mlx5_priv *priv = &dev->priv;
+	int err;
 
 	dev_info(&pdev->dev, "Shutdown was called\n");
 	/* Notify mlx5 clients that the kernel is being shut down */
 	set_bit(MLX5_INTERFACE_STATE_SHUTDOWN, &dev->intf_state);
-	mlx5_unload_one(dev, priv, false);
+	err = mlx5_try_fast_unload(dev);
+	if (err)
+		mlx5_unload_one(dev, priv, false);
 	mlx5_pci_disable_device(dev);
 }
 
@@ -1514,8 +1561,12 @@ static const struct pci_device_id mlx5_core_pci_table[] = {
 	{ PCI_VDEVICE(MELLANOX, 0x1016), MLX5_PCI_DEV_IS_VF},	/* ConnectX-4LX VF */
 	{ PCI_VDEVICE(MELLANOX, 0x1017) },			/* ConnectX-5, PCIe 3.0 */
 	{ PCI_VDEVICE(MELLANOX, 0x1018), MLX5_PCI_DEV_IS_VF},	/* ConnectX-5 VF */
-	{ PCI_VDEVICE(MELLANOX, 0x1019) },			/* ConnectX-5, PCIe 4.0 */
-	{ PCI_VDEVICE(MELLANOX, 0x101a), MLX5_PCI_DEV_IS_VF},	/* ConnectX-5, PCIe 4.0 VF */
+	{ PCI_VDEVICE(MELLANOX, 0x1019) },			/* ConnectX-5 Ex */
+	{ PCI_VDEVICE(MELLANOX, 0x101a), MLX5_PCI_DEV_IS_VF},	/* ConnectX-5 Ex VF */
+	{ PCI_VDEVICE(MELLANOX, 0x101b) },			/* ConnectX-6 */
+	{ PCI_VDEVICE(MELLANOX, 0x101c), MLX5_PCI_DEV_IS_VF},	/* ConnectX-6 VF */
+	{ PCI_VDEVICE(MELLANOX, 0xa2d2) },			/* BlueField integrated ConnectX-5 network controller */
+	{ PCI_VDEVICE(MELLANOX, 0xa2d3), MLX5_PCI_DEV_IS_VF},	/* BlueField integrated ConnectX-5 network controller VF */
 	{ 0, }
 };
 
