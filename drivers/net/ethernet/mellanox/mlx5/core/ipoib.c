@@ -65,6 +65,10 @@ static void mlx5i_init(struct mlx5_core_dev *mdev,
 
 	mlx5e_build_nic_params(mdev, &priv->channels.params, profile->max_nch(mdev));
 
+	/* Override RQ params as IPoIB supports only LINKED LIST RQ for now */
+	mlx5e_set_rq_type_params(mdev, &priv->channels.params, MLX5_WQ_TYPE_LINKED_LIST);
+	priv->channels.params.lro_en = false;
+
 	mutex_init(&priv->state_lock);
 
 	netdev->hw_features    |= NETIF_F_SG;
@@ -155,6 +159,8 @@ out:
 
 static void mlx5i_destroy_underlay_qp(struct mlx5_core_dev *mdev, struct mlx5_core_qp *qp)
 {
+	mlx5_fs_remove_rx_underlay_qpn(mdev, qp->qpn);
+
 	mlx5_core_destroy_qp(mdev, qp);
 }
 
@@ -168,6 +174,8 @@ static int mlx5i_init_tx(struct mlx5e_priv *priv)
 		mlx5_core_warn(priv->mdev, "create underlay QP failed, %d\n", err);
 		return err;
 	}
+
+	mlx5_fs_add_rx_underlay_qpn(priv->mdev, ipriv->qp.qpn);
 
 	err = mlx5e_create_tis(priv->mdev, 0 /* tc */, ipriv->qp.qpn, &priv->tisn[0]);
 	if (err) {
@@ -188,7 +196,6 @@ static void mlx5i_cleanup_tx(struct mlx5e_priv *priv)
 
 static int mlx5i_create_flow_steering(struct mlx5e_priv *priv)
 {
-	struct mlx5i_priv *ipriv = priv->ppriv;
 	int err;
 
 	priv->fs.ns = mlx5_get_flow_namespace(priv->mdev,
@@ -204,7 +211,7 @@ static int mlx5i_create_flow_steering(struct mlx5e_priv *priv)
 		priv->netdev->hw_features &= ~NETIF_F_NTUPLE;
 	}
 
-	err = mlx5e_create_ttc_table(priv, ipriv->qp.qpn);
+	err = mlx5e_create_ttc_table(priv);
 	if (err) {
 		netdev_err(priv->netdev, "Failed to create ttc table, err=%d\n",
 			   err);
