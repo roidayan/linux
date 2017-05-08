@@ -55,7 +55,6 @@ int ibnl_chk_listeners(unsigned int group)
 		return -1;
 	return 0;
 }
-EXPORT_SYMBOL(ibnl_chk_listeners);
 
 int ibnl_add_client(int index, int nops,
 		    const struct ibnl_client_cbs cb_table[])
