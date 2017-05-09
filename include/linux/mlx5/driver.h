@@ -104,8 +104,10 @@ enum {
 };
 
 enum {
+	MLX5_REG_QPTS            = 0x4002,
 	MLX5_REG_QETCR		 = 0x4005,
 	MLX5_REG_QTCT		 = 0x400a,
+	MLX5_REG_QCAM            = 0x4019,
 	MLX5_REG_DCBX_PARAM      = 0x4020,
 	MLX5_REG_DCBX_APP        = 0x4021,
 	MLX5_REG_PCAP		 = 0x5001,
@@ -119,6 +121,7 @@ enum {
 	MLX5_REG_PMPE		 = 0x5010,
 	MLX5_REG_PELC		 = 0x500e,
 	MLX5_REG_PVLC		 = 0x500f,
+	MLX5_REG_PDDR		 = 0x5031,
 	MLX5_REG_PCMR		 = 0x5041,
 	MLX5_REG_PMLP		 = 0x5002,
 	MLX5_REG_PCAM		 = 0x507f,
@@ -130,6 +133,12 @@ enum {
 	MLX5_REG_MTPPS		 = 0x9053,
 	MLX5_REG_MTPPSE		 = 0x9054,
 	MLX5_REG_MCAM		 = 0x907f,
+};
+
+enum mlx5_qpts_trust_mode {
+	MLX5_QPTS_TRUST_PORT,
+	MLX5_QPTS_TRUST_PCP,
+	MLX5_QPTS_TRUST_DSCP,
 };
 
 enum mlx5_dcbx_oper_mode {
@@ -746,6 +755,7 @@ struct mlx5_core_dev {
 		u32 hca_max[MLX5_CAP_NUM][MLX5_UN_SZ_DW(hca_cap_union)];
 		u32 pcam[MLX5_ST_SZ_DW(pcam_reg)];
 		u32 mcam[MLX5_ST_SZ_DW(mcam_reg)];
+		u32 qcam[MLX5_ST_SZ_DW(qcam_reg)];
 	} caps;
 	phys_addr_t		iseg_base;
 	struct mlx5_init_seg __iomem *iseg;
@@ -807,6 +817,7 @@ struct mlx5_cmd_work_ent {
 	u64			ts1;
 	u64			ts2;
 	u16			op;
+	bool			polling;
 };
 
 struct mlx5_pas {
@@ -915,6 +926,8 @@ int mlx5_cmd_exec(struct mlx5_core_dev *dev, void *in, int in_size, void *out,
 int mlx5_cmd_exec_cb(struct mlx5_core_dev *dev, void *in, int in_size,
 		     void *out, int out_size, mlx5_cmd_cbk_t callback,
 		     void *context);
+int mlx5_cmd_exec_polling(struct mlx5_core_dev *dev, void *in, int in_size,
+			  void *out, int out_size);
 void mlx5_cmd_mbox_status(void *out, u8 *status, u32 *syndrome);
 
 int mlx5_core_get_caps(struct mlx5_core_dev *dev, enum mlx5_cap_type cap_type);

@@ -756,6 +756,7 @@ struct mlx5e_priv {
 	struct mlx5_core_dev      *mdev;
 	struct net_device         *netdev;
 	struct mlx5e_stats         stats;
+	rwlock_t                   stats_lock;
 	struct mlx5e_tstamp        tstamp;
 	u16 q_counter;
 #ifdef CONFIG_MLX5_CORE_EN_DCB
@@ -1003,7 +1004,7 @@ int mlx5e_create_direct_tirs(struct mlx5e_priv *priv);
 void mlx5e_destroy_direct_tirs(struct mlx5e_priv *priv);
 void mlx5e_destroy_rqt(struct mlx5e_priv *priv, struct mlx5e_rqt *rqt);
 
-int mlx5e_create_ttc_table(struct mlx5e_priv *priv, u32 underlay_qpn);
+int mlx5e_create_ttc_table(struct mlx5e_priv *priv);
 void mlx5e_destroy_ttc_table(struct mlx5e_priv *priv);
 
 int mlx5e_create_tis(struct mlx5_core_dev *mdev, int tc,
