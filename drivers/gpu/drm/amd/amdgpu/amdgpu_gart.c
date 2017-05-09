@@ -27,6 +27,9 @@
  */
 #include <drm/drmP.h>
 #include <drm/amdgpu_drm.h>
+#ifdef CONFIG_X86
+#include <asm/set_memory.h>
+#endif
 #include "amdgpu.h"
 
 /*
@@ -229,7 +232,8 @@ void amdgpu_gart_unbind(struct amdgpu_device *adev, uint64_t offset,
 	unsigned p;
 	int i, j;
 	u64 page_base;
-	uint32_t flags = AMDGPU_PTE_SYSTEM;
+	/* Starting from VEGA10, system bit must be 0 to mean invalid. */
+	uint64_t flags = 0;
 
 	if (!adev->gart.ready) {
 		WARN(1, "trying to unbind memory from uninitialized GART !\n");
@@ -271,7 +275,7 @@ void amdgpu_gart_unbind(struct amdgpu_device *adev, uint64_t offset,
  */
 int amdgpu_gart_bind(struct amdgpu_device *adev, uint64_t offset,
 		     int pages, struct page **pagelist, dma_addr_t *dma_addr,
-		     uint32_t flags)
+		     uint64_t flags)
 {
 	unsigned t;
 	unsigned p;
