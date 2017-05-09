@@ -305,6 +305,7 @@ static void mlx5e_get_ethtool_stats(struct net_device *dev,
 	struct mlx5_priv *mlx5_priv;
 	int i, j, tc, prio, idx = 0;
 	unsigned long pfc_combined;
+	bool global_pause;
 
 	if (!data)
 		return;
@@ -313,8 +314,11 @@ static void mlx5e_get_ethtool_stats(struct net_device *dev,
 	if (test_bit(MLX5E_STATE_OPENED, &priv->state))
 		mlx5e_update_stats(priv);
 	channels = &priv->channels;
+	pfc_combined = mlx5e_query_pfc_combined(priv);
+	global_pause = mlx5e_query_global_pause_combined(priv);
 	mutex_unlock(&priv->state_lock);
 
+	read_lock(&priv->stats_lock);
 	for (i = 0; i < NUM_SW_COUNTERS; i++)
 		data[idx++] = MLX5E_READ_CTR64_CPU(&priv->stats.sw,
 						   sw_stats_desc, i);
@@ -353,7 +357,6 @@ static void mlx5e_get_ethtool_stats(struct net_device *dev,
 						 pport_per_prio_traffic_stats_desc, i);
 	}
 
-	pfc_combined = mlx5e_query_pfc_combined(priv);
 	for_each_set_bit(prio, &pfc_combined, NUM_PPORT_PRIO) {
 		for (i = 0; i < NUM_PPORT_PER_PRIO_PFC_COUNTERS; i++) {
 			data[idx++] = MLX5E_READ_CTR64_BE(&priv->stats.pport.per_prio_counters[prio],
@@ -361,7 +364,7 @@ static void mlx5e_get_ethtool_stats(struct net_device *dev,
 		}
 	}
 
-	if (mlx5e_query_global_pause_combined(priv)) {
+	if (global_pause) {
 		for (i = 0; i < NUM_PPORT_PER_PRIO_PFC_COUNTERS; i++) {
 			data[idx++] = MLX5E_READ_CTR64_BE(&priv->stats.pport.per_prio_counters[0],
 							  pport_per_prio_pfc_stats_desc, i);
@@ -379,7 +382,7 @@ static void mlx5e_get_ethtool_stats(struct net_device *dev,
 						   mlx5e_pme_error_desc, i);
 
 	if (!test_bit(MLX5E_STATE_OPENED, &priv->state))
-		return;
+		goto out;
 
 	/* per channel counters */
 	for (i = 0; i < channels->num; i++)
@@ -393,6 +396,9 @@ static void mlx5e_get_ethtool_stats(struct net_device *dev,
 			for (j = 0; j < NUM_SQ_STATS; j++)
 				data[idx++] = MLX5E_READ_CTR64_CPU(&channels->c[i]->sq[tc].stats,
 								   sq_stats_desc, j);
+
+out:
+	read_unlock(&priv->stats_lock);
 }
 
 static u32 mlx5e_rx_wqes_to_packets(struct mlx5e_priv *priv, int rq_wq_type,
@@ -794,7 +800,6 @@ static void get_supported(u32 eth_proto_cap,
 	ptys2ethtool_supported_port(link_ksettings, eth_proto_cap);
 	ptys2ethtool_supported_link(supported, eth_proto_cap);
 	ethtool_link_ksettings_add_link_mode(link_ksettings, supported, Pause);
-	ethtool_link_ksettings_add_link_mode(link_ksettings, supported, Asym_Pause);
 }
 
 static void get_advertising(u32 eth_proto_cap, u8 tx_pause,
@@ -804,7 +809,7 @@ static void get_advertising(u32 eth_proto_cap, u8 tx_pause,
 	unsigned long *advertising = link_ksettings->link_modes.advertising;
 
 	ptys2ethtool_adver_link(advertising, eth_proto_cap);
-	if (tx_pause)
+	if (rx_pause)
 		ethtool_link_ksettings_add_link_mode(link_ksettings, advertising, Pause);
 	if (tx_pause ^ rx_pause)
 		ethtool_link_ksettings_add_link_mode(link_ksettings, advertising, Asym_Pause);
@@ -849,6 +854,8 @@ static int mlx5e_get_link_ksettings(struct net_device *netdev,
 	struct mlx5e_priv *priv    = netdev_priv(netdev);
 	struct mlx5_core_dev *mdev = priv->mdev;
 	u32 out[MLX5_ST_SZ_DW(ptys_reg)] = {0};
+	u32 rx_pause = 0;
+	u32 tx_pause = 0;
 	u32 eth_proto_cap;
 	u32 eth_proto_admin;
 	u32 eth_proto_lp;
@@ -871,11 +878,13 @@ static int mlx5e_get_link_ksettings(struct net_device *netdev,
 	an_disable_admin = MLX5_GET(ptys_reg, out, an_disable_admin);
 	an_status        = MLX5_GET(ptys_reg, out, an_status);
 
+	mlx5_query_port_pause(mdev, &rx_pause, &tx_pause);
+
 	ethtool_link_ksettings_zero_link_mode(link_ksettings, supported);
 	ethtool_link_ksettings_zero_link_mode(link_ksettings, advertising);
 
 	get_supported(eth_proto_cap, link_ksettings);
-	get_advertising(eth_proto_admin, 0, 0, link_ksettings);
+	get_advertising(eth_proto_admin, tx_pause, rx_pause, link_ksettings);
 	get_speed_duplex(netdev, eth_proto_oper, link_ksettings);
 
 	eth_proto_oper = eth_proto_oper ? eth_proto_oper : eth_proto_cap;
