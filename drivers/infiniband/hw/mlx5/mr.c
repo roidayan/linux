@@ -600,30 +600,44 @@ static int mlx5_mr_cache_debugfs_init(struct mlx5_ib_dev *dev)
 		sprintf(ent->name, "%d", ent->order);
 		ent->dir = debugfs_create_dir(ent->name,  cache->root);
 		if (!ent->dir)
-			return -ENOMEM;
+			goto err;
 
 		ent->fsize = debugfs_create_file("size", 0600, ent->dir, ent,
 						 &size_fops);
 		if (!ent->fsize)
-			return -ENOMEM;
+			goto err;
 
 		ent->flimit = debugfs_create_file("limit", 0600, ent->dir, ent,
 						  &limit_fops);
 		if (!ent->flimit)
-			return -ENOMEM;
+			goto err;
 
 		ent->fcur = debugfs_create_u32("cur", 0400, ent->dir,
 					       &ent->cur);
 		if (!ent->fcur)
-			return -ENOMEM;
+			goto err;
 
 		ent->fmiss = debugfs_create_u32("miss", 0600, ent->dir,
 						&ent->miss);
 		if (!ent->fmiss)
-			return -ENOMEM;
+			goto err;
 	}
 
 	return 0;
+err:
+	debugfs_remove_recursive(cache->root);
+
+	for (i = 0; i < MAX_MR_CACHE_ENTRIES; i++) {
+		ent = &cache->ent[i];
+		ent->dir = NULL;
+		ent->fsize = NULL;
+		ent->flimit = NULL;
+		ent->fcur = NULL;
+		ent->fmiss = NULL;
+	}
+	cache->root = NULL;
+
+	return -ENOMEM;
 }
 
 static void mlx5_mr_cache_debugfs_cleanup(struct mlx5_ib_dev *dev)
@@ -691,6 +705,11 @@ int mlx5_mr_cache_init(struct mlx5_ib_dev *dev)
 	err = mlx5_mr_cache_debugfs_init(dev);
 	if (err)
 		mlx5_ib_warn(dev, "cache debugfs failure\n");
+
+	/*
+	 * We don't want to fail driver if debugfs failed to initialize,
+	 * so we are not forwarding error to the user.
+	 */
 
 	return 0;
 }
