@@ -43,6 +43,7 @@
 #include <net/tc_act/tc_vlan.h>
 #include <net/tc_act/tc_tunnel_key.h>
 #include <net/tc_act/tc_pedit.h>
+#include <net/tc_act/tc_csum.h>
 #include <net/vxlan.h>
 #include <net/arp.h>
 #include "en.h"
@@ -1149,6 +1150,16 @@ static int parse_tc_nic_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 			continue;
 		}
 
+		if (is_tcf_csum(a)) {
+			/*  when re-writing headers, the HW recalcs L3/L4 checksums */
+			if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR)
+				continue;
+
+			netdev_warn(priv->netdev,
+				    "csum TC action is only offloaded with pedit\n");
+			return -EOPNOTSUPP;
+		}
+
 		if (is_tcf_skbedit_mark(a)) {
 			u32 mark = tcf_skbedit_mark(a);
 
@@ -1649,6 +1660,16 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 
 			attr->action |= MLX5_FLOW_CONTEXT_ACTION_MOD_HDR;
 			continue;
+		}
+
+		if (is_tcf_csum(a)) {
+			/*  when re-writing headers, the HW recalcs L3/L4 checksums */
+			if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR)
+				continue;
+
+			netdev_warn(priv->netdev,
+				    "csum TC action is only offloaded with pedit\n");
+			return -EOPNOTSUPP;
 		}
 
 		if (is_tcf_mirred_egress_redirect(a)) {
