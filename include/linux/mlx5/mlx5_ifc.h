@@ -1846,7 +1846,11 @@ struct mlx5_ifc_pcie_perf_cntrs_grp_data_layout_bits {
 
 	u8         crc_error_tlp[0x20];
 
-	u8         reserved_at_140[0x680];
+	u8         tx_overflow_buffer_pkt_high[0x20];
+
+	u8         tx_overflow_buffer_pkt_low[0x20];
+
+	u8         reserved_at_140[0x640];
 };
 
 struct mlx5_ifc_cmd_inter_comp_event_bits {
@@ -7730,8 +7734,9 @@ struct mlx5_ifc_pcam_reg_bits {
 };
 
 struct mlx5_ifc_mcam_enhanced_features_bits {
-	u8         reserved_at_0[0x7f];
-
+	u8         reserved_at_0[0x7c];
+	u8         tx_overflow_buffer_pkt[0x1];
+	u8         reserved_at_7d[0x2];
 	u8         pcie_performance_group[0x1];
 };
 
