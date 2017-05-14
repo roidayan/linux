@@ -176,6 +176,7 @@ static const struct nla_policy dcbnl_ieee_policy[DCB_ATTR_IEEE_MAX + 1] = {
 	[DCB_ATTR_IEEE_MAXRATE]   = {.len = sizeof(struct ieee_maxrate)},
 	[DCB_ATTR_IEEE_QCN]         = {.len = sizeof(struct ieee_qcn)},
 	[DCB_ATTR_IEEE_QCN_STATS]   = {.len = sizeof(struct ieee_qcn_stats)},
+	[DCB_ATTR_DCB_TRUST]        = {.len = sizeof(struct dcbnl_trust)},
 };
 
 static const struct nla_policy dcbnl_ieee_app[DCB_ATTR_IEEE_APP_MAX + 1] = {
@@ -1098,6 +1099,16 @@ static int dcbnl_ieee_fill(struct sk_buff *skb, struct net_device *netdev)
 			return -EMSGSIZE;
 	}
 
+	if (ops->dcbnl_gettrust) {
+		struct dcbnl_trust trust;
+
+		memset(&trust, 0, sizeof(trust));
+		err = ops->dcbnl_gettrust(netdev, &trust);
+		if (!err &&
+		    nla_put(skb, DCB_ATTR_DCB_TRUST, sizeof(trust), &trust))
+			return -EMSGSIZE;
+	}
+
 	app = nla_nest_start(skb, DCB_ATTR_IEEE_APP_TABLE);
 	if (!app)
 		return -EMSGSIZE;
@@ -1453,6 +1464,14 @@ static int dcbnl_ieee_set(struct net_device *netdev, struct nlmsghdr *nlh,
 	if (ieee[DCB_ATTR_IEEE_PFC] && ops->ieee_setpfc) {
 		struct ieee_pfc *pfc = nla_data(ieee[DCB_ATTR_IEEE_PFC]);
 		err = ops->ieee_setpfc(netdev, pfc);
+		if (err)
+			goto err;
+	}
+
+	if (ieee[DCB_ATTR_DCB_TRUST] && ops->dcbnl_settrust) {
+		struct dcbnl_trust *trust = nla_data(ieee[DCB_ATTR_DCB_TRUST]);
+
+		err = ops->dcbnl_settrust(netdev, trust);
 		if (err)
 			goto err;
 	}
