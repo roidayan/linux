@@ -1385,8 +1385,9 @@ static int create_qp(struct ib_uverbs_file *file,
 		attr.rwq_ind_tbl = ind_tbl;
 	}
 
-	if ((cmd_sz >= offsetof(typeof(*cmd), reserved1) +
-		       sizeof(cmd->reserved1)) && cmd->reserved1) {
+	if (cmd_sz > sizeof(*cmd) &&
+	    !ib_is_udata_cleared(ucore, sizeof(*cmd),
+				 cmd_sz - sizeof(*cmd))) {
 		ret = -EOPNOTSUPP;
 		goto err_put;
 	}
@@ -1484,10 +1485,14 @@ static int create_qp(struct ib_uverbs_file *file,
 				IB_QP_CREATE_MANAGED_SEND |
 				IB_QP_CREATE_MANAGED_RECV |
 				IB_QP_CREATE_SCATTER_FCS |
-				IB_QP_CREATE_CVLAN_STRIPPING)) {
+				IB_QP_CREATE_CVLAN_STRIPPING |
+				IB_QP_CREATE_ASSOC_QPN)) {
 		ret = -EINVAL;
 		goto err_put;
 	}
+
+	if (attr.create_flags & IB_QP_CREATE_ASSOC_QPN)
+		attr.associated_qpn = cmd->associated_qpn;
 
 	buf = (void *)cmd + sizeof(*cmd);
 	if (cmd_sz > sizeof(*cmd))
