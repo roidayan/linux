@@ -223,8 +223,8 @@ static int translate_eth_proto_oper(u32 eth_proto_oper, u8 *active_speed,
 	return 0;
 }
 
-static void mlx5_query_port_roce(struct ib_device *device, u8 port_num,
-				 struct ib_port_attr *props)
+static int mlx5_query_port_roce(struct ib_device *device, u8 port_num,
+				struct ib_port_attr *props)
 {
 	struct mlx5_ib_dev *dev = to_mdev(device);
 	struct mlx5_core_dev *mdev = dev->mdev;
@@ -232,12 +232,14 @@ static void mlx5_query_port_roce(struct ib_device *device, u8 port_num,
 	enum ib_mtu ndev_ib_mtu;
 	u16 qkey_viol_cntr;
 	u32 eth_prot_oper;
+	int err;
 
 	/* Possible bad flows are checked before filling out props so in case
 	 * of an error it will still be zeroed out.
 	 */
-	if (mlx5_query_port_eth_proto_oper(mdev, &eth_prot_oper, port_num))
-		return;
+	err = mlx5_query_port_eth_proto_oper(mdev, &eth_prot_oper, port_num);
+	if (err)
+		return err;
 
 	translate_eth_proto_oper(eth_prot_oper, &props->active_speed,
 				 &props->active_width);
@@ -258,7 +260,7 @@ static void mlx5_query_port_roce(struct ib_device *device, u8 port_num,
 
 	ndev = mlx5_ib_get_netdev(device, port_num);
 	if (!ndev)
-		return;
+		return 0;
 
 	if (mlx5_lag_is_active(dev->mdev)) {
 		rcu_read_lock();
@@ -281,6 +283,7 @@ static void mlx5_query_port_roce(struct ib_device *device, u8 port_num,
 	dev_put(ndev);
 
 	props->active_mtu	= min(props->max_mtu, ndev_ib_mtu);
+	return 0;
 }
 
 static void ib_gid_to_mlx5_roce_addr(const union ib_gid *gid,
