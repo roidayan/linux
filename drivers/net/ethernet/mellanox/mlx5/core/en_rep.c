@@ -667,6 +667,9 @@ static int mlx5e_rep_ndo_setup_tc(struct net_device *dev, u32 handle,
 							    proto, tc);
 	}
 
+	if (!mlx5_eswitch_is_vport_enabled(dev))
+		return -EINVAL;
+
 	switch (tc->type) {
 	case TC_SETUP_CLSFLOWER:
 		switch (tc->cls_flower->command) {

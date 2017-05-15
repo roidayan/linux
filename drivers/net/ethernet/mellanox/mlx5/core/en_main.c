@@ -2999,6 +2999,9 @@ static int mlx5e_ndo_setup_tc(struct net_device *dev, u32 handle,
 	if (TC_H_MAJ(handle) != TC_H_MAJ(TC_H_INGRESS))
 		goto mqprio;
 
+	if (!mlx5_eswitch_is_vport_enabled(dev))
+		return -EINVAL;
+
 	switch (tc->type) {
 	case TC_SETUP_CLSFLOWER:
 		switch (tc->cls_flower->command) {

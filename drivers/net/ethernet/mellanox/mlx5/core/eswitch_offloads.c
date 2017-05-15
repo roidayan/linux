@@ -37,6 +37,8 @@
 #include <linux/mlx5/fs.h>
 #include "mlx5_core.h"
 #include "eswitch.h"
+#include "en.h"
+#include "en_rep.h"
 
 enum {
 	FDB_FAST_PATH = 0,
@@ -1153,10 +1155,31 @@ void mlx5_eswitch_unregister_vport_rep(struct mlx5_eswitch *esw,
 
 struct net_device *mlx5_eswitch_get_uplink_netdev(struct mlx5_eswitch *esw)
 {
-#define UPLINK_REP_INDEX 0
 	struct mlx5_esw_offload *offloads = &esw->offloads;
 	struct mlx5_eswitch_rep *rep;
 
 	rep = &offloads->vport_reps[UPLINK_REP_INDEX];
 	return rep->netdev;
+}
+
+bool mlx5_eswitch_is_vport_enabled(struct net_device *dev)
+{
+	struct mlx5e_priv *priv = netdev_priv(dev);
+	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
+	struct mlx5_vport *vport;
+
+	if (esw->mode == SRIOV_OFFLOADS) {
+		struct mlx5e_rep_priv *rpriv = priv->ppriv;
+		struct mlx5_eswitch_rep *rep = rpriv->rep;
+
+		if (mlx5e_is_uplink_rep(priv))
+			vport = &esw->vports[UPLINK_REP_INDEX];
+		else
+			vport = &esw->vports[rep->vport];
+
+		return vport->enabled;
+	}
+
+	vport = &esw->vports[UPLINK_REP_INDEX];
+	return vport->enabled;
 }
