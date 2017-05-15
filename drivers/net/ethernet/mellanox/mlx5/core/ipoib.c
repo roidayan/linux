@@ -49,6 +49,101 @@ static const struct net_device_ops mlx5i_netdev_ops = {
 	.ndo_uninit              = mlx5i_dev_cleanup,
 };
 
+/* IPoIB ethtool support */
+
+static void mlx5i_get_drvinfo(struct net_device *dev,
+			      struct ethtool_drvinfo *drvinfo)
+{
+	struct mlx5e_priv *priv = mlx5i_epriv(dev);
+
+	mlx5e_ethtool_get_drvinfo(priv, drvinfo);
+}
+
+static void mlx5i_get_strings(struct net_device *dev,
+			      uint32_t stringset, uint8_t *data)
+{
+	struct mlx5e_priv *priv  = mlx5i_epriv(dev);
+
+	mlx5e_ethtool_get_strings(priv, stringset, data);
+}
+
+static int mlx5i_get_sset_count(struct net_device *dev, int sset)
+{
+	struct mlx5e_priv *priv = mlx5i_epriv(dev);
+
+	return mlx5e_ethtool_get_sset_count(priv, sset);
+}
+
+static void mlx5i_get_ethtool_stats(struct net_device *dev,
+				    struct ethtool_stats *stats,
+				    u64 *data)
+{
+	struct mlx5e_priv *priv = mlx5i_epriv(dev);
+
+	mlx5e_ethtool_get_ethtool_stats(priv, stats, data);
+}
+
+static int mlx5i_set_ringparam(struct net_device *dev,
+			       struct ethtool_ringparam *param)
+{
+	struct mlx5e_priv *priv = mlx5i_epriv(dev);
+
+	return mlx5e_ethtool_set_ringparam(priv, param);
+}
+
+static void mlx5i_get_ringparam(struct net_device *dev,
+				struct ethtool_ringparam *param)
+{
+	struct mlx5e_priv *priv = mlx5i_epriv(dev);
+
+	mlx5e_ethtool_get_ringparam(priv, param);
+}
+
+static int mlx5i_set_channels(struct net_device *dev,
+			      struct ethtool_channels *ch)
+{
+	struct mlx5e_priv *priv = mlx5i_epriv(dev);
+
+	return mlx5e_ethtool_set_channels(priv, ch);
+}
+
+static void mlx5i_get_channels(struct net_device *dev,
+			       struct ethtool_channels *ch)
+{
+	struct mlx5e_priv *priv = mlx5i_epriv(dev);
+
+	mlx5e_ethtool_get_channels(priv, ch);
+}
+
+static int mlx5i_set_coalesce(struct net_device *netdev,
+			      struct ethtool_coalesce *coal)
+{
+	struct mlx5e_priv *priv = mlx5i_epriv(netdev);
+
+	return mlx5e_ethtool_set_coalesce(priv, coal);
+}
+
+static int mlx5i_get_coalesce(struct net_device *netdev,
+			      struct ethtool_coalesce *coal)
+{
+	struct mlx5e_priv *priv = mlx5i_epriv(netdev);
+
+	return mlx5e_ethtool_get_coalesce(priv, coal);
+}
+
+const struct ethtool_ops mlx5i_ethtool_ops = {
+	.get_drvinfo       = mlx5i_get_drvinfo,
+	.get_strings       = mlx5i_get_strings,
+	.get_sset_count    = mlx5i_get_sset_count,
+	.get_ethtool_stats = mlx5i_get_ethtool_stats,
+	.get_ringparam     = mlx5i_get_ringparam,
+	.set_ringparam     = mlx5i_set_ringparam,
+	.get_channels      = mlx5i_get_channels,
+	.set_channels      = mlx5i_set_channels,
+	.get_coalesce      = mlx5i_get_coalesce,
+	.set_coalesce      = mlx5i_set_coalesce,
+};
+
 /* IPoIB mlx5 netdev profile */
 
 /* Called directly after IPoIB netdevice was created to initialize SW structs */
@@ -82,6 +177,7 @@ static void mlx5i_init(struct mlx5_core_dev *mdev,
 	netdev->hw_features    |= NETIF_F_RXHASH;
 
 	netdev->netdev_ops = &mlx5i_netdev_ops;
+	netdev->ethtool_ops = &mlx5i_ethtool_ops;
 }
 
 /* Called directly before IPoIB netdevice is destroyed to cleanup SW structs */
@@ -510,4 +606,3 @@ void mlx5_rdma_netdev_free(struct net_device *netdev)
 	mlx5e_destroy_mdev_resources(priv->mdev);
 }
 EXPORT_SYMBOL(mlx5_rdma_netdev_free);
-
