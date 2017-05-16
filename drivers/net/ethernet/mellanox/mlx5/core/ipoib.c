@@ -49,6 +49,101 @@ static const struct net_device_ops mlx5i_netdev_ops = {
 	.ndo_uninit              = mlx5i_dev_cleanup,
 };
 
+/* IPoIB ethtool support */
+
+static void mlx5i_get_drvinfo(struct net_device *dev,
+			      struct ethtool_drvinfo *drvinfo)
+{
+	struct mlx5e_priv *priv = mlx5i_epriv(dev);
+
+	mlx5e_ethtool_get_drvinfo(priv, drvinfo);
+}
+
+static void mlx5i_get_strings(struct net_device *dev,
+			      uint32_t stringset, uint8_t *data)
+{
+	struct mlx5e_priv *priv  = mlx5i_epriv(dev);
+
+	mlx5e_ethtool_get_strings(priv, stringset, data);
+}
+
+static int mlx5i_get_sset_count(struct net_device *dev, int sset)
+{
+	struct mlx5e_priv *priv = mlx5i_epriv(dev);
+
+	return mlx5e_ethtool_get_sset_count(priv, sset);
+}
+
+static void mlx5i_get_ethtool_stats(struct net_device *dev,
+				    struct ethtool_stats *stats,
+				    u64 *data)
+{
+	struct mlx5e_priv *priv = mlx5i_epriv(dev);
+
+	mlx5e_ethtool_get_ethtool_stats(priv, stats, data);
+}
+
+static int mlx5i_set_ringparam(struct net_device *dev,
+			       struct ethtool_ringparam *param)
+{
+	struct mlx5e_priv *priv = mlx5i_epriv(dev);
+
+	return mlx5e_ethtool_set_ringparam(priv, param);
+}
+
+static void mlx5i_get_ringparam(struct net_device *dev,
+				struct ethtool_ringparam *param)
+{
+	struct mlx5e_priv *priv = mlx5i_epriv(dev);
+
+	mlx5e_ethtool_get_ringparam(priv, param);
+}
+
+static int mlx5i_set_channels(struct net_device *dev,
+			      struct ethtool_channels *ch)
+{
+	struct mlx5e_priv *priv = mlx5i_epriv(dev);
+
+	return mlx5e_ethtool_set_channels(priv, ch);
+}
+
+static void mlx5i_get_channels(struct net_device *dev,
+			       struct ethtool_channels *ch)
+{
+	struct mlx5e_priv *priv = mlx5i_epriv(dev);
+
+	mlx5e_ethtool_get_channels(priv, ch);
+}
+
+static int mlx5i_set_coalesce(struct net_device *netdev,
+			      struct ethtool_coalesce *coal)
+{
+	struct mlx5e_priv *priv = mlx5i_epriv(netdev);
+
+	return mlx5e_ethtool_set_coalesce(priv, coal);
+}
+
+static int mlx5i_get_coalesce(struct net_device *netdev,
+			      struct ethtool_coalesce *coal)
+{
+	struct mlx5e_priv *priv = mlx5i_epriv(netdev);
+
+	return mlx5e_ethtool_get_coalesce(priv, coal);
+}
+
+const struct ethtool_ops mlx5i_ethtool_ops = {
+	.get_drvinfo       = mlx5i_get_drvinfo,
+	.get_strings       = mlx5i_get_strings,
+	.get_sset_count    = mlx5i_get_sset_count,
+	.get_ethtool_stats = mlx5i_get_ethtool_stats,
+	.get_ringparam     = mlx5i_get_ringparam,
+	.set_ringparam     = mlx5i_set_ringparam,
+	.get_channels      = mlx5i_get_channels,
+	.set_channels      = mlx5i_set_channels,
+	.get_coalesce      = mlx5i_get_coalesce,
+	.set_coalesce      = mlx5i_set_coalesce,
+};
+
 /* IPoIB mlx5 netdev profile */
 
 /* Called directly after IPoIB netdevice was created to initialize SW structs */
@@ -66,6 +161,10 @@ static void mlx5i_init(struct mlx5_core_dev *mdev,
 
 	mlx5e_build_nic_params(mdev, &priv->channels.params, profile->max_nch(mdev));
 
+	/* Override RQ params as IPoIB supports only LINKED LIST RQ for now */
+	mlx5e_set_rq_type_params(mdev, &priv->channels.params, MLX5_WQ_TYPE_LINKED_LIST);
+	priv->channels.params.lro_en = false;
+
 	mutex_init(&priv->state_lock);
 
 	netdev->hw_features    |= NETIF_F_SG;
@@ -78,6 +177,7 @@ static void mlx5i_init(struct mlx5_core_dev *mdev,
 	netdev->hw_features    |= NETIF_F_RXHASH;
 
 	netdev->netdev_ops = &mlx5i_netdev_ops;
+	netdev->ethtool_ops = &mlx5i_ethtool_ops;
 }
 
 /* Called directly before IPoIB netdevice is destroyed to cleanup SW structs */
@@ -98,7 +198,7 @@ static int mlx5i_create_underlay_qp(struct mlx5_core_dev *mdev, struct mlx5_core
 	void *qpc;
 
 	inlen = MLX5_ST_SZ_BYTES(create_qp_in);
-	in = mlx5_vzalloc(inlen);
+	in = kvzalloc(inlen, GFP_KERNEL);
 	if (!in)
 		return -ENOMEM;
 
@@ -156,6 +256,8 @@ out:
 
 static void mlx5i_destroy_underlay_qp(struct mlx5_core_dev *mdev, struct mlx5_core_qp *qp)
 {
+	mlx5_fs_remove_rx_underlay_qpn(mdev, qp->qpn);
+
 	mlx5_core_destroy_qp(mdev, qp);
 }
 
@@ -169,6 +271,8 @@ static int mlx5i_init_tx(struct mlx5e_priv *priv)
 		mlx5_core_warn(priv->mdev, "create underlay QP failed, %d\n", err);
 		return err;
 	}
+
+	mlx5_fs_add_rx_underlay_qpn(priv->mdev, ipriv->qp.qpn);
 
 	err = mlx5e_create_tis(priv->mdev, 0 /* tc */, ipriv->qp.qpn, &priv->tisn[0]);
 	if (err) {
@@ -189,7 +293,6 @@ static void mlx5i_cleanup_tx(struct mlx5e_priv *priv)
 
 static int mlx5i_create_flow_steering(struct mlx5e_priv *priv)
 {
-	struct mlx5i_priv *ipriv = priv->ppriv;
 	int err;
 
 	priv->fs.ns = mlx5_get_flow_namespace(priv->mdev,
@@ -205,7 +308,7 @@ static int mlx5i_create_flow_steering(struct mlx5e_priv *priv)
 		priv->netdev->hw_features &= ~NETIF_F_NTUPLE;
 	}
 
-	err = mlx5e_create_ttc_table(priv, ipriv->qp.qpn);
+	err = mlx5e_create_ttc_table(priv);
 	if (err) {
 		netdev_err(priv->netdev, "Failed to create ttc table, err=%d\n",
 			   err);
@@ -503,4 +606,3 @@ void mlx5_rdma_netdev_free(struct net_device *netdev)
 	mlx5e_destroy_mdev_resources(priv->mdev);
 }
 EXPORT_SYMBOL(mlx5_rdma_netdev_free);
-
