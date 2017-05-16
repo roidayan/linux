@@ -756,6 +756,7 @@ struct mlx5e_priv {
 	struct mlx5_core_dev      *mdev;
 	struct net_device         *netdev;
 	struct mlx5e_stats         stats;
+	rwlock_t                   stats_lock;
 	struct mlx5e_tstamp        tstamp;
 	u16 q_counter;
 #ifdef CONFIG_MLX5_CORE_EN_DCB
