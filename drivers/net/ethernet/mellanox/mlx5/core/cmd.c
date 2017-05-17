@@ -774,7 +774,7 @@ static void cb_timeout_handler(struct work_struct *work)
 	mlx5_core_warn(dev, "%s(0x%x) timeout. Will cause a leak of a command resource\n",
 		       mlx5_command_str(msg_to_opcode(ent->in)),
 		       msg_to_opcode(ent->in));
-	mlx5_cmd_comp_handler(dev, 1UL << ent->idx);
+	mlx5_cmd_comp_handler(dev, 1UL << ent->idx, true);
 }
 
 static void cmd_work_handler(struct work_struct *work)
@@ -804,6 +804,7 @@ static void cmd_work_handler(struct work_struct *work)
 	}
 
 	cmd->ent_arr[ent->idx] = ent;
+	set_bit(MLX5_CMD_ENT_STATE_PENDING_COMP, &ent->state);
 	lay = get_inst(cmd, ent->idx);
 	ent->lay = lay;
 	memset(lay, 0, sizeof(*lay));
@@ -825,6 +826,20 @@ static void cmd_work_handler(struct work_struct *work)
 	if (ent->callback)
 		schedule_delayed_work(&ent->cb_timeout_work, cb_timeout);
 
+	/* Skip sending command to fw if internal error */
+	if (pci_channel_offline(dev->pdev) ||
+	    dev->state == MLX5_DEVICE_STATE_INTERNAL_ERROR) {
+		u8 status = 0;
+		u32 drv_synd;
+
+		ent->ret = mlx5_internal_err_ret_value(dev, msg_to_opcode(ent->in), &drv_synd, &status);
+		MLX5_SET(mbox_out, ent->out, status, status);
+		MLX5_SET(mbox_out, ent->out, syndrome, drv_synd);
+
+		mlx5_cmd_comp_handler(dev, 1UL << ent->idx, true);
+		return;
+	}
+
 	/* ring doorbell after the descriptor is valid */
 	mlx5_core_dbg(dev, "writing 0x%x to command doorbell\n", 1 << ent->idx);
 	wmb();
@@ -835,7 +850,7 @@ static void cmd_work_handler(struct work_struct *work)
 		poll_timeout(ent);
 		/* make sure we read the descriptor after ownership is SW */
 		rmb();
-		mlx5_cmd_comp_handler(dev, 1UL << ent->idx);
+		mlx5_cmd_comp_handler(dev, 1UL << ent->idx, (ent->ret == -ETIMEDOUT));
 	}
 }
 
@@ -879,7 +894,7 @@ static int wait_func(struct mlx5_core_dev *dev, struct mlx5_cmd_work_ent *ent)
 		wait_for_completion(&ent->done);
 	} else if (!wait_for_completion_timeout(&ent->done, timeout)) {
 		ent->ret = -ETIMEDOUT;
-		mlx5_cmd_comp_handler(dev, 1UL << ent->idx);
+		mlx5_cmd_comp_handler(dev, 1UL << ent->idx, true);
 	}
 
 	err = ent->ret;
@@ -1336,6 +1351,46 @@ err_dbg:
 	return err;
 }
 
+static void trigger_cmd_completions(struct mlx5_core_dev *dev)
+{
+	unsigned long flags;
+	u64 vector;
+
+	/* wait for pending handlers to complete */
+	synchronize_irq(dev->priv.msix_arr[MLX5_EQ_VEC_CMD].vector);
+	spin_lock_irqsave(&dev->cmd.alloc_lock, flags);
+	vector = ~dev->cmd.bitmask & ((1ul << (1 << dev->cmd.log_sz)) - 1);
+	if (!vector)
+		goto no_trig;
+
+	vector |= MLX5_TRIGGERED_CMD_COMP;
+	spin_unlock_irqrestore(&dev->cmd.alloc_lock, flags);
+
+	mlx5_core_dbg(dev, "vector 0x%llx\n", vector);
+	mlx5_cmd_comp_handler(dev, vector, true);
+	return;
+
+no_trig:
+	spin_unlock_irqrestore(&dev->cmd.alloc_lock, flags);
+}
+
+void mlx5_flush_cmdif(struct mlx5_core_dev *dev)
+{
+	struct mlx5_cmd *cmd = &dev->cmd;
+	int i;
+
+	for (i = 0; i < cmd->max_reg_cmds; i++)
+		while (down_trylock(&cmd->sem))
+			trigger_cmd_completions(dev);
+
+	while (down_trylock(&cmd->pages_sem))
+		trigger_cmd_completions(dev);
+
+	up(&cmd->pages_sem);
+	for (i = 0; i < cmd->max_reg_cmds; i++)
+		up(&cmd->sem);
+}
+
 static void mlx5_cmd_change_mod(struct mlx5_core_dev *dev, int mode)
 {
 	struct mlx5_cmd *cmd = &dev->cmd;
@@ -1375,7 +1430,7 @@ static void free_msg(struct mlx5_core_dev *dev, struct mlx5_cmd_msg *msg)
 	}
 }
 
-void mlx5_cmd_comp_handler(struct mlx5_core_dev *dev, u64 vec)
+void mlx5_cmd_comp_handler(struct mlx5_core_dev *dev, u64 vec, bool forced)
 {
 	struct mlx5_cmd *cmd = &dev->cmd;
 	struct mlx5_cmd_work_ent *ent;
@@ -1395,6 +1450,19 @@ void mlx5_cmd_comp_handler(struct mlx5_core_dev *dev, u64 vec)
 			struct semaphore *sem;
 
 			ent = cmd->ent_arr[i];
+
+			/* if we already completed the command, ignore it */
+			if (!test_and_clear_bit(MLX5_CMD_ENT_STATE_PENDING_COMP,
+						&ent->state)) {
+				/* only real completion can free the cmd slot */
+				if (!forced) {
+					mlx5_core_err(dev, "Command completion arrived after timeout (entry idx = %d).\n",
+						      ent->idx);
+					free_ent(cmd, ent->idx);
+				}
+				continue;
+			}
+
 			if (ent->callback)
 				cancel_delayed_work(&ent->cb_timeout_work);
 			if (ent->page_queue)
@@ -1417,7 +1485,10 @@ void mlx5_cmd_comp_handler(struct mlx5_core_dev *dev, u64 vec)
 				mlx5_core_dbg(dev, "command completed. ret 0x%x, delivery status %s(0x%x)\n",
 					      ent->ret, deliv_status_to_str(ent->status), ent->status);
 			}
-			free_ent(cmd, ent->idx);
+
+			/* only real completion will free the entry slot */
+			if (!forced)
+				free_ent(cmd, ent->idx);
 
 			if (ent->callback) {
 				ds = ent->ts2 - ent->ts1;
