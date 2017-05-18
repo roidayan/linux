@@ -118,7 +118,7 @@ static void mlx5e_set_rq_params(struct mlx5_core_dev *mdev, struct mlx5e_params 
 	mlx5e_set_rq_type_params(mdev, params, rq_type);
 }
 
-static void mlx5e_update_carrier(struct mlx5e_priv *priv)
+void mlx5e_update_carrier(struct mlx5e_priv *priv)
 {
 	struct mlx5_core_dev *mdev = priv->mdev;
 	u8 port_state;
@@ -143,7 +143,8 @@ static void mlx5e_update_carrier_work(struct work_struct *work)
 
 	mutex_lock(&priv->state_lock);
 	if (test_bit(MLX5E_STATE_OPENED, &priv->state))
-		mlx5e_update_carrier(priv);
+		if (priv->profile->update_carrier)
+			priv->profile->update_carrier(priv);
 	mutex_unlock(&priv->state_lock);
 }
 
@@ -2593,9 +2594,10 @@ void mlx5e_switch_priv_channels(struct mlx5e_priv *priv,
 {
 	struct net_device *netdev = priv->netdev;
 	int new_num_txqs;
-
+	int carrier_ok;
 	new_num_txqs = new_chs->num * new_chs->params.num_tc;
 
+	carrier_ok = netif_carrier_ok(netdev);
 	netif_carrier_off(netdev);
 
 	if (new_num_txqs < netdev->real_num_tx_queues)
@@ -2613,7 +2615,9 @@ void mlx5e_switch_priv_channels(struct mlx5e_priv *priv,
 	mlx5e_refresh_tirs(priv, false);
 	mlx5e_activate_priv_channels(priv);
 
-	mlx5e_update_carrier(priv);
+	/* return carrier back if needed */
+	if (carrier_ok)
+		netif_carrier_on(netdev);
 }
 
 int mlx5e_open_locked(struct net_device *netdev)
@@ -2629,7 +2633,8 @@ int mlx5e_open_locked(struct net_device *netdev)
 
 	mlx5e_refresh_tirs(priv, false);
 	mlx5e_activate_priv_channels(priv);
-	mlx5e_update_carrier(priv);
+	if (priv->profile->update_carrier)
+		priv->profile->update_carrier(priv);
 	mlx5e_timestamp_init(priv);
 
 	if (priv->profile->update_stats)
@@ -4208,6 +4213,7 @@ static const struct mlx5e_profile mlx5e_nic_profile = {
 	.disable	   = mlx5e_nic_disable,
 	.update_stats	   = mlx5e_update_ndo_stats,
 	.max_nch	   = mlx5e_get_max_num_channels,
+	.update_carrier	   = mlx5e_update_carrier,
 	.rx_handlers.handle_rx_cqe       = mlx5e_handle_rx_cqe,
 	.rx_handlers.handle_rx_cqe_mpwqe = mlx5e_handle_rx_cqe_mpwrq,
 	.max_tc		   = MLX5E_MAX_NUM_TC,
