@@ -3806,8 +3806,7 @@ static void dump_wqe(struct mlx5_ib_qp *qp, int idx, int size_16)
 
 static u8 get_fence(u8 fence, struct ib_send_wr *wr)
 {
-	if (unlikely(wr->opcode == IB_WR_LOCAL_INV &&
-		     wr->send_flags & IB_SEND_FENCE))
+	if (wr->opcode == IB_WR_LOCAL_INV || wr->opcode == IB_WR_REG_MR)
 		return MLX5_FENCE_MODE_STRONG_ORDERING;
 
 	if (unlikely(fence)) {
