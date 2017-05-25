@@ -723,6 +723,7 @@ struct mlx5_ib_dev {
 	u32                      user_td;
 	struct mlx5_ib_dbg_cc_params *dbg_cc_params;
 	struct mlx5_ib_delay_drop delay_drop;
+	u8				umr_fence;
 };
 
 static inline struct mlx5_ib_cq *to_mibcq(struct mlx5_core_cq *mcq)
