@@ -1020,7 +1020,6 @@ err_destroy_netdev:
 	mlx5e_destroy_netdev(netdev_priv(netdev));
 	kfree(rpriv);
 	return err;
-
 }
 
 static void
