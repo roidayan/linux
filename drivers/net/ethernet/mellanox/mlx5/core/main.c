@@ -56,6 +56,7 @@
 #ifdef CONFIG_MLX5_CORE_EN
 #include "eswitch.h"
 #endif
+#include "fpga/core.h"
 
 MODULE_AUTHOR("Eli Cohen <eli@mellanox.com>");
 MODULE_DESCRIPTION("Mellanox Connect-IB, ConnectX-4 core driver");
@@ -355,11 +356,10 @@ static void mlx5_disable_msix(struct mlx5_core_dev *dev)
 	kfree(priv->msix_arr);
 }
 
-struct mlx5_reg_host_endianess {
+struct mlx5_reg_host_endianness {
 	u8	he;
 	u8      rsvd[15];
 };
-
 
 #define CAP_MASK(pos, size) ((u64)((1 << (size)) - 1) << (pos))
 
@@ -474,7 +474,7 @@ static int handle_hca_cap_atomic(struct mlx5_core_dev *dev)
 
 	req_endianness =
 		MLX5_CAP_ATOMIC(dev,
-				supported_atomic_req_8B_endianess_mode_1);
+				supported_atomic_req_8B_endianness_mode_1);
 
 	if (req_endianness != MLX5_ATOMIC_REQ_MODE_HOST_ENDIANNESS)
 		return 0;
@@ -486,7 +486,7 @@ static int handle_hca_cap_atomic(struct mlx5_core_dev *dev)
 	set_hca_cap = MLX5_ADDR_OF(set_hca_cap_in, set_ctx, capability);
 
 	/* Set requestor to host endianness */
-	MLX5_SET(atomic_caps, set_hca_cap, atomic_req_8B_endianess_mode,
+	MLX5_SET(atomic_caps, set_hca_cap, atomic_req_8B_endianness_mode,
 		 MLX5_ATOMIC_REQ_MODE_HOST_ENDIANNESS);
 
 	err = set_caps(dev, set_ctx, set_sz, MLX5_SET_HCA_CAP_OP_MOD_ATOMIC);
@@ -559,8 +559,8 @@ query_ex:
 
 static int set_hca_ctrl(struct mlx5_core_dev *dev)
 {
-	struct mlx5_reg_host_endianess he_in;
-	struct mlx5_reg_host_endianess he_out;
+	struct mlx5_reg_host_endianness he_in;
+	struct mlx5_reg_host_endianness he_out;
 	int err;
 
 	if (!mlx5_core_is_pf(dev))
@@ -612,7 +612,6 @@ static int mlx5_irq_set_affinity_hint(struct mlx5_core_dev *mdev, int i)
 	struct mlx5_priv *priv  = &mdev->priv;
 	struct msix_entry *msix = priv->msix_arr;
 	int irq                 = msix[i + MLX5_EQ_VEC_COMP_BASE].vector;
-	int err;
 
 	if (!zalloc_cpumask_var(&priv->irq_info[i].mask, GFP_KERNEL)) {
 		mlx5_core_warn(mdev, "zalloc_cpumask_var failed");
@@ -622,18 +621,12 @@ static int mlx5_irq_set_affinity_hint(struct mlx5_core_dev *mdev, int i)
 	cpumask_set_cpu(cpumask_local_spread(i, priv->numa_node),
 			priv->irq_info[i].mask);
 
-	err = irq_set_affinity_hint(irq, priv->irq_info[i].mask);
-	if (err) {
-		mlx5_core_warn(mdev, "irq_set_affinity_hint failed,irq 0x%.4x",
-			       irq);
-		goto err_clear_mask;
-	}
+#ifdef CONFIG_SMP
+	if (irq_set_affinity_hint(irq, priv->irq_info[i].mask))
+		mlx5_core_warn(mdev, "irq_set_affinity_hint failed, irq 0x%.4x", irq);
+#endif
 
 	return 0;
-
-err_clear_mask:
-	free_cpumask_var(priv->irq_info[i].mask);
-	return err;
 }
 
 static void mlx5_irq_clear_affinity_hint(struct mlx5_core_dev *mdev, int i)
@@ -1113,10 +1106,16 @@ static int mlx5_load_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv,
 		goto err_disable_msix;
 	}
 
+	err = mlx5_fpga_device_init(dev);
+	if (err) {
+		dev_err(&pdev->dev, "fpga device init failed %d\n", err);
+		goto err_put_uars;
+	}
+
 	err = mlx5_start_eqs(dev);
 	if (err) {
 		dev_err(&pdev->dev, "Failed to start pages and async EQs\n");
-		goto err_put_uars;
+		goto err_fpga_init;
 	}
 
 	err = alloc_comp_eqs(dev);
@@ -1145,6 +1144,12 @@ static int mlx5_load_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv,
 	if (err) {
 		dev_err(&pdev->dev, "sriov init failed %d\n", err);
 		goto err_sriov;
+	}
+
+	err = mlx5_fpga_device_start(dev);
+	if (err) {
+		dev_err(&pdev->dev, "fpga device start failed %d\n", err);
+		goto err_reg_dev;
 	}
 
 	if (mlx5_device_registered(dev)) {
@@ -1181,6 +1186,9 @@ err_affinity_hints:
 
 err_stop_eqs:
 	mlx5_stop_eqs(dev);
+
+err_fpga_init:
+	mlx5_fpga_device_cleanup(dev);
 
 err_put_uars:
 	mlx5_put_uars_page(dev, priv->uar);
@@ -1246,6 +1254,7 @@ static int mlx5_unload_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv,
 	mlx5_irq_clear_affinity_hints(dev);
 	free_comp_eqs(dev);
 	mlx5_stop_eqs(dev);
+	mlx5_fpga_device_cleanup(dev);
 	mlx5_put_uars_page(dev, priv->uar);
 	mlx5_disable_msix(dev);
 	if (cleanup)
@@ -1520,6 +1529,8 @@ static const struct pci_device_id mlx5_core_pci_table[] = {
 	{ PCI_VDEVICE(MELLANOX, 0x101a), MLX5_PCI_DEV_IS_VF},	/* ConnectX-5 Ex VF */
 	{ PCI_VDEVICE(MELLANOX, 0x101b) },			/* ConnectX-6 */
 	{ PCI_VDEVICE(MELLANOX, 0x101c), MLX5_PCI_DEV_IS_VF},	/* ConnectX-6 VF */
+	{ PCI_VDEVICE(MELLANOX, 0xa2d2) },			/* BlueField integrated ConnectX-5 network controller */
+	{ PCI_VDEVICE(MELLANOX, 0xa2d3), MLX5_PCI_DEV_IS_VF},	/* BlueField integrated ConnectX-5 network controller VF */
 	{ 0, }
 };
 
