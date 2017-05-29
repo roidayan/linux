@@ -217,7 +217,6 @@ static void free_cmd(struct mlx5_cmd_work_ent *ent)
 	kfree(ent);
 }
 
-
 static int verify_signature(struct mlx5_cmd_work_ent *ent)
 {
 	struct mlx5_cmd_mailbox *next = ent->out->next;
@@ -874,7 +873,7 @@ static const char *deliv_status_to_str(u8 status)
 	case MLX5_CMD_DELIVERY_STAT_IN_LENGTH_ERR:
 		return "command input length error";
 	case MLX5_CMD_DELIVERY_STAT_OUT_LENGTH_ERR:
-		return "command ouput length error";
+		return "command output length error";
 	case MLX5_CMD_DELIVERY_STAT_RES_FLD_NOT_CLR_ERR:
 		return "reserved fields not cleared";
 	case MLX5_CMD_DELIVERY_STAT_CMD_DESCR_ERR:
@@ -1000,7 +999,6 @@ static ssize_t dbg_write(struct file *filp, const char __user *buf,
 
 	return err ? err : count;
 }
-
 
 static const struct file_operations fops = {
 	.owner	= THIS_MODULE,
@@ -1153,7 +1151,7 @@ err_alloc:
 }
 
 static void mlx5_free_cmd_msg(struct mlx5_core_dev *dev,
-				  struct mlx5_cmd_msg *msg)
+			      struct mlx5_cmd_msg *msg)
 {
 	struct mlx5_cmd_mailbox *head = msg->next;
 	struct mlx5_cmd_mailbox *next;

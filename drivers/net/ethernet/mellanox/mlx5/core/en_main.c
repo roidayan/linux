@@ -124,7 +124,8 @@ static void mlx5e_update_carrier(struct mlx5e_priv *priv)
 	u8 port_state;
 
 	port_state = mlx5_query_vport_state(mdev,
-		MLX5_QUERY_VPORT_STATE_IN_OP_MOD_VNIC_VPORT, 0);
+					    MLX5_QUERY_VPORT_STATE_IN_OP_MOD_VNIC_VPORT,
+					    0);
 
 	if (port_state == VPORT_STATE_UP) {
 		netdev_info(priv->netdev, "Link up\n");
@@ -2651,6 +2652,8 @@ int mlx5e_open(struct net_device *netdev)
 
 	mutex_lock(&priv->state_lock);
 	err = mlx5e_open_locked(netdev);
+	if (!err)
+		mlx5_set_port_admin_status(priv->mdev, MLX5_PORT_UP);
 	mutex_unlock(&priv->state_lock);
 
 	return err;
@@ -2685,6 +2688,7 @@ int mlx5e_close(struct net_device *netdev)
 		return -ENODEV;
 
 	mutex_lock(&priv->state_lock);
+	mlx5_set_port_admin_status(priv->mdev, MLX5_PORT_DOWN);
 	err = mlx5e_close_locked(netdev);
 	mutex_unlock(&priv->state_lock);
 
@@ -3063,7 +3067,6 @@ mlx5e_get_stats(struct net_device *dev, struct rtnl_link_stats64 *stats)
 	 */
 	stats->multicast =
 		VPORT_COUNTER_GET(vstats, received_eth_multicast.packets);
-
 }
 
 static void mlx5e_set_rx_mode(struct net_device *dev)
@@ -3847,7 +3850,7 @@ void mlx5e_build_nic_params(struct mlx5_core_dev *mdev,
 	/* set CQE compression */
 	params->rx_cqe_compress_def = false;
 	if (MLX5_CAP_GEN(mdev, cqe_compression) &&
-	     MLX5_CAP_GEN(mdev, vport_group_manager))
+	    MLX5_CAP_GEN(mdev, vport_group_manager))
 		params->rx_cqe_compress_def = cqe_compress_heuristic(link_speed, pci_bw);
 
 	MLX5E_SET_PFLAG(params, MLX5E_PFLAG_RX_CQE_COMPRESS, params->rx_cqe_compress_def);
@@ -4137,6 +4140,10 @@ static void mlx5e_nic_enable(struct mlx5e_priv *priv)
 	u16 max_mtu;
 
 	mlx5e_init_l2_addr(priv);
+
+	/* Marking the link as currently not needed by the Driver */
+	if (!netif_running(netdev))
+		mlx5_set_port_admin_status(mdev, MLX5_PORT_DOWN);
 
 	/* MTU range: 68 - hw-specific max */
 	netdev->min_mtu = ETH_MIN_MTU;
