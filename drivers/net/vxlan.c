@@ -1058,6 +1058,7 @@ static bool __vxlan_sock_release_prep(struct vxlan_sock *vs)
 static void vxlan_sock_release(struct vxlan_dev *vxlan)
 {
 	struct vxlan_sock *sock4 = rtnl_dereference(vxlan->vn4_sock);
+	struct vxlan_net *vn = net_generic(vxlan->net, vxlan_net_id);
 #if IS_ENABLED(CONFIG_IPV6)
 	struct vxlan_sock *sock6 = rtnl_dereference(vxlan->vn6_sock);
 
@@ -1066,6 +1067,10 @@ static void vxlan_sock_release(struct vxlan_dev *vxlan)
 
 	rcu_assign_pointer(vxlan->vn4_sock, NULL);
 	synchronize_net();
+
+	spin_lock(&vn->sock_lock);
+	hlist_del_rcu(&vxlan->hlist);
+	spin_unlock(&vn->sock_lock);
 
 	if (__vxlan_sock_release_prep(sock4)) {
 		udp_tunnel_sock_release(sock4->sock);
@@ -3286,14 +3291,8 @@ static int vxlan_changelink(struct net_device *dev, struct nlattr *tb[],
 static void vxlan_dellink(struct net_device *dev, struct list_head *head)
 {
 	struct vxlan_dev *vxlan = netdev_priv(dev);
-	struct vxlan_net *vn = net_generic(vxlan->net, vxlan_net_id);
 
 	vxlan_flush(vxlan, true);
-
-	spin_lock(&vn->sock_lock);
-	if (!hlist_unhashed(&vxlan->hlist))
-		hlist_del_rcu(&vxlan->hlist);
-	spin_unlock(&vn->sock_lock);
 
 	gro_cells_destroy(&vxlan->gro_cells);
 	list_del(&vxlan->next);
