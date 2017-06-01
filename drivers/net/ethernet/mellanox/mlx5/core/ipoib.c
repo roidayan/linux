@@ -134,6 +134,14 @@ static int mlx5i_get_coalesce(struct net_device *netdev,
 	return mlx5e_ethtool_get_coalesce(priv, coal);
 }
 
+static int mlx5i_get_ts_info(struct net_device *netdev,
+			     struct ethtool_ts_info *info)
+{
+	struct mlx5e_priv *priv = mlx5i_epriv(netdev);
+
+	return mlx5e_ethtool_get_ts_info(priv, info);
+}
+
 static const struct ethtool_ops mlx5i_ethtool_ops = {
 	.get_drvinfo       = mlx5i_get_drvinfo,
 	.get_strings       = mlx5i_get_strings,
@@ -145,6 +153,7 @@ static const struct ethtool_ops mlx5i_ethtool_ops = {
 	.set_channels      = mlx5i_set_channels,
 	.get_coalesce      = mlx5i_get_coalesce,
 	.set_coalesce      = mlx5i_set_coalesce,
+	.get_ts_info       = mlx5i_get_ts_info,
 };
 
 static void mlx5i_build_nic_params(struct mlx5_core_dev *mdev,
@@ -478,6 +487,7 @@ static int mlx5i_open(struct net_device *netdev)
 
 	mlx5e_refresh_tirs(priv, false);
 	mlx5e_activate_priv_channels(priv);
+	mlx5e_timestamp_init(priv);
 
 	mutex_unlock(&priv->state_lock);
 	return 0;
@@ -502,6 +512,7 @@ static int mlx5i_close(struct net_device *netdev)
 
 	clear_bit(MLX5E_STATE_OPENED, &priv->state);
 
+	mlx5e_timestamp_cleanup(priv);
 	netif_carrier_off(priv->netdev);
 	mlx5e_deactivate_priv_channels(priv);
 	mlx5e_close_channels(&priv->channels);
