@@ -46,9 +46,6 @@ struct uverbs_uobject_type;
  * =======================================
  */
 
-#define UVERBS_ID_GROUP_MASK 0xF000
-#define UVERBS_ID_GROUP_SHIFT 12
-
 enum uverbs_attr_type {
 	UVERBS_ATTR_TYPE_NA,
 	UVERBS_ATTR_TYPE_PTR_IN,

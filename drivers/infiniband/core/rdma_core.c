@@ -36,6 +36,7 @@
 #include <rdma/uverbs_types.h>
 #include <linux/rcupdate.h>
 #include <rdma/uverbs_ioctl.h>
+#include <rdma/ib_user_ioctl_verbs.h>
 #include "uverbs.h"
 #include "core_priv.h"
 #include "rdma_core.h"
