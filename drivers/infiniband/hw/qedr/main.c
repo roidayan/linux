@@ -33,6 +33,8 @@
 #include <rdma/ib_verbs.h>
 #include <rdma/ib_addr.h>
 #include <rdma/ib_user_verbs.h>
+#include <rdma/uverbs_ioctl.h>
+#include <rdma/uverbs_std_types.h>
 #include <linux/netdevice.h>
 #include <linux/iommu.h>
 #include <linux/pci.h>
@@ -93,6 +95,8 @@ static struct net_device *qedr_get_netdev(struct ib_device *dev, u8 port_num)
 	 */
 	return qdev->ndev;
 }
+
+static DECLARE_UVERBS_TYPES_GROUP(root, &uverbs_common_types);
 
 static int qedr_register_device(struct qedr_dev *dev)
 {
@@ -176,6 +180,7 @@ static int qedr_register_device(struct qedr_dev *dev)
 	dev->ibdev.get_link_layer = qedr_link_layer;
 	dev->ibdev.get_dev_fw_str = qedr_get_dev_fw_str;
 
+	dev->ibdev.specs_root = &root;
 	return ib_register_device(&dev->ibdev, NULL);
 }
 
