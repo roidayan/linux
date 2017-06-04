@@ -1,0 +1,84 @@
+Out of order data placement
+===========================
+
+This document describes out of order data placement feature and its
+user interface.
+
+1. Overview
+===========
+
+In certain fabric configurations IB packets for a given QP may take up
+different paths in a network from source to destination. This results
+into reaching packets out of order at the receiver side. Instead of
+dropping packets, handling out of order packets can improve overall
+network performance in following ways.
+(a) improve network utilization by avoiding retransmission
+(b) avoiding latency increase due to retransmission
+
+2. Description
+==============
+
+This is optional feature of an HCA.
+Enablement of this feature is done on per QP basis.
+This optional QP attribute is set when a QP state is changed from INIT
+to RTR.
+
+Out of order data placement capability indicates that if HCA receives
+out of order RDMA packets, their data placement can be done at the
+desired memory destination given in the packet(s). This is applicable
+to RDMA read and write operations.
+
+Send queue work requests are still completed in-order regardless of
+their data placement order at requester or responder side.
+
+In-order semantics is always guaranteed by setting the Fence
+indicator for appropriate WRs.
+
+Data placement ordering rules of a QP when out of order is enabled is
+described below.
+
+ +----------------------------------------------------------------+
+ |                   Work Request Operation Ordering              |
+ +-----------+----------------------------------------------------+
+ | First     |                Second Operation                    |
+ | Operation |                                                    |
+ +-----------+------+------+-------+------+-------+-------+-------+
+ |           | Send | Bind | Write | Read | Atomic| Local | Write |
+ |           |      | MW   |       |      |       | inv.  | imm.  |
+ |-----------+------+------+-------+------|-------+-------+-------+
+ | Send      | #    | #    | #     | #    | #     | F     | #     |
+ |-----------+------+------+-------+------|-------+-------+-------+
+ | Bind MW   | #    | #    | #     | #    | #     | F     | #     |
+ |-----------+------+------+-------+------|-------+-------+-------+
+ | Write     | #    | #    | F     | F    | #     | #     | #     |
+ +-----------+------+------+-------+------+-------+-------+-------+
+ | Read      | F    | F    | F     | F    | F     | F     | #     |
+ +-----------+------+------+-------+------+-------+-------+-------+
+ | Atomic    | F    | F    | F     | #    | F     | F     | F     |
+ +-----------+------+------+-------+------+-------+-------+-------+
+ | Local inv.| #    | #    | #     | #    | #     | #     | #     |
+ |-----------+------+------+-------+------|-------+-------+-------+
+ | Write     | #    | #    | #     | #    | #     | #     | #     |
+ | imm.      |      |      |       |      |       |       |       |
+ +-----------+------+------+-------+------+-------+--------+------+
+ | #  - Order is always maintained                                |
+ | F  - Order maintained only if second operation has Fence       |
+ |      indicator set                                             |
+ | Send inv.  - Send with invalidate                              |
+ | Local inv. - Local invalidate                                  |
+ | Write imm. - Write with immediate data                         |
+ | Bind MW    - Bind memory window                                |
+ +-----------+----------------------------------------------------+
+
+3. Usage
+========
+
+(a) ibv_query_device_ex returns out of order data placement
+capability at ooo_caps structure for a given transport.
+Whenever HCA supports such capability for each transport user
+should get IB_OOO_RW_DATA_PLACEMENT set in the caps.
+
+(b) When such capability is set, user can set
+IB_QP_OOO_RW_DATA_PLACEMENT while invoking ibv_modify_qp().
+IB_QP_OOO_RW_DATA_PLACEMENT is optional attribute which is supported
+only when QP state transions from INIT to RTR state.

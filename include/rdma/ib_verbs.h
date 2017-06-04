@@ -278,6 +278,26 @@ struct ib_rss_caps {
 	u32 max_rwq_indirection_table_size;
 };
 
+/*
+ * Out of order data placement capability bits.
+ * Out of order data placement means, if HCA receives RDMA packets in
+ * out of order manner, their data placement can be done at the desired
+ * memory destination given in the packet(s). This is applicable
+ * to RDMA read and write operations.
+ * Send queue work requests are still completed in-order regardless of their
+ * data placement order at local or remote end.
+ */
+enum ib_ooo_transport_caps {
+	IB_OOO_RW_DATA_PLACEMENT	= (1 << 0),
+};
+
+struct ib_ooo_caps {
+	u32 rc_caps;
+	u32 xrc_caps;
+	u32 ud_caps;
+	u32 uc_caps;
+};
+
 enum ib_cq_creation_flags {
 	IB_CQ_FLAGS_TIMESTAMP_COMPLETION   = 1 << 0,
 	IB_CQ_FLAGS_IGNORE_OVERRUN	   = 1 << 1,
@@ -338,6 +358,7 @@ struct ib_device_attr {
 	struct ib_rss_caps	rss_caps;
 	u32			max_wq_type_rq;
 	u32			raw_packet_caps; /* Use ib_raw_packet_caps enum */
+	struct ib_ooo_caps	ooo_caps;
 };
 
 enum ib_mtu {
@@ -1056,9 +1077,10 @@ enum ib_qp_create_flags {
 	IB_QP_CREATE_MANAGED_RECV               = 1 << 4,
 	IB_QP_CREATE_NETIF_QP			= 1 << 5,
 	IB_QP_CREATE_SIGNATURE_EN		= 1 << 6,
-	IB_QP_CREATE_USE_GFP_NOIO		= 1 << 7,
+	/* FREE					= 1 << 7, */
 	IB_QP_CREATE_SCATTER_FCS		= 1 << 8,
 	IB_QP_CREATE_CVLAN_STRIPPING		= 1 << 9,
+	IB_QP_CREATE_ASSOC_QPN			= 1 << 10,
 	/* reserve bits 26-31 for low level drivers' internal use */
 	IB_QP_CREATE_RESERVED_START		= 1 << 26,
 	IB_QP_CREATE_RESERVED_END		= 1 << 31,
@@ -1086,6 +1108,7 @@ struct ib_qp_init_attr {
 	 */
 	u8			port_num;
 	struct ib_rwq_ind_table *rwq_ind_tbl;
+	u32			associated_qpn;
 };
 
 struct ib_qp_open_attr {
@@ -1157,6 +1180,7 @@ enum ib_qp_attr_mask {
 	IB_QP_RESERVED3			= (1<<23),
 	IB_QP_RESERVED4			= (1<<24),
 	IB_QP_RATE_LIMIT		= (1<<25),
+	IB_QP_OOO_RW_DATA_PLACEMENT	= (1 << 26),
 };
 
 enum ib_qp_state {
@@ -1546,6 +1570,10 @@ enum ib_raw_packet_caps {
 	IB_RAW_PACKET_CAP_SCATTER_FCS		= (1 << 1),
 	/* Checksum offloads are supported (for both send and receive). */
 	IB_RAW_PACKET_CAP_IP_CSUM		= (1 << 2),
+	/* When a packet is received for an RQ with no receive WQEs, the
+	 * packet processing is delayed.
+	 */
+	IB_RAW_PACKET_CAP_DELAY_DROP		= (1 << 3),
 };
 
 enum ib_wq_type {
@@ -1574,6 +1602,7 @@ struct ib_wq {
 enum ib_wq_flags {
 	IB_WQ_FLAGS_CVLAN_STRIPPING	= 1 << 0,
 	IB_WQ_FLAGS_SCATTER_FCS		= 1 << 1,
+	IB_WQ_FLAGS_DELAY_DROP		= 1 << 2,
 };
 
 struct ib_wq_init_attr {
@@ -2895,6 +2924,22 @@ static inline int ib_post_srq_recv(struct ib_srq *srq,
  */
 struct ib_qp *ib_create_qp(struct ib_pd *pd,
 			   struct ib_qp_init_attr *qp_init_attr);
+
+/**
+ * ib_modify_qp_with_udata - Modifies the attributes for the specified QP.
+ * @qp: The QP to modify.
+ * @attr: On input, specifies the QP attributes to modify.  On output,
+ *   the current values of selected QP attributes are returned.
+ * @attr_mask: A bit-mask used to specify which attributes of the QP
+ *   are being modified.
+ * @udata: pointer to user's input output buffer information
+ *   are being modified.
+ * It returns 0 on success and returns appropriate error code on error.
+ */
+int ib_modify_qp_with_udata(struct ib_qp *qp,
+			    struct ib_qp_attr *attr,
+			    int attr_mask,
+			    struct ib_udata *udata);
 
 /**
  * ib_modify_qp - Modifies the attributes for the specified QP and then
