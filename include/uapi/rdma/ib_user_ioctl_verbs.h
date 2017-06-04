@@ -33,6 +33,11 @@
 #ifndef IB_USER_IOCTL_VERBS_H
 #define IB_USER_IOCTL_VERBS_H
 
+#define UVERBS_ID_GROUP_MASK 0xF000
+#define UVERBS_ID_GROUP_SHIFT 12
+#define UVERBS_UDATA_DRIVER_DATA_GROUP	1
+#define UVERBS_UDATA_DRIVER_DATA_FLAG	(1UL << UVERBS_ID_GROUP_SHIFT)
+
 enum uverbs_common_types {
 	UVERBS_TYPE_DEVICE, /* No instances of DEVICE are allowed */
 	UVERBS_TYPE_PD,
@@ -48,6 +53,11 @@ enum uverbs_common_types {
 	UVERBS_TYPE_RWQ_IND_TBL,
 	UVERBS_TYPE_WQ,
 	UVERBS_TYPE_LAST,
+};
+
+enum {
+	UVERBS_UHW_IN,
+	UVERBS_UHW_OUT,
 };
 
 #endif
