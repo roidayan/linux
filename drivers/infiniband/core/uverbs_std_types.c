@@ -248,6 +248,141 @@ static void create_udata(struct uverbs_attr_array *ctx, size_t num,
 	}
 	INIT_UDATA_BUF_OR_NULL(udata, inbuf, outbuf, inbuf_len, outbuf_len);
 }
+
+static DECLARE_UVERBS_ATTR_SPEC(
+	uverbs_create_cq_spec,
+	UVERBS_ATTR_IDR(CREATE_CQ_HANDLE, UVERBS_TYPE_CQ, UVERBS_ACCESS_NEW,
+			UA_FLAGS(UVERBS_ATTR_SPEC_F_MANDATORY)),
+	UVERBS_ATTR_PTR_IN(CREATE_CQ_CQE, u32,
+			   UA_FLAGS(UVERBS_ATTR_SPEC_F_MANDATORY)),
+	UVERBS_ATTR_PTR_IN(CREATE_CQ_USER_HANDLE, u64),
+	UVERBS_ATTR_FD(CREATE_CQ_COMP_CHANNEL, UVERBS_TYPE_COMP_CHANNEL, UVERBS_ACCESS_READ),
+	/*
+	 * Currently, COMP_VECTOR is mandatory, but that could be lifted in the
+	 * future.
+	 */
+	UVERBS_ATTR_PTR_IN(CREATE_CQ_COMP_VECTOR, u32,
+			   UA_FLAGS(UVERBS_ATTR_SPEC_F_MANDATORY)),
+	UVERBS_ATTR_PTR_IN(CREATE_CQ_FLAGS, u32),
+	UVERBS_ATTR_PTR_OUT(CREATE_CQ_RESP_CQE, u32,
+			    UA_FLAGS(UVERBS_ATTR_SPEC_F_MANDATORY)));
+
+static int uverbs_create_cq_handler(struct ib_device *ib_dev,
+				    struct ib_uverbs_file *file,
+				    struct uverbs_attr_array *ctx, size_t num)
+{
+	struct uverbs_attr_array *common = &ctx[0];
+	struct ib_ucontext *ucontext = file->ucontext;
+	struct ib_ucq_object           *obj;
+	struct ib_udata uhw;
+	int ret;
+	u64 user_handle = 0;
+	struct ib_cq_init_attr attr = {};
+	struct ib_cq                   *cq;
+	struct ib_uverbs_completion_event_file    *ev_file = NULL;
+
+	if (!(ib_dev->uverbs_cmd_mask & 1ULL << IB_USER_VERBS_CMD_CREATE_CQ))
+		return -EOPNOTSUPP;
+
+	ret = uverbs_copy_from(&attr.comp_vector, common, CREATE_CQ_COMP_VECTOR);
+	if (!ret)
+		ret = uverbs_copy_from(&attr.cqe, common, CREATE_CQ_CQE);
+	if (ret)
+		return ret;
+
+	/* Optional params, if they don't exist, we get -ENOENT and skip them */
+	if (uverbs_copy_from(&attr.flags, common, CREATE_CQ_FLAGS) == -EFAULT ||
+	    uverbs_copy_from(&user_handle, common, CREATE_CQ_USER_HANDLE) == -EFAULT)
+		return -EFAULT;
+
+	if (uverbs_is_valid(common, CREATE_CQ_COMP_CHANNEL)) {
+		struct ib_uobject *ev_file_uobj =
+			common->attrs[CREATE_CQ_COMP_CHANNEL].obj_attr.uobject;
+
+		ev_file = container_of(ev_file_uobj,
+				       struct ib_uverbs_completion_event_file,
+				       uobj_file.uobj);
+		uverbs_uobject_get(ev_file_uobj);
+	}
+
+	if (attr.comp_vector >= ucontext->ufile->device->num_comp_vectors) {
+		ret = -EINVAL;
+		goto err_event_file;
+	}
+
+	obj = container_of(common->attrs[CREATE_CQ_HANDLE].obj_attr.uobject,
+			   typeof(*obj), uobject);
+	obj->uverbs_file	   = ucontext->ufile;
+	obj->comp_events_reported  = 0;
+	obj->async_events_reported = 0;
+	INIT_LIST_HEAD(&obj->comp_list);
+	INIT_LIST_HEAD(&obj->async_list);
+
+	/* Temporary, only until drivers get the new uverbs_attr_array */
+	create_udata(ctx, num, &uhw);
+
+	cq = ib_dev->create_cq(ib_dev, &attr, ucontext, &uhw);
+	if (IS_ERR(cq)) {
+		ret = PTR_ERR(cq);
+		goto err_event_file;
+	}
+
+	cq->device        = ib_dev;
+	cq->uobject       = &obj->uobject;
+	cq->comp_handler  = ib_uverbs_comp_handler;
+	cq->event_handler = ib_uverbs_cq_event_handler;
+	cq->cq_context    = &ev_file->ev_queue;
+	obj->uobject.object = cq;
+	obj->uobject.user_handle = user_handle;
+	atomic_set(&cq->usecnt, 0);
+
+	ret = uverbs_copy_to(common, CREATE_CQ_RESP_CQE, &cq->cqe);
+	if (ret)
+		goto err_cq;
+
+	return 0;
+err_cq:
+	ib_destroy_cq(cq);
+
+err_event_file:
+	if (ev_file)
+		uverbs_uobject_put(&ev_file->uobj_file.uobj);
+	return ret;
+};
+
+static DECLARE_UVERBS_ATTR_SPEC(
+	uverbs_destroy_cq_spec,
+	UVERBS_ATTR_IDR(DESTROY_CQ_HANDLE, UVERBS_TYPE_CQ,
+			UVERBS_ACCESS_DESTROY,
+			UA_FLAGS(UVERBS_ATTR_SPEC_F_MANDATORY)),
+	UVERBS_ATTR_PTR_OUT(DESTROY_CQ_RESP, struct ib_uverbs_destroy_cq_resp,
+			    UA_FLAGS(UVERBS_ATTR_SPEC_F_MANDATORY)));
+
+static int uverbs_destroy_cq_handler(struct ib_device *ib_dev,
+				     struct ib_uverbs_file *file,
+				     struct uverbs_attr_array *ctx, size_t num)
+{
+	struct uverbs_attr_array *common = &ctx[0];
+	struct ib_uverbs_destroy_cq_resp resp;
+	struct ib_uobject *uobj =
+		common->attrs[DESTROY_CQ_HANDLE].obj_attr.uobject;
+	struct ib_ucq_object *obj = container_of(uobj, struct ib_ucq_object,
+						 uobject);
+	int ret;
+
+	if (!(ib_dev->uverbs_cmd_mask & 1ULL << IB_USER_VERBS_CMD_DESTROY_CQ))
+		return -EOPNOTSUPP;
+
+	ret = rdma_explicit_destroy(uobj);
+	if (ret)
+		return ret;
+
+	resp.comp_events_reported  = obj->comp_events_reported;
+	resp.async_events_reported = obj->async_events_reported;
+
+	return uverbs_copy_to(common, DESTROY_CQ_RESP, &resp);
+}
+
 DECLARE_UVERBS_TYPE(uverbs_type_comp_channel,
 		    &UVERBS_TYPE_ALLOC_FD(0,
 					  sizeof(struct ib_uverbs_completion_event_file),
@@ -257,7 +392,15 @@ DECLARE_UVERBS_TYPE(uverbs_type_comp_channel,
 
 DECLARE_UVERBS_TYPE(uverbs_type_cq,
 		    &UVERBS_TYPE_ALLOC_IDR_SZ(sizeof(struct ib_ucq_object), 0,
-					      uverbs_free_cq));
+					      uverbs_free_cq),
+		    &UVERBS_ACTIONS(
+			ADD_UVERBS_ACTION(UVERBS_CQ_CREATE,
+					  uverbs_create_cq_handler,
+					  &uverbs_create_cq_spec,
+					  &uverbs_uhw_compat_spec),
+			ADD_UVERBS_ACTION(UVERBS_CQ_DESTROY,
+					  uverbs_destroy_cq_handler,
+					  &uverbs_destroy_cq_spec)));
 
 DECLARE_UVERBS_TYPE(uverbs_type_qp,
 		    &UVERBS_TYPE_ALLOC_IDR_SZ(sizeof(struct ib_uqp_object), 0,
