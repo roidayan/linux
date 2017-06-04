@@ -36,6 +36,8 @@
 #include <rdma/uverbs_types.h>
 #include <rdma/ib_user_ioctl_verbs.h>
 
+extern const struct uverbs_action_group uverbs_actions_cq;
+
 extern const struct uverbs_type uverbs_type_comp_channel;
 extern const struct uverbs_type uverbs_type_cq;
 extern const struct uverbs_type uverbs_type_qp;
