@@ -44,6 +44,8 @@
 #include <linux/idr.h>
 #include <rdma/ib_verbs.h>
 #include <rdma/ib_user_verbs.h>
+#include <rdma/uverbs_ioctl.h>
+#include <rdma/uverbs_std_types.h>
 #include <rdma/ib_addr.h>
 #include <rdma/ib_mad.h>
 
@@ -115,6 +117,8 @@ static void get_dev_fw_str(struct ib_device *device, char *str,
 
 	snprintf(str, str_len, "%s", &dev->attr.fw_ver[0]);
 }
+
+static DECLARE_UVERBS_TYPES_GROUP(root, &uverbs_common_types);
 
 static int ocrdma_register_device(struct ocrdma_dev *dev)
 {
@@ -219,6 +223,7 @@ static int ocrdma_register_device(struct ocrdma_dev *dev)
 		dev->ibdev.destroy_srq = ocrdma_destroy_srq;
 		dev->ibdev.post_srq_recv = ocrdma_post_srq_recv;
 	}
+	dev->ibdev.specs_root = &root;
 	return ib_register_device(&dev->ibdev, NULL);
 }
 

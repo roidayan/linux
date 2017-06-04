@@ -58,6 +58,8 @@
 #include <linux/mlx5/vport.h>
 #include "mlx5_ib.h"
 #include "cmd.h"
+#include <rdma/uverbs_ioctl.h>
+#include <rdma/uverbs_std_types.h>
 
 #define DRIVER_NAME "mlx5_ib"
 #define DRIVER_VERSION "2.2-1"
@@ -3562,6 +3564,8 @@ static void mlx5_ib_free_rdma_netdev(struct net_device *netdev)
 	return mlx5_rdma_netdev_free(netdev);
 }
 
+static DECLARE_UVERBS_TYPES_GROUP(root, &uverbs_common_types);
+
 static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 {
 	struct mlx5_ib_dev *dev;
@@ -3787,6 +3791,7 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 	if (err)
 		goto err_bfreg;
 
+	dev->ib_dev.specs_root = &root;
 	err = ib_register_device(&dev->ib_dev, NULL);
 	if (err)
 		goto err_fp_bfreg;

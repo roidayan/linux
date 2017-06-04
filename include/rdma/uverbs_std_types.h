@@ -36,6 +36,7 @@
 #include <rdma/uverbs_types.h>
 #include <rdma/ib_user_ioctl_verbs.h>
 
+#if IS_ENABLED(CONFIG_INFINIBAND_USER_ACCESS)
 extern const struct uverbs_action_group uverbs_actions_cq;
 
 extern const struct uverbs_type uverbs_type_comp_channel;
@@ -52,6 +53,9 @@ extern const struct uverbs_type uverbs_type_pd;
 extern const struct uverbs_type uverbs_type_xrcd;
 extern const struct uverbs_type uverbs_type_device;
 extern const struct uverbs_type_group uverbs_common_types;
+#else
+static DECLARE_UVERBS_TYPES(uverbs_common_types);
+#endif
 
 static inline struct ib_uobject *__uobj_get(const struct uverbs_obj_type *type,
 					    bool write,
