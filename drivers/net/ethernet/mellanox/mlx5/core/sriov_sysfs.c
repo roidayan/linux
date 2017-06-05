@@ -256,10 +256,10 @@ static ssize_t node_store(struct mlx5_sriov_vf *g, struct vf_attributes *oa,
 static const char *policy_str(enum port_state_policy policy)
 {
 	switch (policy) {
-	case MLX5_POLICY_DOWN:		return "Down";
-	case MLX5_POLICY_UP:		return "Up";
-	case MLX5_POLICY_FOLLOW:	return "Follow";
-	default:			return "Invalid policy";
+	case MLX5_POLICY_DOWN:		return "Down\n";
+	case MLX5_POLICY_UP:		return "Up\n";
+	case MLX5_POLICY_FOLLOW:	return "Follow\n";
+	default:			return "Invalid policy\n";
 	}
 }
 
@@ -291,17 +291,17 @@ free:
 
 static int strpolicy(const char *buf, enum port_state_policy *policy)
 {
-	if (!strcmp(buf, "Down\n")) {
+	if (!strncmp(buf, "Down", 4)) {
 		*policy = MLX5_POLICY_DOWN;
 		return 0;
 	}
 
-	if (!strcmp(buf, "Up\n")) {
+	if (!strncmp(buf, "Up", 2)) {
 		*policy = MLX5_POLICY_UP;
 		return 0;
 	}
 
-	if (!strcmp(buf, "Follow\n")) {
+	if (!strncmp(buf, "Follow", 6)) {
 		*policy = MLX5_POLICY_FOLLOW;
 		return 0;
 	}
@@ -560,7 +560,7 @@ static ssize_t config_show(struct mlx5_sriov_vf *g, struct vf_attributes *oa,
 	p += _sprintf(p, buf, "QoS        : %d\n", ivi->qos);
 	p += _sprintf(p, buf, "SpoofCheck : %s\n", ivi->spoofchk ? "ON" : "OFF");
 	p += _sprintf(p, buf, "Trust      : %s\n", ivi->trusted ? "ON" : "OFF");
-	p += _sprintf(p, buf, "LinkState  : %s\n", policy_str(ivi->link_state));
+	p += _sprintf(p, buf, "LinkState  : %s",   policy_str(ivi->link_state));
 	p += _sprintf(p, buf, "MinTxRate  : %d\n", ivi->min_rate);
 	p += _sprintf(p, buf, "MaxTxRate  : %d\n", ivi->max_rate);
 	mutex_unlock(&esw->state_lock);
