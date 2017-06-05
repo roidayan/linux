@@ -1008,29 +1008,6 @@ struct net_device *ib_get_net_dev_by_params(struct ib_device *dev,
 }
 EXPORT_SYMBOL(ib_get_net_dev_by_params);
 
-static struct ibnl_client_cbs ibnl_ls_cb_table[] = {
-	[RDMA_NL_LS_OP_RESOLVE] = {
-		.dump = ib_nl_handle_resolve_resp,
-		.module = THIS_MODULE },
-	[RDMA_NL_LS_OP_SET_TIMEOUT] = {
-		.dump = ib_nl_handle_set_timeout,
-		.module = THIS_MODULE },
-	[RDMA_NL_LS_OP_IP_RESOLVE] = {
-		.dump = ib_nl_handle_ip_res_resp,
-		.module = THIS_MODULE },
-};
-
-static int ib_add_ibnl_clients(void)
-{
-	return ibnl_add_client(RDMA_NL_LS, ARRAY_SIZE(ibnl_ls_cb_table),
-			       ibnl_ls_cb_table);
-}
-
-static void ib_remove_ibnl_clients(void)
-{
-	ibnl_remove_client(RDMA_NL_LS);
-}
-
 static int __init ib_core_init(void)
 {
 	int ret;
@@ -1052,9 +1029,9 @@ static int __init ib_core_init(void)
 		goto err_comp;
 	}
 
-	ret = ibnl_init();
+	ret = rdma_nl_init();
 	if (ret) {
-		pr_warn("Couldn't init IB netlink interface\n");
+		pr_warn("Couldn't init IB netlink interface %d\n", ret);
 		goto err_sysfs;
 	}
 
@@ -1076,24 +1053,16 @@ static int __init ib_core_init(void)
 		goto err_mad;
 	}
 
-	ret = ib_add_ibnl_clients();
-	if (ret) {
-		pr_warn("Couldn't register ibnl clients\n");
-		goto err_sa;
-	}
-
 	ib_cache_setup();
 
 	return 0;
 
-err_sa:
-	ib_sa_cleanup();
 err_mad:
 	ib_mad_cleanup();
 err_addr:
 	addr_cleanup();
 err_ibnl:
-	ibnl_cleanup();
+	rdma_nl_exit();
 err_sysfs:
 	class_unregister(&ib_class);
 err_comp:
@@ -1106,11 +1075,10 @@ err:
 static void __exit ib_core_cleanup(void)
 {
 	ib_cache_cleanup();
-	ib_remove_ibnl_clients();
 	ib_sa_cleanup();
 	ib_mad_cleanup();
 	addr_cleanup();
-	ibnl_cleanup();
+	rdma_nl_exit();
 	class_unregister(&ib_class);
 	destroy_workqueue(ib_comp_wq);
 	/* Make sure that any pending umem accounting work is done. */
