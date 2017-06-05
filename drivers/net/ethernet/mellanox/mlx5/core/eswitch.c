@@ -1584,7 +1584,7 @@ void mlx5_eswitch_disable_sriov(struct mlx5_eswitch *esw)
 	int nvports;
 	int i;
 
-	if (!ESW_ALLOWED(esw))
+	if (!ESW_ALLOWED(esw) || esw->mode == SRIOV_NONE)
 		return;
 
 	esw_info(esw->dev, "disable SRIOV: active vports(%d) mode(%d)\n",
