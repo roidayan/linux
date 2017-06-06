@@ -34,23 +34,7 @@
 #define _UVERBS_STD_TYPES__
 
 #include <rdma/uverbs_types.h>
-
-enum uverbs_common_types {
-	UVERBS_TYPE_DEVICE, /* No instances of DEVICE are allowed */
-	UVERBS_TYPE_PD,
-	UVERBS_TYPE_COMP_CHANNEL,
-	UVERBS_TYPE_CQ,
-	UVERBS_TYPE_QP,
-	UVERBS_TYPE_SRQ,
-	UVERBS_TYPE_AH,
-	UVERBS_TYPE_MR,
-	UVERBS_TYPE_MW,
-	UVERBS_TYPE_FLOW,
-	UVERBS_TYPE_XRCD,
-	UVERBS_TYPE_RWQ_IND_TBL,
-	UVERBS_TYPE_WQ,
-	UVERBS_TYPE_LAST,
-};
+#include <rdma/ib_user_ioctl_verbs.h>
 
 extern const struct uverbs_type uverbs_type_comp_channel;
 extern const struct uverbs_type uverbs_type_cq;
