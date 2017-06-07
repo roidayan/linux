@@ -144,7 +144,7 @@ static int mlx5i_get_ts_info(struct net_device *netdev,
 	return mlx5e_ethtool_get_ts_info(priv, info);
 }
 
-const struct ethtool_ops mlx5i_ethtool_ops = {
+static const struct ethtool_ops mlx5i_ethtool_ops = {
 	.get_drvinfo       = mlx5i_get_drvinfo,
 	.get_strings       = mlx5i_get_strings,
 	.get_sset_count    = mlx5i_get_sset_count,
