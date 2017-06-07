@@ -7,30 +7,24 @@
 
 struct ibnl_client_cbs {
 	int (*dump)(struct sk_buff *skb, struct netlink_callback *nlcb);
-	struct module *module;
 };
 
-int ibnl_init(void);
-void ibnl_cleanup(void);
+int rdma_nl_init(void);
+void rdma_nl_exit(void);
 
 /**
- * Add a a client to the list of IB netlink exporters.
+ * Register client in RDMA netlink.
  * @index: Index of the added client
- * @nops: Number of supported ops by the added client.
  * @cb_table: A table for op->callback
- *
- * Returns 0 on success or a negative error code.
  */
-int ibnl_add_client(int index, int nops,
-		    const struct ibnl_client_cbs cb_table[]);
+void rdma_nl_register(unsigned int index,
+		      const struct ibnl_client_cbs cb_table[]);
 
 /**
  * Remove a client from IB netlink.
  * @index: Index of the removed IB client.
- *
- * Returns 0 on success or a negative error code.
  */
-int ibnl_remove_client(int index);
+void rdma_nl_unregister(unsigned int index);
 
 /**
  * Put a new message in a supplied skb.
@@ -76,12 +70,5 @@ int ibnl_unicast(struct sk_buff *skb, struct nlmsghdr *nlh,
  */
 int ibnl_multicast(struct sk_buff *skb, struct nlmsghdr *nlh,
 			unsigned int group, gfp_t flags);
-
-/**
- * Check if there are any listeners to the netlink group
- * @group: the netlink group ID
- * Returns 0 on success or a negative for no listeners.
- */
-int ibnl_chk_listeners(unsigned int group);
 
 #endif /* _RDMA_NETLINK_H */

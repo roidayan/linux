@@ -48,6 +48,8 @@
 
 #include <rdma/ib_smi.h>
 #include <rdma/ib_user_verbs.h>
+#include <rdma/uverbs_ioctl.h>
+#include <rdma/uverbs_std_types.h>
 #include <rdma/ib_addr.h>
 #include <rdma/ib_cache.h>
 
@@ -1156,7 +1158,7 @@ static void mlx4_ib_disassociate_ucontext(struct ib_ucontext *ibcontext)
 			 * call to mlx4_ib_vma_close.
 			 */
 			put_task_struct(owning_process);
-			msleep(1);
+			usleep_range(1000, 2000);
 			owning_process = get_pid_task(ibcontext->tgid,
 						      PIDTYPE_PID);
 			if (!owning_process ||
@@ -2578,6 +2580,8 @@ static void get_fw_ver_str(struct ib_device *device, char *str,
 		 (int) dev->dev->caps.fw_ver & 0xffff);
 }
 
+static DECLARE_UVERBS_TYPES_GROUP(root, &uverbs_common_types);
+
 static void *mlx4_ib_add(struct mlx4_dev *dev)
 {
 	struct mlx4_ib_dev *ibdev;
@@ -2860,6 +2864,7 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 	if (mlx4_ib_alloc_diag_counters(ibdev))
 		goto err_steer_free_bitmap;
 
+	ibdev->ib_dev.specs_root = &root;
 	if (ib_register_device(&ibdev->ib_dev, NULL))
 		goto err_diag_counters;
 
