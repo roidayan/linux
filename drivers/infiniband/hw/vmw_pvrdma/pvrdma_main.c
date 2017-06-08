@@ -51,6 +51,8 @@
 #include <rdma/ib_addr.h>
 #include <rdma/ib_smi.h>
 #include <rdma/ib_user_verbs.h>
+#include <rdma/uverbs_ioctl.h>
+#include <rdma/uverbs_std_types.h>
 #include <net/addrconf.h>
 
 #include "pvrdma.h"
@@ -162,6 +164,8 @@ static struct net_device *pvrdma_get_netdev(struct ib_device *ibdev,
 	return netdev;
 }
 
+static DECLARE_UVERBS_TYPES_GROUP(root, &uverbs_common_types);
+
 static int pvrdma_register_device(struct pvrdma_dev *dev)
 {
 	int ret = -1;
@@ -251,6 +255,7 @@ static int pvrdma_register_device(struct pvrdma_dev *dev)
 		goto err_cq_free;
 	spin_lock_init(&dev->qp_tbl_lock);
 
+	dev->ib_dev.specs_root = &root;
 	ret = ib_register_device(&dev->ib_dev, NULL);
 	if (ret)
 		goto err_qp_free;
