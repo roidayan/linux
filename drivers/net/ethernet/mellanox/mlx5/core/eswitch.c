@@ -1217,7 +1217,6 @@ static int esw_vport_ingress_config(struct mlx5_eswitch *esw,
 			       "vport[%d] configure ingress rules failed, illegal mac with spoofchk\n",
 			       vport->vport);
 		return -EPERM;
-
 	}
 
 	esw_vport_cleanup_ingress_rules(esw, vport);
@@ -1769,6 +1768,7 @@ int mlx5_eswitch_init(struct mlx5_core_dev *dev)
 	}
 
 	hash_init(esw->offloads.encap_tbl);
+	hash_init(esw->offloads.mod_hdr_tbl);
 	mutex_init(&esw->state_lock);
 
 	for (vport_num = 0; vport_num < total_vports; vport_num++) {
