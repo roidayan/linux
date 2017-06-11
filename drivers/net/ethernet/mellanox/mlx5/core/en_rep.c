@@ -613,15 +613,18 @@ static int mlx5e_rep_open(struct net_device *dev)
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 	int err;
 
-	err = mlx5e_open(dev);
+	mutex_lock(&priv->state_lock);
+	err = mlx5e_open_locked(dev);
 	if (err)
-		return err;
+		goto unlock;
 
-	err = mlx5_eswitch_set_vport_state(esw, rep->vport, MLX5_ESW_VPORT_ADMIN_STATE_UP);
-	if (!err)
+	if (!mlx5_eswitch_set_vport_state(esw, rep->vport,
+					  MLX5_ESW_VPORT_ADMIN_STATE_UP))
 		netif_carrier_on(dev);
 
-	return 0;
+unlock:
+	mutex_unlock(&priv->state_lock);
+	return err;
 }
 
 static int mlx5e_rep_close(struct net_device *dev)
@@ -630,10 +633,13 @@ static int mlx5e_rep_close(struct net_device *dev)
 	struct mlx5e_rep_priv *rpriv = priv->ppriv;
 	struct mlx5_eswitch_rep *rep = rpriv->rep;
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
+	int ret;
 
+	mutex_lock(&priv->state_lock);
 	(void)mlx5_eswitch_set_vport_state(esw, rep->vport, MLX5_ESW_VPORT_ADMIN_STATE_DOWN);
-
-	return mlx5e_close(dev);
+	ret = mlx5e_close_locked(dev);
+	mutex_unlock(&priv->state_lock);
+	return ret;
 }
 
 static int mlx5e_rep_get_phys_port_name(struct net_device *dev,
@@ -652,7 +658,8 @@ static int mlx5e_rep_get_phys_port_name(struct net_device *dev,
 }
 
 static int mlx5e_rep_ndo_setup_tc(struct net_device *dev, u32 handle,
-				  __be16 proto, struct tc_to_netdev *tc)
+				  u32 chain_index, __be16 proto,
+				  struct tc_to_netdev *tc)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
 
@@ -664,8 +671,12 @@ static int mlx5e_rep_ndo_setup_tc(struct net_device *dev, u32 handle,
 		struct net_device *uplink_dev = mlx5_eswitch_get_uplink_netdev(esw);
 
 		return uplink_dev->netdev_ops->ndo_setup_tc(uplink_dev, handle,
+							    chain_index,
 							    proto, tc);
 	}
+
+	if (chain_index)
+		return -EOPNOTSUPP;
 
 	switch (tc->type) {
 	case TC_SETUP_CLSFLOWER:
@@ -1014,7 +1025,6 @@ err_destroy_netdev:
 	mlx5e_destroy_netdev(netdev_priv(netdev));
 	kfree(rpriv);
 	return err;
-
 }
 
 static void

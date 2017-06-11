@@ -60,6 +60,10 @@ struct dcbnl_rtnl_ops {
 	int (*ieee_peer_getets) (struct net_device *, struct ieee_ets *);
 	int (*ieee_peer_getpfc) (struct net_device *, struct ieee_pfc *);
 
+	/* dcbnl extension for priority trust mode setting */
+	int (*dcbnl_gettrust)(struct net_device *, struct dcbnl_trust *);
+	int (*dcbnl_settrust)(struct net_device *, struct dcbnl_trust *);
+
 	/* CEE std */
 	u8   (*getstate)(struct net_device *);
 	u8   (*setstate)(struct net_device *, u8);
