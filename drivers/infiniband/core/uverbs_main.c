@@ -45,6 +45,7 @@
 #include <linux/cdev.h>
 #include <linux/anon_inodes.h>
 #include <linux/slab.h>
+#include <rdma/uverbs_std_types.h>
 
 #include <linux/uaccess.h>
 
@@ -950,6 +951,9 @@ static const struct file_operations uverbs_fops = {
 	.open	 = ib_uverbs_open,
 	.release = ib_uverbs_close,
 	.llseek	 = no_llseek,
+#if IS_ENABLED(CONFIG_INFINIBAND_EXP_USER_ACCESS)
+	.unlocked_ioctl = ib_uverbs_ioctl,
+#endif
 };
 
 static const struct file_operations uverbs_mmap_fops = {
@@ -959,6 +963,9 @@ static const struct file_operations uverbs_mmap_fops = {
 	.open	 = ib_uverbs_open,
 	.release = ib_uverbs_close,
 	.llseek	 = no_llseek,
+#if IS_ENABLED(CONFIG_INFINIBAND_EXP_USER_ACCESS)
+	.unlocked_ioctl = ib_uverbs_ioctl,
+#endif
 };
 
 static struct ib_client uverbs_client = {
@@ -1253,6 +1260,8 @@ static char *uverbs_devnode(struct device *dev, umode_t *mode)
 static int __init ib_uverbs_init(void)
 {
 	int ret;
+
+	uverbs_initialize_type_group(&uverbs_common_types);
 
 	ret = register_chrdev_region(IB_UVERBS_BASE_DEV, IB_UVERBS_MAX_DEVICES,
 				     "infiniband_verbs");
