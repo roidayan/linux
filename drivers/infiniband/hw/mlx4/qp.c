@@ -634,8 +634,8 @@ static void mlx4_ib_free_qp_counter(struct mlx4_ib_dev *dev,
 
 static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 			    struct ib_qp_init_attr *init_attr,
-			    struct ib_udata *udata, int sqpn, struct mlx4_ib_qp **caller_qp,
-			    gfp_t gfp)
+			    struct ib_udata *udata, int sqpn,
+			    struct mlx4_ib_qp **caller_qp)
 {
 	int qpn;
 	int err;
@@ -691,14 +691,14 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 		if (qp_type == MLX4_IB_QPT_SMI || qp_type == MLX4_IB_QPT_GSI ||
 		    (qp_type & (MLX4_IB_QPT_PROXY_SMI | MLX4_IB_QPT_PROXY_SMI_OWNER |
 				MLX4_IB_QPT_PROXY_GSI | MLX4_IB_QPT_TUN_SMI_OWNER))) {
-			sqp = kzalloc(sizeof (struct mlx4_ib_sqp), gfp);
+			sqp = kzalloc(sizeof(struct mlx4_ib_sqp), GFP_KERNEL);
 			if (!sqp)
 				return -ENOMEM;
 			qp = &sqp->qp;
 			qp->pri.vid = 0xFFFF;
 			qp->alt.vid = 0xFFFF;
 		} else {
-			qp = kzalloc(sizeof (struct mlx4_ib_qp), gfp);
+			qp = kzalloc(sizeof(struct mlx4_ib_qp), GFP_KERNEL);
 			if (!qp)
 				return -ENOMEM;
 			qp->pri.vid = 0xFFFF;
@@ -759,6 +759,7 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 			if (err)
 				goto err_mtt;
 		}
+		qp->mqp.usage = MLX4_RES_USAGE_USER_VERBS;
 	} else {
 		qp->sq_no_prefetch = 0;
 
@@ -780,7 +781,7 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 			goto err;
 
 		if (qp_has_rq(init_attr)) {
-			err = mlx4_db_alloc(dev->dev, &qp->db, 0, gfp);
+			err = mlx4_db_alloc(dev->dev, &qp->db, 0);
 			if (err)
 				goto err;
 
@@ -788,7 +789,7 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 		}
 
 		if (mlx4_buf_alloc(dev->dev, qp->buf_size, qp->buf_size,
-				   &qp->buf, gfp)) {
+				   &qp->buf)) {
 			memcpy(&init_attr->cap, &backup_cap,
 			       sizeof(backup_cap));
 			err = set_kernel_sq_size(dev, &init_attr->cap, qp_type,
@@ -797,7 +798,7 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 				goto err_db;
 
 			if (mlx4_buf_alloc(dev->dev, qp->buf_size,
-					   PAGE_SIZE * 2, &qp->buf, gfp)) {
+					   PAGE_SIZE * 2, &qp->buf)) {
 				err = -ENOMEM;
 				goto err_db;
 			}
@@ -808,24 +809,25 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 		if (err)
 			goto err_buf;
 
-		err = mlx4_buf_write_mtt(dev->dev, &qp->mtt, &qp->buf, gfp);
+		err = mlx4_buf_write_mtt(dev->dev, &qp->mtt, &qp->buf);
 		if (err)
 			goto err_mtt;
 
 		qp->sq.wrid = kmalloc_array(qp->sq.wqe_cnt, sizeof(u64),
-					gfp | __GFP_NOWARN);
+					GFP_KERNEL | __GFP_NOWARN);
 		if (!qp->sq.wrid)
 			qp->sq.wrid = __vmalloc(qp->sq.wqe_cnt * sizeof(u64),
-						gfp, PAGE_KERNEL);
+						GFP_KERNEL, PAGE_KERNEL);
 		qp->rq.wrid = kmalloc_array(qp->rq.wqe_cnt, sizeof(u64),
-					gfp | __GFP_NOWARN);
+					GFP_KERNEL | __GFP_NOWARN);
 		if (!qp->rq.wrid)
 			qp->rq.wrid = __vmalloc(qp->rq.wqe_cnt * sizeof(u64),
-						gfp, PAGE_KERNEL);
+						GFP_KERNEL, PAGE_KERNEL);
 		if (!qp->sq.wrid || !qp->rq.wrid) {
 			err = -ENOMEM;
 			goto err_wrid;
 		}
+		qp->mqp.usage = MLX4_RES_USAGE_DRIVER;
 	}
 
 	if (sqpn) {
@@ -845,13 +847,14 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 						    (init_attr->cap.max_send_wr ?
 						     MLX4_RESERVE_ETH_BF_QP : 0) |
 						    (init_attr->cap.max_recv_wr ?
-						     MLX4_RESERVE_A0_QP : 0));
+						     MLX4_RESERVE_A0_QP : 0),
+						    qp->mqp.usage);
 		else
 			if (qp->flags & MLX4_IB_QP_NETIF)
 				err = mlx4_ib_steer_qp_alloc(dev, 1, &qpn);
 			else
 				err = mlx4_qp_reserve_range(dev->dev, 1, 1,
-							    &qpn, 0);
+							    &qpn, 0, qp->mqp.usage);
 		if (err)
 			goto err_proxy;
 	}
@@ -859,7 +862,7 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 	if (init_attr->create_flags & IB_QP_CREATE_BLOCK_MULTICAST_LOOPBACK)
 		qp->flags |= MLX4_IB_QP_BLOCK_MULTICAST_LOOPBACK;
 
-	err = mlx4_qp_alloc(dev->dev, qpn, &qp->mqp, gfp);
+	err = mlx4_qp_alloc(dev->dev, qpn, &qp->mqp);
 	if (err)
 		goto err_qpn;
 
@@ -1127,10 +1130,7 @@ static struct ib_qp *_mlx4_ib_create_qp(struct ib_pd *pd,
 	int err;
 	int sup_u_create_flags = MLX4_IB_QP_BLOCK_MULTICAST_LOOPBACK;
 	u16 xrcdn = 0;
-	gfp_t gfp;
 
-	gfp = (init_attr->create_flags & MLX4_IB_QP_CREATE_USE_GFP_NOIO) ?
-		GFP_NOIO : GFP_KERNEL;
 	/*
 	 * We only support LSO, vendor flag1, and multicast loopback blocking,
 	 * and only for kernel UD QPs.
@@ -1140,8 +1140,7 @@ static struct ib_qp *_mlx4_ib_create_qp(struct ib_pd *pd,
 					MLX4_IB_SRIOV_TUNNEL_QP |
 					MLX4_IB_SRIOV_SQP |
 					MLX4_IB_QP_NETIF |
-					MLX4_IB_QP_CREATE_ROCE_V2_GSI |
-					MLX4_IB_QP_CREATE_USE_GFP_NOIO))
+					MLX4_IB_QP_CREATE_ROCE_V2_GSI))
 		return ERR_PTR(-EINVAL);
 
 	if (init_attr->create_flags & IB_QP_CREATE_NETIF_QP) {
@@ -1154,7 +1153,6 @@ static struct ib_qp *_mlx4_ib_create_qp(struct ib_pd *pd,
 			return ERR_PTR(-EINVAL);
 
 		if ((init_attr->create_flags & ~(MLX4_IB_SRIOV_SQP |
-						 MLX4_IB_QP_CREATE_USE_GFP_NOIO |
 						 MLX4_IB_QP_CREATE_ROCE_V2_GSI  |
 						 MLX4_IB_QP_BLOCK_MULTICAST_LOOPBACK) &&
 		     init_attr->qp_type != IB_QPT_UD) ||
@@ -1179,7 +1177,7 @@ static struct ib_qp *_mlx4_ib_create_qp(struct ib_pd *pd,
 	case IB_QPT_RC:
 	case IB_QPT_UC:
 	case IB_QPT_RAW_PACKET:
-		qp = kzalloc(sizeof *qp, gfp);
+		qp = kzalloc(sizeof(*qp), GFP_KERNEL);
 		if (!qp)
 			return ERR_PTR(-ENOMEM);
 		qp->pri.vid = 0xFFFF;
@@ -1188,7 +1186,7 @@ static struct ib_qp *_mlx4_ib_create_qp(struct ib_pd *pd,
 	case IB_QPT_UD:
 	{
 		err = create_qp_common(to_mdev(pd->device), pd, init_attr,
-				       udata, 0, &qp, gfp);
+				       udata, 0, &qp);
 		if (err) {
 			kfree(qp);
 			return ERR_PTR(err);
@@ -1208,7 +1206,9 @@ static struct ib_qp *_mlx4_ib_create_qp(struct ib_pd *pd,
 		if (udata)
 			return ERR_PTR(-EINVAL);
 		if (init_attr->create_flags & MLX4_IB_QP_CREATE_ROCE_V2_GSI) {
-			int res = mlx4_qp_reserve_range(to_mdev(pd->device)->dev, 1, 1, &sqpn, 0);
+			int res = mlx4_qp_reserve_range(to_mdev(pd->device)->dev,
+							1, 1, &sqpn, 0,
+							MLX4_RES_USAGE_DRIVER);
 
 			if (res)
 				return ERR_PTR(res);
@@ -1217,8 +1217,7 @@ static struct ib_qp *_mlx4_ib_create_qp(struct ib_pd *pd,
 		}
 
 		err = create_qp_common(to_mdev(pd->device), pd, init_attr, udata,
-				       sqpn,
-				       &qp, gfp);
+				       sqpn, &qp);
 		if (err)
 			return ERR_PTR(err);
 
@@ -1572,7 +1571,7 @@ static int create_qp_lb_counter(struct mlx4_ib_dev *dev, struct mlx4_ib_qp *qp)
 	    !(dev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_LB_SRC_CHK))
 		return 0;
 
-	err = mlx4_counter_alloc(dev->dev, &tmp_idx);
+	err = mlx4_counter_alloc(dev->dev, &tmp_idx, MLX4_RES_USAGE_DRIVER);
 	if (err)
 		return err;
 

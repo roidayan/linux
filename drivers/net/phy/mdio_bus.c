@@ -263,21 +263,10 @@ static void of_mdiobus_link_mdiodev(struct mii_bus *bus,
 
 	for_each_available_child_of_node(bus->dev.of_node, child) {
 		int addr;
-		int ret;
 
-		ret = of_property_read_u32(child, "reg", &addr);
-		if (ret < 0) {
-			dev_err(dev, "%s has invalid MDIO address\n",
-				child->full_name);
+		addr = of_mdio_parse_addr(dev, child);
+		if (addr < 0)
 			continue;
-		}
-
-		/* A MDIO device must have a reg property in the range [0-31] */
-		if (addr >= PHY_MAX_ADDR) {
-			dev_err(dev, "%s MDIO address %i is too large\n",
-				child->full_name, addr);
-			continue;
-		}
 
 		if (addr == mdiodev->addr) {
 			dev->of_node = child;
@@ -364,9 +353,6 @@ int __mdiobus_register(struct mii_bus *bus, struct module *owner)
 
 	mutex_init(&bus->mdio_lock);
 
-	if (bus->reset)
-		bus->reset(bus);
-
 	/* de-assert bus level PHY GPIO resets */
 	if (bus->num_reset_gpios > 0) {
 		bus->reset_gpiod = devm_kcalloc(&bus->dev,
@@ -395,6 +381,9 @@ int __mdiobus_register(struct mii_bus *bus, struct module *owner)
 			gpiod_set_value_cansleep(gpiod, 0);
 		}
 	}
+
+	if (bus->reset)
+		bus->reset(bus);
 
 	for (i = 0; i < PHY_MAX_ADDR; i++) {
 		if ((bus->phy_mask & (1 << i)) == 0) {
@@ -658,6 +647,18 @@ static int mdio_bus_match(struct device *dev, struct device_driver *drv)
 	return 0;
 }
 
+static int mdio_uevent(struct device *dev, struct kobj_uevent_env *env)
+{
+	int rc;
+
+	/* Some devices have extra OF data and an OF-style MODALIAS */
+	rc = of_device_uevent_modalias(dev, env);
+	if (rc != -ENODEV)
+		return rc;
+
+	return 0;
+}
+
 #ifdef CONFIG_PM
 static int mdio_bus_suspend(struct device *dev)
 {
@@ -708,6 +709,7 @@ static const struct dev_pm_ops mdio_bus_pm_ops = {
 struct bus_type mdio_bus_type = {
 	.name		= "mdio_bus",
 	.match		= mdio_bus_match,
+	.uevent		= mdio_uevent,
 	.pm		= MDIO_BUS_PM_OPS,
 };
 EXPORT_SYMBOL(mdio_bus_type);
