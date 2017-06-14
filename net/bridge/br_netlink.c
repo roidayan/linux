@@ -595,7 +595,7 @@ static int br_afspec(struct net_bridge *br,
 		err = 0;
 		switch (nla_type(attr)) {
 		case IFLA_BRIDGE_VLAN_TUNNEL_INFO:
-			if (!(p->flags & BR_VLAN_TUNNEL))
+			if (!p || !(p->flags & BR_VLAN_TUNNEL))
 				return -EINVAL;
 			err = br_parse_vlan_tunnel_info(attr, &tinfo_curr);
 			if (err)
@@ -1251,7 +1251,7 @@ static int br_fill_info(struct sk_buff *skb, const struct net_device *brdev)
 	u32 ageing_time = jiffies_to_clock_t(br->ageing_time);
 	u32 stp_enabled = br->stp_enabled;
 	u16 priority = (br->bridge_id.prio[0] << 8) | br->bridge_id.prio[1];
-	u8 vlan_enabled = br_vlan_enabled(br);
+	u8 vlan_enabled = br_vlan_enabled(br->dev);
 	u64 clockval;
 
 	clockval = br_timer_value(&br->hello_timer);
