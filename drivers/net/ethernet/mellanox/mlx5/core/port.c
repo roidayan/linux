@@ -47,8 +47,8 @@ int mlx5_core_access_reg(struct mlx5_core_dev *dev, void *data_in,
 	u32 *in = NULL;
 	void *data;
 
-	in = mlx5_vzalloc(inlen);
-	out = mlx5_vzalloc(outlen);
+	in = kvzalloc(inlen, GFP_KERNEL);
+	out = kvzalloc(outlen, GFP_KERNEL);
 	if (!in || !out)
 		goto out;
 
@@ -96,6 +96,18 @@ int mlx5_query_mcam_reg(struct mlx5_core_dev *dev, u32 *mcam, u8 feature_group,
 	MLX5_SET(mcam_reg, in, access_reg_group, access_reg_group);
 
 	return mlx5_core_access_reg(dev, in, sz, mcam, sz, MLX5_REG_MCAM, 0, 0);
+}
+
+int mlx5_query_qcam_reg(struct mlx5_core_dev *mdev, u32 *qcam,
+			u8 feature_group, u8 access_reg_group)
+{
+	u32 in[MLX5_ST_SZ_DW(qcam_reg)] = {0};
+	int sz = MLX5_ST_SZ_BYTES(qcam_reg);
+
+	MLX5_SET(qcam_reg, in, feature_group, feature_group);
+	MLX5_SET(qcam_reg, in, access_reg_group, access_reg_group);
+
+	return mlx5_core_access_reg(mdev, in, sz, qcam, sz, MLX5_REG_QCAM, 0, 0);
 }
 
 struct mlx5_reg_pcap {
@@ -454,7 +466,7 @@ int mlx5_core_query_ib_ppcnt(struct mlx5_core_dev *dev,
 	u32 *in;
 	int err;
 
-	in  = mlx5_vzalloc(sz);
+	in  = kvzalloc(sz, GFP_KERNEL);
 	if (!in) {
 		err = -ENOMEM;
 		return err;
@@ -590,6 +602,36 @@ int mlx5_set_port_dcbx_param(struct mlx5_core_dev *mdev, u32 *in)
 
 	return mlx5_core_access_reg(mdev, in, sizeof(out), out,
 				    sizeof(out), MLX5_REG_DCBX_PARAM, 0, 1);
+}
+
+int mlx5_set_port_trust_state(struct mlx5_core_dev *mdev, u8 trust_state)
+{
+	u32 in[MLX5_ST_SZ_DW(qpts_reg)] = {};
+	u32 out[MLX5_ST_SZ_DW(qpts_reg)] = {};
+	int err;
+
+	MLX5_SET(qpts_reg, in, local_port, 1);
+	MLX5_SET(qpts_reg, in, trust_state, trust_state);
+
+	err = mlx5_core_access_reg(mdev, in, sizeof(in), out,
+				   sizeof(out), MLX5_REG_QPTS, 0, 1);
+	return err;
+}
+
+int mlx5_query_port_trust_state(struct mlx5_core_dev *mdev, u8 *trust_state)
+{
+	u32 in[MLX5_ST_SZ_DW(qpts_reg)] = {};
+	u32 out[MLX5_ST_SZ_DW(qpts_reg)] = {};
+	int err;
+
+	MLX5_SET(qpts_reg, in, local_port, 1);
+
+	err = mlx5_core_access_reg(mdev, in, sizeof(in), out,
+				   sizeof(out), MLX5_REG_QPTS, 0, 0);
+	if (!err)
+		*trust_state = MLX5_GET(qpts_reg, out, trust_state);
+
+	return err;
 }
 
 int mlx5_set_port_prio_tc(struct mlx5_core_dev *mdev, u8 *prio_tc)
@@ -788,6 +830,45 @@ int mlx5_query_port_wol(struct mlx5_core_dev *mdev, u8 *wol_mode)
 	return err;
 }
 EXPORT_SYMBOL_GPL(mlx5_query_port_wol);
+
+static int mlx5_query_pddr(struct mlx5_core_dev *mdev,
+			   int page_select, u32 *out, int outlen)
+{
+	u32 in[MLX5_ST_SZ_DW(pddr_reg)] = {0};
+
+	if (!MLX5_CAP_PCAM_REG(mdev, pddr))
+		return -EOPNOTSUPP;
+
+	MLX5_SET(pddr_reg, in, local_port, 1);
+	MLX5_SET(pddr_reg, in, page_select, page_select);
+
+	return mlx5_core_access_reg(mdev, in, sizeof(in), out, outlen, MLX5_REG_PDDR, 0, 0);
+}
+
+int mlx5_query_pddr_troubleshooting_info(struct mlx5_core_dev *mdev,
+					 u16 *monitor_opcode,
+					 u8 *status_message)
+{
+	int outlen = MLX5_ST_SZ_BYTES(pddr_reg);
+	u32 out[MLX5_ST_SZ_DW(pddr_reg)] = {0};
+	int err;
+
+	err = mlx5_query_pddr(mdev, MLX5_PDDR_TROUBLESHOOTING_INFO_PAGE,
+			      out, outlen);
+	if (err)
+		return err;
+
+	if (monitor_opcode)
+		*monitor_opcode = MLX5_GET(pddr_reg, out,
+					   page_data.troubleshooting_info_page.status_opcode.monitor_opcodes);
+
+	if (status_message)
+		memcpy(status_message,
+		       MLX5_ADDR_OF(pddr_reg, out, page_data.troubleshooting_info_page.status_message),
+		       ETH_GSTRING_LEN);
+
+	return 0;
+}
 
 static int mlx5_query_ports_check(struct mlx5_core_dev *mdev, u32 *out,
 				  int outlen)
