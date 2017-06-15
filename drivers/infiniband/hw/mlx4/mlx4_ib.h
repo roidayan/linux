@@ -185,7 +185,6 @@ enum mlx4_ib_qp_flags {
 	MLX4_IB_QP_LSO = IB_QP_CREATE_IPOIB_UD_LSO,
 	MLX4_IB_QP_BLOCK_MULTICAST_LOOPBACK = IB_QP_CREATE_BLOCK_MULTICAST_LOOPBACK,
 	MLX4_IB_QP_NETIF = IB_QP_CREATE_NETIF_QP,
-	MLX4_IB_QP_CREATE_USE_GFP_NOIO = IB_QP_CREATE_USE_GFP_NOIO,
 
 	/* Mellanox specific flags start from IB_QP_CREATE_RESERVED_START */
 	MLX4_IB_ROCE_V2_GSI_QP = MLX4_IB_QP_CREATE_ROCE_V2_GSI,
@@ -319,6 +318,7 @@ struct mlx4_ib_qp {
 	u8			sq_no_prefetch;
 	u8			state;
 	int			mlx_type;
+	u32			inl_recv_sz;
 	struct list_head	gid_list;
 	struct list_head	steering_rules;
 	struct mlx4_ib_buf	*sqp_proxy_rcv;
@@ -624,6 +624,8 @@ struct mlx4_uverbs_ex_query_device_resp {
 	__u32 comp_mask;
 	__u32 response_length;
 	__u64 hca_core_clock_offset;
+	__u32 max_inl_recv_sz;
+	__u32 reserved;
 };
 
 static inline struct mlx4_ib_dev *to_mdev(struct ib_device *ibdev)

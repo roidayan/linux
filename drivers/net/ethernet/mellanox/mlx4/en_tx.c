@@ -105,13 +105,14 @@ int mlx4_en_create_tx_ring(struct mlx4_en_priv *priv,
 	       (unsigned long long) ring->sp_wqres.buf.direct.map);
 
 	err = mlx4_qp_reserve_range(mdev->dev, 1, 1, &ring->qpn,
-				    MLX4_RESERVE_ETH_BF_QP);
+				    MLX4_RESERVE_ETH_BF_QP,
+				    MLX4_RES_USAGE_DRIVER);
 	if (err) {
 		en_err(priv, "failed reserving qp for TX ring\n");
 		goto err_hwq_res;
 	}
 
-	err = mlx4_qp_alloc(mdev->dev, ring->qpn, &ring->sp_qp, GFP_KERNEL);
+	err = mlx4_qp_alloc(mdev->dev, ring->qpn, &ring->sp_qp);
 	if (err) {
 		en_err(priv, "Failed allocating qp %d\n", ring->qpn);
 		goto err_reserve;
