@@ -247,12 +247,11 @@ int rdma_nl_unicast(struct sk_buff *skb, u32 pid)
 }
 EXPORT_SYMBOL(rdma_nl_unicast);
 
-int ibnl_multicast(struct sk_buff *skb, struct nlmsghdr *nlh,
-			unsigned int group, gfp_t flags)
+int rdma_nl_multicast(struct sk_buff *skb, unsigned int group, gfp_t flags)
 {
 	return nlmsg_multicast(nls, skb, 0, group, flags);
 }
-EXPORT_SYMBOL(ibnl_multicast);
+EXPORT_SYMBOL(rdma_nl_multicast);
 
 int __init rdma_nl_init(void)
 {
