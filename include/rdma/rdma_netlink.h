@@ -70,4 +70,10 @@ int rdma_nl_unicast(struct sk_buff *skb, u32 pid);
  */
 int rdma_nl_multicast(struct sk_buff *skb, unsigned int group, gfp_t flags);
 
+/**
+ * Check if there are any listeners to the netlink group
+ * @group: the netlink group ID
+ * Returns 0 on success or a negative for no listeners.
+ */
+int rdma_nl_chk_listeners(unsigned int group);
 #endif /* _RDMA_NETLINK_H */
