@@ -64,12 +64,10 @@ int rdma_nl_unicast(struct sk_buff *skb, u32 pid);
 /**
  * Send the supplied skb to a netlink group.
  * @skb: The netlink skb
- * @nlh: Header of the netlink message to send
  * @group: Netlink group ID
  * @flags: allocation flags
  * Returns 0 on success or a negative error code.
  */
-int ibnl_multicast(struct sk_buff *skb, struct nlmsghdr *nlh,
-			unsigned int group, gfp_t flags);
+int rdma_nl_multicast(struct sk_buff *skb, unsigned int group, gfp_t flags);
 
 #endif /* _RDMA_NETLINK_H */
