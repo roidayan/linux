@@ -48,6 +48,8 @@
 
 #include <rdma/ib_smi.h>
 #include <rdma/ib_user_verbs.h>
+#include <rdma/uverbs_ioctl.h>
+#include <rdma/uverbs_std_types.h>
 #include <rdma/ib_addr.h>
 #include <rdma/ib_cache.h>
 
@@ -561,6 +563,13 @@ static int mlx4_ib_query_device(struct ib_device *ibdev,
 			resp.comp_mask |= QUERY_DEVICE_RESP_MASK_TIMESTAMP;
 			resp.hca_core_clock_offset = clock_params.offset % PAGE_SIZE;
 		}
+	}
+
+	if (uhw->outlen >= resp.response_length +
+	    sizeof(resp.max_inl_recv_sz)) {
+		resp.response_length += sizeof(resp.max_inl_recv_sz);
+		resp.max_inl_recv_sz  = dev->dev->caps.max_rq_sg *
+			sizeof(struct mlx4_wqe_data_seg);
 	}
 
 	if (uhw->outlen) {
@@ -1155,7 +1164,7 @@ static void mlx4_ib_disassociate_ucontext(struct ib_ucontext *ibcontext)
 			 * call to mlx4_ib_vma_close.
 			 */
 			put_task_struct(owning_process);
-			msleep(1);
+			usleep_range(1000, 2000);
 			owning_process = get_pid_task(ibcontext->tgid,
 						      PIDTYPE_PID);
 			if (!owning_process ||
@@ -2577,6 +2586,8 @@ static void get_fw_ver_str(struct ib_device *device, char *str,
 		 (int) dev->dev->caps.fw_ver & 0xffff);
 }
 
+static DECLARE_UVERBS_TYPES_GROUP(root, &uverbs_common_types);
+
 static void *mlx4_ib_add(struct mlx4_dev *dev)
 {
 	struct mlx4_ib_dev *ibdev;
@@ -2772,7 +2783,8 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 		allocated = 0;
 		if (mlx4_ib_port_link_layer(&ibdev->ib_dev, i + 1) ==
 						IB_LINK_LAYER_ETHERNET) {
-			err = mlx4_counter_alloc(ibdev->dev, &counter_index);
+			err = mlx4_counter_alloc(ibdev->dev, &counter_index,
+						 MLX4_RES_USAGE_DRIVER);
 			/* if failed to allocate a new counter, use default */
 			if (err)
 				counter_index =
@@ -2827,7 +2839,8 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 		ibdev->steer_qpn_count = MLX4_IB_UC_MAX_NUM_QPS;
 		err = mlx4_qp_reserve_range(dev, ibdev->steer_qpn_count,
 					    MLX4_IB_UC_STEER_QPN_ALIGN,
-					    &ibdev->steer_qpn_base, 0);
+					    &ibdev->steer_qpn_base, 0,
+					    MLX4_RES_USAGE_DRIVER);
 		if (err)
 			goto err_counter;
 
@@ -2859,6 +2872,7 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 	if (mlx4_ib_alloc_diag_counters(ibdev))
 		goto err_steer_free_bitmap;
 
+	ibdev->ib_dev.specs_root = &root;
 	if (ib_register_device(&ibdev->ib_dev, NULL))
 		goto err_diag_counters;
 
