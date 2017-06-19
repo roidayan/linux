@@ -40,6 +40,7 @@
 #include "en.h"
 #include "ipsec_sadb.h"
 #include "en_ipsec/ipsec.h"
+#include "en_ipsec/rxtx.h"
 
 struct mlx5e_ipsec_sa_entry {
 	struct hlist_node hlist; /* Item in SADB_RX hashtable */
@@ -48,6 +49,24 @@ struct mlx5e_ipsec_sa_entry {
 	struct mlx5e_ipsec_dev *dev;
 	void *context;
 };
+
+struct xfrm_state *mlx5e_ipsec_sadb_rx_lookup(struct mlx5e_ipsec_dev *dev,
+					      unsigned int handle)
+{
+	struct mlx5e_ipsec_sa_entry *sa_entry;
+	struct xfrm_state *ret = NULL;
+
+	rcu_read_lock();
+	hash_for_each_possible_rcu(dev->sadb_rx, sa_entry, hlist, handle)
+		if (sa_entry->handle == handle) {
+			ret = sa_entry->x;
+			xfrm_state_hold(ret);
+			break;
+		}
+	rcu_read_unlock();
+
+	return ret;
+}
 
 static int mlx5e_ipsec_sadb_rx_add(struct mlx5e_ipsec_sa_entry *sa_entry)
 {
@@ -356,6 +375,7 @@ int mlx5e_ipsec_device_init(struct mlx5e_priv *priv)
 	ida_init(&dev->halloc);
 	dev->en_priv = priv;
 	dev->en_priv->ipsec = dev;
+	dev->en_priv->hard_mtu += MLX5_METADATA_ETHER_LEN;
 	netdev_dbg(priv->netdev, "IPSec attached to netdevice\n");
 	return 0;
 }
@@ -368,6 +388,7 @@ void mlx5e_ipsec_device_cleanup(struct mlx5e_priv *priv)
 		return;
 
 	netdev_dbg(dev->en_priv->netdev, "%s\n", __func__);
+	dev->en_priv->hard_mtu -= MLX5_METADATA_ETHER_LEN;
 	ida_destroy(&dev->halloc);
 	kfree(dev);
 	priv->ipsec = NULL;
