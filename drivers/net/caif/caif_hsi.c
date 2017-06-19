@@ -454,8 +454,7 @@ static int cfhsi_rx_desc(struct cfhsi_desc *desc, struct cfhsi *cfhsi)
 		}
 		caif_assert(skb != NULL);
 
-		dst = skb_put(skb, len);
-		memcpy(dst, pfrm, len);
+		dst = skb_put_data(skb, pfrm, len);
 
 		skb->protocol = htons(ETH_P_CAIF);
 		skb_reset_mac_header(skb);
@@ -585,8 +584,7 @@ static int cfhsi_rx_pld(struct cfhsi_desc *desc, struct cfhsi *cfhsi)
 		}
 		caif_assert(skb != NULL);
 
-		dst = skb_put(skb, len);
-		memcpy(dst, pcffrm, len);
+		dst = skb_put_data(skb, pcffrm, len);
 
 		skb->protocol = htons(ETH_P_CAIF);
 		skb_reset_mac_header(skb);
@@ -1121,7 +1119,7 @@ static void cfhsi_setup(struct net_device *dev)
 	dev->flags = IFF_POINTOPOINT | IFF_NOARP;
 	dev->mtu = CFHSI_MAX_CAIF_FRAME_SZ;
 	dev->priv_flags |= IFF_NO_QUEUE;
-	dev->destructor = free_netdev;
+	dev->needs_free_netdev = true;
 	dev->netdev_ops = &cfhsi_netdevops;
 	for (i = 0; i < CFHSI_PRIO_LAST; ++i)
 		skb_queue_head_init(&cfhsi->qhead[i]);

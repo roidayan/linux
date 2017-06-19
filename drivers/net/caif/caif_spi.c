@@ -548,8 +548,7 @@ int cfspi_rxfrm(struct cfspi *cfspi, u8 *buf, size_t len)
 		skb = netdev_alloc_skb(cfspi->ndev, pkt_len + 1);
 		caif_assert(skb != NULL);
 
-		dst = skb_put(skb, pkt_len);
-		memcpy(dst, src, pkt_len);
+		dst = skb_put_data(skb, src, pkt_len);
 		src += pkt_len;
 
 		skb->protocol = htons(ETH_P_CAIF);
@@ -712,7 +711,7 @@ static void cfspi_setup(struct net_device *dev)
 	dev->flags = IFF_NOARP | IFF_POINTOPOINT;
 	dev->priv_flags |= IFF_NO_QUEUE;
 	dev->mtu = SPI_MAX_PAYLOAD_SIZE;
-	dev->destructor = free_netdev;
+	dev->needs_free_netdev = true;
 	skb_queue_head_init(&cfspi->qhead);
 	skb_queue_head_init(&cfspi->chead);
 	cfspi->cfdev.link_select = CAIF_LINK_HIGH_BANDW;
