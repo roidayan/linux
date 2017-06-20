@@ -458,13 +458,15 @@ struct mlx5e_mpw_info {
 
 struct mlx5e_rx_am_stats {
 	int ppms; /* packets per msec */
+	int bpms; /* bytes per msec */
 	int epms; /* events per msec */
 };
 
 struct mlx5e_rx_am_sample {
-	ktime_t		time;
-	unsigned int	pkt_ctr;
-	u16		event_ctr;
+	ktime_t	time;
+	u32	pkt_ctr;
+	u32	byte_ctr;
+	u16	event_ctr;
 };
 
 struct mlx5e_rx_am { /* Adaptive Moderation */
@@ -623,6 +625,8 @@ struct mlx5e_tc_table {
 
 	struct rhashtable_params        ht_params;
 	struct rhashtable               ht;
+
+	DECLARE_HASHTABLE(mod_hdr_tbl, 8);
 };
 
 struct mlx5e_vlan_table {
@@ -1003,7 +1007,7 @@ int mlx5e_create_direct_tirs(struct mlx5e_priv *priv);
 void mlx5e_destroy_direct_tirs(struct mlx5e_priv *priv);
 void mlx5e_destroy_rqt(struct mlx5e_priv *priv, struct mlx5e_rqt *rqt);
 
-int mlx5e_create_ttc_table(struct mlx5e_priv *priv, u32 underlay_qpn);
+int mlx5e_create_ttc_table(struct mlx5e_priv *priv);
 void mlx5e_destroy_ttc_table(struct mlx5e_priv *priv);
 
 int mlx5e_create_tis(struct mlx5_core_dev *mdev, int tc,

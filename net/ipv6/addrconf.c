@@ -963,6 +963,7 @@ ipv6_add_addr(struct inet6_dev *idev, const struct in6_addr *addr,
 	struct net *net = dev_net(idev->dev);
 	struct inet6_ifaddr *ifa = NULL;
 	struct rt6_info *rt;
+	struct in6_validator_info i6vi;
 	unsigned int hash;
 	int err = 0;
 	int addr_type = ipv6_addr_type(addr);
@@ -974,6 +975,9 @@ ipv6_add_addr(struct inet6_dev *idev, const struct in6_addr *addr,
 		return ERR_PTR(-EADDRNOTAVAIL);
 
 	rcu_read_lock_bh();
+
+	in6_dev_hold(idev);
+
 	if (idev->dead) {
 		err = -ENODEV;			/*XXX*/
 		goto out2;
@@ -983,6 +987,17 @@ ipv6_add_addr(struct inet6_dev *idev, const struct in6_addr *addr,
 		err = -EACCES;
 		goto out2;
 	}
+
+	i6vi.i6vi_addr = *addr;
+	i6vi.i6vi_dev = idev;
+	rcu_read_unlock_bh();
+
+	err = inet6addr_validator_notifier_call_chain(NETDEV_UP, &i6vi);
+
+	rcu_read_lock_bh();
+	err = notifier_to_errno(err);
+	if (err)
+		goto out2;
 
 	spin_lock(&addrconf_hash_lock);
 
@@ -1022,7 +1037,10 @@ ipv6_add_addr(struct inet6_dev *idev, const struct in6_addr *addr,
 	INIT_HLIST_NODE(&ifa->addr_lst);
 	ifa->scope = scope;
 	ifa->prefix_len = pfxlen;
-	ifa->flags = flags | IFA_F_TENTATIVE;
+	ifa->flags = flags;
+	/* No need to add the TENTATIVE flag for addresses with NODAD */
+	if (!(flags & IFA_F_NODAD))
+		ifa->flags |= IFA_F_TENTATIVE;
 	ifa->valid_lft = valid_lft;
 	ifa->prefered_lft = prefered_lft;
 	ifa->cstamp = ifa->tstamp = jiffies;
@@ -1031,7 +1049,6 @@ ipv6_add_addr(struct inet6_dev *idev, const struct in6_addr *addr,
 	ifa->rt = rt;
 
 	ifa->idev = idev;
-	in6_dev_hold(idev);
 	/* For caller */
 	in6_ifa_hold(ifa);
 
@@ -1059,6 +1076,7 @@ out2:
 		inet6addr_notifier_call_chain(NETDEV_UP, ifa);
 	else {
 		kfree(ifa);
+		in6_dev_put(idev);
 		ifa = ERR_PTR(err);
 	}
 
@@ -2277,7 +2295,7 @@ addrconf_prefix_route(struct in6_addr *pfx, int plen, struct net_device *dev,
 		cfg.fc_flags |= RTF_NONEXTHOP;
 #endif
 
-	ip6_route_add(&cfg);
+	ip6_route_add(&cfg, NULL);
 }
 
 
@@ -2332,7 +2350,7 @@ static void addrconf_add_mroute(struct net_device *dev)
 
 	ipv6_addr_set(&cfg.fc_dst, htonl(0xFF000000), 0, 0, 0);
 
-	ip6_route_add(&cfg);
+	ip6_route_add(&cfg, NULL);
 }
 
 static struct inet6_dev *addrconf_add_dev(struct net_device *dev)

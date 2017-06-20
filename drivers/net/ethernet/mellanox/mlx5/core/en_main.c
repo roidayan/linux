@@ -2978,7 +2978,7 @@ static int mlx5e_setup_tc(struct net_device *netdev, u8 tc)
 	new_channels.params = priv->channels.params;
 	new_channels.params.num_tc = tc ? tc : 1;
 
-	if (test_bit(MLX5E_STATE_OPENED, &priv->state)) {
+	if (!test_bit(MLX5E_STATE_OPENED, &priv->state)) {
 		priv->channels.params = new_channels.params;
 		goto out;
 	}
@@ -2994,12 +2994,16 @@ out:
 }
 
 static int mlx5e_ndo_setup_tc(struct net_device *dev, u32 handle,
-			      __be16 proto, struct tc_to_netdev *tc)
+			      u32 chain_index, __be16 proto,
+			      struct tc_to_netdev *tc)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
 
 	if (TC_H_MAJ(handle) != TC_H_MAJ(TC_H_INGRESS))
 		goto mqprio;
+
+	if (chain_index)
+		return -EOPNOTSUPP;
 
 	switch (tc->type) {
 	case TC_SETUP_CLSFLOWER:

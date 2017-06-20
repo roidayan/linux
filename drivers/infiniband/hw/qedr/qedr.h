@@ -58,7 +58,10 @@
 #define QEDR_MSG_QP   "  QP"
 #define QEDR_MSG_GSI  " GSI"
 
-#define QEDR_CQ_MAGIC_NUMBER   (0x11223344)
+#define QEDR_CQ_MAGIC_NUMBER	(0x11223344)
+
+#define FW_PAGE_SIZE		(RDMA_RING_PAGE_SIZE)
+#define FW_PAGE_SHIFT		(12)
 
 struct qedr_dev;
 
@@ -150,6 +153,8 @@ struct qedr_dev {
 	u32			dp_module;
 	u8			dp_level;
 	u8			num_hwfns;
+	u8			gsi_ll2_handle;
+
 	uint			wq_multiplier;
 	u8			gsi_ll2_mac_address[ETH_ALEN];
 	int			gsi_qp_created;
