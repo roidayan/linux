@@ -50,6 +50,16 @@ static int fill_dev_info(struct sk_buff *msg, struct ib_device *device)
 	return 0;
 }
 
+static int fill_port_info(struct sk_buff *msg,
+			  struct ib_device *device, u32 port)
+{
+	if (nla_put_string(msg, RDMA_NLDEV_ATTR_DEV_NAME, device->name))
+		return -EMSGSIZE;
+	if (nla_put_u32(msg, RDMA_NLDEV_ATTR_PORT_INDEX, port))
+		return -EMSGSIZE;
+	return 0;
+}
+
 static int nldev_get_doit(struct sk_buff *skb, struct nlmsghdr *nlh,
 			  struct netlink_ext_ack *extack)
 {
@@ -126,10 +136,60 @@ static int nldev_get_dumpit(struct sk_buff *skb, struct netlink_callback *cb)
 	return ib_enum_all_devs(_nldev_get_dumpit, skb, cb);
 }
 
+static int nldev_port_get_dumpit(struct sk_buff *skb,
+				 struct netlink_callback *cb)
+{
+	struct nlattr *tb[RDMA_NLDEV_ATTR_MAX];
+	char name[IB_DEVICE_NAME_MAX];
+	struct ib_device *device;
+	int start = cb->args[0];
+	struct nlmsghdr *nlh;
+	u32 idx = 0;
+	int err;
+	u32 p;
+
+	err = nlmsg_parse(cb->nlh, 0, tb, RDMA_NLDEV_ATTR_MAX,
+			  nldev_policy, NULL);
+	if (err || !tb[RDMA_NLDEV_ATTR_DEV_NAME])
+		return -EINVAL;
+
+	nla_strlcpy(name, tb[RDMA_NLDEV_ATTR_DEV_NAME], IB_DEVICE_NAME_MAX);
+
+	device = __ib_device_get_by_name(name);
+	if (!device)
+		return -EINVAL;
+
+	for (p = rdma_start_port(device); p <= rdma_end_port(device); ++p) {
+		if (idx < start) {
+			idx++;
+			continue;
+		}
+
+		nlh = nlmsg_put(skb, NETLINK_CB(cb->skb).portid,
+				cb->nlh->nlmsg_seq,
+				RDMA_NL_GET_TYPE(RDMA_NL_NLDEV,
+						 RDMA_NLDEV_CMD_PORT_GET),
+				0, NLM_F_MULTI);
+
+		if (fill_port_info(skb, device, p)) {
+			nlmsg_cancel(skb, nlh);
+			goto out;
+		}
+		idx++;
+		nlmsg_end(skb, nlh);
+	}
+
+out:	cb->args[0] = idx;
+	return skb->len;
+}
+
 static const struct rdma_nl_cbs nldev_cb_table[] = {
 	[RDMA_NLDEV_CMD_GET] = {
 		.doit = nldev_get_doit,
 		.dump = nldev_get_dumpit,
+	},
+	[RDMA_NLDEV_CMD_PORT_GET] = {
+		.dump = nldev_port_get_dumpit,
 	},
 };
 
