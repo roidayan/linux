@@ -236,6 +236,17 @@ struct ib_uverbs_rss_caps {
 	__u32 reserved;
 };
 
+struct ib_uverbs_ooo_caps {
+	/*
+	 * Per transport capability indicating whether out of order data
+	 * placement is supported or not.
+	 */
+	 __u32 rc_caps;
+	 __u32 xrc_caps;
+	 __u32 ud_caps;
+	 __u32 uc_caps;
+};
+
 struct ib_uverbs_ex_query_device_resp {
 	struct ib_uverbs_query_device_resp base;
 	__u32 comp_mask;
@@ -247,6 +258,7 @@ struct ib_uverbs_ex_query_device_resp {
 	struct ib_uverbs_rss_caps rss_caps;
 	__u32  max_wq_type_rq;
 	__u32 raw_packet_caps;
+	struct ib_uverbs_ooo_caps ooo_caps;
 };
 
 struct ib_uverbs_query_port {
@@ -555,9 +567,9 @@ enum {
 
 enum {
 	/*
-	 * This value is equal to IB_QP_RATE_LIMIT.
+	 * This value is equal to IB_QP_OOO_RW_DATA_PLACEMENT.
 	 */
-	IB_USER_LAST_QP_ATTR_MASK = 1ULL << 25,
+	IB_USER_LAST_QP_ATTR_MASK = 1ULL << 26,
 };
 
 struct ib_uverbs_ex_create_qp {
