@@ -1092,6 +1092,7 @@ static int __init ib_core_init(void)
 		goto err_mad;
 	}
 
+	nldev_init();
 	rdma_nl_register(RDMA_NL_LS, ibnl_ls_cb_table);
 	ib_cache_setup();
 
@@ -1115,6 +1116,7 @@ err:
 static void __exit ib_core_cleanup(void)
 {
 	ib_cache_cleanup();
+	nldev_exit();
 	rdma_nl_unregister(RDMA_NL_LS);
 	ib_sa_cleanup();
 	ib_mad_cleanup();

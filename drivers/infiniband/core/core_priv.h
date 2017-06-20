@@ -188,4 +188,8 @@ int ib_nl_handle_ip_res_resp(struct sk_buff *skb,
 			     struct netlink_ext_ack *extack);
 
 struct ib_device *__ib_device_get_by_name(const char *name);
+
+/* RDMA device netlink */
+void nldev_init(void);
+void nldev_exit(void);
 #endif /* _CORE_PRIV_H */
