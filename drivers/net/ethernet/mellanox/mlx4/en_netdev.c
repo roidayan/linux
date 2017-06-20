@@ -86,7 +86,8 @@ int mlx4_en_setup_tc(struct net_device *dev, u8 up)
 	return 0;
 }
 
-static int __mlx4_en_setup_tc(struct net_device *dev, u32 handle, __be16 proto,
+static int __mlx4_en_setup_tc(struct net_device *dev, u32 handle,
+			      u32 chain_index, __be16 proto,
 			      struct tc_to_netdev *tc)
 {
 	if (tc->type != TC_SETUP_MQPRIO)
@@ -595,6 +596,8 @@ static int mlx4_en_get_qp(struct mlx4_en_priv *priv)
 		return err;
 	}
 
+	en_info(priv, "Steering Mode %d\n", dev->caps.steering_mode);
+
 	if (dev->caps.steering_mode == MLX4_STEERING_MODE_A0) {
 		int base_qpn = mlx4_get_base_qpn(dev, priv->port);
 		*qpn = base_qpn + index;
@@ -1009,7 +1012,7 @@ static void mlx4_en_do_multicast(struct mlx4_en_priv *priv,
 				memcpy(&mc_list[10], mclist->addr, ETH_ALEN);
 				mc_list[5] = priv->port;
 				err = mlx4_multicast_detach(mdev->dev,
-							    &priv->rss_map.indir_qp,
+							    priv->rss_map.indir_qp,
 							    mc_list,
 							    MLX4_PROT_ETH,
 							    mclist->reg_id);
@@ -1031,7 +1034,7 @@ static void mlx4_en_do_multicast(struct mlx4_en_priv *priv,
 				/* needed for B0 steering support */
 				mc_list[5] = priv->port;
 				err = mlx4_multicast_attach(mdev->dev,
-							    &priv->rss_map.indir_qp,
+							    priv->rss_map.indir_qp,
 							    mc_list,
 							    priv->port, 0,
 							    MLX4_PROT_ETH,
@@ -1741,7 +1744,7 @@ int mlx4_en_start_port(struct net_device *dev)
 	/* Attach rx QP to bradcast address */
 	eth_broadcast_addr(&mc_list[10]);
 	mc_list[5] = priv->port; /* needed for B0 steering support */
-	if (mlx4_multicast_attach(mdev->dev, &priv->rss_map.indir_qp, mc_list,
+	if (mlx4_multicast_attach(mdev->dev, priv->rss_map.indir_qp, mc_list,
 				  priv->port, 0, MLX4_PROT_ETH,
 				  &priv->broadcast_id))
 		mlx4_warn(mdev, "Failed Attaching Broadcast\n");
@@ -1865,12 +1868,12 @@ void mlx4_en_stop_port(struct net_device *dev, int detach)
 	/* Detach All multicasts */
 	eth_broadcast_addr(&mc_list[10]);
 	mc_list[5] = priv->port; /* needed for B0 steering support */
-	mlx4_multicast_detach(mdev->dev, &priv->rss_map.indir_qp, mc_list,
+	mlx4_multicast_detach(mdev->dev, priv->rss_map.indir_qp, mc_list,
 			      MLX4_PROT_ETH, priv->broadcast_id);
 	list_for_each_entry(mclist, &priv->curr_list, list) {
 		memcpy(&mc_list[10], mclist->addr, ETH_ALEN);
 		mc_list[5] = priv->port;
-		mlx4_multicast_detach(mdev->dev, &priv->rss_map.indir_qp,
+		mlx4_multicast_detach(mdev->dev, priv->rss_map.indir_qp,
 				      mc_list, MLX4_PROT_ETH, mclist->reg_id);
 		if (mclist->tunnel_reg_id)
 			mlx4_flow_detach(mdev->dev, mclist->tunnel_reg_id);
@@ -2375,6 +2378,7 @@ static int mlx4_en_hwtstamp_set(struct net_device *dev, struct ifreq *ifr)
 	case HWTSTAMP_FILTER_PTP_V2_EVENT:
 	case HWTSTAMP_FILTER_PTP_V2_SYNC:
 	case HWTSTAMP_FILTER_PTP_V2_DELAY_REQ:
+	case HWTSTAMP_FILTER_NTP_ALL:
 		config.rx_filter = HWTSTAMP_FILTER_ALL;
 		break;
 	default:
