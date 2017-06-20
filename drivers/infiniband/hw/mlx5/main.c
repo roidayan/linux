@@ -30,6 +30,7 @@
  * SOFTWARE.
  */
 
+#include <linux/debugfs.h>
 #include <linux/highmem.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -696,6 +697,9 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 	if (MLX5_CAP_GEN(mdev, ipoib_enhanced_offloads) &&
 	    MLX5_CAP_IPOIB_ENHANCED(mdev, csum_cap))
 		props->device_cap_flags |= IB_DEVICE_UD_IP_CSUM;
+	if (MLX5_CAP_GEN(dev->mdev, rq_delay_drop) &&
+	    MLX5_CAP_GEN(dev->mdev, general_notification_event))
+		props->raw_packet_caps |= IB_RAW_PACKET_CAP_DELAY_DROP;
 
 	if (MLX5_CAP_GEN(dev->mdev, eth_net_offloads) &&
 	    MLX5_CAP_ETH(dev->mdev, scatter_fcs)) {
@@ -2758,6 +2762,26 @@ static void mlx5_ib_handle_internal_error(struct mlx5_ib_dev *ibdev)
 	spin_unlock_irqrestore(&ibdev->reset_flow_resource_lock, flags);
 }
 
+static void delay_drop_handler(struct work_struct *work)
+{
+	int err;
+	struct mlx5_ib_delay_drop *delay_drop =
+		container_of(work, struct mlx5_ib_delay_drop,
+			     delay_drop_work);
+
+	atomic_inc(&delay_drop->events_cnt);
+
+	mutex_lock(&delay_drop->lock);
+	err = mlx5_core_set_delay_drop(delay_drop->dev->mdev,
+				       delay_drop->timeout);
+	if (err) {
+		mlx5_ib_warn(delay_drop->dev, "Failed to set delay drop, timeout=%u\n",
+			     delay_drop->timeout);
+		delay_drop->activate = false;
+	}
+	mutex_unlock(&delay_drop->lock);
+}
+
 static void mlx5_ib_event(struct mlx5_core_dev *dev, void *context,
 			  enum mlx5_dev_event event, unsigned long param)
 {
@@ -2810,8 +2834,11 @@ static void mlx5_ib_event(struct mlx5_core_dev *dev, void *context,
 		ibev.event = IB_EVENT_CLIENT_REREGISTER;
 		port = (u8)param;
 		break;
+	case MLX5_DEV_EVENT_DELAY_DROP_TIMEOUT:
+		schedule_work(&ibdev->delay_drop.delay_drop_work);
+		goto out;
 	default:
-		return;
+		goto out;
 	}
 
 	ibev.device	      = &ibdev->ib_dev;
@@ -2819,7 +2846,7 @@ static void mlx5_ib_event(struct mlx5_core_dev *dev, void *context,
 
 	if (port < 1 || port > ibdev->num_ports) {
 		mlx5_ib_warn(ibdev, "warning: event on port %d\n", port);
-		return;
+		goto out;
 	}
 
 	if (ibdev->ib_active)
@@ -2827,6 +2854,9 @@ static void mlx5_ib_event(struct mlx5_core_dev *dev, void *context,
 
 	if (fatal)
 		ibdev->ib_active = false;
+
+out:
+	return;
 }
 
 static int set_has_smi_cap(struct mlx5_ib_dev *dev)
@@ -3643,6 +3673,126 @@ static void mlx5_ib_free_rdma_netdev(struct net_device *netdev)
 	return mlx5_rdma_netdev_free(netdev);
 }
 
+static void delay_drop_debugfs_cleanup(struct mlx5_ib_dev *dev)
+{
+	if (!dev->delay_drop.dbg)
+		return;
+	debugfs_remove_recursive(dev->delay_drop.dbg->dir_debugfs);
+	kfree(dev->delay_drop.dbg);
+	dev->delay_drop.dbg = NULL;
+}
+
+static void cancel_delay_drop(struct mlx5_ib_dev *dev)
+{
+	if (!(dev->ib_dev.attrs.raw_packet_caps & IB_RAW_PACKET_CAP_DELAY_DROP))
+		return;
+
+	cancel_work_sync(&dev->delay_drop.delay_drop_work);
+	delay_drop_debugfs_cleanup(dev);
+}
+
+static ssize_t delay_drop_timeout_read(struct file *filp, char __user *buf,
+				       size_t count, loff_t *pos)
+{
+	struct mlx5_ib_delay_drop *delay_drop = filp->private_data;
+	char lbuf[20];
+	int len;
+
+	len = snprintf(lbuf, sizeof(lbuf), "%u\n", delay_drop->timeout);
+	return simple_read_from_buffer(buf, count, pos, lbuf, len);
+}
+
+static ssize_t delay_drop_timeout_write(struct file *filp, const char __user *buf,
+					size_t count, loff_t *pos)
+{
+	struct mlx5_ib_delay_drop *delay_drop = filp->private_data;
+	u32 timeout;
+	u32 var;
+
+	if (kstrtouint_from_user(buf, count, 0, &var))
+		return -EFAULT;
+
+	timeout = min_t(u32, roundup(var, 100), MLX5_MAX_DELAY_DROP_TIMEOUT_MS *
+			1000);
+	if (timeout != var)
+		mlx5_ib_dbg(delay_drop->dev, "Round delay drop timeout to %u usec\n",
+			    timeout);
+
+	delay_drop->timeout = timeout;
+
+	return count;
+}
+
+static const struct file_operations fops_delay_drop_timeout = {
+	.owner	= THIS_MODULE,
+	.open	= simple_open,
+	.write	= delay_drop_timeout_write,
+	.read	= delay_drop_timeout_read,
+};
+
+static int delay_drop_debugfs_init(struct mlx5_ib_dev *dev)
+{
+	struct mlx5_ib_dbg_delay_drop *dbg;
+
+	if (!mlx5_debugfs_root)
+		return 0;
+
+	dbg = kzalloc(sizeof(*dbg), GFP_KERNEL);
+	if (!dbg)
+		return -ENOMEM;
+
+	dbg->dir_debugfs =
+		debugfs_create_dir("delay_drop",
+				   dev->mdev->priv.dbg_root);
+	if (!dbg->dir_debugfs)
+		return -ENOMEM;
+
+	dbg->events_cnt_debugfs =
+		debugfs_create_atomic_t("num_timeout_events", 0400,
+					dbg->dir_debugfs,
+					&dev->delay_drop.events_cnt);
+	if (!dbg->events_cnt_debugfs)
+		goto out_debugfs;
+
+	dbg->rqs_cnt_debugfs =
+		debugfs_create_atomic_t("num_rqs", 0400,
+					dbg->dir_debugfs,
+					&dev->delay_drop.rqs_cnt);
+	if (!dbg->rqs_cnt_debugfs)
+		goto out_debugfs;
+
+	dbg->timeout_debugfs =
+		debugfs_create_file("timeout", 0600,
+				    dbg->dir_debugfs,
+				    &dev->delay_drop,
+				    &fops_delay_drop_timeout);
+	if (!dbg->timeout_debugfs)
+		goto out_debugfs;
+
+	return 0;
+
+out_debugfs:
+	delay_drop_debugfs_cleanup(dev);
+	return -ENOMEM;
+}
+
+static void init_delay_drop(struct mlx5_ib_dev *dev)
+{
+	if (!(dev->ib_dev.attrs.raw_packet_caps & IB_RAW_PACKET_CAP_DELAY_DROP))
+		return;
+
+	mutex_init(&dev->delay_drop.lock);
+	dev->delay_drop.dev = dev;
+	dev->delay_drop.activate = false;
+	dev->delay_drop.timeout = MLX5_MAX_DELAY_DROP_TIMEOUT_MS * 1000;
+	INIT_WORK(&dev->delay_drop.delay_drop_work, delay_drop_handler);
+	atomic_set(&dev->delay_drop.rqs_cnt, 0);
+	atomic_set(&dev->delay_drop.events_cnt, 0);
+
+	if (delay_drop_debugfs_init(dev))
+		mlx5_ib_warn(dev, "Failed to init delay drop debugfs\n");
+}
+
 static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 {
 	struct mlx5_ib_dev *dev;
@@ -3884,11 +4034,13 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 	if (err)
 		goto err_dev;
 
+	init_delay_drop(dev);
+
 	for (i = 0; i < ARRAY_SIZE(mlx5_class_attributes); i++) {
 		err = device_create_file(&dev->ib_dev.dev,
 					 mlx5_class_attributes[i]);
 		if (err)
-			goto err_umrc;
+			goto err_delay_drop;
 	}
 
 	if ((MLX5_CAP_GEN(mdev, port_type) == MLX5_CAP_PORT_TYPE_ETH) &&
@@ -3899,7 +4051,8 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 
 	return dev;
 
-err_umrc:
+err_delay_drop:
+	cancel_delay_drop(dev);
 	destroy_umrc_res(dev);
 
 err_dev:
@@ -3946,6 +4099,7 @@ static void mlx5_ib_remove(struct mlx5_core_dev *mdev, void *context)
 	struct mlx5_ib_dev *dev = context;
 	enum rdma_link_layer ll = mlx5_ib_port_link_layer(&dev->ib_dev, 1);
 
+	cancel_delay_drop(dev);
 	mlx5_remove_netdev_notifier(dev);
 	ib_unregister_device(&dev->ib_dev);
 	mlx5_free_bfreg(dev->mdev, &dev->fp_bfreg);
