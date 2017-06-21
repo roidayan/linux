@@ -703,10 +703,8 @@ static int macvlan_set_mac_address(struct net_device *dev, void *p)
 	if (!is_valid_ether_addr(addr->sa_data))
 		return -EADDRNOTAVAIL;
 
-	if (vlan->mode == MACVLAN_MODE_PASSTHRU) {
-		dev_set_mac_address(vlan->lowerdev, addr);
-		return 0;
-	}
+	if (vlan->mode == MACVLAN_MODE_PASSTHRU)
+		return dev_set_mac_address(vlan->lowerdev, addr);
 
 	return macvlan_sync_address(dev, addr->sa_data);
 }
@@ -1092,7 +1090,7 @@ void macvlan_common_setup(struct net_device *dev)
 	netif_keep_dst(dev);
 	dev->priv_flags	       |= IFF_UNICAST_FLT;
 	dev->netdev_ops		= &macvlan_netdev_ops;
-	dev->destructor		= free_netdev;
+	dev->needs_free_netdev	= true;
 	dev->header_ops		= &macvlan_hard_header_ops;
 	dev->ethtool_ops	= &macvlan_ethtool_ops;
 }
