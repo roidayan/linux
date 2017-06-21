@@ -1126,6 +1126,9 @@ enum mlx5_qcam_feature_groups {
 #define MLX5_CAP_FPGA(mdev, cap) \
 	MLX5_GET(fpga_cap, (mdev)->caps.hca_cur[MLX5_CAP_FPGA], cap)
 
+#define MLX5_CAP64_FPGA(mdev, cap) \
+	MLX5_GET64(fpga_cap, (mdev)->caps.hca_cur[MLX5_CAP_FPGA], cap)
+
 enum {
 	MLX5_CMD_STAT_OK			= 0x0,
 	MLX5_CMD_STAT_INT_ERR			= 0x1,
@@ -1175,5 +1178,8 @@ static inline u16 mlx5_to_sw_pkey_sz(int pkey_sz)
 #define MLX5_BY_PASS_NUM_PRIOS (MLX5_BY_PASS_NUM_REGULAR_PRIOS +\
 				MLX5_BY_PASS_NUM_DONT_TRAP_PRIOS +\
 				MLX5_BY_PASS_NUM_MULTICAST_PRIOS)
+
+#define MLX5_METADATA_ETHER_TYPE	(0x8CE4)
+#define MLX5_METADATA_ETHER_LEN		8
 
 #endif /* MLX5_DEVICE_H */

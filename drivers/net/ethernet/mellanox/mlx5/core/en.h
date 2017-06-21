@@ -368,6 +368,9 @@ struct mlx5e_txqsq {
 	struct mlx5e_tstamp       *tstamp;
 	__be32                     mkey_be;
 	unsigned long              state;
+#ifdef CONFIG_MLX5_EN_IPSEC
+	bool                       ipsec;
+#endif
 
 	/* control path */
 	struct mlx5_wq_ctrl        wq_ctrl;
@@ -508,6 +511,8 @@ struct mlx5e_rq;
 typedef void (*mlx5e_fp_handle_rx_cqe)(struct mlx5e_rq*, struct mlx5_cqe64*);
 typedef int (*mlx5e_fp_alloc_wqe)(struct mlx5e_rq*, struct mlx5e_rx_wqe*, u16);
 typedef void (*mlx5e_fp_dealloc_wqe)(struct mlx5e_rq*, u16);
+
+#define RQ_PAGE_SIZE(rq) ((1 << (rq)->buff.page_order) << PAGE_SHIFT)
 
 struct mlx5e_rq {
 	/* data path */
@@ -784,6 +789,9 @@ struct mlx5e_priv {
 
 	const struct mlx5e_profile *profile;
 	void                      *ppriv;
+#ifdef CONFIG_MLX5_EN_IPSEC
+	struct mlx5e_ipsec_dev    *ipsec;
+#endif
 };
 
 struct mlx5e_profile {
@@ -833,7 +841,6 @@ void mlx5e_dealloc_rx_wqe(struct mlx5e_rq *rq, u16 ix);
 void mlx5e_dealloc_rx_mpwqe(struct mlx5e_rq *rq, u16 ix);
 void mlx5e_post_rx_mpwqe(struct mlx5e_rq *rq);
 void mlx5e_free_rx_mpwqe(struct mlx5e_rq *rq, struct mlx5e_mpw_info *wi);
-struct mlx5_cqe64 *mlx5e_get_cqe(struct mlx5e_cq *cq);
 
 void mlx5e_rx_am(struct mlx5e_rq *rq);
 void mlx5e_rx_am_work(struct work_struct *work);
@@ -1072,4 +1079,6 @@ void mlx5e_build_nic_params(struct mlx5_core_dev *mdev,
 			    struct mlx5e_params *params,
 			    u16 max_channels);
 
+void mlx5e_complete_rx_cqe(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe,
+			   u32 cqe_bcnt, struct sk_buff *skb);
 #endif /* __MLX5_EN_H__ */

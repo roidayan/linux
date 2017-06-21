@@ -44,6 +44,15 @@ struct mlx5_fpga_device {
 	enum mlx5_fpga_status state;
 	enum mlx5_fpga_image last_admin_image;
 	enum mlx5_fpga_image last_oper_image;
+
+	/* QP Connection resources */
+	struct {
+		u32 pdn;
+		struct mlx5_core_mkey mkey;
+		struct mlx5_uars_page *uar;
+	} conn_res;
+
+	struct mlx5_fpga_ipsec *ipsec;
 };
 
 #define mlx5_fpga_dbg(__adev, format, ...) \
@@ -71,6 +80,7 @@ struct mlx5_fpga_device {
 int mlx5_fpga_device_init(struct mlx5_core_dev *mdev);
 void mlx5_fpga_device_cleanup(struct mlx5_core_dev *mdev);
 int mlx5_fpga_device_start(struct mlx5_core_dev *mdev);
+void mlx5_fpga_device_stop(struct mlx5_core_dev *mdev);
 void mlx5_fpga_event(struct mlx5_core_dev *mdev, u8 event, void *data);
 
 #else
@@ -87,6 +97,10 @@ static inline void mlx5_fpga_device_cleanup(struct mlx5_core_dev *mdev)
 static inline int mlx5_fpga_device_start(struct mlx5_core_dev *mdev)
 {
 	return 0;
+}
+
+static inline void mlx5_fpga_device_stop(struct mlx5_core_dev *mdev)
+{
 }
 
 static inline void mlx5_fpga_event(struct mlx5_core_dev *mdev, u8 event,
