@@ -48,6 +48,8 @@
 
 #include <rdma/ib_smi.h>
 #include <rdma/ib_user_verbs.h>
+#include <rdma/uverbs_ioctl.h>
+#include <rdma/uverbs_std_types.h>
 #include <rdma/ib_addr.h>
 #include <rdma/ib_cache.h>
 
@@ -81,6 +83,8 @@ static const char mlx4_ib_version[] =
 	DRV_VERSION "\n";
 
 static void do_slave_init(struct mlx4_ib_dev *ibdev, int slave, int do_init);
+static enum rdma_link_layer mlx4_ib_port_link_layer(struct ib_device *device,
+						    u8 port_num);
 
 static struct workqueue_struct *wq;
 
@@ -552,6 +556,16 @@ static int mlx4_ib_query_device(struct ib_device *ibdev,
 	props->timestamp_mask = 0xFFFFFFFFFFFFULL;
 	props->max_ah = INT_MAX;
 
+	if ((dev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_RSS) &&
+	    (mlx4_ib_port_link_layer(ibdev, 1) == IB_LINK_LAYER_ETHERNET ||
+	     mlx4_ib_port_link_layer(ibdev, 2) == IB_LINK_LAYER_ETHERNET)) {
+		props->rss_caps.max_rwq_indirection_tables = 128;
+		props->rss_caps.max_rwq_indirection_table_size =
+			dev->dev->caps.max_rss_tbl_sz;
+		props->rss_caps.supported_qpts = 1 << IB_QPT_RAW_PACKET;
+		props->max_wq_type_rq = MLX4_IB_MAX_CTX_WQS;
+	}
+
 	if (!mlx4_is_slave(dev->dev))
 		err = mlx4_get_internal_clock_params(dev->dev, &clock_params);
 
@@ -561,6 +575,13 @@ static int mlx4_ib_query_device(struct ib_device *ibdev,
 			resp.comp_mask |= QUERY_DEVICE_RESP_MASK_TIMESTAMP;
 			resp.hca_core_clock_offset = clock_params.offset % PAGE_SIZE;
 		}
+	}
+
+	if (uhw->outlen >= resp.response_length +
+	    sizeof(resp.max_inl_recv_sz)) {
+		resp.response_length += sizeof(resp.max_inl_recv_sz);
+		resp.max_inl_recv_sz  = dev->dev->caps.max_rq_sg *
+			sizeof(struct mlx4_wqe_data_seg);
 	}
 
 	if (uhw->outlen) {
@@ -1080,12 +1101,31 @@ static struct ib_ucontext *mlx4_ib_alloc_ucontext(struct ib_device *ibdev,
 		return ERR_PTR(-EFAULT);
 	}
 
+	context->wq_use_cnt = MLX4_IB_MAX_CTX_WQS; /* WQs pool is empty */
+	context->base_wqn = 0xFFFFFFFF; /* invalid wqn */
+
+	if ((rdma_port_get_link_layer(ibdev, 1) == IB_LINK_LAYER_ETHERNET) ||
+	    (rdma_port_get_link_layer(ibdev, 2) == IB_LINK_LAYER_ETHERNET)) {
+		if (!mlx4_qp_reserve_range(dev->dev, MLX4_IB_MAX_CTX_WQS,
+					   MLX4_IB_MAX_CTX_WQS,
+					   &context->base_wqn, 0,
+					   MLX4_RES_USAGE_USER_VERBS)) {
+			context->wq_use_cnt = 0;
+		} else {
+			pr_warn("Failed to reserve WQNs for user context\n");
+		}
+	}
+
 	return &context->ibucontext;
 }
 
 static int mlx4_ib_dealloc_ucontext(struct ib_ucontext *ibcontext)
 {
 	struct mlx4_ib_ucontext *context = to_mucontext(ibcontext);
+
+	if (context->base_wqn != 0xFFFFFFFF)
+		mlx4_qp_release_range(to_mdev(ibcontext->device)->dev,
+				      context->base_wqn, MLX4_IB_MAX_CTX_WQS);
 
 	mlx4_uar_free(to_mdev(ibcontext->device)->dev, &context->uar);
 	kfree(context);
@@ -1155,7 +1195,7 @@ static void mlx4_ib_disassociate_ucontext(struct ib_ucontext *ibcontext)
 			 * call to mlx4_ib_vma_close.
 			 */
 			put_task_struct(owning_process);
-			msleep(1);
+			usleep_range(1000, 2000);
 			owning_process = get_pid_task(ibcontext->tgid,
 						      PIDTYPE_PID);
 			if (!owning_process ||
@@ -2577,6 +2617,8 @@ static void get_fw_ver_str(struct ib_device *device, char *str,
 		 (int) dev->dev->caps.fw_ver & 0xffff);
 }
 
+static DECLARE_UVERBS_TYPES_GROUP(root, &uverbs_common_types);
+
 static void *mlx4_ib_add(struct mlx4_dev *dev)
 {
 	struct mlx4_ib_dev *ibdev;
@@ -2713,6 +2755,26 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 	ibdev->ib_dev.get_dev_fw_str    = get_fw_ver_str;
 	ibdev->ib_dev.disassociate_ucontext = mlx4_ib_disassociate_ucontext;
 
+	if ((dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_RSS) &&
+	    ((mlx4_ib_port_link_layer(&ibdev->ib_dev, 1) ==
+	    IB_LINK_LAYER_ETHERNET) ||
+	    (mlx4_ib_port_link_layer(&ibdev->ib_dev, 2) ==
+	    IB_LINK_LAYER_ETHERNET))) {
+		ibdev->ib_dev.create_wq		= mlx4_ib_create_wq;
+		ibdev->ib_dev.modify_wq		= mlx4_ib_modify_wq;
+		ibdev->ib_dev.destroy_wq	= mlx4_ib_destroy_wq;
+		ibdev->ib_dev.create_rwq_ind_table  =
+			mlx4_ib_create_rwq_ind_table;
+		ibdev->ib_dev.destroy_rwq_ind_table =
+			mlx4_ib_destroy_rwq_ind_table;
+		ibdev->ib_dev.uverbs_ex_cmd_mask |=
+			(1ull << IB_USER_VERBS_EX_CMD_CREATE_WQ)	  |
+			(1ull << IB_USER_VERBS_EX_CMD_MODIFY_WQ)	  |
+			(1ull << IB_USER_VERBS_EX_CMD_DESTROY_WQ)	  |
+			(1ull << IB_USER_VERBS_EX_CMD_CREATE_RWQ_IND_TBL) |
+			(1ull << IB_USER_VERBS_EX_CMD_DESTROY_RWQ_IND_TBL);
+	}
+
 	if (!mlx4_is_slave(ibdev->dev)) {
 		ibdev->ib_dev.alloc_fmr		= mlx4_ib_fmr_alloc;
 		ibdev->ib_dev.map_phys_fmr	= mlx4_ib_map_phys_fmr;
@@ -2772,7 +2834,8 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 		allocated = 0;
 		if (mlx4_ib_port_link_layer(&ibdev->ib_dev, i + 1) ==
 						IB_LINK_LAYER_ETHERNET) {
-			err = mlx4_counter_alloc(ibdev->dev, &counter_index);
+			err = mlx4_counter_alloc(ibdev->dev, &counter_index,
+						 MLX4_RES_USAGE_DRIVER);
 			/* if failed to allocate a new counter, use default */
 			if (err)
 				counter_index =
@@ -2827,7 +2890,8 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 		ibdev->steer_qpn_count = MLX4_IB_UC_MAX_NUM_QPS;
 		err = mlx4_qp_reserve_range(dev, ibdev->steer_qpn_count,
 					    MLX4_IB_UC_STEER_QPN_ALIGN,
-					    &ibdev->steer_qpn_base, 0);
+					    &ibdev->steer_qpn_base, 0,
+					    MLX4_RES_USAGE_DRIVER);
 		if (err)
 			goto err_counter;
 
@@ -2859,6 +2923,7 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 	if (mlx4_ib_alloc_diag_counters(ibdev))
 		goto err_steer_free_bitmap;
 
+	ibdev->ib_dev.specs_root = &root;
 	if (ib_register_device(&ibdev->ib_dev, NULL))
 		goto err_diag_counters;
 
