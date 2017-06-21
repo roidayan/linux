@@ -337,15 +337,12 @@ u32 mlx4_en_recycle_tx_desc(struct mlx4_en_priv *priv,
 			    int napi_mode)
 {
 	struct mlx4_en_tx_info *tx_info = &ring->tx_info[index];
-	struct mlx4_en_rx_alloc frame = {
-		.page = tx_info->page,
-		.dma = tx_info->map0_dma,
-	};
+	struct page *page = tx_info->page;
+	dma_addr_t dma = tx_info->map0_dma;
 
-	if (!mlx4_en_rx_recycle(ring->recycle_ring, &frame)) {
-		dma_unmap_page(priv->ddev, tx_info->map0_dma,
-			       PAGE_SIZE, priv->dma_dir);
-		put_page(tx_info->page);
+	if (!mlx4_en_rx_recycle(ring->recycle_ring, page, dma)) {
+		dma_unmap_page(priv->ddev, dma, PAGE_SIZE, priv->dma_dir);
+		__free_page(page);
 	}
 
 	return tx_info->nr_txbb;
@@ -691,15 +688,11 @@ u16 mlx4_en_select_queue(struct net_device *dev, struct sk_buff *skb,
 {
 	struct mlx4_en_priv *priv = netdev_priv(dev);
 	u16 rings_p_up = priv->num_tx_rings_p_up;
-	u8 up = 0;
 
 	if (netdev_get_num_tc(dev))
 		return skb_tx_hash(dev, skb);
 
-	if (skb_vlan_tag_present(skb))
-		up = skb_vlan_tag_get(skb) >> VLAN_PRIO_SHIFT;
-
-	return fallback(dev, skb) % rings_p_up + up * rings_p_up;
+	return fallback(dev, skb) % rings_p_up;
 }
 
 static void mlx4_bf_copy(void __iomem *dst, const void *src,
