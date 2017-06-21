@@ -134,7 +134,7 @@ static int ib_device_check_mandatory(struct ib_device *device)
 	return 0;
 }
 
-static struct ib_device *__ib_device_get_by_name(const char *name)
+struct ib_device *__ib_device_get_by_name(const char *name)
 {
 	struct ib_device *device;
 
@@ -144,7 +144,6 @@ static struct ib_device *__ib_device_get_by_name(const char *name)
 
 	return NULL;
 }
-
 
 static int alloc_name(char *name)
 {
@@ -892,6 +891,31 @@ void ib_enum_all_roce_netdevs(roce_netdev_filter filter,
 }
 
 /**
+ * ib_enum_all_devs - enumerate all ib_devices
+ * @cb: Callback to call for each found ib_device
+ *
+ * Enumerates all ib_devices and calls callback() on each device.
+ */
+int ib_enum_all_devs(nldev_callback nldev_cb, struct sk_buff *skb,
+		     struct netlink_callback *cb)
+{
+	struct ib_device *dev;
+	unsigned int idx = 0;
+	int ret = 0;
+
+	down_read(&lists_rwsem);
+	list_for_each_entry(dev, &device_list, core_list) {
+		ret = nldev_cb(dev, skb, cb, idx);
+		if (ret)
+			break;
+		idx++;
+	}
+
+	up_read(&lists_rwsem);
+	return ret;
+}
+
+/**
  * ib_query_pkey - Get P_Key table entry
  * @device:Device to query
  * @port_num:Port number to query
@@ -1085,13 +1109,19 @@ struct net_device *ib_get_net_dev_by_params(struct ib_device *dev,
 }
 EXPORT_SYMBOL(ib_get_net_dev_by_params);
 
-static const struct ibnl_client_cbs ibnl_ls_cb_table[] = {
+static const struct rdma_nl_cbs ibnl_ls_cb_table[] = {
 	[RDMA_NL_LS_OP_RESOLVE] = {
-		.dump = ib_nl_handle_resolve_resp},
+		.doit = ib_nl_handle_resolve_resp,
+		.flags = RDMA_NL_ADMIN_PERM,
+	},
 	[RDMA_NL_LS_OP_SET_TIMEOUT] = {
-		.dump = ib_nl_handle_set_timeout},
+		.doit = ib_nl_handle_set_timeout,
+		.flags = RDMA_NL_ADMIN_PERM,
+	},
 	[RDMA_NL_LS_OP_IP_RESOLVE] = {
-		.dump = ib_nl_handle_ip_res_resp},
+		.doit = ib_nl_handle_ip_res_resp,
+		.flags = RDMA_NL_ADMIN_PERM,
+	},
 };
 
 static int __init ib_core_init(void)
@@ -1145,6 +1175,7 @@ static int __init ib_core_init(void)
 		goto err_sa;
 	}
 
+	nldev_init();
 	rdma_nl_register(RDMA_NL_LS, ibnl_ls_cb_table);
 	ib_cache_setup();
 
@@ -1170,6 +1201,7 @@ err:
 static void __exit ib_core_cleanup(void)
 {
 	ib_cache_cleanup();
+	nldev_exit();
 	rdma_nl_unregister(RDMA_NL_LS);
 	unregister_lsm_notifier(&ibdev_lsm_nb);
 	ib_sa_cleanup();
