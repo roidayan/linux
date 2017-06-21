@@ -32,6 +32,8 @@
  */
 
 #include <linux/dma-mapping.h>
+#include <rdma/uverbs_ioctl.h>
+#include <rdma/uverbs_std_types.h>
 #include <net/addrconf.h>
 #include "rxe.h"
 #include "rxe_loc.h"
@@ -1222,6 +1224,8 @@ static struct device_attribute *rxe_dev_attributes[] = {
 	&dev_attr_parent,
 };
 
+static DECLARE_UVERBS_TYPES_GROUP(root, &uverbs_common_types);
+
 int rxe_register_device(struct rxe_dev *rxe)
 {
 	int err;
@@ -1331,6 +1335,7 @@ int rxe_register_device(struct rxe_dev *rxe)
 		return PTR_ERR(rxe->tfm);
 	}
 
+	dev->specs_root = &root;
 	err = ib_register_device(dev, NULL);
 	if (err) {
 		pr_warn("%s failed with error %d\n", __func__, err);

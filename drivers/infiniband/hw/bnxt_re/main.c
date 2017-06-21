@@ -53,6 +53,8 @@
 #include <rdma/ib_user_verbs.h>
 #include <rdma/ib_umem.h>
 #include <rdma/ib_addr.h>
+#include <rdma/uverbs_ioctl.h>
+#include <rdma/uverbs_std_types.h>
 
 #include "bnxt_ulp.h"
 #include "roce_hsi.h"
@@ -421,6 +423,8 @@ static void bnxt_re_unregister_ib(struct bnxt_re_dev *rdev)
 	ib_unregister_device(&rdev->ibdev);
 }
 
+static DECLARE_UVERBS_TYPES_GROUP(root, &uverbs_common_types);
+
 static int bnxt_re_register_ib(struct bnxt_re_dev *rdev)
 {
 	struct ib_device *ibdev = &rdev->ibdev;
@@ -513,6 +517,7 @@ static int bnxt_re_register_ib(struct bnxt_re_dev *rdev)
 	ibdev->dealloc_ucontext		= bnxt_re_dealloc_ucontext;
 	ibdev->mmap			= bnxt_re_mmap;
 
+	ibdev->specs_root = &root;
 	return ib_register_device(ibdev, NULL);
 }
 
