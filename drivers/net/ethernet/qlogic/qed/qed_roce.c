@@ -35,7 +35,6 @@
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/errno.h>
-#include <linux/etherdevice.h>
 #include <linux/if_ether.h>
 #include <linux/if_vlan.h>
 #include <linux/io.h>
@@ -65,15 +64,18 @@
 #include "qed_sp.h"
 #include "qed_roce.h"
 #include "qed_ll2.h"
+#include <linux/qed/qed_ll2_if.h>
 
 static void qed_roce_free_real_icid(struct qed_hwfn *p_hwfn, u16 icid);
 
-void qed_roce_async_event(struct qed_hwfn *p_hwfn,
-			  u8 fw_event_code, union rdma_eqe_data *rdma_data)
+static int
+qed_roce_async_event(struct qed_hwfn *p_hwfn,
+		     u8 fw_event_code,
+		     u16 echo, union event_ring_data *data, u8 fw_return_code)
 {
 	if (fw_event_code == ROCE_ASYNC_EVENT_DESTROY_QP_DONE) {
 		u16 icid =
-		    (u16)le32_to_cpu(rdma_data->rdma_destroy_qp_data.cid);
+		    (u16)le32_to_cpu(data->rdma_data.rdma_destroy_qp_data.cid);
 
 		/* icid release in this async event can occur only if the icid
 		 * was offloaded to the FW. In case it wasn't offloaded this is
@@ -85,8 +87,10 @@ void qed_roce_async_event(struct qed_hwfn *p_hwfn,
 
 		events->affiliated_event(p_hwfn->p_rdma_info->events.context,
 					 fw_event_code,
-					 &rdma_data->async_handle);
+				     (void *)&data->rdma_data.async_handle);
 	}
+
+	return 0;
 }
 
 static int qed_rdma_bmap_alloc(struct qed_hwfn *p_hwfn,
@@ -160,6 +164,11 @@ static int qed_bmap_test_id(struct qed_hwfn *p_hwfn,
 		return -1;
 
 	return test_bit(id_num, bmap->bitmap);
+}
+
+static bool qed_bmap_is_empty(struct qed_bmap *bmap)
+{
+	return bmap->max_count == find_first_bit(bmap->bitmap, bmap->max_count);
 }
 
 static u32 qed_rdma_get_sb_id(void *p_hwfn, u32 rel_sb_id)
@@ -367,22 +376,7 @@ end:
 
 static void qed_rdma_resc_free(struct qed_hwfn *p_hwfn)
 {
-	struct qed_bmap *rcid_map = &p_hwfn->p_rdma_info->real_cid_map;
 	struct qed_rdma_info *p_rdma_info = p_hwfn->p_rdma_info;
-	int wait_count = 0;
-
-	/* when destroying a_RoCE QP the control is returned to the user after
-	 * the synchronous part. The asynchronous part may take a little longer.
-	 * We delay for a short while if an async destroy QP is still expected.
-	 * Beyond the added delay we clear the bitmap anyway.
-	 */
-	while (bitmap_weight(rcid_map->bitmap, rcid_map->max_count)) {
-		msleep(100);
-		if (wait_count++ > 20) {
-			DP_NOTICE(p_hwfn, "cid bitmap wait timed out\n");
-			break;
-		}
-	}
 
 	qed_rdma_bmap_free(p_hwfn, &p_hwfn->p_rdma_info->cid_map, 1);
 	qed_rdma_bmap_free(p_hwfn, &p_hwfn->p_rdma_info->pd_map, 1);
@@ -581,6 +575,7 @@ static int qed_rdma_start_fw(struct qed_hwfn *p_hwfn,
 	struct qed_sp_init_data init_data;
 	struct qed_spq_entry *p_ent;
 	u32 cnq_id, sb_id;
+	u16 igu_sb_id;
 	int rc;
 
 	DP_VERBOSE(p_hwfn, QED_MSG_RDMA, "Starting FW\n");
@@ -612,10 +607,10 @@ static int qed_rdma_start_fw(struct qed_hwfn *p_hwfn,
 
 	for (cnq_id = 0; cnq_id < params->desired_cnq; cnq_id++) {
 		sb_id = qed_rdma_get_sb_id(p_hwfn, cnq_id);
+		igu_sb_id = qed_get_igu_sb_id(p_hwfn, sb_id);
+		p_ramrod->cnq_params[cnq_id].sb_num = cpu_to_le16(igu_sb_id);
 		p_cnq_params = &p_ramrod->cnq_params[cnq_id];
 		p_cnq_pbl_list = &params->cnq_pbl_list[cnq_id];
-		p_cnq_params->sb_num =
-			cpu_to_le16(p_hwfn->sbs_info[sb_id]->igu_sb_id);
 
 		p_cnq_params->sb_index = p_hwfn->pf_params.rdma_pf_params.gl_pi;
 		p_cnq_params->num_pbl_pages = p_cnq_pbl_list->num_pbl_pages;
@@ -695,7 +690,30 @@ static int qed_rdma_setup(struct qed_hwfn *p_hwfn,
 	if (rc)
 		return rc;
 
+	qed_spq_register_async_cb(p_hwfn, PROTOCOLID_ROCE,
+				  qed_roce_async_event);
+
 	return qed_rdma_start_fw(p_hwfn, params, p_ptt);
+}
+
+void qed_roce_stop(struct qed_hwfn *p_hwfn)
+{
+	struct qed_bmap *rcid_map = &p_hwfn->p_rdma_info->real_cid_map;
+	int wait_count = 0;
+
+	/* when destroying a_RoCE QP the control is returned to the user after
+	 * the synchronous part. The asynchronous part may take a little longer.
+	 * We delay for a short while if an async destroy QP is still expected.
+	 * Beyond the added delay we clear the bitmap anyway.
+	 */
+	while (bitmap_weight(rcid_map->bitmap, rcid_map->max_count)) {
+		msleep(100);
+		if (wait_count++ > 20) {
+			DP_NOTICE(p_hwfn, "cid bitmap wait timed out\n");
+			break;
+		}
+	}
+	qed_spq_unregister_async_cb(p_hwfn, PROTOCOLID_ROCE);
 }
 
 static int qed_rdma_stop(void *rdma_cxt)
@@ -727,6 +745,7 @@ static int qed_rdma_stop(void *rdma_cxt)
 	qed_wr(p_hwfn, p_ptt, PRS_REG_LIGHT_L2_ETHERTYPE_EN,
 	       (ll2_ethertype_en & 0xFFFE));
 
+	qed_roce_stop(p_hwfn);
 	qed_ptt_release(p_hwfn, p_ptt);
 
 	/* Get SPQ entry */
@@ -2432,10 +2451,6 @@ qed_rdma_register_tid(void *rdma_cxt,
 			  params->page_size_log - 12);
 
 	SET_FIELD(p_ramrod->flags,
-		  RDMA_REGISTER_TID_RAMROD_DATA_MAX_ID,
-		  p_hwfn->p_rdma_info->last_tid);
-
-	SET_FIELD(p_ramrod->flags,
 		  RDMA_REGISTER_TID_RAMROD_DATA_REMOTE_READ,
 		  params->remote_read);
 
@@ -2641,6 +2656,23 @@ static void *qed_rdma_get_rdma_ctx(struct qed_dev *cdev)
 	return QED_LEADING_HWFN(cdev);
 }
 
+static bool qed_rdma_allocated_qps(struct qed_hwfn *p_hwfn)
+{
+	bool result;
+
+	/* if rdma info has not been allocated, naturally there are no qps */
+	if (!p_hwfn->p_rdma_info)
+		return false;
+
+	spin_lock_bh(&p_hwfn->p_rdma_info->lock);
+	if (!p_hwfn->p_rdma_info->cid_map.bitmap)
+		result = false;
+	else
+		result = !qed_bmap_is_empty(&p_hwfn->p_rdma_info->cid_map);
+	spin_unlock_bh(&p_hwfn->p_rdma_info->lock);
+	return result;
+}
+
 static void qed_rdma_dpm_conf(struct qed_hwfn *p_hwfn, struct qed_ptt *p_ptt)
 {
 	u32 val;
@@ -2651,6 +2683,20 @@ static void qed_rdma_dpm_conf(struct qed_hwfn *p_hwfn, struct qed_ptt *p_ptt)
 	DP_VERBOSE(p_hwfn, (QED_MSG_DCB | QED_MSG_RDMA),
 		   "Changing DPM_EN state to %d (DCBX=%d, DB_BAR=%d)\n",
 		   val, p_hwfn->dcbx_no_edpm, p_hwfn->db_bar_no_edpm);
+}
+
+void qed_roce_dpm_dcbx(struct qed_hwfn *p_hwfn, struct qed_ptt *p_ptt)
+{
+	u8 val;
+
+	/* if any QPs are already active, we want to disable DPM, since their
+	 * context information contains information from before the latest DCBx
+	 * update. Otherwise enable it.
+	 */
+	val = qed_rdma_allocated_qps(p_hwfn) ? true : false;
+	p_hwfn->dcbx_no_edpm = (u8)val;
+
+	qed_rdma_dpm_conf(p_hwfn, p_ptt);
 }
 
 void qed_rdma_dpm_bar(struct qed_hwfn *p_hwfn, struct qed_ptt *p_ptt)
@@ -2712,299 +2758,33 @@ static void qed_rdma_remove_user(void *rdma_cxt, u16 dpi)
 	spin_unlock_bh(&p_hwfn->p_rdma_info->lock);
 }
 
-void qed_ll2b_complete_tx_gsi_packet(struct qed_hwfn *p_hwfn,
-				     u8 connection_handle,
-				     void *cookie,
-				     dma_addr_t first_frag_addr,
-				     bool b_last_fragment, bool b_last_packet)
-{
-	struct qed_roce_ll2_packet *packet = cookie;
-	struct qed_roce_ll2_info *roce_ll2 = p_hwfn->ll2;
-
-	roce_ll2->cbs.tx_cb(roce_ll2->cb_cookie, packet);
-}
-
-void qed_ll2b_release_tx_gsi_packet(struct qed_hwfn *p_hwfn,
-				    u8 connection_handle,
-				    void *cookie,
-				    dma_addr_t first_frag_addr,
-				    bool b_last_fragment, bool b_last_packet)
-{
-	qed_ll2b_complete_tx_gsi_packet(p_hwfn, connection_handle,
-					cookie, first_frag_addr,
-					b_last_fragment, b_last_packet);
-}
-
-void qed_ll2b_complete_rx_gsi_packet(struct qed_hwfn *p_hwfn,
-				     u8 connection_handle,
-				     void *cookie,
-				     dma_addr_t rx_buf_addr,
-				     u16 data_length,
-				     u8 data_length_error,
-				     u16 parse_flags,
-				     u16 vlan,
-				     u32 src_mac_addr_hi,
-				     u16 src_mac_addr_lo, bool b_last_packet)
-{
-	struct qed_roce_ll2_info *roce_ll2 = p_hwfn->ll2;
-	struct qed_roce_ll2_rx_params params;
-	struct qed_dev *cdev = p_hwfn->cdev;
-	struct qed_roce_ll2_packet pkt;
-
-	DP_VERBOSE(cdev,
-		   QED_MSG_LL2,
-		   "roce ll2 rx complete: bus_addr=%p, len=%d, data_len_err=%d\n",
-		   (void *)(uintptr_t)rx_buf_addr,
-		   data_length, data_length_error);
-
-	memset(&pkt, 0, sizeof(pkt));
-	pkt.n_seg = 1;
-	pkt.payload[0].baddr = rx_buf_addr;
-	pkt.payload[0].len = data_length;
-
-	memset(&params, 0, sizeof(params));
-	params.vlan_id = vlan;
-	*((u32 *)&params.smac[0]) = ntohl(src_mac_addr_hi);
-	*((u16 *)&params.smac[4]) = ntohs(src_mac_addr_lo);
-
-	if (data_length_error) {
-		DP_ERR(cdev,
-		       "roce ll2 rx complete: data length error %d, length=%d\n",
-		       data_length_error, data_length);
-		params.rc = -EINVAL;
-	}
-
-	roce_ll2->cbs.rx_cb(roce_ll2->cb_cookie, &pkt, &params);
-}
-
 static int qed_roce_ll2_set_mac_filter(struct qed_dev *cdev,
 				       u8 *old_mac_address,
 				       u8 *new_mac_address)
 {
-	struct qed_hwfn *hwfn = QED_LEADING_HWFN(cdev);
+	struct qed_hwfn *p_hwfn = QED_LEADING_HWFN(cdev);
 	struct qed_ptt *p_ptt;
 	int rc = 0;
 
-	if (!hwfn->ll2 || hwfn->ll2->handle == QED_LL2_UNUSED_HANDLE) {
-		DP_ERR(cdev,
-		       "qed roce mac filter failed - roce_info/ll2 NULL\n");
-		return -EINVAL;
-	}
-
-	p_ptt = qed_ptt_acquire(QED_LEADING_HWFN(cdev));
+	p_ptt = qed_ptt_acquire(p_hwfn);
 	if (!p_ptt) {
 		DP_ERR(cdev,
 		       "qed roce ll2 mac filter set: failed to acquire PTT\n");
 		return -EINVAL;
 	}
 
-	mutex_lock(&hwfn->ll2->lock);
 	if (old_mac_address)
-		qed_llh_remove_mac_filter(QED_LEADING_HWFN(cdev), p_ptt,
-					  old_mac_address);
+		qed_llh_remove_mac_filter(p_hwfn, p_ptt, old_mac_address);
 	if (new_mac_address)
-		rc = qed_llh_add_mac_filter(QED_LEADING_HWFN(cdev), p_ptt,
-					    new_mac_address);
-	mutex_unlock(&hwfn->ll2->lock);
+		rc = qed_llh_add_mac_filter(p_hwfn, p_ptt, new_mac_address);
 
-	qed_ptt_release(QED_LEADING_HWFN(cdev), p_ptt);
+	qed_ptt_release(p_hwfn, p_ptt);
 
 	if (rc)
 		DP_ERR(cdev,
-		       "qed roce ll2 mac filter set: failed to add mac filter\n");
+		       "qed roce ll2 mac filter set: failed to add MAC filter\n");
 
 	return rc;
-}
-
-static int qed_roce_ll2_start(struct qed_dev *cdev,
-			      struct qed_roce_ll2_params *params)
-{
-	struct qed_hwfn *hwfn = QED_LEADING_HWFN(cdev);
-	struct qed_roce_ll2_info *roce_ll2;
-	struct qed_ll2_conn ll2_params;
-	int rc;
-
-	if (!params) {
-		DP_ERR(cdev, "qed roce ll2 start: failed due to NULL params\n");
-		return -EINVAL;
-	}
-	if (!params->cbs.tx_cb || !params->cbs.rx_cb) {
-		DP_ERR(cdev,
-		       "qed roce ll2 start: failed due to NULL tx/rx. tx_cb=%p, rx_cb=%p\n",
-		       params->cbs.tx_cb, params->cbs.rx_cb);
-		return -EINVAL;
-	}
-	if (!is_valid_ether_addr(params->mac_address)) {
-		DP_ERR(cdev,
-		       "qed roce ll2 start: failed due to invalid Ethernet address %pM\n",
-		       params->mac_address);
-		return -EINVAL;
-	}
-
-	/* Initialize */
-	roce_ll2 = kzalloc(sizeof(*roce_ll2), GFP_ATOMIC);
-	if (!roce_ll2) {
-		DP_ERR(cdev, "qed roce ll2 start: failed memory allocation\n");
-		return -ENOMEM;
-	}
-	roce_ll2->handle = QED_LL2_UNUSED_HANDLE;
-	roce_ll2->cbs = params->cbs;
-	roce_ll2->cb_cookie = params->cb_cookie;
-	mutex_init(&roce_ll2->lock);
-
-	memset(&ll2_params, 0, sizeof(ll2_params));
-	ll2_params.conn_type = QED_LL2_TYPE_ROCE;
-	ll2_params.mtu = params->mtu;
-	ll2_params.rx_drop_ttl0_flg = true;
-	ll2_params.rx_vlan_removal_en = false;
-	ll2_params.tx_dest = CORE_TX_DEST_NW;
-	ll2_params.ai_err_packet_too_big = LL2_DROP_PACKET;
-	ll2_params.ai_err_no_buf = LL2_DROP_PACKET;
-	ll2_params.gsi_enable = true;
-
-	rc = qed_ll2_acquire_connection(QED_LEADING_HWFN(cdev), &ll2_params,
-					params->max_rx_buffers,
-					params->max_tx_buffers,
-					&roce_ll2->handle);
-	if (rc) {
-		DP_ERR(cdev,
-		       "qed roce ll2 start: failed to acquire LL2 connection (rc=%d)\n",
-		       rc);
-		goto err;
-	}
-
-	rc = qed_ll2_establish_connection(QED_LEADING_HWFN(cdev),
-					  roce_ll2->handle);
-	if (rc) {
-		DP_ERR(cdev,
-		       "qed roce ll2 start: failed to establish LL2 connection (rc=%d)\n",
-		       rc);
-		goto err1;
-	}
-
-	hwfn->ll2 = roce_ll2;
-
-	rc = qed_roce_ll2_set_mac_filter(cdev, NULL, params->mac_address);
-	if (rc) {
-		hwfn->ll2 = NULL;
-		goto err2;
-	}
-	ether_addr_copy(roce_ll2->mac_address, params->mac_address);
-
-	return 0;
-
-err2:
-	qed_ll2_terminate_connection(QED_LEADING_HWFN(cdev), roce_ll2->handle);
-err1:
-	qed_ll2_release_connection(QED_LEADING_HWFN(cdev), roce_ll2->handle);
-err:
-	kfree(roce_ll2);
-	return rc;
-}
-
-static int qed_roce_ll2_stop(struct qed_dev *cdev)
-{
-	struct qed_hwfn *hwfn = QED_LEADING_HWFN(cdev);
-	struct qed_roce_ll2_info *roce_ll2 = hwfn->ll2;
-	int rc;
-
-	if (roce_ll2->handle == QED_LL2_UNUSED_HANDLE) {
-		DP_ERR(cdev, "qed roce ll2 stop: cannot stop an unused LL2\n");
-		return -EINVAL;
-	}
-
-	/* remove LL2 MAC address filter */
-	rc = qed_roce_ll2_set_mac_filter(cdev, roce_ll2->mac_address, NULL);
-	eth_zero_addr(roce_ll2->mac_address);
-
-	rc = qed_ll2_terminate_connection(QED_LEADING_HWFN(cdev),
-					  roce_ll2->handle);
-	if (rc)
-		DP_ERR(cdev,
-		       "qed roce ll2 stop: failed to terminate LL2 connection (rc=%d)\n",
-		       rc);
-
-	qed_ll2_release_connection(QED_LEADING_HWFN(cdev), roce_ll2->handle);
-
-	roce_ll2->handle = QED_LL2_UNUSED_HANDLE;
-
-	kfree(roce_ll2);
-
-	return rc;
-}
-
-static int qed_roce_ll2_tx(struct qed_dev *cdev,
-			   struct qed_roce_ll2_packet *pkt,
-			   struct qed_roce_ll2_tx_params *params)
-{
-	struct qed_hwfn *hwfn = QED_LEADING_HWFN(cdev);
-	struct qed_roce_ll2_info *roce_ll2 = hwfn->ll2;
-	enum qed_ll2_roce_flavor_type qed_roce_flavor;
-	u8 flags = 0;
-	int rc;
-	int i;
-
-	if (!pkt || !params) {
-		DP_ERR(cdev,
-		       "roce ll2 tx: failed tx because one of the following is NULL - drv=%p, pkt=%p, params=%p\n",
-		       cdev, pkt, params);
-		return -EINVAL;
-	}
-
-	qed_roce_flavor = (pkt->roce_mode == ROCE_V1) ? QED_LL2_ROCE
-						      : QED_LL2_RROCE;
-
-	if (pkt->roce_mode == ROCE_V2_IPV4)
-		flags |= BIT(CORE_TX_BD_DATA_IP_CSUM_SHIFT);
-
-	/* Tx header */
-	rc = qed_ll2_prepare_tx_packet(QED_LEADING_HWFN(cdev), roce_ll2->handle,
-				       1 + pkt->n_seg, 0, flags, 0,
-				       QED_LL2_TX_DEST_NW,
-				       qed_roce_flavor, pkt->header.baddr,
-				       pkt->header.len, pkt, 1);
-	if (rc) {
-		DP_ERR(cdev, "roce ll2 tx: header failed (rc=%d)\n", rc);
-		return QED_ROCE_TX_HEAD_FAILURE;
-	}
-
-	/* Tx payload */
-	for (i = 0; i < pkt->n_seg; i++) {
-		rc = qed_ll2_set_fragment_of_tx_packet(QED_LEADING_HWFN(cdev),
-						       roce_ll2->handle,
-						       pkt->payload[i].baddr,
-						       pkt->payload[i].len);
-		if (rc) {
-			/* If failed not much to do here, partial packet has
-			 * been posted * we can't free memory, will need to wait
-			 * for completion
-			 */
-			DP_ERR(cdev,
-			       "roce ll2 tx: payload failed (rc=%d)\n", rc);
-			return QED_ROCE_TX_FRAG_FAILURE;
-		}
-	}
-
-	return 0;
-}
-
-static int qed_roce_ll2_post_rx_buffer(struct qed_dev *cdev,
-				       struct qed_roce_ll2_buffer *buf,
-				       u64 cookie, u8 notify_fw)
-{
-	return qed_ll2_post_rx_buffer(QED_LEADING_HWFN(cdev),
-				      QED_LEADING_HWFN(cdev)->ll2->handle,
-				      buf->baddr, buf->len,
-				      (void *)(uintptr_t)cookie, notify_fw);
-}
-
-static int qed_roce_ll2_stats(struct qed_dev *cdev, struct qed_ll2_stats *stats)
-{
-	struct qed_hwfn *hwfn = QED_LEADING_HWFN(cdev);
-	struct qed_roce_ll2_info *roce_ll2 = hwfn->ll2;
-
-	return qed_ll2_get_stats(QED_LEADING_HWFN(cdev),
-				 roce_ll2->handle, stats);
 }
 
 static const struct qed_rdma_ops qed_rdma_ops_pass = {
@@ -3034,12 +2814,15 @@ static const struct qed_rdma_ops qed_rdma_ops_pass = {
 	.rdma_free_tid = &qed_rdma_free_tid,
 	.rdma_register_tid = &qed_rdma_register_tid,
 	.rdma_deregister_tid = &qed_rdma_deregister_tid,
-	.roce_ll2_start = &qed_roce_ll2_start,
-	.roce_ll2_stop = &qed_roce_ll2_stop,
-	.roce_ll2_tx = &qed_roce_ll2_tx,
-	.roce_ll2_post_rx_buffer = &qed_roce_ll2_post_rx_buffer,
-	.roce_ll2_set_mac_filter = &qed_roce_ll2_set_mac_filter,
-	.roce_ll2_stats = &qed_roce_ll2_stats,
+	.ll2_acquire_connection = &qed_ll2_acquire_connection,
+	.ll2_establish_connection = &qed_ll2_establish_connection,
+	.ll2_terminate_connection = &qed_ll2_terminate_connection,
+	.ll2_release_connection = &qed_ll2_release_connection,
+	.ll2_post_rx_buffer = &qed_ll2_post_rx_buffer,
+	.ll2_prepare_tx_packet = &qed_ll2_prepare_tx_packet,
+	.ll2_set_fragment_of_tx_packet = &qed_ll2_set_fragment_of_tx_packet,
+	.ll2_set_mac_filter = &qed_roce_ll2_set_mac_filter,
+	.ll2_get_stats = &qed_ll2_get_stats,
 };
 
 const struct qed_rdma_ops *qed_get_rdma_ops(void)

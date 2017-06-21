@@ -2523,6 +2523,26 @@ out:
 	return ret;
 }
 
+static int get_link_down_reason(struct net_device *dev, void __user *useraddr)
+{
+	struct ethtool_link_down_reason ldr;
+	int ret;
+
+	if (!dev->ethtool_ops->get_link_down_reason)
+		return -EOPNOTSUPP;
+
+	memset(&ldr, 0, sizeof(ldr));
+	ldr.cmd = ETHTOOL_GLINK_DOWN_RSN;
+	ret = dev->ethtool_ops->get_link_down_reason(dev, &ldr);
+	if (ret)
+		return ret;
+
+	if (copy_to_user(useraddr, &ldr, sizeof(ldr)))
+		return -EFAULT;
+
+	return 0;
+}
+
 /* The main entry point in this file.  Called from net/core/dev_ioctl.c */
 
 int dev_ethtool(struct net *net, struct ifreq *ifr)
@@ -2582,6 +2602,7 @@ int dev_ethtool(struct net *net, struct ifreq *ifr)
 	case ETHTOOL_GTUNABLE:
 	case ETHTOOL_PHY_GTUNABLE:
 	case ETHTOOL_GLINKSETTINGS:
+	case ETHTOOL_GLINK_DOWN_RSN:
 		break;
 	default:
 		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
@@ -2792,6 +2813,9 @@ int dev_ethtool(struct net *net, struct ifreq *ifr)
 		break;
 	case ETHTOOL_PHY_STUNABLE:
 		rc = set_phy_tunable(dev, useraddr);
+		break;
+	case ETHTOOL_GLINK_DOWN_RSN:
+		rc = get_link_down_reason(dev, useraddr);
 		break;
 	default:
 		rc = -EOPNOTSUPP;
