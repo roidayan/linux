@@ -398,7 +398,7 @@ static inline void gtp0_push_header(struct sk_buff *skb, struct pdp_ctx *pctx)
 	int payload_len = skb->len;
 	struct gtp0_header *gtp0;
 
-	gtp0 = (struct gtp0_header *) skb_push(skb, sizeof(*gtp0));
+	gtp0 = skb_push(skb, sizeof(*gtp0));
 
 	gtp0->flags	= 0x1e; /* v0, GTP-non-prime. */
 	gtp0->type	= GTP_TPDU;
@@ -415,7 +415,7 @@ static inline void gtp1_push_header(struct sk_buff *skb, struct pdp_ctx *pctx)
 	int payload_len = skb->len;
 	struct gtp1_header *gtp1;
 
-	gtp1 = (struct gtp1_header *) skb_push(skb, sizeof(*gtp1));
+	gtp1 = skb_push(skb, sizeof(*gtp1));
 
 	/* Bits    8  7  6  5  4  3  2	1
 	 *	  +--+--+--+--+--+--+--+--+
@@ -611,7 +611,7 @@ static const struct net_device_ops gtp_netdev_ops = {
 static void gtp_link_setup(struct net_device *dev)
 {
 	dev->netdev_ops		= &gtp_netdev_ops;
-	dev->destructor		= free_netdev;
+	dev->needs_free_netdev	= true;
 
 	dev->hard_header_len = 0;
 	dev->addr_len = 0;
