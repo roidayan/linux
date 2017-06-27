@@ -8,7 +8,14 @@ enum {
 	RDMA_NL_IWCM,
 	RDMA_NL_RSVD,
 	RDMA_NL_LS,	/* RDMA Local Services */
+	/*
+	 * RDMA_NL_I40IW not in use and it was added here by mistake,
+	 * but we need to keep it anyway, because it is UAPI and for
+	 * unknown reasons, someone in the field decided to replace "5"
+	 * with this define.
+	 */
 	RDMA_NL_I40IW,
+	RDMA_NL_NLDEV = RDMA_NL_I40IW, /* RDMA device interface */
 	RDMA_NL_NUM_CLIENTS
 };
 
@@ -222,4 +229,44 @@ struct rdma_nla_ls_gid {
 	__u8		gid[16];
 };
 
+enum rdma_nldev_command {
+	RDMA_NLDEV_CMD_UNSPEC,
+
+	RDMA_NLDEV_CMD_GET, /* can dump */
+	RDMA_NLDEV_CMD_SET,
+	RDMA_NLDEV_CMD_NEW,
+	RDMA_NLDEV_CMD_DEL,
+
+	RDMA_NLDEV_CMD_PORT_GET, /* can dump */
+	RDMA_NLDEV_CMD_PORT_SET,
+	RDMA_NLDEV_CMD_PORT_NEW,
+	RDMA_NLDEV_CMD_PORT_DEL,
+
+	RDMA_NLDEV_NUM_OPS
+};
+
+enum rdma_nldev_attr {
+	/* don't change the order or add anything between, this is ABI! */
+	RDMA_NLDEV_ATTR_UNSPEC,
+
+	/* Identifier for ib_device */
+	RDMA_NLDEV_ATTR_DEV_NAME,		/* string */
+	/*
+	 * Device name together with port index are identifiers
+	 * for port/link properties.
+	 *
+	 * For RDMA_NLDEV_CMD_GET comamnd, port index will return number
+	 * of available ports in ib_device, while for port specific operations,
+	 * it will be real port index as it appears in sysfs. Port index follows
+	 * sysfs notation and starts from 1 for the first port.
+	 */
+	RDMA_NLDEV_ATTR_PORT_INDEX,		/* u32 */
+
+	/*
+	 * Device and port capabilities
+	 */
+	RDMA_NLDEV_ATTR_CAP_FLAGS,		/* u64 */
+
+	RDMA_NLDEV_ATTR_MAX
+};
 #endif /* _UAPI_RDMA_NETLINK_H */

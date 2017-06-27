@@ -1385,8 +1385,9 @@ static int create_qp(struct ib_uverbs_file *file,
 		attr.rwq_ind_tbl = ind_tbl;
 	}
 
-	if ((cmd_sz >= offsetof(typeof(*cmd), reserved1) +
-		       sizeof(cmd->reserved1)) && cmd->reserved1) {
+	if (cmd_sz > sizeof(*cmd) &&
+	    !ib_is_udata_cleared(ucore, sizeof(*cmd),
+				 cmd_sz - sizeof(*cmd))) {
 		ret = -EOPNOTSUPP;
 		goto err_put;
 	}
@@ -1484,9 +1485,19 @@ static int create_qp(struct ib_uverbs_file *file,
 				IB_QP_CREATE_MANAGED_SEND |
 				IB_QP_CREATE_MANAGED_RECV |
 				IB_QP_CREATE_SCATTER_FCS |
-				IB_QP_CREATE_CVLAN_STRIPPING)) {
+				IB_QP_CREATE_CVLAN_STRIPPING |
+				IB_QP_CREATE_SOURCE_QPN)) {
 		ret = -EINVAL;
 		goto err_put;
+	}
+
+	if (attr.create_flags & IB_QP_CREATE_SOURCE_QPN) {
+		if (!capable(CAP_NET_RAW)) {
+			ret = -EPERM;
+			goto err_put;
+		}
+
+		attr.source_qpn = cmd->source_qpn;
 	}
 
 	buf = (void *)cmd + sizeof(*cmd);
@@ -1508,6 +1519,10 @@ static int create_qp(struct ib_uverbs_file *file,
 	}
 
 	if (cmd->qp_type != IB_QPT_XRC_TGT) {
+		ret = ib_create_qp_security(qp, device);
+		if (ret)
+			goto err_cb;
+
 		qp->real_qp	  = qp;
 		qp->device	  = device;
 		qp->pd		  = pd;
@@ -1996,23 +2011,10 @@ static int modify_qp(struct ib_uverbs_file *file,
 	rdma_ah_set_port_num(&attr->alt_ah_attr,
 			     cmd->base.alt_dest.port_num);
 
-	if (qp->real_qp == qp) {
-		if (cmd->base.attr_mask & IB_QP_AV) {
-			ret = ib_resolve_eth_dmac(qp->device, &attr->ah_attr);
-			if (ret)
-				goto release_qp;
-		}
-		ret = qp->device->modify_qp(qp, attr,
-					    modify_qp_mask(qp->qp_type,
-							   cmd->base.attr_mask),
-					    udata);
-	} else {
-		ret = ib_modify_qp(qp, attr,
-				   modify_qp_mask(qp->qp_type,
-						  cmd->base.attr_mask));
-	}
-
-release_qp:
+	ret = ib_modify_qp_with_udata(qp, attr,
+				      modify_qp_mask(qp->qp_type,
+						     cmd->base.attr_mask),
+				      udata);
 	uobj_put_obj_read(qp);
 
 out:
@@ -3766,6 +3768,15 @@ ssize_t ib_uverbs_destroy_srq(struct ib_uverbs_file *file,
 	return in_len;
 }
 
+static void copy_ooo_caps(struct ib_uverbs_ooo_caps *uverb_caps,
+			  struct ib_ooo_caps *attr_caps)
+{
+	uverb_caps->rc_caps = attr_caps->rc_caps;
+	uverb_caps->xrc_caps = attr_caps->xrc_caps;
+	uverb_caps->ud_caps = attr_caps->ud_caps;
+	uverb_caps->uc_caps = attr_caps->uc_caps;
+}
+
 int ib_uverbs_ex_query_device(struct ib_uverbs_file *file,
 			      struct ib_device *ib_dev,
 			      struct ib_udata *ucore,
@@ -3854,6 +3865,13 @@ int ib_uverbs_ex_query_device(struct ib_uverbs_file *file,
 
 	resp.raw_packet_caps = attr.raw_packet_caps;
 	resp.response_length += sizeof(resp.raw_packet_caps);
+
+	if (ucore->outlen < resp.response_length + sizeof(resp.ooo_caps))
+		goto end;
+
+	copy_ooo_caps(&resp.ooo_caps, &attr.ooo_caps);
+	resp.response_length += sizeof(resp.ooo_caps);
+
 end:
 	err = ib_copy_to_udata(ucore, &resp, resp.response_length);
 	return err;
