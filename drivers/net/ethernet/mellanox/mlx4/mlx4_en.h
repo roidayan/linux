@@ -99,27 +99,24 @@
 
 #define MLX4_EN_WATCHDOG_TIMEOUT	(15 * HZ)
 
-/* Use the maximum between 16384 and a single page */
-#define MLX4_EN_ALLOC_SIZE	PAGE_ALIGN(16384)
-
 #define MLX4_EN_MAX_RX_FRAGS	4
 
 /* Maximum ring sizes */
 #define MLX4_EN_MAX_TX_SIZE	8192
 #define MLX4_EN_MAX_RX_SIZE	8192
 
-/* Minimum ring size for our page-allocation scheme to work */
-#define MLX4_EN_MIN_RX_SIZE	(MLX4_EN_ALLOC_SIZE / SMP_CACHE_BYTES)
+#define MLX4_EN_MIN_RX_SIZE	256
 #define MLX4_EN_MIN_TX_SIZE	(4096 / TXBB_SIZE)
 
 #define MLX4_EN_SMALL_PKT_SIZE		64
 #define MLX4_EN_MIN_TX_RING_P_UP	1
 #define MLX4_EN_MAX_TX_RING_P_UP	32
-#define MLX4_EN_NUM_UP			8
+#define MLX4_EN_NUM_UP_LOW		1
+#define MLX4_EN_NUM_UP_HIGH		8
 #define MLX4_EN_DEF_RX_RING_SIZE  	1024
 #define MLX4_EN_DEF_TX_RING_SIZE	MLX4_EN_DEF_RX_RING_SIZE
 #define MAX_TX_RINGS			(MLX4_EN_MAX_TX_RING_P_UP * \
-					 MLX4_EN_NUM_UP)
+					 MLX4_EN_NUM_UP_HIGH)
 
 #define MLX4_EN_DEFAULT_TX_WORK		256
 
@@ -324,6 +321,30 @@ struct mlx4_en_rx_desc {
 	struct mlx4_wqe_data_seg data[0];
 };
 
+/* Each rx_ring has a pool of pages, with associated dma mapping.
+ * We try to recycle the pages, by keeping a reference on them.
+ */
+struct mlx4_en_page {
+	struct page	*page;
+	dma_addr_t	dma; /* might be kept in page_private() ? */
+};
+
+/* A page pool contains a fixed number of pages, and a current index.
+ */
+struct mlx4_en_page_pool {
+	unsigned int		pool_size;
+	unsigned int		pool_idx;
+	struct mlx4_en_page	*array;
+};
+
+struct mlx4_en_frag_info {
+	u16		frag_size;
+	u32		frag_stride;
+	struct page	*page;
+	dma_addr_t	dma;
+	u32		page_offset;
+};
+
 struct mlx4_en_rx_ring {
 	struct mlx4_hwq_resources wqres;
 	u32 size ;	/* number of Rx descs*/
@@ -336,22 +357,31 @@ struct mlx4_en_rx_ring {
 	u32 cons;
 	u32 buf_size;
 	u8  fcs_del;
+	u8  hwtstamp_rx_filter;
+	u16 node;
 	void *buf;
 	void *rx_info;
-	struct bpf_prog __rcu *xdp_prog;
-	struct mlx4_en_page_cache page_cache;
+	struct bpf_prog __rcu		*xdp_prog;
+	struct mlx4_en_page_pool	pool;
+	unsigned long			rx_alloc_pages;
+
+	struct page			*pre_allocated;
+	unsigned int			pre_allocated_count;
+	unsigned int			rx_alloc_order;
+	struct mlx4_en_frag_info	frag_info[MLX4_EN_MAX_RX_FRAGS];
+	struct mlx4_en_page_cache	page_cache;
+
 	unsigned long bytes;
 	unsigned long packets;
 	unsigned long csum_ok;
 	unsigned long csum_none;
 	unsigned long csum_complete;
-	unsigned long rx_alloc_pages;
 	unsigned long xdp_drop;
 	unsigned long xdp_tx;
 	unsigned long xdp_tx_full;
 	unsigned long dropped;
-	int hwtstamp_rx_filter;
 	cpumask_var_t affinity_mask;
+	unsigned int			rx_pref_alloc_order;
 };
 
 struct mlx4_en_cq {
@@ -386,6 +416,7 @@ struct mlx4_en_port_profile {
 	u8 rx_ppp;
 	u8 tx_pause;
 	u8 tx_ppp;
+	u8 num_up;
 	int rss_rings;
 	int inline_thold;
 	struct hwtstamp_config hwtstamp_config;
@@ -397,7 +428,7 @@ struct mlx4_en_profile {
 	u32 active_ports;
 	u32 small_pkt_int;
 	u8 no_reset;
-	u8 num_tx_rings_p_up;
+	u8 max_num_tx_rings_p_up;
 	struct mlx4_en_port_profile prof[MLX4_MAX_PORTS + 1];
 };
 
@@ -464,11 +495,6 @@ struct mlx4_en_mc_list {
 	u64			tunnel_reg_id;
 };
 
-struct mlx4_en_frag_info {
-	u16 frag_size;
-	u32 frag_stride;
-};
-
 #ifdef CONFIG_MLX4_EN_DCB
 /* Minimal TC BW - setting to 0 will block traffic */
 #define MLX4_EN_BW_MIN 1
@@ -485,7 +511,7 @@ enum dcb_pfc_type {
 
 struct mlx4_en_cee_config {
 	bool	pfc_state;
-	enum	dcb_pfc_type dcb_pfc[MLX4_EN_NUM_UP];
+	enum	dcb_pfc_type dcb_pfc[MLX4_EN_NUM_UP_HIGH];
 };
 #endif
 
@@ -695,7 +721,7 @@ netdev_tx_t mlx4_en_xmit_frame(struct mlx4_en_rx_ring *rx_ring,
 			       int tx_ind, bool *doorbell_pending);
 void mlx4_en_xmit_doorbell(struct mlx4_en_tx_ring *ring);
 bool mlx4_en_rx_recycle(struct mlx4_en_rx_ring *ring,
-			struct mlx4_en_rx_alloc *frame);
+			struct page *page, dma_addr_t dma);
 
 int mlx4_en_create_tx_ring(struct mlx4_en_priv *priv,
 			   struct mlx4_en_tx_ring **pring,
@@ -761,6 +787,7 @@ extern const struct dcbnl_rtnl_ops mlx4_en_dcbnl_pfc_ops;
 #endif
 
 int mlx4_en_setup_tc(struct net_device *dev, u8 up);
+int mlx4_en_alloc_tx_queue_per_tc(struct net_device *dev, u8 tc);
 
 #ifdef CONFIG_RFS_ACCEL
 void mlx4_en_cleanup_filters(struct mlx4_en_priv *priv);
