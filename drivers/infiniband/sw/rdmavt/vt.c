@@ -48,6 +48,8 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/dma-mapping.h>
+#include <rdma/uverbs_ioctl.h>
+#include <rdma/uverbs_std_types.h>
 #include "vt.h"
 #include "trace.h"
 
@@ -716,6 +718,8 @@ static noinline int check_support(struct rvt_dev_info *rdi, int verb)
 	return 0;
 }
 
+static DECLARE_UVERBS_TYPES_GROUP(root, &uverbs_common_types);
+
 /**
  * rvt_register_device - register a driver
  * @rdi: main dev structure for all of rdmavt operations
@@ -826,6 +830,7 @@ int rvt_register_device(struct rvt_dev_info *rdi)
 	rdi->ibdev.node_type = RDMA_NODE_IB_CA;
 	rdi->ibdev.num_comp_vectors = 1;
 
+	rdi->ibdev.specs_root = &root;
 	/* We are now good to announce we exist */
 	ret =  ib_register_device(&rdi->ibdev, rdi->driver_f.port_callback);
 	if (ret) {

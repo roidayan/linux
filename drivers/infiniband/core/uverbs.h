@@ -191,7 +191,10 @@ struct ib_ucq_object {
 	u32			async_events_reported;
 };
 
+struct uverbs_type_group;
+
 extern const struct file_operations uverbs_event_fops;
+void uverbs_initialize_type_group(const struct uverbs_type_group *type_group);
 void ib_uverbs_init_event_queue(struct ib_uverbs_event_queue *ev_queue);
 struct file *ib_uverbs_alloc_async_event_file(struct ib_uverbs_file *uverbs_file,
 					      struct ib_device *ib_dev);
@@ -217,6 +220,8 @@ int ib_uverbs_dealloc_xrcd(struct ib_uverbs_device *dev, struct ib_xrcd *xrcd,
 int uverbs_dealloc_mw(struct ib_mw *mw);
 void ib_uverbs_detach_umcast(struct ib_qp *qp,
 			     struct ib_uqp_object *uobj);
+
+long ib_uverbs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
 
 struct ib_uverbs_flow_spec {
 	union {
