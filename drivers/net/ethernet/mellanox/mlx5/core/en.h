@@ -569,10 +569,6 @@ struct mlx5e_rq {
 	struct mlx5_core_mkey  umr_mkey;
 } ____cacheline_aligned_in_smp;
 
-enum channel_flags {
-	MLX5E_CHANNEL_NAPI_SCHED = 1,
-};
-
 struct mlx5e_channel {
 	/* data path */
 	struct mlx5e_rq            rq;
@@ -584,7 +580,6 @@ struct mlx5e_channel {
 	struct net_device         *netdev;
 	__be32                     mkey_be;
 	u8                         num_tc;
-	unsigned long              flags;
 
 	/* control */
 	struct mlx5e_priv         *priv;
