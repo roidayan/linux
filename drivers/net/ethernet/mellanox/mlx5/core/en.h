@@ -533,8 +533,8 @@ struct mlx5e_rq {
 		} wqe;
 		struct {
 			struct mlx5e_mpw_info *info;
-			u16                    stride_sz;
 			u16                    num_strides;
+			u8                     log_stride_sz;
 		} mpwqe;
 	};
 	struct {
