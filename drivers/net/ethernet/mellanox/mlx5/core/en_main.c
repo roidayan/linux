@@ -1746,6 +1746,37 @@ static int mlx5e_set_tx_maxrate(struct net_device *dev, int index, u32 rate)
 	return err;
 }
 
+#ifdef CONFIG_SMP
+static void mlx5e_irq_affinity_notify(struct irq_affinity_notify *notify,
+				      const cpumask_t *mask)
+{
+	struct mlx5e_channel *c = container_of(notify, struct mlx5e_channel,
+					       affinity_notify);
+
+	c->affinity_mask = *mask;
+}
+
+static void mlx5e_irq_affinity_release(struct kref *ref) {}
+
+static void mlx5e_init_channel_affinity_notifier(struct mlx5e_channel *c)
+{
+	int irqn = c->rq.cq.mcq.irqn;
+
+	c->affinity_mask = *(c->priv->mdev->priv.irq_info[c->ix].mask);
+	c->affinity_notify.notify = mlx5e_irq_affinity_notify;
+	c->affinity_notify.release = mlx5e_irq_affinity_release;
+
+	irq_set_affinity_notifier(irqn, &c->affinity_notify);
+}
+
+static void mlx5e_clear_channel_affinity_notifier(struct mlx5e_channel *c)
+{
+	int irqn = c->rq.cq.mcq.irqn;
+
+	irq_set_affinity_notifier(irqn, NULL);
+}
+#endif
+
 static int mlx5e_open_channel(struct mlx5e_priv *priv, int ix,
 			      struct mlx5e_params *params,
 			      struct mlx5e_channel_param *cparam,
@@ -1810,6 +1841,9 @@ static int mlx5e_open_channel(struct mlx5e_priv *priv, int ix,
 	if (err)
 		goto err_close_xdp_sq;
 
+#ifdef CONFIG_SMP
+	mlx5e_init_channel_affinity_notifier(c);
+#endif
 	*cp = c;
 
 	return 0;
@@ -1865,6 +1899,9 @@ static void mlx5e_deactivate_channel(struct mlx5e_channel *c)
 
 static void mlx5e_close_channel(struct mlx5e_channel *c)
 {
+#ifdef CONFIG_SMP
+	mlx5e_clear_channel_affinity_notifier(c);
+#endif
 	mlx5e_close_rq(&c->rq);
 	if (c->xdp)
 		mlx5e_close_xdpsq(&c->rq.xdpsq);
