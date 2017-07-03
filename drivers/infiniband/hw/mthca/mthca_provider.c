@@ -37,6 +37,8 @@
 #include <rdma/ib_smi.h>
 #include <rdma/ib_umem.h>
 #include <rdma/ib_user_verbs.h>
+#include <rdma/uverbs_ioctl.h>
+#include <rdma/uverbs_std_types.h>
 
 #include <linux/sched.h>
 #include <linux/slab.h>
@@ -1188,6 +1190,8 @@ static void get_dev_fw_str(struct ib_device *device, char *str)
 		 (int) dev->fw_ver & 0xffff);
 }
 
+static DECLARE_UVERBS_TYPES_GROUP(root, &uverbs_common_types);
+
 int mthca_register_device(struct mthca_dev *dev)
 {
 	int ret;
@@ -1295,6 +1299,7 @@ int mthca_register_device(struct mthca_dev *dev)
 
 	mutex_init(&dev->cap_mask_mutex);
 
+	dev->ib_dev.specs_root = &root;
 	ret = ib_register_device(&dev->ib_dev, NULL);
 	if (ret)
 		return ret;
