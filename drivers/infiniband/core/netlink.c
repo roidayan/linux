@@ -1,4 +1,5 @@
 /*
+ * Copyright (c) 2017 Mellanox Technologies Inc.  All rights reserved.
  * Copyright (c) 2010 Voltaire Inc.  All rights reserved.
  *
  * This software is available to you under a choice of one of two
@@ -44,15 +45,14 @@
 static DEFINE_MUTEX(rdma_nl_mutex);
 static struct sock *nls;
 static struct {
-	const struct ibnl_client_cbs   *cb_table;
+	const struct rdma_nl_cbs   *cb_table;
 } rdma_nl_types[RDMA_NL_NUM_CLIENTS];
 
-int ibnl_chk_listeners(unsigned int group)
+int rdma_nl_chk_listeners(unsigned int group)
 {
-	if (netlink_has_listeners(nls, group) == 0)
-		return -1;
-	return 0;
+	return (netlink_has_listeners(nls, group)) ? 0 : -1;
 }
+EXPORT_SYMBOL(rdma_nl_chk_listeners);
 
 static bool is_nl_msg_valid(unsigned int type, unsigned int op)
 {
@@ -61,7 +61,7 @@ static bool is_nl_msg_valid(unsigned int type, unsigned int op)
 				  RDMA_NL_IWPM_NUM_OPS,
 				  0,
 				  RDMA_NL_LS_NUM_OPS,
-				  0 };
+				  RDMA_NLDEV_NUM_OPS };
 
 	/*
 	 * This BUILD_BUG_ON is intended to catch addition of new
@@ -77,15 +77,19 @@ static bool is_nl_msg_valid(unsigned int type, unsigned int op)
 
 static bool is_nl_valid(unsigned int type, unsigned int op)
 {
-	if (!is_nl_msg_valid(type, op) ||
-	    !rdma_nl_types[type].cb_table ||
-	    !rdma_nl_types[type].cb_table[op].dump)
+	const struct rdma_nl_cbs *cb_table;
+
+	if (!is_nl_msg_valid(type, op))
+		return false;
+
+	cb_table = rdma_nl_types[type].cb_table;
+	if (!cb_table || (!cb_table[op].dump && !cb_table[op].doit))
 		return false;
 	return true;
 }
 
 void rdma_nl_register(unsigned int index,
-		      const struct ibnl_client_cbs cb_table[])
+		      const struct rdma_nl_cbs cb_table[])
 {
 	mutex_lock(&rdma_nl_mutex);
 	if (!is_nl_msg_valid(index, 0)) {
@@ -126,36 +130,23 @@ EXPORT_SYMBOL(rdma_nl_unregister);
 void *ibnl_put_msg(struct sk_buff *skb, struct nlmsghdr **nlh, int seq,
 		   int len, int client, int op, int flags)
 {
-	unsigned char *prev_tail;
-
-	prev_tail = skb_tail_pointer(skb);
-	*nlh = nlmsg_put(skb, 0, seq, RDMA_NL_GET_TYPE(client, op),
-			 len, flags);
-	if (!*nlh)
-		goto out_nlmsg_trim;
-	(*nlh)->nlmsg_len = skb_tail_pointer(skb) - prev_tail;
+	*nlh = nlmsg_put(skb, 0, seq, RDMA_NL_GET_TYPE(client, op), len, flags);
+	if (!*nlh) {
+		nlmsg_cancel(skb, *nlh);
+		return NULL;
+	}
 	return nlmsg_data(*nlh);
-
-out_nlmsg_trim:
-	nlmsg_trim(skb, prev_tail);
-	return NULL;
 }
 EXPORT_SYMBOL(ibnl_put_msg);
 
 int ibnl_put_attr(struct sk_buff *skb, struct nlmsghdr *nlh,
 		  int len, void *data, int type)
 {
-	unsigned char *prev_tail;
-
-	prev_tail = skb_tail_pointer(skb);
-	if (nla_put(skb, type, len, data))
-		goto nla_put_failure;
-	nlh->nlmsg_len += skb_tail_pointer(skb) - prev_tail;
+	if (nla_put(skb, type, len, data)) {
+		nlmsg_cancel(skb, nlh);
+		return -EMSGSIZE;
+	}
 	return 0;
-
-nla_put_failure:
-	nlmsg_trim(skb, prev_tail - nlh->nlmsg_len);
-	return -EMSGSIZE;
 }
 EXPORT_SYMBOL(ibnl_put_attr);
 
@@ -165,26 +156,30 @@ static int rdma_nl_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh,
 	int type = nlh->nlmsg_type;
 	unsigned int index = RDMA_NL_GET_CLIENT(type);
 	unsigned int op = RDMA_NL_GET_OP(type);
-	struct netlink_callback cb = {};
-	struct netlink_dump_control c = {};
+	const struct rdma_nl_cbs *cb_table;
 
 	if (!is_nl_valid(index, op))
 		return -EINVAL;
 
-	/*
-	 * For response or local service set_timeout request,
-	 * there is no need to use netlink_dump_start.
-	 */
-	if (!(nlh->nlmsg_flags & NLM_F_REQUEST) ||
-	    (index == RDMA_NL_LS && op == RDMA_NL_LS_OP_SET_TIMEOUT)) {
-		cb.skb = skb;
-		cb.nlh = nlh;
-		cb.dump = rdma_nl_types[index].cb_table[op].dump;
-		return cb.dump(skb, &cb);
+	cb_table = rdma_nl_types[index].cb_table;
+
+	if ((cb_table[op].flags & RDMA_NL_ADMIN_PERM) &&
+	    !netlink_capable(skb, CAP_NET_ADMIN))
+		return -EPERM;
+
+	/* FIXME: Convert IWCM to properly handle doit callbacks */
+	if ((nlh->nlmsg_flags & NLM_F_DUMP) || index == RDMA_NL_RDMA_CM ||
+	    index == RDMA_NL_IWCM) {
+		struct netlink_dump_control c = {
+			.dump = cb_table[op].dump,
+		};
+		return netlink_dump_start(nls, skb, nlh, &c);
 	}
 
-	c.dump = rdma_nl_types[index].cb_table[op].dump;
-	return netlink_dump_start(nls, skb, nlh, &c);
+	if (cb_table[op].doit)
+		return cb_table[op].doit(skb, nlh, extack);
+
+	return 0;
 }
 
 /*
@@ -250,19 +245,17 @@ static void rdma_nl_rcv(struct sk_buff *skb)
 	mutex_unlock(&rdma_nl_mutex);
 }
 
-int ibnl_unicast(struct sk_buff *skb, struct nlmsghdr *nlh,
-			__u32 pid)
+int rdma_nl_unicast(struct sk_buff *skb, u32 pid)
 {
 	return nlmsg_unicast(nls, skb, pid);
 }
-EXPORT_SYMBOL(ibnl_unicast);
+EXPORT_SYMBOL(rdma_nl_unicast);
 
-int ibnl_multicast(struct sk_buff *skb, struct nlmsghdr *nlh,
-			unsigned int group, gfp_t flags)
+int rdma_nl_multicast(struct sk_buff *skb, unsigned int group, gfp_t flags)
 {
 	return nlmsg_multicast(nls, skb, 0, group, flags);
 }
-EXPORT_SYMBOL(ibnl_multicast);
+EXPORT_SYMBOL(rdma_nl_multicast);
 
 int __init rdma_nl_init(void)
 {
