@@ -58,8 +58,7 @@
 #include "mlx4_stats.h"
 
 #define DRV_NAME	"mlx4_en"
-#define DRV_VERSION	"2.2-1"
-#define DRV_RELDATE	"Feb 2014"
+#define DRV_VERSION	"4.0-0"
 
 #define MLX4_EN_MSG_LEVEL	(NETIF_MSG_LINK | NETIF_MSG_IFDOWN)
 
@@ -277,7 +276,7 @@ struct mlx4_en_tx_ring {
 	struct netdev_queue	*tx_queue;
 	u32			(*free_tx_desc)(struct mlx4_en_priv *priv,
 						struct mlx4_en_tx_ring *ring,
-						int index, u8 owner,
+						int index,
 						u64 timestamp, int napi_mode);
 	struct mlx4_en_rx_ring	*recycle_ring;
 
@@ -432,7 +431,7 @@ struct mlx4_en_rss_map {
 	int base_qpn;
 	struct mlx4_qp qps[MAX_RX_RINGS];
 	enum mlx4_qp_state state[MAX_RX_RINGS];
-	struct mlx4_qp indir_qp;
+	struct mlx4_qp *indir_qp;
 	enum mlx4_qp_state indir_state;
 };
 
@@ -724,11 +723,11 @@ int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget);
 int mlx4_en_poll_tx_cq(struct napi_struct *napi, int budget);
 u32 mlx4_en_free_tx_desc(struct mlx4_en_priv *priv,
 			 struct mlx4_en_tx_ring *ring,
-			 int index, u8 owner, u64 timestamp,
+			 int index, u64 timestamp,
 			 int napi_mode);
 u32 mlx4_en_recycle_tx_desc(struct mlx4_en_priv *priv,
 			    struct mlx4_en_tx_ring *ring,
-			    int index, u8 owner, u64 timestamp,
+			    int index, u64 timestamp,
 			    int napi_mode);
 void mlx4_en_fill_qp_context(struct mlx4_en_priv *priv, int size, int stride,
 		int is_tx, int rss, int qpn, int cqn, int user_prio,
