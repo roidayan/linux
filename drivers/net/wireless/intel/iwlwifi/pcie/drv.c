@@ -538,7 +538,7 @@ static const struct pci_device_id iwl_hw_card_ids[] = {
 
 /* a000 Series */
 	{IWL_PCI_DEVICE(0x2720, 0x0A10, iwla000_2ac_cfg_hr_cdb)},
-	{IWL_PCI_DEVICE(0x2722, 0x0A10, iwla000_2ac_cfg_hr)},
+	{IWL_PCI_DEVICE(0x34F0, 0x0310, iwla000_2ac_cfg_jf)},
 #endif /* CONFIG_IWLMVM */
 
 	{0}
@@ -672,10 +672,12 @@ static int iwl_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		iwl_trans->cfg = cfg_7265d;
 	}
 
-	if (iwl_trans->cfg->rf_id &&
-	    (cfg == &iwla000_2ac_cfg_hr || cfg == &iwla000_2ac_cfg_hr_cdb) &&
-	     iwl_trans->hw_rf_id == CSR_HW_RF_ID_TYPE_JF) {
-		cfg = &iwla000_2ac_cfg_jf;
+	if (iwl_trans->cfg->rf_id && cfg == &iwla000_2ac_cfg_hr_cdb) {
+		if (iwl_trans->hw_rf_id == CSR_HW_RF_ID_TYPE_JF)
+			cfg = &iwla000_2ac_cfg_jf;
+		else if (iwl_trans->hw_rf_id == CSR_HW_RF_ID_TYPE_HR)
+			cfg = &iwla000_2ac_cfg_hr;
+
 		iwl_trans->cfg = cfg;
 	}
 #endif
@@ -764,7 +766,6 @@ static int iwl_pci_resume(struct device *device)
 	struct pci_dev *pdev = to_pci_dev(device);
 	struct iwl_trans *trans = pci_get_drvdata(pdev);
 	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
-	bool hw_rfkill;
 
 	/* Before you put code here, think about WoWLAN. You cannot check here
 	 * whether WoWLAN is enabled or not, and your code will run even if
@@ -781,16 +782,13 @@ static int iwl_pci_resume(struct device *device)
 		return 0;
 
 	/*
-	 * Enable rfkill interrupt (in order to keep track of
-	 * the rfkill status). Must be locked to avoid processing
-	 * a possible rfkill interrupt between reading the state
-	 * and calling iwl_trans_pcie_rf_kill() with it.
+	 * Enable rfkill interrupt (in order to keep track of the rfkill
+	 * status). Must be locked to avoid processing a possible rfkill
+	 * interrupt while in iwl_trans_check_hw_rf_kill().
 	 */
 	mutex_lock(&trans_pcie->mutex);
 	iwl_enable_rfkill_int(trans);
-
-	hw_rfkill = iwl_is_rfkill_set(trans);
-	iwl_trans_pcie_rf_kill(trans, hw_rfkill);
+	iwl_trans_check_hw_rf_kill(trans);
 	mutex_unlock(&trans_pcie->mutex);
 
 	return 0;

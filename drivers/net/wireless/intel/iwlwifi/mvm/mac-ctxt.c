@@ -846,6 +846,8 @@ static int iwl_mvm_mac_ctxt_cmd_sta(struct iwl_mvm *mvm,
 			cpu_to_le64(vif->bss_conf.sync_tsf + dtim_offs);
 		ctxt_sta->dtim_time =
 			cpu_to_le32(vif->bss_conf.sync_device_ts + dtim_offs);
+		ctxt_sta->assoc_beacon_arrive_time =
+			cpu_to_le32(vif->bss_conf.sync_device_ts);
 
 		IWL_DEBUG_INFO(mvm, "DTIM TBTT is 0x%llx/0x%x, offset %d\n",
 			       le64_to_cpu(ctxt_sta->dtim_tsf),
@@ -1040,7 +1042,7 @@ static int iwl_mvm_mac_ctxt_send_beacon(struct iwl_mvm *mvm,
 		struct iwl_mac_beacon_cmd_v6 beacon_cmd_v6;
 		struct iwl_mac_beacon_cmd_v7 beacon_cmd;
 	} u = {};
-	struct iwl_mac_beacon_cmd beacon_cmd;
+	struct iwl_mac_beacon_cmd beacon_cmd = {};
 	struct ieee80211_tx_info *info;
 	u32 beacon_skb_len;
 	u32 rate, tx_flags;
@@ -1457,6 +1459,7 @@ void iwl_mvm_rx_beacon_notif(struct iwl_mvm *mvm,
 
 	beacon_notify_hdr = &beacon->beacon_notify_hdr;
 	mvm->ap_last_beacon_gp2 = le32_to_cpu(beacon->gp2);
+	mvm->ibss_manager = beacon->ibss_mgr_status != 0;
 
 	agg_status = iwl_mvm_get_agg_status(mvm, beacon_notify_hdr);
 	status = le16_to_cpu(agg_status->status) & TX_STATUS_MSK;
@@ -1596,7 +1599,7 @@ void iwl_mvm_rx_stored_beacon_notif(struct iwl_mvm *mvm,
 					       rx_status.band);
 
 	/* copy the data */
-	memcpy(skb_put(skb, size), sb->data, size);
+	skb_put_data(skb, sb->data, size);
 	memcpy(IEEE80211_SKB_RXCB(skb), &rx_status, sizeof(rx_status));
 
 	/* pass it as regular rx to mac80211 */
@@ -1632,9 +1635,9 @@ void iwl_mvm_channel_switch_noa_notif(struct iwl_mvm *mvm,
 
 	IWL_DEBUG_INFO(mvm, "Channel Switch Started Notification\n");
 
-	queue_delayed_work(system_wq, &mvm->cs_tx_unblock_dwork,
-			   msecs_to_jiffies(IWL_MVM_CS_UNBLOCK_TX_TIMEOUT *
-					    csa_vif->bss_conf.beacon_int));
+	schedule_delayed_work(&mvm->cs_tx_unblock_dwork,
+			      msecs_to_jiffies(IWL_MVM_CS_UNBLOCK_TX_TIMEOUT *
+					       csa_vif->bss_conf.beacon_int));
 
 	ieee80211_csa_finish(csa_vif);
 

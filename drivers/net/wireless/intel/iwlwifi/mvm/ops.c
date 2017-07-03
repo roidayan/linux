@@ -7,6 +7,7 @@
  *
  * Copyright(c) 2012 - 2014 Intel Corporation. All rights reserved.
  * Copyright(c) 2013 - 2015 Intel Mobile Communications GmbH
+ * Copyright(c) 2016 - 2017 Intel Deutschland GmbH
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -33,7 +34,7 @@
  *
  * Copyright(c) 2012 - 2014 Intel Corporation. All rights reserved.
  * Copyright(c) 2013 - 2015 Intel Mobile Communications GmbH
- * Copyright(c) 2016 Intel Deutschland GmbH
+ * Copyright(c) 2016 - 2017 Intel Deutschland GmbH
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -172,13 +173,14 @@ static void iwl_mvm_nic_config(struct iwl_op_mode *op_mode)
 		 ~CSR_HW_IF_CONFIG_REG_MSK_PHY_TYPE);
 
 	/*
-	 * TODO: Bits 7-8 of CSR in 8000 HW family set the ADC sampling, and
-	 * shouldn't be set to any non-zero value. The same is supposed to be
-	 * true of the other HW, but unsetting them (such as the 7260) causes
-	 * automatic tests to fail on seemingly unrelated errors. Need to
-	 * further investigate this, but for now we'll separate cases.
+	 * TODO: Bits 7-8 of CSR in 8000 HW family and higher set the ADC
+	 * sampling, and shouldn't be set to any non-zero value.
+	 * The same is supposed to be true of the other HW, but unsetting
+	 * them (such as the 7260) causes automatic tests to fail on seemingly
+	 * unrelated errors. Need to further investigate this, but for now
+	 * we'll separate cases.
 	 */
-	if (mvm->trans->cfg->device_family != IWL_DEVICE_FAMILY_8000)
+	if (mvm->trans->cfg->device_family < IWL_DEVICE_FAMILY_8000)
 		reg_val |= CSR_HW_IF_CONFIG_REG_BIT_RADIO_SI;
 
 	iwl_trans_set_bits_mask(mvm->trans, CSR_HW_IF_CONFIG_REG,
@@ -483,6 +485,7 @@ static const struct iwl_hcmd_names iwl_mvm_prot_offload_names[] = {
  */
 static const struct iwl_hcmd_names iwl_mvm_regulatory_and_nvm_names[] = {
 	HCMD_NAME(NVM_ACCESS_COMPLETE),
+	HCMD_NAME(NVM_GET_INFO),
 };
 
 static const struct iwl_hcmd_arr iwl_mvm_groups[] = {
@@ -587,6 +590,8 @@ iwl_op_mode_mvm_start(struct iwl_trans *trans, const struct iwl_cfg *cfg,
 	mvm->cfg = cfg;
 	mvm->fw = fw;
 	mvm->hw = hw;
+
+	mvm->init_status = 0;
 
 	if (iwl_mvm_has_new_rx_api(mvm)) {
 		op_mode->ops = &iwl_mvm_ops_mq;
@@ -752,7 +757,7 @@ iwl_op_mode_mvm_start(struct iwl_trans *trans, const struct iwl_cfg *cfg,
 	iwl_mvm_unref(mvm, IWL_MVM_REF_INIT_UCODE);
 	mutex_unlock(&mvm->mutex);
 	/* returns 0 if successful, 1 if success but in rfkill */
-	if (err < 0 && !iwlmvm_mod_params.init_dbg) {
+	if (err < 0) {
 		IWL_ERR(mvm, "Failed to run INIT ucode: %d\n", err);
 		goto out_free;
 	}
@@ -790,12 +795,18 @@ iwl_op_mode_mvm_start(struct iwl_trans *trans, const struct iwl_cfg *cfg,
 	return op_mode;
 
  out_unregister:
+	if (iwlmvm_mod_params.init_dbg)
+		return op_mode;
+
 	ieee80211_unregister_hw(mvm->hw);
 	mvm->hw_registered = false;
 	iwl_mvm_leds_exit(mvm);
 	iwl_mvm_thermal_exit(mvm);
  out_free:
 	flush_delayed_work(&mvm->fw_dump_wk);
+
+	if (iwlmvm_mod_params.init_dbg)
+		return op_mode;
 	iwl_phy_db_free(mvm->phy_db);
 	kfree(mvm->scan_cmd);
 	iwl_trans_op_mode_leave(trans);
@@ -820,7 +831,10 @@ static void iwl_op_mode_mvm_stop(struct iwl_op_mode *op_mode)
 
 	iwl_mvm_thermal_exit(mvm);
 
-	ieee80211_unregister_hw(mvm->hw);
+	if (mvm->init_status & IWL_MVM_INIT_STATUS_REG_HW_INIT_COMPLETE) {
+		ieee80211_unregister_hw(mvm->hw);
+		mvm->init_status &= ~IWL_MVM_INIT_STATUS_REG_HW_INIT_COMPLETE;
+	}
 
 	kfree(mvm->scan_cmd);
 	kfree(mvm->mcast_filter_cmd);
@@ -835,7 +849,7 @@ static void iwl_op_mode_mvm_stop(struct iwl_op_mode *op_mode)
 	iwl_phy_db_free(mvm->phy_db);
 	mvm->phy_db = NULL;
 
-	iwl_free_nvm_data(mvm->nvm_data);
+	kfree(mvm->nvm_data);
 	for (i = 0; i < NVM_MAX_NUM_SECTIONS; i++)
 		kfree(mvm->nvm_sections[i].data);
 
@@ -1080,6 +1094,16 @@ static void iwl_mvm_wake_sw_queue(struct iwl_op_mode *op_mode, int hw_queue)
 	iwl_mvm_start_mac_queues(mvm, mq);
 }
 
+static void iwl_mvm_set_rfkill_state(struct iwl_mvm *mvm)
+{
+	bool state = iwl_mvm_is_radio_killed(mvm);
+
+	if (state)
+		wake_up(&mvm->rx_sync_waitq);
+
+	wiphy_rfkill_set_hw_state(mvm->hw->wiphy, state);
+}
+
 void iwl_mvm_set_hw_ctkill_state(struct iwl_mvm *mvm, bool state)
 {
 	if (state)
@@ -1087,7 +1111,7 @@ void iwl_mvm_set_hw_ctkill_state(struct iwl_mvm *mvm, bool state)
 	else
 		clear_bit(IWL_MVM_STATUS_HW_CTKILL, &mvm->status);
 
-	wiphy_rfkill_set_hw_state(mvm->hw->wiphy, iwl_mvm_is_radio_killed(mvm));
+	iwl_mvm_set_rfkill_state(mvm);
 }
 
 static bool iwl_mvm_set_hw_rfkill_state(struct iwl_op_mode *op_mode, bool state)
@@ -1100,7 +1124,7 @@ static bool iwl_mvm_set_hw_rfkill_state(struct iwl_op_mode *op_mode, bool state)
 	else
 		clear_bit(IWL_MVM_STATUS_HW_RFKILL, &mvm->status);
 
-	wiphy_rfkill_set_hw_state(mvm->hw->wiphy, iwl_mvm_is_radio_killed(mvm));
+	iwl_mvm_set_rfkill_state(mvm);
 
 	/* iwl_run_init_mvm_ucode is waiting for results, abort it */
 	if (calibrating)
@@ -1149,21 +1173,41 @@ static void iwl_mvm_fw_error_dump_wk(struct work_struct *work)
 
 	mutex_lock(&mvm->mutex);
 
-	/* stop recording */
 	if (mvm->cfg->device_family == IWL_DEVICE_FAMILY_7000) {
+		/* stop recording */
 		iwl_set_bits_prph(mvm->trans, MON_BUFF_SAMPLE_CTL, 0x100);
+
+		iwl_mvm_fw_error_dump(mvm);
+
+		/* start recording again if the firmware is not crashed */
+		if (!test_bit(STATUS_FW_ERROR, &mvm->trans->status) &&
+		    mvm->fw->dbg_dest_tlv) {
+			iwl_clear_bits_prph(mvm->trans,
+					    MON_BUFF_SAMPLE_CTL, 0x100);
+			iwl_clear_bits_prph(mvm->trans,
+					    MON_BUFF_SAMPLE_CTL, 0x1);
+			iwl_set_bits_prph(mvm->trans, MON_BUFF_SAMPLE_CTL, 0x1);
+		}
 	} else {
+		u32 in_sample = iwl_read_prph(mvm->trans, DBGC_IN_SAMPLE);
+		u32 out_ctrl = iwl_read_prph(mvm->trans, DBGC_OUT_CTRL);
+
+		/* stop recording */
 		iwl_write_prph(mvm->trans, DBGC_IN_SAMPLE, 0);
-		/* wait before we collect the data till the DBGC stop */
 		udelay(100);
+		iwl_write_prph(mvm->trans, DBGC_OUT_CTRL, 0);
+		/* wait before we collect the data till the DBGC stop */
+		udelay(500);
+
+		iwl_mvm_fw_error_dump(mvm);
+
+		/* start recording again if the firmware is not crashed */
+		if (!test_bit(STATUS_FW_ERROR, &mvm->trans->status) &&
+		    mvm->fw->dbg_dest_tlv) {
+			iwl_write_prph(mvm->trans, DBGC_IN_SAMPLE, in_sample);
+			iwl_write_prph(mvm->trans, DBGC_OUT_CTRL, out_ctrl);
+		}
 	}
-
-	iwl_mvm_fw_error_dump(mvm);
-
-	/* start recording again if the firmware is not crashed */
-	WARN_ON_ONCE((!test_bit(STATUS_FW_ERROR, &mvm->trans->status)) &&
-		     mvm->fw->dbg_dest_tlv &&
-		     iwl_mvm_start_fw_dbg_conf(mvm, mvm->fw_dbg_conf));
 
 	mutex_unlock(&mvm->mutex);
 
@@ -1283,7 +1327,7 @@ static bool iwl_mvm_disallow_offloading(struct iwl_mvm *mvm,
 		 * for offloading in order to prevent reuse of the same
 		 * qos seq counters.
 		 */
-		if (iwl_mvm_tid_queued(tid_data))
+		if (iwl_mvm_tid_queued(mvm, tid_data))
 			continue;
 
 		if (tid_data->state != IWL_AGG_OFF)
@@ -1433,9 +1477,15 @@ int iwl_mvm_enter_d0i3(struct iwl_op_mode *op_mode)
 	synchronize_net();
 
 	/* Flush the hw queues, in case something got queued during entry */
-	ret = iwl_mvm_flush_tx_path(mvm, iwl_mvm_flushable_queues(mvm), flags);
-	if (ret)
-		return ret;
+	/* TODO new tx api */
+	if (iwl_mvm_has_new_tx_api(mvm)) {
+		WARN_ONCE(1, "d0i3: Need to implement flush TX queue\n");
+	} else {
+		ret = iwl_mvm_flush_tx_path(mvm, iwl_mvm_flushable_queues(mvm),
+					    flags);
+		if (ret)
+			return ret;
+	}
 
 	/* configure wowlan configuration only if needed */
 	if (mvm->d0i3_ap_sta_id != IWL_MVM_INVALID_STA) {
@@ -1579,9 +1629,6 @@ static void iwl_mvm_d0i3_exit_work(struct work_struct *wk)
 	mutex_lock(&mvm->mutex);
 	ret = iwl_mvm_send_cmd(mvm, &get_status_cmd);
 	if (ret)
-		goto out;
-
-	if (!get_status_cmd.resp_pkt)
 		goto out;
 
 	status = (void *)get_status_cmd.resp_pkt->data;

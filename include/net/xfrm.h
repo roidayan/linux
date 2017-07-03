@@ -631,7 +631,8 @@ struct xfrm_mgr {
 					   u8 dir, u8 type,
 					   const struct xfrm_migrate *m,
 					   int num_bundles,
-					   const struct xfrm_kmaddress *k);
+					   const struct xfrm_kmaddress *k,
+					   const struct xfrm_encap_tmpl *encap);
 	bool			(*is_alive)(const struct km_event *c);
 };
 
@@ -1675,13 +1676,16 @@ int xfrm_sk_policy_insert(struct sock *sk, int dir, struct xfrm_policy *pol);
 #ifdef CONFIG_XFRM_MIGRATE
 int km_migrate(const struct xfrm_selector *sel, u8 dir, u8 type,
 	       const struct xfrm_migrate *m, int num_bundles,
-	       const struct xfrm_kmaddress *k);
+	       const struct xfrm_kmaddress *k,
+	       const struct xfrm_encap_tmpl *encap);
 struct xfrm_state *xfrm_migrate_state_find(struct xfrm_migrate *m, struct net *net);
 struct xfrm_state *xfrm_state_migrate(struct xfrm_state *x,
-				      struct xfrm_migrate *m);
+				      struct xfrm_migrate *m,
+				      struct xfrm_encap_tmpl *encap);
 int xfrm_migrate(const struct xfrm_selector *sel, u8 dir, u8 type,
 		 struct xfrm_migrate *m, int num_bundles,
-		 struct xfrm_kmaddress *k, struct net *net);
+		 struct xfrm_kmaddress *k, struct net *net,
+		 struct xfrm_encap_tmpl *encap);
 #endif
 
 int km_new_mapping(struct xfrm_state *x, xfrm_address_t *ipaddr, __be16 sport);
@@ -1850,8 +1854,9 @@ static inline struct xfrm_offload *xfrm_offload(struct sk_buff *skb)
 }
 #endif
 
-#ifdef CONFIG_XFRM_OFFLOAD
 void __net_init xfrm_dev_init(void);
+
+#ifdef CONFIG_XFRM_OFFLOAD
 int validate_xmit_xfrm(struct sk_buff *skb, netdev_features_t features);
 int xfrm_dev_state_add(struct net *net, struct xfrm_state *x,
 		       struct xfrm_user_offload *xuo);
@@ -1877,10 +1882,6 @@ static inline void xfrm_dev_state_free(struct xfrm_state *x)
 	}
 }
 #else
-static inline void __net_init xfrm_dev_init(void)
-{
-}
-
 static inline int validate_xmit_xfrm(struct sk_buff *skb, netdev_features_t features)
 {
 	return 0;

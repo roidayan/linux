@@ -964,7 +964,8 @@ static int __ip_append_data(struct sock *sk,
 		csummode = CHECKSUM_PARTIAL;
 
 	cork->length += length;
-	if ((((length + fragheaderlen) > mtu) || (skb && skb_is_gso(skb))) &&
+	if ((((length + (skb ? skb->len : fragheaderlen)) > mtu) ||
+	     (skb && skb_is_gso(skb))) &&
 	    (sk->sk_protocol == IPPROTO_UDP) &&
 	    (rt->dst.dev->features & NETIF_F_UFO) && !dst_xfrm(&rt->dst) &&
 	    (sk->sk_type == SOCK_DGRAM) && !sk->sk_no_check_tx) {
@@ -1036,7 +1037,7 @@ alloc_new_skb:
 						(flags & MSG_DONTWAIT), &err);
 			} else {
 				skb = NULL;
-				if (atomic_read(&sk->sk_wmem_alloc) <=
+				if (refcount_read(&sk->sk_wmem_alloc) <=
 				    2 * sk->sk_sndbuf)
 					skb = sock_wmalloc(sk,
 							   alloclen + hh_len + 15, 1,
@@ -1144,7 +1145,7 @@ alloc_new_skb:
 			skb->len += copy;
 			skb->data_len += copy;
 			skb->truesize += copy;
-			atomic_add(copy, &sk->sk_wmem_alloc);
+			refcount_add(copy, &sk->sk_wmem_alloc);
 		}
 		offset += copy;
 		length -= copy;
@@ -1368,7 +1369,7 @@ ssize_t	ip_append_page(struct sock *sk, struct flowi4 *fl4, struct page *page,
 		skb->len += len;
 		skb->data_len += len;
 		skb->truesize += len;
-		atomic_add(len, &sk->sk_wmem_alloc);
+		refcount_add(len, &sk->sk_wmem_alloc);
 		offset += len;
 		size -= len;
 	}
