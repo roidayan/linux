@@ -43,6 +43,30 @@
 /* Legacy name, for user space application which already use it */
 #define IB_IOCTL_MAGIC		RDMA_IOCTL_MAGIC
 
+#define RDMA_VERBS_IOCTL \
+	_IOWR(RDMA_IOCTL_MAGIC, 1, struct ib_uverbs_ioctl_hdr)
+
+enum ib_uverbs_attr_flags {
+	UVERBS_ATTR_F_MANDATORY = 1U << 0,
+};
+
+struct ib_uverbs_attr {
+	__u16 attr_id;		/* command specific type attribute */
+	__u16 len;		/* only for pointers */
+	__u16 flags;		/* combination of ib_uverbs_attr_flags */
+	__u16 reserved;
+	__u64 data;		/* ptr to command, inline data or idr/fd */
+};
+
+struct ib_uverbs_ioctl_hdr {
+	__u16 length;
+	__u16 object_type;
+	__u16 action;
+	__u16 num_attrs;
+	__u64 reserved;
+	struct ib_uverbs_attr  attrs[0];
+};
+
 /*
  * General blocks assignments
  * It is closed on purpose do not expose it it user space
