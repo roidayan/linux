@@ -677,9 +677,13 @@ err_umem:
 	return err;
 }
 
-static void destroy_user_rq(struct ib_pd *pd, struct mlx5_ib_rwq *rwq)
+static void destroy_user_rq(struct mlx5_ib_dev *dev, struct ib_pd *pd,
+			    struct mlx5_ib_rwq *rwq)
 {
 	struct mlx5_ib_ucontext *context;
+
+	if (rwq->create_flags & MLX5_IB_WQ_FLAGS_DELAY_DROP)
+		atomic_dec(&dev->delay_drop.rqs_cnt);
 
 	context = to_mucontext(pd->uobject->context);
 	mlx5_ib_db_unmap_user(context, &rwq->db);
@@ -4639,6 +4643,27 @@ static void mlx5_ib_wq_event(struct mlx5_core_qp *core_qp, int type)
 	}
 }
 
+static int set_delay_drop(struct mlx5_ib_dev *dev)
+{
+	int err = 0;
+
+	mutex_lock(&dev->delay_drop.lock);
+	if (dev->delay_drop.activate)
+		goto out;
+
+	err = mlx5_core_set_delay_drop(dev->mdev, dev->delay_drop.timeout);
+	if (err)
+		goto out;
+
+	dev->delay_drop.activate = true;
+out:
+	mutex_unlock(&dev->delay_drop.lock);
+
+	if (!err)
+		atomic_inc(&dev->delay_drop.rqs_cnt);
+	return err;
+}
+
 static int  create_rq(struct mlx5_ib_rwq *rwq, struct ib_pd *pd,
 		      struct ib_wq_init_attr *init_attr)
 {
@@ -4693,9 +4718,28 @@ static int  create_rq(struct mlx5_ib_rwq *rwq, struct ib_pd *pd,
 		}
 		MLX5_SET(rqc, rqc, scatter_fcs, 1);
 	}
+	if (init_attr->create_flags & IB_WQ_FLAGS_DELAY_DROP) {
+		if (!(dev->ib_dev.attrs.raw_packet_caps &
+		      IB_RAW_PACKET_CAP_DELAY_DROP)) {
+			mlx5_ib_dbg(dev, "Delay drop is not supported\n");
+			err = -EOPNOTSUPP;
+			goto out;
+		}
+		MLX5_SET(rqc, rqc, delay_drop_en, 1);
+	}
 	rq_pas0 = (__be64 *)MLX5_ADDR_OF(wq, wq, pas);
 	mlx5_ib_populate_pas(dev, rwq->umem, rwq->page_shift, rq_pas0, 0);
 	err = mlx5_core_create_rq_tracked(dev->mdev, in, inlen, &rwq->core_qp);
+	if (!err && init_attr->create_flags & IB_WQ_FLAGS_DELAY_DROP) {
+		err = set_delay_drop(dev);
+		if (err) {
+			mlx5_ib_warn(dev, "Failed to enable delay drop err=%d\n",
+				     err);
+			mlx5_core_destroy_rq_tracked(dev->mdev, &rwq->core_qp);
+		} else {
+			rwq->create_flags |= MLX5_IB_WQ_FLAGS_DELAY_DROP;
+		}
+	}
 out:
 	kvfree(in);
 	return err;
@@ -4829,7 +4873,7 @@ struct ib_wq *mlx5_ib_create_wq(struct ib_pd *pd,
 err_copy:
 	mlx5_core_destroy_rq_tracked(dev->mdev, &rwq->core_qp);
 err_user_rq:
-	destroy_user_rq(pd, rwq);
+	destroy_user_rq(dev, pd, rwq);
 err:
 	kfree(rwq);
 	return ERR_PTR(err);
@@ -4841,7 +4885,7 @@ int mlx5_ib_destroy_wq(struct ib_wq *wq)
 	struct mlx5_ib_rwq *rwq = to_mrwq(wq);
 
 	mlx5_core_destroy_rq_tracked(dev->mdev, &rwq->core_qp);
-	destroy_user_rq(wq->pd, rwq);
+	destroy_user_rq(dev, wq->pd, rwq);
 	kfree(rwq);
 
 	return 0;
