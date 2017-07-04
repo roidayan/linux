@@ -41,6 +41,8 @@
 #include <rdma/ib_verbs.h>
 #include <rdma/iw_cm.h>
 #include <rdma/ib_user_verbs.h>
+#include <rdma/uverbs_ioctl.h>
+#include <rdma/uverbs_std_types.h>
 
 #include "nes.h"
 
@@ -3672,15 +3674,14 @@ static int nes_port_immutable(struct ib_device *ibdev, u8 port_num,
 	return 0;
 }
 
-static void get_dev_fw_str(struct ib_device *dev, char *str,
-			   size_t str_len)
+static void get_dev_fw_str(struct ib_device *dev, char *str)
 {
 	struct nes_ib_device *nesibdev =
 			container_of(dev, struct nes_ib_device, ibdev);
 	struct nes_vnic *nesvnic = nesibdev->nesvnic;
 
 	nes_debug(NES_DBG_INIT, "\n");
-	snprintf(str, str_len, "%u.%u",
+	snprintf(str, IB_FW_VERSION_NAME_MAX, "%u.%u",
 		 (nesvnic->nesdev->nesadapter->firmware_version >> 16),
 		 (nesvnic->nesdev->nesadapter->firmware_version & 0x000000ff));
 }
@@ -3852,6 +3853,8 @@ void nes_destroy_ofa_device(struct nes_ib_device *nesibdev)
 }
 
 
+static DECLARE_UVERBS_TYPES_GROUP(root, &uverbs_common_types);
+
 /**
  * nes_register_ofa_device
  */
@@ -3862,6 +3865,7 @@ int nes_register_ofa_device(struct nes_ib_device *nesibdev)
 	struct nes_adapter *nesadapter = nesdev->nesadapter;
 	int i, ret;
 
+	nesvnic->nesibdev->ibdev.specs_root = &root;
 	ret = ib_register_device(&nesvnic->nesibdev->ibdev, NULL);
 	if (ret) {
 		return ret;

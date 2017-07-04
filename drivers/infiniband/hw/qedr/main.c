@@ -33,6 +33,8 @@
 #include <rdma/ib_verbs.h>
 #include <rdma/ib_addr.h>
 #include <rdma/ib_user_verbs.h>
+#include <rdma/uverbs_ioctl.h>
+#include <rdma/uverbs_std_types.h>
 #include <linux/netdevice.h>
 #include <linux/iommu.h>
 #include <linux/pci.h>
@@ -47,7 +49,6 @@
 MODULE_DESCRIPTION("QLogic 40G/100G ROCE Driver");
 MODULE_AUTHOR("QLogic Corporation");
 MODULE_LICENSE("Dual BSD/GPL");
-MODULE_VERSION(QEDR_MODULE_VERSION);
 
 #define QEDR_WQ_MULTIPLIER_DFT	(3)
 
@@ -69,13 +70,12 @@ static enum rdma_link_layer qedr_link_layer(struct ib_device *device,
 	return IB_LINK_LAYER_ETHERNET;
 }
 
-static void qedr_get_dev_fw_str(struct ib_device *ibdev, char *str,
-				size_t str_len)
+static void qedr_get_dev_fw_str(struct ib_device *ibdev, char *str)
 {
 	struct qedr_dev *qedr = get_qedr_dev(ibdev);
 	u32 fw_ver = (u32)qedr->attr.fw_ver;
 
-	snprintf(str, str_len, "%d. %d. %d. %d",
+	snprintf(str, IB_FW_VERSION_NAME_MAX, "%d. %d. %d. %d",
 		 (fw_ver >> 24) & 0xFF, (fw_ver >> 16) & 0xFF,
 		 (fw_ver >> 8) & 0xFF, fw_ver & 0xFF);
 }
@@ -93,6 +93,8 @@ static struct net_device *qedr_get_netdev(struct ib_device *dev, u8 port_num)
 	 */
 	return qdev->ndev;
 }
+
+static DECLARE_UVERBS_TYPES_GROUP(root, &uverbs_common_types);
 
 static int qedr_register_device(struct qedr_dev *dev)
 {
@@ -176,6 +178,7 @@ static int qedr_register_device(struct qedr_dev *dev)
 	dev->ibdev.get_link_layer = qedr_link_layer;
 	dev->ibdev.get_dev_fw_str = qedr_get_dev_fw_str;
 
+	dev->ibdev.specs_root = &root;
 	return ib_register_device(&dev->ibdev, NULL);
 }
 

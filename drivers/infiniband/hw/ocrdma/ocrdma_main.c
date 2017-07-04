@@ -44,6 +44,8 @@
 #include <linux/idr.h>
 #include <rdma/ib_verbs.h>
 #include <rdma/ib_user_verbs.h>
+#include <rdma/uverbs_ioctl.h>
+#include <rdma/uverbs_std_types.h>
 #include <rdma/ib_addr.h>
 #include <rdma/ib_mad.h>
 
@@ -58,7 +60,6 @@
 #include "ocrdma_stats.h"
 #include <rdma/ocrdma-abi.h>
 
-MODULE_VERSION(OCRDMA_ROCE_DRV_VERSION);
 MODULE_DESCRIPTION(OCRDMA_ROCE_DRV_DESC " " OCRDMA_ROCE_DRV_VERSION);
 MODULE_AUTHOR("Emulex Corporation");
 MODULE_LICENSE("Dual BSD/GPL");
@@ -108,13 +109,14 @@ static int ocrdma_port_immutable(struct ib_device *ibdev, u8 port_num,
 	return 0;
 }
 
-static void get_dev_fw_str(struct ib_device *device, char *str,
-			   size_t str_len)
+static void get_dev_fw_str(struct ib_device *device, char *str)
 {
 	struct ocrdma_dev *dev = get_ocrdma_dev(device);
 
-	snprintf(str, str_len, "%s", &dev->attr.fw_ver[0]);
+	snprintf(str, IB_FW_VERSION_NAME_MAX, "%s", &dev->attr.fw_ver[0]);
 }
+
+static DECLARE_UVERBS_TYPES_GROUP(root, &uverbs_common_types);
 
 static int ocrdma_register_device(struct ocrdma_dev *dev)
 {
@@ -219,6 +221,7 @@ static int ocrdma_register_device(struct ocrdma_dev *dev)
 		dev->ibdev.destroy_srq = ocrdma_destroy_srq;
 		dev->ibdev.post_srq_recv = ocrdma_post_srq_recv;
 	}
+	dev->ibdev.specs_root = &root;
 	return ib_register_device(&dev->ibdev, NULL);
 }
 

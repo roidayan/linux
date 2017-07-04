@@ -51,6 +51,8 @@
 #include <rdma/ib_addr.h>
 #include <rdma/ib_smi.h>
 #include <rdma/ib_user_verbs.h>
+#include <rdma/uverbs_ioctl.h>
+#include <rdma/uverbs_std_types.h>
 #include <net/addrconf.h>
 
 #include "pvrdma.h"
@@ -102,12 +104,11 @@ static struct device_attribute *pvrdma_class_attributes[] = {
 	&dev_attr_board_id
 };
 
-static void pvrdma_get_fw_ver_str(struct ib_device *device, char *str,
-				  size_t str_len)
+static void pvrdma_get_fw_ver_str(struct ib_device *device, char *str)
 {
 	struct pvrdma_dev *dev =
 		container_of(device, struct pvrdma_dev, ib_dev);
-	snprintf(str, str_len, "%d.%d.%d\n",
+	snprintf(str, IB_FW_VERSION_NAME_MAX, "%d.%d.%d\n",
 		 (int) (dev->dsr->caps.fw_ver >> 32),
 		 (int) (dev->dsr->caps.fw_ver >> 16) & 0xffff,
 		 (int) dev->dsr->caps.fw_ver & 0xffff);
@@ -161,6 +162,8 @@ static struct net_device *pvrdma_get_netdev(struct ib_device *ibdev,
 
 	return netdev;
 }
+
+static DECLARE_UVERBS_TYPES_GROUP(root, &uverbs_common_types);
 
 static int pvrdma_register_device(struct pvrdma_dev *dev)
 {
@@ -251,6 +254,7 @@ static int pvrdma_register_device(struct pvrdma_dev *dev)
 		goto err_cq_free;
 	spin_lock_init(&dev->qp_tbl_lock);
 
+	dev->ib_dev.specs_root = &root;
 	ret = ib_register_device(&dev->ib_dev, NULL);
 	if (ret)
 		goto err_qp_free;
@@ -1119,5 +1123,4 @@ module_exit(pvrdma_cleanup);
 
 MODULE_AUTHOR("VMware, Inc");
 MODULE_DESCRIPTION("VMware Paravirtual RDMA driver");
-MODULE_VERSION(DRV_VERSION);
 MODULE_LICENSE("Dual BSD/GPL");

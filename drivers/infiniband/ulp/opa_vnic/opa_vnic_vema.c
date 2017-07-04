@@ -794,7 +794,7 @@ void opa_vnic_vema_send_trap(struct opa_vnic_adapter *adapter,
 
 	send_buf = ib_create_send_mad(port->mad_agent, 1, pkey_idx, 0,
 				      IB_MGMT_VENDOR_HDR, IB_MGMT_MAD_DATA,
-				      GFP_KERNEL, OPA_MGMT_BASE_VERSION);
+				      GFP_ATOMIC, OPA_MGMT_BASE_VERSION);
 	if (IS_ERR(send_buf)) {
 		c_err("%s:Couldn't allocate send buf\n", __func__);
 		goto err_sndbuf;
@@ -1053,4 +1053,3 @@ module_exit(opa_vnic_deinit);
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_AUTHOR("Intel Corporation");
 MODULE_DESCRIPTION("Intel OPA Virtual Network driver");
-MODULE_VERSION(DRV_VERSION);

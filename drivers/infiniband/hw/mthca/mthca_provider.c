@@ -37,6 +37,8 @@
 #include <rdma/ib_smi.h>
 #include <rdma/ib_umem.h>
 #include <rdma/ib_user_verbs.h>
+#include <rdma/uverbs_ioctl.h>
+#include <rdma/uverbs_std_types.h>
 
 #include <linux/sched.h>
 #include <linux/slab.h>
@@ -1178,16 +1180,17 @@ static int mthca_port_immutable(struct ib_device *ibdev, u8 port_num,
 	return 0;
 }
 
-static void get_dev_fw_str(struct ib_device *device, char *str,
-			   size_t str_len)
+static void get_dev_fw_str(struct ib_device *device, char *str)
 {
 	struct mthca_dev *dev =
 		container_of(device, struct mthca_dev, ib_dev);
-	snprintf(str, str_len, "%d.%d.%d",
+	snprintf(str, IB_FW_VERSION_NAME_MAX, "%d.%d.%d",
 		 (int) (dev->fw_ver >> 32),
 		 (int) (dev->fw_ver >> 16) & 0xffff,
 		 (int) dev->fw_ver & 0xffff);
 }
+
+static DECLARE_UVERBS_TYPES_GROUP(root, &uverbs_common_types);
 
 int mthca_register_device(struct mthca_dev *dev)
 {
@@ -1296,6 +1299,7 @@ int mthca_register_device(struct mthca_dev *dev)
 
 	mutex_init(&dev->cap_mask_mutex);
 
+	dev->ib_dev.specs_root = &root;
 	ret = ib_register_device(&dev->ib_dev, NULL);
 	if (ret)
 		return ret;
