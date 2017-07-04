@@ -41,6 +41,8 @@
 #include <rdma/ib_verbs.h>
 #include <rdma/iw_cm.h>
 #include <rdma/ib_user_verbs.h>
+#include <rdma/uverbs_ioctl.h>
+#include <rdma/uverbs_std_types.h>
 
 #include "nes.h"
 
@@ -3851,6 +3853,8 @@ void nes_destroy_ofa_device(struct nes_ib_device *nesibdev)
 }
 
 
+static DECLARE_UVERBS_TYPES_GROUP(root, &uverbs_common_types);
+
 /**
  * nes_register_ofa_device
  */
@@ -3861,6 +3865,7 @@ int nes_register_ofa_device(struct nes_ib_device *nesibdev)
 	struct nes_adapter *nesadapter = nesdev->nesadapter;
 	int i, ret;
 
+	nesvnic->nesibdev->ibdev.specs_root = &root;
 	ret = ib_register_device(&nesvnic->nesibdev->ibdev, NULL);
 	if (ret) {
 		return ret;
