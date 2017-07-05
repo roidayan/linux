@@ -52,11 +52,21 @@ mlx5_eswitch_add_offloaded_rule(struct mlx5_eswitch *esw,
 	struct mlx5_flow_act flow_act = {0};
 	struct mlx5_fc *counter = NULL;
 	struct mlx5_flow_handle *rule;
+	struct mlx5_vport *evport;
 	void *misc;
 	int i = 0;
 
-	if (esw->mode != SRIOV_OFFLOADS)
-		return ERR_PTR(-EOPNOTSUPP);
+	evport = &esw->vports[0];
+	mutex_lock(&esw->state_lock);
+	if (!evport->enabled) {
+		rule = ERR_PTR(-EOPNOTSUPP);
+		goto eswitch_unlock;
+	}
+
+	if (esw->mode != SRIOV_OFFLOADS) {
+		rule = ERR_PTR(-EBUSY);
+		goto eswitch_unlock;
+	}
 
 	/* per flow vlan pop/push is emulated, don't set that into the firmware */
 	flow_act.action = attr->action & ~(MLX5_FLOW_CONTEXT_ACTION_VLAN_PUSH | MLX5_FLOW_CONTEXT_ACTION_VLAN_POP);
@@ -101,10 +111,12 @@ mlx5_eswitch_add_offloaded_rule(struct mlx5_eswitch *esw,
 	else
 		esw->offloads.num_flows++;
 
-	return rule;
+	goto eswitch_unlock;
 
 err_add_rule:
 	mlx5_fc_destroy(esw->dev, counter);
+eswitch_unlock:
+	mutex_unlock(&esw->state_lock);
 err_counter_alloc:
 	return rule;
 }
@@ -116,10 +128,12 @@ mlx5_eswitch_del_offloaded_rule(struct mlx5_eswitch *esw,
 {
 	struct mlx5_fc *counter = NULL;
 
+	mutex_lock(&esw->state_lock);
 	counter = mlx5_flow_rule_counter(rule);
 	mlx5_del_flow_rules(rule);
 	mlx5_fc_destroy(esw->dev, counter);
 	esw->offloads.num_flows--;
+	mutex_unlock(&esw->state_lock);
 }
 
 static int esw_set_global_vlan_pop(struct mlx5_eswitch *esw, u8 val)
@@ -343,9 +357,6 @@ void mlx5_eswitch_sqs2vport_stop(struct mlx5_eswitch *esw,
 				 struct mlx5_eswitch_rep *rep)
 {
 	struct mlx5_esw_sq *esw_sq, *tmp;
-
-	if (esw->mode != SRIOV_OFFLOADS)
-		return;
 
 	list_for_each_entry_safe(esw_sq, tmp, &rep->vport_sqs_list, list) {
 		mlx5_del_flow_rules(esw_sq->send_to_vport_rule);
