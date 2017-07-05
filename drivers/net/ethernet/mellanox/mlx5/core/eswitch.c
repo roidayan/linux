@@ -1666,6 +1666,7 @@ void mlx5_eswitch_disable_sriov(struct mlx5_eswitch *esw)
 	struct esw_mc_addr *mc_promisc;
 	int nvports;
 	int i;
+	int old_mode;
 
 	if (!esw || !MLX5_CAP_GEN(esw->dev, vport_group_manager) ||
 	    MLX5_CAP_GEN(esw->dev, port_type) != MLX5_CAP_PORT_TYPE_ETH)
@@ -1685,12 +1686,16 @@ void mlx5_eswitch_disable_sriov(struct mlx5_eswitch *esw)
 
 	esw_destroy_tsar(esw);
 
-	if (esw->mode == SRIOV_LEGACY)
+	old_mode = esw->mode;
+	mutex_lock(&esw->state_lock);
+	esw->mode = SRIOV_NONE;
+	mutex_unlock(&esw->state_lock);
+
+	if (old_mode == SRIOV_LEGACY)
 		esw_destroy_legacy_fdb_table(esw);
-	else if (esw->mode == SRIOV_OFFLOADS)
+	else if (old_mode == SRIOV_OFFLOADS)
 		esw_offloads_cleanup(esw, nvports);
 
-	esw->mode = SRIOV_NONE;
 	/* VPORT 0 (PF) must be enabled back with non-sriov configuration */
 	esw_enable_vport(esw, 0, UC_ADDR_CHANGE);
 }

@@ -2031,9 +2031,17 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv, __be16 protocol,
 	int attr_size, err = 0;
 	u8 flow_flags = 0;
 
-	if (esw && esw->mode == SRIOV_OFFLOADS) {
-		flow_flags = MLX5E_TC_FLOW_ESWITCH;
-		attr_size  = sizeof(struct mlx5_esw_flow_attr);
+	if (esw) {
+		mutex_lock(&esw->state_lock);
+		if (esw->mode == SRIOV_NONE) {
+			mutex_unlock(&esw->state_lock);
+			return -EOPNOTSUPP;
+		}
+		if (esw->mode == SRIOV_OFFLOADS) {
+			flow_flags = MLX5E_TC_FLOW_ESWITCH;
+			attr_size  = sizeof(struct mlx5_esw_flow_attr);
+		}
+		mutex_unlock(&esw->state_lock);
 	} else {
 		flow_flags = MLX5E_TC_FLOW_NIC;
 		attr_size  = sizeof(struct mlx5_nic_flow_attr);
@@ -2105,6 +2113,16 @@ int mlx5e_delete_flower(struct mlx5e_priv *priv,
 {
 	struct mlx5e_tc_flow *flow;
 	struct mlx5e_tc_table *tc = &priv->fs.tc;
+	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
+
+	if (esw) {
+		mutex_lock(&esw->state_lock);
+		if (esw->mode == SRIOV_NONE) {
+			mutex_unlock(&esw->state_lock);
+			return -EOPNOTSUPP;
+		}
+		mutex_unlock(&esw->state_lock);
+	}
 
 	flow = rhashtable_lookup_fast(&tc->ht, &f->cookie,
 				      tc->ht_params);
