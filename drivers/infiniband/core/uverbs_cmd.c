@@ -2732,6 +2732,13 @@ static int kern_spec_to_ib_spec_action(struct ib_uverbs_flow_spec *kern_spec,
 
 		ib_spec->drop.size = sizeof(struct ib_flow_spec_action_drop);
 		break;
+	case IB_FLOW_SPEC_ACTION_COUNT:
+		if (kern_spec->flow_count.size !=
+			sizeof(struct ib_uverbs_flow_spec_action_count))
+			return -EINVAL;
+		ib_spec->flow_count.size =
+				sizeof(struct ib_flow_spec_action_count);
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -3269,9 +3276,11 @@ int ib_uverbs_ex_create_flow(struct ib_uverbs_file *file,
 	struct ib_uverbs_flow_attr	  *kern_flow_attr;
 	struct ib_flow_attr		  *flow_attr;
 	struct ib_qp			  *qp;
+	struct ib_counter_set	*cs = NULL;
 	int err = 0;
 	void *kern_spec;
 	void *ib_spec;
+	int cs_used = 0;
 	int i;
 
 	if (ucore->inlen < sizeof(cmd))
@@ -3366,6 +3375,25 @@ int ib_uverbs_ex_create_flow(struct ib_uverbs_file *file,
 		flow_attr->size +=
 			((union ib_flow_spec *) ib_spec)->size;
 		cmd.flow_attr.size -= ((struct ib_uverbs_flow_spec *)kern_spec)->size;
+		if (((struct ib_uverbs_flow_spec *)kern_spec)->type ==
+				IB_FLOW_SPEC_ACTION_COUNT) {
+			__u32 cs_handle =
+				((struct ib_uverbs_flow_spec *)kern_spec)->flow_count.cs_handle;
+			cs_used++;
+			if (cs_used > 1) {
+				uobj_put_obj_read(cs);
+				err = -EINVAL;
+				goto err_free;
+			}
+			cs = uobj_get_obj_read(counter_set,
+					       cs_handle,
+					       file->ucontext);
+			if (!cs) {
+				err = -EINVAL;
+				goto err_free;
+			}
+			((union ib_flow_spec *)ib_spec)->flow_count.counter_set = cs;
+		}
 		kern_spec += ((struct ib_uverbs_flow_spec *) kern_spec)->size;
 		ib_spec += ((union ib_flow_spec *) ib_spec)->size;
 	}
@@ -3376,6 +3404,10 @@ int ib_uverbs_ex_create_flow(struct ib_uverbs_file *file,
 		goto err_free;
 	}
 	flow_id = ib_create_flow(qp, flow_attr, IB_FLOW_DOMAIN_USER);
+
+	if (cs_used)
+		uobj_put_obj_read(cs);
+
 	if (IS_ERR(flow_id)) {
 		err = PTR_ERR(flow_id);
 		goto err_free;
