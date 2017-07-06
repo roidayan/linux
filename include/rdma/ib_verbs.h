@@ -1811,6 +1811,7 @@ enum ib_flow_spec_type {
 	/* Actions */
 	IB_FLOW_SPEC_ACTION_TAG         = 0x1000,
 	IB_FLOW_SPEC_ACTION_DROP        = 0x1001,
+	IB_FLOW_SPEC_ACTION_COUNT       = 0x1002,
 };
 #define IB_FLOW_SPEC_LAYER_MASK	0xF0
 #define IB_FLOW_SPEC_SUPPORT_LAYERS 8
@@ -1944,6 +1945,12 @@ struct ib_flow_spec_action_drop {
 	u16			      size;
 };
 
+struct ib_flow_spec_action_count {
+	enum ib_flow_spec_type type;
+	u16 size;
+	struct ib_counter_set *counter_set;
+};
+
 union ib_flow_spec {
 	struct {
 		u32			type;
@@ -1957,6 +1964,7 @@ union ib_flow_spec {
 	struct ib_flow_spec_tunnel      tunnel;
 	struct ib_flow_spec_action_tag  flow_tag;
 	struct ib_flow_spec_action_drop drop;
+	struct ib_flow_spec_action_count flow_count;
 };
 
 struct ib_flow_attr {
@@ -1975,6 +1983,7 @@ struct ib_flow_attr {
 struct ib_flow {
 	struct ib_qp		*qp;
 	struct ib_uobject	*uobject;
+	struct ib_counter_set	*counter_set;
 };
 
 struct ib_mad_hdr;
@@ -3671,16 +3680,15 @@ struct ib_rwq_ind_table *ib_create_rwq_ind_table(struct ib_device *device,
 						 wq_ind_table_init_attr);
 int ib_destroy_rwq_ind_table(struct ib_rwq_ind_table *wq_ind_table);
 
-int ib_describe_counter_set(struct ib_device *device, u16 cs_id,
+int ib_map_mr_sg(struct ib_mr *mr, struct scatterlist *sg, int sg_nents,
+		 unsigned int *sg_offset, unsigned int page_size);
+int ib_describe_counter_set(struct ib_device *device,  u16 cs_id,
 			    struct ib_counter_set_describe_attr *cs_describe_attr);
 struct ib_counter_set *ib_create_counter_set(struct ib_device *device,
 					     u16 cs_id);
 int ib_destroy_counter_set(struct ib_counter_set *cs);
 int ib_query_counter_set(struct ib_counter_set *cs,
 			 struct ib_counter_set_query_attr *cs_query_attr);
-
-int ib_map_mr_sg(struct ib_mr *mr, struct scatterlist *sg, int sg_nents,
-		 unsigned int *sg_offset, unsigned int page_size);
 
 static inline int
 ib_map_mr_sg_zbva(struct ib_mr *mr, struct scatterlist *sg, int sg_nents,

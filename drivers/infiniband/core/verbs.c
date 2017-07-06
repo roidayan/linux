@@ -1941,6 +1941,8 @@ struct ib_flow *ib_create_flow(struct ib_qp *qp,
 	if (!IS_ERR(flow_id)) {
 		atomic_inc(&qp->usecnt);
 		flow_id->qp = qp;
+		if (flow_id->counter_set)
+			atomic_inc(&flow_id->counter_set->usecnt);
 	}
 	return flow_id;
 }
@@ -1950,10 +1952,14 @@ int ib_destroy_flow(struct ib_flow *flow_id)
 {
 	int err;
 	struct ib_qp *qp = flow_id->qp;
+	struct ib_counter_set *counter_set = flow_id->counter_set;
 
 	err = qp->device->destroy_flow(flow_id);
-	if (!err)
+	if (!err) {
 		atomic_dec(&qp->usecnt);
+		if (counter_set)
+			atomic_dec(&counter_set->usecnt);
+	}
 	return err;
 }
 EXPORT_SYMBOL(ib_destroy_flow);
