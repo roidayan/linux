@@ -234,21 +234,6 @@ static struct acpi_iort_node *iort_scan_node(enum acpi_iort_node_type type,
 	return NULL;
 }
 
-static acpi_status
-iort_match_type_callback(struct acpi_iort_node *node, void *context)
-{
-	return AE_OK;
-}
-
-bool iort_node_match(u8 type)
-{
-	struct acpi_iort_node *node;
-
-	node = iort_scan_node(type, iort_match_type_callback, NULL);
-
-	return node != NULL;
-}
-
 static acpi_status iort_match_node_callback(struct acpi_iort_node *node,
 					    void *context)
 {
@@ -666,14 +651,6 @@ static const struct iommu_ops *iort_iommu_xlate(struct device *dev,
 	int ret = -ENODEV;
 	struct fwnode_handle *iort_fwnode;
 
-	/*
-	 * If we already translated the fwspec there
-	 * is nothing left to do, return the iommu_ops.
-	 */
-	ops = iort_fwspec_iommu_ops(dev->iommu_fwspec);
-	if (ops)
-		return ops;
-
 	if (node) {
 		iort_fwnode = iort_get_fwnode(node);
 		if (!iort_fwnode)
@@ -735,6 +712,14 @@ const struct iommu_ops *iort_iommu_configure(struct device *dev)
 	u32 streamid = 0;
 	int err;
 
+	/*
+	 * If we already translated the fwspec there
+	 * is nothing left to do, return the iommu_ops.
+	 */
+	ops = iort_fwspec_iommu_ops(dev->iommu_fwspec);
+	if (ops)
+		return ops;
+
 	if (dev_is_pci(dev)) {
 		struct pci_bus *bus = to_pci_dev(dev)->bus;
 		u32 rid;
@@ -781,6 +766,12 @@ const struct iommu_ops *iort_iommu_configure(struct device *dev)
 	err = iort_add_device_replay(ops, dev);
 	if (err)
 		ops = ERR_PTR(err);
+
+	/* Ignore all other errors apart from EPROBE_DEFER */
+	if (IS_ERR(ops) && (PTR_ERR(ops) != -EPROBE_DEFER)) {
+		dev_dbg(dev, "Adding to IOMMU failed: %ld\n", PTR_ERR(ops));
+		ops = NULL;
+	}
 
 	return ops;
 }
