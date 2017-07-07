@@ -2310,3 +2310,45 @@ int ib_describe_counter_set(struct ib_device *device,
 					NULL);
 }
 EXPORT_SYMBOL(ib_describe_counter_set);
+
+/**
+ * ib_create_counter_set - Creates a Counter Set
+ * @device: The device on which to create the counter set.
+ * @cs_id: counter set id required to
+ * create the counter set.
+ */
+struct ib_counter_set *ib_create_counter_set(struct ib_device *device,
+					     u16 cs_id)
+{
+	struct ib_counter_set *cs;
+
+	if (!device->create_counter_set)
+		return ERR_PTR(-ENOSYS);
+
+	cs = device->create_counter_set(device, cs_id, NULL);
+	if (!IS_ERR(cs)) {
+		cs->device = device;
+		cs->uobject = NULL;
+		cs->cs_id = cs_id;
+		atomic_set(&cs->usecnt, 0);
+	}
+
+	return cs;
+}
+EXPORT_SYMBOL(ib_create_counter_set);
+
+/**
+ * ib_destroy_counter_set - Destroys the specified counter set.
+ * @cs: The counter set to destroy.
+ **/
+int ib_destroy_counter_set(struct ib_counter_set *cs)
+{
+	if (!cs->device->destroy_counter_set)
+		return -ENOSYS;
+
+	if (atomic_read(&cs->usecnt))
+		return -EBUSY;
+
+	return cs->device->destroy_counter_set(cs);
+}
+EXPORT_SYMBOL(ib_destroy_counter_set);
