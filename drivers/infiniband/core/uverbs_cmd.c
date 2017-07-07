@@ -3909,3 +3909,78 @@ int ib_uverbs_ex_modify_cq(struct ib_uverbs_file *file,
 
 	return ret;
 }
+
+int ib_uverbs_ex_describe_counter_set(struct ib_uverbs_file *file,
+				      struct ib_device *ib_dev,
+				      struct ib_udata *ucore,
+				      struct ib_udata *uhw)
+{
+	struct ib_uverbs_ex_describe_counter_set	cmd = {};
+	struct ib_uverbs_ex_describe_counter_set_resp	resp = {};
+	struct ib_counter_set_describe_attr cs_describe_attr = {};
+	size_t	required_resp_len;
+	size_t	required_cmd_sz;
+	u16 buff_len;
+	int ret = 0;
+
+	required_cmd_sz = offsetof(typeof(cmd), cs_id) +
+			sizeof(cmd.cs_id);
+	required_resp_len = offsetof(typeof(resp), reserved) +
+			sizeof(resp.reserved);
+
+	if (ucore->inlen < required_cmd_sz)
+		return -EINVAL;
+
+	if (ucore->outlen < required_resp_len)
+		return -ENOSPC;
+
+	if (ucore->inlen > sizeof(cmd) &&
+	    !ib_is_udata_cleared(ucore, sizeof(cmd),
+			ucore->inlen - sizeof(cmd)))
+		return -EOPNOTSUPP;
+
+	ret = ib_copy_from_udata(&cmd, ucore, min(sizeof(cmd), ucore->inlen));
+	if (ret)
+		return ret;
+
+	if (cmd.comp_mask)
+		return -EOPNOTSUPP;
+
+	if (cmd.counters_names_resp) {
+		/* Prevent memory allocation rather than max expected size */
+		buff_len = min_t(u16, cmd.counters_names_max,
+				 MAX_COUNTER_SET_BUFF_LEN);
+		cs_describe_attr.counters_names_buff =
+				kzalloc(buff_len, GFP_KERNEL);
+		if (!cs_describe_attr.counters_names_buff)
+			return -ENOMEM;
+
+		cs_describe_attr.counters_names_len = buff_len;
+	}
+
+	ret = ib_dev->describe_counter_set(ib_dev, cmd.cs_id,
+					   &cs_describe_attr, uhw);
+	if (ret)
+		goto err;
+
+	if (cmd.counters_names_resp) {
+		if (copy_to_user(u64_to_user_ptr(cmd.counters_names_resp),
+				 cs_describe_attr.counters_names_buff,
+				 cs_describe_attr.entries_count *
+				 IB_COUNTER_NAME_LEN)) {
+			ret = -EFAULT;
+			goto err;
+		}
+	}
+
+	resp.num_of_cs = cs_describe_attr.num_of_cs;
+	resp.attributes = cs_describe_attr.attributes;
+	resp.counted_type = cs_describe_attr.counted_type;
+	resp.entries_count = cs_describe_attr.entries_count;
+	resp.response_length = required_resp_len;
+	ret = ib_copy_to_udata(ucore, &resp, resp.response_length);
+
+err:
+	kfree(cs_describe_attr.counters_names_buff);
+	return ret;
+}

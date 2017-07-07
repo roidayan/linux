@@ -3644,6 +3644,10 @@ struct ib_rwq_ind_table *ib_create_rwq_ind_table(struct ib_device *device,
 						 wq_ind_table_init_attr);
 int ib_destroy_rwq_ind_table(struct ib_rwq_ind_table *wq_ind_table);
 
+int ib_describe_counter_set(struct ib_device *device,
+			    u16 cs_id,
+			    struct ib_counter_set_describe_attr *cs_describe_attr);
+
 int ib_map_mr_sg(struct ib_mr *mr, struct scatterlist *sg, int sg_nents,
 		 unsigned int *sg_offset, unsigned int page_size);
 
