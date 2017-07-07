@@ -2352,3 +2352,24 @@ int ib_destroy_counter_set(struct ib_counter_set *cs)
 	return cs->device->destroy_counter_set(cs);
 }
 EXPORT_SYMBOL(ib_destroy_counter_set);
+
+/**
+ * ib_query_counter_set - Queries a Counter Set
+ * @cs: The counter set to query.
+ * @cs_query_attr: A list of query attributes
+ * required to get the outcome.
+ */
+int ib_query_counter_set(struct ib_counter_set *cs,
+			 struct ib_counter_set_query_attr *cs_query_attr)
+{
+	if (!cs->device->query_counter_set)
+		return -ENOSYS;
+
+	if (!atomic_read(&cs->usecnt))
+		return -EINVAL;
+
+	return cs->device->query_counter_set(cs,
+				cs_query_attr,
+				NULL);
+}
+EXPORT_SYMBOL(ib_query_counter_set);
