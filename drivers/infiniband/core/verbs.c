@@ -2290,3 +2290,23 @@ void ib_drain_qp(struct ib_qp *qp)
 		ib_drain_rq(qp);
 }
 EXPORT_SYMBOL(ib_drain_qp);
+
+/**
+ * ib_describe_counter_set - Describes a Counter Set
+ * @device: The device on which to describe a counter set.
+ * @cs_id: the counter set id to be described
+ * @cs_describe_attr: A list of description attributes
+ * required to get the outcome.
+ */
+int ib_describe_counter_set(struct ib_device *device,
+			    u16 cs_id,
+			    struct ib_counter_set_describe_attr *cs_describe_attr)
+{
+	if (!device->describe_counter_set)
+		return -ENOSYS;
+
+	return device->describe_counter_set(device, cs_id,
+					cs_describe_attr,
+					NULL);
+}
+EXPORT_SYMBOL(ib_describe_counter_set);

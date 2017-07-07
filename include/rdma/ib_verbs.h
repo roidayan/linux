@@ -2053,6 +2053,30 @@ struct ib_port_pkey_list {
 	struct list_head              pkey_list;
 };
 
+enum ib_counter_set_type {
+	IB_COUNTER_SET_FLOW,
+};
+
+enum ib_counter_set_attributes {
+	/* Is cache supported */
+	IB_COUNTER_SET_ATTR_CACHED = 1 << 0,
+};
+
+#define IB_COUNTER_NAME_LEN 64
+struct ib_counter_set_describe_attr {
+	/* Type that this set refers to, use enum ib_counter_set_type */
+	u8 counted_type;
+	/* Number of instances of this counter-set available in the hardware */
+	u64 num_of_cs;
+	/* Attributes of the set, use enum ib_counter_set_attributes */
+	u32 attributes;
+	/* Number of counters in this set */
+	u8 entries_count;
+	/* Counters_names_buff length */
+	u16 counters_names_len;
+	char *counters_names_buff;
+};
+
 struct ib_device {
 	/* Do not access @dma_device directly from ULP nor from HW drivers. */
 	struct device                *dma_device;
@@ -2308,6 +2332,11 @@ struct ib_device {
 							   struct ib_rwq_ind_table_init_attr *init_attr,
 							   struct ib_udata *udata);
 	int                        (*destroy_rwq_ind_table)(struct ib_rwq_ind_table *wq_ind_table);
+	int	(*describe_counter_set)(struct ib_device *device,
+					u16	cs_id,
+					struct ib_counter_set_describe_attr *cs_describe_attr,
+					struct ib_udata *udata);
+
 	/**
 	 * rdma netdev operation
 	 *
@@ -3614,6 +3643,9 @@ struct ib_rwq_ind_table *ib_create_rwq_ind_table(struct ib_device *device,
 						 struct ib_rwq_ind_table_init_attr*
 						 wq_ind_table_init_attr);
 int ib_destroy_rwq_ind_table(struct ib_rwq_ind_table *wq_ind_table);
+
+int ib_describe_counter_set(struct ib_device *device, u16 cs_id,
+			    struct ib_counter_set_describe_attr *cs_describe_attr);
 
 int ib_map_mr_sg(struct ib_mr *mr, struct scatterlist *sg, int sg_nents,
 		 unsigned int *sg_offset, unsigned int page_size);
