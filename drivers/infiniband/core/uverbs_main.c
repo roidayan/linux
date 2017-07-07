@@ -132,6 +132,7 @@ static int (*uverbs_ex_cmd_table[])(struct ib_uverbs_file *file,
 	[IB_USER_VERBS_EX_CMD_DESCRIBE_COUNTER_SET]	= ib_uverbs_ex_describe_counter_set,
 	[IB_USER_VERBS_EX_CMD_CREATE_COUNTER_SET]	= ib_uverbs_ex_create_counter_set,
 	[IB_USER_VERBS_EX_CMD_DESTROY_COUNTER_SET]	= ib_uverbs_ex_destroy_counter_set,
+	[IB_USER_VERBS_EX_CMD_QUERY_COUNTER_SET]	= ib_uverbs_ex_query_counter_set,
 };
 
 static void ib_uverbs_add_one(struct ib_device *device);

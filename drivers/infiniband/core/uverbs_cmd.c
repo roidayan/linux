@@ -4101,3 +4101,85 @@ int ib_uverbs_ex_destroy_counter_set(struct ib_uverbs_file *file,
 	resp.response_length = required_resp_len;
 	return ib_copy_to_udata(ucore, &resp, resp.response_length);
 }
+
+int ib_uverbs_ex_query_counter_set(struct ib_uverbs_file *file,
+				   struct ib_device *ib_dev,
+				   struct ib_udata *ucore,
+				   struct ib_udata *uhw)
+{
+	struct ib_counter_set_query_attr cs_query_attr = {};
+	struct ib_uverbs_ex_query_counter_set	cmd = {};
+	struct ib_uverbs_ex_query_counter_set_resp	resp = {};
+	struct ib_counter_set	*cs;
+	size_t	required_resp_len;
+	size_t	required_cmd_sz;
+	u32 buff_len;
+	int	ret;
+
+	required_cmd_sz = offsetof(typeof(cmd), comp_mask) +
+			sizeof(cmd.comp_mask);
+	required_resp_len = offsetof(typeof(resp), response_length) +
+			sizeof(resp.response_length);
+
+	if (ucore->inlen < required_cmd_sz)
+		return -EINVAL;
+
+	if (ucore->outlen < required_resp_len)
+		return -ENOSPC;
+
+	if (ucore->inlen > sizeof(cmd) &&
+	    !ib_is_udata_cleared(ucore, sizeof(cmd),
+			   ucore->inlen - sizeof(cmd)))
+		return -EOPNOTSUPP;
+
+	ret = ib_copy_from_udata(&cmd, ucore, min(sizeof(cmd), ucore->inlen));
+	if (ret)
+		return ret;
+
+	if (cmd.comp_mask)
+		return -EOPNOTSUPP;
+
+	cs = uobj_get_obj_read(counter_set,
+			       cmd.cs_handle,
+			       file->ucontext);
+
+	if (!cs)
+		return -EINVAL;
+
+	if (!atomic_read(&cs->usecnt)) {
+		ret = -EINVAL;
+		goto err;
+	}
+
+	/* Prevent memory allocation rather than max expected size */
+	buff_len = min_t(u32, cmd.out_buff_len,
+			 MAX_COUNTER_SET_BUFF_LEN);
+	cs_query_attr.buff_len = buff_len;
+	cs_query_attr.out_buff = kzalloc(buff_len, GFP_KERNEL);
+	if (!cs_query_attr.out_buff) {
+		ret = -ENOMEM;
+		goto err;
+	}
+
+	cs_query_attr.query_flags = cmd.query_attr;
+	ret = ib_dev->query_counter_set(cs, &cs_query_attr, uhw);
+	if (ret)
+		goto err_query;
+
+	if (copy_to_user(u64_to_user_ptr(cmd.out_buff),
+			 cs_query_attr.out_buff,
+			 cs_query_attr.outlen)) {
+		ret = -EFAULT;
+		goto err_query;
+	}
+
+	resp.response_length = required_resp_len;
+	ret = ib_copy_to_udata(ucore,
+			       &resp, required_resp_len);
+
+err_query:
+	kfree(cs_query_attr.out_buff);
+err:
+	uobj_put_obj_read(cs);
+	return ret;
+}

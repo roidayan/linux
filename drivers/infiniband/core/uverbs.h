@@ -310,5 +310,6 @@ IB_UVERBS_DECLARE_EX_CMD(modify_cq);
 IB_UVERBS_DECLARE_EX_CMD(describe_counter_set);
 IB_UVERBS_DECLARE_EX_CMD(create_counter_set);
 IB_UVERBS_DECLARE_EX_CMD(destroy_counter_set);
+IB_UVERBS_DECLARE_EX_CMD(query_counter_set);
 
 #endif /* UVERBS_H */

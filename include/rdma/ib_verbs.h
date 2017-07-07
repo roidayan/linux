@@ -3676,6 +3676,8 @@ int ib_describe_counter_set(struct ib_device *device, u16 cs_id,
 struct ib_counter_set *ib_create_counter_set(struct ib_device *device,
 					     u16 cs_id);
 int ib_destroy_counter_set(struct ib_counter_set *cs);
+int ib_query_counter_set(struct ib_counter_set *cs,
+			 struct ib_counter_set_query_attr *cs_query_attr);
 
 int ib_map_mr_sg(struct ib_mr *mr, struct scatterlist *sg, int sg_nents,
 		 unsigned int *sg_offset, unsigned int page_size);
