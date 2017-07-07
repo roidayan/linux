@@ -103,6 +103,8 @@ enum {
 	IB_USER_VERBS_EX_CMD_DESTROY_RWQ_IND_TBL,
 	IB_USER_VERBS_EX_CMD_MODIFY_CQ,
 	IB_USER_VERBS_EX_CMD_DESCRIBE_COUNTER_SET,
+	IB_USER_VERBS_EX_CMD_CREATE_COUNTER_SET,
+	IB_USER_VERBS_EX_CMD_DESTROY_COUNTER_SET,
 };
 
 /*
@@ -1185,6 +1187,29 @@ struct ib_uverbs_ex_describe_counter_set_resp {
 	__u8 counted_type;
 	__u8 entries_count;
 	__u16 reserved;
+};
+
+struct ib_uverbs_ex_create_counter_set {
+	__u32 comp_mask;
+	__u16 cs_id;
+	__u16 reserved;
+};
+
+struct ib_uverbs_ex_create_counter_set_resp {
+	__u32 comp_mask;
+	__u32 response_length;
+	__u32 cs_handle;
+	__u32 reserved;
+};
+
+struct ib_uverbs_ex_destroy_counter_set  {
+	__u32 comp_mask;
+	__u32 cs_handle;
+};
+
+struct ib_uverbs_ex_destroy_counter_set_resp {
+	__u32 comp_mask;
+	__u32 response_length;
 };
 
 #define IB_DEVICE_NAME_MAX 64
