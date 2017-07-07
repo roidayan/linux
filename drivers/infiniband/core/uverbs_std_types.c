@@ -190,6 +190,15 @@ static int uverbs_free_pd(struct ib_uobject *uobject,
 	return 0;
 }
 
+static int uverbs_free_counter_set(struct ib_uobject *uobject,
+				   enum rdma_remove_reason why)
+{
+	struct ib_counter_set *ib_cs =
+			(struct ib_counter_set *)(uobject->object);
+
+	return ib_destroy_counter_set(ib_cs);
+}
+
 static int uverbs_hot_unplug_completion_event_file(struct ib_uobject_file *uobj_file,
 						   enum rdma_remove_reason why)
 {
@@ -435,6 +444,9 @@ DECLARE_UVERBS_OBJECT(uverbs_object_pd, UVERBS_OBJECT_PD,
 		      /* 2 is used in order to free the PD after MRs */
 		      &UVERBS_TYPE_ALLOC_IDR(2, uverbs_free_pd));
 
+DECLARE_UVERBS_OBJECT(uverbs_object_counter_set, UVERBS_OBJECT_COUNTER_SET,
+		      &UVERBS_TYPE_ALLOC_IDR(0, uverbs_free_counter_set));
+
 DECLARE_UVERBS_OBJECT(uverbs_object_device, UVERBS_OBJECT_DEVICE, NULL);
 
 DECLARE_UVERBS_OBJECT_TREE(uverbs_default_objects,
@@ -450,4 +462,5 @@ DECLARE_UVERBS_OBJECT_TREE(uverbs_default_objects,
 			   &uverbs_object_flow,
 			   &uverbs_object_wq,
 			   &uverbs_object_rwq_ind_table,
-			   &uverbs_object_xrcd);
+			   &uverbs_object_xrcd,
+			   &uverbs_object_counter_set);

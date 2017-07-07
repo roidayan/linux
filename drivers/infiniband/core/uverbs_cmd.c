@@ -3984,3 +3984,120 @@ err:
 	kfree(cs_describe_attr.counters_names_buff);
 	return ret;
 }
+
+int ib_uverbs_ex_create_counter_set(struct ib_uverbs_file *file,
+				    struct ib_device *ib_dev,
+				    struct ib_udata *ucore,
+				    struct ib_udata *uhw)
+{
+	struct ib_uverbs_ex_create_counter_set	cmd = {};
+	struct ib_uverbs_ex_create_counter_set_resp	resp = {};
+	struct ib_counter_set	*cs;
+	struct ib_uobject	*uobj;
+	size_t	required_resp_len;
+	size_t	required_cmd_sz;
+	int	ret = 0;
+
+	required_cmd_sz = offsetof(typeof(cmd), reserved) +
+			sizeof(cmd.reserved);
+	required_resp_len = offsetof(typeof(resp), reserved) +
+			sizeof(resp.reserved);
+
+	if (ucore->inlen < required_cmd_sz)
+		return -EINVAL;
+
+	if (ucore->outlen < required_resp_len)
+		return -ENOSPC;
+
+	if (ucore->inlen > sizeof(cmd) &&
+	    !ib_is_udata_cleared(ucore, sizeof(cmd),
+			ucore->inlen - sizeof(cmd)))
+		return -EOPNOTSUPP;
+
+	ret = ib_copy_from_udata(&cmd, ucore, min(sizeof(cmd), ucore->inlen));
+	if (ret)
+		return ret;
+
+	if (cmd.comp_mask || cmd.reserved)
+		return -EOPNOTSUPP;
+
+	uobj = uobj_alloc(uobj_get_type(counter_set), file->ucontext);
+	if (IS_ERR(uobj))
+		return PTR_ERR(uobj);
+
+	cs = ib_dev->create_counter_set(ib_dev, cmd.cs_id, uhw);
+	if (IS_ERR(cs)) {
+		ret = PTR_ERR(cs);
+		goto err_uobj;
+	}
+	uobj->object = cs;
+	cs->device = ib_dev;
+	cs->uobject = uobj;
+	cs->cs_id = cmd.cs_id;
+	atomic_set(&cs->usecnt, 0);
+	resp.cs_handle = uobj->id;
+	resp.response_length = required_resp_len;
+	ret = ib_copy_to_udata(ucore,
+			       &resp, required_resp_len);
+	if (ret)
+		goto err_copy;
+
+	uobj_alloc_commit(uobj);
+
+	return 0;
+
+err_copy:
+	ib_destroy_counter_set(cs);
+err_uobj:
+	uobj_alloc_abort(uobj);
+	return ret;
+}
+
+int ib_uverbs_ex_destroy_counter_set(struct ib_uverbs_file *file,
+				     struct ib_device *ib_dev,
+				     struct ib_udata *ucore,
+				     struct ib_udata *uhw)
+{
+	struct ib_uverbs_ex_destroy_counter_set	cmd = {};
+	struct ib_uverbs_ex_destroy_counter_set_resp	resp = {};
+	struct ib_uobject	*uobj;
+	size_t	required_resp_len;
+	size_t	required_cmd_sz;
+	int	ret;
+
+	required_cmd_sz = offsetof(typeof(cmd), cs_handle) +
+			sizeof(cmd.cs_handle);
+	required_resp_len = offsetof(typeof(resp), response_length) +
+			sizeof(resp.response_length);
+
+	if (ucore->inlen < required_cmd_sz)
+		return -EINVAL;
+
+	if (ucore->outlen < required_resp_len)
+		return -ENOSPC;
+
+	if (ucore->inlen > sizeof(cmd) &&
+	    !ib_is_udata_cleared(ucore, sizeof(cmd),
+			   ucore->inlen - sizeof(cmd)))
+		return -EOPNOTSUPP;
+
+	ret = ib_copy_from_udata(&cmd, ucore, min(sizeof(cmd), ucore->inlen));
+	if (ret)
+		return ret;
+
+	if (cmd.comp_mask)
+		return -EOPNOTSUPP;
+
+	uobj  = uobj_get_write(uobj_get_type(counter_set),
+			       cmd.cs_handle,
+			       file->ucontext);
+	if (IS_ERR(uobj))
+		return PTR_ERR(uobj);
+
+	ret = uobj_remove_commit(uobj);
+	if (ret)
+		return ret;
+
+	resp.response_length = required_resp_len;
+	return ib_copy_to_udata(ucore, &resp, resp.response_length);
+}
