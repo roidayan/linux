@@ -2101,6 +2101,14 @@ struct ib_counter_set_describe_attr {
 	char *counters_names_buff;
 };
 
+struct ib_counter_set {
+	struct ib_device	*device;
+	struct ib_uobject	*uobject;
+	u16	cs_id;
+	/* num of objects attached */
+	atomic_t	usecnt;
+};
+
 struct ib_device {
 	/* Do not access @dma_device directly from ULP nor from HW drivers. */
 	struct device                *dma_device;
@@ -2361,6 +2369,10 @@ struct ib_device {
 					u16	cs_id,
 					struct ib_counter_set_describe_attr *cs_describe_attr,
 					struct ib_udata *udata);
+	struct ib_counter_set *	(*create_counter_set)(struct ib_device *device,
+						      u16 cs_id,
+						      struct ib_udata *udata);
+	int	(*destroy_counter_set)(struct ib_counter_set *cs);
 
 	/**
 	 * rdma netdev operation
@@ -3671,6 +3683,8 @@ int ib_destroy_rwq_ind_table(struct ib_rwq_ind_table *wq_ind_table);
 
 int ib_map_mr_sg(struct ib_mr *mr, struct scatterlist *sg, int sg_nents,
 		 unsigned int *sg_offset, unsigned int page_size);
+
+int ib_destroy_counter_set(struct ib_counter_set *cs);
 
 static inline int
 ib_map_mr_sg_zbva(struct ib_mr *mr, struct scatterlist *sg, int sg_nents,
