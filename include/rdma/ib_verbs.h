@@ -2085,6 +2085,18 @@ struct ib_counter_set {
 	atomic_t	usecnt;
 };
 
+enum ib_query_counter_set_flags {
+	/* force hardware query instead of cached value */
+	IB_COUNTER_SET_FORCE_UPDATE = 1 << 0,
+};
+
+struct ib_counter_set_query_attr {
+	u32	query_flags; /* Use enum ib_query_counter_set_flags */
+	u64	*out_buff;
+	u32	buff_len;
+	u32	outlen;
+};
+
 struct ib_device {
 	/* Do not access @dma_device directly from ULP nor from HW drivers. */
 	struct device                *dma_device;
@@ -2348,6 +2360,9 @@ struct ib_device {
 						      u16 cs_id,
 						      struct ib_udata *udata);
 	int	(*destroy_counter_set)(struct ib_counter_set *cs);
+	int	(*query_counter_set)(struct ib_counter_set *cs,
+				     struct ib_counter_set_query_attr *cs_query_attr,
+				     struct ib_udata *udata);
 
 	/**
 	 * rdma netdev operation
