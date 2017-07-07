@@ -105,6 +105,7 @@ enum {
 	IB_USER_VERBS_EX_CMD_DESCRIBE_COUNTER_SET,
 	IB_USER_VERBS_EX_CMD_CREATE_COUNTER_SET,
 	IB_USER_VERBS_EX_CMD_DESTROY_COUNTER_SET,
+	IB_USER_VERBS_EX_CMD_QUERY_COUNTER_SET,
 };
 
 /*
@@ -1208,6 +1209,19 @@ struct ib_uverbs_ex_destroy_counter_set  {
 };
 
 struct ib_uverbs_ex_destroy_counter_set_resp {
+	__u32 comp_mask;
+	__u32 response_length;
+};
+
+struct ib_uverbs_ex_query_counter_set {
+	__u64 out_buff;
+	__u32 out_buff_len;
+	__u32 query_attr; /* Use enum ib_query_counter_set_flags */
+	__u32 cs_handle;
+	__u32 comp_mask;
+};
+
+struct ib_uverbs_ex_query_counter_set_resp {
 	__u32 comp_mask;
 	__u32 response_length;
 };
