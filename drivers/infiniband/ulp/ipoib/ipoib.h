@@ -336,6 +336,7 @@ struct ipoib_dev_priv {
 	unsigned long flags;
 
 	struct rw_semaphore vlan_rwsem;
+	struct mutex        sysfs_lock; /* Protect sysfs running*/
 
 	struct rb_root  path_tree;
 	struct list_head path_list;
