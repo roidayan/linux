@@ -103,4 +103,11 @@ enum rdma_dev_cap {
 	RDMA_DEV_RAW_SCATTER_FCS		= (1ULL << 34),
 	RDMA_DEV_RDMA_NETDEV_OPA_VNIC		= (1ULL << 35),
 };
+
+enum rdma_node_type {
+	/* IB values map to NodeInfo:NodeType. */
+	RDMA_NODE_IB_CA		= 1,
+	RDMA_NODE_RNIC		= 4,
+	RDMA_NODE_USNIC_UDP	= 6,
+};
 #endif /* _RDMA_H */
