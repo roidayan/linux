@@ -291,7 +291,7 @@ extern int
 irq_set_affinity_notifier(unsigned int irq, struct irq_affinity_notify *notify);
 
 struct cpumask *irq_create_affinity_masks(int nvec, const struct irq_affinity *affd);
-int irq_calc_affinity_vectors(int maxvec, const struct irq_affinity *affd);
+int irq_calc_affinity_vectors(int minvec, int maxvec, const struct irq_affinity *affd);
 
 #else /* CONFIG_SMP */
 
@@ -331,7 +331,7 @@ irq_create_affinity_masks(int nvec, const struct irq_affinity *affd)
 }
 
 static inline int
-irq_calc_affinity_vectors(int maxvec, const struct irq_affinity *affd)
+irq_calc_affinity_vectors(int minvec, int maxvec, const struct irq_affinity *affd)
 {
 	return maxvec;
 }
@@ -701,6 +701,12 @@ extern void init_irq_proc(void);
 static inline void init_irq_proc(void)
 {
 }
+#endif
+
+#ifdef CONFIG_IRQ_TIMINGS
+void irq_timings_enable(void);
+void irq_timings_disable(void);
+u64 irq_timings_next_event(u64 now);
 #endif
 
 struct seq_file;
