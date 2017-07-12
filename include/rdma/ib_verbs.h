@@ -93,13 +93,6 @@ struct ib_gid_attr {
 	struct net_device	*ndev;
 };
 
-enum rdma_node_type {
-	/* IB values map to NodeInfo:NodeType. */
-	RDMA_NODE_IB_CA		= 1,
-	RDMA_NODE_RNIC		= 4,
-	RDMA_NODE_USNIC_UDP	= 6,
-};
-
 enum {
 	/* set the local administered indication */
 	IB_SA_WELL_KNOWN_GUID	= BIT_ULL(57) | 2,
