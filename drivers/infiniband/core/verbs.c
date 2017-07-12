@@ -180,17 +180,13 @@ EXPORT_SYMBOL(ib_rate_to_mbps);
 __attribute_const__ enum rdma_transport_type
 rdma_node_get_transport(enum rdma_node_type node_type)
 {
-	switch (node_type) {
-	case RDMA_NODE_IB_CA:
+	if (node_type == RDMA_NODE_IB_CA)
 		return RDMA_TRANSPORT_IB;
-	case RDMA_NODE_RNIC:
+
+	if (node_type == RDMA_NODE_RNIC)
 		return RDMA_TRANSPORT_IWARP;
-	case RDMA_NODE_USNIC_UDP:
-		return RDMA_TRANSPORT_USNIC_UDP;
-	default:
-		BUG();
-		return 0;
-	}
+
+	return RDMA_TRANSPORT_USNIC_UDP;
 }
 EXPORT_SYMBOL(rdma_node_get_transport);
 
