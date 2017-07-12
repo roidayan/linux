@@ -93,12 +93,9 @@ struct ib_gid_attr {
 
 enum rdma_node_type {
 	/* IB values map to NodeInfo:NodeType. */
-	RDMA_NODE_IB_CA 	= 1,
-	RDMA_NODE_IB_SWITCH,
-	RDMA_NODE_IB_ROUTER,
-	RDMA_NODE_RNIC,
-	RDMA_NODE_USNIC,
-	RDMA_NODE_USNIC_UDP,
+	RDMA_NODE_IB_CA		= 1,
+	RDMA_NODE_RNIC		= 4,
+	RDMA_NODE_USNIC_UDP	= 6,
 };
 
 enum {
@@ -107,10 +104,9 @@ enum {
 };
 
 enum rdma_transport_type {
-	RDMA_TRANSPORT_IB,
-	RDMA_TRANSPORT_IWARP,
-	RDMA_TRANSPORT_USNIC,
-	RDMA_TRANSPORT_USNIC_UDP
+	RDMA_TRANSPORT_IB		= 0,
+	RDMA_TRANSPORT_IWARP		= 1,
+	RDMA_TRANSPORT_USNIC_UDP	= 3,
 };
 
 enum rdma_protocol_type {
