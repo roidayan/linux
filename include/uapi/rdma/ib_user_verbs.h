@@ -37,6 +37,7 @@
 #define IB_USER_VERBS_H
 
 #include <linux/types.h>
+#include <rdma/rdma.h>
 
 /*
  * Increment this value if any changes that break userspace ABI
