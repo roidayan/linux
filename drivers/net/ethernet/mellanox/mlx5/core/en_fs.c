@@ -36,6 +36,7 @@
 #include <linux/tcp.h>
 #include <linux/mlx5/fs.h>
 #include "en.h"
+#include "lib/mpfs.h"
 
 static int mlx5e_add_l2_flow_rule(struct mlx5e_priv *priv,
 				  struct mlx5e_l2_rule *ai, int type);
@@ -65,6 +66,7 @@ struct mlx5e_l2_hash_node {
 	struct hlist_node          hlist;
 	u8                         action;
 	struct mlx5e_l2_rule ai;
+	bool   mpfs;
 };
 
 static inline int mlx5e_hash_l2(u8 *addr)
@@ -170,7 +172,6 @@ static int __mlx5e_add_vlan_rule(struct mlx5e_priv *priv,
 
 	spec->match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
 
-
 	switch (rule_type) {
 	case MLX5E_VLAN_RULE_TYPE_UNTAGGED:
 		rule_p = &priv->fs.vlan.untagged_rule;
@@ -218,11 +219,9 @@ static int mlx5e_add_vlan_rule(struct mlx5e_priv *priv,
 	struct mlx5_flow_spec *spec;
 	int err = 0;
 
-	spec = mlx5_vzalloc(sizeof(*spec));
-	if (!spec) {
-		netdev_err(priv->netdev, "%s: alloc failed\n", __func__);
+	spec = kvzalloc(sizeof(*spec), GFP_KERNEL);
+	if (!spec)
 		return -ENOMEM;
-	}
 
 	if (rule_type == MLX5E_VLAN_RULE_TYPE_MATCH_VID)
 		mlx5e_vport_context_update_vlans(priv);
@@ -365,17 +364,30 @@ static void mlx5e_del_vlan_rules(struct mlx5e_priv *priv)
 static void mlx5e_execute_l2_action(struct mlx5e_priv *priv,
 				    struct mlx5e_l2_hash_node *hn)
 {
-	switch (hn->action) {
+	u8 action = hn->action;
+	int l2_err = 0;
+
+	switch (action) {
 	case MLX5E_ACTION_ADD:
 		mlx5e_add_l2_flow_rule(priv, &hn->ai, MLX5E_FULLMATCH);
+		if (!is_multicast_ether_addr(hn->ai.addr)) {
+			l2_err = mlx5_mpfs_add_mac(priv->mdev, hn->ai.addr);
+			hn->mpfs = !l2_err;
+		}
 		hn->action = MLX5E_ACTION_NONE;
 		break;
 
 	case MLX5E_ACTION_DEL:
+		if (!is_multicast_ether_addr(hn->ai.addr) && hn->mpfs)
+			l2_err = mlx5_mpfs_del_mac(priv->mdev, hn->ai.addr);
 		mlx5e_del_l2_flow_rule(priv, &hn->ai);
 		mlx5e_del_l2_from_hash(hn);
 		break;
 	}
+
+	if (l2_err)
+		netdev_warn(priv->netdev, "MPFS, failed to %s mac %pM, err(%d)\n",
+			    action == MLX5E_ACTION_ADD ? "add" : "del", hn->ai.addr, l2_err);
 }
 
 static void mlx5e_sync_netdev_addr(struct mlx5e_priv *priv)
@@ -660,11 +672,9 @@ mlx5e_generate_ttc_rule(struct mlx5e_priv *priv,
 	struct mlx5_flow_spec *spec;
 	int err = 0;
 
-	spec = mlx5_vzalloc(sizeof(*spec));
-	if (!spec) {
-		netdev_err(priv->netdev, "%s: alloc failed\n", __func__);
+	spec = kvzalloc(sizeof(*spec), GFP_KERNEL);
+	if (!spec)
 		return ERR_PTR(-ENOMEM);
-	}
 
 	if (proto) {
 		spec->match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
@@ -742,7 +752,7 @@ static int mlx5e_create_ttc_table_groups(struct mlx5e_ttc_table *ttc)
 			sizeof(*ft->g), GFP_KERNEL);
 	if (!ft->g)
 		return -ENOMEM;
-	in = mlx5_vzalloc(inlen);
+	in = kvzalloc(inlen, GFP_KERNEL);
 	if (!in) {
 		kfree(ft->g);
 		return -ENOMEM;
@@ -852,11 +862,9 @@ static int mlx5e_add_l2_flow_rule(struct mlx5e_priv *priv,
 	u8 *mc_dmac;
 	u8 *mv_dmac;
 
-	spec = mlx5_vzalloc(sizeof(*spec));
-	if (!spec) {
-		netdev_err(priv->netdev, "%s: alloc failed\n", __func__);
+	spec = kvzalloc(sizeof(*spec), GFP_KERNEL);
+	if (!spec)
 		return -ENOMEM;
-	}
 
 	mc_dmac = MLX5_ADDR_OF(fte_match_param, spec->match_criteria,
 			       outer_headers.dmac_47_16);
@@ -916,7 +924,7 @@ static int mlx5e_create_l2_table_groups(struct mlx5e_l2_table *l2_table)
 	ft->g = kcalloc(MLX5E_NUM_L2_GROUPS, sizeof(*ft->g), GFP_KERNEL);
 	if (!ft->g)
 		return -ENOMEM;
-	in = mlx5_vzalloc(inlen);
+	in = kvzalloc(inlen, GFP_KERNEL);
 	if (!in) {
 		kfree(ft->g);
 		return -ENOMEM;
@@ -1071,7 +1079,7 @@ static int mlx5e_create_vlan_table_groups(struct mlx5e_flow_table *ft)
 	int inlen = MLX5_ST_SZ_BYTES(create_flow_group_in);
 	int err;
 
-	in = mlx5_vzalloc(inlen);
+	in = kvzalloc(inlen, GFP_KERNEL);
 	if (!in)
 		return -ENOMEM;
 
