@@ -110,4 +110,37 @@ enum rdma_node_type {
 	RDMA_NODE_RNIC		= 4,
 	RDMA_NODE_USNIC_UDP	= 6,
 };
+
+/*
+ * This capability flags are taken from
+ * InfiniBandTM Architecture Specification Volume 1, Revision 1.3
+ * 14.2.5.6 PORTINFO - CapabilityMask
+ *
+ */
+enum rdma_port_cap {
+	RDMA_PORT_SM				= 1 <<  1,
+	RDMA_PORT_NOTICE			= 1 <<  2,
+	RDMA_PORT_TRAP				= 1 <<  3,
+	RDMA_PORT_OPT_IPD			= 1 <<  4,
+	RDMA_PORT_AUTO_MIGR			= 1 <<  5,
+	RDMA_PORT_SL_MAP			= 1 <<  6,
+	RDMA_PORT_MKEY_NVRAM			= 1 <<  7,
+	RDMA_PORT_PKEY_NVRAM			= 1 <<  8,
+	RDMA_PORT_LED_INFO			= 1 <<  9,
+	RDMA_PORT_SM_DISABLED			= 1 << 10,
+	RDMA_PORT_SYS_IMAGE_GUID		= 1 << 11,
+	RDMA_PORT_PKEY_SW_EXT_PORT_TRAP		= 1 << 12,
+	RDMA_PORT_EXTENDED_SPEEDS		= 1 << 14,
+	RDMA_PORT_CM				= 1 << 16,
+	RDMA_PORT_SNMP_TUNNEL			= 1 << 17,
+	RDMA_PORT_REINIT			= 1 << 18,
+	RDMA_PORT_DEVICE_MGMT			= 1 << 19,
+	RDMA_PORT_VENDOR_CLASS			= 1 << 20,
+	RDMA_PORT_DR_NOTICE			= 1 << 21,
+	RDMA_PORT_CAP_MASK_NOTICE		= 1 << 22,
+	RDMA_PORT_BOOT_MGMT			= 1 << 23,
+	RDMA_PORT_LINK_LATENCY			= 1 << 24,
+	RDMA_PORT_CLIENT_REG			= 1 << 25,
+	RDMA_PORT_IP_BASED_GIDS			= 1 << 26,
+};
 #endif /* _RDMA_H */
