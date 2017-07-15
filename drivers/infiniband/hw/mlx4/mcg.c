@@ -956,7 +956,7 @@ int mlx4_ib_mcg_multiplex_handler(struct ib_device *ibdev, int port,
 		mutex_lock(&ctx->mcg_table_lock);
 		group = acquire_group(ctx, &rec->mgid, may_create, GFP_KERNEL);
 		mutex_unlock(&ctx->mcg_table_lock);
-		if (IS_ERR(group)) {
+		if (IS_ERR_OR_NULL(group)) {
 			kfree(req);
 			return PTR_ERR(group);
 		}
