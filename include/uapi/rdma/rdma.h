@@ -152,5 +152,45 @@ enum rdma_link_state {
 	RDMA_LINK_STATE_ACTIVE,
 	RDMA_LINK_STATE_ACTIVE_DEFER,
 };
+
+/*
+ * When writing this field, only values 0, 1, 2, and 3
+ * are valid. Other values are ignored. See InfiniBand Architecture
+ * Specification Volume 2, Link/Phy Interface chapter.
+ */
+enum rdma_link_phys_state {
+	/*
+	 * 0 - 7 are according to the IB specification
+	 * 8 - 15 -  Reserved and ignored in IB, but partially
+	 *	     in use by OmniPath
+	 */
+	RDMA_LINK_PHYS_STATE_NOP,
+	RDMA_LINK_PHYS_STATE_SLEEP,
+	RDMA_LINK_PHYS_STATE_POLLING,
+	RDMA_LINK_PHYS_STATE_DISABLED,
+	RDMA_LINK_PHYS_STATE_PORT_CONFIGURATION_TRAINING,
+	RDMA_LINK_PHYS_STATE_LINK_UP,
+	RDMA_LINK_PHYS_STATE_LINK_ERROR_RECOVER,
+	RDMA_LINK_PHYS_STATE_LINK_PHY_TEST,
+
+	/* 8 is reserved in OPA */
+
+	/*
+	 * Offline: Port is quiet (transmitters disabled) due to lack of
+	 * physical media, unsupported media, or transition between link up
+	 * and next link up attempt
+	 */
+	RDMA_LINK_PHYS_STATE_OFFLINE = 9,
+
+	/* 10 is reserved in OPA */
+
+	/*
+	 * Phy_Test: Specific test patterns are transmitted, and receiver BER
+	 * can be monitored. This facilitates signal integrity testing for the
+	 * physical layer of the port.
+	 */
+	RDMA_LINK_PHYS_STATE_TEST = 11,
+
+	/* values 12-15 are reserved/ignored */
 };
 #endif /* _RDMA_H */
