@@ -22,6 +22,8 @@
 
 #include <linux/types.h>
 
+#define IEEE_8021QAZ_APP_SEL_DSCP	5
+
 /* IEEE 802.1Qaz std supported values */
 #define IEEE_8021QAZ_MAX_TCS	8
 
