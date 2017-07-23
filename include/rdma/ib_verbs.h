@@ -93,12 +93,9 @@ struct ib_gid_attr {
 
 enum rdma_node_type {
 	/* IB values map to NodeInfo:NodeType. */
-	RDMA_NODE_IB_CA 	= 1,
-	RDMA_NODE_IB_SWITCH,
-	RDMA_NODE_IB_ROUTER,
-	RDMA_NODE_RNIC,
-	RDMA_NODE_USNIC,
-	RDMA_NODE_USNIC_UDP,
+	RDMA_NODE_IB_CA		= 1,
+	RDMA_NODE_RNIC		= 4,
+	RDMA_NODE_USNIC_UDP	= 6,
 };
 
 enum {
@@ -107,10 +104,9 @@ enum {
 };
 
 enum rdma_transport_type {
-	RDMA_TRANSPORT_IB,
-	RDMA_TRANSPORT_IWARP,
-	RDMA_TRANSPORT_USNIC,
-	RDMA_TRANSPORT_USNIC_UDP
+	RDMA_TRANSPORT_IB		= 0,
+	RDMA_TRANSPORT_IWARP		= 1,
+	RDMA_TRANSPORT_USNIC_UDP	= 3,
 };
 
 enum rdma_protocol_type {
@@ -168,7 +164,7 @@ enum ib_device_cap_flags {
 	IB_DEVICE_UD_AV_PORT_ENFORCE		= (1 << 6),
 	IB_DEVICE_CURR_QP_STATE_MOD		= (1 << 7),
 	IB_DEVICE_SHUTDOWN_PORT			= (1 << 8),
-	IB_DEVICE_INIT_TYPE			= (1 << 9),
+	/* Not in use, former INIT_TYPE		= (1 << 9),*/
 	IB_DEVICE_PORT_ACTIVE_EVENT		= (1 << 10),
 	IB_DEVICE_SYS_IMAGE_GUID		= (1 << 11),
 	IB_DEVICE_RC_RNR_NAK_GEN		= (1 << 12),
@@ -183,7 +179,7 @@ enum ib_device_cap_flags {
 	 * which will always contain a usable lkey.
 	 */
 	IB_DEVICE_LOCAL_DMA_LKEY		= (1 << 15),
-	IB_DEVICE_RESERVED /* old SEND_W_INV */	= (1 << 16),
+	/* Reserved, old SEND_W_INV		= (1 << 16),*/
 	IB_DEVICE_MEM_WINDOW			= (1 << 17),
 	/*
 	 * Devices should set IB_DEVICE_UD_IP_SUM if they support
@@ -218,7 +214,7 @@ enum ib_device_cap_flags {
 	 * of I/O operations with single completion queue managed
 	 * by hardware.
 	 */
-	IB_DEVICE_CROSS_CHANNEL		= (1 << 27),
+	IB_DEVICE_CROSS_CHANNEL			= (1 << 27),
 	IB_DEVICE_MANAGED_FLOW_STEERING		= (1 << 29),
 	IB_DEVICE_SIGNATURE_HANDOVER		= (1 << 30),
 	IB_DEVICE_ON_DEMAND_PAGING		= (1ULL << 31),
@@ -1056,7 +1052,7 @@ enum ib_qp_create_flags {
 	IB_QP_CREATE_MANAGED_RECV               = 1 << 4,
 	IB_QP_CREATE_NETIF_QP			= 1 << 5,
 	IB_QP_CREATE_SIGNATURE_EN		= 1 << 6,
-	IB_QP_CREATE_USE_GFP_NOIO		= 1 << 7,
+	/* FREE					= 1 << 7, */
 	IB_QP_CREATE_SCATTER_FCS		= 1 << 8,
 	IB_QP_CREATE_CVLAN_STRIPPING		= 1 << 9,
 	/* reserve bits 26-31 for low level drivers' internal use */
@@ -2395,8 +2391,8 @@ int ib_modify_qp_is_ok(enum ib_qp_state cur_state, enum ib_qp_state next_state,
 		       enum ib_qp_type type, enum ib_qp_attr_mask mask,
 		       enum rdma_link_layer ll);
 
-int ib_register_event_handler  (struct ib_event_handler *event_handler);
-int ib_unregister_event_handler(struct ib_event_handler *event_handler);
+void ib_register_event_handler(struct ib_event_handler *event_handler);
+void ib_unregister_event_handler(struct ib_event_handler *event_handler);
 void ib_dispatch_event(struct ib_event *event);
 
 int ib_query_port(struct ib_device *device,
@@ -2946,6 +2942,22 @@ static inline int ib_post_srq_recv(struct ib_srq *srq,
  */
 struct ib_qp *ib_create_qp(struct ib_pd *pd,
 			   struct ib_qp_init_attr *qp_init_attr);
+
+/**
+ * ib_modify_qp_with_udata - Modifies the attributes for the specified QP.
+ * @qp: The QP to modify.
+ * @attr: On input, specifies the QP attributes to modify.  On output,
+ *   the current values of selected QP attributes are returned.
+ * @attr_mask: A bit-mask used to specify which attributes of the QP
+ *   are being modified.
+ * @udata: pointer to user's input output buffer information
+ *   are being modified.
+ * It returns 0 on success and returns appropriate error code on error.
+ */
+int ib_modify_qp_with_udata(struct ib_qp *qp,
+			    struct ib_qp_attr *attr,
+			    int attr_mask,
+			    struct ib_udata *udata);
 
 /**
  * ib_modify_qp - Modifies the attributes for the specified QP and then

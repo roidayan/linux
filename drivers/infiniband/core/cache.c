@@ -1213,12 +1213,8 @@ int ib_cache_setup_one(struct ib_device *device)
 
 	INIT_IB_EVENT_HANDLER(&device->cache.event_handler,
 			      device, ib_cache_event);
-	err = ib_register_event_handler(&device->cache.event_handler);
-	if (err)
-		goto err;
-
+	ib_register_event_handler(&device->cache.event_handler);
 	return 0;
-
 err:
 	gid_table_cleanup_one(device);
 out:
