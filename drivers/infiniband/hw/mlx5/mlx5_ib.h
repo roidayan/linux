@@ -228,6 +228,7 @@ struct wr_list {
 
 enum mlx5_ib_rq_flags {
 	MLX5_IB_RQ_CVLAN_STRIPPING	= 1 << 0,
+	MLX5_IB_RQ_SCATTER_END_PADDING	= 1 << 1,
 };
 
 struct mlx5_ib_wq {
@@ -420,6 +421,7 @@ enum mlx5_ib_qp_flags {
 	MLX5_IB_QP_RSS				= 1 << 8,
 	MLX5_IB_QP_CVLAN_STRIPPING		= 1 << 9,
 	MLX5_IB_QP_UNDERLAY			= 1 << 10,
+	MLX5_IB_QP_SCATTER_END_PADDING		= 1 << 11,
 };
 
 struct mlx5_umr_wr {
