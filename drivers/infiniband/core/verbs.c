@@ -180,39 +180,27 @@ EXPORT_SYMBOL(ib_rate_to_mbps);
 __attribute_const__ enum rdma_transport_type
 rdma_node_get_transport(enum rdma_node_type node_type)
 {
-	switch (node_type) {
-	case RDMA_NODE_IB_CA:
-	case RDMA_NODE_IB_SWITCH:
-	case RDMA_NODE_IB_ROUTER:
+	if (node_type == RDMA_NODE_IB_CA)
 		return RDMA_TRANSPORT_IB;
-	case RDMA_NODE_RNIC:
+
+	if (node_type == RDMA_NODE_RNIC)
 		return RDMA_TRANSPORT_IWARP;
-	case RDMA_NODE_USNIC:
-		return RDMA_TRANSPORT_USNIC;
-	case RDMA_NODE_USNIC_UDP:
-		return RDMA_TRANSPORT_USNIC_UDP;
-	default:
-		BUG();
-		return 0;
-	}
+
+	return RDMA_TRANSPORT_USNIC_UDP;
 }
 EXPORT_SYMBOL(rdma_node_get_transport);
 
 enum rdma_link_layer rdma_port_get_link_layer(struct ib_device *device, u8 port_num)
 {
+	enum rdma_transport_type lt;
 	if (device->get_link_layer)
 		return device->get_link_layer(device, port_num);
 
-	switch (rdma_node_get_transport(device->node_type)) {
-	case RDMA_TRANSPORT_IB:
+	lt = rdma_node_get_transport(device->node_type);
+	if (lt == RDMA_TRANSPORT_IB)
 		return IB_LINK_LAYER_INFINIBAND;
-	case RDMA_TRANSPORT_IWARP:
-	case RDMA_TRANSPORT_USNIC:
-	case RDMA_TRANSPORT_USNIC_UDP:
-		return IB_LINK_LAYER_ETHERNET;
-	default:
-		return IB_LINK_LAYER_UNSPECIFIED;
-	}
+
+	return IB_LINK_LAYER_ETHERNET;
 }
 EXPORT_SYMBOL(rdma_port_get_link_layer);
 
@@ -895,7 +883,6 @@ static const struct {
 } qp_state_table[IB_QPS_ERR + 1][IB_QPS_ERR + 1] = {
 	[IB_QPS_RESET] = {
 		[IB_QPS_RESET] = { .valid = 1 },
-		[IB_QPS_ERR] =   { .valid = 1 },
 		[IB_QPS_INIT]  = {
 			.valid = 1,
 			.req_param = {
