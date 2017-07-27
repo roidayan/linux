@@ -39,10 +39,11 @@ static void mlx5i_get_drvinfo(struct net_device *dev,
 	struct mlx5e_priv *priv = mlx5i_epriv(dev);
 
 	mlx5e_ethtool_get_drvinfo(priv, drvinfo);
+	strlcpy(drvinfo->driver, DRIVER_NAME "[ib_ipoib]",
+		sizeof(drvinfo->driver));
 }
 
-static void mlx5i_get_strings(struct net_device *dev,
-			      uint32_t stringset, uint8_t *data)
+static void mlx5i_get_strings(struct net_device *dev, u32 stringset, u8 *data)
 {
 	struct mlx5e_priv *priv  = mlx5i_epriv(dev);
 
