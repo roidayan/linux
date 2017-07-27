@@ -333,9 +333,7 @@ static int usnic_port_immutable(struct ib_device *ibdev, u8 port_num,
 	return 0;
 }
 
-static void usnic_get_dev_fw_str(struct ib_device *device,
-				 char *str,
-				 size_t str_len)
+static void usnic_get_dev_fw_str(struct ib_device *device, char *str)
 {
 	struct usnic_ib_dev *us_ibdev =
 		container_of(device, struct usnic_ib_dev, ib_dev);
@@ -345,7 +343,7 @@ static void usnic_get_dev_fw_str(struct ib_device *device,
 	us_ibdev->netdev->ethtool_ops->get_drvinfo(us_ibdev->netdev, &info);
 	mutex_unlock(&us_ibdev->usdev_lock);
 
-	snprintf(str, str_len, "%s", info.fw_version);
+	snprintf(str, IB_FW_VERSION_NAME_MAX, "%s", info.fw_version);
 }
 
 /* Start of PF discovery section */
@@ -720,7 +718,6 @@ static void __exit usnic_ib_destroy(void)
 MODULE_DESCRIPTION("Cisco VIC (usNIC) Verbs Driver");
 MODULE_AUTHOR("Upinder Malhi <umalhi@cisco.com>");
 MODULE_LICENSE("Dual BSD/GPL");
-MODULE_VERSION(DRV_VERSION);
 module_param(usnic_log_lvl, uint, S_IRUGO | S_IWUSR);
 module_param(usnic_ib_share_vf, uint, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(usnic_log_lvl, " Off=0, Err=1, Info=2, Debug=3");
