@@ -1195,6 +1195,7 @@ static int mlx5e_create_sq(struct mlx5_core_dev *mdev,
 	MLX5_SET(sqc,  sqc, tis_lst_sz, csp->tis_lst_sz);
 	MLX5_SET(sqc,  sqc, tis_num_0, csp->tisn);
 	MLX5_SET(sqc,  sqc, cqn, csp->cqn);
+	MLX5_SET(sqc,  sqc, allow_multi_pkt_send_wqe, MLX5_CAP_ETH(mdev, multi_pkt_send_wqe));
 
 	if (MLX5_CAP_ETH(mdev, wqe_inline_mode) == MLX5_CAP_INLINE_MODE_VPORT_CONTEXT)
 		MLX5_SET(sqc,  sqc, min_wqe_inline_mode, csp->min_inline_mode);
@@ -1424,13 +1425,22 @@ static int mlx5e_open_xdpsq(struct mlx5e_channel *c,
 	csp.tisn            = c->priv->tisn[0]; /* tc = 0 */
 	csp.cqn             = sq->cq.mcq.cqn;
 	csp.wq_ctrl         = &sq->wq_ctrl;
+
 	csp.min_inline_mode = sq->min_inline_mode;
 	set_bit(MLX5E_SQ_STATE_ENABLED, &sq->state);
 	err = mlx5e_create_sq_rdy(c->mdev, param, &csp, &sq->sqn);
 	if (err)
 		goto err_free_xdpsq;
 
-	if (sq->min_inline_mode != MLX5_INLINE_MODE_NONE) {
+	/* If any min inline mode is required, set it to L2 */
+	if (sq->min_inline_mode != MLX5_INLINE_MODE_NONE)
+		sq->min_inline_mode = MLX5_INLINE_MODE_L2;
+
+	/* If XDP TX MPWQE is requested, override sq min inline mode */
+	if (MLX5E_GET_PFLAG(params, MLX5E_PFLAG_XDP_TX_MPWQE))
+		sq->min_inline_mode = MLX5_INLINE_MODE_MPWQE;
+
+	if (sq->min_inline_mode == MLX5_INLINE_MODE_L2) {
 		inline_hdr_sz = MLX5E_XDP_MIN_INLINE;
 		ds_cnt++;
 	}
@@ -3953,6 +3963,7 @@ static const struct net_device_ops mlx5e_netdev_ops = {
 
 static int mlx5e_check_required_hca_cap(struct mlx5_core_dev *mdev)
 {
+	mlx5_core_warn(mdev, "SEND MWPWQE IS Supported ? %d\n", MLX5_CAP_ETH(mdev, multi_pkt_send_wqe));
 	if (MLX5_CAP_GEN(mdev, port_type) != MLX5_CAP_PORT_TYPE_ETH)
 		return -EOPNOTSUPP;
 	if (!MLX5_CAP_GEN(mdev, eth_net_offloads) ||

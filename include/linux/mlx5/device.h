@@ -161,6 +161,7 @@ enum mlx5_inline_modes {
 	MLX5_INLINE_MODE_L2,
 	MLX5_INLINE_MODE_IP,
 	MLX5_INLINE_MODE_TCP_UDP,
+	MLX5_INLINE_MODE_MPWQE = 0xf
 };
 
 enum {
