@@ -742,7 +742,7 @@ static inline bool mlx5e_xmit_xdp_frame(struct mlx5e_rq *rq,
 
 	ptrdiff_t data_offset = xdp->data - xdp->data_hard_start;
 	dma_addr_t dma_addr  = di->addr + data_offset;
-	unsigned int dma_len = xdp->data_end - xdp->data;
+	u16 dma_len = xdp->data_end - xdp->data;
 
 	prefetchw(wqe);
 
@@ -768,20 +768,24 @@ static inline bool mlx5e_xmit_xdp_frame(struct mlx5e_rq *rq,
 
 	dseg = (struct mlx5_wqe_data_seg *)eseg + 1;
 
-	/* copy the inline part if required */
-	if (sq->min_inline_mode != MLX5_INLINE_MODE_NONE) {
-		memcpy(eseg->inline_hdr.start, xdp->data, MLX5E_XDP_MIN_INLINE);
-		eseg->inline_hdr.sz = cpu_to_be16(MLX5E_XDP_MIN_INLINE);
-		dma_len  -= MLX5E_XDP_MIN_INLINE;
-		dma_addr += MLX5E_XDP_MIN_INLINE;
-		dseg++;
+	if (sq->min_inline_mode == MLX5_INLINE_MODE_MPWQE) {
+		cseg->opmod_idx_opcode = cpu_to_be32((1 << 24) | (sq->pc << 8) | MLX5_OPCODE_LSO);
+		eseg->mss = cpu_to_be16(dma_len);
+	} else {
+		/* copy the inline part if required */
+		if (sq->min_inline_mode == MLX5_INLINE_MODE_L2) {
+			memcpy(eseg->inline_hdr.start, xdp->data, MLX5E_XDP_MIN_INLINE);
+			eseg->inline_hdr.sz = cpu_to_be16(MLX5E_XDP_MIN_INLINE);
+			dma_len  -= MLX5E_XDP_MIN_INLINE;
+			dma_addr += MLX5E_XDP_MIN_INLINE;
+			dseg++;
+		}
+		cseg->opmod_idx_opcode = cpu_to_be32((sq->pc << 8) | MLX5_OPCODE_SEND);
 	}
 
 	/* write the dma part */
 	dseg->addr       = cpu_to_be64(dma_addr);
 	dseg->byte_count = cpu_to_be32(dma_len);
-
-	cseg->opmod_idx_opcode = cpu_to_be32((sq->pc << 8) | MLX5_OPCODE_SEND);
 
 	/* move page to reference to sq responsibility,
 	 * and mark so it's not put back in page-cache.

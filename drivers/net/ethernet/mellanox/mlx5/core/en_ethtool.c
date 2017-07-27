@@ -1565,6 +1565,38 @@ static int set_pflag_rx_cqe_compress(struct net_device *netdev,
 	return 0;
 }
 
+static int set_pflag_xdp_tx_mpwqe(struct net_device *netdev, bool new_val)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+	struct mlx5_core_dev *mdev = priv->mdev;
+
+	bool curr_val = MLX5E_GET_PFLAG(&priv->channels.params, MLX5E_PFLAG_XDP_TX_MPWQE);
+	struct mlx5e_channels new_channels = {};
+	int err = 0;
+
+	if (!MLX5_CAP_ETH(mdev, multi_pkt_send_wqe))
+		return -EOPNOTSUPP;
+
+	if (curr_val == new_val)
+		return 0;
+
+	new_channels.params = priv->channels.params;
+	MLX5E_SET_PFLAG(&new_channels.params, MLX5E_PFLAG_XDP_TX_MPWQE, new_val);
+
+	mlx5e_init_rq_type_params(priv->mdev, &new_channels.params, new_channels.params.rq_wq_type);
+	if (!test_bit(MLX5E_STATE_OPENED, &priv->state)) {
+		priv->channels.params = new_channels.params;
+		return 0;
+	}
+
+	err = mlx5e_open_channels(priv, &new_channels);
+	if (err)
+		return err;
+
+	mlx5e_switch_priv_channels(priv, &new_channels, NULL);
+	return 0;
+}
+
 static int mlx5e_handle_pflag(struct net_device *netdev,
 			      u32 wanted_flags,
 			      enum mlx5e_priv_flag flag,
@@ -1610,7 +1642,12 @@ static int mlx5e_set_priv_flags(struct net_device *netdev, u32 pflags)
 	err = mlx5e_handle_pflag(netdev, pflags,
 				 MLX5E_PFLAG_RX_CQE_COMPRESS,
 				 set_pflag_rx_cqe_compress);
+	if (err)
+		goto out;
 
+	err = mlx5e_handle_pflag(netdev, pflags,
+				 MLX5E_PFLAG_XDP_TX_MPWQE,
+				 set_pflag_xdp_tx_mpwqe);
 out:
 	mutex_unlock(&priv->state_lock);
 	return err;
