@@ -176,7 +176,6 @@ static bool mlx5e_query_global_pause_combined(struct mlx5e_priv *priv)
 
 int mlx5e_ethtool_get_sset_count(struct mlx5e_priv *priv, int sset)
 {
-
 	switch (sset) {
 	case ETH_SS_STATS:
 		return NUM_SW_COUNTERS +
@@ -207,7 +206,7 @@ static int mlx5e_get_sset_count(struct net_device *dev, int sset)
 	return mlx5e_ethtool_get_sset_count(priv, sset);
 }
 
-static void mlx5e_fill_stats_strings(struct mlx5e_priv *priv, uint8_t *data)
+static void mlx5e_fill_stats_strings(struct mlx5e_priv *priv, u8 *data)
 {
 	int i, j, tc, prio, idx = 0;
 	unsigned long pfc_combined;
@@ -297,8 +296,7 @@ static void mlx5e_fill_stats_strings(struct mlx5e_priv *priv, uint8_t *data)
 					priv->channel_tc2txq[i][tc]);
 }
 
-void mlx5e_ethtool_get_strings(struct mlx5e_priv *priv,
-			       uint32_t stringset, uint8_t *data)
+void mlx5e_ethtool_get_strings(struct mlx5e_priv *priv, u32 stringset, u8 *data)
 {
 	int i;
 
@@ -320,8 +318,7 @@ void mlx5e_ethtool_get_strings(struct mlx5e_priv *priv,
 	}
 }
 
-static void mlx5e_get_strings(struct net_device *dev,
-			      uint32_t stringset, uint8_t *data)
+static void mlx5e_get_strings(struct net_device *dev, u32 stringset, u8 *data)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
 
@@ -641,7 +638,7 @@ int mlx5e_ethtool_set_channels(struct mlx5e_priv *priv,
 
 	new_channels.params = priv->channels.params;
 	new_channels.params.num_channels = count;
-	mlx5e_build_default_indir_rqt(priv->mdev, new_channels.params.indirection_rqt,
+	mlx5e_build_default_indir_rqt(new_channels.params.indirection_rqt,
 				      MLX5E_INDIR_RQT_SIZE, count);
 
 	if (!test_bit(MLX5E_STATE_OPENED, &priv->state)) {
@@ -965,23 +962,23 @@ static u8 get_connector_port(u32 eth_proto, u8 connector_type)
 		return ptys2connector_type[connector_type];
 
 	if (eth_proto & (MLX5E_PROT_MASK(MLX5E_10GBASE_SR)
-			 | MLX5E_PROT_MASK(MLX5E_40GBASE_SR4)
-			 | MLX5E_PROT_MASK(MLX5E_100GBASE_SR4)
-			 | MLX5E_PROT_MASK(MLX5E_1000BASE_CX_SGMII))) {
-			return PORT_FIBRE;
+	    | MLX5E_PROT_MASK(MLX5E_40GBASE_SR4)
+	    | MLX5E_PROT_MASK(MLX5E_100GBASE_SR4)
+	    | MLX5E_PROT_MASK(MLX5E_1000BASE_CX_SGMII))) {
+		return PORT_FIBRE;
 	}
 
 	if (eth_proto & (MLX5E_PROT_MASK(MLX5E_40GBASE_CR4)
-			 | MLX5E_PROT_MASK(MLX5E_10GBASE_CR)
-			 | MLX5E_PROT_MASK(MLX5E_100GBASE_CR4))) {
-			return PORT_DA;
+	    | MLX5E_PROT_MASK(MLX5E_10GBASE_CR)
+	    | MLX5E_PROT_MASK(MLX5E_100GBASE_CR4))) {
+		return PORT_DA;
 	}
 
 	if (eth_proto & (MLX5E_PROT_MASK(MLX5E_10GBASE_KX4)
-			 | MLX5E_PROT_MASK(MLX5E_10GBASE_KR)
-			 | MLX5E_PROT_MASK(MLX5E_40GBASE_KR4)
-			 | MLX5E_PROT_MASK(MLX5E_100GBASE_KR4))) {
-			return PORT_NONE;
+	    | MLX5E_PROT_MASK(MLX5E_10GBASE_KR)
+	    | MLX5E_PROT_MASK(MLX5E_40GBASE_KR4)
+	    | MLX5E_PROT_MASK(MLX5E_100GBASE_KR4))) {
+		return PORT_NONE;
 	}
 
 	return PORT_OTHER;
