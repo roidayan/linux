@@ -197,7 +197,7 @@ struct mlx5_ib_query_device_resp {
 	struct	mlx5_ib_cqe_comp_caps cqe_comp_caps;
 	struct	mlx5_packet_pacing_caps packet_pacing_caps;
 	__u32	mlx5_ib_support_multi_pkt_send_wqes;
-	__u32	reserved;
+	__u32	mlx5_ib_support_enhanced_multi_pkt_send_wqes;
 	struct mlx5_ib_sw_parsing_caps sw_parsing_caps;
 };
 
