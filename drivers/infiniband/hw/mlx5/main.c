@@ -820,8 +820,14 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 			sizeof(resp.mlx5_ib_support_multi_pkt_send_wqes);
 	}
 
-	if (field_avail(typeof(resp), reserved, uhw->outlen))
-		resp.response_length += sizeof(resp.reserved);
+	if (field_avail(typeof(resp),
+			mlx5_ib_support_enhanced_multi_pkt_send_wqes,
+			uhw->outlen)) {
+		resp.mlx5_ib_support_enhanced_multi_pkt_send_wqes =
+			MLX5_CAP_ETH(mdev, enhanced_multi_pkt_send_wqe);
+		resp.response_length +=
+		sizeof(resp.mlx5_ib_support_enhanced_multi_pkt_send_wqes);
+	}
 
 	if (field_avail(typeof(resp), sw_parsing_caps,
 			uhw->outlen)) {
