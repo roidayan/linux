@@ -190,6 +190,8 @@ static int dsa_switch_rcv(struct sk_buff *skb, struct net_device *dev,
 {
 	struct dsa_switch_tree *dst = dev->dsa_ptr;
 	struct sk_buff *nskb = NULL;
+	struct pcpu_sw_netstats *s;
+	struct dsa_slave_priv *p;
 
 	if (unlikely(dst == NULL)) {
 		kfree_skb(skb);
@@ -207,12 +209,16 @@ static int dsa_switch_rcv(struct sk_buff *skb, struct net_device *dev,
 	}
 
 	skb = nskb;
+	p = netdev_priv(skb->dev);
 	skb_push(skb, ETH_HLEN);
 	skb->pkt_type = PACKET_HOST;
 	skb->protocol = eth_type_trans(skb, skb->dev);
 
-	skb->dev->stats.rx_packets++;
-	skb->dev->stats.rx_bytes += skb->len;
+	s = this_cpu_ptr(p->stats64);
+	u64_stats_update_begin(&s->syncp);
+	s->rx_packets++;
+	s->rx_bytes += skb->len;
+	u64_stats_update_end(&s->syncp);
 
 	netif_receive_skb(skb);
 
@@ -220,6 +226,11 @@ static int dsa_switch_rcv(struct sk_buff *skb, struct net_device *dev,
 }
 
 #ifdef CONFIG_PM_SLEEP
+static bool dsa_is_port_initialized(struct dsa_switch *ds, int p)
+{
+	return ds->enabled_port_mask & (1 << p) && ds->ports[p].netdev;
+}
+
 int dsa_switch_suspend(struct dsa_switch *ds)
 {
 	int i, ret = 0;
