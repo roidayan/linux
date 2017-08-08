@@ -792,6 +792,7 @@ static struct ib_qp *_mlx4_ib_create_qp_rss(struct ib_pd *pd,
 	struct mlx4_ib_create_qp_rss ucmd = {};
 	size_t required_cmd_sz;
 	int err;
+	int i;
 
 	if (!udata) {
 		pr_debug("RSS QP with NULL udata\n");
@@ -812,6 +813,10 @@ static struct ib_qp *_mlx4_ib_create_qp_rss(struct ib_pd *pd,
 		pr_debug("copy failed\n");
 		return ERR_PTR(-EFAULT);
 	}
+
+	for (i = 0; i < sizeof(ucmd.reserved); i++)
+		if (ucmd.reserved[i])
+			return ERR_PTR(-EOPNOTSUPP);
 
 	if (ucmd.comp_mask || ucmd.reserved1)
 		return ERR_PTR(-EOPNOTSUPP);
