@@ -64,6 +64,8 @@
 #include <linux/cgroup_rdma.h>
 #include <uapi/rdma/ib_user_verbs.h>
 
+#define IB_FW_VERSION_NAME_MAX	ETHTOOL_FWVERS_LEN
+
 extern struct workqueue_struct *ib_wq;
 extern struct workqueue_struct *ib_comp_wq;
 
@@ -91,26 +93,15 @@ struct ib_gid_attr {
 	struct net_device	*ndev;
 };
 
-enum rdma_node_type {
-	/* IB values map to NodeInfo:NodeType. */
-	RDMA_NODE_IB_CA 	= 1,
-	RDMA_NODE_IB_SWITCH,
-	RDMA_NODE_IB_ROUTER,
-	RDMA_NODE_RNIC,
-	RDMA_NODE_USNIC,
-	RDMA_NODE_USNIC_UDP,
-};
-
 enum {
 	/* set the local administered indication */
 	IB_SA_WELL_KNOWN_GUID	= BIT_ULL(57) | 2,
 };
 
 enum rdma_transport_type {
-	RDMA_TRANSPORT_IB,
-	RDMA_TRANSPORT_IWARP,
-	RDMA_TRANSPORT_USNIC,
-	RDMA_TRANSPORT_USNIC_UDP
+	RDMA_TRANSPORT_IB		= 0,
+	RDMA_TRANSPORT_IWARP		= 1,
+	RDMA_TRANSPORT_USNIC_UDP	= 3,
 };
 
 enum rdma_protocol_type {
@@ -159,22 +150,21 @@ enum rdma_link_layer {
 };
 
 enum ib_device_cap_flags {
-	IB_DEVICE_RESIZE_MAX_WR			= (1 << 0),
-	IB_DEVICE_BAD_PKEY_CNTR			= (1 << 1),
-	IB_DEVICE_BAD_QKEY_CNTR			= (1 << 2),
-	IB_DEVICE_RAW_MULTI			= (1 << 3),
-	IB_DEVICE_AUTO_PATH_MIG			= (1 << 4),
-	IB_DEVICE_CHANGE_PHY_PORT		= (1 << 5),
-	IB_DEVICE_UD_AV_PORT_ENFORCE		= (1 << 6),
-	IB_DEVICE_CURR_QP_STATE_MOD		= (1 << 7),
-	IB_DEVICE_SHUTDOWN_PORT			= (1 << 8),
-	IB_DEVICE_INIT_TYPE			= (1 << 9),
-	IB_DEVICE_PORT_ACTIVE_EVENT		= (1 << 10),
-	IB_DEVICE_SYS_IMAGE_GUID		= (1 << 11),
-	IB_DEVICE_RC_RNR_NAK_GEN		= (1 << 12),
-	IB_DEVICE_SRQ_RESIZE			= (1 << 13),
-	IB_DEVICE_N_NOTIFY_CQ			= (1 << 14),
-
+	IB_DEVICE_RESIZE_MAX_WR			= RDMA_DEV_RESIZE_MAX_WR,
+	IB_DEVICE_BAD_PKEY_CNTR			= RDMA_DEV_BAD_PKEY_CNTR,
+	IB_DEVICE_BAD_QKEY_CNTR			= RDMA_DEV_BAD_QKEY_CNTR,
+	IB_DEVICE_RAW_MULTI			= RDMA_DEV_RAW_MULTI,
+	IB_DEVICE_AUTO_PATH_MIG			= RDMA_DEV_AUTO_PATH_MIG,
+	IB_DEVICE_CHANGE_PHY_PORT		= RDMA_DEV_CHANGE_PHY_PORT,
+	IB_DEVICE_UD_AV_PORT_ENFORCE		= RDMA_DEV_UD_AV_PORT_ENFORCE,
+	IB_DEVICE_CURR_QP_STATE_MOD		= RDMA_DEV_CURR_QP_STATE_MOD,
+	IB_DEVICE_SHUTDOWN_PORT			= RDMA_DEV_SHUTDOWN_PORT,
+	/* Not in use, former INIT_TYPE		= (1 << 9),*/
+	IB_DEVICE_PORT_ACTIVE_EVENT		= RDMA_DEV_PORT_ACTIVE_EVENT,
+	IB_DEVICE_SYS_IMAGE_GUID		= RDMA_DEV_SYS_IMAGE_GUID,
+	IB_DEVICE_RC_RNR_NAK_GEN		= RDMA_DEV_RC_RNR_NAK_GEN,
+	IB_DEVICE_SRQ_RESIZE			= RDMA_DEV_SRQ_RESIZE,
+	IB_DEVICE_N_NOTIFY_CQ			= RDMA_DEV_N_NOTIFY_CQ,
 	/*
 	 * This device supports a per-device lkey or stag that can be
 	 * used without performing a memory registration for the local
@@ -182,9 +172,9 @@ enum ib_device_cap_flags {
 	 * instead of use the local_dma_lkey flag in the ib_pd structure,
 	 * which will always contain a usable lkey.
 	 */
-	IB_DEVICE_LOCAL_DMA_LKEY		= (1 << 15),
-	IB_DEVICE_RESERVED /* old SEND_W_INV */	= (1 << 16),
-	IB_DEVICE_MEM_WINDOW			= (1 << 17),
+	IB_DEVICE_LOCAL_DMA_LKEY		= RDMA_DEV_LOCAL_DMA_LKEY,
+	/* Reserved, old SEND_W_INV		= (1 << 16),*/
+	IB_DEVICE_MEM_WINDOW			= RDMA_DEV_MEM_WINDOW,
 	/*
 	 * Devices should set IB_DEVICE_UD_IP_SUM if they support
 	 * insertion of UDP and TCP checksum on outgoing UD IPoIB
@@ -192,10 +182,9 @@ enum ib_device_cap_flags {
 	 * incoming messages.  Setting this flag implies that the
 	 * IPoIB driver may set NETIF_F_IP_CSUM for datagram mode.
 	 */
-	IB_DEVICE_UD_IP_CSUM			= (1 << 18),
-	IB_DEVICE_UD_TSO			= (1 << 19),
-	IB_DEVICE_XRC				= (1 << 20),
-
+	IB_DEVICE_UD_IP_CSUM			= RDMA_DEV_UD_IP_CSUM,
+	IB_DEVICE_UD_TSO			= RDMA_DEV_UD_TSO,
+	IB_DEVICE_XRC				= RDMA_DEV_XRC,
 	/*
 	 * This device supports the IB "base memory management extension",
 	 * which includes support for fast registrations (IB_WR_REG_MR,
@@ -205,28 +194,28 @@ enum ib_device_cap_flags {
 	 * IB_WR_RDMA_READ_WITH_INV verb for RDMA READs that invalidate the
 	 * stag.
 	 */
-	IB_DEVICE_MEM_MGT_EXTENSIONS		= (1 << 21),
-	IB_DEVICE_BLOCK_MULTICAST_LOOPBACK	= (1 << 22),
-	IB_DEVICE_MEM_WINDOW_TYPE_2A		= (1 << 23),
-	IB_DEVICE_MEM_WINDOW_TYPE_2B		= (1 << 24),
-	IB_DEVICE_RC_IP_CSUM			= (1 << 25),
+	IB_DEVICE_MEM_MGT_EXTENSIONS		= RDMA_DEV_MEM_MGT_EXTENSIONS,
+	IB_DEVICE_BLOCK_MULTICAST_LOOPBACK	= RDMA_DEV_BLOCK_MULTICAST_LOOPBACK,
+	IB_DEVICE_MEM_WINDOW_TYPE_2A		= RDMA_DEV_MEM_WINDOW_TYPE_2A,
+	IB_DEVICE_MEM_WINDOW_TYPE_2B		= RDMA_DEV_MEM_WINDOW_TYPE_2B,
+	IB_DEVICE_RC_IP_CSUM			= RDMA_DEV_RC_IP_CSUM,
 	/* Deprecated. Please use IB_RAW_PACKET_CAP_IP_CSUM. */
-	IB_DEVICE_RAW_IP_CSUM			= (1 << 26),
+	IB_DEVICE_RAW_IP_CSUM			= RDMA_DEV_RAW_IP_CSUM,
 	/*
 	 * Devices should set IB_DEVICE_CROSS_CHANNEL if they
 	 * support execution of WQEs that involve synchronization
 	 * of I/O operations with single completion queue managed
 	 * by hardware.
 	 */
-	IB_DEVICE_CROSS_CHANNEL		= (1 << 27),
-	IB_DEVICE_MANAGED_FLOW_STEERING		= (1 << 29),
-	IB_DEVICE_SIGNATURE_HANDOVER		= (1 << 30),
-	IB_DEVICE_ON_DEMAND_PAGING		= (1ULL << 31),
-	IB_DEVICE_SG_GAPS_REG			= (1ULL << 32),
-	IB_DEVICE_VIRTUAL_FUNCTION		= (1ULL << 33),
+	IB_DEVICE_CROSS_CHANNEL			= RDMA_DEV_CROSS_CHANNEL,
+	IB_DEVICE_MANAGED_FLOW_STEERING		= RDMA_DEV_MANAGED_FLOW_STEERING,
+	IB_DEVICE_SIGNATURE_HANDOVER		= RDMA_DEV_SIGNATURE_HANDOVER,
+	IB_DEVICE_ON_DEMAND_PAGING		= RDMA_DEV_ON_DEMAND_PAGING,
+	IB_DEVICE_SG_GAPS_REG			= RDMA_DEV_SG_GAPS_REG,
+	IB_DEVICE_VIRTUAL_FUNCTION		= RDMA_DEV_VIRTUAL_FUNCTION,
 	/* Deprecated. Please use IB_RAW_PACKET_CAP_SCATTER_FCS. */
-	IB_DEVICE_RAW_SCATTER_FCS		= (1ULL << 34),
-	IB_DEVICE_RDMA_NETDEV_OPA_VNIC		= (1ULL << 35),
+	IB_DEVICE_RAW_SCATTER_FCS		= RDMA_DEV_RAW_SCATTER_FCS,
+	IB_DEVICE_RDMA_NETDEV_OPA_VNIC		= RDMA_DEV_RDMA_NETDEV_OPA_VNIC,
 };
 
 enum ib_signature_prot_cap {
@@ -276,6 +265,24 @@ struct ib_rss_caps {
 	u32 supported_qpts;
 	u32 max_rwq_indirection_tables;
 	u32 max_rwq_indirection_table_size;
+};
+
+enum ib_tm_cap_flags {
+	/*  Support tag matching on RC transport */
+	IB_TM_CAP_RC		    = 1 << 0,
+};
+
+struct ib_xrq_caps {
+	/* Max size of RNDV header */
+	u32 max_rndv_hdr_size;
+	/* Max number of entries in tag matching list */
+	u32 max_num_tags;
+	/* From enum ib_tm_cap_flags */
+	u32 flags;
+	/* Max number of outstanding list operations */
+	u32 max_ops;
+	/* Max number of SGE in tag matching entry */
+	u32 max_sge;
 };
 
 enum ib_cq_creation_flags {
@@ -338,6 +345,7 @@ struct ib_device_attr {
 	struct ib_rss_caps	rss_caps;
 	u32			max_wq_type_rq;
 	u32			raw_packet_caps; /* Use ib_raw_packet_caps enum */
+	struct ib_xrq_caps	xrq_caps;
 };
 
 enum ib_mtu {
@@ -375,39 +383,39 @@ static inline enum ib_mtu ib_mtu_int_to_enum(int mtu)
 }
 
 enum ib_port_state {
-	IB_PORT_NOP		= 0,
-	IB_PORT_DOWN		= 1,
-	IB_PORT_INIT		= 2,
-	IB_PORT_ARMED		= 3,
-	IB_PORT_ACTIVE		= 4,
-	IB_PORT_ACTIVE_DEFER	= 5
+	IB_PORT_NOP		= RDMA_LINK_STATE_NOP,
+	IB_PORT_DOWN		= RDMA_LINK_STATE_DOWN,
+	IB_PORT_INIT		= RDMA_LINK_STATE_INIT,
+	IB_PORT_ARMED		= RDMA_LINK_STATE_ARMED,
+	IB_PORT_ACTIVE		= RDMA_LINK_STATE_ACTIVE,
+	IB_PORT_ACTIVE_DEFER	= RDMA_LINK_STATE_ACTIVE_DEFER
 };
 
 enum ib_port_cap_flags {
-	IB_PORT_SM				= 1 <<  1,
-	IB_PORT_NOTICE_SUP			= 1 <<  2,
-	IB_PORT_TRAP_SUP			= 1 <<  3,
-	IB_PORT_OPT_IPD_SUP                     = 1 <<  4,
-	IB_PORT_AUTO_MIGR_SUP			= 1 <<  5,
-	IB_PORT_SL_MAP_SUP			= 1 <<  6,
-	IB_PORT_MKEY_NVRAM			= 1 <<  7,
-	IB_PORT_PKEY_NVRAM			= 1 <<  8,
-	IB_PORT_LED_INFO_SUP			= 1 <<  9,
-	IB_PORT_SM_DISABLED			= 1 << 10,
-	IB_PORT_SYS_IMAGE_GUID_SUP		= 1 << 11,
-	IB_PORT_PKEY_SW_EXT_PORT_TRAP_SUP	= 1 << 12,
-	IB_PORT_EXTENDED_SPEEDS_SUP             = 1 << 14,
-	IB_PORT_CM_SUP				= 1 << 16,
-	IB_PORT_SNMP_TUNNEL_SUP			= 1 << 17,
-	IB_PORT_REINIT_SUP			= 1 << 18,
-	IB_PORT_DEVICE_MGMT_SUP			= 1 << 19,
-	IB_PORT_VENDOR_CLASS_SUP		= 1 << 20,
-	IB_PORT_DR_NOTICE_SUP			= 1 << 21,
-	IB_PORT_CAP_MASK_NOTICE_SUP		= 1 << 22,
-	IB_PORT_BOOT_MGMT_SUP			= 1 << 23,
-	IB_PORT_LINK_LATENCY_SUP		= 1 << 24,
-	IB_PORT_CLIENT_REG_SUP			= 1 << 25,
-	IB_PORT_IP_BASED_GIDS			= 1 << 26,
+	IB_PORT_SM				= RDMA_PORT_SM,
+	IB_PORT_NOTICE_SUP			= RDMA_PORT_NOTICE,
+	IB_PORT_TRAP_SUP			= RDMA_PORT_TRAP,
+	IB_PORT_OPT_IPD_SUP                     = RDMA_PORT_OPT_IPD,
+	IB_PORT_AUTO_MIGR_SUP			= RDMA_PORT_AUTO_MIGR,
+	IB_PORT_SL_MAP_SUP			= RDMA_PORT_SL_MAP,
+	IB_PORT_MKEY_NVRAM			= RDMA_PORT_MKEY_NVRAM,
+	IB_PORT_PKEY_NVRAM			= RDMA_PORT_PKEY_NVRAM,
+	IB_PORT_LED_INFO_SUP			= RDMA_PORT_LED_INFO,
+	IB_PORT_SM_DISABLED			= RDMA_PORT_SM_DISABLED,
+	IB_PORT_SYS_IMAGE_GUID_SUP		= RDMA_PORT_SYS_IMAGE_GUID,
+	IB_PORT_PKEY_SW_EXT_PORT_TRAP_SUP	= RDMA_PORT_PKEY_SW_EXT_PORT_TRAP,
+	IB_PORT_EXTENDED_SPEEDS_SUP             = RDMA_PORT_EXTENDED_SPEEDS,
+	IB_PORT_CM_SUP				= RDMA_PORT_CM,
+	IB_PORT_SNMP_TUNNEL_SUP			= RDMA_PORT_SNMP_TUNNEL,
+	IB_PORT_REINIT_SUP			= RDMA_PORT_REINIT,
+	IB_PORT_DEVICE_MGMT_SUP			= RDMA_PORT_DEVICE_MGMT,
+	IB_PORT_VENDOR_CLASS_SUP		= RDMA_PORT_VENDOR_CLASS,
+	IB_PORT_DR_NOTICE_SUP			= RDMA_PORT_DR_NOTICE,
+	IB_PORT_CAP_MASK_NOTICE_SUP		= RDMA_PORT_CAP_MASK_NOTICE,
+	IB_PORT_BOOT_MGMT_SUP			= RDMA_PORT_BOOT_MGMT,
+	IB_PORT_LINK_LATENCY_SUP		= RDMA_PORT_LINK_LATENCY,
+	IB_PORT_CLIENT_REG_SUP			= RDMA_PORT_CLIENT_REG,
+	IB_PORT_IP_BASED_GIDS			= RDMA_PORT_IP_BASED_GIDS,
 };
 
 enum ib_port_width {
@@ -577,7 +585,8 @@ struct ib_device_modify {
 enum ib_port_modify_flags {
 	IB_PORT_SHUTDOWN		= 1,
 	IB_PORT_INIT_TYPE		= (1<<2),
-	IB_PORT_RESET_QKEY_CNTR		= (1<<3)
+	IB_PORT_RESET_QKEY_CNTR		= (1<<3),
+	IB_PORT_OPA_MASK_CHG		= (1<<4)
 };
 
 struct ib_port_modify {
@@ -663,6 +672,8 @@ union rdma_network_hdr {
 		struct iphdr	roce4grh;
 	};
 };
+
+#define IB_QPN_MASK		0xFFFFFF
 
 enum {
 	IB_MULTICAST_QPN = 0xffffff
@@ -966,8 +977,15 @@ enum ib_cq_notify_flags {
 
 enum ib_srq_type {
 	IB_SRQT_BASIC,
-	IB_SRQT_XRC
+	IB_SRQT_XRC,
+	IB_SRQT_TM,
 };
+
+static inline bool ib_srq_has_cq(enum ib_srq_type srq_type)
+{
+	return srq_type == IB_SRQT_XRC ||
+	       srq_type == IB_SRQT_TM;
+}
 
 enum ib_srq_attr_mask {
 	IB_SRQ_MAX_WR	= 1 << 0,
@@ -986,11 +1004,17 @@ struct ib_srq_init_attr {
 	struct ib_srq_attr	attr;
 	enum ib_srq_type	srq_type;
 
-	union {
-		struct {
-			struct ib_xrcd *xrcd;
-			struct ib_cq   *cq;
-		} xrc;
+	struct {
+		struct ib_cq   *cq;
+		union {
+			struct {
+				struct ib_xrcd *xrcd;
+			} xrc;
+
+			struct {
+				u32		max_num_tags;
+			} tag_matching;
+		};
 	} ext;
 };
 
@@ -1059,6 +1083,7 @@ enum ib_qp_create_flags {
 	/* FREE					= 1 << 7, */
 	IB_QP_CREATE_SCATTER_FCS		= 1 << 8,
 	IB_QP_CREATE_CVLAN_STRIPPING		= 1 << 9,
+	IB_QP_CREATE_SOURCE_QPN			= 1 << 10,
 	/* reserve bits 26-31 for low level drivers' internal use */
 	IB_QP_CREATE_RESERVED_START		= 1 << 26,
 	IB_QP_CREATE_RESERVED_END		= 1 << 31,
@@ -1086,6 +1111,7 @@ struct ib_qp_init_attr {
 	 */
 	u8			port_num;
 	struct ib_rwq_ind_table *rwq_ind_tbl;
+	u32			source_qpn;
 };
 
 struct ib_qp_open_attr {
@@ -1527,12 +1553,14 @@ struct ib_srq {
 	enum ib_srq_type	srq_type;
 	atomic_t		usecnt;
 
-	union {
-		struct {
-			struct ib_xrcd *xrcd;
-			struct ib_cq   *cq;
-			u32		srq_num;
-		} xrc;
+	struct {
+		struct ib_cq   *cq;
+		union {
+			struct {
+				struct ib_xrcd *xrcd;
+				u32		srq_num;
+			} xrc;
+		};
 	} ext;
 };
 
@@ -1546,6 +1574,10 @@ enum ib_raw_packet_caps {
 	IB_RAW_PACKET_CAP_SCATTER_FCS		= (1 << 1),
 	/* Checksum offloads are supported (for both send and receive). */
 	IB_RAW_PACKET_CAP_IP_CSUM		= (1 << 2),
+	/* When a packet is received for an RQ with no receive WQEs, the
+	 * packet processing is delayed.
+	 */
+	IB_RAW_PACKET_CAP_DELAY_DROP		= (1 << 3),
 };
 
 enum ib_wq_type {
@@ -1574,6 +1606,7 @@ struct ib_wq {
 enum ib_wq_flags {
 	IB_WQ_FLAGS_CVLAN_STRIPPING	= 1 << 0,
 	IB_WQ_FLAGS_SCATTER_FCS		= 1 << 1,
+	IB_WQ_FLAGS_DELAY_DROP		= 1 << 2,
 };
 
 struct ib_wq_init_attr {
@@ -2288,6 +2321,8 @@ struct ib_device {
 	struct rdmacg_device         cg_device;
 #endif
 
+	u32                          index;
+
 	/**
 	 * The following mandatory functions are used only at device
 	 * registration.  Keep functions such as these at the end of this
@@ -2295,7 +2330,7 @@ struct ib_device {
 	 * in fast paths.
 	 */
 	int (*get_port_immutable)(struct ib_device *, u8, struct ib_port_immutable *);
-	void (*get_dev_fw_str)(struct ib_device *, char *str, size_t str_len);
+	void (*get_dev_fw_str)(struct ib_device *, char *str);
 };
 
 struct ib_client {
@@ -2331,7 +2366,7 @@ struct ib_client {
 struct ib_device *ib_alloc_device(size_t size);
 void ib_dealloc_device(struct ib_device *device);
 
-void ib_get_device_fw_str(struct ib_device *device, char *str, size_t str_len);
+void ib_get_device_fw_str(struct ib_device *device, char *str);
 
 int ib_register_device(struct ib_device *device,
 		       int (*port_callback)(struct ib_device *,
@@ -2395,8 +2430,8 @@ int ib_modify_qp_is_ok(enum ib_qp_state cur_state, enum ib_qp_state next_state,
 		       enum ib_qp_type type, enum ib_qp_attr_mask mask,
 		       enum rdma_link_layer ll);
 
-int ib_register_event_handler  (struct ib_event_handler *event_handler);
-int ib_unregister_event_handler(struct ib_event_handler *event_handler);
+void ib_register_event_handler(struct ib_event_handler *event_handler);
+void ib_unregister_event_handler(struct ib_event_handler *event_handler);
 void ib_dispatch_event(struct ib_event *event);
 
 int ib_query_port(struct ib_device *device,
@@ -3555,6 +3590,7 @@ void ib_drain_qp(struct ib_qp *qp);
 
 int ib_resolve_eth_dmac(struct ib_device *device,
 			struct rdma_ah_attr *ah_attr);
+int ib_get_eth_speed(struct ib_device *dev, u8 port_num, u8 *speed, u8 *width);
 
 static inline u8 *rdma_ah_retrieve_dmac(struct rdma_ah_attr *attr)
 {
