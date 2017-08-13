@@ -687,10 +687,12 @@ struct ifla_vf_vlan_range {
 	__u32 setting;
 };
 
+#ifdef __KERNEL__
 struct ifla_vf_vlan_trunk {
 	__u32 vf;
 	unsigned long allowed_vlans_bm[BITS_TO_LONGS(VF_VLAN_N_VID)];
 };
+#endif
 
 struct ifla_vf_tx_rate {
 	__u32 vf;
