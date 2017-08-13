@@ -698,7 +698,7 @@ static int mthca_map_cmd(struct mthca_dev *dev, u16 op, struct mthca_icm *icm,
 		for (i = 0; i < mthca_icm_size(&iter) >> lg; ++i) {
 			if (virt != -1) {
 				pages[nent * 2] = cpu_to_be64(virt);
-				virt += 1 << lg;
+				virt += 1ULL << lg;
 			}
 
 			pages[nent * 2 + 1] =
@@ -1921,7 +1921,7 @@ int mthca_MAD_IFC(struct mthca_dev *dev, int ignore_mkey, int ignore_bkey,
 			(in_wc->wc_flags & IB_WC_GRH ? 0x80 : 0);
 		MTHCA_PUT(inbox, val,               MAD_IFC_G_PATH_OFFSET);
 
-		MTHCA_PUT(inbox, in_wc->slid,       MAD_IFC_RLID_OFFSET);
+		MTHCA_PUT(inbox, ib_slid_cpu16(in_wc->slid), MAD_IFC_RLID_OFFSET);
 		MTHCA_PUT(inbox, in_wc->pkey_index, MAD_IFC_PKEY_OFFSET);
 
 		if (in_grh)
@@ -1929,7 +1929,7 @@ int mthca_MAD_IFC(struct mthca_dev *dev, int ignore_mkey, int ignore_bkey,
 
 		op_modifier |= 0x4;
 
-		in_modifier |= in_wc->slid << 16;
+		in_modifier |= ib_slid_cpu16(in_wc->slid) << 16;
 	}
 
 	err = mthca_cmd_box(dev, inmailbox->dma, outmailbox->dma,

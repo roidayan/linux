@@ -251,10 +251,10 @@ int qedr_query_port(struct ib_device *ibdev, u8 port, struct ib_port_attr *attr)
 	/* *attr being zeroed by the caller, avoid zeroing it here */
 	if (rdma_port->port_state == QED_RDMA_PORT_UP) {
 		attr->state = IB_PORT_ACTIVE;
-		attr->phys_state = 5;
+		attr->phys_state = RDMA_LINK_PHYS_STATE_LINK_UP;
 	} else {
 		attr->state = IB_PORT_DOWN;
-		attr->phys_state = 3;
+		attr->phys_state = RDMA_LINK_PHYS_STATE_DISABLED;
 	}
 	attr->max_mtu = IB_MTU_4096;
 	attr->active_mtu = iboe_get_mtu(dev->ndev->mtu);
@@ -376,6 +376,9 @@ struct ib_ucontext *qedr_alloc_ucontext(struct ib_device *ibdev,
 
 	memset(&uresp, 0, sizeof(uresp));
 
+	uresp.dpm_enabled = dev->user_dpm_enabled;
+	uresp.wids_enabled = 1;
+	uresp.wid_count = oparams.wid_count;
 	uresp.db_pa = ctx->dpi_phys_addr;
 	uresp.db_size = ctx->dpi_size;
 	uresp.max_send_wr = dev->attr.max_sqe;
