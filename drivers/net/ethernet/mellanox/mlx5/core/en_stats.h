@@ -301,7 +301,6 @@ static const struct counter_desc pport_per_prio_pfc_stats_desc[] = {
 
 static const struct counter_desc pport_eth_ext_stats_desc[] = {
 	{ "rx_buffer_passed_thres_phy", PPORT_ETH_EXT_OFF(rx_buffer_almost_full) },
-	{ "rx_buffer_full_phy", PPORT_ETH_EXT_OFF(rx_buffer_full) },
 };
 
 #define PCIE_PERF_OFF(c) \
