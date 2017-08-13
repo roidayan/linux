@@ -582,10 +582,7 @@ struct mlx5e_channel {
 	u8                         num_tc;
 
 	/* data path - accessed per napi poll */
-#ifdef CONFIG_SMP
-	struct irq_affinity_notify affinity_notify;
-	cpumask_t affinity_mask;
-#endif
+	struct irq_desc *irq_desc;
 
 	/* control */
 	struct mlx5e_priv         *priv;
