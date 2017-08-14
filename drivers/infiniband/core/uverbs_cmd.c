@@ -1542,6 +1542,7 @@ static int create_qp(struct ib_uverbs_file *file,
 		qp->qp_type	  = attr.qp_type;
 		atomic_set(&qp->usecnt, 0);
 		atomic_inc(&pd->usecnt);
+		qp->port = 0;
 		if (attr.send_cq)
 			atomic_inc(&attr.send_cq->usecnt);
 		if (attr.recv_cq)
@@ -1926,11 +1927,11 @@ static int modify_qp_mask(enum ib_qp_type qp_type, int mask)
 	}
 }
 
-static void copy_ah_attr_from_uverbs(struct ib_device *dev,
+static void copy_ah_attr_from_uverbs(struct ib_qp *qp,
 				     struct rdma_ah_attr *rdma_attr,
 				     struct ib_uverbs_qp_dest *uverb_attr)
 {
-	rdma_attr->type = rdma_ah_find_type(dev, uverb_attr->port_num);
+	rdma_attr->type = rdma_ah_find_type(qp->device, qp->port);
 	if (uverb_attr->is_global) {
 		rdma_ah_set_grh(rdma_attr, NULL,
 				uverb_attr->flow_label,
@@ -1994,9 +1995,11 @@ static int modify_qp(struct ib_uverbs_file *file,
 	attr->alt_timeout	  = cmd->base.alt_timeout;
 	attr->rate_limit	  = cmd->rate_limit;
 
-	copy_ah_attr_from_uverbs(qp->device, &attr->ah_attr, &cmd->base.dest);
-	copy_ah_attr_from_uverbs(qp->device, &attr->alt_ah_attr,
-				 &cmd->base.alt_dest);
+	if (cmd->base.attr_mask & IB_QP_AV)
+		copy_ah_attr_from_uverbs(qp, &attr->ah_attr, &cmd->base.dest);
+	if (cmd->base.attr_mask & IB_QP_ALT_PATH)
+		copy_ah_attr_from_uverbs(qp, &attr->alt_ah_attr,
+					 &cmd->base.alt_dest);
 
 	ret = ib_modify_qp_with_udata(qp, attr,
 				      modify_qp_mask(qp->qp_type,
