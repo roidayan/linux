@@ -463,7 +463,7 @@ static void del_fte(struct fs_node *node)
 
 	dev = get_dev(&ft->node);
 	err = mlx5_cmd_delete_fte(dev, ft,
-				  fte->index);
+				  fte);
 	if (err)
 		mlx5_core_warn(dev,
 			       "flow steering can't delete fte in index %d of flow group id %d\n",
