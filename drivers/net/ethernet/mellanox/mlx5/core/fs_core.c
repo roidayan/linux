@@ -174,7 +174,7 @@ static void del_hw_fte(struct fs_node *node);
 static void del_sw_flow_table(struct fs_node *node);
 static void del_sw_flow_group(struct fs_node *node);
 static void del_sw_fte(struct fs_node *node);
-/* Delete rule (destination) is special case that 
+/* Delete rule (destination) is special case that
  * requires to lock the FTE for all the deletion process.
  */
 static void del_sw_hw_rule(struct fs_node *node);
@@ -498,8 +498,7 @@ static void del_hw_fte(struct fs_node *node)
 	trace_mlx5_fs_del_fte(fte);
 	dev = get_dev(&ft->node);
 	if (node->active) {
-		err = mlx5_cmd_delete_fte(dev, ft,
-					  fte->index);
+		err = mlx5_cmd_delete_fte(dev, ft, fte);
 		if (err)
 			mlx5_core_warn(dev,
 				       "flow steering can't delete fte in index %d of flow group id %d\n",
