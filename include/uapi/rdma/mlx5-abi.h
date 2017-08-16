@@ -89,6 +89,7 @@ enum mlx5_ib_alloc_ucontext_resp_mask {
 enum mlx5_user_cmds_supp_uhw {
 	MLX5_USER_CMDS_SUPP_UHW_QUERY_DEVICE = 1 << 0,
 	MLX5_USER_CMDS_SUPP_UHW_CREATE_AH    = 1 << 1,
+	MLX5_USER_CMDS_SUPP_UHW_CREATE_FLOW  = 1 << 2,
 };
 
 /* The eth_min_inline response value is set to off-by-one vs the FW
@@ -345,4 +346,19 @@ struct mlx5_ib_modify_wq {
 	__u32	comp_mask;
 	__u32	reserved;
 };
+
+enum mlx5_ib_create_flow_uhw {
+	MLX5_IB_CREATE_FLOW_FLAG_REQUIRE_PET = 1UL << 0,
+};
+
+struct mlx5_ib_create_flow {
+	__u32	flags;
+	__u32	comp_mask;
+};
+
+struct mlx5_ib_create_flow_resp {
+	__u32	response_length;
+	__u32	reserved;
+};
+
 #endif /* MLX5_ABI_USER_H */
