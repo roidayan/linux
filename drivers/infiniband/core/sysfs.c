@@ -284,14 +284,22 @@ static ssize_t phys_state_show(struct ib_port *p, struct port_attribute *unused,
 		return ret;
 
 	switch (attr.phys_state) {
-	case 1:  return sprintf(buf, "1: Sleep\n");
-	case 2:  return sprintf(buf, "2: Polling\n");
-	case 3:  return sprintf(buf, "3: Disabled\n");
-	case 4:  return sprintf(buf, "4: PortConfigurationTraining\n");
-	case 5:  return sprintf(buf, "5: LinkUp\n");
-	case 6:  return sprintf(buf, "6: LinkErrorRecovery\n");
-	case 7:  return sprintf(buf, "7: Phy Test\n");
-	default: return sprintf(buf, "%d: <unknown>\n", attr.phys_state);
+	case RDMA_LINK_PHYS_STATE_SLEEP:
+		return sprintf(buf, "1: Sleep\n");
+	case RDMA_LINK_PHYS_STATE_POLLING:
+		return sprintf(buf, "2: Polling\n");
+	case RDMA_LINK_PHYS_STATE_DISABLED:
+		return sprintf(buf, "3: Disabled\n");
+	case RDMA_LINK_PHYS_STATE_PORT_CONFIGURATION_TRAINING:
+		return sprintf(buf, "4: PortConfigurationTraining\n");
+	case RDMA_LINK_PHYS_STATE_LINK_UP:
+		return sprintf(buf, "5: LinkUp\n");
+	case RDMA_LINK_PHYS_STATE_LINK_ERROR_RECOVER:
+		return sprintf(buf, "6: LinkErrorRecovery\n");
+	case RDMA_LINK_PHYS_STATE_LINK_PHY_TEST:
+		return sprintf(buf, "7: Phy Test\n");
+	default:
+		return sprintf(buf, "%d: <unknown>\n", attr.phys_state);
 	}
 }
 
@@ -1146,10 +1154,7 @@ static ssize_t show_node_type(struct device *device,
 	switch (dev->node_type) {
 	case RDMA_NODE_IB_CA:	  return sprintf(buf, "%d: CA\n", dev->node_type);
 	case RDMA_NODE_RNIC:	  return sprintf(buf, "%d: RNIC\n", dev->node_type);
-	case RDMA_NODE_USNIC:	  return sprintf(buf, "%d: usNIC\n", dev->node_type);
 	case RDMA_NODE_USNIC_UDP: return sprintf(buf, "%d: usNIC UDP\n", dev->node_type);
-	case RDMA_NODE_IB_SWITCH: return sprintf(buf, "%d: switch\n", dev->node_type);
-	case RDMA_NODE_IB_ROUTER: return sprintf(buf, "%d: router\n", dev->node_type);
 	default:		  return sprintf(buf, "%d: <unknown>\n", dev->node_type);
 	}
 }
@@ -1210,8 +1215,8 @@ static ssize_t show_fw_ver(struct device *device, struct device_attribute *attr,
 {
 	struct ib_device *dev = container_of(device, struct ib_device, dev);
 
-	ib_get_device_fw_str(dev, buf, PAGE_SIZE);
-	strlcat(buf, "\n", PAGE_SIZE);
+	ib_get_device_fw_str(dev, buf);
+	strlcat(buf, "\n", IB_FW_VERSION_NAME_MAX);
 	return strlen(buf);
 }
 
