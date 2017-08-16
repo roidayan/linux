@@ -1446,7 +1446,8 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 
 	if (field_avail(typeof(resp), cmds_supp_uhw, udata->outlen)) {
 		resp.cmds_supp_uhw |= MLX5_USER_CMDS_SUPP_UHW_QUERY_DEVICE |
-				      MLX5_USER_CMDS_SUPP_UHW_CREATE_AH;
+				      MLX5_USER_CMDS_SUPP_UHW_CREATE_AH |
+				      MLX5_USER_CMDS_SUPP_UHW_CREATE_FLOW;
 		resp.response_length += sizeof(resp.cmds_supp_uhw);
 	}
 
@@ -2359,7 +2360,8 @@ enum flow_table_type {
 #define MLX5_FS_MAX_ENTRIES	 BIT(16)
 static struct mlx5_ib_flow_prio *get_flow_table(struct mlx5_ib_dev *dev,
 						struct ib_flow_attr *flow_attr,
-						enum flow_table_type ft_type)
+						enum flow_table_type ft_type,
+						__u32 flags)
 {
 	bool dont_trap = flow_attr->flags & IB_FLOW_ATTR_FLAGS_DONT_TRAP;
 	struct mlx5_flow_namespace *ns = NULL;
@@ -2385,7 +2387,8 @@ static struct mlx5_ib_flow_prio *get_flow_table(struct mlx5_ib_dev *dev,
 			MLX5_IB_FT_RX : MLX5_IB_FT_TX];
 		if (mlx5_get_flow_namespace(dev->mdev,
 					    MLX5_FLOW_NAMESPACE_BYPASS) !=
-		    ns && flow_attr->priority != 0)
+		    ns && (flow_attr->priority != 0 ||
+			   !(flags & MLX5_IB_CREATE_FLOW_FLAG_REQUIRE_PET)))
 			return ERR_PTR(-EOPNOTSUPP);
 		priority = ib_prio_to_core_prio(flow_attr->priority,
 						dont_trap);
@@ -2709,15 +2712,50 @@ static struct ib_flow *mlx5_ib_create_flow(struct ib_qp *qp,
 	struct mlx5_ib_flow_prio *ft_prio_tx = NULL;
 	struct mlx5_ib_flow_prio *ft_prio;
 	bool is_egress = flow_attr->flags & IB_FLOW_ATTR_FLAGS_EGRESS;
+	struct mlx5_ib_create_flow ucmd = {};
+	size_t required_cmd_sz;
+	struct mlx5_ib_create_flow_resp resp = {};
 	int err;
 	int underlay_qpn;
 
+	required_cmd_sz = offsetof(typeof(ucmd), comp_mask) +
+		sizeof(ucmd.comp_mask);
+
 	if (udata &&
-	    udata->inlen && !ib_is_udata_cleared(udata, 0, udata->inlen))
+	    udata->inlen > sizeof(ucmd) &&
+	    !ib_is_udata_cleared(udata, sizeof(ucmd), udata->inlen -
+				 sizeof(ucmd)))
 		return ERR_PTR(-EOPNOTSUPP);
+	err = ib_copy_from_udata(&ucmd, udata, min(sizeof(ucmd), udata->inlen));
+	if (err) {
+		mlx5_ib_dbg(dev, "Copy failed in get_flow_table with error %d\n",
+			    err);
+		return ERR_PTR(err);
+	}
+
+	if (ucmd.comp_mask) {
+		mlx5_ib_dbg(dev, "Invalid comp mask = %08x\n", ucmd.comp_mask);
+		return ERR_PTR(-EOPNOTSUPP);
+	}
+
+	if (ucmd.flags & (~MLX5_IB_CREATE_FLOW_FLAG_REQUIRE_PET)) {
+		mlx5_ib_dbg(dev, "Unsupported flag given = %08x\n", ucmd.flags);
+		return ERR_PTR(-EOPNOTSUPP);
+	}
 
 	if (flow_attr->priority > MLX5_IB_FLOW_LAST_PRIO)
 		return ERR_PTR(-ENOMEM);
+
+	/* Maintain ABI compatibility if resp will be extended */
+	resp.response_length = offsetof(typeof(resp), response_length) +
+		sizeof(resp.response_length);
+	if (udata->outlen < resp.response_length) {
+		resp.response_length = 0;
+	} else {
+		err = ib_copy_to_udata(udata, &resp, resp.response_length);
+		if (err)
+			return ERR_PTR(err);
+	}
 
 	if (domain != IB_FLOW_DOMAIN_USER ||
 	    flow_attr->port > MLX5_CAP_GEN(dev->mdev, num_ports) ||
@@ -2748,11 +2786,13 @@ static struct ib_flow *mlx5_ib_create_flow(struct ib_qp *qp,
 		}
 
 		ft_prio = get_flow_table(dev, flow_attr,
-					 MLX5_IB_FT_TX_IPSEC);
+					 MLX5_IB_FT_TX_IPSEC,
+					 ucmd.flags);
 	} else {
 		ft_prio = get_flow_table(dev, flow_attr,
 					 is_ipsec_spec_exists(flow_attr) ?
-					 MLX5_IB_FT_RX_IPSEC : MLX5_IB_FT_RX);
+					 MLX5_IB_FT_RX_IPSEC : MLX5_IB_FT_RX,
+					 ucmd.flags);
 	}
 
 	if (IS_ERR(ft_prio)) {
@@ -2760,7 +2800,8 @@ static struct ib_flow *mlx5_ib_create_flow(struct ib_qp *qp,
 		goto unlock;
 	}
 	if (flow_attr->type == IB_FLOW_ATTR_SNIFFER) {
-		ft_prio_tx = get_flow_table(dev, flow_attr, MLX5_IB_FT_TX);
+		ft_prio_tx = get_flow_table(dev, flow_attr, MLX5_IB_FT_TX,
+					    ucmd.flags);
 		if (IS_ERR(ft_prio_tx)) {
 			err = PTR_ERR(ft_prio_tx);
 			ft_prio_tx = NULL;
