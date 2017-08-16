@@ -2142,6 +2142,7 @@ static int parse_flow_attr(struct mlx5_core_dev *mdev, u32 *match_c,
 			return -EINVAL;
 
 		action->flow_tag = ib_spec->flow_tag.tag_id;
+		action->has_flow_tag = true;
 		break;
 	case IB_FLOW_SPEC_ACTION_DROP:
 		if (FIELDS_NOT_SUPPORTED(ib_spec->drop,
@@ -2400,7 +2401,7 @@ static struct mlx5_ib_flow_handler *_create_flow_rule(struct mlx5_ib_dev *dev,
 {
 	struct mlx5_flow_table	*ft = ft_prio->flow_table;
 	struct mlx5_ib_flow_handler *handler;
-	struct mlx5_flow_act flow_act = {0};
+	struct mlx5_flow_act flow_act = {.flow_tag = MLX5_FS_DEFAULT_FLOW_TAG};
 	struct mlx5_flow_spec *spec;
 	struct mlx5_flow_destination *rule_dst = dst;
 	const void *ib_flow = (const void *)flow_attr + sizeof(*flow_attr);
@@ -2442,7 +2443,7 @@ static struct mlx5_ib_flow_handler *_create_flow_rule(struct mlx5_ib_dev *dev,
 		    MLX5_FLOW_CONTEXT_ACTION_FWD_NEXT_PRIO;
 	}
 
-	if (flow_act.flow_tag != MLX5_FS_DEFAULT_FLOW_TAG &&
+	if (flow_act.has_flow_tag &&
 	    (flow_attr->type == IB_FLOW_ATTR_ALL_DEFAULT ||
 	     flow_attr->type == IB_FLOW_ATTR_MC_DEFAULT)) {
 		mlx5_ib_warn(dev, "Flow tag %u and attribute type %x isn't allowed in leftovers\n",
