@@ -337,6 +337,7 @@ struct ipoib_dev_priv {
 
 	struct rw_semaphore vlan_rwsem;
 	struct mutex        sysfs_lock; /* Protect sysfs running*/
+	struct mutex mcast_mutex;
 
 	struct rb_root  path_tree;
 	struct list_head path_list;
