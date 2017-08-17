@@ -399,6 +399,7 @@ struct mlx5_ib_qp {
 	struct list_head	cq_send_list;
 	u32			rate_limit;
 	u32                     underlay_qpn;
+	bool			tunnel_offload_en;
 };
 
 struct mlx5_ib_cq_buf {
@@ -422,6 +423,7 @@ enum mlx5_ib_qp_flags {
 	MLX5_IB_QP_CVLAN_STRIPPING		= 1 << 9,
 	MLX5_IB_QP_UNDERLAY			= 1 << 10,
 	MLX5_IB_QP_SCATTER_END_PADDING		= 1 << 11,
+	MLX5_IB_QP_TUNNEL_OFFLOAD		= 1 << 12,
 };
 
 struct mlx5_umr_wr {
