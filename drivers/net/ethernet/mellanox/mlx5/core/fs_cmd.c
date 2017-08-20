@@ -39,6 +39,12 @@
 #include "mlx5_core.h"
 #include "eswitch.h"
 
+int mlx5_cmd_def_update_root_ft(struct mlx5_core_dev *dev,
+				struct mlx5_flow_table *ft, u32 underlay_qpn)
+{
+	return 0;
+}
+
 int mlx5_cmd_update_root_ft(struct mlx5_core_dev *dev,
 			    struct mlx5_flow_table *ft, u32 underlay_qpn)
 {
@@ -60,6 +66,18 @@ int mlx5_cmd_update_root_ft(struct mlx5_core_dev *dev,
 	}
 
 	return mlx5_cmd_exec(dev, in, sizeof(in), out, sizeof(out));
+}
+
+int mlx5_cmd_def_create_flow_table(struct mlx5_core_dev *dev,
+				   u16 vport,
+				   enum fs_flow_table_op_mod op_mod,
+				   enum fs_flow_table_type type,
+				   unsigned int level,
+				   unsigned int log_size,
+				   struct mlx5_flow_table
+				   *next_ft, unsigned int *table_id, u32 flags)
+{
+	return 0;
 }
 
 int mlx5_cmd_create_flow_table(struct mlx5_core_dev *dev,
@@ -116,6 +134,12 @@ int mlx5_cmd_create_flow_table(struct mlx5_core_dev *dev,
 	return err;
 }
 
+int mlx5_cmd_def_destroy_flow_table(struct mlx5_core_dev *dev,
+				    struct mlx5_flow_table *ft)
+{
+	return 0;
+}
+
 int mlx5_cmd_destroy_flow_table(struct mlx5_core_dev *dev,
 				struct mlx5_flow_table *ft)
 {
@@ -132,6 +156,13 @@ int mlx5_cmd_destroy_flow_table(struct mlx5_core_dev *dev,
 	}
 
 	return mlx5_cmd_exec(dev, in, sizeof(in), out, sizeof(out));
+}
+
+int mlx5_cmd_def_modify_flow_table(struct mlx5_core_dev *dev,
+				   struct mlx5_flow_table *ft,
+				   struct mlx5_flow_table *next_ft)
+{
+	return 0;
 }
 
 int mlx5_cmd_modify_flow_table(struct mlx5_core_dev *dev,
@@ -179,6 +210,14 @@ int mlx5_cmd_modify_flow_table(struct mlx5_core_dev *dev,
 	return mlx5_cmd_exec(dev, in, sizeof(in), out, sizeof(out));
 }
 
+int mlx5_cmd_def_create_flow_group(struct mlx5_core_dev *dev,
+				   struct mlx5_flow_table *ft,
+				   u32 *in,
+				   unsigned int *group_id)
+{
+	return 0;
+}
+
 int mlx5_cmd_create_flow_group(struct mlx5_core_dev *dev,
 			       struct mlx5_flow_table *ft,
 			       u32 *in,
@@ -202,6 +241,13 @@ int mlx5_cmd_create_flow_group(struct mlx5_core_dev *dev,
 		*group_id = MLX5_GET(create_flow_group_out, out,
 				     group_id);
 	return err;
+}
+
+int mlx5_cmd_def_destroy_flow_group(struct mlx5_core_dev *dev,
+				    struct mlx5_flow_table *ft,
+				    unsigned int group_id)
+{
+	return 0;
 }
 
 int mlx5_cmd_destroy_flow_group(struct mlx5_core_dev *dev,
@@ -317,10 +363,21 @@ static int mlx5_cmd_set_fte(struct mlx5_core_dev *dev,
 
 int mlx5_cmd_create_fte(struct mlx5_core_dev *dev,
 			struct mlx5_flow_table *ft,
-			unsigned group_id,
+			struct mlx5_flow_group *group,
 			struct fs_fte *fte)
 {
+	unsigned int group_id = group->id;
+
 	return mlx5_cmd_set_fte(dev, 0, 0, ft, group_id, fte);
+}
+
+int mlx5_cmd_def_update_fte(struct mlx5_core_dev *dev,
+			    struct mlx5_flow_table *ft,
+			    unsigned group_id,
+			    int modify_mask,
+			    struct fs_fte *fte)
+{
+	return -EOPNOTSUPP;
 }
 
 int mlx5_cmd_update_fte(struct mlx5_core_dev *dev,

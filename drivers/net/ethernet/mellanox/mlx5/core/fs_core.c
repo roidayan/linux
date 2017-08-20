@@ -1260,7 +1260,7 @@ add_rule_fte(struct fs_fte *fte,
 	fs_get_obj(ft, fg->node.parent);
 	if (!(fte->status & FS_FTE_STATUS_EXISTING))
 		err = mlx5_cmd_create_fte(get_dev(&ft->node),
-					  ft, fg->id, fte);
+					  ft, fg, fte);
 	else
 		err = mlx5_cmd_update_fte(get_dev(&ft->node),
 					  ft, fg->id, modify_mask, fte);
