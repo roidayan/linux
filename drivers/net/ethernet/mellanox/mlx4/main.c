@@ -821,16 +821,8 @@ static void slave_adjust_steering_mode(struct mlx4_dev *dev,
 
 static void mlx4_slave_destroy_special_qp_cap(struct mlx4_dev *dev)
 {
-	kfree(dev->caps.qp0_qkey);
-	kfree(dev->caps.qp0_tunnel);
-	kfree(dev->caps.qp0_proxy);
-	kfree(dev->caps.qp1_tunnel);
-	kfree(dev->caps.qp1_proxy);
-	dev->caps.qp0_qkey = NULL;
-	dev->caps.qp0_tunnel = NULL;
-	dev->caps.qp0_proxy = NULL;
-	dev->caps.qp1_tunnel = NULL;
-	dev->caps.qp1_proxy = NULL;
+	kfree(dev->caps.qp_info);
+	dev->caps.qp_info = NULL;
 }
 
 static int mlx4_slave_special_qp_cap(struct mlx4_dev *dev)
@@ -840,15 +832,9 @@ static int mlx4_slave_special_qp_cap(struct mlx4_dev *dev)
 	int i, err = 0;
 
 	func_cap = kzalloc(sizeof(*func_cap), GFP_KERNEL);
-	caps->qp0_qkey = kcalloc(caps->num_ports, sizeof(u32), GFP_KERNEL);
-	caps->qp0_tunnel = kcalloc(caps->num_ports, sizeof(u32), GFP_KERNEL);
-	caps->qp0_proxy = kcalloc(caps->num_ports, sizeof(u32), GFP_KERNEL);
-	caps->qp1_tunnel = kcalloc(caps->num_ports, sizeof(u32), GFP_KERNEL);
-	caps->qp1_proxy = kcalloc(caps->num_ports, sizeof(u32), GFP_KERNEL);
+	caps->qp_info = kcalloc(caps->num_ports, sizeof(*caps->qp_info), GFP_KERNEL);
 
-	if (!caps->qp0_tunnel || !caps->qp0_proxy ||
-	    !caps->qp1_tunnel || !caps->qp1_proxy ||
-	    !caps->qp0_qkey || !func_cap) {
+	if (!caps->qp_info) {
 		mlx4_err(dev, "Failed to allocate memory for special qps cap\n");
 		err = -ENOMEM;
 		goto err_mem;
@@ -861,11 +847,7 @@ static int mlx4_slave_special_qp_cap(struct mlx4_dev *dev)
 				 i, err);
 			goto err_mem;
 		}
-		caps->qp0_qkey[i - 1] = func_cap->qp0_qkey;
-		caps->qp0_tunnel[i - 1] = func_cap->qp0_tunnel_qpn;
-		caps->qp0_proxy[i - 1] = func_cap->qp0_proxy_qpn;
-		caps->qp1_tunnel[i - 1] = func_cap->qp1_tunnel_qpn;
-		caps->qp1_proxy[i - 1] = func_cap->qp1_proxy_qpn;
+		caps->qp_info[i - 1] = func_cap->qp_info;
 		caps->port_mask[i] = caps->port_type[i];
 		caps->phys_port_id[i] = func_cap->phys_port_id;
 		err = mlx4_get_slave_pkey_gid_tbl_len(dev, i,
@@ -3636,13 +3618,8 @@ err_master_mfunc:
 		mlx4_multi_func_cleanup(dev);
 	}
 
-	if (mlx4_is_slave(dev)) {
-		kfree(dev->caps.qp0_qkey);
-		kfree(dev->caps.qp0_tunnel);
-		kfree(dev->caps.qp0_proxy);
-		kfree(dev->caps.qp1_tunnel);
-		kfree(dev->caps.qp1_proxy);
-	}
+	if (mlx4_is_slave(dev))
+		kfree(dev->caps.qp_info);
 
 err_close:
 	mlx4_close_hca(dev);
@@ -3982,11 +3959,7 @@ static void mlx4_unload_one(struct pci_dev *pdev)
 	if (!mlx4_is_slave(dev))
 		mlx4_free_ownership(dev);
 
-	kfree(dev->caps.qp0_qkey);
-	kfree(dev->caps.qp0_tunnel);
-	kfree(dev->caps.qp0_proxy);
-	kfree(dev->caps.qp1_tunnel);
-	kfree(dev->caps.qp1_proxy);
+	kfree(dev->caps.qp_info);
 	kfree(dev->dev_vfs);
 
 	mlx4_clean_dev(dev);
