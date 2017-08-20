@@ -458,15 +458,15 @@ static int mlx5e_rq_alloc_mpwqe_info(struct mlx5e_rq *rq,
 		goto err_out;
 
 	/* We allocate more than mtt_sz as we will align the pointer */
-	rq->mpwqe_mtt_no_align = kzalloc_node(mtt_alloc * wq_sz, GFP_KERNEL,
+	rq->mpwqe.mtt_no_align = kzalloc_node(mtt_alloc * wq_sz, GFP_KERNEL,
 					cpu_to_node(c->cpu));
-	if (unlikely(!rq->mpwqe_mtt_no_align))
+	if (unlikely(!rq->mpwqe.mtt_no_align))
 		goto err_free_wqe_info;
 
 	for (i = 0; i < wq_sz; i++) {
 		struct mlx5e_mpw_info *wi = &rq->mpwqe.info[i];
 
-		wi->umr.mtt = PTR_ALIGN(rq->mpwqe_mtt_no_align + i * mtt_alloc,
+		wi->umr.mtt = PTR_ALIGN(rq->mpwqe.mtt_no_align + i * mtt_alloc,
 					MLX5_UMR_ALIGN);
 		wi->umr.mtt_addr = dma_map_single(c->pdev, wi->umr.mtt, mtt_sz,
 						  PCI_DMA_TODEVICE);
@@ -485,7 +485,7 @@ err_unmap_mtts:
 		dma_unmap_single(c->pdev, wi->umr.mtt_addr, mtt_sz,
 				 PCI_DMA_TODEVICE);
 	}
-	kfree(rq->mpwqe_mtt_no_align);
+	kfree(rq->mpwqe.mtt_no_align);
 err_free_wqe_info:
 	kfree(rq->mpwqe.info);
 
@@ -505,7 +505,7 @@ static void mlx5e_rq_free_mpwqe_info(struct mlx5e_rq *rq)
 		dma_unmap_single(rq->pdev, wi->umr.mtt_addr, mtt_sz,
 				 PCI_DMA_TODEVICE);
 	}
-	kfree(rq->mpwqe_mtt_no_align);
+	kfree(rq->mpwqe.mtt_no_align);
 	kfree(rq->mpwqe.info);
 }
 

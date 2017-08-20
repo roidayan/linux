@@ -527,6 +527,7 @@ struct mlx5e_rq {
 		} wqe;
 		struct {
 			struct mlx5e_mpw_info *info;
+			void                  *mtt_no_align;
 			u16                    num_strides;
 			u8                     log_stride_sz;
 			bool                   umr_in_progress;
@@ -563,7 +564,6 @@ struct mlx5e_rq {
 	struct mlx5_wq_ctrl    wq_ctrl;
 	__be32                 mkey_be;
 	u8                     wq_type;
-	void                  *mpwqe_mtt_no_align;
 	u32                    rqn;
 	struct mlx5_core_dev  *mdev;
 	struct mlx5_core_mkey  umr_mkey;
