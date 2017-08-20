@@ -212,6 +212,7 @@ struct mlx5_flow_root_namespace {
 	/* Should be held when chaining flow tables */
 	struct mutex			chain_lock;
 	u32				underlay_qpn;
+	const struct mlx5_flow_cmds	*cmds;
 };
 
 int mlx5_init_fc_stats(struct mlx5_core_dev *dev);
