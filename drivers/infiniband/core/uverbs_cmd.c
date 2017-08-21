@@ -1158,7 +1158,7 @@ ssize_t ib_uverbs_resize_cq(struct ib_uverbs_file *file,
 			    int out_len)
 {
 	struct ib_uverbs_resize_cq	cmd;
-	struct ib_uverbs_resize_cq_resp	resp;
+	struct ib_uverbs_resize_cq_resp	resp = {};
 	struct ib_udata                 udata;
 	struct ib_cq			*cq;
 	int				ret = -EINVAL;
@@ -2000,7 +2000,6 @@ static int modify_qp(struct ib_uverbs_file *file,
 	if (cmd->base.attr_mask & IB_QP_ALT_PATH)
 		copy_ah_attr_from_uverbs(qp, &attr->alt_ah_attr,
 					 &cmd->base.alt_dest);
-
 	ret = ib_modify_qp_with_udata(qp, attr,
 				      modify_qp_mask(qp->qp_type,
 						     cmd->base.attr_mask),
