@@ -645,6 +645,8 @@ enum {
 	IFLA_VF_IB_NODE_GUID,	/* VF Infiniband node GUID */
 	IFLA_VF_IB_PORT_GUID,	/* VF Infiniband port GUID */
 	IFLA_VF_VLAN_LIST,	/* nested list of vlans, option for QinQ */
+	IFLA_VF_VLAN_RANGE,	/* add/delete vlan range filtering */
+	IFLA_VF_VLAN_TRUNK,	/* vlan trunk filtering */
 	__IFLA_VF_MAX,
 };
 
@@ -669,6 +671,7 @@ enum {
 
 #define IFLA_VF_VLAN_INFO_MAX (__IFLA_VF_VLAN_INFO_MAX - 1)
 #define MAX_VLAN_LIST_LEN 1
+#define VF_VLAN_N_VID 4096
 
 struct ifla_vf_vlan_info {
 	__u32 vf;
@@ -676,6 +679,20 @@ struct ifla_vf_vlan_info {
 	__u32 qos;
 	__be16 vlan_proto; /* VLAN protocol either 802.1Q or 802.1ad */
 };
+
+struct ifla_vf_vlan_range {
+	__u32 vf;
+	__u32 start_vid; /* 1 - 4095 */
+	__u32 end_vid; /* 1 - 4095 */
+	__u32 setting;
+};
+
+#ifdef __KERNEL__
+struct ifla_vf_vlan_trunk {
+	__u32 vf;
+	unsigned long allowed_vlans_bm[BITS_TO_LONGS(VF_VLAN_N_VID)];
+};
+#endif
 
 struct ifla_vf_tx_rate {
 	__u32 vf;
@@ -723,6 +740,8 @@ enum {
 	IFLA_VF_STATS_BROADCAST,
 	IFLA_VF_STATS_MULTICAST,
 	IFLA_VF_STATS_PAD,
+	IFLA_VF_STATS_RX_DROPPED,
+	IFLA_VF_STATS_TX_DROPPED,
 	__IFLA_VF_STATS_MAX,
 };
 
