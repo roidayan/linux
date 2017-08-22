@@ -140,6 +140,7 @@ struct mlx5_flow_act {
 	u32 flow_tag;
 	u32 encap_id;
 	u32 modify_id;
+	struct ib_counter_set *counter_set;
 };
 
 #define MLX5_DECLARE_FLOW_ACT(name) \
