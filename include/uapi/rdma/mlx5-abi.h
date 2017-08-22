@@ -361,4 +361,18 @@ struct mlx5_ib_create_flow_resp {
 	__u32	reserved;
 };
 
+struct mlx5_ib_describe_counter_set_resp {
+	__u32	response_length;
+	__u32	reserved;
+};
+
+struct mlx5_ib_create_counter_set_resp {
+	__u32	response_length;
+	__u32	reserved;
+};
+
+struct mlx5_ib_query_counter_set_resp {
+	__u32	response_length;
+	__u32	reserved;
+};
 #endif /* MLX5_ABI_USER_H */
