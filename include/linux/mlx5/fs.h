@@ -163,6 +163,7 @@ struct mlx5_flow_act {
 	u32 encap_id;
 	u32 modify_id;
 	struct mlx5_flow_esp_aes_gcm_action esp_aes_gcm;
+	struct ib_counter_set *counter_set;
 };
 
 #define MLX5_DECLARE_FLOW_ACT(name) \
