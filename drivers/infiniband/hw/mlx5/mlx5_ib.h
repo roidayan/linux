@@ -705,6 +705,35 @@ struct mlx5_ib_delay_drop {
 	struct mlx5_ib_dbg_delay_drop *dbg;
 };
 
+struct mlx5_query_count_attr {
+	void *hw_cs_handle;
+	u64 *out;
+	u32 query_flags;
+};
+
+struct mlx5_desc_cs_attr {
+	struct ib_counter_set_describe_attr cs_desc;
+	void (*fill_counters_names)(char *cs_names_buff);
+};
+
+struct mlx5_ib_cs {
+	struct ib_counter_set ibcs;
+	struct mlx5_desc_cs_attr *desc_cs;
+	void *hw_cs_handle;
+	int (*query_count)(struct ib_device *ibdev,
+			   struct mlx5_query_count_attr *query_attr);
+};
+
+static inline struct mlx5_ib_cs *to_mcs(struct ib_counter_set *ibcs)
+{
+	return container_of(ibcs, struct mlx5_ib_cs, ibcs);
+}
+
+struct mlx5_ib_counter_sets {
+	struct mlx5_desc_cs_attr *desc_cs_arr;
+	u16 max_counter_sets;
+};
+
 struct mlx5_ib_dev {
 	struct ib_device		ib_dev;
 	struct mlx5_core_dev		*mdev;
@@ -748,6 +777,8 @@ struct mlx5_ib_dev {
 	struct mutex		lb_mutex;
 	u32			user_td;
 	u8			umr_fence;
+
+	struct mlx5_ib_counter_sets counter_sets;
 };
 
 static inline struct mlx5_ib_cq *to_mibcq(struct mlx5_core_cq *mcq)
