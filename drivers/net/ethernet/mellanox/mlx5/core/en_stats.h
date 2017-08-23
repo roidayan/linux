@@ -153,6 +153,9 @@ struct mlx5e_rq_stats {
 	u64 csum_none;
 	u64 lro_packets;
 	u64 lro_bytes;
+	u64 xdp_drop;
+	u64 xdp_tx;
+	u64 xdp_tx_full;
 	u64 wqe_err;
 	u64 mpwqe_filler;
 	u64 buff_alloc_err;
@@ -164,28 +167,6 @@ struct mlx5e_rq_stats {
 	u64 cache_empty;
 	u64 cache_busy;
 	u64 cache_waive;
-};
-
-static const struct counter_desc rq_stats_desc[] = {
-	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, packets) },
-	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, bytes) },
-	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, csum_complete) },
-	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, csum_unnecessary) },
-	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, csum_unnecessary_inner) },
-	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, csum_none) },
-	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, lro_packets) },
-	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, lro_bytes) },
-	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, wqe_err) },
-	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, mpwqe_filler) },
-	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, buff_alloc_err) },
-	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, cqe_compress_blks) },
-	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, cqe_compress_pkts) },
-	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, page_reuse) },
-	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, cache_reuse) },
-	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, cache_full) },
-	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, cache_empty) },
-	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, cache_busy) },
-	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, cache_waive) },
 };
 
 struct mlx5e_sq_stats {
@@ -206,26 +187,6 @@ struct mlx5e_sq_stats {
 	u64 wake;
 	u64 dropped;
 };
-
-static const struct counter_desc sq_stats_desc[] = {
-	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, packets) },
-	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, bytes) },
-	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, tso_packets) },
-	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, tso_bytes) },
-	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, tso_inner_packets) },
-	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, tso_inner_bytes) },
-	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, csum_partial) },
-	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, csum_partial_inner) },
-	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, nop) },
-	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, csum_none) },
-	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, stopped) },
-	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, wake) },
-	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, dropped) },
-	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, xmit_more) },
-};
-
-#define NUM_RQ_STATS			ARRAY_SIZE(rq_stats_desc)
-#define NUM_SQ_STATS			ARRAY_SIZE(sq_stats_desc)
 
 struct mlx5e_stats {
 	struct mlx5e_sw_stats sw;
