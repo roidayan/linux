@@ -73,6 +73,8 @@ struct mlx5_flow_steering {
 	struct mlx5_flow_root_namespace *esw_ingress_root_ns;
 	struct mlx5_flow_root_namespace	*sniffer_tx_root_ns;
 	struct mlx5_flow_root_namespace	*sniffer_rx_root_ns;
+	struct mlx5_flow_root_namespace	*ipsec_tx_root_ns;
+	struct mlx5_flow_root_namespace	*ipsec_rx_root_ns;
 };
 
 struct fs_node {
@@ -228,6 +230,13 @@ void mlx5_fc_update_sampling_interval(struct mlx5_core_dev *dev,
 
 int mlx5_init_fs(struct mlx5_core_dev *dev);
 void mlx5_cleanup_fs(struct mlx5_core_dev *dev);
+
+struct mlx5_flow_root_namespace *create_root_ns(struct mlx5_flow_steering *steering,
+						enum fs_flow_table_type table_type,
+						const struct mlx5_flow_cmds *cmds);
+struct fs_prio *fs_create_prio(struct mlx5_flow_namespace *ns,
+			       unsigned int prio, int num_levels);
+void cleanup_root_ns(struct mlx5_flow_root_namespace *root_ns);
 
 #define fs_get_obj(v, _node)  {v = container_of((_node), typeof(*v), node); }
 
