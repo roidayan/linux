@@ -908,8 +908,7 @@ static int nfp_net_tx(struct sk_buff *skb, struct net_device *netdev)
 	return NETDEV_TX_OK;
 
 err_unmap:
-	--f;
-	while (f >= 0) {
+	while (--f >= 0) {
 		frag = &skb_shinfo(skb)->frags[f];
 		dma_unmap_page(dp->dev, tx_ring->txbufs[wr_idx].dma_addr,
 			       skb_frag_size(frag), DMA_TO_DEVICE);
@@ -2660,6 +2659,7 @@ static int nfp_net_netdev_close(struct net_device *netdev)
 	/* Step 2: Tell NFP
 	 */
 	nfp_net_clear_config_and_disable(nn);
+	nfp_port_configure(netdev, false);
 
 	/* Step 3: Free resources
 	 */
@@ -2777,15 +2777,20 @@ static int nfp_net_netdev_open(struct net_device *netdev)
 		goto err_free_all;
 
 	/* Step 2: Configure the NFP
+	 * - Ifup the physical interface if it exists
 	 * - Enable rings from 0 to tx_rings/rx_rings - 1.
 	 * - Write MAC address (in case it changed)
 	 * - Set the MTU
 	 * - Set the Freelist buffer size
 	 * - Enable the FW
 	 */
-	err = nfp_net_set_config_and_enable(nn);
+	err = nfp_port_configure(netdev, true);
 	if (err)
 		goto err_free_all;
+
+	err = nfp_net_set_config_and_enable(nn);
+	if (err)
+		goto err_port_disable;
 
 	/* Step 3: Enable for kernel
 	 * - put some freelist descriptors on each RX ring
@@ -2797,6 +2802,8 @@ static int nfp_net_netdev_open(struct net_device *netdev)
 
 	return 0;
 
+err_port_disable:
+	nfp_port_configure(netdev, false);
 err_free_all:
 	nfp_net_close_free_all(nn);
 	return err;

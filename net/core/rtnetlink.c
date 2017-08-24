@@ -62,7 +62,7 @@
 struct rtnl_link {
 	rtnl_doit_func		doit;
 	rtnl_dumpit_func	dumpit;
-	rtnl_calcit_func 	calcit;
+	unsigned int		flags;
 };
 
 static DEFINE_MUTEX(rtnl_mutex);
@@ -127,7 +127,8 @@ bool lockdep_rtnl_is_held(void)
 EXPORT_SYMBOL(lockdep_rtnl_is_held);
 #endif /* #ifdef CONFIG_PROVE_LOCKING */
 
-static struct rtnl_link *rtnl_msg_handlers[RTNL_FAMILY_MAX + 1];
+static struct rtnl_link __rcu *rtnl_msg_handlers[RTNL_FAMILY_MAX + 1];
+static refcount_t rtnl_msg_handlers_ref[RTNL_FAMILY_MAX + 1];
 
 static inline int rtm_msgindex(int msgtype)
 {
@@ -143,58 +144,13 @@ static inline int rtm_msgindex(int msgtype)
 	return msgindex;
 }
 
-static rtnl_doit_func rtnl_get_doit(int protocol, int msgindex)
-{
-	struct rtnl_link *tab;
-
-	if (protocol <= RTNL_FAMILY_MAX)
-		tab = rtnl_msg_handlers[protocol];
-	else
-		tab = NULL;
-
-	if (tab == NULL || tab[msgindex].doit == NULL)
-		tab = rtnl_msg_handlers[PF_UNSPEC];
-
-	return tab[msgindex].doit;
-}
-
-static rtnl_dumpit_func rtnl_get_dumpit(int protocol, int msgindex)
-{
-	struct rtnl_link *tab;
-
-	if (protocol <= RTNL_FAMILY_MAX)
-		tab = rtnl_msg_handlers[protocol];
-	else
-		tab = NULL;
-
-	if (tab == NULL || tab[msgindex].dumpit == NULL)
-		tab = rtnl_msg_handlers[PF_UNSPEC];
-
-	return tab[msgindex].dumpit;
-}
-
-static rtnl_calcit_func rtnl_get_calcit(int protocol, int msgindex)
-{
-	struct rtnl_link *tab;
-
-	if (protocol <= RTNL_FAMILY_MAX)
-		tab = rtnl_msg_handlers[protocol];
-	else
-		tab = NULL;
-
-	if (tab == NULL || tab[msgindex].calcit == NULL)
-		tab = rtnl_msg_handlers[PF_UNSPEC];
-
-	return tab[msgindex].calcit;
-}
-
 /**
  * __rtnl_register - Register a rtnetlink message type
  * @protocol: Protocol family or PF_UNSPEC
  * @msgtype: rtnetlink message type
  * @doit: Function pointer called for each request message
  * @dumpit: Function pointer called for each dump request (NLM_F_DUMP) message
- * @calcit: Function pointer to calc size of dump message
+ * @flags: rtnl_link_flags to modifiy behaviour of doit/dumpit functions
  *
  * Registers the specified function pointers (at least one of them has
  * to be non-NULL) to be called whenever a request message for the
@@ -208,7 +164,7 @@ static rtnl_calcit_func rtnl_get_calcit(int protocol, int msgindex)
  */
 int __rtnl_register(int protocol, int msgtype,
 		    rtnl_doit_func doit, rtnl_dumpit_func dumpit,
-		    rtnl_calcit_func calcit)
+		    unsigned int flags)
 {
 	struct rtnl_link *tab;
 	int msgindex;
@@ -216,23 +172,20 @@ int __rtnl_register(int protocol, int msgtype,
 	BUG_ON(protocol < 0 || protocol > RTNL_FAMILY_MAX);
 	msgindex = rtm_msgindex(msgtype);
 
-	tab = rtnl_msg_handlers[protocol];
+	tab = rcu_dereference_raw(rtnl_msg_handlers[protocol]);
 	if (tab == NULL) {
 		tab = kcalloc(RTM_NR_MSGTYPES, sizeof(*tab), GFP_KERNEL);
 		if (tab == NULL)
 			return -ENOBUFS;
 
-		rtnl_msg_handlers[protocol] = tab;
+		rcu_assign_pointer(rtnl_msg_handlers[protocol], tab);
 	}
 
 	if (doit)
 		tab[msgindex].doit = doit;
-
 	if (dumpit)
 		tab[msgindex].dumpit = dumpit;
-
-	if (calcit)
-		tab[msgindex].calcit = calcit;
+	tab[msgindex].flags |= flags;
 
 	return 0;
 }
@@ -249,9 +202,9 @@ EXPORT_SYMBOL_GPL(__rtnl_register);
  */
 void rtnl_register(int protocol, int msgtype,
 		   rtnl_doit_func doit, rtnl_dumpit_func dumpit,
-		   rtnl_calcit_func calcit)
+		   unsigned int flags)
 {
-	if (__rtnl_register(protocol, msgtype, doit, dumpit, calcit) < 0)
+	if (__rtnl_register(protocol, msgtype, doit, dumpit, flags) < 0)
 		panic("Unable to register rtnetlink message handler, "
 		      "protocol = %d, message type = %d\n",
 		      protocol, msgtype);
@@ -267,17 +220,23 @@ EXPORT_SYMBOL_GPL(rtnl_register);
  */
 int rtnl_unregister(int protocol, int msgtype)
 {
+	struct rtnl_link *handlers;
 	int msgindex;
 
 	BUG_ON(protocol < 0 || protocol > RTNL_FAMILY_MAX);
 	msgindex = rtm_msgindex(msgtype);
 
-	if (rtnl_msg_handlers[protocol] == NULL)
+	rtnl_lock();
+	handlers = rtnl_dereference(rtnl_msg_handlers[protocol]);
+	if (!handlers) {
+		rtnl_unlock();
 		return -ENOENT;
+	}
 
-	rtnl_msg_handlers[protocol][msgindex].doit = NULL;
-	rtnl_msg_handlers[protocol][msgindex].dumpit = NULL;
-	rtnl_msg_handlers[protocol][msgindex].calcit = NULL;
+	handlers[msgindex].doit = NULL;
+	handlers[msgindex].dumpit = NULL;
+	handlers[msgindex].flags = 0;
+	rtnl_unlock();
 
 	return 0;
 }
@@ -292,10 +251,20 @@ EXPORT_SYMBOL_GPL(rtnl_unregister);
  */
 void rtnl_unregister_all(int protocol)
 {
+	struct rtnl_link *handlers;
+
 	BUG_ON(protocol < 0 || protocol > RTNL_FAMILY_MAX);
 
-	kfree(rtnl_msg_handlers[protocol]);
-	rtnl_msg_handlers[protocol] = NULL;
+	rtnl_lock();
+	handlers = rtnl_dereference(rtnl_msg_handlers[protocol]);
+	RCU_INIT_POINTER(rtnl_msg_handlers[protocol], NULL);
+	rtnl_unlock();
+
+	synchronize_net();
+
+	while (refcount_read(&rtnl_msg_handlers_ref[protocol]) > 1)
+		schedule();
+	kfree(handlers);
 }
 EXPORT_SYMBOL_GPL(rtnl_unregister_all);
 
@@ -433,16 +402,24 @@ static size_t rtnl_link_get_slave_info_data_size(const struct net_device *dev)
 {
 	struct net_device *master_dev;
 	const struct rtnl_link_ops *ops;
+	size_t size = 0;
 
-	master_dev = netdev_master_upper_dev_get((struct net_device *) dev);
+	rcu_read_lock();
+
+	master_dev = netdev_master_upper_dev_get_rcu((struct net_device *)dev);
 	if (!master_dev)
-		return 0;
+		goto out;
+
 	ops = master_dev->rtnl_link_ops;
 	if (!ops || !ops->get_slave_size)
-		return 0;
+		goto out;
 	/* IFLA_INFO_SLAVE_DATA + nested data */
-	return nla_total_size(sizeof(struct nlattr)) +
+	size = nla_total_size(sizeof(struct nlattr)) +
 	       ops->get_slave_size(master_dev, dev);
+
+out:
+	rcu_read_unlock();
+	return size;
 }
 
 static size_t rtnl_link_get_size(const struct net_device *dev)
@@ -850,6 +827,7 @@ static inline int rtnl_vfinfo_size(const struct net_device *dev,
 			 nla_total_size(MAX_VLAN_LIST_LEN *
 					sizeof(struct ifla_vf_vlan_info)) +
 			 nla_total_size(sizeof(struct ifla_vf_spoofchk)) +
+			 nla_total_size(sizeof(struct ifla_vf_vlan_trunk)) +
 			 nla_total_size(sizeof(struct ifla_vf_tx_rate)) +
 			 nla_total_size(sizeof(struct ifla_vf_rate)) +
 			 nla_total_size(sizeof(struct ifla_vf_link_state)) +
@@ -866,6 +844,10 @@ static inline int rtnl_vfinfo_size(const struct net_device *dev,
 			 /* IFLA_VF_STATS_BROADCAST */
 			 nla_total_size_64bit(sizeof(__u64)) +
 			 /* IFLA_VF_STATS_MULTICAST */
+			 nla_total_size_64bit(sizeof(__u64)) +
+			 /* IFLA_VF_STATS_RX_DROPPED */
+			 nla_total_size_64bit(sizeof(__u64)) +
+			 /* IFLA_VF_STATS_TX_DROPPED */
 			 nla_total_size_64bit(sizeof(__u64)) +
 			 nla_total_size(sizeof(struct ifla_vf_trust)));
 		return size;
@@ -1121,31 +1103,43 @@ static noinline_for_stack int rtnl_fill_vfinfo(struct sk_buff *skb,
 	struct ifla_vf_link_state vf_linkstate;
 	struct ifla_vf_vlan_info vf_vlan_info;
 	struct ifla_vf_spoofchk vf_spoofchk;
+	struct ifla_vf_vlan_trunk *vf_trunk;
 	struct ifla_vf_tx_rate vf_tx_rate;
 	struct ifla_vf_stats vf_stats;
 	struct ifla_vf_trust vf_trust;
 	struct ifla_vf_vlan vf_vlan;
 	struct ifla_vf_rate vf_rate;
 	struct ifla_vf_mac vf_mac;
-	struct ifla_vf_info ivi;
+	struct ifla_vf_info *ivi;
 
-	memset(&ivi, 0, sizeof(ivi));
+	ivi = kzalloc(sizeof(*ivi), GFP_KERNEL);
+	if (!ivi)
+		return -ENOMEM;
+
+	vf_trunk = kzalloc(sizeof(*vf_trunk), GFP_KERNEL);
+	if (!vf_trunk) {
+		kfree(ivi);
+		return -ENOMEM;
+	}
 
 	/* Not all SR-IOV capable drivers support the
 	 * spoofcheck and "RSS query enable" query.  Preset to
 	 * -1 so the user space tool can detect that the driver
 	 * didn't report anything.
 	 */
-	ivi.spoofchk = -1;
-	ivi.rss_query_en = -1;
-	ivi.trusted = -1;
+	ivi->spoofchk = -1;
+	ivi->rss_query_en = -1;
+	ivi->trusted = -1;
+	memset(ivi->mac, 0, sizeof(ivi->mac));
+	memset(ivi->trunk_8021q, 0, sizeof(ivi->trunk_8021q));
+	memset(ivi->trunk_8021ad, 0, sizeof(ivi->trunk_8021ad));
 	/* The default value for VF link state is "auto"
 	 * IFLA_VF_LINK_STATE_AUTO which equals zero
 	 */
-	ivi.linkstate = 0;
+	ivi->linkstate = 0;
 	/* VLAN Protocol by default is 802.1Q */
-	ivi.vlan_proto = htons(ETH_P_8021Q);
-	if (dev->netdev_ops->ndo_get_vf_config(dev, vfs_num, &ivi))
+	ivi->vlan_proto = htons(ETH_P_8021Q);
+	if (dev->netdev_ops->ndo_get_vf_config(dev, vfs_num, ivi))
 		return 0;
 
 	memset(&vf_vlan_info, 0, sizeof(vf_vlan_info));
@@ -1158,21 +1152,24 @@ static noinline_for_stack int rtnl_fill_vfinfo(struct sk_buff *skb,
 		vf_spoofchk.vf =
 		vf_linkstate.vf =
 		vf_rss_query_en.vf =
-		vf_trust.vf = ivi.vf;
+		vf_trunk->vf =
+		vf_trust.vf = ivi->vf;
 
-	memcpy(vf_mac.mac, ivi.mac, sizeof(ivi.mac));
-	vf_vlan.vlan = ivi.vlan;
-	vf_vlan.qos = ivi.qos;
-	vf_vlan_info.vlan = ivi.vlan;
-	vf_vlan_info.qos = ivi.qos;
-	vf_vlan_info.vlan_proto = ivi.vlan_proto;
-	vf_tx_rate.rate = ivi.max_tx_rate;
-	vf_rate.min_tx_rate = ivi.min_tx_rate;
-	vf_rate.max_tx_rate = ivi.max_tx_rate;
-	vf_spoofchk.setting = ivi.spoofchk;
-	vf_linkstate.link_state = ivi.linkstate;
-	vf_rss_query_en.setting = ivi.rss_query_en;
-	vf_trust.setting = ivi.trusted;
+	memcpy(vf_mac.mac, ivi->mac, sizeof(ivi->mac));
+	memcpy(vf_trunk->allowed_vlans_8021q_bm, ivi->trunk_8021q, sizeof(ivi->trunk_8021q));
+	memcpy(vf_trunk->allowed_vlans_8021ad_bm, ivi->trunk_8021ad, sizeof(ivi->trunk_8021ad));
+	vf_vlan.vlan = ivi->vlan;
+	vf_vlan.qos = ivi->qos;
+	vf_vlan_info.vlan = ivi->vlan;
+	vf_vlan_info.qos = ivi->qos;
+	vf_vlan_info.vlan_proto = ivi->vlan_proto;
+	vf_tx_rate.rate = ivi->max_tx_rate;
+	vf_rate.min_tx_rate = ivi->min_tx_rate;
+	vf_rate.max_tx_rate = ivi->max_tx_rate;
+	vf_spoofchk.setting = ivi->spoofchk;
+	vf_linkstate.link_state = ivi->linkstate;
+	vf_rss_query_en.setting = ivi->rss_query_en;
+	vf_trust.setting = ivi->trusted;
 	vf = nla_nest_start(skb, IFLA_VF_INFO);
 	if (!vf)
 		goto nla_put_vfinfo_failure;
@@ -1190,7 +1187,9 @@ static noinline_for_stack int rtnl_fill_vfinfo(struct sk_buff *skb,
 		    sizeof(vf_rss_query_en),
 		    &vf_rss_query_en) ||
 	    nla_put(skb, IFLA_VF_TRUST,
-		    sizeof(vf_trust), &vf_trust))
+		    sizeof(vf_trust), &vf_trust) ||
+	    nla_put(skb, IFLA_VF_VLAN_TRUNK,
+		    sizeof(*vf_trunk), vf_trunk))
 		goto nla_put_vf_failure;
 	vfvlanlist = nla_nest_start(skb, IFLA_VF_VLAN_LIST);
 	if (!vfvlanlist)
@@ -1219,18 +1218,26 @@ static noinline_for_stack int rtnl_fill_vfinfo(struct sk_buff *skb,
 	    nla_put_u64_64bit(skb, IFLA_VF_STATS_BROADCAST,
 			      vf_stats.broadcast, IFLA_VF_STATS_PAD) ||
 	    nla_put_u64_64bit(skb, IFLA_VF_STATS_MULTICAST,
-			      vf_stats.multicast, IFLA_VF_STATS_PAD)) {
+			      vf_stats.multicast, IFLA_VF_STATS_PAD) ||
+	    nla_put_u64_64bit(skb, IFLA_VF_STATS_RX_DROPPED,
+			      vf_stats.rx_dropped, IFLA_VF_STATS_PAD) ||
+	    nla_put_u64_64bit(skb, IFLA_VF_STATS_TX_DROPPED,
+			      vf_stats.tx_dropped, IFLA_VF_STATS_PAD)) {
 		nla_nest_cancel(skb, vfstats);
 		goto nla_put_vf_failure;
 	}
 	nla_nest_end(skb, vfstats);
 	nla_nest_end(skb, vf);
+	kfree(vf_trunk);
+	kfree(ivi);
 	return 0;
 
 nla_put_vf_failure:
 	nla_nest_cancel(skb, vf);
 nla_put_vfinfo_failure:
 	nla_nest_cancel(skb, vfinfo);
+	kfree(vf_trunk);
+	kfree(ivi);
 	return -EMSGSIZE;
 }
 
@@ -1644,8 +1651,6 @@ static int rtnl_dump_ifinfo(struct sk_buff *skb, struct netlink_callback *cb)
 	s_h = cb->args[0];
 	s_idx = cb->args[1];
 
-	cb->seq = net->dev_base_seq;
-
 	/* A hack to preserve kernel<->userspace interface.
 	 * The correct header is ifinfomsg. It is consistent with rtnl_getlink.
 	 * However, before Linux v3.9 the code here assumed rtgenmsg and that's
@@ -1691,8 +1696,6 @@ static int rtnl_dump_ifinfo(struct sk_buff *skb, struct netlink_callback *cb)
 
 				goto out_err;
 			}
-
-			nl_dump_check_consistent(cb, nlmsg_hdr(skb));
 cont:
 			idx++;
 		}
@@ -1702,6 +1705,8 @@ out:
 out_err:
 	cb->args[1] = idx;
 	cb->args[0] = h;
+	cb->seq = net->dev_base_seq;
+	nl_dump_check_consistent(cb, nlmsg_hdr(skb));
 
 	return err;
 }
@@ -1809,6 +1814,26 @@ static int do_setvfinfo(struct net_device *dev, struct nlattr **tb)
 			return err;
 	}
 
+	if (tb[IFLA_VF_VLAN_RANGE]) {
+		struct ifla_vf_vlan_range *ivvr =
+					nla_data(tb[IFLA_VF_VLAN_RANGE]);
+		bool add = !!ivvr->setting;
+
+		err = -EOPNOTSUPP;
+		if (add && ops->ndo_add_vf_vlan_trunk_range)
+			err = ops->ndo_add_vf_vlan_trunk_range(dev, ivvr->vf,
+							       ivvr->start_vid,
+							       ivvr->end_vid,
+							       ivvr->vlan_proto);
+		else if (!add && ops->ndo_del_vf_vlan_trunk_range)
+			err = ops->ndo_del_vf_vlan_trunk_range(dev, ivvr->vf,
+							       ivvr->start_vid,
+							       ivvr->end_vid,
+							       ivvr->vlan_proto);
+		if (err < 0)
+			return err;
+	}
+
 	if (tb[IFLA_VF_VLAN_LIST]) {
 		struct ifla_vf_vlan_info *ivvl[MAX_VLAN_LIST_LEN];
 		struct nlattr *attr;
@@ -1840,21 +1865,30 @@ static int do_setvfinfo(struct net_device *dev, struct nlattr **tb)
 
 	if (tb[IFLA_VF_TX_RATE]) {
 		struct ifla_vf_tx_rate *ivt = nla_data(tb[IFLA_VF_TX_RATE]);
-		struct ifla_vf_info ivf;
+		struct ifla_vf_info *ivf;
+
+		ivf = kzalloc(sizeof(*ivf), GFP_KERNEL);
+		if (!ivf)
+			return -ENOMEM;
 
 		err = -EOPNOTSUPP;
 		if (ops->ndo_get_vf_config)
-			err = ops->ndo_get_vf_config(dev, ivt->vf, &ivf);
-		if (err < 0)
+			err = ops->ndo_get_vf_config(dev, ivt->vf, ivf);
+		if (err < 0) {
+			kfree(ivf);
 			return err;
+		}
 
 		err = -EOPNOTSUPP;
 		if (ops->ndo_set_vf_rate)
 			err = ops->ndo_set_vf_rate(dev, ivt->vf,
-						   ivf.min_tx_rate,
+						   ivf->min_tx_rate,
 						   ivt->rate);
-		if (err < 0)
+		if (err < 0) {
+			kfree(ivf);
 			return err;
+		}
+		kfree(ivf);
 	}
 
 	if (tb[IFLA_VF_RATE]) {
@@ -2831,11 +2865,13 @@ static u16 rtnl_calcit(struct sk_buff *skb, struct nlmsghdr *nlh)
 	 * traverse the list of net devices and compute the minimum
 	 * buffer size based upon the filter mask.
 	 */
-	list_for_each_entry(dev, &net->dev_base_head, dev_list) {
+	rcu_read_lock();
+	for_each_netdev_rcu(net, dev) {
 		min_ifinfo_dump_size = max_t(u16, min_ifinfo_dump_size,
 					     if_nlmsg_size(dev,
 						           ext_filter_mask));
 	}
+	rcu_read_unlock();
 
 	return nlmsg_total_size(min_ifinfo_dump_size);
 }
@@ -2847,19 +2883,29 @@ static int rtnl_dump_all(struct sk_buff *skb, struct netlink_callback *cb)
 
 	if (s_idx == 0)
 		s_idx = 1;
+
 	for (idx = 1; idx <= RTNL_FAMILY_MAX; idx++) {
 		int type = cb->nlh->nlmsg_type-RTM_BASE;
+		struct rtnl_link *handlers;
+		rtnl_dumpit_func dumpit;
+
 		if (idx < s_idx || idx == PF_PACKET)
 			continue;
-		if (rtnl_msg_handlers[idx] == NULL ||
-		    rtnl_msg_handlers[idx][type].dumpit == NULL)
+
+		handlers = rtnl_dereference(rtnl_msg_handlers[idx]);
+		if (!handlers)
 			continue;
+
+		dumpit = READ_ONCE(handlers[type].dumpit);
+		if (!dumpit)
+			continue;
+
 		if (idx > s_idx) {
 			memset(&cb->args[0], 0, sizeof(cb->args));
 			cb->prev_seq = 0;
 			cb->seq = 0;
 		}
-		if (rtnl_msg_handlers[idx][type].dumpit(skb, cb))
+		if (dumpit(skb, cb))
 			break;
 	}
 	cb->family = idx;
@@ -4162,11 +4208,13 @@ static int rtnetlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh,
 			     struct netlink_ext_ack *extack)
 {
 	struct net *net = sock_net(skb->sk);
+	struct rtnl_link *handlers;
+	int err = -EOPNOTSUPP;
 	rtnl_doit_func doit;
+	unsigned int flags;
 	int kind;
 	int family;
 	int type;
-	int err;
 
 	type = nlh->nlmsg_type;
 	if (type > RTM_MAX)
@@ -4184,20 +4232,40 @@ static int rtnetlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh,
 	if (kind != 2 && !netlink_net_capable(skb, CAP_NET_ADMIN))
 		return -EPERM;
 
+	if (family >= ARRAY_SIZE(rtnl_msg_handlers))
+		family = PF_UNSPEC;
+
+	rcu_read_lock();
+	handlers = rcu_dereference(rtnl_msg_handlers[family]);
+	if (!handlers) {
+		family = PF_UNSPEC;
+		handlers = rcu_dereference(rtnl_msg_handlers[family]);
+	}
+
 	if (kind == 2 && nlh->nlmsg_flags&NLM_F_DUMP) {
 		struct sock *rtnl;
 		rtnl_dumpit_func dumpit;
-		rtnl_calcit_func calcit;
 		u16 min_dump_alloc = 0;
 
-		dumpit = rtnl_get_dumpit(family, type);
-		if (dumpit == NULL)
-			return -EOPNOTSUPP;
-		calcit = rtnl_get_calcit(family, type);
-		if (calcit)
-			min_dump_alloc = calcit(skb, nlh);
+		dumpit = READ_ONCE(handlers[type].dumpit);
+		if (!dumpit) {
+			family = PF_UNSPEC;
+			handlers = rcu_dereference(rtnl_msg_handlers[PF_UNSPEC]);
+			if (!handlers)
+				goto err_unlock;
 
-		__rtnl_unlock();
+			dumpit = READ_ONCE(handlers[type].dumpit);
+			if (!dumpit)
+				goto err_unlock;
+		}
+
+		refcount_inc(&rtnl_msg_handlers_ref[family]);
+
+		if (type == RTM_GETLINK - RTM_BASE)
+			min_dump_alloc = rtnl_calcit(skb, nlh);
+
+		rcu_read_unlock();
+
 		rtnl = net->rtnl;
 		{
 			struct netlink_dump_control c = {
@@ -4206,22 +4274,47 @@ static int rtnetlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh,
 			};
 			err = netlink_dump_start(rtnl, skb, nlh, &c);
 		}
-		rtnl_lock();
+		refcount_dec(&rtnl_msg_handlers_ref[family]);
 		return err;
 	}
 
-	doit = rtnl_get_doit(family, type);
-	if (doit == NULL)
-		return -EOPNOTSUPP;
+	doit = READ_ONCE(handlers[type].doit);
+	if (!doit) {
+		family = PF_UNSPEC;
+		handlers = rcu_dereference(rtnl_msg_handlers[family]);
+	}
 
-	return doit(skb, nlh, extack);
+	flags = READ_ONCE(handlers[type].flags);
+	if (flags & RTNL_FLAG_DOIT_UNLOCKED) {
+		refcount_inc(&rtnl_msg_handlers_ref[family]);
+		doit = READ_ONCE(handlers[type].doit);
+		rcu_read_unlock();
+		if (doit)
+			err = doit(skb, nlh, extack);
+		refcount_dec(&rtnl_msg_handlers_ref[family]);
+		return err;
+	}
+
+	rcu_read_unlock();
+
+	rtnl_lock();
+	handlers = rtnl_dereference(rtnl_msg_handlers[family]);
+	if (handlers) {
+		doit = READ_ONCE(handlers[type].doit);
+		if (doit)
+			err = doit(skb, nlh, extack);
+	}
+	rtnl_unlock();
+	return err;
+
+err_unlock:
+	rcu_read_unlock();
+	return -EOPNOTSUPP;
 }
 
 static void rtnetlink_rcv(struct sk_buff *skb)
 {
-	rtnl_lock();
 	netlink_rcv_skb(skb, &rtnetlink_rcv_msg);
-	rtnl_unlock();
 }
 
 static int rtnetlink_bind(struct net *net, int group)
@@ -4294,29 +4387,34 @@ static struct pernet_operations rtnetlink_net_ops = {
 
 void __init rtnetlink_init(void)
 {
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(rtnl_msg_handlers_ref); i++)
+		refcount_set(&rtnl_msg_handlers_ref[i], 1);
+
 	if (register_pernet_subsys(&rtnetlink_net_ops))
 		panic("rtnetlink_init: cannot initialize rtnetlink\n");
 
 	register_netdevice_notifier(&rtnetlink_dev_notifier);
 
 	rtnl_register(PF_UNSPEC, RTM_GETLINK, rtnl_getlink,
-		      rtnl_dump_ifinfo, rtnl_calcit);
-	rtnl_register(PF_UNSPEC, RTM_SETLINK, rtnl_setlink, NULL, NULL);
-	rtnl_register(PF_UNSPEC, RTM_NEWLINK, rtnl_newlink, NULL, NULL);
-	rtnl_register(PF_UNSPEC, RTM_DELLINK, rtnl_dellink, NULL, NULL);
+		      rtnl_dump_ifinfo, 0);
+	rtnl_register(PF_UNSPEC, RTM_SETLINK, rtnl_setlink, NULL, 0);
+	rtnl_register(PF_UNSPEC, RTM_NEWLINK, rtnl_newlink, NULL, 0);
+	rtnl_register(PF_UNSPEC, RTM_DELLINK, rtnl_dellink, NULL, 0);
 
-	rtnl_register(PF_UNSPEC, RTM_GETADDR, NULL, rtnl_dump_all, NULL);
-	rtnl_register(PF_UNSPEC, RTM_GETROUTE, NULL, rtnl_dump_all, NULL);
-	rtnl_register(PF_UNSPEC, RTM_GETNETCONF, NULL, rtnl_dump_all, NULL);
+	rtnl_register(PF_UNSPEC, RTM_GETADDR, NULL, rtnl_dump_all, 0);
+	rtnl_register(PF_UNSPEC, RTM_GETROUTE, NULL, rtnl_dump_all, 0);
+	rtnl_register(PF_UNSPEC, RTM_GETNETCONF, NULL, rtnl_dump_all, 0);
 
-	rtnl_register(PF_BRIDGE, RTM_NEWNEIGH, rtnl_fdb_add, NULL, NULL);
-	rtnl_register(PF_BRIDGE, RTM_DELNEIGH, rtnl_fdb_del, NULL, NULL);
-	rtnl_register(PF_BRIDGE, RTM_GETNEIGH, NULL, rtnl_fdb_dump, NULL);
+	rtnl_register(PF_BRIDGE, RTM_NEWNEIGH, rtnl_fdb_add, NULL, 0);
+	rtnl_register(PF_BRIDGE, RTM_DELNEIGH, rtnl_fdb_del, NULL, 0);
+	rtnl_register(PF_BRIDGE, RTM_GETNEIGH, NULL, rtnl_fdb_dump, 0);
 
-	rtnl_register(PF_BRIDGE, RTM_GETLINK, NULL, rtnl_bridge_getlink, NULL);
-	rtnl_register(PF_BRIDGE, RTM_DELLINK, rtnl_bridge_dellink, NULL, NULL);
-	rtnl_register(PF_BRIDGE, RTM_SETLINK, rtnl_bridge_setlink, NULL, NULL);
+	rtnl_register(PF_BRIDGE, RTM_GETLINK, NULL, rtnl_bridge_getlink, 0);
+	rtnl_register(PF_BRIDGE, RTM_DELLINK, rtnl_bridge_dellink, NULL, 0);
+	rtnl_register(PF_BRIDGE, RTM_SETLINK, rtnl_bridge_setlink, NULL, 0);
 
 	rtnl_register(PF_UNSPEC, RTM_GETSTATS, rtnl_stats_get, rtnl_stats_dump,
-		      NULL);
+		      0);
 }
