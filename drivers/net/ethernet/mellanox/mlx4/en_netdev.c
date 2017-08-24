@@ -130,19 +130,20 @@ out:
 	return err;
 }
 
-static int __mlx4_en_setup_tc(struct net_device *dev, u32 handle,
-			      u32 chain_index, __be16 proto,
-			      struct tc_to_netdev *tc)
+static int __mlx4_en_setup_tc(struct net_device *dev, enum tc_setup_type type,
+			      void *type_data)
 {
-	if (tc->type != TC_SETUP_MQPRIO)
+	struct tc_mqprio_qopt *mqprio = type_data;
+
+	if (type != TC_SETUP_MQPRIO)
+		return -EOPNOTSUPP;
+
+	if (mqprio->num_tc && mqprio->num_tc != MLX4_EN_NUM_UP_HIGH)
 		return -EINVAL;
 
-	if (tc->mqprio->num_tc && tc->mqprio->num_tc != MLX4_EN_NUM_UP_HIGH)
-		return -EINVAL;
+	mqprio->hw = TC_MQPRIO_HW_OFFLOAD_TCS;
 
-	tc->mqprio->hw = TC_MQPRIO_HW_OFFLOAD_TCS;
-
-	return mlx4_en_alloc_tx_queue_per_tc(dev, tc->mqprio->num_tc);
+	return mlx4_en_alloc_tx_queue_per_tc(dev, mqprio->num_tc);
 }
 
 #ifdef CONFIG_RFS_ACCEL
@@ -3284,7 +3285,7 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
 	priv->pflags = MLX4_EN_PRIV_FLAGS_BLUEFLAME;
 	priv->ctrl_flags = cpu_to_be32(MLX4_WQE_CTRL_CQ_UPDATE |
 			MLX4_WQE_CTRL_SOLICITED);
-	priv->num_tx_rings_p_up = mdev->profile.num_tx_rings_p_up;
+	priv->num_tx_rings_p_up = mdev->profile.max_num_tx_rings_p_up;
 	priv->tx_work_limit = MLX4_EN_DEFAULT_TX_WORK;
 	netdev_rss_key_fill(priv->rss_key, sizeof(priv->rss_key));
 
