@@ -1819,6 +1819,16 @@ struct mlx5_flow_namespace *mlx5_get_flow_namespace(struct mlx5_core_dev *dev,
 			return &steering->sniffer_tx_root_ns->ns;
 		else
 			return NULL;
+	case MLX5_FLOW_NAMESPACE_IPSEC_RX:
+		if (steering->ipsec_rx_root_ns)
+			return &steering->ipsec_rx_root_ns->ns;
+		else
+			return NULL;
+	case MLX5_FLOW_NAMESPACE_IPSEC_TX:
+		if (steering->ipsec_tx_root_ns)
+			return &steering->ipsec_tx_root_ns->ns;
+		else
+			return NULL;
 	default:
 		return NULL;
 	}
@@ -1839,8 +1849,8 @@ struct mlx5_flow_namespace *mlx5_get_flow_namespace(struct mlx5_core_dev *dev,
 }
 EXPORT_SYMBOL(mlx5_get_flow_namespace);
 
-static struct fs_prio *fs_create_prio(struct mlx5_flow_namespace *ns,
-				      unsigned int prio, int num_levels)
+struct fs_prio *fs_create_prio(struct mlx5_flow_namespace *ns,
+			       unsigned int prio, int num_levels)
 {
 	struct fs_prio *fs_prio;
 
@@ -1994,9 +2004,9 @@ static const struct mlx5_flow_cmds mlx5_flow_cmds = {
 	.update_root_ft = mlx5_cmd_update_root_ft,
 };
 
-static struct mlx5_flow_root_namespace *create_root_ns(struct mlx5_flow_steering *steering,
-						       enum fs_flow_table_type table_type,
-						       const struct mlx5_flow_cmds *cmds)
+struct mlx5_flow_root_namespace *create_root_ns(struct mlx5_flow_steering *steering,
+						enum fs_flow_table_type table_type,
+						const struct mlx5_flow_cmds *cmds)
 {
 	struct mlx5_flow_root_namespace *root_ns;
 	struct mlx5_flow_namespace *ns;
@@ -2117,7 +2127,7 @@ static void clean_tree(struct fs_node *node)
 	}
 }
 
-static void cleanup_root_ns(struct mlx5_flow_root_namespace *root_ns)
+void cleanup_root_ns(struct mlx5_flow_root_namespace *root_ns)
 {
 	if (!root_ns)
 		return;
