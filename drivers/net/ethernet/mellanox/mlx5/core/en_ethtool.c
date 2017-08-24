@@ -254,8 +254,8 @@ static void mlx5e_fill_stats_strings(struct mlx5e_priv *priv, u8 *data)
 		       pcie_perf_stats_desc64[i].format);
 
 	for (i = 0; i < NUM_PCIE_PERF_STALL_COUNTERS(priv); i++)
-	 strcpy(data + (idx++) * ETH_GSTRING_LEN,
-		pcie_perf_stall_stats_desc[i].format);
+		strcpy(data + (idx++) * ETH_GSTRING_LEN,
+		       pcie_perf_stall_stats_desc[i].format);
 
 	for (prio = 0; prio < NUM_PPORT_PRIO; prio++) {
 		for (i = 0; i < NUM_PPORT_PER_PRIO_TRAFFIC_COUNTERS; i++)
@@ -662,7 +662,7 @@ int mlx5e_ethtool_set_channels(struct mlx5e_priv *priv,
 
 	new_channels.params = priv->channels.params;
 	new_channels.params.num_channels = count;
-	mlx5e_build_default_indir_rqt(priv->mdev, new_channels.params.indirection_rqt,
+	mlx5e_build_default_indir_rqt(new_channels.params.indirection_rqt,
 				      MLX5E_INDIR_RQT_SIZE, count);
 
 	if (!test_bit(MLX5E_STATE_OPENED, &priv->state)) {
