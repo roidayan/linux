@@ -538,6 +538,62 @@ int mlx5_cmd_delete_ipsec_fte(struct mlx5_core_dev *dev,
 	return mlx5_accel_ipsec_sa_cmd_wait(context);
 }
 
+static int init_ipsec_tx_root_ns(struct mlx5_flow_steering *steering)
+{
+	struct fs_prio *prio;
+
+	steering->ipsec_tx_root_ns = create_root_ns(steering, FS_FT_IPSEC_TX,
+						    &mlx5_ipsec_flow_cmds);
+	if (!steering->ipsec_tx_root_ns)
+		return -ENOMEM;
+
+	/* Create single prio */
+	prio = fs_create_prio(&steering->ipsec_tx_root_ns->ns, 1, 1);
+	if (IS_ERR(prio)) {
+		cleanup_root_ns(steering->ipsec_tx_root_ns);
+		return PTR_ERR(prio);
+	}
+	return 0;
+}
+
+static int init_ipsec_rx_root_ns(struct mlx5_flow_steering *steering)
+{
+	struct fs_prio *prio;
+
+	steering->ipsec_rx_root_ns = create_root_ns(steering, FS_FT_IPSEC_RX,
+						    &mlx5_ipsec_flow_cmds);
+	if (!steering->ipsec_rx_root_ns)
+		return -ENOMEM;
+
+	/* Create single prio */
+	prio = fs_create_prio(&steering->ipsec_rx_root_ns->ns, 1, 1);
+	if (IS_ERR(prio)) {
+		cleanup_root_ns(steering->ipsec_rx_root_ns);
+		return PTR_ERR(prio);
+	}
+	return 0;
+}
+
+int init_ipsec_root_ns(struct mlx5_core_dev *mdev)
+{
+	struct mlx5_flow_steering *steering = mdev->priv.steering;
+	int err;
+
+	err = init_ipsec_tx_root_ns(steering);
+	if (err)
+		goto err;
+
+	err = init_ipsec_rx_root_ns(steering);
+	if (err)
+		goto err;
+	goto out;
+err:
+	steering->ipsec_rx_root_ns = NULL;
+	steering->ipsec_tx_root_ns = NULL;
+out:
+	return err;
+}
+
 int mlx5_fpga_ipsec_init(struct mlx5_core_dev *mdev)
 {
 	struct mlx5_fpga_conn_attr init_attr = {0};
@@ -547,6 +603,10 @@ int mlx5_fpga_ipsec_init(struct mlx5_core_dev *mdev)
 
 	if (!mlx5_fpga_is_ipsec_device(mdev))
 		return 0;
+
+	err = init_ipsec_root_ns(mdev);
+	if (err)
+		return err;
 
 	fdev->ipsec = kzalloc(sizeof(*fdev->ipsec), GFP_KERNEL);
 	if (!fdev->ipsec)
@@ -580,11 +640,13 @@ int mlx5_fpga_ipsec_init(struct mlx5_core_dev *mdev)
 error:
 	kfree(fdev->ipsec);
 	fdev->ipsec = NULL;
+	mlx5_fpga_ipsec_cleanup(mdev);
 	return err;
 }
 
 void mlx5_fpga_ipsec_cleanup(struct mlx5_core_dev *mdev)
 {
+	struct mlx5_flow_steering *steering = mdev->priv.steering;
 	struct mlx5_fpga_device *fdev = mdev->fpga;
 
 	if (!mlx5_fpga_is_ipsec_device(mdev))
@@ -593,4 +655,6 @@ void mlx5_fpga_ipsec_cleanup(struct mlx5_core_dev *mdev)
 	mlx5_fpga_sbu_conn_destroy(fdev->ipsec->conn);
 	kfree(fdev->ipsec);
 	fdev->ipsec = NULL;
+	cleanup_root_ns(steering->ipsec_rx_root_ns);
+	cleanup_root_ns(steering->ipsec_tx_root_ns);
 }
