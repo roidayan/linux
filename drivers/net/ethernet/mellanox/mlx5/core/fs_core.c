@@ -2013,6 +2013,16 @@ struct mlx5_flow_namespace *mlx5_get_flow_namespace(struct mlx5_core_dev *dev,
 			return &steering->sniffer_tx_root_ns->ns;
 		else
 			return NULL;
+	case MLX5_FLOW_NAMESPACE_IPSEC_RX:
+		if (steering->ipsec_rx_root_ns)
+			return &steering->ipsec_rx_root_ns->ns;
+		else
+			return NULL;
+	case MLX5_FLOW_NAMESPACE_IPSEC_TX:
+		if (steering->ipsec_tx_root_ns)
+			return &steering->ipsec_tx_root_ns->ns;
+		else
+			return NULL;
 	default:
 		return NULL;
 	}
@@ -2033,8 +2043,8 @@ struct mlx5_flow_namespace *mlx5_get_flow_namespace(struct mlx5_core_dev *dev,
 }
 EXPORT_SYMBOL(mlx5_get_flow_namespace);
 
-static struct fs_prio *fs_create_prio(struct mlx5_flow_namespace *ns,
-				      unsigned int prio, int num_levels)
+struct fs_prio *fs_create_prio(struct mlx5_flow_namespace *ns,
+			       unsigned int prio, int num_levels)
 {
 	struct fs_prio *fs_prio;
 
@@ -2176,9 +2186,22 @@ static int init_root_tree(struct mlx5_flow_steering *steering,
 	return 0;
 }
 
-static struct mlx5_flow_root_namespace *create_root_ns(struct mlx5_flow_steering *steering,
-						       enum fs_flow_table_type
-						       table_type)
+static const struct mlx5_flow_cmds mlx5_flow_cmds = {
+	.create_flow_table = mlx5_cmd_create_flow_table,
+	.destroy_flow_table = mlx5_cmd_destroy_flow_table,
+	.modify_flow_table = mlx5_cmd_modify_flow_table,
+	.create_flow_group = mlx5_cmd_create_flow_group,
+	.destroy_flow_group = mlx5_cmd_destroy_flow_group,
+	.create_fte = mlx5_cmd_create_fte,
+	.update_fte = mlx5_cmd_update_fte,
+	.delete_fte = mlx5_cmd_delete_fte,
+	.update_root_ft = mlx5_cmd_update_root_ft,
+};
+
+struct mlx5_flow_root_namespace
+*create_root_ns(struct mlx5_flow_steering *steering,
+		enum fs_flow_table_type table_type,
+		const struct mlx5_flow_cmds *cmds)
 {
 	struct mlx5_flow_root_namespace *root_ns;
 	struct mlx5_flow_namespace *ns;
@@ -2267,7 +2290,8 @@ static int create_anchor_flow_table(struct mlx5_flow_steering *steering)
 
 static int init_root_ns(struct mlx5_flow_steering *steering)
 {
-	steering->root_ns = create_root_ns(steering, FS_FT_NIC_RX);
+	steering->root_ns = create_root_ns(steering, FS_FT_NIC_RX,
+					   &mlx5_flow_cmds);
 	if (!steering->root_ns)
 		goto cleanup;
 
@@ -2300,7 +2324,7 @@ static void clean_tree(struct fs_node *node)
 	}
 }
 
-static void cleanup_root_ns(struct mlx5_flow_root_namespace *root_ns)
+void cleanup_root_ns(struct mlx5_flow_root_namespace *root_ns)
 {
 	if (!root_ns)
 		return;
@@ -2328,7 +2352,9 @@ static int init_sniffer_tx_root_ns(struct mlx5_flow_steering *steering)
 {
 	struct fs_prio *prio;
 
-	steering->sniffer_tx_root_ns = create_root_ns(steering, FS_FT_SNIFFER_TX);
+	steering->sniffer_tx_root_ns = create_root_ns(steering,
+						      FS_FT_SNIFFER_TX,
+						      &mlx5_flow_cmds);
 	if (!steering->sniffer_tx_root_ns)
 		return -ENOMEM;
 
@@ -2345,7 +2371,9 @@ static int init_sniffer_rx_root_ns(struct mlx5_flow_steering *steering)
 {
 	struct fs_prio *prio;
 
-	steering->sniffer_rx_root_ns = create_root_ns(steering, FS_FT_SNIFFER_RX);
+	steering->sniffer_rx_root_ns = create_root_ns(steering,
+						      FS_FT_SNIFFER_RX,
+						      &mlx5_flow_cmds);
 	if (!steering->sniffer_rx_root_ns)
 		return -ENOMEM;
 
@@ -2362,7 +2390,8 @@ static int init_fdb_root_ns(struct mlx5_flow_steering *steering)
 {
 	struct fs_prio *prio;
 
-	steering->fdb_root_ns = create_root_ns(steering, FS_FT_FDB);
+	steering->fdb_root_ns = create_root_ns(steering, FS_FT_FDB,
+					       &mlx5_flow_cmds);
 	if (!steering->fdb_root_ns)
 		return -ENOMEM;
 
@@ -2387,7 +2416,9 @@ static int init_ingress_acl_root_ns(struct mlx5_flow_steering *steering)
 {
 	struct fs_prio *prio;
 
-	steering->esw_egress_root_ns = create_root_ns(steering, FS_FT_ESW_EGRESS_ACL);
+	steering->esw_egress_root_ns = create_root_ns(steering,
+						      FS_FT_ESW_EGRESS_ACL,
+						      &mlx5_flow_cmds);
 	if (!steering->esw_egress_root_ns)
 		return -ENOMEM;
 
@@ -2401,7 +2432,9 @@ static int init_egress_acl_root_ns(struct mlx5_flow_steering *steering)
 {
 	struct fs_prio *prio;
 
-	steering->esw_ingress_root_ns = create_root_ns(steering, FS_FT_ESW_INGRESS_ACL);
+	steering->esw_ingress_root_ns = create_root_ns(steering,
+						       FS_FT_ESW_INGRESS_ACL,
+						       &mlx5_flow_cmds);
 	if (!steering->esw_ingress_root_ns)
 		return -ENOMEM;
 
