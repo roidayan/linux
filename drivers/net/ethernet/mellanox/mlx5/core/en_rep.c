@@ -971,7 +971,7 @@ static const struct mlx5e_profile mlx5e_rep_profile = {
 /* e-Switch vport representors */
 
 static int
-mlx5e_nic_rep_load(struct mlx5_eswitch *esw, struct mlx5_eswitch_rep *rep)
+mlx5e_nic_rep_load(struct mlx5_core_dev *dev, struct mlx5_eswitch_rep *rep)
 {
 	struct mlx5e_priv *priv = netdev_priv(rep->netdev);
 	struct mlx5e_rep_priv *rpriv = priv->ppriv;
@@ -996,7 +996,7 @@ err_remove_sqs:
 }
 
 static void
-mlx5e_nic_rep_unload(struct mlx5_eswitch *esw, struct mlx5_eswitch_rep *rep)
+mlx5e_nic_rep_unload(struct mlx5_eswitch_rep *rep)
 {
 	struct mlx5e_priv *priv = netdev_priv(rep->netdev);
 	struct mlx5e_rep_priv *rpriv = priv->ppriv;
@@ -1012,7 +1012,7 @@ mlx5e_nic_rep_unload(struct mlx5_eswitch *esw, struct mlx5_eswitch_rep *rep)
 }
 
 static int
-mlx5e_vport_rep_load(struct mlx5_eswitch *esw, struct mlx5_eswitch_rep *rep)
+mlx5e_vport_rep_load(struct mlx5_core_dev *dev, struct mlx5_eswitch_rep *rep)
 {
 	struct mlx5e_rep_priv *rpriv;
 	struct net_device *netdev;
@@ -1023,7 +1023,7 @@ mlx5e_vport_rep_load(struct mlx5_eswitch *esw, struct mlx5_eswitch_rep *rep)
 	if (!rpriv)
 		return -ENOMEM;
 
-	netdev = mlx5e_create_netdev(esw->dev, &mlx5e_rep_profile, rpriv);
+	netdev = mlx5e_create_netdev(dev, &mlx5e_rep_profile, rpriv);
 	if (!netdev) {
 		pr_warn("Failed to create representor netdev for vport %d\n",
 			rep->vport);
@@ -1048,7 +1048,7 @@ mlx5e_vport_rep_load(struct mlx5_eswitch *esw, struct mlx5_eswitch_rep *rep)
 		goto err_detach_netdev;
 	}
 
-	upriv = netdev_priv(mlx5_eswitch_get_uplink_netdev(esw));
+	upriv = netdev_priv(mlx5_eswitch_get_uplink_netdev(dev->priv.eswitch));
 	err = tc_setup_cb_egdev_register(netdev, mlx5e_setup_tc_block_cb,
 					 upriv);
 	if (err)
@@ -1080,7 +1080,7 @@ err_destroy_netdev:
 }
 
 static void
-mlx5e_vport_rep_unload(struct mlx5_eswitch *esw, struct mlx5_eswitch_rep *rep)
+mlx5e_vport_rep_unload(struct mlx5_eswitch_rep *rep)
 {
 	struct net_device *netdev = rep->netdev;
 	struct mlx5e_priv *priv = netdev_priv(netdev);
@@ -1089,7 +1089,7 @@ mlx5e_vport_rep_unload(struct mlx5_eswitch *esw, struct mlx5_eswitch_rep *rep)
 	struct mlx5e_priv *upriv;
 
 	unregister_netdev(rep->netdev);
-	upriv = netdev_priv(mlx5_eswitch_get_uplink_netdev(esw));
+	upriv = netdev_priv(mlx5_eswitch_get_uplink_netdev(priv->mdev->priv.eswitch));
 	tc_setup_cb_egdev_unregister(netdev, mlx5e_setup_tc_block_cb,
 				     upriv);
 	mlx5e_rep_neigh_cleanup(rpriv);
