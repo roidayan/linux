@@ -336,6 +336,7 @@ struct ipoib_dev_priv {
 	unsigned long flags;
 
 	struct rw_semaphore vlan_rwsem;
+	struct mutex        sysfs_lock; /* Protect sysfs running*/
 	struct mutex mcast_mutex;
 
 	struct rb_root  path_tree;
@@ -367,7 +368,7 @@ struct ipoib_dev_priv {
 	u32		  qkey;
 
 	union ib_gid local_gid;
-	u16	     local_lid;
+	u32	     local_lid;
 
 	unsigned int admin_mtu;
 	unsigned int mcast_mtu;
