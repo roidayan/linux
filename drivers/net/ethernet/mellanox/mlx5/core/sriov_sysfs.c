@@ -291,17 +291,17 @@ free:
 
 static int strpolicy(const char *buf, enum port_state_policy *policy)
 {
-	if (!strncmp(buf, "Down", 4)) {
+	if (sysfs_streq(buf, "Down")) {
 		*policy = MLX5_POLICY_DOWN;
 		return 0;
 	}
 
-	if (!strncmp(buf, "Up", 2)) {
+	if (sysfs_streq(buf, "Up")) {
 		*policy = MLX5_POLICY_UP;
 		return 0;
 	}
 
-	if (!strncmp(buf, "Follow", 6)) {
+	if (sysfs_streq(buf, "Follow")) {
 		*policy = MLX5_POLICY_FOLLOW;
 		return 0;
 	}
@@ -358,7 +358,7 @@ static ssize_t mac_store(struct mlx5_sriov_vf *g, struct vf_attributes *oa,
 	if (err == 6)
 		goto set_mac;
 
-	if (!strncmp(buf, "Random", 6))
+	if (sysfs_streq(buf, "Random"))
 		eth_random_addr(mac);
 	else
 		return -EINVAL;
@@ -409,9 +409,9 @@ static ssize_t spoofcheck_store(struct mlx5_sriov_vf *g,
 	bool settings;
 	int err;
 
-	if (!strncmp(buf, "ON", 2))
+	if (sysfs_streq(buf, "ON"))
 		settings = true;
-	else if (!strncmp(buf, "OFF", 3))
+	else if (sysfs_streq(buf, "OFF"))
 		settings = false;
 	else
 		return -EINVAL;
@@ -438,9 +438,9 @@ static ssize_t trust_store(struct mlx5_sriov_vf *g,
 	bool settings;
 	int err;
 
-	if (!strncmp(buf, "ON", 2))
+	if (sysfs_streq(buf, "ON"))
 		settings = true;
-	else if (!strncmp(buf, "OFF", 3))
+	else if (sysfs_streq(buf, "OFF"))
 		settings = false;
 	else
 		return -EINVAL;
