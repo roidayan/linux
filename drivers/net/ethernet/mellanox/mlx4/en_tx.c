@@ -337,15 +337,12 @@ u32 mlx4_en_recycle_tx_desc(struct mlx4_en_priv *priv,
 			    int napi_mode)
 {
 	struct mlx4_en_tx_info *tx_info = &ring->tx_info[index];
-	struct mlx4_en_rx_alloc frame = {
-		.page = tx_info->page,
-		.dma = tx_info->map0_dma,
-	};
+	struct page *page = tx_info->page;
+	dma_addr_t dma = tx_info->map0_dma;
 
-	if (!mlx4_en_rx_recycle(ring->recycle_ring, &frame)) {
-		dma_unmap_page(priv->ddev, tx_info->map0_dma,
-			       PAGE_SIZE, priv->dma_dir);
-		put_page(tx_info->page);
+	if (!mlx4_en_rx_recycle(ring->recycle_ring, page, dma)) {
+		dma_unmap_page(priv->ddev, dma, PAGE_SIZE, priv->dma_dir);
+		__free_page(page);
 	}
 
 	return tx_info->nr_txbb;
@@ -643,7 +640,7 @@ static void build_inline_wqe(struct mlx4_en_tx_desc *tx_desc,
 			     void *fragptr)
 {
 	struct mlx4_wqe_inline_seg *inl = &tx_desc->inl;
-	int spc = MLX4_INLINE_ALIGN - CTRL_SIZE - sizeof *inl;
+	int spc = MLX4_INLINE_ALIGN - CTRL_SIZE - sizeof(*inl);
 	unsigned int hlen = skb_headlen(skb);
 
 	if (skb->len <= spc) {
@@ -717,7 +714,7 @@ void mlx4_en_xmit_doorbell(struct mlx4_en_tx_ring *ring)
 #else
 	iowrite32be(
 #endif
-		  ring->doorbell_qpn,
+		  (__force u32)ring->doorbell_qpn,
 		  ring->bf.uar->map + MLX4_SEND_DOORBELL);
 }
 
