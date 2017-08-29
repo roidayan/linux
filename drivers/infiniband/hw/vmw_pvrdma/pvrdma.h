@@ -426,6 +426,12 @@ static inline int pvrdma_wc_flags_to_ib(int flags)
 	return flags;
 }
 
+static inline enum rdma_network_type pvrdma_wc_network_hdr_to_ib(
+					enum pvrdma_network_type type)
+{
+	return (enum rdma_network_type)type;
+}
+
 static inline int ib_send_flags_to_pvrdma(int flags)
 {
 	return flags & PVRDMA_MASK(PVRDMA_SEND_FLAGS_MAX);

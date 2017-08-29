@@ -389,6 +389,8 @@ retry:
 	wc->dlid_path_bits = cqe->dlid_path_bits;
 	wc->port_num = cqe->port_num;
 	wc->vendor_err = cqe->vendor_err;
+	wc->network_hdr_type =
+			pvrdma_wc_network_hdr_to_ib(cqe->network_hdr_type);
 
 	/* Update shared ring state */
 	pvrdma_idx_ring_inc(&cq->ring_state->rx.cons_head, cq->ibcq.cqe);
