@@ -194,6 +194,7 @@ struct pvrdma_dev {
 	void *resp_slot;
 	unsigned long flags;
 	struct list_head device_link;
+	unsigned int dsr_version;
 
 	/* Locking and interrupt information. */
 	spinlock_t cmd_lock; /* Command lock. */
@@ -425,6 +426,12 @@ static inline int pvrdma_wc_flags_to_ib(int flags)
 	return flags;
 }
 
+static inline enum rdma_network_type pvrdma_wc_network_hdr_to_ib(
+					enum pvrdma_network_type type)
+{
+	return (enum rdma_network_type)type;
+}
+
 static inline int ib_send_flags_to_pvrdma(int flags)
 {
 	return flags & PVRDMA_MASK(PVRDMA_SEND_FLAGS_MAX);
@@ -444,6 +451,7 @@ void pvrdma_ah_attr_to_rdma(struct rdma_ah_attr *dst,
 			    const struct pvrdma_ah_attr *src);
 void rdma_ah_attr_to_pvrdma(struct pvrdma_ah_attr *dst,
 			    const struct rdma_ah_attr *src);
+u8 ib_gid_type_to_pvrdma(enum ib_gid_type gid_type);
 
 int pvrdma_uar_table_init(struct pvrdma_dev *dev);
 void pvrdma_uar_table_cleanup(struct pvrdma_dev *dev);
