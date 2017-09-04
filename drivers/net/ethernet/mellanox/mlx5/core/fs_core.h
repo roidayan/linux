@@ -52,6 +52,8 @@ enum fs_flow_table_type {
 	FS_FT_FDB             = 0X4,
 	FS_FT_SNIFFER_RX	= 0X5,
 	FS_FT_SNIFFER_TX	= 0X6,
+	FS_FT_IPSEC_RX		= 0X7,
+	FS_FT_IPSEC_TX		= 0X8,
 };
 
 enum fs_flow_table_op_mod {
