@@ -105,6 +105,7 @@ enum {
 	IB_USER_VERBS_EX_CMD_CREATE_COUNTER_SET,
 	IB_USER_VERBS_EX_CMD_DESTROY_COUNTER_SET,
 	IB_USER_VERBS_EX_CMD_QUERY_COUNTER_SET,
+	IB_USER_VERBS_EX_CMD_MODIFY_CQ
 };
 
 /*
@@ -1260,6 +1261,14 @@ struct ib_uverbs_ex_query_counter_set {
 struct ib_uverbs_ex_query_counter_set_resp {
 	__u32 comp_mask;
 	__u32 response_length;
+};
+
+struct ib_uverbs_ex_modify_cq {
+	__u32 cq_handle;
+	__u32 attr_mask;
+	__u16 cq_count;
+	__u16 cq_period;
+	__u32 comp_mask;
 };
 
 #define IB_DEVICE_NAME_MAX 64
