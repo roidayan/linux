@@ -315,6 +315,11 @@ enum ib_cq_attr_mask {
 	IB_CQ_MODERATE = 1 << 0,
 };
 
+struct ib_cq_caps {
+	u16     max_cq_moderation_count;
+	u16     max_cq_moderation_period;
+};
+
 struct ib_device_attr {
 	u64			fw_ver;
 	__be64			sys_image_guid;
@@ -366,6 +371,7 @@ struct ib_device_attr {
 	u32			raw_packet_caps; /* Use ib_raw_packet_caps enum */
 	struct ib_tm_caps	tm_caps;
 	u16			max_counter_sets;
+	struct ib_cq_caps       cq_caps;
 };
 
 enum ib_mtu {
