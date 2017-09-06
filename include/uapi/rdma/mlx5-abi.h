@@ -168,6 +168,41 @@ struct mlx5_packet_pacing_caps {
 	__u32 reserved;
 };
 
+enum mlx5_ib_mpw_caps {
+	MPW_RESERVED		= 1 << 0,
+	MLX5_IB_ALLOW_MPW	= 1 << 1,
+	MLX5_IB_SUPPORT_EMPW	= 1 << 2,
+};
+
+enum mlx5_ib_sw_parsing_offloads {
+	MLX5_IB_SW_PARSING = 1 << 0,
+	MLX5_IB_SW_PARSING_CSUM = 1 << 1,
+	MLX5_IB_SW_PARSING_LSO = 1 << 2,
+};
+
+struct mlx5_ib_sw_parsing_caps {
+	__u32 sw_parsing_offloads; /* enum mlx5_ib_sw_parsing_offloads */
+
+	/* Corresponding bit will be set if qp type from
+	 * 'enum ib_qp_type' is supported, e.g.
+	 * supported_qpts |= 1 << IB_QPT_RAW_PACKET
+	 */
+	__u32 supported_qpts;
+};
+
+struct mlx5_ib_striding_rq_caps {
+	__u32 min_single_stride_log_num_of_bytes;
+	__u32 max_single_stride_log_num_of_bytes;
+	__u32 min_single_wqe_log_num_of_strides;
+	__u32 max_single_wqe_log_num_of_strides;
+
+	/* Corresponding bit will be set if qp type from
+	 * 'enum ib_qp_type' is supported, e.g.
+	 * supported_qpts |= 1 << IB_QPT_RAW_PACKET
+	 */
+	__u32 supported_qpts;
+};
+
 struct mlx5_ib_query_device_resp {
 	__u32	comp_mask;
 	__u32	response_length;
@@ -177,6 +212,8 @@ struct mlx5_ib_query_device_resp {
 	struct	mlx5_packet_pacing_caps packet_pacing_caps;
 	__u32	mlx5_ib_support_multi_pkt_send_wqes;
 	__u32	reserved;
+	struct mlx5_ib_sw_parsing_caps sw_parsing_caps;
+	struct mlx5_ib_striding_rq_caps striding_rq_caps;
 };
 
 struct mlx5_ib_create_cq {
@@ -271,6 +308,10 @@ struct mlx5_ib_alloc_mw {
 	__u16	reserved2;
 };
 
+enum mlx5_ib_create_wq_mask {
+	MLX5_IB_CREATE_WQ_STRIDING_RQ	= (1 << 0),
+};
+
 struct mlx5_ib_create_wq {
 	__u64   buf_addr;
 	__u64   db_addr;
@@ -279,7 +320,9 @@ struct mlx5_ib_create_wq {
 	__u32   user_index;
 	__u32   flags;
 	__u32   comp_mask;
-	__u32   reserved;
+	__u32	single_stride_log_num_of_bytes;
+	__u32	single_wqe_log_num_of_strides;
+	__u32	two_byte_shift_en;
 };
 
 struct mlx5_ib_create_ah_resp {
