@@ -173,6 +173,7 @@ struct fs_fte {
 	enum fs_fte_status		status;
 	struct mlx5_fc			*counter;
 	struct rhash_head		hash;
+	struct mlx5_flow_esp_aes_gcm_action *esp_aes_gcm;
 };
 
 /* Type of children is mlx5_flow_table/namespace */
