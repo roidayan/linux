@@ -32,7 +32,10 @@
  */
 
 #include <linux/mlx5/driver.h>
+#include <linux/mlx5/fs_helpers.h>
 
+#include "fs_core.h"
+#include "fs_cmd.h"
 #include "mlx5_core.h"
 #include "fpga/ipsec.h"
 #include "fpga/sdk.h"
@@ -316,6 +319,223 @@ int mlx5_fpga_ipsec_counters_read(struct mlx5_core_dev *mdev, u64 *counters,
 out:
 	kfree(data);
 	return ret;
+}
+
+static const struct mlx5_flow_cmds mlx5_ipsec_flow_cmds = {
+	.create_flow_table = mlx5_cmd_def_create_flow_table,
+	.destroy_flow_table = mlx5_cmd_def_destroy_flow_table,
+	.modify_flow_table = mlx5_cmd_def_modify_flow_table,
+	.create_flow_group = mlx5_cmd_def_create_flow_group,
+	.destroy_flow_group = mlx5_cmd_def_destroy_flow_group,
+	.create_fte = mlx5_cmd_create_ipsec_fte,
+	.update_fte = mlx5_cmd_def_update_fte,
+	.delete_fte = mlx5_cmd_delete_ipsec_fte,
+	.update_root_ft = mlx5_cmd_def_update_root_ft,
+};
+
+static void mlx5_fs_ipsec_build_hw_sa(struct mlx5_core_dev *dev, u32 op,
+				      struct fs_fte *fte,
+				      struct mlx5_flow_group *fg,
+				      struct mlx5_accel_ipsec_sa *hw_sa)
+{
+	struct mlx5_flow_esp_aes_gcm_action  *esp_aes_gcm = fte->esp_aes_gcm;
+
+	memset(hw_sa, 0, sizeof(*hw_sa));
+
+	if (op == MLX5_IPSEC_CMD_ADD_SA) {
+		memcpy(&hw_sa->key_enc, esp_aes_gcm->key,
+		       esp_aes_gcm->key_length);
+		if (esp_aes_gcm->key_length == 16)
+			memcpy(&hw_sa->key_enc[16], esp_aes_gcm->key,
+			       esp_aes_gcm->key_length);
+		hw_sa->gcm.salt = *((__be32 *)esp_aes_gcm->salt);
+	}
+
+	hw_sa->cmd = htonl(op);
+	hw_sa->flags |= MLX5_IPSEC_SADB_SA_VALID | MLX5_IPSEC_SADB_SPI_EN;
+	if (mlx5_fs_is_outer_ipv4_flow(dev, fg->mask.match_criteria, fte->val)) {
+		memcpy(&hw_sa->sip[3],
+		       MLX5_ADDR_OF(fte_match_set_lyr_2_4, fte->val,
+				    src_ipv4_src_ipv6.ipv4_layout.ipv4),
+		       sizeof(hw_sa->sip[3]));
+		memcpy(&hw_sa->dip[3],
+		       MLX5_ADDR_OF(fte_match_set_lyr_2_4, fte->val,
+				    dst_ipv4_dst_ipv6.ipv4_layout.ipv4),
+		       sizeof(hw_sa->dip[3]));
+		hw_sa->sip_masklen = 32;
+		hw_sa->dip_masklen = 32;
+	} else {
+		memcpy(hw_sa->sip,
+		       MLX5_ADDR_OF(fte_match_param, fte->val,
+				    outer_headers.src_ipv4_src_ipv6.ipv6_layout.ipv6),
+		       sizeof(hw_sa->sip));
+		memcpy(hw_sa->dip,
+		       MLX5_ADDR_OF(fte_match_param, fte->val,
+				    outer_headers.dst_ipv4_dst_ipv6.ipv6_layout.ipv6),
+		       sizeof(hw_sa->dip));
+		hw_sa->sip_masklen = 128;
+		hw_sa->dip_masklen = 128;
+		hw_sa->flags |= MLX5_IPSEC_SADB_IPV6;
+	}
+	hw_sa->spi = MLX5_GET_BE(typeof(hw_sa->spi),
+				 fte_match_param, fte->val,
+				 misc_parameters.outer_esp_spi);
+	hw_sa->sw_sa_handle = 0;
+	hw_sa->flags |= MLX5_IPSEC_SADB_IP_ESP;
+	switch (esp_aes_gcm->key_length) {
+	case 16:
+		hw_sa->enc_mode = MLX5_IPSEC_SADB_MODE_AES_GCM_128_AUTH_128;
+	case 32:
+		hw_sa->enc_mode = MLX5_IPSEC_SADB_MODE_AES_GCM_256_AUTH_128;
+	}
+
+	if (fte->action & MLX5_FLOW_CONTEXT_ACTION_ENCRYPT)
+		hw_sa->flags |= MLX5_IPSEC_SADB_DIR_SX;
+}
+
+static bool mlx5_is_fpga_ipsec_rule(struct mlx5_core_dev *dev,
+				    struct fs_fte *fte,
+				    struct mlx5_flow_group *fg)
+{
+	u32 ipsec_dev_caps = mlx5_accel_ipsec_device_caps(dev);
+	const u32 *match_c;
+	const u32 *match_v;
+	bool ipv6_flow;
+
+	match_c = fg->mask.match_criteria;
+	match_v = fte->val;
+	ipv6_flow = mlx5_fs_is_outer_ipv6_flow(dev, match_c, match_v);
+
+	if (mlx5_fs_is_outer_udp_flow(match_c, match_v) ||
+	    mlx5_fs_is_outer_tcp_flow(match_c, match_v) ||
+	    mlx5_fs_is_vxlan_flow(match_c) ||
+	    (fg->mask.match_criteria_enable & 1 << MLX5_CREATE_FLOW_GROUP_IN_MATCH_CRITERIA_ENABLE_INNER_HEADERS) ||
+	    !(mlx5_fs_is_outer_ipv4_flow(dev, match_c, match_v) ||
+	      ipv6_flow))
+		return false;
+
+	if (!(ipsec_dev_caps & MLX5_ACCEL_IPSEC_DEVICE))
+		return false;
+
+	if (!(ipsec_dev_caps & MLX5_ACCEL_IPSEC_ESP) &&
+	    mlx5_fs_is_ipsec_flow(match_c))
+		return false;
+
+	if (!(ipsec_dev_caps & MLX5_ACCEL_IPSEC_IPV6) &&
+	    ipv6_flow)
+		return false;
+
+	return true;
+}
+
+static bool is_full_mask(const void *p, size_t len)
+{
+	WARN_ON(len % 4);
+
+	return !memchr_inv(p, 0xff, len);
+}
+
+static bool validate_fpga_full_mask(struct mlx5_core_dev *dev,
+				    const struct mlx5_flow_group *fg,
+				    const struct fs_fte *fte)
+{
+	const void *misc_params_c = MLX5_ADDR_OF(fte_match_param,
+						 fg->mask.match_criteria,
+						 misc_parameters);
+	const void *headers_c = MLX5_ADDR_OF(fte_match_param,
+					     fg->mask.match_criteria,
+					     outer_headers);
+	const void *headers_v = MLX5_ADDR_OF(fte_match_param,
+					     fte->val,
+					     outer_headers);
+
+	if (mlx5_fs_is_outer_ipv4_flow(dev, headers_c, headers_v)) {
+		const void *s_ipv4_c = MLX5_ADDR_OF(fte_match_set_lyr_2_4, headers_c,
+						    src_ipv4_src_ipv6.ipv4_layout.ipv4);
+		const void *d_ipv4_c = MLX5_ADDR_OF(fte_match_set_lyr_2_4, headers_c,
+						    dst_ipv4_dst_ipv6.ipv4_layout.ipv4);
+
+		if (!is_full_mask(s_ipv4_c, MLX5_FLD_SZ_BYTES(ipv4_layout,
+							      ipv4)) ||
+		    !is_full_mask(d_ipv4_c, MLX5_FLD_SZ_BYTES(ipv4_layout,
+							      ipv4)))
+			return false;
+	} else {
+		const void *s_ipv6_c = MLX5_ADDR_OF(fte_match_set_lyr_2_4, headers_c,
+						    src_ipv4_src_ipv6.ipv6_layout.ipv6);
+		const void *d_ipv6_c = MLX5_ADDR_OF(fte_match_set_lyr_2_4, headers_c,
+						    dst_ipv4_dst_ipv6.ipv6_layout.ipv6);
+
+		if (!is_full_mask(s_ipv6_c, MLX5_FLD_SZ_BYTES(ipv6_layout,
+							      ipv6)) ||
+		    !is_full_mask(d_ipv6_c, MLX5_FLD_SZ_BYTES(ipv6_layout,
+							      ipv6)))
+			return false;
+	}
+
+	if (!is_full_mask(MLX5_ADDR_OF(fte_match_set_misc, misc_params_c,
+				       outer_esp_spi),
+			  MLX5_FLD_SZ_BYTES(fte_match_set_misc, outer_esp_spi)))
+		return false;
+
+	return true;
+}
+
+int mlx5_cmd_create_ipsec_fte(struct mlx5_core_dev *dev,
+			      struct mlx5_flow_table *ft,
+			      struct mlx5_flow_group *fg,
+			      struct fs_fte *fte)
+{
+	struct mlx5_accel_ipsec_sa hw_sa;
+	void *context;
+
+	if (!mlx5_is_fpga_ipsec_rule(dev, fte, fg))
+		return -EINVAL;
+
+	if (fte->esp_aes_gcm) {
+		if (!validate_fpga_full_mask(dev, fg, fte))
+			return -EINVAL;
+
+		if (fte->esp_aes_gcm->key_length != 32 &&
+		    fte->esp_aes_gcm->key_length != 16) {
+			pr_err("only 256 and 128 bit aes-gcm keys are supported\n");
+			return -EINVAL;
+		}
+
+		if (fte->esp_aes_gcm->is_esn) {
+			pr_err("ESN not supported\n");
+			return -EINVAL;
+		}
+	} else {
+		return -EINVAL;
+	}
+
+	mlx5_fs_ipsec_build_hw_sa(dev, MLX5_IPSEC_CMD_ADD_SA, fte, fg,
+				  &hw_sa);
+	context = mlx5_accel_ipsec_sa_cmd_exec(dev, &hw_sa);
+	if (IS_ERR(context))
+		return PTR_ERR(context);
+
+	return mlx5_accel_ipsec_sa_cmd_wait(context);
+}
+
+int mlx5_cmd_delete_ipsec_fte(struct mlx5_core_dev *dev,
+			      struct mlx5_flow_table *ft,
+			      struct fs_fte *fte)
+{
+	struct mlx5_accel_ipsec_sa hw_sa;
+	struct mlx5_flow_group *fg;
+	void *context;
+
+	fs_get_obj(fg, fte->node.parent);
+
+	mlx5_fs_ipsec_build_hw_sa(dev, MLX5_IPSEC_CMD_DEL_SA, fte, fg,
+				  &hw_sa);
+	context = mlx5_accel_ipsec_sa_cmd_exec(dev, &hw_sa);
+	if (IS_ERR(context))
+		return PTR_ERR(context);
+
+	return mlx5_accel_ipsec_sa_cmd_wait(context);
 }
 
 int mlx5_fpga_ipsec_init(struct mlx5_core_dev *mdev)
