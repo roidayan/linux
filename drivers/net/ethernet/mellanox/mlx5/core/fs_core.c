@@ -37,6 +37,7 @@
 #include "fs_core.h"
 #include "fs_cmd.h"
 #include "diag/fs_tracepoint.h"
+#include "accel/ipsec.h"
 
 #define INIT_TREE_NODE_ARRAY_SIZE(...)	(sizeof((struct init_tree_node[]){__VA_ARGS__}) /\
 					 sizeof(struct init_tree_node))
@@ -504,6 +505,9 @@ static void del_hw_fte(struct fs_node *node)
 				       "flow steering can't delete fte in index %d of flow group id %d\n",
 				       fte->index, fg->id);
 	}
+
+	kfree(fte->esp_aes_gcm);
+	fte->esp_aes_gcm = NULL;
 }
 
 static void del_sw_fte(struct fs_node *node)
@@ -591,11 +595,22 @@ static struct fs_fte *alloc_fte(struct mlx5_flow_table *ft,
 				struct mlx5_flow_act *flow_act)
 {
 	struct mlx5_flow_steering *steering = get_steering(&ft->node);
+	struct mlx5_flow_esp_aes_gcm_action *crypto = NULL;
 	struct fs_fte *fte;
 
+	if (flow_act->action & (MLX5_FLOW_CONTEXT_ACTION_ENCRYPT |
+				MLX5_FLOW_CONTEXT_ACTION_DECRYPT)) {
+		crypto = kzalloc(sizeof(*crypto), GFP_KERNEL);
+		if (!crypto)
+			return ERR_PTR(-ENOMEM);
+		memcpy(crypto, &flow_act->esp_aes_gcm, sizeof(*crypto));
+	}
+
 	fte = kmem_cache_zalloc(steering->ftes_cache, GFP_KERNEL);
-	if (!fte)
+	if (!fte) {
+		kfree(crypto);
 		return ERR_PTR(-ENOMEM);
+	}
 
 	memcpy(fte->val, match_value, sizeof(fte->val));
 	fte->node.type =  FS_TYPE_FLOW_ENTRY;
@@ -603,6 +618,7 @@ static struct fs_fte *alloc_fte(struct mlx5_flow_table *ft,
 	fte->action = flow_act->action;
 	fte->encap_id = flow_act->encap_id;
 	fte->modify_id = flow_act->modify_id;
+	fte->esp_aes_gcm = crypto;
 
 	tree_init_node(&fte->node, del_hw_fte, del_sw_fte);
 
