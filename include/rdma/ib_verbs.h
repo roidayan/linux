@@ -229,6 +229,8 @@ enum ib_device_cap_flags {
 	/* Deprecated. Please use IB_RAW_PACKET_CAP_SCATTER_FCS. */
 	IB_DEVICE_RAW_SCATTER_FCS		= (1ULL << 34),
 	IB_DEVICE_RDMA_NETDEV_OPA_VNIC		= (1ULL << 35),
+	/* The device supports padding incoming writes to cacheline. */
+	IB_DEVICE_SCATTER_END_PADDING		= (1ULL << 36),
 };
 
 enum ib_signature_prot_cap {
@@ -1098,6 +1100,7 @@ enum ib_qp_create_flags {
 	IB_QP_CREATE_SCATTER_FCS		= 1 << 8,
 	IB_QP_CREATE_CVLAN_STRIPPING		= 1 << 9,
 	IB_QP_CREATE_SOURCE_QPN			= 1 << 10,
+	IB_QP_CREATE_SCATTER_END_PADDING	= 1 << 11,
 	/* reserve bits 26-31 for low level drivers' internal use */
 	IB_QP_CREATE_RESERVED_START		= 1 << 26,
 	IB_QP_CREATE_RESERVED_END		= 1 << 31,
@@ -1621,6 +1624,7 @@ enum ib_wq_flags {
 	IB_WQ_FLAGS_CVLAN_STRIPPING	= 1 << 0,
 	IB_WQ_FLAGS_SCATTER_FCS		= 1 << 1,
 	IB_WQ_FLAGS_DELAY_DROP		= 1 << 2,
+	IB_WQ_FLAGS_SCATTER_END_PADDING = 1 << 3,
 };
 
 struct ib_wq_init_attr {
@@ -1739,7 +1743,7 @@ struct ib_mr {
 	u32		   lkey;
 	u32		   rkey;
 	u64		   iova;
-	u32		   length;
+	u64		   length;
 	unsigned int	   page_size;
 	bool		   need_inval;
 	union {
@@ -1788,6 +1792,7 @@ enum ib_flow_spec_type {
 	/* L3 header*/
 	IB_FLOW_SPEC_IPV4		= 0x30,
 	IB_FLOW_SPEC_IPV6		= 0x31,
+	IB_FLOW_SPEC_ESP                = 0x34,
 	/* L4 headers*/
 	IB_FLOW_SPEC_TCP		= 0x40,
 	IB_FLOW_SPEC_UDP		= 0x41,
@@ -1796,6 +1801,7 @@ enum ib_flow_spec_type {
 	/* Actions */
 	IB_FLOW_SPEC_ACTION_TAG         = 0x1000,
 	IB_FLOW_SPEC_ACTION_DROP        = 0x1001,
+	IB_FLOW_SPEC_ACTION_ESP_AES_GCM = 0x1002,
 };
 #define IB_FLOW_SPEC_LAYER_MASK	0xF0
 #define IB_FLOW_SPEC_SUPPORT_LAYERS 8
@@ -1813,7 +1819,8 @@ enum ib_flow_domain {
 
 enum ib_flow_flags {
 	IB_FLOW_ATTR_FLAGS_DONT_TRAP = 1UL << 1, /* Continue match, no steal */
-	IB_FLOW_ATTR_FLAGS_RESERVED  = 1UL << 2  /* Must be last */
+	IB_FLOW_ATTR_FLAGS_EGRESS = 1UL << 2, /* Egress flow */
+	IB_FLOW_ATTR_FLAGS_RESERVED  = 1UL << 3  /* Must be last */
 };
 
 struct ib_flow_eth_filter {
@@ -1851,6 +1858,10 @@ enum ib_ipv4_flags {
 	IB_IPV4_DONT_FRAG = 0x2, /* Don't enable packet fragmentation */
 	IB_IPV4_MORE_FRAG = 0X4  /* For All fragmented packets except the
 				    last have this flag set */
+};
+
+enum ib_ipsec_flags {
+	IB_IPSEC_ESN = 0x1,
 };
 
 struct ib_flow_ipv4_filter {
@@ -1918,6 +1929,20 @@ struct ib_flow_spec_tunnel {
 	struct ib_flow_tunnel_filter  mask;
 };
 
+struct ib_flow_esp_filter {
+	__be32	spi;
+	__be32	seq;
+	/* Must be last */
+	u8	real_sz[0];
+};
+
+struct ib_flow_spec_esp {
+	u32                           type;
+	u16			      size;
+	struct ib_flow_esp_filter     val;
+	struct ib_flow_esp_filter     mask;
+};
+
 struct ib_flow_spec_action_tag {
 	enum ib_flow_spec_type	      type;
 	u16			      size;
@@ -1927,6 +1952,17 @@ struct ib_flow_spec_action_tag {
 struct ib_flow_spec_action_drop {
 	enum ib_flow_spec_type	      type;
 	u16			      size;
+};
+
+struct ib_flow_spec_action_esp_aes_gcm {
+	enum ib_flow_spec_type	      type;
+	u16			      size;
+	u8                            key[32];
+	u32                           key_length;
+	u8                            salt[4];
+	u8			      seqiv[8];
+	u8			      esn[4];
+	enum ib_ipsec_flags	      flags;
 };
 
 union ib_flow_spec {
@@ -1940,8 +1976,10 @@ union ib_flow_spec {
 	struct ib_flow_spec_tcp_udp	tcp_udp;
 	struct ib_flow_spec_ipv6        ipv6;
 	struct ib_flow_spec_tunnel      tunnel;
+	struct ib_flow_spec_esp		esp;
 	struct ib_flow_spec_action_tag  flow_tag;
 	struct ib_flow_spec_action_drop drop;
+	struct ib_flow_spec_action_esp_aes_gcm	esp_aes_gcm;
 };
 
 struct ib_flow_attr {
@@ -2266,7 +2304,8 @@ struct ib_device {
 	struct ib_flow *	   (*create_flow)(struct ib_qp *qp,
 						  struct ib_flow_attr
 						  *flow_attr,
-						  int domain);
+						  int domain,
+						  struct ib_udata *udata);
 	int			   (*destroy_flow)(struct ib_flow *flow_id);
 	int			   (*check_mr_status)(struct ib_mr *mr, u32 check_mask,
 						      struct ib_mr_status *mr_status);

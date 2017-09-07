@@ -1195,4 +1195,13 @@ mlx5_get_vector_affinity(struct mlx5_core_dev *dev, int vector)
 	return pci_irq_get_affinity(dev->pdev, MLX5_EQ_VEC_COMP_BASE + vector);
 }
 
+u32 mlx5_accel_ipsec_device_caps(struct mlx5_core_dev *mdev);
+
+enum {
+	MLX5_ACCEL_IPSEC_DEVICE = BIT(1),
+	MLX5_ACCEL_IPSEC_IPV6 = BIT(2),
+	MLX5_ACCEL_IPSEC_ESP = BIT(3),
+	MLX5_ACCEL_IPSEC_LSO = BIT(4),
+};
+
 #endif /* MLX5_DRIVER_H */
