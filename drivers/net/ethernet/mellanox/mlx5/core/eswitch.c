@@ -2100,9 +2100,9 @@ unlock:
 	return err;
 }
 
-static int mlx5_eswitch_query_vport_drop_stats(struct mlx5_core_dev *dev,
-					       int vport_idx,
-					       struct mlx5_vport_drop_stats *stats)
+int mlx5_eswitch_query_vport_drop_stats(struct mlx5_core_dev *dev,
+					int vport_idx,
+					struct mlx5_vport_drop_stats *stats)
 {
 	struct mlx5_eswitch *esw = dev->priv.eswitch;
 	struct mlx5_vport *vport = &esw->vports[vport_idx];

@@ -218,7 +218,9 @@ int mlx5_eswitch_get_vport_stats(struct mlx5_eswitch *esw,
 				 int vport,
 				 struct ifla_vf_stats *vf_stats);
 void mlx5_eswitch_del_send_to_vport_rule(struct mlx5_flow_handle *rule);
-
+int mlx5_eswitch_query_vport_drop_stats(struct mlx5_core_dev *dev,
+					int vport_idx,
+					struct mlx5_vport_drop_stats *stats);
 struct mlx5_flow_spec;
 struct mlx5_esw_flow_attr;
 
