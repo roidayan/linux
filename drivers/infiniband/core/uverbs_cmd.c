@@ -1501,7 +1501,8 @@ static int create_qp(struct ib_uverbs_file *file,
 				IB_QP_CREATE_MANAGED_RECV |
 				IB_QP_CREATE_SCATTER_FCS |
 				IB_QP_CREATE_CVLAN_STRIPPING |
-				IB_QP_CREATE_SOURCE_QPN)) {
+				IB_QP_CREATE_SOURCE_QPN |
+				IB_QP_CREATE_SCATTER_END_PADDING)) {
 		ret = -EINVAL;
 		goto err_put;
 	}
@@ -2756,6 +2757,30 @@ static int kern_spec_to_ib_spec_action(struct ib_uverbs_flow_spec *kern_spec,
 
 		ib_spec->drop.size = sizeof(struct ib_flow_spec_action_drop);
 		break;
+	case IB_FLOW_SPEC_ACTION_ESP_AES_GCM:
+		if (kern_spec->esp_aes_gcm.size !=
+		    sizeof(struct ib_uverbs_flow_spec_action_esp_aes_gcm))
+			return -EINVAL;
+		/* Possible ipsec key lengths according to the spec */
+		if (kern_spec->esp_aes_gcm.key_length != 32 &&
+		    kern_spec->esp_aes_gcm.key_length != 24 &&
+		    kern_spec->esp_aes_gcm.key_length != 16)
+			return -EINVAL;
+		ib_spec->esp_aes_gcm.size =
+			sizeof(struct ib_flow_spec_action_esp_aes_gcm);
+		memcpy(ib_spec->esp_aes_gcm.key, kern_spec->esp_aes_gcm.key,
+		       sizeof(ib_spec->esp_aes_gcm.key));
+		ib_spec->esp_aes_gcm.key_length =
+			kern_spec->esp_aes_gcm.key_length;
+		memcpy(ib_spec->esp_aes_gcm.salt, kern_spec->esp_aes_gcm.salt,
+		       sizeof(ib_spec->esp_aes_gcm.salt));
+		memcpy(ib_spec->esp_aes_gcm.esn, kern_spec->esp_aes_gcm.esn,
+		       sizeof(ib_spec->esp_aes_gcm.esn));
+		memcpy(ib_spec->esp_aes_gcm.seqiv, kern_spec->esp_aes_gcm.seqiv,
+		       sizeof(ib_spec->esp_aes_gcm.seqiv));
+		ib_spec->esp_aes_gcm.flags = kern_spec->esp_aes_gcm.flags;
+		break;
+
 	default:
 		return -EINVAL;
 	}
@@ -2876,6 +2901,18 @@ static int kern_spec_to_ib_spec_filter(struct ib_uverbs_flow_spec *kern_spec,
 		    (ntohl(ib_spec->tunnel.val.tunnel_id)) >= BIT(24))
 			return -EINVAL;
 		break;
+	case IB_FLOW_SPEC_ESP:
+		ib_filter_sz = offsetof(struct ib_flow_esp_filter, real_sz);
+		actual_filter_sz = spec_filter_size(kern_spec_mask,
+						    kern_filter_sz,
+						    ib_filter_sz);
+		if (actual_filter_sz <= 0)
+			return -EINVAL;
+		ib_spec->esp.size = sizeof(struct ib_flow_spec_esp);
+		memcpy(&ib_spec->esp.val, kern_spec_val, actual_filter_sz);
+		memcpy(&ib_spec->esp.mask, kern_spec_mask, actual_filter_sz);
+		break;
+
 	default:
 		return -EINVAL;
 	}
@@ -3399,11 +3436,14 @@ int ib_uverbs_ex_create_flow(struct ib_uverbs_file *file,
 		err = -EINVAL;
 		goto err_free;
 	}
-	flow_id = ib_create_flow(qp, flow_attr, IB_FLOW_DOMAIN_USER);
+	flow_id = qp->device->create_flow(qp, flow_attr,
+					  IB_FLOW_DOMAIN_USER, uhw);
 	if (IS_ERR(flow_id)) {
 		err = PTR_ERR(flow_id);
 		goto err_free;
 	}
+	atomic_inc(&qp->usecnt);
+	flow_id->qp = qp;
 	flow_id->uobject = uobj;
 	uobj->object = flow_id;
 
