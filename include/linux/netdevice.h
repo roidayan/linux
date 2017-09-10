@@ -4414,4 +4414,17 @@ do {								\
 #define PTYPE_HASH_SIZE	(16)
 #define PTYPE_HASH_MASK	(PTYPE_HASH_SIZE - 1)
 
+#define netdev_level_once(level, dev, fmt, ...)                 \
+do {                                                            \
+	static bool __print_once __read_mostly;                 \
+								\
+	if (!__print_once) {                                    \
+		__print_once = true;                            \
+		netdev_printk(level, dev, fmt, ##__VA_ARGS__);  \
+	}                                                       \
+} while (0)
+
+#define netdev_warn_once(dev, fmt, ...) \
+	netdev_level_once(KERN_WARNING, dev, fmt, ##__VA_ARGS__)
+
 #endif	/* _LINUX_NETDEVICE_H */
