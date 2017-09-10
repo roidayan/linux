@@ -97,10 +97,8 @@ int mlx5_modify_nic_vport_promisc(struct mlx5_core_dev *mdev,
 				  int promisc_uc,
 				  int promisc_mc,
 				  int promisc_all);
-int mlx5_query_nic_vport_vlans(struct mlx5_core_dev *dev,
-			       u32 vport,
-			       u16 vlans[],
-			       int *size);
+int mlx5_query_nic_vport_vlans(struct mlx5_core_dev *dev, u32 vport,
+			       unsigned long *vlans);
 int mlx5_modify_nic_vport_vlans(struct mlx5_core_dev *dev,
 				u16 vlans[],
 				int list_size);
@@ -114,5 +112,6 @@ int mlx5_core_modify_hca_vport_context(struct mlx5_core_dev *dev,
 				       u8 other_vport, u8 port_num,
 				       int vf,
 				       struct mlx5_hca_vport_context *req);
-
+int mlx5_nic_vport_update_local_lb(struct mlx5_core_dev *mdev, bool enable);
+int mlx5_nic_vport_query_local_lb(struct mlx5_core_dev *mdev, bool *status);
 #endif /* __MLX5_VPORT_H__ */
