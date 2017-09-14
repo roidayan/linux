@@ -56,6 +56,7 @@
 #include <linux/in.h>
 #include <linux/etherdevice.h>
 #include <linux/mlx5/fs.h>
+#include <linux/mlx5/fs_helpers.h>
 #include <linux/mlx5/vport.h>
 #include "mlx5_ib.h"
 #include "cmd.h"
@@ -715,6 +716,9 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 	if (mlx5_get_flow_namespace(dev->mdev, MLX5_FLOW_NAMESPACE_BYPASS))
 		props->device_cap_flags |= IB_DEVICE_MANAGED_FLOW_STEERING;
 
+	if (MLX5_CAP_GEN(mdev, end_pad))
+		props->device_cap_flags |= IB_DEVICE_SCATTER_END_PADDING;
+
 	props->vendor_part_id	   = mdev->pdev->device;
 	props->hw_ver		   = mdev->pdev->revision;
 
@@ -778,13 +782,13 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 	}
 
 	if (MLX5_CAP_GEN(mdev, tag_matching)) {
-		props->xrq_caps.max_rndv_hdr_size = MLX5_TM_MAX_RNDV_MSG_SIZE;
-		props->xrq_caps.max_num_tags =
+		props->tm_caps.max_rndv_hdr_size = MLX5_TM_MAX_RNDV_MSG_SIZE;
+		props->tm_caps.max_num_tags =
 			(1 << MLX5_CAP_GEN(mdev, log_tag_matching_list_sz)) - 1;
-		props->xrq_caps.flags = IB_TM_CAP_RC;
-		props->xrq_caps.max_ops =
+		props->tm_caps.flags = IB_TM_CAP_RC;
+		props->tm_caps.max_ops =
 			1 << MLX5_CAP_GEN(mdev, log_max_qp_sz);
-		props->xrq_caps.max_sge = MLX5_TM_MAX_SGE;
+		props->tm_caps.max_sge = MLX5_TM_MAX_SGE;
 	}
 
 	if (field_avail(typeof(resp), cqe_comp_caps, uhw->outlen)) {
@@ -845,6 +849,22 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 			if (resp.sw_parsing_caps.sw_parsing_offloads)
 				resp.sw_parsing_caps.supported_qpts =
 					BIT(IB_QPT_RAW_PACKET);
+		}
+	}
+
+	if (field_avail(typeof(resp), striding_rq_caps, uhw->outlen)) {
+		resp.response_length += sizeof(resp.striding_rq_caps);
+		if (MLX5_CAP_GEN(mdev, striding_rq)) {
+			resp.striding_rq_caps.min_single_stride_log_num_of_bytes =
+				MLX5_MIN_SINGLE_STRIDE_LOG_NUM_BYTES;
+			resp.striding_rq_caps.max_single_stride_log_num_of_bytes =
+				MLX5_MAX_SINGLE_STRIDE_LOG_NUM_BYTES;
+			resp.striding_rq_caps.min_single_wqe_log_num_of_strides =
+				MLX5_MIN_SINGLE_WQE_LOG_NUM_STRIDES;
+			resp.striding_rq_caps.max_single_wqe_log_num_of_strides =
+				MLX5_MAX_SINGLE_WQE_LOG_NUM_STRIDES;
+			resp.striding_rq_caps.supported_qpts =
+				BIT(IB_QPT_RAW_PACKET);
 		}
 	}
 
@@ -1426,7 +1446,8 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 
 	if (field_avail(typeof(resp), cmds_supp_uhw, udata->outlen)) {
 		resp.cmds_supp_uhw |= MLX5_USER_CMDS_SUPP_UHW_QUERY_DEVICE |
-				      MLX5_USER_CMDS_SUPP_UHW_CREATE_AH;
+				      MLX5_USER_CMDS_SUPP_UHW_CREATE_AH |
+				      MLX5_USER_CMDS_SUPP_UHW_CREATE_FLOW;
 		resp.response_length += sizeof(resp.cmds_supp_uhw);
 	}
 
@@ -1891,6 +1912,7 @@ static void set_tos(void *outer_c, void *outer_v, u8 mask, u8 val)
 #define LAST_TUNNEL_FIELD tunnel_id
 #define LAST_FLOW_TAG_FIELD tag_id
 #define LAST_DROP_FIELD size
+#define LAST_CRYPTO_FIELD is_encrypt
 
 /* Field is the last supported field */
 #define FIELDS_NOT_SUPPORTED(filter, field)\
@@ -1900,11 +1922,10 @@ static void set_tos(void *outer_c, void *outer_v, u8 mask, u8 val)
 		   offsetof(typeof(filter), field) -\
 		   sizeof(filter.field))
 
-#define IPV4_VERSION 4
-#define IPV6_VERSION 6
 static int parse_flow_attr(struct mlx5_core_dev *mdev, u32 *match_c,
 			   u32 *match_v, const union ib_flow_spec *ib_spec,
-			   u32 *tag_id, bool *is_drop)
+			   const struct ib_flow_attr *flow_attr,
+			   struct mlx5_flow_act *action)
 {
 	void *misc_params_c = MLX5_ADDR_OF(fte_match_param, match_c,
 					   misc_parameters);
@@ -1987,7 +2008,7 @@ static int parse_flow_attr(struct mlx5_core_dev *mdev, u32 *match_c,
 			MLX5_SET(fte_match_set_lyr_2_4, headers_c,
 				 ip_version, 0xf);
 			MLX5_SET(fte_match_set_lyr_2_4, headers_v,
-				 ip_version, IPV4_VERSION);
+				 ip_version, MLX5_FS_IPV4_VERSION);
 		} else {
 			MLX5_SET(fte_match_set_lyr_2_4, headers_c,
 				 ethertype, 0xffff);
@@ -2026,7 +2047,7 @@ static int parse_flow_attr(struct mlx5_core_dev *mdev, u32 *match_c,
 			MLX5_SET(fte_match_set_lyr_2_4, headers_c,
 				 ip_version, 0xf);
 			MLX5_SET(fte_match_set_lyr_2_4, headers_v,
-				 ip_version, IPV6_VERSION);
+				 ip_version, MLX5_FS_IPV6_VERSION);
 		} else {
 			MLX5_SET(fte_match_set_lyr_2_4, headers_c,
 				 ethertype, 0xffff);
@@ -2063,7 +2084,15 @@ static int parse_flow_attr(struct mlx5_core_dev *mdev, u32 *match_c,
 			       ntohl(ib_spec->ipv6.mask.flow_label),
 			       ntohl(ib_spec->ipv6.val.flow_label),
 			       ib_spec->type & IB_FLOW_SPEC_INNER);
+		break;
+	case IB_FLOW_SPEC_ESP:
+		if (ib_spec->esp.mask.seq)
+			return -EOPNOTSUPP;
 
+		MLX5_SET(fte_match_set_misc, misc_params_c, outer_esp_spi,
+			 ntohl(ib_spec->esp.mask.spi));
+		MLX5_SET(fte_match_set_misc, misc_params_v, outer_esp_spi,
+			 ntohl(ib_spec->esp.val.spi));
 		break;
 	case IB_FLOW_SPEC_TCP:
 		if (FIELDS_NOT_SUPPORTED(ib_spec->tcp_udp.mask,
@@ -2122,13 +2151,31 @@ static int parse_flow_attr(struct mlx5_core_dev *mdev, u32 *match_c,
 		if (ib_spec->flow_tag.tag_id >= BIT(24))
 			return -EINVAL;
 
-		*tag_id = ib_spec->flow_tag.tag_id;
+		action->flow_tag = ib_spec->flow_tag.tag_id;
+		action->has_flow_tag = true;
 		break;
 	case IB_FLOW_SPEC_ACTION_DROP:
 		if (FIELDS_NOT_SUPPORTED(ib_spec->drop,
 					 LAST_DROP_FIELD))
 			return -EOPNOTSUPP;
-		*is_drop = true;
+		action->action |= MLX5_FLOW_CONTEXT_ACTION_DROP;
+		break;
+	case IB_FLOW_SPEC_ACTION_ESP_AES_GCM:
+		memcpy(action->esp_aes_gcm.key, ib_spec->esp_aes_gcm.key,
+		       sizeof(action->esp_aes_gcm.key));
+		action->esp_aes_gcm.key_length =
+			ib_spec->esp_aes_gcm.key_length;
+		memcpy(action->esp_aes_gcm.salt, ib_spec->esp_aes_gcm.salt,
+		       sizeof(action->esp_aes_gcm.salt));
+		memcpy(action->esp_aes_gcm.seqiv, ib_spec->esp_aes_gcm.seqiv,
+		       sizeof(action->esp_aes_gcm.seqiv));
+		memcpy(&action->esp_aes_gcm.esn, ib_spec->esp_aes_gcm.esn,
+		       sizeof(action->esp_aes_gcm.esn));
+		action->esp_aes_gcm.is_esn =
+			ib_spec->esp_aes_gcm.flags & IB_IPSEC_ESN ? 1 : 0;
+		action->action |= flow_attr->flags & IB_FLOW_ATTR_FLAGS_EGRESS ?
+			MLX5_FLOW_CONTEXT_ACTION_ENCRYPT :
+			MLX5_FLOW_CONTEXT_ACTION_DECRYPT;
 		break;
 	default:
 		return -EINVAL;
@@ -2166,6 +2213,37 @@ static bool flow_is_multicast_only(const struct ib_flow_attr *ib_attr)
 		eth_spec = (struct ib_flow_spec_eth *)flow_spec;
 		return is_multicast_ether_addr(eth_spec->mask.dst_mac) &&
 		       is_multicast_ether_addr(eth_spec->val.dst_mac);
+	}
+
+	return false;
+}
+
+static bool is_valid_esp_aes_gcm(struct mlx5_core_dev *mdev,
+				 const struct mlx5_flow_spec *spec,
+				 const struct mlx5_flow_act *flow_act)
+{
+	const u32 *match_c = spec->match_criteria;
+	bool is_crypto =
+		(flow_act->action & (MLX5_FLOW_CONTEXT_ACTION_ENCRYPT |
+				     MLX5_FLOW_CONTEXT_ACTION_DECRYPT));
+	bool is_ipsec = mlx5_fs_is_ipsec_flow(match_c);
+	bool is_drop = flow_act->action & MLX5_FLOW_CONTEXT_ACTION_DROP;
+
+	return is_crypto && is_ipsec && !is_drop && !flow_act->has_flow_tag;
+}
+
+static bool is_ipsec_spec_exists(const struct ib_flow_attr *flow_attr)
+{
+	union ib_flow_spec *ib_spec = (union ib_flow_spec *)(flow_attr + 1);
+	unsigned int spec_index;
+
+	if (flow_attr->type != IB_FLOW_ATTR_NORMAL)
+		return false;
+
+	for (spec_index = 0; spec_index < flow_attr->num_of_specs;
+	     spec_index++, ib_spec = (void *)ib_spec + ib_spec->size) {
+		if (ib_spec->type == IB_FLOW_SPEC_ESP)
+			return true;
 	}
 
 	return false;
@@ -2273,14 +2351,17 @@ static int ib_prio_to_core_prio(unsigned int priority, bool dont_trap)
 
 enum flow_table_type {
 	MLX5_IB_FT_RX,
-	MLX5_IB_FT_TX
+	MLX5_IB_FT_TX,
+	MLX5_IB_FT_RX_IPSEC,
+	MLX5_IB_FT_TX_IPSEC,
 };
 
 #define MLX5_FS_MAX_TYPES	 6
 #define MLX5_FS_MAX_ENTRIES	 BIT(16)
 static struct mlx5_ib_flow_prio *get_flow_table(struct mlx5_ib_dev *dev,
 						struct ib_flow_attr *flow_attr,
-						enum flow_table_type ft_type)
+						enum flow_table_type ft_type,
+						__u32 flags)
 {
 	bool dont_trap = flow_attr->flags & IB_FLOW_ATTR_FLAGS_DONT_TRAP;
 	struct mlx5_flow_namespace *ns = NULL;
@@ -2294,7 +2375,26 @@ static struct mlx5_ib_flow_prio *get_flow_table(struct mlx5_ib_dev *dev,
 
 	max_table_size = BIT(MLX5_CAP_FLOWTABLE_NIC_RX(dev->mdev,
 						       log_max_ft_size));
-	if (flow_attr->type == IB_FLOW_ATTR_NORMAL) {
+
+	if (ft_type == MLX5_IB_FT_RX_IPSEC ||
+	    ft_type == MLX5_IB_FT_TX_IPSEC) {
+		ns = mlx5_get_flow_namespace(dev->mdev,
+					     ft_type == MLX5_IB_FT_RX_IPSEC ?
+					     MLX5_FLOW_NAMESPACE_IPSEC_RX :
+					     MLX5_FLOW_NAMESPACE_IPSEC_TX);
+
+		prio = &dev->flow_db.ipsec[ft_type == MLX5_IB_FT_RX_IPSEC ?
+			MLX5_IB_FT_RX : MLX5_IB_FT_TX];
+		if (mlx5_get_flow_namespace(dev->mdev,
+					    MLX5_FLOW_NAMESPACE_BYPASS) !=
+		    ns && (flow_attr->priority != 0 ||
+			   !(flags & MLX5_IB_CREATE_FLOW_FLAG_REQUIRE_PET)))
+			return ERR_PTR(-EOPNOTSUPP);
+		priority = ib_prio_to_core_prio(flow_attr->priority,
+						dont_trap);
+		num_entries = MLX5_FS_MAX_ENTRIES;
+		num_groups = MLX5_FS_MAX_TYPES;
+	} else if (flow_attr->type == IB_FLOW_ATTR_NORMAL) {
 		if (flow_is_multicast_only(flow_attr) &&
 		    !dont_trap)
 			priority = MLX5_IB_FLOW_MCAST_PRIO;
@@ -2381,15 +2481,14 @@ static struct mlx5_ib_flow_handler *_create_flow_rule(struct mlx5_ib_dev *dev,
 {
 	struct mlx5_flow_table	*ft = ft_prio->flow_table;
 	struct mlx5_ib_flow_handler *handler;
-	struct mlx5_flow_act flow_act = {0};
+	struct mlx5_flow_act flow_act = {.flow_tag = MLX5_FS_DEFAULT_FLOW_TAG};
 	struct mlx5_flow_spec *spec;
 	struct mlx5_flow_destination *rule_dst = dst;
 	const void *ib_flow = (const void *)flow_attr + sizeof(*flow_attr);
 	unsigned int spec_index;
-	u32 flow_tag = MLX5_FS_DEFAULT_FLOW_TAG;
-	bool is_drop = false;
 	int err = 0;
 	int dest_num = 1;
+	bool is_egress = flow_attr->flags & IB_FLOW_ATTR_FLAGS_EGRESS;
 
 	if (!is_valid_attr(dev->mdev, flow_attr))
 		return ERR_PTR(-EINVAL);
@@ -2406,7 +2505,7 @@ static struct mlx5_ib_flow_handler *_create_flow_rule(struct mlx5_ib_dev *dev,
 	for (spec_index = 0; spec_index < flow_attr->num_of_specs; spec_index++) {
 		err = parse_flow_attr(dev->mdev, spec->match_criteria,
 				      spec->match_value,
-				      ib_flow, &flow_tag, &is_drop);
+				      ib_flow, flow_attr, &flow_act);
 		if (err < 0)
 			goto free;
 
@@ -2417,8 +2516,22 @@ static struct mlx5_ib_flow_handler *_create_flow_rule(struct mlx5_ib_dev *dev,
 		set_underlay_qp(dev, spec, underlay_qpn);
 
 	spec->match_criteria_enable = get_match_criteria_enable(spec->match_criteria);
-	if (is_drop) {
-		flow_act.action = MLX5_FLOW_CONTEXT_ACTION_DROP;
+
+	if (flow_act.action & (MLX5_FLOW_CONTEXT_ACTION_ENCRYPT |
+				 MLX5_FLOW_CONTEXT_ACTION_DECRYPT) ||
+	    mlx5_fs_is_ipsec_flow(spec->match_criteria)) {
+		/* dst == NULL means the caller is requesting a destination of
+		 * type FWD_NEXT_PRIO which is not supported with crypto
+		 */
+		if (!dst || !is_valid_esp_aes_gcm(dev->mdev, spec, &flow_act) ||
+		    flow_attr->type != IB_FLOW_ATTR_NORMAL) {
+			err = -EINVAL;
+			goto free;
+		}
+
+		flow_act.action |= is_egress ? MLX5_FLOW_CONTEXT_ACTION_ALLOW :
+			MLX5_FLOW_CONTEXT_ACTION_FWD_DEST;
+	} else if (flow_act.action & MLX5_FLOW_CONTEXT_ACTION_DROP) {
 		rule_dst = NULL;
 		dest_num = 0;
 	} else {
@@ -2426,15 +2539,14 @@ static struct mlx5_ib_flow_handler *_create_flow_rule(struct mlx5_ib_dev *dev,
 		    MLX5_FLOW_CONTEXT_ACTION_FWD_NEXT_PRIO;
 	}
 
-	if (flow_tag != MLX5_FS_DEFAULT_FLOW_TAG &&
+	if (flow_act.has_flow_tag &&
 	    (flow_attr->type == IB_FLOW_ATTR_ALL_DEFAULT ||
 	     flow_attr->type == IB_FLOW_ATTR_MC_DEFAULT)) {
 		mlx5_ib_warn(dev, "Flow tag %u and attribute type %x isn't allowed in leftovers\n",
-			     flow_tag, flow_attr->type);
+			     flow_act.flow_tag, flow_attr->type);
 		err = -EINVAL;
 		goto free;
 	}
-	flow_act.flow_tag = flow_tag;
 	handler->rule = mlx5_add_flow_rules(ft, spec,
 					    &flow_act,
 					    rule_dst, dest_num);
@@ -2590,7 +2702,8 @@ err:
 
 static struct ib_flow *mlx5_ib_create_flow(struct ib_qp *qp,
 					   struct ib_flow_attr *flow_attr,
-					   int domain)
+					   int domain,
+					   struct ib_udata *udata)
 {
 	struct mlx5_ib_dev *dev = to_mdev(qp->device);
 	struct mlx5_ib_qp *mqp = to_mqp(qp);
@@ -2598,15 +2711,61 @@ static struct ib_flow *mlx5_ib_create_flow(struct ib_qp *qp,
 	struct mlx5_flow_destination *dst = NULL;
 	struct mlx5_ib_flow_prio *ft_prio_tx = NULL;
 	struct mlx5_ib_flow_prio *ft_prio;
+	bool is_egress = flow_attr->flags & IB_FLOW_ATTR_FLAGS_EGRESS;
+	struct mlx5_ib_create_flow ucmd = {};
+	size_t required_cmd_sz;
+	struct mlx5_ib_create_flow_resp resp = {};
 	int err;
 	int underlay_qpn;
+
+	required_cmd_sz = offsetof(typeof(ucmd), comp_mask) +
+		sizeof(ucmd.comp_mask);
+
+	if (udata &&
+	    udata->inlen > sizeof(ucmd) &&
+	    !ib_is_udata_cleared(udata, sizeof(ucmd), udata->inlen -
+				 sizeof(ucmd)))
+		return ERR_PTR(-EOPNOTSUPP);
+	err = ib_copy_from_udata(&ucmd, udata, min(sizeof(ucmd), udata->inlen));
+	if (err) {
+		mlx5_ib_dbg(dev, "Copy failed in get_flow_table with error %d\n",
+			    err);
+		return ERR_PTR(err);
+	}
+
+	if (ucmd.comp_mask) {
+		mlx5_ib_dbg(dev, "Invalid comp mask = %08x\n", ucmd.comp_mask);
+		return ERR_PTR(-EOPNOTSUPP);
+	}
+
+	if (ucmd.flags & (~MLX5_IB_CREATE_FLOW_FLAG_REQUIRE_PET)) {
+		mlx5_ib_dbg(dev, "Unsupported flag given = %08x\n", ucmd.flags);
+		return ERR_PTR(-EOPNOTSUPP);
+	}
 
 	if (flow_attr->priority > MLX5_IB_FLOW_LAST_PRIO)
 		return ERR_PTR(-ENOMEM);
 
+	/* Maintain ABI compatibility if resp will be extended */
+	resp.response_length = offsetof(typeof(resp), response_length) +
+		sizeof(resp.response_length);
+	if (udata->outlen < resp.response_length) {
+		resp.response_length = 0;
+	} else {
+		err = ib_copy_to_udata(udata, &resp, resp.response_length);
+		if (err)
+			return ERR_PTR(err);
+	}
+
 	if (domain != IB_FLOW_DOMAIN_USER ||
 	    flow_attr->port > MLX5_CAP_GEN(dev->mdev, num_ports) ||
-	    (flow_attr->flags & ~IB_FLOW_ATTR_FLAGS_DONT_TRAP))
+	    (flow_attr->flags & ~(IB_FLOW_ATTR_FLAGS_DONT_TRAP |
+				  IB_FLOW_ATTR_FLAGS_EGRESS)))
+		return ERR_PTR(-EINVAL);
+
+	if (is_egress &&
+	    (flow_attr->type == IB_FLOW_ATTR_ALL_DEFAULT ||
+	     flow_attr->type == IB_FLOW_ATTR_MC_DEFAULT))
 		return ERR_PTR(-EINVAL);
 
 	dst = kzalloc(sizeof(*dst), GFP_KERNEL);
@@ -2615,13 +2774,34 @@ static struct ib_flow *mlx5_ib_create_flow(struct ib_qp *qp,
 
 	mutex_lock(&dev->flow_db.lock);
 
-	ft_prio = get_flow_table(dev, flow_attr, MLX5_IB_FT_RX);
+	if (is_egress) {
+		/*
+		 * Currently egress steering is supported only for ipsec and
+		 * sniffer
+		 */
+		if (!is_ipsec_spec_exists(flow_attr) &&
+		    flow_attr->type != IB_FLOW_ATTR_SNIFFER) {
+			err = -EOPNOTSUPP;
+			goto unlock;
+		}
+
+		ft_prio = get_flow_table(dev, flow_attr,
+					 MLX5_IB_FT_TX_IPSEC,
+					 ucmd.flags);
+	} else {
+		ft_prio = get_flow_table(dev, flow_attr,
+					 is_ipsec_spec_exists(flow_attr) ?
+					 MLX5_IB_FT_RX_IPSEC : MLX5_IB_FT_RX,
+					 ucmd.flags);
+	}
+
 	if (IS_ERR(ft_prio)) {
 		err = PTR_ERR(ft_prio);
 		goto unlock;
 	}
 	if (flow_attr->type == IB_FLOW_ATTR_SNIFFER) {
-		ft_prio_tx = get_flow_table(dev, flow_attr, MLX5_IB_FT_TX);
+		ft_prio_tx = get_flow_table(dev, flow_attr, MLX5_IB_FT_TX,
+					    ucmd.flags);
 		if (IS_ERR(ft_prio_tx)) {
 			err = PTR_ERR(ft_prio_tx);
 			ft_prio_tx = NULL;
@@ -2629,11 +2809,15 @@ static struct ib_flow *mlx5_ib_create_flow(struct ib_qp *qp,
 		}
 	}
 
-	dst->type = MLX5_FLOW_DESTINATION_TYPE_TIR;
-	if (mqp->flags & MLX5_IB_QP_RSS)
-		dst->tir_num = mqp->rss_qp.tirn;
-	else
-		dst->tir_num = mqp->raw_packet_qp.rq.tirn;
+	if (is_egress) {
+		dst->type = MLX5_FLOW_DESTINATION_TYPE_WIRE;
+	} else {
+		dst->type = MLX5_FLOW_DESTINATION_TYPE_TIR;
+		if (mqp->flags & MLX5_IB_QP_RSS)
+			dst->tir_num = mqp->rss_qp.tirn;
+		else
+			dst->tir_num = mqp->raw_packet_qp.rq.tirn;
+	}
 
 	if (flow_attr->type == IB_FLOW_ATTR_NORMAL) {
 		if (flow_attr->flags & IB_FLOW_ATTR_FLAGS_DONT_TRAP)  {

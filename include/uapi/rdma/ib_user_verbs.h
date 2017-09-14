@@ -261,7 +261,7 @@ struct ib_uverbs_ex_query_device_resp {
 	struct ib_uverbs_rss_caps rss_caps;
 	__u32  max_wq_type_rq;
 	__u32 raw_packet_caps;
-	struct ib_uverbs_tm_caps xrq_caps;
+	struct ib_uverbs_tm_caps tm_caps;
 };
 
 struct ib_uverbs_query_port {
@@ -908,6 +908,24 @@ struct ib_uverbs_flow_spec_ipv4 {
 	struct ib_uverbs_flow_ipv4_filter mask;
 };
 
+struct ib_uverbs_flow_spec_esp_filter {
+	__u32 spi;
+	__u32 seq;
+};
+
+struct ib_uverbs_flow_spec_esp {
+	union {
+		struct ib_uverbs_flow_spec_hdr hdr;
+		struct {
+			__u32 type;
+			__u16 size;
+			__u16 reserved;
+		};
+	};
+	struct ib_uverbs_flow_spec_esp_filter val;
+	struct ib_uverbs_flow_spec_esp_filter mask;
+};
+
 struct ib_uverbs_flow_tcp_udp_filter {
 	__be16 dst_port;
 	__be16 src_port;
@@ -971,6 +989,27 @@ struct ib_uverbs_flow_spec_action_drop {
 			__u16 reserved;
 		};
 	};
+};
+
+/*
+ * If the action decrypted and authenticated the ipsec packet successfully,
+ * 0 will be set to the tag. Otherwise, we set an error.
+ */
+struct ib_uverbs_flow_spec_action_esp_aes_gcm {
+	union {
+		struct ib_uverbs_flow_spec_hdr hdr;
+		struct {
+			__u32 type;
+			__u16 size;
+			__u16 reserved;
+		};
+	};
+	__u32			        key_length;
+	__u8			        key[32];
+	__u8			        salt[4];
+	__u8			        seqiv[8];
+	__u8				esn[4];
+	__u32				flags; /* Use enum ib_ipsec_flags */
 };
 
 struct ib_uverbs_flow_tunnel_filter {
