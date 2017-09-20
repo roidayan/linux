@@ -436,7 +436,9 @@ struct mlx5_ifc_fte_match_set_misc_bits {
 
 	u8         reserved_at_120[0x28];
 	u8         bth_dst_qp[0x18];
-	u8         reserved_at_160[0xa0];
+	u8	   reserved_at_160[0x20];
+	u8	   outer_esp_spi[0x20];
+	u8         reserved_at_1a0[0x60];
 };
 
 struct mlx5_ifc_cmd_pas_bits {
@@ -743,6 +745,7 @@ enum {
 	MLX5_WQ_TYPE_LINKED_LIST  = 0x0,
 	MLX5_WQ_TYPE_CYCLIC       = 0x1,
 	MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ = 0x2,
+	MLX5_WQ_TYPE_CYCLIC_STRIDING_RQ = 0x3,
 };
 
 enum {
@@ -1066,6 +1069,7 @@ enum mlx5_flow_destination_type {
 	MLX5_FLOW_DESTINATION_TYPE_VPORT        = 0x0,
 	MLX5_FLOW_DESTINATION_TYPE_FLOW_TABLE   = 0x1,
 	MLX5_FLOW_DESTINATION_TYPE_TIR          = 0x2,
+	MLX5_FLOW_DESTINATION_TYPE_WIRE         = 0x3,
 
 	MLX5_FLOW_DESTINATION_TYPE_COUNTER      = 0x100,
 };
