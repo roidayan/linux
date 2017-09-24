@@ -580,7 +580,7 @@ static ssize_t stats_show(struct mlx5_sriov_vf *g, struct vf_attributes *oa,
 {
 	struct mlx5_core_dev *dev = g->dev;
 	struct ifla_vf_stats ifi;
-	struct mlx5_vport_drop_stats stats;
+	struct mlx5_vport_drop_stats stats = {};
 	int err;
 	char *p = buf;
 
