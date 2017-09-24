@@ -89,6 +89,7 @@ enum mlx5_ib_alloc_ucontext_resp_mask {
 enum mlx5_user_cmds_supp_uhw {
 	MLX5_USER_CMDS_SUPP_UHW_QUERY_DEVICE = 1 << 0,
 	MLX5_USER_CMDS_SUPP_UHW_CREATE_AH    = 1 << 1,
+	MLX5_USER_CMDS_SUPP_UHW_CREATE_FLOW  = 1 << 2,
 };
 
 /* The eth_min_inline response value is set to off-by-one vs the FW
@@ -190,6 +191,19 @@ struct mlx5_ib_sw_parsing_caps {
 	__u32 supported_qpts;
 };
 
+struct mlx5_ib_striding_rq_caps {
+	__u32 min_single_stride_log_num_of_bytes;
+	__u32 max_single_stride_log_num_of_bytes;
+	__u32 min_single_wqe_log_num_of_strides;
+	__u32 max_single_wqe_log_num_of_strides;
+
+	/* Corresponding bit will be set if qp type from
+	 * 'enum ib_qp_type' is supported, e.g.
+	 * supported_qpts |= 1 << IB_QPT_RAW_PACKET
+	 */
+	__u32 supported_qpts;
+};
+
 struct mlx5_ib_query_device_resp {
 	__u32	comp_mask;
 	__u32	response_length;
@@ -200,6 +214,7 @@ struct mlx5_ib_query_device_resp {
 	__u32	mlx5_ib_support_multi_pkt_send_wqes;
 	__u32	reserved;
 	struct mlx5_ib_sw_parsing_caps sw_parsing_caps;
+	struct mlx5_ib_striding_rq_caps striding_rq_caps;
 };
 
 struct mlx5_ib_create_cq {
@@ -294,6 +309,10 @@ struct mlx5_ib_alloc_mw {
 	__u16	reserved2;
 };
 
+enum mlx5_ib_create_wq_mask {
+	MLX5_IB_CREATE_WQ_STRIDING_RQ	= (1 << 0),
+};
+
 struct mlx5_ib_create_wq {
 	__u64   buf_addr;
 	__u64   db_addr;
@@ -302,7 +321,9 @@ struct mlx5_ib_create_wq {
 	__u32   user_index;
 	__u32   flags;
 	__u32   comp_mask;
-	__u32   reserved;
+	__u32	single_stride_log_num_of_bytes;
+	__u32	single_wqe_log_num_of_strides;
+	__u32	two_byte_shift_en;
 };
 
 struct mlx5_ib_create_ah_resp {
@@ -325,4 +346,19 @@ struct mlx5_ib_modify_wq {
 	__u32	comp_mask;
 	__u32	reserved;
 };
+
+enum mlx5_ib_create_flow_uhw {
+	MLX5_IB_CREATE_FLOW_FLAG_REQUIRE_PET = 1UL << 0,
+};
+
+struct mlx5_ib_create_flow {
+	__u32	flags;
+	__u32	comp_mask;
+};
+
+struct mlx5_ib_create_flow_resp {
+	__u32	response_length;
+	__u32	reserved;
+};
+
 #endif /* MLX5_ABI_USER_H */
