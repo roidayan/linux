@@ -233,10 +233,13 @@ struct ib_uverbs_flow_spec {
 		};
 		struct ib_uverbs_flow_spec_eth     eth;
 		struct ib_uverbs_flow_spec_ipv4    ipv4;
+		struct ib_uverbs_flow_spec_esp     esp;
 		struct ib_uverbs_flow_spec_tcp_udp tcp_udp;
 		struct ib_uverbs_flow_spec_ipv6    ipv6;
 		struct ib_uverbs_flow_spec_action_tag	flow_tag;
 		struct ib_uverbs_flow_spec_action_drop	drop;
+		struct ib_uverbs_flow_spec_action_esp_aes_gcm	esp_aes_gcm;
+		struct ib_uverbs_flow_spec_action_count flow_count;
 	};
 };
 
@@ -299,5 +302,9 @@ IB_UVERBS_DECLARE_EX_CMD(destroy_wq);
 IB_UVERBS_DECLARE_EX_CMD(create_rwq_ind_table);
 IB_UVERBS_DECLARE_EX_CMD(destroy_rwq_ind_table);
 IB_UVERBS_DECLARE_EX_CMD(modify_qp);
+IB_UVERBS_DECLARE_EX_CMD(describe_counter_set);
+IB_UVERBS_DECLARE_EX_CMD(create_counter_set);
+IB_UVERBS_DECLARE_EX_CMD(destroy_counter_set);
+IB_UVERBS_DECLARE_EX_CMD(query_counter_set);
 
 #endif /* UVERBS_H */
