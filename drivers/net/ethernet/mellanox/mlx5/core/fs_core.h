@@ -52,6 +52,8 @@ enum fs_flow_table_type {
 	FS_FT_FDB             = 0X4,
 	FS_FT_SNIFFER_RX	= 0X5,
 	FS_FT_SNIFFER_TX	= 0X6,
+	FS_FT_IPSEC_RX		= 0X7,
+	FS_FT_IPSEC_TX		= 0X8,
 };
 
 enum fs_flow_table_op_mod {
@@ -73,6 +75,8 @@ struct mlx5_flow_steering {
 	struct mlx5_flow_root_namespace *esw_ingress_root_ns;
 	struct mlx5_flow_root_namespace	*sniffer_tx_root_ns;
 	struct mlx5_flow_root_namespace	*sniffer_rx_root_ns;
+	struct mlx5_flow_root_namespace	*ipsec_tx_root_ns;
+	struct mlx5_flow_root_namespace	*ipsec_rx_root_ns;
 };
 
 struct fs_node {
@@ -127,29 +131,6 @@ struct mlx5_flow_table {
 	struct rhltable			fgs_hash;
 };
 
-struct mlx5_fc_cache {
-	u64 packets;
-	u64 bytes;
-	u64 lastuse;
-};
-
-struct mlx5_fc {
-	struct rb_node node;
-	struct list_head list;
-
-	/* last{packets,bytes} members are used when calculating the delta since
-	 * last reading
-	 */
-	u64 lastpackets;
-	u64 lastbytes;
-
-	u32 id;
-	bool deleted;
-	bool aging;
-
-	struct mlx5_fc_cache cache ____cacheline_aligned_in_smp;
-};
-
 #define MLX5_FTE_MATCH_PARAM_RESERVED	reserved_at_600
 /* Calculate the fte_match_param length and without the reserved length.
  * Make sure the reserved field is the last.
@@ -175,6 +156,7 @@ struct fs_fte {
 	enum fs_fte_status		status;
 	struct mlx5_fc			*counter;
 	struct rhash_head		hash;
+	struct mlx5_flow_esp_aes_gcm_action *esp_aes_gcm;
 };
 
 /* Type of children is mlx5_flow_table/namespace */
@@ -217,6 +199,7 @@ struct mlx5_flow_root_namespace {
 	/* Should be held when chaining flow tables */
 	struct mutex			chain_lock;
 	u32				underlay_qpn;
+	const struct mlx5_flow_cmds	*cmds;
 };
 
 int mlx5_init_fc_stats(struct mlx5_core_dev *dev);
@@ -229,6 +212,13 @@ void mlx5_fc_update_sampling_interval(struct mlx5_core_dev *dev,
 
 int mlx5_init_fs(struct mlx5_core_dev *dev);
 void mlx5_cleanup_fs(struct mlx5_core_dev *dev);
+
+struct mlx5_flow_root_namespace *create_root_ns(struct mlx5_flow_steering *steering,
+						enum fs_flow_table_type table_type,
+						const struct mlx5_flow_cmds *cmds);
+struct fs_prio *fs_create_prio(struct mlx5_flow_namespace *ns,
+			       unsigned int prio, int num_levels);
+void cleanup_root_ns(struct mlx5_flow_root_namespace *root_ns);
 
 #define fs_get_obj(v, _node)  {v = container_of((_node), typeof(*v), node); }
 

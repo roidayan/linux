@@ -37,6 +37,7 @@
 #include "fs_core.h"
 #include "fs_cmd.h"
 #include "diag/fs_tracepoint.h"
+#include "accel/ipsec.h"
 
 #define INIT_TREE_NODE_ARRAY_SIZE(...)	(sizeof((struct init_tree_node[]){__VA_ARGS__}) /\
 					 sizeof(struct init_tree_node))
@@ -174,7 +175,7 @@ static void del_hw_fte(struct fs_node *node);
 static void del_sw_flow_table(struct fs_node *node);
 static void del_sw_flow_group(struct fs_node *node);
 static void del_sw_fte(struct fs_node *node);
-/* Delete rule (destination) is special case that 
+/* Delete rule (destination) is special case that
  * requires to lock the FTE for all the deletion process.
  */
 static void del_sw_hw_rule(struct fs_node *node);
@@ -498,13 +499,15 @@ static void del_hw_fte(struct fs_node *node)
 	trace_mlx5_fs_del_fte(fte);
 	dev = get_dev(&ft->node);
 	if (node->active) {
-		err = mlx5_cmd_delete_fte(dev, ft,
-					  fte->index);
+		err = mlx5_cmd_delete_fte(dev, ft, fte);
 		if (err)
 			mlx5_core_warn(dev,
 				       "flow steering can't delete fte in index %d of flow group id %d\n",
 				       fte->index, fg->id);
 	}
+
+	kfree(fte->esp_aes_gcm);
+	fte->esp_aes_gcm = NULL;
 }
 
 static void del_sw_fte(struct fs_node *node)
@@ -592,11 +595,22 @@ static struct fs_fte *alloc_fte(struct mlx5_flow_table *ft,
 				struct mlx5_flow_act *flow_act)
 {
 	struct mlx5_flow_steering *steering = get_steering(&ft->node);
+	struct mlx5_flow_esp_aes_gcm_action *crypto = NULL;
 	struct fs_fte *fte;
 
+	if (flow_act->action & (MLX5_FLOW_CONTEXT_ACTION_ENCRYPT |
+				MLX5_FLOW_CONTEXT_ACTION_DECRYPT)) {
+		crypto = kzalloc(sizeof(*crypto), GFP_KERNEL);
+		if (!crypto)
+			return ERR_PTR(-ENOMEM);
+		memcpy(crypto, &flow_act->esp_aes_gcm, sizeof(*crypto));
+	}
+
 	fte = kmem_cache_zalloc(steering->ftes_cache, GFP_KERNEL);
-	if (!fte)
+	if (!fte) {
+		kfree(crypto);
 		return ERR_PTR(-ENOMEM);
+	}
 
 	memcpy(fte->val, match_value, sizeof(fte->val));
 	fte->node.type =  FS_TYPE_FLOW_ENTRY;
@@ -604,6 +618,7 @@ static struct fs_fte *alloc_fte(struct mlx5_flow_table *ft,
 	fte->action = flow_act->action;
 	fte->encap_id = flow_act->encap_id;
 	fte->modify_id = flow_act->modify_id;
+	fte->esp_aes_gcm = crypto;
 
 	tree_init_node(&fte->node, del_hw_fte, del_sw_fte);
 
@@ -1261,7 +1276,7 @@ add_rule_fte(struct fs_fte *fte,
 	fs_get_obj(ft, fg->node.parent);
 	if (!(fte->status & FS_FTE_STATUS_EXISTING))
 		err = mlx5_cmd_create_fte(get_dev(&ft->node),
-					  ft, fg->id, fte);
+					  ft, fg, fte);
 	else
 		err = mlx5_cmd_update_fte(get_dev(&ft->node),
 					  ft, fg->id, modify_mask, fte);
@@ -1412,7 +1427,7 @@ static int check_conflicting_ftes(struct fs_fte *fte, const struct mlx5_flow_act
 		return -EEXIST;
 	}
 
-	if (fte->flow_tag != flow_act->flow_tag) {
+	if (flow_act->has_flow_tag && fte->flow_tag != flow_act->flow_tag) {
 		mlx5_core_warn(get_dev(&fte->node),
 			       "FTE flow tag %u already exists with different flow tag %u\n",
 			       fte->flow_tag,
@@ -1998,6 +2013,16 @@ struct mlx5_flow_namespace *mlx5_get_flow_namespace(struct mlx5_core_dev *dev,
 			return &steering->sniffer_tx_root_ns->ns;
 		else
 			return NULL;
+	case MLX5_FLOW_NAMESPACE_IPSEC_RX:
+		if (steering->ipsec_rx_root_ns)
+			return &steering->ipsec_rx_root_ns->ns;
+		else
+			return NULL;
+	case MLX5_FLOW_NAMESPACE_IPSEC_TX:
+		if (steering->ipsec_tx_root_ns)
+			return &steering->ipsec_tx_root_ns->ns;
+		else
+			return NULL;
 	default:
 		return NULL;
 	}
@@ -2018,8 +2043,8 @@ struct mlx5_flow_namespace *mlx5_get_flow_namespace(struct mlx5_core_dev *dev,
 }
 EXPORT_SYMBOL(mlx5_get_flow_namespace);
 
-static struct fs_prio *fs_create_prio(struct mlx5_flow_namespace *ns,
-				      unsigned int prio, int num_levels)
+struct fs_prio *fs_create_prio(struct mlx5_flow_namespace *ns,
+			       unsigned int prio, int num_levels)
 {
 	struct fs_prio *fs_prio;
 
@@ -2161,9 +2186,22 @@ static int init_root_tree(struct mlx5_flow_steering *steering,
 	return 0;
 }
 
-static struct mlx5_flow_root_namespace *create_root_ns(struct mlx5_flow_steering *steering,
-						       enum fs_flow_table_type
-						       table_type)
+static const struct mlx5_flow_cmds mlx5_flow_cmds = {
+	.create_flow_table = mlx5_cmd_create_flow_table,
+	.destroy_flow_table = mlx5_cmd_destroy_flow_table,
+	.modify_flow_table = mlx5_cmd_modify_flow_table,
+	.create_flow_group = mlx5_cmd_create_flow_group,
+	.destroy_flow_group = mlx5_cmd_destroy_flow_group,
+	.create_fte = mlx5_cmd_create_fte,
+	.update_fte = mlx5_cmd_update_fte,
+	.delete_fte = mlx5_cmd_delete_fte,
+	.update_root_ft = mlx5_cmd_update_root_ft,
+};
+
+struct mlx5_flow_root_namespace
+*create_root_ns(struct mlx5_flow_steering *steering,
+		enum fs_flow_table_type table_type,
+		const struct mlx5_flow_cmds *cmds)
 {
 	struct mlx5_flow_root_namespace *root_ns;
 	struct mlx5_flow_namespace *ns;
@@ -2252,7 +2290,8 @@ static int create_anchor_flow_table(struct mlx5_flow_steering *steering)
 
 static int init_root_ns(struct mlx5_flow_steering *steering)
 {
-	steering->root_ns = create_root_ns(steering, FS_FT_NIC_RX);
+	steering->root_ns = create_root_ns(steering, FS_FT_NIC_RX,
+					   &mlx5_flow_cmds);
 	if (!steering->root_ns)
 		goto cleanup;
 
@@ -2285,7 +2324,7 @@ static void clean_tree(struct fs_node *node)
 	}
 }
 
-static void cleanup_root_ns(struct mlx5_flow_root_namespace *root_ns)
+void cleanup_root_ns(struct mlx5_flow_root_namespace *root_ns)
 {
 	if (!root_ns)
 		return;
@@ -2313,7 +2352,9 @@ static int init_sniffer_tx_root_ns(struct mlx5_flow_steering *steering)
 {
 	struct fs_prio *prio;
 
-	steering->sniffer_tx_root_ns = create_root_ns(steering, FS_FT_SNIFFER_TX);
+	steering->sniffer_tx_root_ns = create_root_ns(steering,
+						      FS_FT_SNIFFER_TX,
+						      &mlx5_flow_cmds);
 	if (!steering->sniffer_tx_root_ns)
 		return -ENOMEM;
 
@@ -2330,7 +2371,9 @@ static int init_sniffer_rx_root_ns(struct mlx5_flow_steering *steering)
 {
 	struct fs_prio *prio;
 
-	steering->sniffer_rx_root_ns = create_root_ns(steering, FS_FT_SNIFFER_RX);
+	steering->sniffer_rx_root_ns = create_root_ns(steering,
+						      FS_FT_SNIFFER_RX,
+						      &mlx5_flow_cmds);
 	if (!steering->sniffer_rx_root_ns)
 		return -ENOMEM;
 
@@ -2347,7 +2390,8 @@ static int init_fdb_root_ns(struct mlx5_flow_steering *steering)
 {
 	struct fs_prio *prio;
 
-	steering->fdb_root_ns = create_root_ns(steering, FS_FT_FDB);
+	steering->fdb_root_ns = create_root_ns(steering, FS_FT_FDB,
+					       &mlx5_flow_cmds);
 	if (!steering->fdb_root_ns)
 		return -ENOMEM;
 
@@ -2372,7 +2416,9 @@ static int init_ingress_acl_root_ns(struct mlx5_flow_steering *steering)
 {
 	struct fs_prio *prio;
 
-	steering->esw_egress_root_ns = create_root_ns(steering, FS_FT_ESW_EGRESS_ACL);
+	steering->esw_egress_root_ns = create_root_ns(steering,
+						      FS_FT_ESW_EGRESS_ACL,
+						      &mlx5_flow_cmds);
 	if (!steering->esw_egress_root_ns)
 		return -ENOMEM;
 
@@ -2386,7 +2432,9 @@ static int init_egress_acl_root_ns(struct mlx5_flow_steering *steering)
 {
 	struct fs_prio *prio;
 
-	steering->esw_ingress_root_ns = create_root_ns(steering, FS_FT_ESW_INGRESS_ACL);
+	steering->esw_ingress_root_ns = create_root_ns(steering,
+						       FS_FT_ESW_INGRESS_ACL,
+						       &mlx5_flow_cmds);
 	if (!steering->esw_ingress_root_ns)
 		return -ENOMEM;
 

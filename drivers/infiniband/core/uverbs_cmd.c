@@ -1501,7 +1501,8 @@ static int create_qp(struct ib_uverbs_file *file,
 				IB_QP_CREATE_MANAGED_RECV |
 				IB_QP_CREATE_SCATTER_FCS |
 				IB_QP_CREATE_CVLAN_STRIPPING |
-				IB_QP_CREATE_SOURCE_QPN)) {
+				IB_QP_CREATE_SOURCE_QPN |
+				IB_QP_CREATE_SCATTER_END_PADDING)) {
 		ret = -EINVAL;
 		goto err_put;
 	}
@@ -2537,7 +2538,6 @@ ssize_t ib_uverbs_create_ah(struct ib_uverbs_file *file,
 	struct rdma_ah_attr		attr;
 	int ret;
 	struct ib_udata                   udata;
-	u8				*dmac;
 
 	if (out_len < sizeof resp)
 		return -ENOSPC;
@@ -2580,20 +2580,13 @@ ssize_t ib_uverbs_create_ah(struct ib_uverbs_file *file,
 	} else {
 		rdma_ah_set_ah_flags(&attr, 0);
 	}
-	dmac = rdma_ah_retrieve_dmac(&attr);
-	if (dmac)
-		memset(dmac, 0, ETH_ALEN);
 
-	ah = pd->device->create_ah(pd, &attr, &udata);
-
+	ah = rdma_create_user_ah(pd, &attr, &udata);
 	if (IS_ERR(ah)) {
 		ret = PTR_ERR(ah);
 		goto err_put;
 	}
 
-	ah->device  = pd->device;
-	ah->pd      = pd;
-	atomic_inc(&pd->usecnt);
 	ah->uobject  = uobj;
 	uobj->user_handle = cmd.user_handle;
 	uobj->object = ah;
@@ -2756,6 +2749,37 @@ static int kern_spec_to_ib_spec_action(struct ib_uverbs_flow_spec *kern_spec,
 
 		ib_spec->drop.size = sizeof(struct ib_flow_spec_action_drop);
 		break;
+	case IB_FLOW_SPEC_ACTION_ESP_AES_GCM:
+		if (kern_spec->esp_aes_gcm.size !=
+		    sizeof(struct ib_uverbs_flow_spec_action_esp_aes_gcm))
+			return -EINVAL;
+		/* Possible ipsec key lengths according to the spec */
+		if (kern_spec->esp_aes_gcm.key_length != 32 &&
+		    kern_spec->esp_aes_gcm.key_length != 24 &&
+		    kern_spec->esp_aes_gcm.key_length != 16)
+			return -EINVAL;
+		ib_spec->esp_aes_gcm.size =
+			sizeof(struct ib_flow_spec_action_esp_aes_gcm);
+		memcpy(ib_spec->esp_aes_gcm.key, kern_spec->esp_aes_gcm.key,
+		       sizeof(ib_spec->esp_aes_gcm.key));
+		ib_spec->esp_aes_gcm.key_length =
+			kern_spec->esp_aes_gcm.key_length;
+		memcpy(ib_spec->esp_aes_gcm.salt, kern_spec->esp_aes_gcm.salt,
+		       sizeof(ib_spec->esp_aes_gcm.salt));
+		memcpy(ib_spec->esp_aes_gcm.esn, kern_spec->esp_aes_gcm.esn,
+		       sizeof(ib_spec->esp_aes_gcm.esn));
+		memcpy(ib_spec->esp_aes_gcm.seqiv, kern_spec->esp_aes_gcm.seqiv,
+		       sizeof(ib_spec->esp_aes_gcm.seqiv));
+		ib_spec->esp_aes_gcm.flags = kern_spec->esp_aes_gcm.flags;
+		break;
+	case IB_FLOW_SPEC_ACTION_COUNT:
+		if (kern_spec->flow_count.size !=
+			sizeof(struct ib_uverbs_flow_spec_action_count))
+			return -EINVAL;
+		ib_spec->flow_count.size =
+				sizeof(struct ib_flow_spec_action_count);
+		break;
+
 	default:
 		return -EINVAL;
 	}
@@ -2876,6 +2900,18 @@ static int kern_spec_to_ib_spec_filter(struct ib_uverbs_flow_spec *kern_spec,
 		    (ntohl(ib_spec->tunnel.val.tunnel_id)) >= BIT(24))
 			return -EINVAL;
 		break;
+	case IB_FLOW_SPEC_ESP:
+		ib_filter_sz = offsetof(struct ib_flow_esp_filter, real_sz);
+		actual_filter_sz = spec_filter_size(kern_spec_mask,
+						    kern_filter_sz,
+						    ib_filter_sz);
+		if (actual_filter_sz <= 0)
+			return -EINVAL;
+		ib_spec->esp.size = sizeof(struct ib_flow_spec_esp);
+		memcpy(&ib_spec->esp.val, kern_spec_val, actual_filter_sz);
+		memcpy(&ib_spec->esp.mask, kern_spec_mask, actual_filter_sz);
+		break;
+
 	default:
 		return -EINVAL;
 	}
@@ -3293,9 +3329,11 @@ int ib_uverbs_ex_create_flow(struct ib_uverbs_file *file,
 	struct ib_uverbs_flow_attr	  *kern_flow_attr;
 	struct ib_flow_attr		  *flow_attr;
 	struct ib_qp			  *qp;
+	struct ib_counter_set	*cs = NULL;
 	int err = 0;
 	void *kern_spec;
 	void *ib_spec;
+	int cs_used = 0;
 	int i;
 
 	if (ucore->inlen < sizeof(cmd))
@@ -3390,6 +3428,25 @@ int ib_uverbs_ex_create_flow(struct ib_uverbs_file *file,
 		flow_attr->size +=
 			((union ib_flow_spec *) ib_spec)->size;
 		cmd.flow_attr.size -= ((struct ib_uverbs_flow_spec *)kern_spec)->size;
+		if (((struct ib_uverbs_flow_spec *)kern_spec)->type ==
+				IB_FLOW_SPEC_ACTION_COUNT) {
+			__u32 cs_handle =
+				((struct ib_uverbs_flow_spec *)kern_spec)->flow_count.cs_handle;
+			cs_used++;
+			if (cs_used > 1) {
+				uobj_put_obj_read(cs);
+				err = -EINVAL;
+				goto err_free;
+			}
+			cs = uobj_get_obj_read(counter_set,
+					       cs_handle,
+					       file->ucontext);
+			if (!cs) {
+				err = -EINVAL;
+				goto err_free;
+			}
+			((union ib_flow_spec *)ib_spec)->flow_count.counter_set = cs;
+		}
 		kern_spec += ((struct ib_uverbs_flow_spec *) kern_spec)->size;
 		ib_spec += ((union ib_flow_spec *) ib_spec)->size;
 	}
@@ -3399,11 +3456,21 @@ int ib_uverbs_ex_create_flow(struct ib_uverbs_file *file,
 		err = -EINVAL;
 		goto err_free;
 	}
-	flow_id = ib_create_flow(qp, flow_attr, IB_FLOW_DOMAIN_USER);
+	flow_id = qp->device->create_flow(qp, flow_attr,
+					  IB_FLOW_DOMAIN_USER, uhw);
+	if (cs_used)
+		uobj_put_obj_read(cs);
+
 	if (IS_ERR(flow_id)) {
 		err = PTR_ERR(flow_id);
 		goto err_free;
 	}
+
+	if (flow_id->counter_set)
+		atomic_inc(&flow_id->counter_set->usecnt);
+
+	atomic_inc(&qp->usecnt);
+	flow_id->qp = qp;
 	flow_id->uobject = uobj;
 	uobj->object = flow_id;
 
@@ -3869,16 +3936,298 @@ int ib_uverbs_ex_query_device(struct ib_uverbs_file *file,
 	resp.raw_packet_caps = attr.raw_packet_caps;
 	resp.response_length += sizeof(resp.raw_packet_caps);
 
-	if (ucore->outlen < resp.response_length + sizeof(resp.xrq_caps))
+	if (ucore->outlen < resp.response_length + sizeof(resp.tm_caps))
 		goto end;
 
-	resp.xrq_caps.max_rndv_hdr_size = attr.xrq_caps.max_rndv_hdr_size;
-	resp.xrq_caps.max_num_tags      = attr.xrq_caps.max_num_tags;
-	resp.xrq_caps.max_ops		= attr.xrq_caps.max_ops;
-	resp.xrq_caps.max_sge		= attr.xrq_caps.max_sge;
-	resp.xrq_caps.flags		= attr.xrq_caps.flags;
-	resp.response_length += sizeof(resp.xrq_caps);
+	resp.tm_caps.max_rndv_hdr_size	= attr.tm_caps.max_rndv_hdr_size;
+	resp.tm_caps.max_num_tags	= attr.tm_caps.max_num_tags;
+	resp.tm_caps.max_ops		= attr.tm_caps.max_ops;
+	resp.tm_caps.max_sge		= attr.tm_caps.max_sge;
+	resp.tm_caps.flags		= attr.tm_caps.flags;
+	resp.response_length += sizeof(resp.tm_caps);
+
+	if (ucore->outlen < resp.response_length +
+		sizeof(resp.max_counter_sets) + sizeof(resp.reserved))
+		goto end;
+
+	resp.max_counter_sets = attr.max_counter_sets;
+	resp.response_length += sizeof(resp.max_counter_sets) +
+			 sizeof(resp.reserved);
 end:
 	err = ib_copy_to_udata(ucore, &resp, resp.response_length);
 	return err;
+}
+
+int ib_uverbs_ex_describe_counter_set(struct ib_uverbs_file *file,
+				      struct ib_device *ib_dev,
+				      struct ib_udata *ucore,
+				      struct ib_udata *uhw)
+{
+	struct ib_uverbs_ex_describe_counter_set	cmd = {};
+	struct ib_uverbs_ex_describe_counter_set_resp	resp = {};
+	struct ib_counter_set_describe_attr cs_describe_attr = {};
+	size_t	required_resp_len;
+	size_t	required_cmd_sz;
+	u16 buff_len;
+	int ret = 0;
+
+	required_cmd_sz = offsetof(typeof(cmd), cs_id) +
+			sizeof(cmd.cs_id);
+	required_resp_len = offsetof(typeof(resp), reserved) +
+			sizeof(resp.reserved);
+
+	if (ucore->inlen < required_cmd_sz)
+		return -EINVAL;
+
+	if (ucore->outlen < required_resp_len)
+		return -ENOSPC;
+
+	if (ucore->inlen > sizeof(cmd) &&
+	    !ib_is_udata_cleared(ucore, sizeof(cmd),
+			ucore->inlen - sizeof(cmd)))
+		return -EOPNOTSUPP;
+
+	ret = ib_copy_from_udata(&cmd, ucore, min(sizeof(cmd), ucore->inlen));
+	if (ret)
+		return ret;
+
+	if (cmd.comp_mask)
+		return -EOPNOTSUPP;
+
+	if (cmd.counters_names_resp) {
+		/* Prevent memory allocation rather than max expected size */
+		buff_len = min_t(u16, cmd.counters_names_max,
+				 MAX_COUNTER_SET_BUFF_LEN);
+		cs_describe_attr.counters_names_buff =
+				kzalloc(buff_len, GFP_KERNEL);
+		if (!cs_describe_attr.counters_names_buff)
+			return -ENOMEM;
+
+		cs_describe_attr.counters_names_len = buff_len;
+	}
+
+	ret = ib_dev->describe_counter_set(ib_dev, cmd.cs_id,
+					   &cs_describe_attr, uhw);
+	if (ret)
+		goto err;
+
+	if (cmd.counters_names_resp) {
+		if (copy_to_user((void __user *)cmd.counters_names_resp,
+				 cs_describe_attr.counters_names_buff,
+				 cs_describe_attr.entries_count *
+				 IB_COUNTER_NAME_LEN)) {
+			ret = -EFAULT;
+			goto err;
+		}
+	}
+
+	resp.num_of_cs = cs_describe_attr.num_of_cs;
+	resp.attributes = cs_describe_attr.attributes;
+	resp.counted_type = cs_describe_attr.counted_type;
+	resp.entries_count = cs_describe_attr.entries_count;
+	resp.response_length = required_resp_len;
+	ret = ib_copy_to_udata(ucore, &resp, resp.response_length);
+
+err:
+	kfree(cs_describe_attr.counters_names_buff);
+	return ret;
+}
+
+int ib_uverbs_ex_create_counter_set(struct ib_uverbs_file *file,
+				    struct ib_device *ib_dev,
+				    struct ib_udata *ucore,
+				    struct ib_udata *uhw)
+{
+	struct ib_uverbs_ex_create_counter_set	cmd = {};
+	struct ib_uverbs_ex_create_counter_set_resp	resp = {};
+	struct ib_counter_set	*cs;
+	struct ib_uobject	*uobj;
+	size_t	required_resp_len;
+	size_t	required_cmd_sz;
+	int	ret = 0;
+
+	required_cmd_sz = offsetof(typeof(cmd), reserved) +
+			sizeof(cmd.reserved);
+	required_resp_len = offsetof(typeof(resp), reserved) +
+			sizeof(resp.reserved);
+
+	if (ucore->inlen < required_cmd_sz)
+		return -EINVAL;
+
+	if (ucore->outlen < required_resp_len)
+		return -ENOSPC;
+
+	if (ucore->inlen > sizeof(cmd) &&
+	    !ib_is_udata_cleared(ucore, sizeof(cmd),
+			ucore->inlen - sizeof(cmd)))
+		return -EOPNOTSUPP;
+
+	ret = ib_copy_from_udata(&cmd, ucore, min(sizeof(cmd), ucore->inlen));
+	if (ret)
+		return ret;
+
+	if (cmd.comp_mask || cmd.reserved)
+		return -EOPNOTSUPP;
+
+	uobj = uobj_alloc(uobj_get_type(counter_set), file->ucontext);
+	if (IS_ERR(uobj))
+		return PTR_ERR(uobj);
+
+	cs = ib_dev->create_counter_set(ib_dev, cmd.cs_id, uhw);
+	if (IS_ERR(cs)) {
+		ret = PTR_ERR(cs);
+		goto err_uobj;
+	}
+	uobj->object = cs;
+	cs->device = ib_dev;
+	cs->uobject = uobj;
+	cs->cs_id = cmd.cs_id;
+	atomic_set(&cs->usecnt, 0);
+	resp.cs_handle = uobj->id;
+	resp.response_length = required_resp_len;
+	ret = ib_copy_to_udata(ucore,
+			       &resp, required_resp_len);
+	if (ret)
+		goto err_copy;
+
+	uobj_alloc_commit(uobj);
+
+	return 0;
+
+err_copy:
+	ib_destroy_counter_set(cs);
+err_uobj:
+	uobj_alloc_abort(uobj);
+	return ret;
+}
+
+int ib_uverbs_ex_destroy_counter_set(struct ib_uverbs_file *file,
+				     struct ib_device *ib_dev,
+				     struct ib_udata *ucore,
+				     struct ib_udata *uhw)
+{
+	struct ib_uverbs_ex_destroy_counter_set	cmd = {};
+	struct ib_uverbs_ex_destroy_counter_set_resp	resp = {};
+	struct ib_uobject	*uobj;
+	size_t	required_resp_len;
+	size_t	required_cmd_sz;
+	int	ret;
+
+	required_cmd_sz = offsetof(typeof(cmd), cs_handle) +
+			sizeof(cmd.cs_handle);
+	required_resp_len = offsetof(typeof(resp), response_length) +
+			sizeof(resp.response_length);
+
+	if (ucore->inlen < required_cmd_sz)
+		return -EINVAL;
+
+	if (ucore->outlen < required_resp_len)
+		return -ENOSPC;
+
+	if (ucore->inlen > sizeof(cmd) &&
+	    !ib_is_udata_cleared(ucore, sizeof(cmd),
+			   ucore->inlen - sizeof(cmd)))
+		return -EOPNOTSUPP;
+
+	ret = ib_copy_from_udata(&cmd, ucore, min(sizeof(cmd), ucore->inlen));
+	if (ret)
+		return ret;
+
+	if (cmd.comp_mask)
+		return -EOPNOTSUPP;
+
+	uobj  = uobj_get_write(uobj_get_type(counter_set),
+			       cmd.cs_handle,
+			       file->ucontext);
+	if (IS_ERR(uobj))
+		return PTR_ERR(uobj);
+
+	ret = uobj_remove_commit(uobj);
+	if (ret)
+		return ret;
+
+	resp.response_length = required_resp_len;
+	return ib_copy_to_udata(ucore, &resp, resp.response_length);
+}
+
+int ib_uverbs_ex_query_counter_set(struct ib_uverbs_file *file,
+				   struct ib_device *ib_dev,
+				   struct ib_udata *ucore,
+				   struct ib_udata *uhw)
+{
+	struct ib_counter_set_query_attr cs_query_attr = {};
+	struct ib_uverbs_ex_query_counter_set	cmd = {};
+	struct ib_uverbs_ex_query_counter_set_resp	resp = {};
+	struct ib_counter_set	*cs;
+	size_t	required_resp_len;
+	size_t	required_cmd_sz;
+	u32 buff_len;
+	int	ret;
+
+	required_cmd_sz = offsetof(typeof(cmd), comp_mask) +
+			sizeof(cmd.comp_mask);
+	required_resp_len = offsetof(typeof(resp), response_length) +
+			sizeof(resp.response_length);
+
+	if (ucore->inlen < required_cmd_sz)
+		return -EINVAL;
+
+	if (ucore->outlen < required_resp_len)
+		return -ENOSPC;
+
+	if (ucore->inlen > sizeof(cmd) &&
+	    !ib_is_udata_cleared(ucore, sizeof(cmd),
+			   ucore->inlen - sizeof(cmd)))
+		return -EOPNOTSUPP;
+
+	ret = ib_copy_from_udata(&cmd, ucore, min(sizeof(cmd), ucore->inlen));
+	if (ret)
+		return ret;
+
+	if (cmd.comp_mask)
+		return -EOPNOTSUPP;
+
+	cs = uobj_get_obj_read(counter_set,
+			       cmd.cs_handle,
+			       file->ucontext);
+
+	if (!cs)
+		return -EINVAL;
+
+	if (!atomic_read(&cs->usecnt)) {
+		ret = -EINVAL;
+		goto err;
+	}
+
+	/* Prevent memory allocation rather than max expected size */
+	buff_len = min_t(u32, cmd.out_buff_len,
+			 MAX_COUNTER_SET_BUFF_LEN);
+	cs_query_attr.buff_len = buff_len;
+	cs_query_attr.out_buff = kzalloc(buff_len, GFP_KERNEL);
+	if (!cs_query_attr.out_buff) {
+		ret = -ENOMEM;
+		goto err;
+	}
+
+	cs_query_attr.query_flags = cmd.query_attr;
+	ret = ib_dev->query_counter_set(cs, &cs_query_attr, uhw);
+	if (ret)
+		goto err_query;
+
+	if (copy_to_user((void __user *)cmd.out_buff,
+			 cs_query_attr.out_buff,
+			 cs_query_attr.outlen)) {
+		ret = -EFAULT;
+		goto err_query;
+	}
+
+	resp.response_length = required_resp_len;
+	ret = ib_copy_to_udata(ucore,
+			       &resp, required_resp_len);
+
+err_query:
+	kfree(cs_query_attr.out_buff);
+err:
+	uobj_put_obj_read(cs);
+	return ret;
 }
