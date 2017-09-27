@@ -267,28 +267,6 @@ struct mlx5e_dcbx {
 };
 #endif
 
-#define MAX_PIN_NUM	8
-struct mlx5e_pps {
-	u8                         pin_caps[MAX_PIN_NUM];
-	struct work_struct         out_work;
-	u64                        start[MAX_PIN_NUM];
-	u8                         enabled;
-};
-
-struct mlx5e_tstamp {
-	rwlock_t                   lock;
-	struct cyclecounter        cycles;
-	struct timecounter         clock;
-	struct hwtstamp_config     hwtstamp_config;
-	u32                        nominal_c_mult;
-	unsigned long              overflow_period;
-	struct delayed_work        overflow_work;
-	struct mlx5_core_dev      *mdev;
-	struct ptp_clock          *ptp;
-	struct ptp_clock_info      ptp_info;
-	struct mlx5e_pps           pps_info;
-};
-
 enum {
 	MLX5E_RQ_STATE_ENABLED,
 	MLX5E_RQ_STATE_AM,
@@ -375,9 +353,10 @@ struct mlx5e_txqsq {
 	u8                         min_inline_mode;
 	u16                        edge;
 	struct device             *pdev;
-	struct mlx5e_tstamp       *tstamp;
 	__be32                     mkey_be;
 	unsigned long              state;
+	struct hwtstamp_config    *tstamp;
+	struct mlx5_clock         *clock;
 
 	/* control path */
 	struct mlx5_wq_ctrl        wq_ctrl;
@@ -543,10 +522,11 @@ struct mlx5e_rq {
 	struct mlx5e_channel  *channel;
 	struct device         *pdev;
 	struct net_device     *netdev;
-	struct mlx5e_tstamp   *tstamp;
 	struct mlx5e_rq_stats  stats;
 	struct mlx5e_cq        cq;
 	struct mlx5e_page_cache page_cache;
+	struct hwtstamp_config *tstamp;
+	struct mlx5_clock      *clock;
 
 	mlx5e_fp_handle_rx_cqe handle_rx_cqe;
 	mlx5e_fp_post_rx_wqes  post_wqes;
@@ -588,7 +568,7 @@ struct mlx5e_channel {
 	/* control */
 	struct mlx5e_priv         *priv;
 	struct mlx5_core_dev      *mdev;
-	struct mlx5e_tstamp       *tstamp;
+	struct hwtstamp_config    *tstamp;
 	int                        ix;
 };
 
@@ -655,12 +635,14 @@ struct mlx5e_tc_table {
 
 struct mlx5e_vlan_table {
 	struct mlx5e_flow_table		ft;
-	unsigned long active_vlans[BITS_TO_LONGS(VLAN_N_VID)];
-	struct mlx5_flow_handle	*active_vlans_rule[VLAN_N_VID];
+	DECLARE_BITMAP(active_cvlans, VLAN_N_VID);
+	DECLARE_BITMAP(active_svlans, VLAN_N_VID);
+	struct mlx5_flow_handle	*active_cvlans_rule[VLAN_N_VID];
+	struct mlx5_flow_handle	*active_svlans_rule[VLAN_N_VID];
 	struct mlx5_flow_handle	*untagged_rule;
 	struct mlx5_flow_handle	*any_cvlan_rule;
 	struct mlx5_flow_handle	*any_svlan_rule;
-	bool			filter_disabled;
+	bool			cvlan_filter_disabled;
 };
 
 struct mlx5e_l2_table {
@@ -789,7 +771,7 @@ struct mlx5e_priv {
 	struct mlx5_core_dev      *mdev;
 	struct net_device         *netdev;
 	struct mlx5e_stats         stats;
-	struct mlx5e_tstamp        tstamp;
+	struct hwtstamp_config     tstamp;
 	u16 q_counter;
 #ifdef CONFIG_MLX5_CORE_EN_DCB
 	struct mlx5e_dcbx          dcbx;
@@ -873,12 +855,6 @@ void mlx5e_ethtool_init_steering(struct mlx5e_priv *priv);
 void mlx5e_ethtool_cleanup_steering(struct mlx5e_priv *priv);
 void mlx5e_set_rx_mode_work(struct work_struct *work);
 
-void mlx5e_fill_hwstamp(struct mlx5e_tstamp *clock, u64 timestamp,
-			struct skb_shared_hwtstamps *hwts);
-void mlx5e_timestamp_init(struct mlx5e_priv *priv);
-void mlx5e_timestamp_cleanup(struct mlx5e_priv *priv);
-void mlx5e_pps_event_handler(struct mlx5e_priv *priv,
-			     struct ptp_clock_event *event);
 int mlx5e_hwstamp_set(struct mlx5e_priv *priv, struct ifreq *ifr);
 int mlx5e_hwstamp_get(struct mlx5e_priv *priv, struct ifreq *ifr);
 int mlx5e_modify_rx_cqe_compression_locked(struct mlx5e_priv *priv, bool val);
@@ -887,8 +863,9 @@ int mlx5e_vlan_rx_add_vid(struct net_device *dev, __always_unused __be16 proto,
 			  u16 vid);
 int mlx5e_vlan_rx_kill_vid(struct net_device *dev, __always_unused __be16 proto,
 			   u16 vid);
-void mlx5e_enable_vlan_filter(struct mlx5e_priv *priv);
-void mlx5e_disable_vlan_filter(struct mlx5e_priv *priv);
+void mlx5e_enable_cvlan_filter(struct mlx5e_priv *priv);
+void mlx5e_disable_cvlan_filter(struct mlx5e_priv *priv);
+void mlx5e_timestamp_set(struct mlx5e_priv *priv);
 
 struct mlx5e_redirect_rqt_param {
 	bool is_rss;
@@ -1044,6 +1021,9 @@ void mlx5e_destroy_rqt(struct mlx5e_priv *priv, struct mlx5e_rqt *rqt);
 
 int mlx5e_create_ttc_table(struct mlx5e_priv *priv);
 void mlx5e_destroy_ttc_table(struct mlx5e_priv *priv);
+
+int mlx5e_create_inner_ttc_table(struct mlx5e_priv *priv);
+void mlx5e_destroy_inner_ttc_table(struct mlx5e_priv *priv);
 
 int mlx5e_create_tis(struct mlx5_core_dev *mdev, int tc,
 		     u32 underlay_qpn, u32 *tisn);

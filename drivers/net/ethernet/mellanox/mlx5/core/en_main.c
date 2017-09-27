@@ -197,6 +197,7 @@ static void mlx5e_update_sw_counters(struct mlx5e_priv *priv)
 		s->rx_bytes	+= rq_stats->bytes;
 		s->rx_lro_packets += rq_stats->lro_packets;
 		s->rx_lro_bytes	+= rq_stats->lro_bytes;
+		s->rx_removed_vlan_packets += rq_stats->removed_vlan_packets;
 		s->rx_csum_none	+= rq_stats->csum_none;
 		s->rx_csum_complete += rq_stats->csum_complete;
 		s->rx_csum_unnecessary_inner += rq_stats->csum_unnecessary_inner;
@@ -224,6 +225,7 @@ static void mlx5e_update_sw_counters(struct mlx5e_priv *priv)
 			s->tx_tso_bytes		+= sq_stats->tso_bytes;
 			s->tx_tso_inner_packets	+= sq_stats->tso_inner_packets;
 			s->tx_tso_inner_bytes	+= sq_stats->tso_inner_bytes;
+			s->tx_added_vlan_packets += sq_stats->added_vlan_packets;
 			s->tx_queue_stopped	+= sq_stats->stopped;
 			s->tx_queue_wake	+= sq_stats->wake;
 			s->tx_queue_dropped	+= sq_stats->dropped;
@@ -376,8 +378,6 @@ static void mlx5e_async_event(struct mlx5_core_dev *mdev, void *vpriv,
 			      enum mlx5_dev_event event, unsigned long param)
 {
 	struct mlx5e_priv *priv = vpriv;
-	struct ptp_clock_event ptp_event;
-	struct mlx5_eqe *eqe = NULL;
 
 	if (!test_bit(MLX5E_STATE_ASYNC_EVENTS_ENABLED, &priv->state))
 		return;
@@ -386,14 +386,6 @@ static void mlx5e_async_event(struct mlx5_core_dev *mdev, void *vpriv,
 	case MLX5_DEV_EVENT_PORT_UP:
 	case MLX5_DEV_EVENT_PORT_DOWN:
 		queue_work(priv->wq, &priv->update_carrier_work);
-		break;
-	case MLX5_DEV_EVENT_PPS:
-		eqe = (struct mlx5_eqe *)param;
-		ptp_event.index = eqe->data.pps.pin;
-		ptp_event.timestamp =
-			timecounter_cyc2time(&priv->tstamp.clock,
-					     be64_to_cpu(eqe->data.pps.time_stamp));
-		mlx5e_pps_event_handler(vpriv, &ptp_event);
 		break;
 	default:
 		break;
@@ -588,6 +580,7 @@ static int mlx5e_alloc_rq(struct mlx5e_channel *c,
 	rq->pdev    = c->pdev;
 	rq->netdev  = c->netdev;
 	rq->tstamp  = c->tstamp;
+	rq->clock   = &mdev->clock;
 	rq->channel = c;
 	rq->ix      = c->ix;
 	rq->mdev    = mdev;
@@ -1126,6 +1119,7 @@ static int mlx5e_alloc_txqsq(struct mlx5e_channel *c,
 
 	sq->pdev      = c->pdev;
 	sq->tstamp    = c->tstamp;
+	sq->clock     = &mdev->clock;
 	sq->mkey_be   = c->mkey_be;
 	sq->channel   = c;
 	sq->txq_ix    = txq_ix;
@@ -2681,6 +2675,12 @@ void mlx5e_switch_priv_channels(struct mlx5e_priv *priv,
 		netif_carrier_on(netdev);
 }
 
+void mlx5e_timestamp_set(struct mlx5e_priv *priv)
+{
+	priv->tstamp.tx_type   = HWTSTAMP_TX_OFF;
+	priv->tstamp.rx_filter = HWTSTAMP_FILTER_NONE;
+}
+
 int mlx5e_open_locked(struct net_device *netdev)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
@@ -2696,7 +2696,7 @@ int mlx5e_open_locked(struct net_device *netdev)
 	mlx5e_activate_priv_channels(priv);
 	if (priv->profile->update_carrier)
 		priv->profile->update_carrier(priv);
-	mlx5e_timestamp_init(priv);
+	mlx5e_timestamp_set(priv);
 
 	if (priv->profile->update_stats)
 		queue_delayed_work(priv->wq, &priv->update_stats_work, 0);
@@ -2734,7 +2734,6 @@ int mlx5e_close_locked(struct net_device *netdev)
 
 	clear_bit(MLX5E_STATE_OPENED, &priv->state);
 
-	mlx5e_timestamp_cleanup(priv);
 	netif_carrier_off(priv->netdev);
 	mlx5e_deactivate_priv_channels(priv);
 	mlx5e_close_channels(&priv->channels);
@@ -3233,14 +3232,14 @@ out:
 	return err;
 }
 
-static int set_feature_vlan_filter(struct net_device *netdev, bool enable)
+static int set_feature_cvlan_filter(struct net_device *netdev, bool enable)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
 
 	if (enable)
-		mlx5e_enable_vlan_filter(priv);
+		mlx5e_enable_cvlan_filter(priv);
 	else
-		mlx5e_disable_vlan_filter(priv);
+		mlx5e_disable_cvlan_filter(priv);
 
 	return 0;
 }
@@ -3351,7 +3350,7 @@ static int mlx5e_set_features(struct net_device *netdev,
 				    set_feature_lro);
 	err |= mlx5e_handle_feature(netdev, features,
 				    NETIF_F_HW_VLAN_CTAG_FILTER,
-				    set_feature_vlan_filter);
+				    set_feature_cvlan_filter);
 	err |= mlx5e_handle_feature(netdev, features, NETIF_F_HW_TC,
 				    set_feature_tc_num_filters);
 	err |= mlx5e_handle_feature(netdev, features, NETIF_F_RXALL,
@@ -3366,6 +3365,26 @@ static int mlx5e_set_features(struct net_device *netdev,
 #endif
 
 	return err ? -EINVAL : 0;
+}
+
+static netdev_features_t mlx5e_fix_features(struct net_device *netdev,
+					    netdev_features_t features)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+
+	mutex_lock(&priv->state_lock);
+	if (!bitmap_empty(priv->fs.vlan.active_svlans, VLAN_N_VID)) {
+		/* HW strips the outer C-tag header, this is a problem
+		 * for S-tag traffic.
+		 */
+		features &= ~NETIF_F_HW_VLAN_CTAG_RX;
+		if (netdev->features & NETIF_F_HW_VLAN_CTAG_RX)
+			netdev_warn_once(netdev,
+					 "Dropping C-tag vlan stripping offload due to S-tag vlan\n");
+	}
+	mutex_unlock(&priv->state_lock);
+
+	return features;
 }
 
 static int mlx5e_change_mtu(struct net_device *netdev, int new_mtu)
@@ -3404,6 +3423,80 @@ static int mlx5e_change_mtu(struct net_device *netdev, int new_mtu)
 out:
 	mutex_unlock(&priv->state_lock);
 	return err;
+}
+
+int mlx5e_hwstamp_set(struct mlx5e_priv *priv, struct ifreq *ifr)
+{
+	struct hwtstamp_config config;
+	int err;
+
+	if (!MLX5_CAP_GEN(priv->mdev, device_frequency_khz))
+		return -EOPNOTSUPP;
+
+	if (copy_from_user(&config, ifr->ifr_data, sizeof(config)))
+		return -EFAULT;
+
+	/* TX HW timestamp */
+	switch (config.tx_type) {
+	case HWTSTAMP_TX_OFF:
+	case HWTSTAMP_TX_ON:
+		break;
+	default:
+		return -ERANGE;
+	}
+
+	mutex_lock(&priv->state_lock);
+	/* RX HW timestamp */
+	switch (config.rx_filter) {
+	case HWTSTAMP_FILTER_NONE:
+		/* Reset CQE compression to Admin default */
+		mlx5e_modify_rx_cqe_compression_locked(priv, priv->channels.params.rx_cqe_compress_def);
+		break;
+	case HWTSTAMP_FILTER_ALL:
+	case HWTSTAMP_FILTER_SOME:
+	case HWTSTAMP_FILTER_PTP_V1_L4_EVENT:
+	case HWTSTAMP_FILTER_PTP_V1_L4_SYNC:
+	case HWTSTAMP_FILTER_PTP_V1_L4_DELAY_REQ:
+	case HWTSTAMP_FILTER_PTP_V2_L4_EVENT:
+	case HWTSTAMP_FILTER_PTP_V2_L4_SYNC:
+	case HWTSTAMP_FILTER_PTP_V2_L4_DELAY_REQ:
+	case HWTSTAMP_FILTER_PTP_V2_L2_EVENT:
+	case HWTSTAMP_FILTER_PTP_V2_L2_SYNC:
+	case HWTSTAMP_FILTER_PTP_V2_L2_DELAY_REQ:
+	case HWTSTAMP_FILTER_PTP_V2_EVENT:
+	case HWTSTAMP_FILTER_PTP_V2_SYNC:
+	case HWTSTAMP_FILTER_PTP_V2_DELAY_REQ:
+	case HWTSTAMP_FILTER_NTP_ALL:
+		/* Disable CQE compression */
+		netdev_warn(priv->netdev, "Disabling cqe compression");
+		err = mlx5e_modify_rx_cqe_compression_locked(priv, false);
+		if (err) {
+			netdev_err(priv->netdev, "Failed disabling cqe compression err=%d\n", err);
+			mutex_unlock(&priv->state_lock);
+			return err;
+		}
+		config.rx_filter = HWTSTAMP_FILTER_ALL;
+		break;
+	default:
+		mutex_unlock(&priv->state_lock);
+		return -ERANGE;
+	}
+
+	memcpy(&priv->tstamp, &config, sizeof(config));
+	mutex_unlock(&priv->state_lock);
+
+	return copy_to_user(ifr->ifr_data, &config,
+			    sizeof(config)) ? -EFAULT : 0;
+}
+
+int mlx5e_hwstamp_get(struct mlx5e_priv *priv, struct ifreq *ifr)
+{
+	struct hwtstamp_config *cfg = &priv->tstamp;
+
+	if (!MLX5_CAP_GEN(priv->mdev, device_frequency_khz))
+		return -EOPNOTSUPP;
+
+	return copy_to_user(ifr->ifr_data, cfg, sizeof(*cfg)) ? -EFAULT : 0;
 }
 
 static int mlx5e_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
@@ -3771,6 +3864,7 @@ static const struct net_device_ops mlx5e_netdev_ops = {
 	.ndo_vlan_rx_add_vid     = mlx5e_vlan_rx_add_vid,
 	.ndo_vlan_rx_kill_vid    = mlx5e_vlan_rx_kill_vid,
 	.ndo_set_features        = mlx5e_set_features,
+	.ndo_fix_features        = mlx5e_fix_features,
 	.ndo_change_mtu          = mlx5e_change_mtu,
 	.ndo_do_ioctl            = mlx5e_ioctl,
 	.ndo_set_tx_maxrate      = mlx5e_set_tx_maxrate,
@@ -4058,6 +4152,7 @@ static void mlx5e_build_nic_netdev(struct net_device *netdev)
 	netdev->hw_features      |= NETIF_F_HW_VLAN_CTAG_TX;
 	netdev->hw_features      |= NETIF_F_HW_VLAN_CTAG_RX;
 	netdev->hw_features      |= NETIF_F_HW_VLAN_CTAG_FILTER;
+	netdev->hw_features      |= NETIF_F_HW_VLAN_STAG_TX;
 
 	if (mlx5e_vxlan_allowed(mdev) || MLX5_CAP_ETH(mdev, tunnel_stateless_gre)) {
 		netdev->hw_features     |= NETIF_F_GSO_PARTIAL;
@@ -4115,6 +4210,7 @@ static void mlx5e_build_nic_netdev(struct net_device *netdev)
 	}
 
 	netdev->features         |= NETIF_F_HIGHDMA;
+	netdev->features         |= NETIF_F_HW_VLAN_STAG_FILTER;
 
 	netdev->priv_flags       |= IFF_UNICAST_FLT;
 
