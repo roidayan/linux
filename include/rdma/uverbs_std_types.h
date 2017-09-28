@@ -51,6 +51,7 @@ extern const struct uverbs_object_def uverbs_object_mw;
 extern const struct uverbs_object_def uverbs_object_pd;
 extern const struct uverbs_object_def uverbs_object_xrcd;
 extern const struct uverbs_object_def uverbs_object_device;
+extern const struct uverbs_object_def uverbs_object_counter_set;
 
 extern const struct uverbs_object_tree_def uverbs_default_objects;
 static inline const struct uverbs_object_tree_def *uverbs_default_get_objects(void)
