@@ -5394,13 +5394,13 @@ static int zone_batchsize(struct zone *zone)
 
 	/*
 	 * The per-cpu-pages pools are set to around 1000th of the
-	 * size of the zone.  But no more than 1/2 of a meg.
+	 * size of the zone.
 	 *
-	 * OK, so we don't know how big the cache is.  So guess.
+	 * Removed the 1/2 meg upper bound to solve the scalability
+	 * issue and fulfill the increasing requirements of modern
+	 * applications.
 	 */
 	batch = zone->managed_pages / 1024;
-	if (batch * PAGE_SIZE > 512 * 1024)
-		batch = (512 * 1024) / PAGE_SIZE;
 	batch /= 4;		/* We effectively *= 4 below */
 	if (batch < 1)
 		batch = 1;
