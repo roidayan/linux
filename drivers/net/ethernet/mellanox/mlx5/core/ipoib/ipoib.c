@@ -108,11 +108,68 @@ static void mlx5i_cleanup(struct mlx5e_priv *priv)
 	/* Do nothing .. */
 }
 
+static int mlx5i_init_underlay_qp(struct mlx5e_priv *priv)
+{
+	struct mlx5_core_dev *mdev = priv->mdev;
+	struct mlx5i_priv *ipriv = priv->ppriv;
+	struct mlx5_core_qp *qp = &ipriv->qp;
+	struct mlx5_qp_context *context;
+	int ret;
+
+	/* QP states */
+	context = kzalloc(sizeof(*context), GFP_KERNEL);
+	if (!context)
+		return -ENOMEM;
+
+	context->flags = cpu_to_be32(MLX5_QP_PM_MIGRATED << 11);
+	context->pri_path.port = 1;
+	context->qkey = cpu_to_be32(IB_DEFAULT_Q_KEY);
+
+	ret = mlx5_core_qp_modify(mdev, MLX5_CMD_OP_RST2INIT_QP, 0, context, qp);
+	if (ret) {
+		mlx5_core_err(mdev, "Failed to modify qp RST2INIT, err: %d\n", ret);
+		goto err_qp_modify_to_err;
+	}
+	memset(context, 0, sizeof(*context));
+
+	ret = mlx5_core_qp_modify(mdev, MLX5_CMD_OP_INIT2RTR_QP, 0, context, qp);
+	if (ret) {
+		mlx5_core_err(mdev, "Failed to modify qp INIT2RTR, err: %d\n", ret);
+		goto err_qp_modify_to_err;
+	}
+
+	ret = mlx5_core_qp_modify(mdev, MLX5_CMD_OP_RTR2RTS_QP, 0, context, qp);
+	if (ret) {
+		mlx5_core_err(mdev, "Failed to modify qp RTR2RTS, err: %d\n", ret);
+		goto err_qp_modify_to_err;
+	}
+
+	kfree(context);
+	return 0;
+
+err_qp_modify_to_err:
+	mlx5_core_qp_modify(mdev, MLX5_CMD_OP_2ERR_QP, 0, &context, qp);
+	kfree(context);
+	return ret;
+}
+
+static void mlx5i_uninit_underlay_qp(struct mlx5e_priv *priv)
+{
+	struct mlx5i_priv *ipriv = priv->ppriv;
+	struct mlx5_core_dev *mdev = priv->mdev;
+	struct mlx5_qp_context context;
+	int err;
+
+	err = mlx5_core_qp_modify(mdev, MLX5_CMD_OP_2RST_QP, 0, &context,
+				  &ipriv->qp);
+	if (err)
+		mlx5_core_err(mdev, "Failed to modify qp 2RST, err: %d\n", err);
+}
+
 #define MLX5_QP_ENHANCED_ULP_STATELESS_MODE 2
 
 static int mlx5i_create_underlay_qp(struct mlx5_core_dev *mdev, struct mlx5_core_qp *qp)
 {
-	struct mlx5_qp_context *context = NULL;
 	u32 *in = NULL;
 	void *addr_path;
 	int ret = 0;
@@ -140,38 +197,7 @@ static int mlx5i_create_underlay_qp(struct mlx5_core_dev *mdev, struct mlx5_core
 		goto out;
 	}
 
-	/* QP states */
-	context = kzalloc(sizeof(*context), GFP_KERNEL);
-	if (!context) {
-		ret = -ENOMEM;
-		goto out;
-	}
-
-	context->flags = cpu_to_be32(MLX5_QP_PM_MIGRATED << 11);
-	context->pri_path.port = 1;
-	context->qkey = cpu_to_be32(IB_DEFAULT_Q_KEY);
-
-	ret = mlx5_core_qp_modify(mdev, MLX5_CMD_OP_RST2INIT_QP, 0, context, qp);
-	if (ret) {
-		mlx5_core_err(mdev, "Failed to modify qp RST2INIT, err: %d\n", ret);
-		goto out;
-	}
-	memset(context, 0, sizeof(*context));
-
-	ret = mlx5_core_qp_modify(mdev, MLX5_CMD_OP_INIT2RTR_QP, 0, context, qp);
-	if (ret) {
-		mlx5_core_err(mdev, "Failed to modify qp INIT2RTR, err: %d\n", ret);
-		goto out;
-	}
-
-	ret = mlx5_core_qp_modify(mdev, MLX5_CMD_OP_RTR2RTS_QP, 0, context, qp);
-	if (ret) {
-		mlx5_core_err(mdev, "Failed to modify qp RTR2RTS, err: %d\n", ret);
-		goto out;
-	}
-
 out:
-	kfree(context);
 	kvfree(in);
 	return ret;
 }
@@ -192,13 +218,23 @@ static int mlx5i_init_tx(struct mlx5e_priv *priv)
 		return err;
 	}
 
+	err = mlx5i_init_underlay_qp(priv);
+	if (err) {
+		mlx5_core_warn(priv->mdev, "intilize underlay QP failed, %d\n", err);
+		goto err_destroy_underlay_qp;
+	}
+
 	err = mlx5e_create_tis(priv->mdev, 0 /* tc */, ipriv->qp.qpn, &priv->tisn[0]);
 	if (err) {
 		mlx5_core_warn(priv->mdev, "create tis failed, %d\n", err);
-		return err;
+		goto err_destroy_underlay_qp;
 	}
 
 	return 0;
+
+err_destroy_underlay_qp:
+	mlx5i_destroy_underlay_qp(priv->mdev, &ipriv->qp);
+	return err;
 }
 
 static void mlx5i_cleanup_tx(struct mlx5e_priv *priv)
@@ -249,7 +285,6 @@ static void mlx5i_destroy_flow_steering(struct mlx5e_priv *priv)
 
 static int mlx5i_init_rx(struct mlx5e_priv *priv)
 {
-	struct mlx5i_priv *ipriv  = priv->ppriv;
 	int err;
 
 	err = mlx5e_create_indirect_rqt(priv);
@@ -268,18 +303,12 @@ static int mlx5i_init_rx(struct mlx5e_priv *priv)
 	if (err)
 		goto err_destroy_indirect_tirs;
 
-	err = mlx5_fs_add_rx_underlay_qpn(priv->mdev, ipriv->qp.qpn);
+	err = mlx5i_create_flow_steering(priv);
 	if (err)
 		goto err_destroy_direct_tirs;
 
-	err = mlx5i_create_flow_steering(priv);
-	if (err)
-		goto err_remove_rx_underlay_qpn;
-
 	return 0;
 
-err_remove_rx_underlay_qpn:
-	mlx5_fs_remove_rx_underlay_qpn(priv->mdev, ipriv->qp.qpn);
 err_destroy_direct_tirs:
 	mlx5e_destroy_direct_tirs(priv);
 err_destroy_indirect_tirs:
@@ -293,9 +322,6 @@ err_destroy_indirect_rqts:
 
 static void mlx5i_cleanup_rx(struct mlx5e_priv *priv)
 {
-	struct mlx5i_priv *ipriv  = priv->ppriv;
-
-	mlx5_fs_remove_rx_underlay_qpn(priv->mdev, ipriv->qp.qpn);
 	mlx5i_destroy_flow_steering(priv);
 	mlx5e_destroy_direct_tirs(priv);
 	mlx5e_destroy_indirect_tirs(priv);
@@ -381,60 +407,77 @@ static int mlx5i_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 static void mlx5i_dev_cleanup(struct net_device *dev)
 {
 	struct mlx5e_priv    *priv   = mlx5i_epriv(dev);
-	struct mlx5_core_dev *mdev   = priv->mdev;
-	struct mlx5i_priv    *ipriv  = priv->ppriv;
-	struct mlx5_qp_context context;
 
-	/* detach qp from flow-steering by reset it */
-	mlx5_core_qp_modify(mdev, MLX5_CMD_OP_2RST_QP, 0, &context, &ipriv->qp);
+	mlx5i_uninit_underlay_qp(priv);
 }
 
 static int mlx5i_open(struct net_device *netdev)
 {
-	struct mlx5e_priv *priv = mlx5i_epriv(netdev);
+	struct mlx5e_priv *epriv = mlx5i_epriv(netdev);
+	struct mlx5i_priv *ipriv = epriv->ppriv;
+	struct mlx5_core_dev *mdev = epriv->mdev;
 	int err;
 
-	mutex_lock(&priv->state_lock);
+	mutex_lock(&epriv->state_lock);
 
-	set_bit(MLX5E_STATE_OPENED, &priv->state);
+	set_bit(MLX5E_STATE_OPENED, &epriv->state);
 
-	err = mlx5e_open_channels(priv, &priv->channels);
-	if (err)
+	err = mlx5i_init_underlay_qp(epriv);
+	if (err) {
+		mlx5_core_warn(mdev, "prepare underlay qp state failed, %d\n", err);
 		goto err_clear_state_opened_flag;
+	}
 
-	mlx5e_refresh_tirs(priv, false);
-	mlx5e_activate_priv_channels(priv);
-	mlx5e_timestamp_init(priv);
+	err = mlx5_fs_add_rx_underlay_qpn(mdev, ipriv->qp.qpn);
+	if (err) {
+		mlx5_core_warn(mdev, "attach underlay qp to ft failed, %d\n", err);
+		goto err_reset_qp;
+	}
 
-	mutex_unlock(&priv->state_lock);
+	err = mlx5e_open_channels(epriv, &epriv->channels);
+	if (err)
+		goto err_remove_fs_underlay_qp;
+
+	mlx5e_refresh_tirs(epriv, false);
+	mlx5e_activate_priv_channels(epriv);
+	mlx5e_timestamp_set(epriv);
+
+	mutex_unlock(&epriv->state_lock);
 	return 0;
 
+err_remove_fs_underlay_qp:
+	mlx5_fs_remove_rx_underlay_qpn(mdev, ipriv->qp.qpn);
+err_reset_qp:
+	mlx5i_uninit_underlay_qp(epriv);
 err_clear_state_opened_flag:
-	clear_bit(MLX5E_STATE_OPENED, &priv->state);
-	mutex_unlock(&priv->state_lock);
+	clear_bit(MLX5E_STATE_OPENED, &epriv->state);
+	mutex_unlock(&epriv->state_lock);
 	return err;
 }
 
 static int mlx5i_close(struct net_device *netdev)
 {
-	struct mlx5e_priv *priv = mlx5i_epriv(netdev);
+	struct mlx5e_priv *epriv = mlx5i_epriv(netdev);
+	struct mlx5i_priv *ipriv = epriv->ppriv;
+	struct mlx5_core_dev *mdev = epriv->mdev;
 
 	/* May already be CLOSED in case a previous configuration operation
 	 * (e.g RX/TX queue size change) that involves close&open failed.
 	 */
-	mutex_lock(&priv->state_lock);
+	mutex_lock(&epriv->state_lock);
 
-	if (!test_bit(MLX5E_STATE_OPENED, &priv->state))
+	if (!test_bit(MLX5E_STATE_OPENED, &epriv->state))
 		goto unlock;
 
-	clear_bit(MLX5E_STATE_OPENED, &priv->state);
+	clear_bit(MLX5E_STATE_OPENED, &epriv->state);
 
-	mlx5e_timestamp_cleanup(priv);
-	netif_carrier_off(priv->netdev);
-	mlx5e_deactivate_priv_channels(priv);
-	mlx5e_close_channels(&priv->channels);
+	netif_carrier_off(epriv->netdev);
+	mlx5_fs_remove_rx_underlay_qpn(mdev, ipriv->qp.qpn);
+	mlx5i_uninit_underlay_qp(epriv);
+	mlx5e_deactivate_priv_channels(epriv);
+	mlx5e_close_channels(&epriv->channels);;
 unlock:
-	mutex_unlock(&priv->state_lock);
+	mutex_unlock(&epriv->state_lock);
 	return 0;
 }
 
