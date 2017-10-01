@@ -83,6 +83,31 @@ static bool mlx5e_check_fragmented_striding_rq_cap(struct mlx5_core_dev *mdev)
 		MLX5_CAP_ETH(mdev, reg_umr_sq);
 }
 
+static inline bool mlx5e_rx_frag_sz_page_cross(u32 frag_sz)
+{
+	return frag_sz > PAGE_SIZE;
+}
+
+static bool mlx5e_rx_mpwqe_is_linear_skb(struct mlx5_core_dev *mdev,
+					 struct mlx5e_params *params,
+					 u32 frag_sz)
+{
+	s8 signed_log_num_strides_param;
+	u8 log_num_strides;
+
+	if (params->lro_en || mlx5e_rx_frag_sz_page_cross(frag_sz))
+		return false;
+
+	if (MLX5_CAP_GEN(mdev, ext_stride_num_range))
+		return true;
+
+	log_num_strides = MLX5_MPWRQ_LOG_WQE_SZ - order_base_2(frag_sz);
+	signed_log_num_strides_param =
+		(s8)log_num_strides - MLX5_MPWQE_LOG_NUM_STRIDES_BASE;
+
+	return signed_log_num_strides_param >= 0;
+}
+
 void mlx5e_align_rq_mpwqe_params(struct mlx5e_priv *priv,
 				 struct mlx5e_params *params)
 {
@@ -90,7 +115,8 @@ void mlx5e_align_rq_mpwqe_params(struct mlx5e_priv *priv,
 	u16 hw_mtu = MLX5E_SW2HW_MTU(priv, priv->netdev->mtu);
 	struct mlx5_core_dev *mdev = priv->mdev;
 	u8 log_mtus_per_mpwqe;
-	u32 frag_sz;
+	u32 linear_frag_sz;
+	u16 rq_headroom;
 
 	if (params->rq_wq_type != MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ) {
 		netdev_warn(priv->netdev, "Bad RQ type (0x%x), expected: (0x%x).\n",
@@ -98,14 +124,24 @@ void mlx5e_align_rq_mpwqe_params(struct mlx5e_priv *priv,
 		return;
 	}
 
-	frag_sz = params->rq_headroom + hw_mtu;
-	log_mtus_per_mpwqe = MLX5_MPWRQ_LOG_WQE_SZ - order_base_2(frag_sz);
+	rq_headroom = MLX5_RX_HEADROOM + NET_IP_ALIGN;
+	linear_frag_sz = MLX5_SKB_FRAG_SZ(rq_headroom + hw_mtu);
+
+	log_mtus_per_mpwqe = MLX5_MPWRQ_LOG_WQE_SZ - order_base_2(linear_frag_sz);
 	mpwqe->log_rq_size = params->log_rx_ring_mtu_size - log_mtus_per_mpwqe;
 	mpwqe->log_rq_size = max_t(u8, mpwqe->log_rq_size,
 				   MLX5E_PARAMS_MINIMUM_LOG_RQ_SIZE_MPW);
 
-	mpwqe->log_stride_size = MLX5E_MPWQE_STRIDE_SZ(mdev,
-		MLX5E_GET_PFLAG(params, MLX5E_PFLAG_RX_CQE_COMPRESS));
+	mpwqe->linear_skb =
+		mlx5e_rx_mpwqe_is_linear_skb(mdev, params, linear_frag_sz);
+	if (mpwqe->linear_skb) {
+		params->rq_headroom = rq_headroom;
+		mpwqe->log_stride_size = order_base_2(linear_frag_sz);
+	} else {
+		params->rq_headroom = 0;
+		mpwqe->log_stride_size = MLX5E_MPWQE_STRIDE_SZ(mdev,
+			MLX5E_GET_PFLAG(params, MLX5E_PFLAG_RX_CQE_COMPRESS));
+	}
 	mpwqe->log_num_strides = MLX5_MPWRQ_LOG_WQE_SZ - mpwqe->log_stride_size;
 }
 
@@ -133,7 +169,8 @@ void mlx5e_init_rq_type_params(struct mlx5e_priv *priv,
 
 	mlx5_core_info(priv->mdev, "MLX5E: StrdRq(%d) RqSz(%ld) StrdSz(%ld) RxCqeCmprss(%d)\n",
 		       params->rq_wq_type == MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ,
-		       BIT(params->log_rx_ring_mtu_size),
+		       params->rq_wq_type == MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ ?
+		       BIT(params->mpwqe.log_rq_size) : BIT(params->log_rx_ring_mtu_size),
 		       BIT(params->mpwqe.log_stride_size),
 		       MLX5E_GET_PFLAG(params, MLX5E_PFLAG_RX_CQE_COMPRESS));
 }
@@ -615,7 +652,6 @@ static int mlx5e_alloc_rq(struct mlx5e_channel *c,
 
 	switch (rq->wq_type) {
 	case MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ:
-
 		rq->post_wqes = mlx5e_post_rx_mpwqes;
 		rq->dealloc_wqe = mlx5e_dealloc_rx_mpwqe;
 
@@ -633,6 +669,9 @@ static int mlx5e_alloc_rq(struct mlx5e_channel *c,
 			goto err_rq_wq_destroy;
 		}
 
+		rq->mpwqe.handle_rx_cqe_mpwrq = mpwqe->linear_skb ?
+			mlx5e_handle_rx_cqe_mpwrq_linear :
+			mlx5e_handle_rx_cqe_mpwrq_nonlinear;
 		rq->mpwqe.log_stride_sz    = mpwqe->log_stride_size;
 		rq->mpwqe.num_strides      = BIT(mpwqe->log_num_strides);
 
@@ -696,7 +735,7 @@ static int mlx5e_alloc_rq(struct mlx5e_channel *c,
 		if (rq->wq_type == MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ) {
 			u64 dma_offset = (u64)mlx5e_get_wqe_mtt_offset(rq, i) << PAGE_SHIFT;
 
-			wqe->data.addr = cpu_to_be64(dma_offset);
+			wqe->data.addr = cpu_to_be64(dma_offset + rq->buff.headroom);
 		}
 
 		wqe->data.byte_count = cpu_to_be32(byte_count);
@@ -1915,8 +1954,10 @@ static void mlx5e_build_rq_param(struct mlx5e_priv *priv,
 
 	switch (params->rq_wq_type) {
 	case MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ:
-		MLX5_SET(wq, wq, log_wqe_num_of_strides, mpwqe->log_num_strides - 9);
-		MLX5_SET(wq, wq, log_wqe_stride_size, mpwqe->log_stride_size - 6);
+		MLX5_SET(wq, wq, log_wqe_num_of_strides,
+			 mpwqe->log_num_strides - MLX5_MPWQE_LOG_NUM_STRIDES_BASE);
+		MLX5_SET(wq, wq, log_wqe_stride_size,
+			 mpwqe->log_stride_size - MLX5_MPWQE_LOG_STRIDE_SZ_BASE);
 		MLX5_SET(wq, wq, wq_type, MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ);
 		MLX5_SET(wq, wq, log_wq_sz, mpwqe->log_rq_size);
 		break;
@@ -3259,12 +3300,20 @@ static int set_feature_lro(struct net_device *netdev, bool enable)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
 	struct mlx5e_channels new_channels = {};
+	struct mlx5e_params *old_params;
 	int err = 0;
+	u32 frag_sz;
+	u16 hw_mtu;
 	bool reset;
 
 	mutex_lock(&priv->state_lock);
 
-	reset = (priv->channels.params.rq_wq_type == MLX5_WQ_TYPE_LINKED_LIST);
+	old_params = &priv->channels.params;
+	hw_mtu = MLX5E_SW2HW_MTU(priv, priv->netdev->mtu);
+	frag_sz = MLX5_SKB_FRAG_SZ(old_params->rq_headroom + hw_mtu);
+
+	reset = !(old_params->rq_wq_type == MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ &&
+		 mlx5e_rx_frag_sz_page_cross(frag_sz));
 	reset = reset && test_bit(MLX5E_STATE_OPENED, &priv->state);
 
 	new_channels.params = priv->channels.params;
@@ -3275,6 +3324,9 @@ static int set_feature_lro(struct net_device *netdev, bool enable)
 		err = mlx5e_modify_tirs_lro(priv);
 		goto out;
 	}
+
+	/* Change RQ params according to new params */
+	mlx5e_set_rq_params(priv, &new_channels.params);
 
 	err = mlx5e_open_channels(priv, &new_channels);
 	if (err)
@@ -3450,9 +3502,7 @@ static int mlx5e_change_mtu(struct net_device *netdev, int new_mtu)
 
 	mutex_lock(&priv->state_lock);
 
-	reset = !priv->channels.params.lro_en &&
-		(priv->channels.params.rq_wq_type !=
-		 MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ);
+	reset = !priv->channels.params.lro_en;
 
 	reset = reset && test_bit(MLX5E_STATE_OPENED, &priv->state);
 
@@ -3465,6 +3515,9 @@ static int mlx5e_change_mtu(struct net_device *netdev, int new_mtu)
 	}
 
 	new_channels.params = priv->channels.params;
+	/* Change RQ params according to new params */
+	mlx5e_set_rq_params(priv, &new_channels.params);
+
 	err = mlx5e_open_channels(priv, &new_channels);
 	if (err) {
 		netdev->mtu = curr_mtu;
@@ -4026,12 +4079,6 @@ static bool cqe_compress_heuristic(u32 link_speed, u32 pci_bw)
 		(pci_bw < 40000) && (pci_bw < link_speed));
 }
 
-static bool hw_lro_heuristic(u32 link_speed, u32 pci_bw)
-{
-	return !(link_speed && pci_bw &&
-		 (pci_bw <= 16000) && (pci_bw < link_speed));
-}
-
 void mlx5e_set_tx_cq_mode_params(struct mlx5e_params *params, u8 cq_period_mode)
 {
 	params->tx_cq_moderation.cq_period_mode = cq_period_mode;
@@ -4117,11 +4164,6 @@ void mlx5e_build_nic_params(struct mlx5e_priv *priv,
 	/* RQ */
 	mlx5e_set_rq_params(priv, params);
 
-	/* HW LRO */
-
-	/* TODO: && MLX5_CAP_ETH(mdev, lro_cap) */
-	if (params->rq_wq_type == MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ)
-		params->lro_en = hw_lro_heuristic(link_speed, pci_bw);
 	params->lro_timeout = mlx5e_choose_lro_timeout(mdev, MLX5E_DEFAULT_LRO_TIMEOUT);
 
 	/* CQ moderation params */
