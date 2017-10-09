@@ -628,6 +628,7 @@ static inline void mlx5e_handle_csum(struct net_device *netdev,
 
 	if (lro) {
 		skb->ip_summed = CHECKSUM_UNNECESSARY;
+		rq->stats.csum_unnecessary++;
 		return;
 	}
 
@@ -645,7 +646,9 @@ static inline void mlx5e_handle_csum(struct net_device *netdev,
 			skb->csum_level = 1;
 			skb->encapsulation = 1;
 			rq->stats.csum_unnecessary_inner++;
+			return;
 		}
+		rq->stats.csum_unnecessary++;
 		return;
 	}
 csum_none:
