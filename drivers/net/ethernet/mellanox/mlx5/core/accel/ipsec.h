@@ -37,13 +37,7 @@
 #ifdef CONFIG_MLX5_ACCEL
 
 #include <linux/mlx5/driver.h>
-
-enum {
-	MLX5_ACCEL_IPSEC_DEVICE = BIT(1),
-	MLX5_ACCEL_IPSEC_IPV6 = BIT(2),
-	MLX5_ACCEL_IPSEC_ESP = BIT(3),
-	MLX5_ACCEL_IPSEC_LSO = BIT(4),
-};
+#include "fs_core.h"
 
 #define MLX5_IPSEC_SADB_IP_AH       BIT(7)
 #define MLX5_IPSEC_SADB_IP_ESP      BIT(6)
@@ -111,14 +105,21 @@ void *mlx5_accel_ipsec_sa_cmd_exec(struct mlx5_core_dev *mdev,
  */
 int mlx5_accel_ipsec_sa_cmd_wait(void *context);
 
-u32 mlx5_accel_ipsec_device_caps(struct mlx5_core_dev *mdev);
-
 unsigned int mlx5_accel_ipsec_counters_count(struct mlx5_core_dev *mdev);
 int mlx5_accel_ipsec_counters_read(struct mlx5_core_dev *mdev, u64 *counters,
 				   unsigned int count);
 
 int mlx5_accel_ipsec_init(struct mlx5_core_dev *mdev);
 void mlx5_accel_ipsec_cleanup(struct mlx5_core_dev *mdev);
+
+int mlx5_cmd_create_ipsec_fte(struct mlx5_core_dev *dev,
+			      struct mlx5_flow_table *ft,
+			      struct mlx5_flow_group *group,
+			      struct fs_fte *fte);
+
+int mlx5_cmd_delete_ipsec_fte(struct mlx5_core_dev *dev,
+			      struct mlx5_flow_table *ft,
+			      struct fs_fte *fte);
 
 #else
 

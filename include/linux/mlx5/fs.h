@@ -40,6 +40,8 @@
 
 enum {
 	MLX5_FLOW_CONTEXT_ACTION_FWD_NEXT_PRIO	= 1 << 16,
+	MLX5_FLOW_CONTEXT_ACTION_ENCRYPT	= 1 << 17,
+	MLX5_FLOW_CONTEXT_ACTION_DECRYPT	= 1 << 18,
 };
 
 enum {
@@ -69,6 +71,8 @@ enum mlx5_flow_namespace_type {
 	MLX5_FLOW_NAMESPACE_ESW_INGRESS,
 	MLX5_FLOW_NAMESPACE_SNIFFER_RX,
 	MLX5_FLOW_NAMESPACE_SNIFFER_TX,
+	MLX5_FLOW_NAMESPACE_IPSEC_RX,
+	MLX5_FLOW_NAMESPACE_IPSEC_TX,
 };
 
 struct mlx5_flow_table;
@@ -90,6 +94,23 @@ struct mlx5_flow_destination {
 		u32			vport_num;
 		struct mlx5_fc		*counter;
 	};
+};
+
+enum {
+	MLX5_FLOW_ESP_AES_GCM_CRYPTO_EN		= BIT(0),
+	MLX5_FLOW_ESP_AES_GCM_ESP_EN		= BIT(1),
+	MLX5_FLOW_ESP_AES_GCM_IPV6_EN		= BIT(2),
+	MLX5_FLOW_ESP_AES_GCM_IPV4_EN		= BIT(3),
+	MLX5_FLOW_ESP_AES_GCM_EN		= BIT(4),
+};
+
+struct mlx5_flow_esp_aes_gcm_action {
+	u32			      esn;
+	u8			      key[32];
+	u32			      key_length;
+	u8			      salt[4];
+	u8			      seqiv[8];
+	bool			      is_esn;
 };
 
 struct mlx5_flow_namespace *
@@ -137,9 +158,12 @@ void mlx5_destroy_flow_group(struct mlx5_flow_group *fg);
 
 struct mlx5_flow_act {
 	u32 action;
+	bool has_flow_tag;
 	u32 flow_tag;
 	u32 encap_id;
 	u32 modify_id;
+	struct mlx5_flow_esp_aes_gcm_action esp_aes_gcm;
+	struct ib_counter_set *counter_set;
 };
 
 #define MLX5_DECLARE_FLOW_ACT(name) \
@@ -166,6 +190,28 @@ struct mlx5_fc *mlx5_fc_create(struct mlx5_core_dev *dev, bool aging);
 void mlx5_fc_destroy(struct mlx5_core_dev *dev, struct mlx5_fc *counter);
 void mlx5_fc_query_cached(struct mlx5_fc *counter,
 			  u64 *bytes, u64 *packets, u64 *lastuse);
+int mlx5_cmd_fc_query(struct mlx5_core_dev *dev, u32 id,
+		      u64 *packets, u64 *bytes);
+
+struct mlx5_fc_cache {
+	u64 packets;
+	u64 bytes;
+	u64 lastuse;
+};
+
+struct mlx5_fc {
+	struct rb_node node;
+	struct list_head list;
+
+	u64 lastpackets;
+	u64 lastbytes;
+
+	u32 id;
+	bool deleted;
+	bool aging;
+	struct mlx5_fc_cache cache ____cacheline_aligned_in_smp;
+};
+
 int mlx5_fs_add_rx_underlay_qpn(struct mlx5_core_dev *dev, u32 underlay_qpn);
 int mlx5_fs_remove_rx_underlay_qpn(struct mlx5_core_dev *dev, u32 underlay_qpn);
 
