@@ -1489,11 +1489,11 @@ static int query_port(struct rvt_dev_info *rdi, u8 port_num,
 	/*
 	 * sm_lid of 0xFFFF needs special handling so that it can
 	 * be differentiated from a permissve LID of 0xFFFF.
-	 * We set the grh_required flag here so the SA can program
+	 * We set the IB_PORT_GRH_REQUIRED flag here so the SA can program
 	 * the DGID in the address handle appropriately
 	 */
 	if (props->sm_lid == be16_to_cpu(IB_LID_PERMISSIVE))
-		props->grh_required = true;
+		props->port_cap_flags |= IB_PORT_GRH_REQUIRED;
 
 	return 0;
 }
