@@ -1985,14 +1985,20 @@ static int modify_qp(struct ib_uverbs_file *file,
 	}
 
 	if ((cmd->base.attr_mask & IB_QP_AV) &&
-	    !rdma_is_port_valid(qp->device, cmd->base.dest.port_num)) {
+	    !(rdma_is_port_valid(qp->device, cmd->base.dest.port_num) &&
+	      rdma_validate_av(qp->device, cmd->base.dest.port_num,
+			       cmd->base.dest.is_global))) {
 		ret = -EINVAL;
 		goto release_qp;
 	}
 
 	if ((cmd->base.attr_mask & IB_QP_ALT_PATH) &&
-	    (!rdma_is_port_valid(qp->device, cmd->base.alt_port_num) ||
-	    !rdma_is_port_valid(qp->device, cmd->base.alt_dest.port_num))) {
+	    !(rdma_is_port_valid(qp->device, cmd->base.alt_port_num) &&
+	      rdma_validate_av(qp->device, cmd->base.alt_port_num,
+			       cmd->base.alt_dest.is_global) &&
+	      rdma_is_port_valid(qp->device, cmd->base.alt_dest.port_num) &&
+	      rdma_validate_av(qp->device, cmd->base.alt_dest.port_num,
+			       cmd->base.alt_dest.is_global))) {
 		ret = -EINVAL;
 		goto release_qp;
 	}
@@ -2563,6 +2569,9 @@ ssize_t ib_uverbs_create_ah(struct ib_uverbs_file *file,
 		return -EFAULT;
 
 	if (!rdma_is_port_valid(ib_dev, cmd.attr.port_num))
+		return -EINVAL;
+
+	if (!rdma_validate_av(ib_dev, cmd.attr.port_num, cmd.attr.is_global))
 		return -EINVAL;
 
 	ib_uverbs_init_udata(&udata, buf + sizeof(cmd),
