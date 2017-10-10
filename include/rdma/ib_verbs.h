@@ -455,6 +455,7 @@ enum ib_port_cap_flags {
 	IB_PORT_LINK_LATENCY_SUP		= 1 << 24,
 	IB_PORT_CLIENT_REG_SUP			= 1 << 25,
 	IB_PORT_IP_BASED_GIDS			= 1 << 26,
+	IB_PORT_GRH_REQUIRED			= 1 << 27,
 };
 
 enum ib_port_width {
@@ -554,6 +555,7 @@ static inline struct rdma_hw_stats *rdma_alloc_hw_stats_struct(
 #define RDMA_CORE_CAP_AF_IB             0x00001000
 #define RDMA_CORE_CAP_ETH_AH            0x00002000
 #define RDMA_CORE_CAP_OPA_AH            0x00004000
+#define RDMA_CORE_CAP_IB_GRH_REQUIRED   0x00008000
 
 /* Protocol                             0xFFF00000 */
 #define RDMA_CORE_CAP_PROT_IB           0x00100000
@@ -610,7 +612,6 @@ struct ib_port_attr {
 	u8			active_width;
 	u8			active_speed;
 	u8                      phys_state;
-	bool			grh_required;
 };
 
 enum ib_device_modify_flags {
@@ -2704,6 +2705,13 @@ static inline int rdma_is_port_valid(const struct ib_device *device,
 {
 	return (port >= rdma_start_port(device) &&
 		port <= rdma_end_port(device));
+}
+
+static inline bool rdma_validate_av(const struct ib_device *device,
+				    u8 port_num, u8 is_global)
+{
+	return is_global || !(device->port_immutable[port_num].core_cap_flags &
+		RDMA_CORE_CAP_IB_GRH_REQUIRED);
 }
 
 static inline bool rdma_protocol_ib(const struct ib_device *device, u8 port_num)
