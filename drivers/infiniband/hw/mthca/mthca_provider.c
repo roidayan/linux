@@ -49,6 +49,34 @@
 #include <rdma/mthca-abi.h>
 #include "mthca_memfree.h"
 
+
+enum {
+	MTHCA_SUPPORTED_IB_SPEC_PORT_CAP_FLAGS =
+		IB_PORT_SM			  |
+		IB_PORT_NOTICE_SUP		  |
+		IB_PORT_TRAP_SUP		  |
+		IB_PORT_OPT_IPD_SUP		  |
+		IB_PORT_AUTO_MIGR_SUP		  |
+		IB_PORT_SL_MAP_SUP		  |
+		IB_PORT_MKEY_NVRAM		  |
+		IB_PORT_PKEY_NVRAM		  |
+		IB_PORT_LED_INFO_SUP		  |
+		IB_PORT_SM_DISABLED		  |
+		IB_PORT_SYS_IMAGE_GUID_SUP	  |
+		IB_PORT_PKEY_SW_EXT_PORT_TRAP_SUP |
+		IB_PORT_EXTENDED_SPEEDS_SUP	  |
+		IB_PORT_CM_SUP			  |
+		IB_PORT_SNMP_TUNNEL_SUP		  |
+		IB_PORT_REINIT_SUP		  |
+		IB_PORT_DEVICE_MGMT_SUP		  |
+		IB_PORT_VENDOR_CLASS_SUP	  |
+		IB_PORT_DR_NOTICE_SUP		  |
+		IB_PORT_CAP_MASK_NOTICE_SUP	  |
+		IB_PORT_BOOT_MGMT_SUP		  |
+		IB_PORT_LINK_LATENCY_SUP	  |
+		IB_PORT_CLIENT_REG_SUP
+};
+
 static void init_query_mad(struct ib_smp *mad)
 {
 	mad->base_version  = 1;
@@ -176,6 +204,7 @@ static int mthca_query_port(struct ib_device *ibdev,
 	props->subnet_timeout    = out_mad->data[51] & 0x1f;
 	props->max_vl_num        = out_mad->data[37] >> 4;
 	props->init_type_reply   = out_mad->data[41] >> 4;
+	props->port_cap_flags   &= MTHCA_SUPPORTED_IB_SPEC_PORT_CAP_FLAGS;
 
  out:
 	kfree(in_mad);
