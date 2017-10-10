@@ -92,6 +92,33 @@ enum {
 	MLX5_ATOMIC_SIZE_QP_8BYTES = 1 << 3,
 };
 
+enum {
+	MLX5_SUPPORTED_IB_SPEC_PORT_CAP_FLAGS =
+		IB_PORT_SM			  |
+		IB_PORT_NOTICE_SUP		  |
+		IB_PORT_TRAP_SUP		  |
+		IB_PORT_OPT_IPD_SUP		  |
+		IB_PORT_AUTO_MIGR_SUP		  |
+		IB_PORT_SL_MAP_SUP		  |
+		IB_PORT_MKEY_NVRAM		  |
+		IB_PORT_PKEY_NVRAM		  |
+		IB_PORT_LED_INFO_SUP		  |
+		IB_PORT_SM_DISABLED		  |
+		IB_PORT_SYS_IMAGE_GUID_SUP	  |
+		IB_PORT_PKEY_SW_EXT_PORT_TRAP_SUP |
+		IB_PORT_EXTENDED_SPEEDS_SUP	  |
+		IB_PORT_CM_SUP			  |
+		IB_PORT_SNMP_TUNNEL_SUP		  |
+		IB_PORT_REINIT_SUP		  |
+		IB_PORT_DEVICE_MGMT_SUP		  |
+		IB_PORT_VENDOR_CLASS_SUP	  |
+		IB_PORT_DR_NOTICE_SUP		  |
+		IB_PORT_CAP_MASK_NOTICE_SUP	  |
+		IB_PORT_BOOT_MGMT_SUP		  |
+		IB_PORT_LINK_LATENCY_SUP	  |
+		IB_PORT_CLIENT_REG_SUP
+};
+
 static struct workqueue_struct *mlx5_ib_event_wq;
 static LIST_HEAD(mlx5_ib_unaffiliated_port_list);
 static LIST_HEAD(mlx5_ib_dev_list);
@@ -1238,7 +1265,9 @@ static int mlx5_query_hca_port(struct ib_device *ibdev, u8 port,
 	props->qkey_viol_cntr	= rep->qkey_violation_counter;
 	props->subnet_timeout	= rep->subnet_timeout;
 	props->init_type_reply	= rep->init_type_reply;
-	props->grh_required	= rep->grh_required;
+	props->port_cap_flags  &= MLX5_SUPPORTED_IB_SPEC_PORT_CAP_FLAGS;
+	if (rep->grh_required)
+		props->port_cap_flags  |= IB_PORT_GRH_REQUIRED;
 
 	err = mlx5_query_port_link_width_oper(mdev, &ib_link_width_oper, port);
 	if (err)
@@ -4290,7 +4319,8 @@ static void destroy_dev_resources(struct mlx5_ib_resources *devr)
 		cancel_work_sync(&devr->ports[port].pkey_change_work);
 }
 
-static u32 get_core_cap_flags(struct ib_device *ibdev)
+static u32 get_core_cap_flags(struct ib_device *ibdev,
+			      struct ib_port_attr *port_attr)
 {
 	struct mlx5_ib_dev *dev = to_mdev(ibdev);
 	enum rdma_link_layer ll = mlx5_ib_port_link_layer(ibdev, 1);
@@ -4299,8 +4329,14 @@ static u32 get_core_cap_flags(struct ib_device *ibdev)
 	bool raw_support = !mlx5_core_mp_enabled(dev->mdev);
 	u32 ret = 0;
 
-	if (ll == IB_LINK_LAYER_INFINIBAND)
-		return RDMA_CORE_PORT_IBA_IB;
+	if (ll == IB_LINK_LAYER_INFINIBAND) {
+		ret = RDMA_CORE_PORT_IBA_IB;
+
+		if (port_attr->port_cap_flags & IB_PORT_GRH_REQUIRED)
+			ret |= RDMA_CORE_CAP_IB_GRH_REQUIRED;
+
+		return ret;
+	}
 
 	if (raw_support)
 		ret = RDMA_CORE_PORT_RAW_PACKET;
@@ -4328,15 +4364,13 @@ static int mlx5_port_immutable(struct ib_device *ibdev, u8 port_num,
 	enum rdma_link_layer ll = mlx5_ib_port_link_layer(ibdev, port_num);
 	int err;
 
-	immutable->core_cap_flags = get_core_cap_flags(ibdev);
-
 	err = ib_query_port(ibdev, port_num, &attr);
 	if (err)
 		return err;
 
 	immutable->pkey_tbl_len = attr.pkey_tbl_len;
 	immutable->gid_tbl_len = attr.gid_tbl_len;
-	immutable->core_cap_flags = get_core_cap_flags(ibdev);
+	immutable->core_cap_flags = get_core_cap_flags(ibdev, &attr);
 	if ((ll == IB_LINK_LAYER_INFINIBAND) || MLX5_CAP_GEN(dev->mdev, roce))
 		immutable->max_mad_size = IB_MGMT_MAD_SIZE;
 

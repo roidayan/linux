@@ -2314,7 +2314,7 @@ static void update_sm_ah(struct work_struct *work)
 	rdma_ah_set_dlid(&ah_attr, port_attr.sm_lid);
 	rdma_ah_set_sl(&ah_attr, port_attr.sm_sl);
 	rdma_ah_set_port_num(&ah_attr, port->port_num);
-	if (port_attr.grh_required) {
+	if (port_attr.port_cap_flags & IB_PORT_GRH_REQUIRED) {
 		if (ah_attr.type == RDMA_AH_ATTR_TYPE_OPA) {
 			rdma_ah_set_make_grd(&ah_attr, true);
 		} else {
