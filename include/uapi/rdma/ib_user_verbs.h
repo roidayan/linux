@@ -100,7 +100,12 @@ enum {
 	IB_USER_VERBS_EX_CMD_MODIFY_WQ,
 	IB_USER_VERBS_EX_CMD_DESTROY_WQ,
 	IB_USER_VERBS_EX_CMD_CREATE_RWQ_IND_TBL,
-	IB_USER_VERBS_EX_CMD_DESTROY_RWQ_IND_TBL
+	IB_USER_VERBS_EX_CMD_DESTROY_RWQ_IND_TBL,
+	IB_USER_VERBS_EX_CMD_DESCRIBE_COUNTER_SET,
+	IB_USER_VERBS_EX_CMD_CREATE_COUNTER_SET,
+	IB_USER_VERBS_EX_CMD_DESTROY_COUNTER_SET,
+	IB_USER_VERBS_EX_CMD_QUERY_COUNTER_SET,
+	IB_USER_VERBS_EX_CMD_MODIFY_CQ
 };
 
 /*
@@ -122,6 +127,12 @@ struct ib_uverbs_async_event_desc {
 
 struct ib_uverbs_comp_event_desc {
 	__u64 cq_handle;
+};
+
+struct ib_uverbs_cq_caps {
+	__u16     max_cq_moderation_count;
+	__u16     max_cq_moderation_period;
+	__u32     reserved;
 };
 
 /*
@@ -262,6 +273,9 @@ struct ib_uverbs_ex_query_device_resp {
 	__u32  max_wq_type_rq;
 	__u32 raw_packet_caps;
 	struct ib_uverbs_tm_caps tm_caps;
+	__u16 max_counter_sets;
+	__u8 reserved[6];
+	struct ib_uverbs_cq_caps cq_moderation_caps;
 };
 
 struct ib_uverbs_query_port {
@@ -908,6 +922,24 @@ struct ib_uverbs_flow_spec_ipv4 {
 	struct ib_uverbs_flow_ipv4_filter mask;
 };
 
+struct ib_uverbs_flow_spec_esp_filter {
+	__u32 spi;
+	__u32 seq;
+};
+
+struct ib_uverbs_flow_spec_esp {
+	union {
+		struct ib_uverbs_flow_spec_hdr hdr;
+		struct {
+			__u32 type;
+			__u16 size;
+			__u16 reserved;
+		};
+	};
+	struct ib_uverbs_flow_spec_esp_filter val;
+	struct ib_uverbs_flow_spec_esp_filter mask;
+};
+
 struct ib_uverbs_flow_tcp_udp_filter {
 	__be16 dst_port;
 	__be16 src_port;
@@ -971,6 +1003,40 @@ struct ib_uverbs_flow_spec_action_drop {
 			__u16 reserved;
 		};
 	};
+};
+
+/*
+ * If the action decrypted and authenticated the ipsec packet successfully,
+ * 0 will be set to the tag. Otherwise, we set an error.
+ */
+struct ib_uverbs_flow_spec_action_esp_aes_gcm {
+	union {
+		struct ib_uverbs_flow_spec_hdr hdr;
+		struct {
+			__u32 type;
+			__u16 size;
+			__u16 reserved;
+		};
+	};
+	__u32			        key_length;
+	__u8			        key[32];
+	__u8			        salt[4];
+	__u8			        seqiv[8];
+	__u8				esn[4];
+	__u32				flags; /* Use enum ib_ipsec_flags */
+};
+
+struct ib_uverbs_flow_spec_action_count {
+	union {
+		struct ib_uverbs_flow_spec_hdr hdr;
+		struct {
+			__u32 type;
+			__u16 size;
+			__u16 reserved;
+		};
+	};
+	__u32 cs_handle;
+	__u32 reserved1;
 };
 
 struct ib_uverbs_flow_tunnel_filter {
@@ -1148,6 +1214,68 @@ struct ib_uverbs_ex_create_rwq_ind_table_resp {
 struct ib_uverbs_ex_destroy_rwq_ind_table  {
 	__u32 comp_mask;
 	__u32 ind_tbl_handle;
+};
+
+#define MAX_COUNTER_SET_BUFF_LEN 4096
+struct ib_uverbs_ex_describe_counter_set  {
+	__u64 counters_names_resp;
+	__u32 comp_mask;
+	__u16 counters_names_max;
+	__u16 cs_id;
+};
+
+struct ib_uverbs_ex_describe_counter_set_resp {
+	__u64 num_of_cs;
+	__u32 comp_mask;
+	__u32 response_length;
+	__u32 attributes;
+	__u8 counted_type;
+	__u8 entries_count;
+	__u16 reserved;
+};
+
+struct ib_uverbs_ex_create_counter_set {
+	__u32 comp_mask;
+	__u16 cs_id;
+	__u16 reserved;
+};
+
+struct ib_uverbs_ex_create_counter_set_resp {
+	__u32 comp_mask;
+	__u32 response_length;
+	__u32 cs_handle;
+	__u32 reserved;
+};
+
+struct ib_uverbs_ex_destroy_counter_set  {
+	__u32 comp_mask;
+	__u32 cs_handle;
+};
+
+struct ib_uverbs_ex_destroy_counter_set_resp {
+	__u32 comp_mask;
+	__u32 response_length;
+};
+
+struct ib_uverbs_ex_query_counter_set {
+	__u64 out_buff;
+	__u32 out_buff_len;
+	__u32 query_attr; /* Use enum ib_query_counter_set_flags */
+	__u32 cs_handle;
+	__u32 comp_mask;
+};
+
+struct ib_uverbs_ex_query_counter_set_resp {
+	__u32 comp_mask;
+	__u32 response_length;
+};
+
+struct ib_uverbs_ex_modify_cq {
+	__u32 cq_handle;
+	__u32 attr_mask;
+	__u16 cq_count;
+	__u16 cq_period;
+	__u32 comp_mask;
 };
 
 #define IB_DEVICE_NAME_MAX 64

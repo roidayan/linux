@@ -1,5 +1,5 @@
-/*
- * Copyright (c) 2017, Mellanox Technologies inc.  All rights reserved.
+/* QLogic qed NIC Driver
+ * Copyright (c) 2015-2017  QLogic Corporation
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -17,7 +17,7 @@
  *
  *      - Redistributions in binary form must reproduce the above
  *        copyright notice, this list of conditions and the following
- *        disclaimer in the documentation and/or other materials
+ *        disclaimer in the documentation and /or other materials
  *        provided with the distribution.
  *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
@@ -29,57 +29,21 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
+#include <rdma/iw_cm.h>
 
-#ifndef IB_USER_IOCTL_VERBS_H
-#define IB_USER_IOCTL_VERBS_H
+int qedr_iw_connect(struct iw_cm_id *cm_id,
+		    struct iw_cm_conn_param *conn_param);
 
-#include <rdma/rdma_user_ioctl.h>
+int qedr_iw_create_listen(struct iw_cm_id *cm_id, int backlog);
 
-#define UVERBS_UDATA_DRIVER_DATA_NS	1
-#define UVERBS_UDATA_DRIVER_DATA_FLAG	(1UL << UVERBS_ID_NS_SHIFT)
+int qedr_iw_destroy_listen(struct iw_cm_id *cm_id);
 
-enum uverbs_default_objects {
-	UVERBS_OBJECT_DEVICE, /* No instances of DEVICE are allowed */
-	UVERBS_OBJECT_PD,
-	UVERBS_OBJECT_COMP_CHANNEL,
-	UVERBS_OBJECT_CQ,
-	UVERBS_OBJECT_QP,
-	UVERBS_OBJECT_SRQ,
-	UVERBS_OBJECT_AH,
-	UVERBS_OBJECT_MR,
-	UVERBS_OBJECT_MW,
-	UVERBS_OBJECT_FLOW,
-	UVERBS_OBJECT_XRCD,
-	UVERBS_OBJECT_RWQ_IND_TBL,
-	UVERBS_OBJECT_WQ,
-	UVERBS_OBJECT_COUNTER_SET,
-	UVERBS_OBJECT_LAST,
-};
+int qedr_iw_accept(struct iw_cm_id *cm_id, struct iw_cm_conn_param *conn_param);
 
-enum {
-	UVERBS_UHW_IN = UVERBS_UDATA_DRIVER_DATA_FLAG,
-	UVERBS_UHW_OUT,
-};
+int qedr_iw_reject(struct iw_cm_id *cm_id, const void *pdata, u8 pdata_len);
 
-enum uverbs_create_cq_cmd_attr_ids {
-	CREATE_CQ_HANDLE,
-	CREATE_CQ_CQE,
-	CREATE_CQ_USER_HANDLE,
-	CREATE_CQ_COMP_CHANNEL,
-	CREATE_CQ_COMP_VECTOR,
-	CREATE_CQ_FLAGS,
-	CREATE_CQ_RESP_CQE,
-};
+void qedr_iw_qp_add_ref(struct ib_qp *qp);
 
-enum uverbs_destroy_cq_cmd_attr_ids {
-	DESTROY_CQ_HANDLE,
-	DESTROY_CQ_RESP,
-};
+void qedr_iw_qp_rem_ref(struct ib_qp *qp);
 
-enum uverbs_actions_cq_ops {
-	UVERBS_CQ_CREATE,
-	UVERBS_CQ_DESTROY,
-};
-
-#endif
-
+struct ib_qp *qedr_iw_get_qp(struct ib_device *dev, int qpn);
