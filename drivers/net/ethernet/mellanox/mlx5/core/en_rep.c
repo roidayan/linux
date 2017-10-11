@@ -34,6 +34,7 @@
 #include <linux/mlx5/fs.h>
 #include <net/switchdev.h>
 #include <net/pkt_cls.h>
+#include <net/act_api.h>
 #include <net/netevent.h>
 #include <net/arp.h>
 #include <net/addrconf.h>
@@ -691,6 +692,14 @@ static int mlx5e_rep_setup_tc(struct net_device *dev, enum tc_setup_type type,
 	}
 }
 
+static int mlx5e_rep_setup_tc_cb(enum tc_setup_type type, void *type_data,
+				 void *cb_priv)
+{
+	struct net_device *dev = cb_priv;
+
+	return mlx5e_setup_tc(dev, type, type_data);
+}
+
 bool mlx5e_is_uplink_rep(struct mlx5e_priv *priv)
 {
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
@@ -1011,14 +1020,23 @@ mlx5e_vport_rep_load(struct mlx5_eswitch *esw, struct mlx5_eswitch_rep *rep)
 		goto err_detach_netdev;
 	}
 
+	err = tc_setup_cb_egdev_register(netdev, mlx5e_rep_setup_tc_cb,
+					 mlx5_eswitch_get_uplink_netdev(esw));
+	if (err)
+		goto err_neigh_cleanup;
+
 	err = register_netdev(netdev);
 	if (err) {
 		pr_warn("Failed to register representor netdev for vport %d\n",
 			rep->vport);
-		goto err_neigh_cleanup;
+		goto err_egdev_cleanup;
 	}
 
 	return 0;
+
+err_egdev_cleanup:
+	tc_setup_cb_egdev_unregister(netdev, mlx5e_rep_setup_tc_cb,
+				     mlx5_eswitch_get_uplink_netdev(esw));
 
 err_neigh_cleanup:
 	mlx5e_rep_neigh_cleanup(rpriv);
@@ -1041,7 +1059,8 @@ mlx5e_vport_rep_unload(struct mlx5_eswitch *esw, struct mlx5_eswitch_rep *rep)
 	void *ppriv = priv->ppriv;
 
 	unregister_netdev(rep->netdev);
-
+	tc_setup_cb_egdev_unregister(netdev, mlx5e_rep_setup_tc_cb,
+				     mlx5_eswitch_get_uplink_netdev(esw));
 	mlx5e_rep_neigh_cleanup(rpriv);
 	mlx5e_detach_netdev(priv);
 	mlx5e_destroy_netdev(priv);
