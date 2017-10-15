@@ -201,6 +201,7 @@ enum devlink_attr {
 	DEVLINK_ATTR_PAD,
 
 	DEVLINK_ATTR_ESWITCH_ENCAP_MODE,	/* u8 */
+	DEVLINK_ATTR_ESWITCH_MULTIPATH_MODE,	/* u8 */
 
 	/* add new attributes above here, update the policy in devlink.c */
 
