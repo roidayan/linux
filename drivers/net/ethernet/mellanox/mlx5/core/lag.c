@@ -695,3 +695,20 @@ unlock:
 	return ret;
 }
 EXPORT_SYMBOL(mlx5_lag_query_cong_counters);
+
+struct mlx5_core_dev *mlx5_lag_get_peer_mdev(struct mlx5_core_dev *dev)
+{
+	struct mlx5_core_dev *peer_dev = NULL;
+	struct mlx5_lag *ldev;
+
+	mutex_lock(&lag_mutex);
+	ldev = mlx5_lag_dev_get(dev);
+	if (!ldev)
+		goto unlock;
+
+	peer_dev = ldev->pf[0].dev == dev ? ldev->pf[1].dev : ldev->pf[0].dev;
+
+unlock:
+	mutex_unlock(&lag_mutex);
+	return peer_dev;
+}
