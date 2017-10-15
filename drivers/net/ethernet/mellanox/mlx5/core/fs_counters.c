@@ -315,16 +315,22 @@ void mlx5_cleanup_fc_stats(struct mlx5_core_dev *dev)
 }
 
 void mlx5_fc_query_cached(struct mlx5_fc *counter,
-			  u64 *bytes, u64 *packets, u64 *lastuse)
+			  u64 *bytes, u64 *packets, u64 *lastuse,
+			  enum mlx5_flow_query_cached_flags query_flags)
 {
 	struct mlx5_fc_cache c;
 
 	c = counter->cache;
 
-	*bytes = c.bytes - counter->lastbytes;
-	*packets = c.packets - counter->lastpackets;
-	*lastuse = c.lastuse;
+	if (query_flags == MLX5_FLOW_QUERY_CACHED_ABS) {
+		*bytes = c.bytes;
+		*packets = c.packets;
+	} else {
+		*bytes = c.bytes - counter->lastbytes;
+		*packets = c.packets - counter->lastpackets;
+	}
 
+	*lastuse = c.lastuse;
 	counter->lastbytes = c.bytes;
 	counter->lastpackets = c.packets;
 }

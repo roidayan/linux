@@ -465,7 +465,8 @@ void mlx5e_tc_update_neigh_used_value(struct mlx5e_neigh_hash_entry *nhe)
 		list_for_each_entry(flow, &e->flows, encap) {
 			if (flow->flags & MLX5E_TC_FLOW_OFFLOADED) {
 				counter = mlx5_flow_rule_counter(flow->rule);
-				mlx5_fc_query_cached(counter, &bytes, &packets, &lastuse);
+				mlx5_fc_query_cached(counter, &bytes, &packets, &lastuse,
+						     MLX5_FLOW_QUERY_CACHED_DIFF);
 				if (time_after((unsigned long)lastuse, nhe->reported_lastuse)) {
 					neigh_used = true;
 					break;
@@ -2133,7 +2134,8 @@ int mlx5e_stats_flower(struct mlx5e_priv *priv,
 	if (!counter)
 		return 0;
 
-	mlx5_fc_query_cached(counter, &bytes, &packets, &lastuse);
+	mlx5_fc_query_cached(counter, &bytes, &packets, &lastuse,
+			     MLX5_FLOW_QUERY_CACHED_DIFF);
 
 	tcf_exts_stats_update(f->exts, bytes, packets, lastuse);
 
