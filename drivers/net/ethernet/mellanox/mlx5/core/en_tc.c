@@ -70,7 +70,7 @@ struct mlx5e_tc_flow {
 	struct rhash_head	node;
 	u64			cookie;
 	u8			flags;
-	struct mlx5_flow_handle *rule;
+	struct mlx5_flow_handle *rule[2];
 	struct list_head	encap;   /* flows sharing the same encap ID */
 	struct list_head	mod_hdr; /* flows sharing the same mod hdr ID */
 	struct list_head	hairpin; /* flows sharing the same hairpin */
@@ -81,7 +81,7 @@ struct mlx5e_tc_flow {
 };
 
 struct mlx5e_tc_flow_parse_attr {
-	struct mlx5_flow_spec spec;
+	struct mlx5_flow_spec spec[2];
 	int peer_ifindex;
 	int num_mod_hdr_actions;
 	void *mod_hdr_actions;
@@ -461,12 +461,13 @@ int mlx5e_tc_add_nic_flow(struct mlx5e_priv *priv,
 		table_created = true;
 	}
 
-	parse_attr->spec.match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
-	flow->rule = mlx5_add_flow_rules(priv->fs.tc.t, &parse_attr->spec,
-					 &flow_act, dest, dest_ix);
+	parse_attr->spec[0].match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
+	flow->rule[0] = mlx5_add_flow_rules(priv->fs.tc.t,
+					    &parse_attr->spec[0],
+					    &flow_act, dest, dest_ix);
 
-	if (IS_ERR(flow->rule)) {
-		err = PTR_ERR(flow->rule);
+	if (IS_ERR(flow->rule[0])) {
+		err = PTR_ERR(flow->rule[0]);
 		goto err_add_rule;
 	}
 
@@ -494,8 +495,8 @@ static void mlx5e_tc_del_nic_flow(struct mlx5e_priv *priv,
 	struct mlx5_nic_flow_attr *attr = flow->nic_attr;
 	struct mlx5_fc *counter = NULL;
 
-	counter = mlx5_flow_rule_counter(flow->rule);
-	mlx5_del_flow_rules(flow->rule);
+	counter = mlx5_flow_rule_counter(flow->rule[0]);
+	mlx5_del_flow_rules(flow->rule[0]);
 	mlx5_fc_destroy(priv->mdev, counter);
 
 	if (!mlx5e_tc_num_filters(priv) && (priv->fs.tc.t)) {
@@ -532,11 +533,29 @@ int mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 			goto err_mod_hdr;
 	}
 
-	flow->rule = mlx5_eswitch_add_offloaded_rule(esw, &parse_attr->spec,
-						     attr);
-	if (IS_ERR(flow->rule)) {
-		err = PTR_ERR(flow->rule);
+	flow->rule[0] = mlx5_eswitch_add_offloaded_rule(esw,
+				&parse_attr->spec[0], attr);
+	if (IS_ERR(flow->rule[0])) {
+		err = PTR_ERR(flow->rule[0]);
 		goto err_add_rule;
+	}
+
+	if (mlx5_lag_is_multipath(priv->mdev) &&
+	    (attr->action & MLX5_FLOW_CONTEXT_ACTION_DECAP)) {
+		struct mlx5_core_dev *peer_dev =
+			mlx5_lag_get_peer_mdev(priv->mdev);
+
+		flow->rule[1] = mlx5_eswitch_add_offloaded_rule(
+					peer_dev->priv.eswitch,
+					&parse_attr->spec[1], attr);
+		if (IS_ERR(flow->rule[1])) {
+			mlx5_eswitch_del_offloaded_rule(
+				peer_dev->priv.eswitch,
+				flow->rule[0],
+				attr);
+			err = PTR_ERR(flow->rule[1]);
+			goto err_add_rule;
+		}
 	}
 
 	return 0;
@@ -558,7 +577,15 @@ static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
 
 	if (flow->flags & MLX5E_TC_FLOW_OFFLOADED) {
 		flow->flags &= ~MLX5E_TC_FLOW_OFFLOADED;
-		mlx5_eswitch_del_offloaded_rule(esw, flow->rule, attr);
+		mlx5_eswitch_del_offloaded_rule(esw, flow->rule[0], attr);
+
+		if (flow->rule[1]) {
+			struct mlx5_core_dev *peer_dev =
+				mlx5_lag_get_peer_mdev(priv->mdev);
+
+			mlx5_eswitch_del_offloaded_rule(
+				peer_dev->priv.eswitch, flow->rule[1], attr);
+		}
 	}
 
 	mlx5_eswitch_del_vlan_action(esw, attr);
@@ -612,8 +639,8 @@ void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
 	list_for_each_entry(flow, &e->flows, encap) {
 		if (flow->flags & MLX5E_TC_FLOW_OFFLOADED) {
 			flow->flags &= ~MLX5E_TC_FLOW_OFFLOADED;
-			counter = mlx5_flow_rule_counter(flow->rule);
-			mlx5_del_flow_rules(flow->rule);
+			counter = mlx5_flow_rule_counter(flow->rule[0]);
+			mlx5_del_flow_rules(flow->rule[0]);
 			mlx5_fc_destroy(priv->mdev, counter);
 		}
 	}
@@ -649,8 +676,17 @@ void mlx5e_tc_update_neigh_used_value(struct mlx5e_neigh_hash_entry *nhe)
 			continue;
 		list_for_each_entry(flow, &e->flows, encap) {
 			if (flow->flags & MLX5E_TC_FLOW_OFFLOADED) {
-				counter = mlx5_flow_rule_counter(flow->rule);
+				counter = mlx5_flow_rule_counter(flow->rule[0]);
 				mlx5_fc_query_cached(counter, &bytes, &packets, &lastuse);
+
+				if (flow->rule[1]) {
+					u64 lastuse2;
+
+					counter = mlx5_flow_rule_counter(flow->rule[1]);
+					mlx5_fc_query_cached(counter, &bytes, &packets, &lastuse2);
+					lastuse = max_t(u64, lastuse, lastuse2);
+				}
+
 				if (time_after((unsigned long)lastuse, nhe->reported_lastuse)) {
 					neigh_used = true;
 					break;
@@ -1560,7 +1596,7 @@ static bool actions_match_supported(struct mlx5e_priv *priv,
 		actions = flow->nic_attr->action;
 
 	if (actions & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR)
-		return modify_header_match_supported(&parse_attr->spec, exts);
+		return modify_header_match_supported(&parse_attr->spec[0], exts);
 
 	return true;
 }
@@ -2251,9 +2287,19 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv, __be16 protocol,
 	flow->cookie = f->cookie;
 	flow->flags = flow_flags;
 
-	err = parse_cls_flower(priv, flow, &parse_attr->spec, f);
+	err = parse_cls_flower(priv, flow, &parse_attr->spec[0], f);
 	if (err < 0)
 		goto err_free;
+
+	if (mlx5_lag_is_multipath(esw->dev)) {
+		struct net_device *peer_netdev =
+			mlx5_lag_get_peer_netdev(priv->mdev);
+
+		err = parse_cls_flower(netdev_priv(peer_netdev), flow,
+				       &parse_attr->spec[1], f);
+		if (err < 0)
+			goto err_free;
+	}
 
 	if (flow->flags & MLX5E_TC_FLOW_ESWITCH) {
 		err = parse_tc_fdb_actions(priv, f->exts, parse_attr, flow);
@@ -2329,9 +2375,7 @@ int mlx5e_stats_flower(struct mlx5e_priv *priv,
 	struct mlx5e_tc_table *tc = &priv->fs.tc;
 	struct mlx5e_tc_flow *flow;
 	struct mlx5_fc *counter;
-	u64 bytes;
-	u64 packets;
-	u64 lastuse;
+	u64 bytes, packets, lastuse = 0;
 
 	flow = rhashtable_lookup_fast(&tc->ht, &f->cookie,
 				      tc->ht_params);
@@ -2341,11 +2385,21 @@ int mlx5e_stats_flower(struct mlx5e_priv *priv,
 	if (!(flow->flags & MLX5E_TC_FLOW_OFFLOADED))
 		return 0;
 
-	counter = mlx5_flow_rule_counter(flow->rule);
+	counter = mlx5_flow_rule_counter(flow->rule[0]);
 	if (!counter)
 		return 0;
 
 	mlx5_fc_query_cached(counter, &bytes, &packets, &lastuse);
+
+	if (flow->rule[1]) {
+		u64 bytes2, packets2, lastuse2;
+
+		counter = mlx5_flow_rule_counter(flow->rule[1]);
+		mlx5_fc_query_cached(counter, &bytes2, &packets2, &lastuse2);
+		bytes   += bytes2;
+		packets += packets2;
+		lastuse  = max_t(u64, lastuse, lastuse2);
+	}
 
 	tcf_exts_stats_update(f->exts, bytes, packets, lastuse);
 
