@@ -180,5 +180,11 @@ int mlx5_lag_allow(struct mlx5_core_dev *dev);
 int mlx5_lag_forbid(struct mlx5_core_dev *dev);
 
 struct mlx5_core_dev *mlx5_lag_get_peer_mdev(struct mlx5_core_dev *dev);
+int mlx5_lag_activate_multipath(struct mlx5_core_dev *dev);
+void mlx5_lag_deactivate_multipath(struct mlx5_core_dev *dev);
+bool mlx5_lag_is_multipath(struct mlx5_core_dev *dev);
+void mlx5_lag_set_multipath_ready(struct mlx5_core_dev *dev);
+void mlx5_lag_unset_multipath_ready(struct mlx5_core_dev *dev);
+bool mlx5_lag_is_multipath_ready(struct mlx5_core_dev *dev);
 
 #endif /* __MLX5_CORE_H__ */
