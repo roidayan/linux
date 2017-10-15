@@ -164,8 +164,14 @@ int mlx5_modify_rule_destination(struct mlx5_flow_handle *handler,
 struct mlx5_fc *mlx5_flow_rule_counter(struct mlx5_flow_handle *handler);
 struct mlx5_fc *mlx5_fc_create(struct mlx5_core_dev *dev, bool aging);
 void mlx5_fc_destroy(struct mlx5_core_dev *dev, struct mlx5_fc *counter);
+
+enum mlx5_flow_query_cached_flags {
+	MLX5_FLOW_QUERY_CACHED_DIFF = 0,
+	MLX5_FLOW_QUERY_CACHED_ABS = 1,
+};
 void mlx5_fc_query_cached(struct mlx5_fc *counter,
-			  u64 *bytes, u64 *packets, u64 *lastuse);
+			  u64 *bytes, u64 *packets, u64 *lastuse,
+			  enum mlx5_flow_query_cached_flags query_flags);
 int mlx5_cmd_fc_query(struct mlx5_core_dev *dev, u32 id,
 		      u64 *packets, u64 *bytes);
 
