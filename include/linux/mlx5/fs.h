@@ -90,6 +90,8 @@ struct mlx5_flow_destination {
 		u32			vport_num;
 		struct mlx5_fc		*counter;
 	};
+	u16  destination_vport_vhca_id;
+	bool destination_vport_vhca_id_valid;
 };
 
 struct mlx5_flow_namespace *
