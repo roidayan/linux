@@ -223,6 +223,7 @@ enum devlink_attr {
 	DEVLINK_ATTR_RESOURCE_OCC,		/* u64 */
 	DEVLINK_ATTR_DPIPE_TABLE_RESOURCE_ID,	/* u64 */
 	DEVLINK_ATTR_DPIPE_TABLE_RESOURCE_UNITS,/* u64 */
+	DEVLINK_ATTR_ESWITCH_MULTIPATH_MODE,	/* u8 */
 
 	/* add new attributes above here, update the policy in devlink.c */
 
