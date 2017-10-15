@@ -1675,6 +1675,8 @@ void mlx5_eswitch_disable_sriov(struct mlx5_eswitch *esw)
 	esw_info(esw->dev, "disable SRIOV: active vports(%d) mode(%d)\n",
 		 esw->enabled_vports, esw->mode);
 
+	mlx5_lag_deactivate_multipath(esw->dev);
+
 	mc_promisc = &esw->mc_promisc;
 	nvports = esw->enabled_vports;
 
