@@ -382,8 +382,7 @@ static void mlx5e_hairpin_flow_rem(struct mlx5e_priv *priv,
 	}
 }
 
-static struct mlx5_flow_handle *
-mlx5e_tc_add_nic_flow(struct mlx5e_priv *priv,
+int mlx5e_tc_add_nic_flow(struct mlx5e_priv *priv,
 		      struct mlx5e_tc_flow_parse_attr *parse_attr,
 		      struct mlx5e_tc_flow *flow)
 {
@@ -396,17 +395,14 @@ mlx5e_tc_add_nic_flow(struct mlx5e_priv *priv,
 		.encap_id = 0,
 	};
 	struct mlx5_fc *counter = NULL;
-	struct mlx5_flow_handle *rule;
 	bool table_created = false;
 	int err, dest_ix = 0;
 
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_FWD_DEST) {
 		if (flow->flags & MLX5E_TC_FLOW_HAIRPIN) {
 			err = mlx5e_hairpin_flow_add(priv, flow, parse_attr);
-			if (err) {
-				rule = ERR_PTR(err);
+			if (err)
 				goto err_add_hairpin_flow;
-			}
 			dest[dest_ix].type = MLX5_FLOW_DESTINATION_TYPE_TIR;
 			dest[dest_ix].tir_num = attr->hairpin_tirn;
 		} else {
@@ -419,7 +415,7 @@ mlx5e_tc_add_nic_flow(struct mlx5e_priv *priv,
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_COUNT) {
 		counter = mlx5_fc_create(dev, true);
 		if (IS_ERR(counter))
-			return ERR_CAST(counter);
+			return PTR_ERR(counter);
 
 		dest[dest_ix].type = MLX5_FLOW_DESTINATION_TYPE_COUNTER;
 		dest[dest_ix].counter = counter;
@@ -430,10 +426,8 @@ mlx5e_tc_add_nic_flow(struct mlx5e_priv *priv,
 		err = mlx5e_attach_mod_hdr(priv, flow, parse_attr);
 		flow_act.modify_id = attr->mod_hdr_id;
 		kfree(parse_attr->mod_hdr_actions);
-		if (err) {
-			rule = ERR_PTR(err);
+		if (err)
 			goto err_create_mod_hdr_id;
-		}
 	}
 
 	if (IS_ERR_OR_NULL(priv->fs.tc.t)) {
@@ -457,7 +451,7 @@ mlx5e_tc_add_nic_flow(struct mlx5e_priv *priv,
 		if (IS_ERR(priv->fs.tc.t)) {
 			netdev_err(priv->netdev,
 				   "Failed to create tc offload table\n");
-			rule = ERR_CAST(priv->fs.tc.t);
+			err = PTR_ERR(priv->fs.tc.t);
 			goto err_create_ft;
 		}
 
@@ -465,13 +459,15 @@ mlx5e_tc_add_nic_flow(struct mlx5e_priv *priv,
 	}
 
 	parse_attr->spec.match_criteria_enable = MLX5_MATCH_OUTER_HEADERS;
-	rule = mlx5_add_flow_rules(priv->fs.tc.t, &parse_attr->spec,
-				   &flow_act, dest, dest_ix);
+	flow->rule = mlx5_add_flow_rules(priv->fs.tc.t, &parse_attr->spec,
+					 &flow_act, dest, dest_ix);
 
-	if (IS_ERR(rule))
+	if (IS_ERR(flow->rule)) {
+		err = PTR_ERR(flow->rule);
 		goto err_add_rule;
+	}
 
-	return rule;
+	return 0;
 
 err_add_rule:
 	if (table_created) {
@@ -486,7 +482,7 @@ err_create_mod_hdr_id:
 		mlx5e_hairpin_flow_rem(priv, flow);
 err_add_hairpin_flow:
 	mlx5_fc_destroy(dev, counter);
-	return rule;
+	return err;
 }
 
 static void mlx5e_tc_del_nic_flow(struct mlx5e_priv *priv,
@@ -520,7 +516,7 @@ static int mlx5e_attach_encap(struct mlx5e_priv *priv,
 			      struct net_device **encap_dev,
 			      struct mlx5e_tc_flow *flow);
 
-static struct mlx5_flow_handle *
+static int
 mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 		      struct mlx5e_tc_flow_parse_attr *parse_attr,
 		      struct mlx5e_tc_flow *flow)
@@ -549,29 +545,28 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	}
 
 	err = mlx5_eswitch_add_vlan_action(esw, attr);
-	if (err) {
-		rule = ERR_PTR(err);
+	if (err)
 		goto err_add_vlan;
-	}
 
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR) {
 		err = mlx5e_attach_mod_hdr(priv, flow, parse_attr);
 		kfree(parse_attr->mod_hdr_actions);
-		if (err) {
-			rule = ERR_PTR(err);
+		if (err)
 			goto err_mod_hdr;
-		}
 	}
 
 	/* we get here if (1) there's no error (rule being null) or when
 	 * (2) there's an encap action and we're on -EAGAIN (no valid neigh)
 	 */
 	if (rule != ERR_PTR(-EAGAIN)) {
-		rule = mlx5_eswitch_add_offloaded_rule(esw, &parse_attr->spec, attr);
-		if (IS_ERR(rule))
+		flow->rule = mlx5_eswitch_add_offloaded_rule(esw, &parse_attr->spec, attr);
+		if (IS_ERR(flow->rule)) {
+			err = PTR_ERR(flow->rule);
 			goto err_add_rule;
+		}
 	}
-	return rule;
+
+	return PTR_ERR(rule);
 
 err_add_rule:
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR)
@@ -582,7 +577,7 @@ err_add_vlan:
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP)
 		mlx5e_detach_encap(priv, flow);
 err_attach_encap:
-	return rule;
+	return err;
 }
 
 static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
@@ -2278,19 +2273,16 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv, __be16 protocol,
 		err = parse_tc_fdb_actions(priv, f->exts, parse_attr, flow);
 		if (err < 0)
 			goto err_free;
-		flow->rule = mlx5e_tc_add_fdb_flow(priv, parse_attr, flow);
+		err = mlx5e_tc_add_fdb_flow(priv, parse_attr, flow);
 	} else {
 		err = parse_tc_nic_actions(priv, f->exts, parse_attr, flow);
 		if (err < 0)
 			goto err_free;
-		flow->rule = mlx5e_tc_add_nic_flow(priv, parse_attr, flow);
+		err = mlx5e_tc_add_nic_flow(priv, parse_attr, flow);
 	}
 
-	if (IS_ERR(flow->rule)) {
-		err = PTR_ERR(flow->rule);
-		if (err != -EAGAIN)
-			goto err_free;
-	}
+	if (err && err != -EAGAIN)
+		goto err_free;
 
 	if (err != -EAGAIN)
 		flow->flags |= MLX5E_TC_FLOW_OFFLOADED;
