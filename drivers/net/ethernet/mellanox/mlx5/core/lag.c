@@ -633,3 +633,15 @@ bool mlx5_lag_intf_add(struct mlx5_interface *intf, struct mlx5_priv *priv)
 	/* If bonded, we do not add an IB device for PF1. */
 	return false;
 }
+
+struct mlx5_core_dev *mlx5_lag_get_peer_mdev(struct mlx5_core_dev *dev)
+{
+	struct mlx5_lag *ldev;
+
+	ldev = mlx5_lag_dev_get(dev);
+
+	if (!ldev)
+		return NULL;
+
+	return ldev->pf[0].dev == dev ? ldev->pf[1].dev : ldev->pf[0].dev;
+}
