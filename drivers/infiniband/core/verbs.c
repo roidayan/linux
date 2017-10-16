@@ -53,6 +53,9 @@
 
 #include "core_priv.h"
 
+static int ib_resolve_eth_dmac(struct ib_device *device,
+			       struct rdma_ah_attr *ah_attr);
+
 static const char * const ib_events[] = {
 	[IB_EVENT_CQ_ERR]		= "CQ error",
 	[IB_EVENT_QP_FATAL]		= "QP fatal error",
@@ -302,11 +305,13 @@ EXPORT_SYMBOL(ib_dealloc_pd);
 
 /* Address handles */
 
-struct ib_ah *rdma_create_ah(struct ib_pd *pd, struct rdma_ah_attr *ah_attr)
+static struct ib_ah *_rdma_create_ah(struct ib_pd *pd,
+				     struct rdma_ah_attr *ah_attr,
+				     struct ib_udata *udata)
 {
 	struct ib_ah *ah;
 
-	ah = pd->device->create_ah(pd, ah_attr, NULL);
+	ah = pd->device->create_ah(pd, ah_attr, udata);
 
 	if (!IS_ERR(ah)) {
 		ah->device  = pd->device;
@@ -318,7 +323,41 @@ struct ib_ah *rdma_create_ah(struct ib_pd *pd, struct rdma_ah_attr *ah_attr)
 
 	return ah;
 }
+
+struct ib_ah *rdma_create_ah(struct ib_pd *pd, struct rdma_ah_attr *ah_attr)
+{
+	return _rdma_create_ah(pd, ah_attr, NULL);
+}
 EXPORT_SYMBOL(rdma_create_ah);
+
+/**
+ * rdma_create_user_ah - Creates an address handle for the
+ * given address vector.
+ * It resolves destination mac address for ah attribute of RoCE type.
+ * @pd: The protection domain associated with the address handle.
+ * @ah_attr: The attributes of the address vector.
+ * @udata: pointer to user's input output buffer information need by
+ *         provider driver.
+ *
+ * It returns 0 on success and returns appropriate error code on error.
+ * The address handle is used to reference a local or global destination
+ * in all UD QP post sends.
+ */
+struct ib_ah *rdma_create_user_ah(struct ib_pd *pd,
+				  struct rdma_ah_attr *ah_attr,
+				  struct ib_udata *udata)
+{
+	int err;
+
+	if (ah_attr->type == RDMA_AH_ATTR_TYPE_ROCE) {
+		err = ib_resolve_eth_dmac(pd->device, ah_attr);
+		if (err)
+			return ERR_PTR(err);
+	}
+
+	return _rdma_create_ah(pd, ah_attr, udata);
+}
+EXPORT_SYMBOL(rdma_create_user_ah);
 
 int ib_get_rdma_header_version(const union rdma_network_hdr *hdr)
 {
@@ -1221,8 +1260,8 @@ int ib_modify_qp_is_ok(enum ib_qp_state cur_state, enum ib_qp_state next_state,
 }
 EXPORT_SYMBOL(ib_modify_qp_is_ok);
 
-int ib_resolve_eth_dmac(struct ib_device *device,
-			struct rdma_ah_attr *ah_attr)
+static int ib_resolve_eth_dmac(struct ib_device *device,
+			       struct rdma_ah_attr *ah_attr)
 {
 	int           ret = 0;
 	struct ib_global_route *grh;
@@ -1281,7 +1320,6 @@ int ib_resolve_eth_dmac(struct ib_device *device,
 out:
 	return ret;
 }
-EXPORT_SYMBOL(ib_resolve_eth_dmac);
 
 /**
  * ib_modify_qp_with_udata - Modifies the attributes for the specified QP.
@@ -1903,6 +1941,8 @@ struct ib_flow *ib_create_flow(struct ib_qp *qp,
 	if (!IS_ERR(flow_id)) {
 		atomic_inc(&qp->usecnt);
 		flow_id->qp = qp;
+		if (flow_id->counter_set)
+			atomic_inc(&flow_id->counter_set->usecnt);
 	}
 	return flow_id;
 }
@@ -1912,10 +1952,14 @@ int ib_destroy_flow(struct ib_flow *flow_id)
 {
 	int err;
 	struct ib_qp *qp = flow_id->qp;
+	struct ib_counter_set *counter_set = flow_id->counter_set;
 
 	err = qp->device->destroy_flow(flow_id);
-	if (!err)
+	if (!err) {
 		atomic_dec(&qp->usecnt);
+		if (counter_set)
+			atomic_dec(&counter_set->usecnt);
+	}
 	return err;
 }
 EXPORT_SYMBOL(ib_destroy_flow);
@@ -2252,3 +2296,86 @@ void ib_drain_qp(struct ib_qp *qp)
 		ib_drain_rq(qp);
 }
 EXPORT_SYMBOL(ib_drain_qp);
+
+/**
+ * ib_describe_counter_set - Describes a Counter Set
+ * @device: The device on which to describe a counter set.
+ * @cs_id: the counter set id to be described
+ * @cs_describe_attr: A list of description attributes
+ * required to get the outcome.
+ */
+int ib_describe_counter_set(struct ib_device *device,
+			    u16 cs_id,
+			    struct ib_counter_set_describe_attr *cs_describe_attr)
+{
+	if (!device->describe_counter_set)
+		return -ENOSYS;
+
+	return device->describe_counter_set(device, cs_id,
+					cs_describe_attr,
+					NULL);
+}
+EXPORT_SYMBOL(ib_describe_counter_set);
+
+/**
+ * ib_create_counter_set - Creates a Counter Set
+ * @device: The device on which to create the counter set.
+ * @cs_id: counter set id required to
+ * create the counter set.
+ */
+struct ib_counter_set *ib_create_counter_set(struct ib_device *device,
+					     u16 cs_id)
+{
+	struct ib_counter_set *cs;
+
+	if (!device->create_counter_set)
+		return ERR_PTR(-ENOSYS);
+
+	cs = device->create_counter_set(device, cs_id, NULL);
+	if (!IS_ERR(cs)) {
+		cs->device = device;
+		cs->uobject = NULL;
+		cs->cs_id = cs_id;
+		atomic_set(&cs->usecnt, 0);
+	}
+
+	return cs;
+}
+EXPORT_SYMBOL(ib_create_counter_set);
+
+/**
+ * ib_destroy_counter_set - Destroys the specified counter set.
+ * @cs: The counter set to destroy.
+ **/
+int ib_destroy_counter_set(struct ib_counter_set *cs)
+{
+	if (!cs->device->destroy_counter_set)
+		return -ENOSYS;
+
+	if (atomic_read(&cs->usecnt))
+		return -EBUSY;
+
+	return cs->device->destroy_counter_set(cs);
+}
+EXPORT_SYMBOL(ib_destroy_counter_set);
+
+/**
+ * ib_query_counter_set - Queries a Counter Set
+ * @cs: The counter set to query.
+ * @cs_query_attr: A list of query attributes
+ * required to get the outcome.
+ */
+int ib_query_counter_set(struct ib_counter_set *cs,
+			 struct ib_counter_set_query_attr *cs_query_attr)
+{
+	if (!cs->device->query_counter_set)
+		return -ENOSYS;
+
+	if (!atomic_read(&cs->usecnt))
+		return -EINVAL;
+
+	return cs->device->query_counter_set(cs,
+				cs_query_attr,
+				NULL);
+}
+EXPORT_SYMBOL(ib_query_counter_set);
