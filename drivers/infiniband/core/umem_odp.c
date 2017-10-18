@@ -754,3 +754,42 @@ void ib_umem_odp_unmap_dma_pages(struct ib_umem *umem, u64 virt,
 	mutex_unlock(&umem->odp_data->umem_mutex);
 }
 EXPORT_SYMBOL(ib_umem_odp_unmap_dma_pages);
+
+/* @last is not a part of the interval. See comment for function
+ * node_last.
+ */
+int rbt_ib_umem_for_each_in_range(struct rb_root_cached *root,
+				  u64 start, u64 last,
+				  umem_call_back cb,
+				  void *cookie)
+{
+	int ret_val = 0;
+	struct umem_odp_node *node, *next;
+	struct ib_umem_odp *umem;
+
+	if (unlikely(start == last))
+		return ret_val;
+
+	for (node = rbt_ib_umem_iter_first(root, start, last - 1);
+			node; node = next) {
+		next = rbt_ib_umem_iter_next(node, start, last - 1);
+		umem = container_of(node, struct ib_umem_odp, interval_tree);
+		ret_val = cb(umem->umem, start, last, cookie) || ret_val;
+	}
+
+	return ret_val;
+}
+EXPORT_SYMBOL(rbt_ib_umem_for_each_in_range);
+
+struct ib_umem_odp *rbt_ib_umem_lookup(struct rb_root_cached *root,
+				       u64 addr, u64 length)
+{
+	struct umem_odp_node *node;
+
+	node = rbt_ib_umem_iter_first(root, addr, addr + length - 1);
+	if (node)
+		return container_of(node, struct ib_umem_odp, interval_tree);
+	return NULL;
+
+}
+EXPORT_SYMBOL(rbt_ib_umem_lookup);

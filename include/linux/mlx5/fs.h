@@ -140,6 +140,7 @@ struct mlx5_flow_act {
 	u32 flow_tag;
 	u32 encap_id;
 	u32 modify_id;
+	struct ib_counter_set *counter_set;
 };
 
 #define MLX5_DECLARE_FLOW_ACT(name) \
@@ -164,8 +165,36 @@ int mlx5_modify_rule_destination(struct mlx5_flow_handle *handler,
 struct mlx5_fc *mlx5_flow_rule_counter(struct mlx5_flow_handle *handler);
 struct mlx5_fc *mlx5_fc_create(struct mlx5_core_dev *dev, bool aging);
 void mlx5_fc_destroy(struct mlx5_core_dev *dev, struct mlx5_fc *counter);
+
+enum mlx5_flow_query_cached_flags {
+	MLX5_FLOW_QUERY_CACHED_DIFF = 0,
+	MLX5_FLOW_QUERY_CACHED_ABS = 1,
+};
 void mlx5_fc_query_cached(struct mlx5_fc *counter,
-			  u64 *bytes, u64 *packets, u64 *lastuse);
+			  u64 *bytes, u64 *packets, u64 *lastuse,
+			  enum mlx5_flow_query_cached_flags query_flags);
+int mlx5_cmd_fc_query(struct mlx5_core_dev *dev, u32 id,
+		      u64 *packets, u64 *bytes);
+
+struct mlx5_fc_cache {
+	u64 packets;
+	u64 bytes;
+	u64 lastuse;
+};
+
+struct mlx5_fc {
+	struct rb_node node;
+	struct list_head list;
+
+	u64 lastpackets;
+	u64 lastbytes;
+
+	u32 id;
+	bool deleted;
+	bool aging;
+	struct mlx5_fc_cache cache ____cacheline_aligned_in_smp;
+};
+
 int mlx5_fs_add_rx_underlay_qpn(struct mlx5_core_dev *dev, u32 underlay_qpn);
 int mlx5_fs_remove_rx_underlay_qpn(struct mlx5_core_dev *dev, u32 underlay_qpn);
 

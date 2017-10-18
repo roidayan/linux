@@ -229,6 +229,8 @@ enum ib_device_cap_flags {
 	/* Deprecated. Please use IB_RAW_PACKET_CAP_SCATTER_FCS. */
 	IB_DEVICE_RAW_SCATTER_FCS		= (1ULL << 34),
 	IB_DEVICE_RDMA_NETDEV_OPA_VNIC		= (1ULL << 35),
+	/* The device supports padding incoming writes to cacheline. */
+	IB_DEVICE_SCATTER_END_PADDING		= (1ULL << 36),
 };
 
 enum ib_signature_prot_cap {
@@ -309,6 +311,15 @@ struct ib_cq_init_attr {
 	u32		flags;
 };
 
+enum ib_cq_attr_mask {
+	IB_CQ_MODERATE = 1 << 0,
+};
+
+struct ib_cq_caps {
+	u16     max_cq_moderation_count;
+	u16     max_cq_moderation_period;
+};
+
 struct ib_device_attr {
 	u64			fw_ver;
 	__be64			sys_image_guid;
@@ -359,6 +370,8 @@ struct ib_device_attr {
 	u32			max_wq_type_rq;
 	u32			raw_packet_caps; /* Use ib_raw_packet_caps enum */
 	struct ib_tm_caps	tm_caps;
+	struct ib_cq_caps       cq_caps;
+	u16			max_counter_sets;
 };
 
 enum ib_mtu {
@@ -1098,6 +1111,7 @@ enum ib_qp_create_flags {
 	IB_QP_CREATE_SCATTER_FCS		= 1 << 8,
 	IB_QP_CREATE_CVLAN_STRIPPING		= 1 << 9,
 	IB_QP_CREATE_SOURCE_QPN			= 1 << 10,
+	IB_QP_CREATE_SCATTER_END_PADDING	= 1 << 11,
 	/* reserve bits 26-31 for low level drivers' internal use */
 	IB_QP_CREATE_RESERVED_START		= 1 << 26,
 	IB_QP_CREATE_RESERVED_END		= 1 << 31,
@@ -1621,6 +1635,7 @@ enum ib_wq_flags {
 	IB_WQ_FLAGS_CVLAN_STRIPPING	= 1 << 0,
 	IB_WQ_FLAGS_SCATTER_FCS		= 1 << 1,
 	IB_WQ_FLAGS_DELAY_DROP		= 1 << 2,
+	IB_WQ_FLAGS_SCATTER_END_PADDING = 1 << 3,
 };
 
 struct ib_wq_init_attr {
@@ -1796,6 +1811,7 @@ enum ib_flow_spec_type {
 	/* Actions */
 	IB_FLOW_SPEC_ACTION_TAG         = 0x1000,
 	IB_FLOW_SPEC_ACTION_DROP        = 0x1001,
+	IB_FLOW_SPEC_ACTION_COUNT       = 0x1002,
 };
 #define IB_FLOW_SPEC_LAYER_MASK	0xF0
 #define IB_FLOW_SPEC_SUPPORT_LAYERS 8
@@ -1929,6 +1945,12 @@ struct ib_flow_spec_action_drop {
 	u16			      size;
 };
 
+struct ib_flow_spec_action_count {
+	enum ib_flow_spec_type type;
+	u16 size;
+	struct ib_counter_set *counter_set;
+};
+
 union ib_flow_spec {
 	struct {
 		u32			type;
@@ -1942,6 +1964,7 @@ union ib_flow_spec {
 	struct ib_flow_spec_tunnel      tunnel;
 	struct ib_flow_spec_action_tag  flow_tag;
 	struct ib_flow_spec_action_drop drop;
+	struct ib_flow_spec_action_count flow_count;
 };
 
 struct ib_flow_attr {
@@ -1960,6 +1983,7 @@ struct ib_flow_attr {
 struct ib_flow {
 	struct ib_qp		*qp;
 	struct ib_uobject	*uobject;
+	struct ib_counter_set	*counter_set;
 };
 
 struct ib_mad_hdr;
@@ -2036,6 +2060,50 @@ struct ib_port_pkey_list {
 	/* Lock to hold while modifying the list. */
 	spinlock_t                    list_lock;
 	struct list_head              pkey_list;
+};
+
+enum ib_counter_set_type {
+	IB_COUNTER_SET_FLOW,
+};
+
+enum ib_counter_set_attributes {
+	/* Is cache supported */
+	IB_COUNTER_SET_ATTR_CACHED = 1 << 0,
+};
+
+#define IB_COUNTER_NAME_LEN 64
+struct ib_counter_set_describe_attr {
+	/* Type that this set refers to, use enum ib_counter_set_type */
+	u8 counted_type;
+	/* Number of instances of this counter-set available in the hardware */
+	u64 num_of_cs;
+	/* Attributes of the set, use enum ib_counter_set_attributes */
+	u32 attributes;
+	/* Number of counters in this set */
+	u8 entries_count;
+	/* Counters_names_buff length */
+	u16 counters_names_len;
+	char *counters_names_buff;
+};
+
+struct ib_counter_set {
+	struct ib_device	*device;
+	struct ib_uobject	*uobject;
+	u16	cs_id;
+	/* num of objects attached */
+	atomic_t	usecnt;
+};
+
+enum ib_query_counter_set_flags {
+	/* force hardware query instead of cached value */
+	IB_COUNTER_SET_FORCE_UPDATE = 1 << 0,
+};
+
+struct ib_counter_set_query_attr {
+	u32	query_flags; /* Use enum ib_query_counter_set_flags */
+	u64	*out_buff;
+	u32	buff_len;
+	u32	outlen;
 };
 
 struct ib_device {
@@ -2293,6 +2361,18 @@ struct ib_device {
 							   struct ib_rwq_ind_table_init_attr *init_attr,
 							   struct ib_udata *udata);
 	int                        (*destroy_rwq_ind_table)(struct ib_rwq_ind_table *wq_ind_table);
+	int	(*describe_counter_set)(struct ib_device *device,
+					u16	cs_id,
+					struct ib_counter_set_describe_attr *cs_describe_attr,
+					struct ib_udata *udata);
+	struct ib_counter_set *	(*create_counter_set)(struct ib_device *device,
+						      u16 cs_id,
+						      struct ib_udata *udata);
+	int	(*destroy_counter_set)(struct ib_counter_set *cs);
+	int	(*query_counter_set)(struct ib_counter_set *cs,
+				     struct ib_counter_set_query_attr *cs_query_attr,
+				     struct ib_udata *udata);
+
 	/**
 	 * rdma netdev operation
 	 *
@@ -2857,6 +2937,21 @@ void ib_dealloc_pd(struct ib_pd *pd);
  */
 struct ib_ah *rdma_create_ah(struct ib_pd *pd, struct rdma_ah_attr *ah_attr);
 
+/**
+ * rdma_create_user_ah - Creates an address handle for the given address vector.
+ * It resolves destination mac address for ah attribute of RoCE type.
+ * @pd: The protection domain associated with the address handle.
+ * @ah_attr: The attributes of the address vector.
+ * @udata: pointer to user's input output buffer information need by
+ *         provider driver.
+ *
+ * It returns 0 on success and returns appropriate error code on error.
+ * The address handle is used to reference a local or global destination
+ * in all UD QP post sends.
+ */
+struct ib_ah *rdma_create_user_ah(struct ib_pd *pd,
+				  struct rdma_ah_attr *ah_attr,
+				  struct ib_udata *udata);
 /**
  * ib_get_gids_from_rdma_hdr - Get sgid and dgid from GRH or IPv4 header
  *   work completion.
@@ -3587,6 +3682,14 @@ int ib_destroy_rwq_ind_table(struct ib_rwq_ind_table *wq_ind_table);
 
 int ib_map_mr_sg(struct ib_mr *mr, struct scatterlist *sg, int sg_nents,
 		 unsigned int *sg_offset, unsigned int page_size);
+int ib_describe_counter_set(struct ib_device *device,
+			    u16 cs_id,
+			    struct ib_counter_set_describe_attr *cs_describe_attr);
+struct ib_counter_set *ib_create_counter_set(struct ib_device *device,
+					     u16 cs_id);
+int ib_destroy_counter_set(struct ib_counter_set *cs);
+int ib_query_counter_set(struct ib_counter_set *cs,
+			 struct ib_counter_set_query_attr *cs_query_attr);
 
 static inline int
 ib_map_mr_sg_zbva(struct ib_mr *mr, struct scatterlist *sg, int sg_nents,
@@ -3607,8 +3710,6 @@ void ib_drain_rq(struct ib_qp *qp);
 void ib_drain_sq(struct ib_qp *qp);
 void ib_drain_qp(struct ib_qp *qp);
 
-int ib_resolve_eth_dmac(struct ib_device *device,
-			struct rdma_ah_attr *ah_attr);
 int ib_get_eth_speed(struct ib_device *dev, u8 port_num, u8 *speed, u8 *width);
 
 static inline u8 *rdma_ah_retrieve_dmac(struct rdma_ah_attr *attr)
