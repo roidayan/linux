@@ -670,6 +670,7 @@ int mlx5_lag_activate_multipath(struct mlx5_core_dev *dev)
 {
 	struct mlx5_lag *ldev = mlx5_lag_dev_get(dev);
 	struct mlx5_core_dev *dev2 = mlx5_lag_get_peer_mdev(dev);
+	struct lag_tracker tracker;
 
 	if (!MLX5_CAP_ESW(dev, merged_eswitch)) {
 		mlx5_core_err(dev, "Merged eSwitch capability not present\n");
@@ -695,9 +696,14 @@ int mlx5_lag_activate_multipath(struct mlx5_core_dev *dev)
 	if (dev2->priv.eswitch->mode != SRIOV_NONE)
 		return -EOPNOTSUPP;
 
+	mutex_lock(&lag_mutex);
+	tracker = ldev->tracker;
+	mutex_unlock(&lag_mutex);
+
 	mlx5_core_info(dev, "Activate multipath\n");
 
 	ldev->flags |= MLX5_LAG_FLAG_MULTIPATH;
+	mlx5_create_lag(ldev, &tracker);
 
 	return 0;
 }
@@ -705,6 +711,7 @@ int mlx5_lag_activate_multipath(struct mlx5_core_dev *dev)
 void mlx5_lag_deactivate_multipath(struct mlx5_core_dev *dev)
 {
 	struct mlx5_lag *ldev = mlx5_lag_dev_get(dev);
+	int err;
 
 	if (!ldev)
 		return;
