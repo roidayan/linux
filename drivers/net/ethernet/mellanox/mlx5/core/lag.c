@@ -665,11 +665,6 @@ int mlx5_lag_activate_multipath(struct mlx5_core_dev *dev)
 	struct mlx5_lag *ldev = mlx5_lag_dev_get(dev);
 	struct mlx5_core_dev *dev2 = mlx5_lag_get_peer_mdev(dev);
 
-	if (!MLX5_CAP_GEN(dev, merged_eswitch)) {
-		mlx5_core_err(dev, "Merged eSwitch capability not present\n");
-		return -EOPNOTSUPP;
-	}
-
 	if (!dev2)
 		return -EOPNOTSUPP;
 
