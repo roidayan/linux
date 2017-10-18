@@ -196,6 +196,7 @@ static void mlx5e_update_sw_counters(struct mlx5e_priv *priv)
 		s->rx_bytes	+= rq_stats->bytes;
 		s->rx_lro_packets += rq_stats->lro_packets;
 		s->rx_lro_bytes	+= rq_stats->lro_bytes;
+		s->rx_removed_vlan_packets += rq_stats->removed_vlan_packets;
 		s->rx_csum_none	+= rq_stats->csum_none;
 		s->rx_csum_complete += rq_stats->csum_complete;
 		s->rx_csum_unnecessary += rq_stats->csum_unnecessary;
@@ -224,6 +225,7 @@ static void mlx5e_update_sw_counters(struct mlx5e_priv *priv)
 			s->tx_tso_bytes		+= sq_stats->tso_bytes;
 			s->tx_tso_inner_packets	+= sq_stats->tso_inner_packets;
 			s->tx_tso_inner_bytes	+= sq_stats->tso_inner_bytes;
+			s->tx_added_vlan_packets += sq_stats->added_vlan_packets;
 			s->tx_queue_stopped	+= sq_stats->stopped;
 			s->tx_queue_wake	+= sq_stats->wake;
 			s->tx_queue_dropped	+= sq_stats->dropped;
@@ -681,7 +683,7 @@ static int mlx5e_alloc_rq(struct mlx5e_channel *c,
 	}
 
 	INIT_WORK(&rq->am.work, mlx5e_rx_am_work);
-	rq->am.mode = params->rx_cq_period_mode;
+	rq->am.mode = params->rx_cq_moderation.cq_period_mode;
 	rq->page_cache.head = 0;
 	rq->page_cache.tail = 0;
 
@@ -1974,7 +1976,7 @@ static void mlx5e_build_rx_cq_param(struct mlx5e_priv *priv,
 	}
 
 	mlx5e_build_common_cq_param(priv, param);
-	param->cq_period_mode = params->rx_cq_period_mode;
+	param->cq_period_mode = params->rx_cq_moderation.cq_period_mode;
 }
 
 static void mlx5e_build_tx_cq_param(struct mlx5e_priv *priv,
@@ -1986,8 +1988,7 @@ static void mlx5e_build_tx_cq_param(struct mlx5e_priv *priv,
 	MLX5_SET(cqc, cqc, log_cq_size, params->log_sq_size);
 
 	mlx5e_build_common_cq_param(priv, param);
-
-	param->cq_period_mode = MLX5_CQ_PERIOD_MODE_START_FROM_EQE;
+	param->cq_period_mode = params->tx_cq_moderation.cq_period_mode;
 }
 
 static void mlx5e_build_ico_cq_param(struct mlx5e_priv *priv,
@@ -3227,14 +3228,14 @@ out:
 	return err;
 }
 
-static int set_feature_vlan_filter(struct net_device *netdev, bool enable)
+static int set_feature_cvlan_filter(struct net_device *netdev, bool enable)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
 
 	if (enable)
-		mlx5e_enable_vlan_filter(priv);
+		mlx5e_enable_cvlan_filter(priv);
 	else
-		mlx5e_disable_vlan_filter(priv);
+		mlx5e_disable_cvlan_filter(priv);
 
 	return 0;
 }
@@ -3345,7 +3346,7 @@ static int mlx5e_set_features(struct net_device *netdev,
 				    set_feature_lro);
 	err |= mlx5e_handle_feature(netdev, features,
 				    NETIF_F_HW_VLAN_CTAG_FILTER,
-				    set_feature_vlan_filter);
+				    set_feature_cvlan_filter);
 	err |= mlx5e_handle_feature(netdev, features, NETIF_F_HW_TC,
 				    set_feature_tc_num_filters);
 	err |= mlx5e_handle_feature(netdev, features, NETIF_F_RXALL,
@@ -3360,6 +3361,25 @@ static int mlx5e_set_features(struct net_device *netdev,
 #endif
 
 	return err ? -EINVAL : 0;
+}
+
+static netdev_features_t mlx5e_fix_features(struct net_device *netdev,
+					    netdev_features_t features)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+
+	mutex_lock(&priv->state_lock);
+	if (!bitmap_empty(priv->fs.vlan.active_svlans, VLAN_N_VID)) {
+		/* HW strips the outer C-tag header, this is a problem
+		 * for S-tag traffic.
+		 */
+		features &= ~NETIF_F_HW_VLAN_CTAG_RX;
+		if (!priv->channels.params.vlan_strip_disable)
+			netdev_warn(netdev, "Dropping C-tag vlan stripping offload due to S-tag vlan\n");
+	}
+	mutex_unlock(&priv->state_lock);
+
+	return features;
 }
 
 static int mlx5e_change_mtu(struct net_device *netdev, int new_mtu)
@@ -3839,6 +3859,7 @@ static const struct net_device_ops mlx5e_netdev_ops = {
 	.ndo_vlan_rx_add_vid     = mlx5e_vlan_rx_add_vid,
 	.ndo_vlan_rx_kill_vid    = mlx5e_vlan_rx_kill_vid,
 	.ndo_set_features        = mlx5e_set_features,
+	.ndo_fix_features        = mlx5e_fix_features,
 	.ndo_change_mtu          = mlx5e_change_mtu,
 	.ndo_do_ioctl            = mlx5e_ioctl,
 	.ndo_set_tx_maxrate      = mlx5e_set_tx_maxrate,
@@ -3953,14 +3974,32 @@ static bool hw_lro_heuristic(u32 link_speed, u32 pci_bw)
 		 (pci_bw <= 16000) && (pci_bw < link_speed));
 }
 
+void mlx5e_set_tx_cq_mode_params(struct mlx5e_params *params, u8 cq_period_mode)
+{
+	params->tx_cq_moderation.cq_period_mode = cq_period_mode;
+
+	params->tx_cq_moderation.pkts =
+		MLX5E_PARAMS_DEFAULT_TX_CQ_MODERATION_PKTS;
+	params->tx_cq_moderation.usec =
+		MLX5E_PARAMS_DEFAULT_TX_CQ_MODERATION_USEC;
+
+	if (cq_period_mode == MLX5_CQ_PERIOD_MODE_START_FROM_CQE)
+		params->tx_cq_moderation.usec =
+			MLX5E_PARAMS_DEFAULT_TX_CQ_MODERATION_USEC_FROM_CQE;
+
+	MLX5E_SET_PFLAG(params, MLX5E_PFLAG_TX_CQE_BASED_MODER,
+			params->tx_cq_moderation.cq_period_mode ==
+				MLX5_CQ_PERIOD_MODE_START_FROM_CQE);
+}
+
 void mlx5e_set_rx_cq_mode_params(struct mlx5e_params *params, u8 cq_period_mode)
 {
-	params->rx_cq_period_mode = cq_period_mode;
+	params->rx_cq_moderation.cq_period_mode = cq_period_mode;
 
 	params->rx_cq_moderation.pkts =
 		MLX5E_PARAMS_DEFAULT_RX_CQ_MODERATION_PKTS;
 	params->rx_cq_moderation.usec =
-			MLX5E_PARAMS_DEFAULT_RX_CQ_MODERATION_USEC;
+		MLX5E_PARAMS_DEFAULT_RX_CQ_MODERATION_USEC;
 
 	if (cq_period_mode == MLX5_CQ_PERIOD_MODE_START_FROM_CQE)
 		params->rx_cq_moderation.usec =
@@ -3968,10 +4007,11 @@ void mlx5e_set_rx_cq_mode_params(struct mlx5e_params *params, u8 cq_period_mode)
 
 	if (params->rx_am_enabled)
 		params->rx_cq_moderation =
-			mlx5e_am_get_def_profile(params->rx_cq_period_mode);
+			mlx5e_am_get_def_profile(cq_period_mode);
 
 	MLX5E_SET_PFLAG(params, MLX5E_PFLAG_RX_CQE_BASED_MODER,
-			params->rx_cq_period_mode == MLX5_CQ_PERIOD_MODE_START_FROM_CQE);
+			params->rx_cq_moderation.cq_period_mode ==
+				MLX5_CQ_PERIOD_MODE_START_FROM_CQE);
 }
 
 u32 mlx5e_choose_lro_timeout(struct mlx5_core_dev *mdev, u32 wanted_timeout)
@@ -4031,9 +4071,7 @@ void mlx5e_build_nic_params(struct mlx5_core_dev *mdev,
 			MLX5_CQ_PERIOD_MODE_START_FROM_EQE;
 	params->rx_am_enabled = MLX5_CAP_GEN(mdev, cq_moderation);
 	mlx5e_set_rx_cq_mode_params(params, cq_period_mode);
-
-	params->tx_cq_moderation.usec = MLX5E_PARAMS_DEFAULT_TX_CQ_MODERATION_USEC;
-	params->tx_cq_moderation.pkts = MLX5E_PARAMS_DEFAULT_TX_CQ_MODERATION_PKTS;
+	mlx5e_set_tx_cq_mode_params(params, cq_period_mode);
 
 	/* TX inline */
 	params->tx_max_inline = mlx5e_get_max_inline_cap(mdev);
@@ -4126,6 +4164,7 @@ static void mlx5e_build_nic_netdev(struct net_device *netdev)
 	netdev->hw_features      |= NETIF_F_HW_VLAN_CTAG_TX;
 	netdev->hw_features      |= NETIF_F_HW_VLAN_CTAG_RX;
 	netdev->hw_features      |= NETIF_F_HW_VLAN_CTAG_FILTER;
+	netdev->hw_features      |= NETIF_F_HW_VLAN_STAG_TX;
 
 	if (mlx5e_vxlan_allowed(mdev) || MLX5_CAP_ETH(mdev, tunnel_stateless_gre)) {
 		netdev->hw_features     |= NETIF_F_GSO_PARTIAL;
@@ -4183,6 +4222,7 @@ static void mlx5e_build_nic_netdev(struct net_device *netdev)
 	}
 
 	netdev->features         |= NETIF_F_HIGHDMA;
+	netdev->features         |= NETIF_F_HW_VLAN_STAG_FILTER;
 
 	netdev->priv_flags       |= IFF_UNICAST_FLT;
 
