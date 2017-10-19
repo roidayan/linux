@@ -712,3 +712,20 @@ unlock:
 	mutex_unlock(&lag_mutex);
 	return peer_dev;
 }
+
+struct net_device *mlx5_lag_get_peer_netdev(struct mlx5_core_dev *dev)
+{
+	struct net_device *peer_ndev = NULL;
+	struct mlx5_lag *ldev;
+
+	mutex_lock(&lag_mutex);
+	ldev = mlx5_lag_dev_get(dev);
+	if (!ldev)
+		goto unlock;
+
+	peer_ndev = ldev->pf[0].dev == dev ? ldev->pf[1].netdev : ldev->pf[0].netdev;
+
+unlock:
+	mutex_unlock(&lag_mutex);
+	return peer_ndev;
+}
