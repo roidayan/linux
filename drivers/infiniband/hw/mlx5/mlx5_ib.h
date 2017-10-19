@@ -228,6 +228,7 @@ struct wr_list {
 
 enum mlx5_ib_rq_flags {
 	MLX5_IB_RQ_CVLAN_STRIPPING	= 1 << 0,
+	MLX5_IB_RQ_SCATTER_END_PADDING	= 1 << 1,
 };
 
 struct mlx5_ib_wq {
@@ -254,7 +255,13 @@ struct mlx5_ib_wq {
 
 enum mlx5_ib_wq_flags {
 	MLX5_IB_WQ_FLAGS_DELAY_DROP = 0x1,
+	MLX5_IB_WQ_FLAGS_STRIDING_RQ = 0x2,
 };
+
+#define MLX5_MIN_SINGLE_WQE_LOG_NUM_STRIDES 9
+#define MLX5_MAX_SINGLE_WQE_LOG_NUM_STRIDES 16
+#define MLX5_MIN_SINGLE_STRIDE_LOG_NUM_BYTES 6
+#define MLX5_MAX_SINGLE_STRIDE_LOG_NUM_BYTES 13
 
 struct mlx5_ib_rwq {
 	struct ib_wq		ibwq;
@@ -264,6 +271,9 @@ struct mlx5_ib_rwq {
 	u32			log_rq_size;
 	u32			rq_page_offset;
 	u32			log_page_size;
+	u32			log_num_strides;
+	u32			two_byte_shift_en;
+	u32			single_stride_log_num_of_bytes;
 	struct ib_umem		*umem;
 	size_t			buf_size;
 	unsigned int		page_shift;
@@ -389,6 +399,7 @@ struct mlx5_ib_qp {
 	struct list_head	cq_send_list;
 	u32			rate_limit;
 	u32                     underlay_qpn;
+	bool			tunnel_offload_en;
 };
 
 struct mlx5_ib_cq_buf {
@@ -411,6 +422,8 @@ enum mlx5_ib_qp_flags {
 	MLX5_IB_QP_RSS				= 1 << 8,
 	MLX5_IB_QP_CVLAN_STRIPPING		= 1 << 9,
 	MLX5_IB_QP_UNDERLAY			= 1 << 10,
+	MLX5_IB_QP_SCATTER_END_PADDING		= 1 << 11,
+	MLX5_IB_QP_TUNNEL_OFFLOAD		= 1 << 12,
 };
 
 struct mlx5_umr_wr {
@@ -435,6 +448,10 @@ struct mlx5_shared_mr_info {
 	struct ib_umem		*umem;
 };
 
+enum mlx5_ib_cq_pr_flags {
+	MLX5_IB_CQ_PR_FLAGS_CQE_128_PAD	= 1 << 0,
+};
+
 struct mlx5_ib_cq {
 	struct ib_cq		ibcq;
 	struct mlx5_core_cq	mcq;
@@ -457,6 +474,7 @@ struct mlx5_ib_cq {
 	struct list_head	wc_list;
 	enum ib_cq_notify_flags notify_flags;
 	struct work_struct	notify_work;
+	u16			private_flags; /* Use mlx5_ib_cq_pr_flags */
 };
 
 struct mlx5_ib_wc {
@@ -687,6 +705,35 @@ struct mlx5_ib_delay_drop {
 	struct mlx5_ib_dbg_delay_drop *dbg;
 };
 
+struct mlx5_query_count_attr {
+	void *hw_cs_handle;
+	u64 *out;
+	u32 query_flags;
+};
+
+struct mlx5_desc_cs_attr {
+	struct ib_counter_set_describe_attr cs_desc;
+	void (*fill_counters_names)(char *cs_names_buff);
+};
+
+struct mlx5_ib_cs {
+	struct ib_counter_set ibcs;
+	struct mlx5_desc_cs_attr *desc_cs;
+	void *hw_cs_handle;
+	int (*query_count)(struct ib_device *ibdev,
+			   struct mlx5_query_count_attr *query_attr);
+};
+
+static inline struct mlx5_ib_cs *to_mcs(struct ib_counter_set *ibcs)
+{
+	return container_of(ibcs, struct mlx5_ib_cs, ibcs);
+}
+
+struct mlx5_ib_counter_sets {
+	struct mlx5_desc_cs_attr *desc_cs_arr;
+	u16 max_counter_sets;
+};
+
 struct mlx5_ib_dev {
 	struct ib_device		ib_dev;
 	struct mlx5_core_dev		*mdev;
@@ -730,6 +777,8 @@ struct mlx5_ib_dev {
 	struct mutex		lb_mutex;
 	u32			user_td;
 	u8			umr_fence;
+
+	struct mlx5_ib_counter_sets counter_sets;
 };
 
 static inline struct mlx5_ib_cq *to_mibcq(struct mlx5_core_cq *mcq)

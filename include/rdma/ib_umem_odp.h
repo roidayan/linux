@@ -36,6 +36,7 @@
 #include <rdma/ib_umem.h>
 #include <rdma/ib_verbs.h>
 #include <linux/interval_tree.h>
+#include <linux/interval_tree_generic.h>
 
 struct umem_odp_node {
 	u64 __subtree_last;
@@ -110,11 +111,38 @@ int ib_umem_odp_map_dma_pages(struct ib_umem *umem, u64 start_offset, u64 bcnt,
 
 void ib_umem_odp_unmap_dma_pages(struct ib_umem *umem, u64 start_offset,
 				 u64 bound);
+/*
+ * The ib_umem list keeps track of memory regions for which the HW
+ * device request to receive notification when the related memory
+ * mapping is changed.
+ *
+ * ib_umem_lock protects the list.
+ */
 
-void rbt_ib_umem_insert(struct umem_odp_node *node,
-			struct rb_root_cached *root);
-void rbt_ib_umem_remove(struct umem_odp_node *node,
-			struct rb_root_cached *root);
+static inline u64 node_start(struct umem_odp_node *n)
+{
+	struct ib_umem_odp *umem_odp =
+			container_of(n, struct ib_umem_odp, interval_tree);
+
+	return ib_umem_start(umem_odp->umem);
+}
+
+/* Note that the representation of the intervals in the interval tree
+ * considers the ending point as contained in the interval, while the
+ * function ib_umem_end returns the first address which is not contained
+ * in the umem.
+ */
+static inline u64 node_last(struct umem_odp_node *n)
+{
+	struct ib_umem_odp *umem_odp =
+			container_of(n, struct ib_umem_odp, interval_tree);
+
+	return ib_umem_end(umem_odp->umem) - 1;
+}
+
+INTERVAL_TREE_DEFINE(struct umem_odp_node, rb, u64, __subtree_last,
+		     node_start, node_last, static inline, rbt_ib_umem)
+
 typedef int (*umem_call_back)(struct ib_umem *item, u64 start, u64 end,
 			      void *cookie);
 /*

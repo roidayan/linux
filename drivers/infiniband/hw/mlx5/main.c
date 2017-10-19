@@ -601,6 +601,9 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 		return -EINVAL;
 
 	memset(props, 0, sizeof(*props));
+	props->max_counter_sets =
+			dev->counter_sets.max_counter_sets;
+
 	err = mlx5_query_system_image_guid(ibdev,
 					   &props->sys_image_guid);
 	if (err)
@@ -715,6 +718,9 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 	if (mlx5_get_flow_namespace(dev->mdev, MLX5_FLOW_NAMESPACE_BYPASS))
 		props->device_cap_flags |= IB_DEVICE_MANAGED_FLOW_STEERING;
 
+	if (MLX5_CAP_GEN(mdev, end_pad))
+		props->device_cap_flags |= IB_DEVICE_SCATTER_END_PADDING;
+
 	props->vendor_part_id	   = mdev->pdev->device;
 	props->hw_ver		   = mdev->pdev->revision;
 
@@ -787,6 +793,13 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 		props->tm_caps.max_sge = MLX5_TM_MAX_SGE;
 	}
 
+	if (MLX5_CAP_GEN(dev->mdev, cq_moderation)) {
+		props->cq_caps.max_cq_moderation_count =
+						MLX5_MAX_CQ_COUNT;
+		props->cq_caps.max_cq_moderation_period =
+						MLX5_MAX_CQ_PERIOD;
+	}
+
 	if (field_avail(typeof(resp), cqe_comp_caps, uhw->outlen)) {
 		resp.cqe_comp_caps.max_num =
 			MLX5_CAP_GEN(dev->mdev, cqe_compression) ?
@@ -824,8 +837,16 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 			sizeof(resp.mlx5_ib_support_multi_pkt_send_wqes);
 	}
 
-	if (field_avail(typeof(resp), reserved, uhw->outlen))
-		resp.response_length += sizeof(resp.reserved);
+	if (field_avail(typeof(resp), flags, uhw->outlen)) {
+		resp.response_length += sizeof(resp.flags);
+
+		if (MLX5_CAP_GEN(mdev, cqe_compression_128))
+			resp.flags |=
+				MLX5_IB_QUERY_DEV_RESP_FLAGS_CQE_128B_COMP;
+
+		if (MLX5_CAP_GEN(mdev, cqe_128_always))
+			resp.flags |= MLX5_IB_QUERY_DEV_RESP_FLAGS_CQE_128B_PAD;
+	}
 
 	if (field_avail(typeof(resp), sw_parsing_caps,
 			uhw->outlen)) {
@@ -846,6 +867,36 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 				resp.sw_parsing_caps.supported_qpts =
 					BIT(IB_QPT_RAW_PACKET);
 		}
+	}
+
+	if (field_avail(typeof(resp), striding_rq_caps, uhw->outlen)) {
+		resp.response_length += sizeof(resp.striding_rq_caps);
+		if (MLX5_CAP_GEN(mdev, striding_rq)) {
+			resp.striding_rq_caps.min_single_stride_log_num_of_bytes =
+				MLX5_MIN_SINGLE_STRIDE_LOG_NUM_BYTES;
+			resp.striding_rq_caps.max_single_stride_log_num_of_bytes =
+				MLX5_MAX_SINGLE_STRIDE_LOG_NUM_BYTES;
+			resp.striding_rq_caps.min_single_wqe_log_num_of_strides =
+				MLX5_MIN_SINGLE_WQE_LOG_NUM_STRIDES;
+			resp.striding_rq_caps.max_single_wqe_log_num_of_strides =
+				MLX5_MAX_SINGLE_WQE_LOG_NUM_STRIDES;
+			resp.striding_rq_caps.supported_qpts =
+				BIT(IB_QPT_RAW_PACKET);
+		}
+	}
+
+	if (field_avail(typeof(resp), tunnel_offloads_caps,
+			uhw->outlen)) {
+		resp.response_length += sizeof(resp.tunnel_offloads_caps);
+		if (MLX5_CAP_ETH(mdev, tunnel_stateless_vxlan))
+			resp.tunnel_offloads_caps |=
+				MLX5_IB_TUNNELED_OFFLOADS_VXLAN;
+		if (MLX5_CAP_ETH(mdev, tunnel_stateless_geneve_rx))
+			resp.tunnel_offloads_caps |=
+				MLX5_IB_TUNNELED_OFFLOADS_GENEVE;
+		if (MLX5_CAP_ETH(mdev, tunnel_stateless_gre))
+			resp.tunnel_offloads_caps |=
+				MLX5_IB_TUNNELED_OFFLOADS_GRE;
 	}
 
 	if (uhw->outlen) {
@@ -1883,6 +1934,16 @@ static void set_tos(void *outer_c, void *outer_v, u8 mask, u8 val)
 	MLX5_SET(fte_match_set_lyr_2_4, outer_v, ip_dscp, val >> 2);
 }
 
+static bool is_counter_set_valid(struct ib_counter_set *cs,
+				 enum ib_counter_set_type type)
+{
+	struct mlx5_ib_cs *mcs;
+
+	mcs = to_mcs(cs);
+
+	return (mcs->desc_cs->cs_desc.counted_type == type);
+}
+
 #define LAST_ETH_FIELD vlan_tag
 #define LAST_IB_FIELD sl
 #define LAST_IPV4_FIELD tos
@@ -1891,6 +1952,7 @@ static void set_tos(void *outer_c, void *outer_v, u8 mask, u8 val)
 #define LAST_TUNNEL_FIELD tunnel_id
 #define LAST_FLOW_TAG_FIELD tag_id
 #define LAST_DROP_FIELD size
+#define LAST_FLOW_COUNTER_FIELD counter_set
 
 /* Field is the last supported field */
 #define FIELDS_NOT_SUPPORTED(filter, field)\
@@ -1904,7 +1966,7 @@ static void set_tos(void *outer_c, void *outer_v, u8 mask, u8 val)
 #define IPV6_VERSION 6
 static int parse_flow_attr(struct mlx5_core_dev *mdev, u32 *match_c,
 			   u32 *match_v, const union ib_flow_spec *ib_spec,
-			   u32 *tag_id, bool *is_drop)
+			   struct mlx5_flow_act *action)
 {
 	void *misc_params_c = MLX5_ADDR_OF(fte_match_param, match_c,
 					   misc_parameters);
@@ -2122,13 +2184,23 @@ static int parse_flow_attr(struct mlx5_core_dev *mdev, u32 *match_c,
 		if (ib_spec->flow_tag.tag_id >= BIT(24))
 			return -EINVAL;
 
-		*tag_id = ib_spec->flow_tag.tag_id;
+		action->flow_tag = ib_spec->flow_tag.tag_id;
 		break;
 	case IB_FLOW_SPEC_ACTION_DROP:
 		if (FIELDS_NOT_SUPPORTED(ib_spec->drop,
 					 LAST_DROP_FIELD))
 			return -EOPNOTSUPP;
-		*is_drop = true;
+		action->action |= MLX5_FLOW_CONTEXT_ACTION_DROP;
+		break;
+	case IB_FLOW_SPEC_ACTION_COUNT:
+		if (FIELDS_NOT_SUPPORTED(ib_spec->flow_count,
+					 LAST_FLOW_COUNTER_FIELD))
+			return -EOPNOTSUPP;
+		action->counter_set = ib_spec->flow_count.counter_set;
+		if (!is_counter_set_valid(action->counter_set,
+					  IB_COUNTER_SET_FLOW))
+			return -EINVAL;
+		action->action |= MLX5_FLOW_CONTEXT_ACTION_COUNT;
 		break;
 	default:
 		return -EINVAL;
@@ -2381,15 +2453,16 @@ static struct mlx5_ib_flow_handler *_create_flow_rule(struct mlx5_ib_dev *dev,
 {
 	struct mlx5_flow_table	*ft = ft_prio->flow_table;
 	struct mlx5_ib_flow_handler *handler;
-	struct mlx5_flow_act flow_act = {0};
+	struct mlx5_flow_act flow_act = {.flow_tag = MLX5_FS_DEFAULT_FLOW_TAG,
+					 .counter_set = NULL};
 	struct mlx5_flow_spec *spec;
-	struct mlx5_flow_destination *rule_dst = dst;
+	struct mlx5_flow_destination dest_arr[2] = {};
+	struct mlx5_flow_destination *rule_dst = dest_arr;
+	struct mlx5_ib_cs *rcs;
 	const void *ib_flow = (const void *)flow_attr + sizeof(*flow_attr);
 	unsigned int spec_index;
-	u32 flow_tag = MLX5_FS_DEFAULT_FLOW_TAG;
-	bool is_drop = false;
 	int err = 0;
-	int dest_num = 1;
+	int dest_num = 0;
 
 	if (!is_valid_attr(dev->mdev, flow_attr))
 		return ERR_PTR(-EINVAL);
@@ -2402,11 +2475,15 @@ static struct mlx5_ib_flow_handler *_create_flow_rule(struct mlx5_ib_dev *dev,
 	}
 
 	INIT_LIST_HEAD(&handler->list);
+	if (dst) {
+		memcpy(&dest_arr[0], dst, sizeof(*dst));
+		dest_num++;
+	}
 
 	for (spec_index = 0; spec_index < flow_attr->num_of_specs; spec_index++) {
 		err = parse_flow_attr(dev->mdev, spec->match_criteria,
 				      spec->match_value,
-				      ib_flow, &flow_tag, &is_drop);
+				      ib_flow, &flow_act);
 		if (err < 0)
 			goto free;
 
@@ -2417,24 +2494,35 @@ static struct mlx5_ib_flow_handler *_create_flow_rule(struct mlx5_ib_dev *dev,
 		set_underlay_qp(dev, spec, underlay_qpn);
 
 	spec->match_criteria_enable = get_match_criteria_enable(spec->match_criteria);
-	if (is_drop) {
-		flow_act.action = MLX5_FLOW_CONTEXT_ACTION_DROP;
-		rule_dst = NULL;
-		dest_num = 0;
-	} else {
-		flow_act.action = dst ? MLX5_FLOW_CONTEXT_ACTION_FWD_DEST :
-		    MLX5_FLOW_CONTEXT_ACTION_FWD_NEXT_PRIO;
+	if (!(flow_act.action & MLX5_FLOW_CONTEXT_ACTION_DROP)) {
+		if (dst) {
+			flow_act.action = MLX5_FLOW_CONTEXT_ACTION_FWD_DEST;
+		} else {
+			flow_act.action = MLX5_FLOW_CONTEXT_ACTION_FWD_NEXT_PRIO;
+			rule_dst = NULL;
+		}
 	}
 
-	if (flow_tag != MLX5_FS_DEFAULT_FLOW_TAG &&
+	if (rule_dst && flow_act.counter_set) {
+		rcs = to_mcs(flow_act.counter_set);
+		dest_arr[dest_num].type =
+				MLX5_FLOW_DESTINATION_TYPE_COUNTER;
+		dest_arr[dest_num].counter =
+				(struct mlx5_fc *)(rcs->hw_cs_handle);
+		dest_num++;
+		handler->ibflow.counter_set =
+				flow_act.counter_set;
+		flow_act.action |= MLX5_FLOW_CONTEXT_ACTION_COUNT;
+	}
+
+	if (flow_act.flow_tag != MLX5_FS_DEFAULT_FLOW_TAG &&
 	    (flow_attr->type == IB_FLOW_ATTR_ALL_DEFAULT ||
 	     flow_attr->type == IB_FLOW_ATTR_MC_DEFAULT)) {
 		mlx5_ib_warn(dev, "Flow tag %u and attribute type %x isn't allowed in leftovers\n",
-			     flow_tag, flow_attr->type);
+			     flow_act.flow_tag, flow_attr->type);
 		err = -EINVAL;
 		goto free;
 	}
-	flow_act.flow_tag = flow_tag;
 	handler->rule = mlx5_add_flow_rules(ft, spec,
 					    &flow_act,
 					    rule_dst, dest_num);
@@ -3897,6 +3985,273 @@ mlx5_ib_get_vector_affinity(struct ib_device *ibdev, int comp_vector)
 	struct mlx5_ib_dev *dev = to_mdev(ibdev);
 
 	return mlx5_get_vector_affinity(dev->mdev, comp_vector);
+};
+
+static int mlx5_ib_describe_counter_set(struct ib_device *ib_dev,
+					u16	cs_id,
+					struct ib_counter_set_describe_attr *cs_describe_attr,
+					struct ib_udata *udata)
+{
+	struct mlx5_ib_describe_counter_set_resp resp = {};
+	struct ib_counter_set_describe_attr *ib_cs_desc;
+	struct mlx5_ib_dev *dev = to_mdev(ib_dev);
+	struct mlx5_desc_cs_attr *desc_cs;
+	size_t min_resp_len;
+
+	if (udata && udata->inlen > 0 &&
+	    !ib_is_udata_cleared(udata, 0,
+				 udata->inlen))
+		return -EINVAL;
+
+	min_resp_len = offsetof(typeof(resp), reserved) + sizeof(resp.reserved);
+	if (udata && udata->outlen && udata->outlen < min_resp_len)
+		return -EINVAL;
+
+	if (cs_id >= dev->counter_sets.max_counter_sets)
+		return -EINVAL;
+
+	desc_cs = &dev->counter_sets.desc_cs_arr[cs_id];
+	ib_cs_desc = &desc_cs->cs_desc;
+	if (cs_describe_attr->counters_names_buff) {
+		if (cs_describe_attr->counters_names_len <
+				ib_cs_desc->counters_names_len)
+			return -EINVAL;
+
+		desc_cs->fill_counters_names(cs_describe_attr->counters_names_buff);
+	}
+
+	cs_describe_attr->counted_type = ib_cs_desc->counted_type;
+	cs_describe_attr->num_of_cs = ib_cs_desc->num_of_cs;
+	cs_describe_attr->attributes = ib_cs_desc->attributes;
+	cs_describe_attr->entries_count = ib_cs_desc->entries_count;
+	if (udata && udata->outlen) {
+		resp.response_length = offsetof(typeof(resp), response_length) +
+					sizeof(resp.response_length);
+		return ib_copy_to_udata(udata, &resp, resp.response_length);
+	}
+
+	return 0;
+}
+
+static int query_flow_counter_set(struct ib_device *ibdev,
+				  struct mlx5_query_count_attr *query_attr)
+{
+	struct mlx5_fc *fc = (struct mlx5_fc *)(query_attr->hw_cs_handle);
+	struct mlx5_ib_dev *dev = to_mdev(ibdev);
+	int ret = 0;
+	u64 last_used;
+
+	if (query_attr->query_flags & IB_COUNTER_SET_FORCE_UPDATE) {
+		ret = mlx5_cmd_fc_query(dev->mdev,
+					fc->id,
+					&query_attr->out[0],
+					&query_attr->out[1]);
+	} else {
+		mlx5_fc_query_cached(fc, &query_attr->out[1],
+				     &query_attr->out[0],
+				     &last_used,
+				     MLX5_FLOW_QUERY_CACHED_ABS);
+	}
+	return ret;
+}
+
+static int mlx5_ib_destroy_counter_set(struct ib_counter_set *cs)
+{
+	struct mlx5_ib_dev *dev = to_mdev(cs->device);
+	struct mlx5_ib_cs *mcs = to_mcs(cs);
+
+	mlx5_fc_destroy(dev->mdev,
+			(struct mlx5_fc *)(mcs->hw_cs_handle));
+	kfree(mcs);
+
+	return 0;
+}
+
+static struct ib_counter_set *mlx5_ib_create_counter_set(
+		struct ib_device *device,
+		u16 cs_id,
+		struct ib_udata *udata)
+{
+	struct mlx5_ib_create_counter_set_resp resp = {};
+	struct mlx5_fc *flow_count;
+	struct mlx5_ib_dev *dev;
+	struct mlx5_ib_cs *mcs;
+	size_t min_resp_len;
+	int err;
+
+	if (udata && udata->inlen > 0 &&
+	    !ib_is_udata_cleared(udata, 0,
+				 udata->inlen))
+		return ERR_PTR(-EINVAL);
+
+	min_resp_len = offsetof(typeof(resp), reserved) + sizeof(resp.reserved);
+	if (udata && udata->outlen && udata->outlen < min_resp_len)
+		return ERR_PTR(-EINVAL);
+
+	dev = to_mdev(device);
+	if (cs_id >= dev->counter_sets.max_counter_sets)
+		return ERR_PTR(-EINVAL);
+
+	mcs = kzalloc(sizeof(*mcs), GFP_KERNEL);
+	if (!mcs)
+		return ERR_PTR(-ENOMEM);
+
+	mcs->desc_cs = &dev->counter_sets.desc_cs_arr[cs_id];
+	switch (mcs->desc_cs->cs_desc.counted_type) {
+	case IB_COUNTER_SET_FLOW:
+		mcs->query_count = query_flow_counter_set;
+		flow_count = mlx5_fc_create(dev->mdev, true);
+		if (IS_ERR(flow_count)) {
+			kfree(mcs);
+			return ERR_CAST(flow_count);
+		}
+		mcs->hw_cs_handle = (void *)flow_count;
+		break;
+	default:
+		mlx5_ib_dbg(dev, "unsupported counter set type %d\n",
+			    mcs->desc_cs->cs_desc.counted_type);
+		err = -EINVAL;
+		goto err_get_counter;
+	}
+
+	if (udata && udata->outlen) {
+		resp.response_length = offsetof(typeof(resp), response_length) +
+					sizeof(resp.response_length);
+		err = ib_copy_to_udata(udata, &resp, resp.response_length);
+		if (err)
+			goto err_get_counter;
+	}
+
+	return &mcs->ibcs;
+
+err_get_counter:
+	mlx5_ib_destroy_counter_set(&mcs->ibcs);
+	return ERR_PTR(err);
+}
+
+static int mlx5_ib_query_counter_set(struct ib_counter_set *cs,
+				     struct ib_counter_set_query_attr *cs_query_attr,
+				     struct ib_udata *udata)
+{
+	struct mlx5_query_count_attr query_attr = {};
+	struct mlx5_ib_query_counter_set_resp resp = {};
+	struct mlx5_ib_cs *mcs = to_mcs(cs);
+	size_t	required_buff_len;
+	size_t min_resp_len;
+	int ret;
+
+	if (udata && udata->inlen > 0 &&
+	    !ib_is_udata_cleared(udata, 0,
+				 udata->inlen))
+		return -EINVAL;
+
+	min_resp_len = offsetof(typeof(resp), reserved) + sizeof(resp.reserved);
+	if (udata && udata->outlen && udata->outlen < min_resp_len)
+		return -EINVAL;
+
+	required_buff_len = mcs->desc_cs->cs_desc.entries_count * sizeof(u64);
+	if (required_buff_len > cs_query_attr->buff_len)
+		return -EINVAL;
+
+	cs_query_attr->outlen = required_buff_len;
+	query_attr.out = cs_query_attr->out_buff;
+	query_attr.hw_cs_handle = mcs->hw_cs_handle;
+	query_attr.query_flags =
+			cs_query_attr->query_flags;
+	ret = mcs->query_count(cs->device, &query_attr);
+	if (udata && udata->outlen) {
+		resp.response_length = offsetof(typeof(resp), response_length) +
+					sizeof(resp.response_length);
+		ret = ib_copy_to_udata(udata, &resp, resp.response_length);
+	}
+
+	return ret;
+}
+
+struct mlx5_ib_flow_counter {
+	size_t offset;
+	const char *name;
+};
+
+#define INIT_COUNTER(_struct, _name)\
+	{ .name = #_name, .offset = MLX5_BYTE_OFF(_struct, _name)}
+
+static const struct mlx5_ib_flow_counter basic_flow_cnts[] = {
+	INIT_COUNTER(traffic_counter, packets),
+	INIT_COUNTER(traffic_counter, octets),
+};
+
+static void fill_counters_names_flow(char *names_buff)
+{
+	u32 basic_flow_size = ARRAY_SIZE(basic_flow_cnts);
+	int i;
+
+	for (i = 0; i < basic_flow_size; i++) {
+		strlcpy(names_buff, basic_flow_cnts[i].name,
+			IB_COUNTER_NAME_LEN - 1);
+		names_buff += IB_COUNTER_NAME_LEN;
+	}
+}
+
+static int mlx5_ib_init_flow_counter_entry(struct mlx5_ib_dev *dev,
+					   struct mlx5_desc_cs_attr *desc_cs)
+{
+	u32 basic_flow_size = ARRAY_SIZE(basic_flow_cnts);
+	struct ib_counter_set_describe_attr *ib_cs_desc;
+
+	ib_cs_desc = &desc_cs->cs_desc;
+	ib_cs_desc->counted_type = IB_COUNTER_SET_FLOW;
+	ib_cs_desc->num_of_cs =
+			1 << MLX5_CAP_GEN(dev->mdev, log_max_flow_counter_bulk);
+	ib_cs_desc->entries_count = basic_flow_size;
+	ib_cs_desc->attributes = IB_COUNTER_SET_ATTR_CACHED;
+	ib_cs_desc->counters_names_len = basic_flow_size * IB_COUNTER_NAME_LEN;
+	desc_cs->fill_counters_names = fill_counters_names_flow;
+
+	return 0;
+}
+
+static int alloc_ib_counter_sets(struct mlx5_ib_dev *dev)
+{
+	struct mlx5_ib_counter_sets *ib_css = &dev->counter_sets;
+	u32 num_of_css = 0;
+	u32 ret;
+
+	ib_css->max_counter_sets = 0;
+	/* flow counters support */
+	ib_css->max_counter_sets +=
+		(mlx5_ib_port_link_layer(&dev->ib_dev, 1)
+				== IB_LINK_LAYER_ETHERNET);
+
+	if (!ib_css->max_counter_sets)
+		return 0;
+
+	/* alloc counter sets array  */
+	ib_css->desc_cs_arr =
+		kcalloc(ib_css->max_counter_sets,
+			sizeof(struct mlx5_desc_cs_attr),
+			GFP_KERNEL);
+	if (!ib_css->desc_cs_arr) {
+		ret = -ENOMEM;
+		goto err_no_cs;
+	}
+
+	ret = mlx5_ib_init_flow_counter_entry(dev,
+					      &ib_css->desc_cs_arr[num_of_css++]);
+	if (ret)
+		goto err_init_flow_counter_entry;
+
+	return 0;
+
+err_init_flow_counter_entry:
+	kfree(ib_css->desc_cs_arr);
+err_no_cs:
+	return ret;
+}
+
+static void dealloc_ib_counter_sets(struct mlx5_ib_dev *dev)
+{
+	kfree(dev->counter_sets.desc_cs_arr);
 }
 
 static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
@@ -3979,7 +4334,12 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 		(1ull << IB_USER_VERBS_EX_CMD_QUERY_DEVICE)	|
 		(1ull << IB_USER_VERBS_EX_CMD_CREATE_CQ)	|
 		(1ull << IB_USER_VERBS_EX_CMD_CREATE_QP)	|
-		(1ull << IB_USER_VERBS_EX_CMD_MODIFY_QP);
+		(1ull << IB_USER_VERBS_EX_CMD_MODIFY_QP)	|
+		(1ull << IB_USER_VERBS_EX_CMD_MODIFY_CQ)	|
+		(1ull << IB_USER_VERBS_EX_CMD_CREATE_COUNTER_SET)	|
+		(1ull << IB_USER_VERBS_EX_CMD_DESTROY_COUNTER_SET)	|
+		(1ull << IB_USER_VERBS_EX_CMD_QUERY_COUNTER_SET)	|
+		(1ull << IB_USER_VERBS_EX_CMD_DESCRIBE_COUNTER_SET);
 
 	dev->ib_dev.query_device	= mlx5_ib_query_device;
 	dev->ib_dev.query_port		= mlx5_ib_query_port;
@@ -4032,6 +4392,10 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 	dev->ib_dev.get_vector_affinity	= mlx5_ib_get_vector_affinity;
 	if (MLX5_CAP_GEN(mdev, ipoib_enhanced_offloads))
 		dev->ib_dev.alloc_rdma_netdev	= mlx5_ib_alloc_rdma_netdev;
+	dev->ib_dev.create_counter_set  = mlx5_ib_create_counter_set;
+	dev->ib_dev.destroy_counter_set = mlx5_ib_destroy_counter_set;
+	dev->ib_dev.query_counter_set   = mlx5_ib_query_counter_set;
+	dev->ib_dev.describe_counter_set = mlx5_ib_describe_counter_set;
 
 	if (mlx5_core_is_pf(mdev)) {
 		dev->ib_dev.get_vf_config	= mlx5_ib_get_vf_config;
@@ -4150,6 +4514,10 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 			goto err_delay_drop;
 	}
 
+	err = alloc_ib_counter_sets(dev);
+	if (err)
+		goto err_create_file;
+
 	if ((MLX5_CAP_GEN(mdev, port_type) == MLX5_CAP_PORT_TYPE_ETH) &&
 	    MLX5_CAP_GEN(mdev, disable_local_lb))
 		mutex_init(&dev->lb_mutex);
@@ -4157,6 +4525,10 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 	dev->ib_active = true;
 
 	return dev;
+
+err_create_file:
+	device_remove_file(&dev->ib_dev.dev,
+			   mlx5_class_attributes[i]);
 
 err_delay_drop:
 	cancel_delay_drop(dev);
@@ -4216,6 +4588,7 @@ static void mlx5_ib_remove(struct mlx5_core_dev *mdev, void *context)
 	if (MLX5_CAP_GEN(dev->mdev, max_qp_cnt))
 		mlx5_ib_dealloc_counters(dev);
 	destroy_umrc_res(dev);
+	dealloc_ib_counter_sets(dev);
 	mlx5_ib_odp_remove_one(dev);
 	destroy_dev_resources(&dev->devr);
 	if (ll == IB_LINK_LAYER_ETHERNET)
