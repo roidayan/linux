@@ -649,6 +649,18 @@ struct mlx5_core_dev *mlx5_lag_get_peer_mdev(struct mlx5_core_dev *dev)
 	return ldev->pf[0].dev == dev ? ldev->pf[1].dev : ldev->pf[0].dev;
 }
 
+struct net_device *mlx5_lag_get_peer_netdev(struct mlx5_core_dev *dev)
+{
+	struct mlx5_lag *ldev;
+
+	ldev = mlx5_lag_dev_get(dev);
+
+	if (!ldev)
+		return NULL;
+
+	return ldev->pf[0].dev == dev ? ldev->pf[1].netdev : ldev->pf[0].netdev;
+}
+
 int mlx5_lag_activate_multipath(struct mlx5_core_dev *dev)
 {
 	struct mlx5_lag *ldev = mlx5_lag_dev_get(dev);
