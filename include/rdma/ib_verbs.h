@@ -65,6 +65,7 @@
 #include <uapi/rdma/ib_user_verbs.h>
 #include <rdma/restrack.h>
 #include <uapi/rdma/rdma_user_ioctl.h>
+#include <uapi/rdma/ib_user_ioctl_verbs.h>
 
 #define IB_FW_VERSION_NAME_MAX	ETHTOOL_FWVERS_LEN
 
@@ -1990,6 +1991,94 @@ struct ib_flow {
 	struct ib_uobject	*uobject;
 };
 
+enum ib_flow_action_type {
+	IB_FLOW_ACTION_UNSPECIFIED,
+	IB_FLOW_ACTION_ESP = 1,
+};
+
+/* We align this struct to u64 as right after this structure we put the keymat
+ * data itself. Since we copy data to this part of the struct via
+ * ret = _uverbs_copy_from_or_zero(&esp_attr->keymat.keymat + 1,
+ *				   attrs,
+ *				   UVERBS_ATTR_FLOW_ACTION_ESP_KEYMAT,
+ *				   sizeof(esp_attr->keymat));
+ * Since the structures after the keymat could have different alignment
+ * requirements, we chose to align the header. This way, we guarantee that all
+ * the structures that come right after would be aligned properly.
+ */
+struct ib_flow_action_attrs_esp_keymat {
+	enum ib_uverbs_flow_action_esp_keymat		protocol;
+} __aligned(__alignof__(u64));
+
+struct ib_flow_action_attrs_esp_keymat_aes_gcm {
+	struct ib_flow_action_attrs_esp_keymat			keymat;
+	struct ib_uverbs_flow_action_esp_keymat_aes_gcm		attrs;
+};
+
+union ib_flow_action_attrs_esp_keymats {
+	struct ib_flow_action_attrs_esp_keymat		keymat;
+	struct ib_flow_action_attrs_esp_keymat_aes_gcm	aes_gcm;
+};
+
+/* see __aligned explanation in the keymat section */
+struct ib_flow_action_attrs_esp_replay {
+	enum ib_uverbs_flow_action_esp_replay		protocol;
+} __aligned(__alignof__(u64));
+
+struct ib_flow_action_attrs_esp_replay_bmp {
+	struct ib_flow_action_attrs_esp_replay		replay;
+	struct ib_uverbs_flow_action_esp_replay_bmp	attrs;
+};
+
+union ib_flow_action_attrs_esp_replays {
+	struct ib_flow_action_attrs_esp_replay		replay;
+	struct ib_flow_action_attrs_esp_replay_bmp	bmp;
+};
+
+enum ib_flow_action_attrs_esp_flags {
+	/* All user-space flags at the top: Use enum ib_uverbs_flow_action_esp_flags
+	 * This is done in order to share the same flags between user-space and
+	 * kernel and spare an unnecessary translation.
+	 */
+
+	/* Kernel flags */
+	IB_FLOW_ACTION_ESP_FLAGS_ESN_TRIGGERED	= 1ULL << 32,
+};
+
+struct ib_flow_spec_list {
+	struct ib_flow_spec_list	*next;
+	union ib_flow_spec		spec;
+};
+
+struct ib_flow_action_attrs_esp {
+	/* Pointer to esp_keymat struct. Use container_of to get the actual
+	 * keymat.
+	 */
+	struct ib_flow_action_attrs_esp_keymat		*keymat;
+	/* Pointer to esp_replay struct. Use contaienr_of to get the actual
+	 * replay.
+	 */
+	struct ib_flow_action_attrs_esp_replay		*replay;
+	struct ib_flow_spec_list			*encap;
+	/* Used only if IB_FLOW_ACTION_ESP_FLAGS_ESN_TRIGGERED is enabled.
+	 * Value of 0 is a valid value.
+	 */
+	u32						esn;
+	u32						spi;
+	u32						seq;
+	u32						tfc_pad;
+	/* Use enum ib_flow_action_attrs_esp_flags */
+	u64						flags;
+	u64						hard_limit_pkts;
+};
+
+struct ib_flow_action {
+	struct ib_device		*device;
+	struct ib_uobject		*uobject;
+	enum ib_flow_action_type	type;
+	atomic_t			usecnt;
+};
+
 struct ib_mad_hdr;
 struct ib_grh;
 
@@ -2065,6 +2154,8 @@ struct ib_port_pkey_list {
 	spinlock_t                    list_lock;
 	struct list_head              pkey_list;
 };
+
+struct uverbs_attr_bundle;
 
 struct ib_device {
 	/* Do not access @dma_device directly from ULP nor from HW drivers. */
@@ -2321,6 +2412,11 @@ struct ib_device {
 							   struct ib_rwq_ind_table_init_attr *init_attr,
 							   struct ib_udata *udata);
 	int                        (*destroy_rwq_ind_table)(struct ib_rwq_ind_table *wq_ind_table);
+	struct ib_flow_action *	   (*create_flow_action_esp)(struct ib_device *device,
+							     const struct ib_flow_action_attrs_esp *attr,
+							     struct uverbs_attr_bundle *attrs);
+	int			   (*destroy_flow_action)(struct ib_flow_action *action);
+
 	/**
 	 * rdma netdev operation
 	 *
