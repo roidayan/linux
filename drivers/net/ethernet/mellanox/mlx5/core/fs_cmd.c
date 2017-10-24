@@ -424,6 +424,7 @@ int mlx5_cmd_fc_query(struct mlx5_core_dev *dev, u32 id,
 	*bytes = MLX5_GET64(traffic_counter, stats, octets);
 	return 0;
 }
+EXPORT_SYMBOL(mlx5_cmd_fc_query);
 
 struct mlx5_cmd_fc_bulk {
 	u32 id;
