@@ -3988,6 +3988,11 @@ static int mlx5_ib_stage_init_init(struct mlx5_ib_dev *dev)
 		dev->mdev->priv.eq_table.num_comp_vectors;
 	dev->ib_dev.dev.parent		= &mdev->pdev->dev;
 
+	mutex_init(&dev->flow_db.lock);
+	mutex_init(&dev->cap_mask_mutex);
+	INIT_LIST_HEAD(&dev->qp_list);
+	spin_lock_init(&dev->reset_flow_resource_lock);
+
 	return 0;
 
 err_free_port:
@@ -4122,11 +4127,6 @@ static int mlx5_ib_stage_caps_init(struct mlx5_ib_dev *dev)
 	err = init_node_data(dev);
 	if (err)
 		return err;
-
-	mutex_init(&dev->flow_db.lock);
-	mutex_init(&dev->cap_mask_mutex);
-	INIT_LIST_HEAD(&dev->qp_list);
-	spin_lock_init(&dev->reset_flow_resource_lock);
 
 	if ((MLX5_CAP_GEN(dev->mdev, port_type) == MLX5_CAP_PORT_TYPE_ETH) &&
 	    MLX5_CAP_GEN(dev->mdev, disable_local_lb))
