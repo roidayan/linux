@@ -735,6 +735,18 @@ struct mlx5_ib_profile {
 	struct mlx5_ib_stage stage[MLX5_IB_STAGE_MAX];
 };
 
+struct mlx5_ib_odp {
+	struct ib_odp_caps	caps;
+	u64			max_size;
+	/*
+	 * Sleepable RCU that prevents destruction of MRs while they are still
+	 * being used by a page fault handler.
+	 */
+	struct srcu_struct      mr_srcu;
+	u32			null_mkey;
+	void			(*sync)(struct mlx5_ib_dev *dev);
+};
+
 struct mlx5_ib_dev {
 	struct ib_device		ib_dev;
 	struct mlx5_core_dev		*mdev;
@@ -754,14 +766,7 @@ struct mlx5_ib_dev {
 	struct mutex			slow_path_mutex;
 	int				fill_delay;
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
-	struct ib_odp_caps	odp_caps;
-	u64			odp_max_size;
-	/*
-	 * Sleepable RCU that prevents destruction of MRs while they are still
-	 * being used by a page fault handler.
-	 */
-	struct srcu_struct      mr_srcu;
-	u32			null_mkey;
+	struct mlx5_ib_odp		odp;
 #endif
 	struct mlx5_ib_flow_db	flow_db;
 	/* protect resources needed as part of reset flow */
