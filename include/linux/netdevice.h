@@ -55,7 +55,7 @@
 struct netpoll_info;
 struct device;
 struct phy_device;
-struct dsa_switch_tree;
+struct dsa_port;
 
 /* 802.11 specific */
 struct wireless_dev;
@@ -775,6 +775,8 @@ enum tc_setup_type {
 	TC_SETUP_CLSFLOWER,
 	TC_SETUP_CLSMATCHALL,
 	TC_SETUP_CLSBPF,
+	TC_SETUP_BLOCK,
+	TC_SETUP_CBS,
 };
 
 /* These structures hold the attributes of xdp state that are being passed
@@ -825,6 +827,11 @@ struct xfrmdev_ops {
 				       struct xfrm_state *x);
 };
 #endif
+
+struct dev_ifalias {
+	struct rcu_head rcuhead;
+	char ifalias[];
+};
 
 /*
  * This structure defines the management hooks for network devices.
@@ -1241,7 +1248,8 @@ struct net_device_ops {
 						     u32 flow_id);
 #endif
 	int			(*ndo_add_slave)(struct net_device *dev,
-						 struct net_device *slave_dev);
+						 struct net_device *slave_dev,
+						 struct netlink_ext_ack *extack);
 	int			(*ndo_del_slave)(struct net_device *dev,
 						 struct net_device *slave_dev);
 	netdev_features_t	(*ndo_fix_features)(struct net_device *dev,
@@ -1551,6 +1559,8 @@ enum netdev_priv_flags {
  *
  *	@rx_handler:		handler for received packets
  *	@rx_handler_data: 	XXX: need comments on this one
+ *	@miniq_ingress:		ingress/clsact qdisc specific data for
+ *				ingress processing
  *	@ingress_queue:		XXX: need comments on this one
  *	@broadcast:		hw bcast address
  *
@@ -1568,7 +1578,8 @@ enum netdev_priv_flags {
  *	@tx_global_lock: 	XXX: need comments on this one
  *
  *	@xps_maps:	XXX: need comments on this one
- *
+ *	@miniq_egress:		clsact qdisc specific data for
+ *				egress processing
  *	@watchdog_timeo:	Represents the timeout that is used by
  *				the watchdog (see dev_watchdog())
  *	@watchdog_timer:	List of timers
@@ -1632,7 +1643,7 @@ enum netdev_priv_flags {
 struct net_device {
 	char			name[IFNAMSIZ];
 	struct hlist_node	name_hlist;
-	char 			*ifalias;
+	struct dev_ifalias	__rcu *ifalias;
 	/*
 	 *	I/O specific fields
 	 *	FIXME: Merge these and struct ifmap into one
@@ -1752,7 +1763,7 @@ struct net_device {
 	struct vlan_info __rcu	*vlan_info;
 #endif
 #if IS_ENABLED(CONFIG_NET_DSA)
-	struct dsa_switch_tree	*dsa_ptr;
+	struct dsa_port		*dsa_ptr;
 #endif
 #if IS_ENABLED(CONFIG_TIPC)
 	struct tipc_bearer __rcu *tipc_ptr;
@@ -1787,7 +1798,7 @@ struct net_device {
 	void __rcu		*rx_handler_data;
 
 #ifdef CONFIG_NET_CLS_ACT
-	struct tcf_proto __rcu  *ingress_cl_list;
+	struct mini_Qdisc __rcu	*miniq_ingress;
 #endif
 	struct netdev_queue __rcu *ingress_queue;
 #ifdef CONFIG_NETFILTER_INGRESS
@@ -1818,7 +1829,7 @@ struct net_device {
 	struct xps_dev_maps __rcu *xps_maps;
 #endif
 #ifdef CONFIG_NET_CLS_ACT
-	struct tcf_proto __rcu  *egress_cl_list;
+	struct mini_Qdisc __rcu	*miniq_egress;
 #endif
 
 	/* These may be needed for future network-power-down code. */
@@ -2304,7 +2315,8 @@ int register_netdevice_notifier(struct notifier_block *nb);
 int unregister_netdevice_notifier(struct notifier_block *nb);
 
 struct netdev_notifier_info {
-	struct net_device *dev;
+	struct net_device	*dev;
+	struct netlink_ext_ack	*extack;
 };
 
 struct netdev_notifier_change_info {
@@ -2329,12 +2341,19 @@ static inline void netdev_notifier_info_init(struct netdev_notifier_info *info,
 					     struct net_device *dev)
 {
 	info->dev = dev;
+	info->extack = NULL;
 }
 
 static inline struct net_device *
 netdev_notifier_info_to_dev(const struct netdev_notifier_info *info)
 {
 	return info->dev;
+}
+
+static inline struct netlink_ext_ack *
+netdev_notifier_info_to_extack(const struct netdev_notifier_info *info)
+{
+	return info->extack;
 }
 
 int call_netdevice_notifiers(unsigned long val, struct net_device *dev);
@@ -3246,6 +3265,7 @@ int do_xdp_generic(struct bpf_prog *xdp_prog, struct sk_buff *skb);
 int netif_rx(struct sk_buff *skb);
 int netif_rx_ni(struct sk_buff *skb);
 int netif_receive_skb(struct sk_buff *skb);
+int netif_receive_skb_core(struct sk_buff *skb);
 gro_result_t napi_gro_receive(struct napi_struct *napi, struct sk_buff *skb);
 void napi_gro_flush(struct napi_struct *napi, bool flush_old);
 struct sk_buff *napi_get_frags(struct napi_struct *napi);
@@ -3275,6 +3295,7 @@ void __dev_notify_flags(struct net_device *, unsigned int old_flags,
 			unsigned int gchanges);
 int dev_change_name(struct net_device *, const char *);
 int dev_set_alias(struct net_device *, const char *, size_t);
+int dev_get_alias(const struct net_device *, char *, size_t);
 int dev_change_net_namespace(struct net_device *, struct net *, const char *);
 int __dev_set_mtu(struct net_device *, int);
 int dev_set_mtu(struct net_device *, int);
@@ -3907,10 +3928,12 @@ void *netdev_adjacent_get_private(struct list_head *adj_list);
 void *netdev_lower_get_first_private_rcu(struct net_device *dev);
 struct net_device *netdev_master_upper_dev_get(struct net_device *dev);
 struct net_device *netdev_master_upper_dev_get_rcu(struct net_device *dev);
-int netdev_upper_dev_link(struct net_device *dev, struct net_device *upper_dev);
+int netdev_upper_dev_link(struct net_device *dev, struct net_device *upper_dev,
+			  struct netlink_ext_ack *extack);
 int netdev_master_upper_dev_link(struct net_device *dev,
 				 struct net_device *upper_dev,
-				 void *upper_priv, void *upper_info);
+				 void *upper_priv, void *upper_info,
+				 struct netlink_ext_ack *extack);
 void netdev_upper_dev_unlink(struct net_device *dev,
 			     struct net_device *upper_dev);
 void netdev_adjacent_rename_links(struct net_device *dev, char *oldname);
@@ -4297,6 +4320,31 @@ void netdev_notice(const struct net_device *dev, const char *format, ...);
 __printf(2, 3)
 void netdev_info(const struct net_device *dev, const char *format, ...);
 
+#define netdev_level_once(level, dev, fmt, ...)			\
+do {								\
+	static bool __print_once __read_mostly;			\
+								\
+	if (!__print_once) {					\
+		__print_once = true;				\
+		netdev_printk(level, dev, fmt, ##__VA_ARGS__);	\
+	}							\
+} while (0)
+
+#define netdev_emerg_once(dev, fmt, ...) \
+	netdev_level_once(KERN_EMERG, dev, fmt, ##__VA_ARGS__)
+#define netdev_alert_once(dev, fmt, ...) \
+	netdev_level_once(KERN_ALERT, dev, fmt, ##__VA_ARGS__)
+#define netdev_crit_once(dev, fmt, ...) \
+	netdev_level_once(KERN_CRIT, dev, fmt, ##__VA_ARGS__)
+#define netdev_err_once(dev, fmt, ...) \
+	netdev_level_once(KERN_ERR, dev, fmt, ##__VA_ARGS__)
+#define netdev_warn_once(dev, fmt, ...) \
+	netdev_level_once(KERN_WARNING, dev, fmt, ##__VA_ARGS__)
+#define netdev_notice_once(dev, fmt, ...) \
+	netdev_level_once(KERN_NOTICE, dev, fmt, ##__VA_ARGS__)
+#define netdev_info_once(dev, fmt, ...) \
+	netdev_level_once(KERN_INFO, dev, fmt, ##__VA_ARGS__)
+
 #define MODULE_ALIAS_NETDEV(device) \
 	MODULE_ALIAS("netdev-" device)
 
@@ -4336,6 +4384,10 @@ do {								\
 #define netdev_WARN(dev, format, args...)			\
 	WARN(1, "netdevice: %s%s\n" format, netdev_name(dev),	\
 	     netdev_reg_state(dev), ##args)
+
+#define netdev_WARN_ONCE(dev, condition, format, arg...)		\
+	WARN_ONCE(1, "netdevice: %s%s\n" format, netdev_name(dev)	\
+		  netdev_reg_state(dev), ##args)
 
 /* netif printk helpers, similar to netdev_printk */
 
