@@ -1709,20 +1709,14 @@ static int mlx5e_route_lookup_ipv4(struct mlx5e_priv *priv,
 	struct neighbour *n = NULL;
 
 #if IS_ENABLED(CONFIG_INET)
-	int ret;
-
+	*out_dev = mlx5_eswitch_get_uplink_netdev(esw);
+	fl4->flowi4_oif = (*out_dev)->ifindex;
 	rt = ip_route_output_key(dev_net(mirred_dev), fl4);
-	ret = PTR_ERR_OR_ZERO(rt);
-	if (ret)
-		return ret;
+	if (IS_ERR(rt))
+		return PTR_ERR(rt);
 #else
 	return -EOPNOTSUPP;
 #endif
-	/* if the egress device isn't on the same HW e-switch, we use the uplink */
-	if (!switchdev_port_same_parent_id(priv->netdev, rt->dst.dev, SWITCHDEV_F_NO_RECURSE))
-		*out_dev = mlx5_eswitch_get_uplink_netdev(esw);
-	else
-		*out_dev = rt->dst.dev;
 
 	*out_ttl = ip4_dst_hoplimit(&rt->dst);
 	n = dst_neigh_lookup(&rt->dst, &fl4->daddr);
