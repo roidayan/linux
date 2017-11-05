@@ -269,7 +269,7 @@ static void mlx5_do_bond(struct mlx5_lag *ldev)
 
 		mlx5_add_dev_by_protocol(dev0, MLX5_INTERFACE_PROTOCOL_IB);
 		mlx5_nic_vport_enable_roce(dev1);
-	} else if (do_bond && mlx5_lag_is_bonded(ldev)) {
+	} else if ((do_bond && mlx5_lag_is_bonded(ldev)) || mlx5_lag_is_multipath(dev0)) {
 		mlx5_modify_lag(ldev, &tracker);
 	} else if (!do_bond && mlx5_lag_is_bonded(ldev)) {
 		mlx5_remove_dev_by_protocol(dev0, MLX5_INTERFACE_PROTOCOL_IB);
@@ -399,17 +399,29 @@ static int mlx5_lag_netdev_event(struct notifier_block *this,
 	struct lag_tracker tracker;
 	struct mlx5_lag *ldev;
 	int changed = 0;
+	int port;
 
 	if (!net_eq(dev_net(ndev), &init_net))
 		return NOTIFY_DONE;
 
-	if ((event != NETDEV_CHANGEUPPER) && (event != NETDEV_CHANGELOWERSTATE))
-		return NOTIFY_DONE;
-
 	ldev    = container_of(this, struct mlx5_lag, nb);
 	tracker = ldev->tracker;
+	port = mlx5_lag_dev_get_netdev_idx(ldev, ndev);
+
+	if (port < 0)
+		return NOTIFY_DONE;
 
 	switch (event) {
+	case NETDEV_UP:
+		tracker.netdev_state[port].link_up = 1;
+		tracker.netdev_state[port].tx_enabled = 1;
+		changed = true;
+		break;
+	case NETDEV_DOWN:
+		tracker.netdev_state[port].link_up = 0;
+		tracker.netdev_state[port].tx_enabled = 0;
+		changed = true;
+		break;
 	case NETDEV_CHANGEUPPER:
 		changed = mlx5_handle_changeupper_event(ldev, &tracker, ndev,
 							ptr);
@@ -418,6 +430,8 @@ static int mlx5_lag_netdev_event(struct notifier_block *this,
 		changed = mlx5_handle_changelowerstate_event(ldev, &tracker,
 							     ndev, ptr);
 		break;
+	default:
+		return NOTIFY_DONE;
 	}
 
 	mutex_lock(&lag_mutex);
