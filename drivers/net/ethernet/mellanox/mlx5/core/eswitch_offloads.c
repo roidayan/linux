@@ -69,8 +69,8 @@ mlx5_eswitch_add_offloaded_rule(struct mlx5_eswitch *esw,
 		if (mlx5_lag_is_multipath(esw->dev)) {
 			struct mlx5e_priv* priv = netdev_priv(attr->in_rep->netdev);
 
-			dest[i].destination_vport_vhca_id = MLX5_CAP_GEN(priv->mdev, vhca_id);
-			dest[i].destination_vport_vhca_id_valid = 1;
+			dest[i].destination_eswitch_owner_vhca_id = MLX5_CAP_GEN(in_priv->mdev, vhca_id);
+			dest[i].destination_eswitch_owner_vhca_id_valid = 1;
 		}
 		i++;
 	}

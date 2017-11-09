@@ -285,10 +285,10 @@ static int mlx5_cmd_set_fte(struct mlx5_core_dev *dev,
 
 				if (dst->dest_attr.type ==
 				    MLX5_FLOW_DESTINATION_TYPE_VPORT) {
-					MLX5_SET(dest_format_struct, in_dests, destination_vport_vhca_id_valid,
-						 dst->dest_attr.destination_vport_vhca_id_valid);
-					MLX5_SET(dest_format_struct, in_dests, destination_vport_vhca_id,
-						 dst->dest_attr.destination_vport_vhca_id);
+					MLX5_SET(dest_format_struct, in_dests, destination_eswitch_owner_vhca_id_valid,
+						 dst->dest_attr.destination_eswitch_owner_vhca_id_valid);
+					MLX5_SET(dest_format_struct, in_dests, destination_eswitch_owner_vhca_id,
+						 dst->dest_attr.destination_eswitch_owner_vhca_id);
 				}
 			}
 			MLX5_SET(dest_format_struct, in_dests, destination_id, id);
