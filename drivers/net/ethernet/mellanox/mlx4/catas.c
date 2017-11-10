@@ -277,7 +277,7 @@ void mlx4_start_catas_poll(struct mlx4_dev *dev)
 	phys_addr_t addr;
 
 	INIT_LIST_HEAD(&priv->catas_err.list);
-	timer_setup(&priv->catas_err.timer, poll_catas, 0);
+	timer_setup(&priv->catas_err.timer, poll_catas, (unsigned long)dev);
 	priv->catas_err.map = NULL;
 
 	if (!mlx4_is_slave(dev)) {
