@@ -714,7 +714,7 @@ int mlx5_lag_activate_multipath(struct mlx5_core_dev *dev)
 	if (!MLX5_CAP_GEN(dev2, vport_group_manager))
 		return -EOPNOTSUPP;
 
-	if (dev2->priv.eswitch->mode == SRIOV_NONE)
+	if (dev2->priv.eswitch->mode != SRIOV_NONE)
 		return -EOPNOTSUPP;
 
 	mutex_lock(&lag_mutex);

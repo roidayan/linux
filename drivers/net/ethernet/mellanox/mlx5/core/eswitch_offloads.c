@@ -1129,17 +1129,22 @@ int mlx5_devlink_eswitch_encap_mode_get(struct devlink *devlink, u8 *encap)
 int mlx5_devlink_eswitch_multipath_mode_set(struct devlink *devlink, u8 mp)
 {
 	struct mlx5_core_dev *dev = devlink_priv(devlink);
-	struct mlx5_eswitch *esw = dev->priv.eswitch;
 	int err = 0;
 
-	err = mlx5_devlink_eswitch_check(devlink);
-	if (err)
-		return err;
-
-	if (esw->offloads.num_flows > 0) {
-		esw_warn(dev, "Can't set multipath when flows are configured\n");
+	if (MLX5_CAP_GEN(dev, port_type) != MLX5_CAP_PORT_TYPE_ETH)
 		return -EOPNOTSUPP;
-	}
+
+	if (!MLX5_CAP_GEN(dev, vport_group_manager))
+		return -EOPNOTSUPP;
+
+	if (dev->priv.eswitch->mode != SRIOV_NONE)
+		return -EOPNOTSUPP;
+
+	if (mp && mlx5_lag_is_multipath(dev))
+		return 0;
+
+	if (!mp && !mlx5_lag_is_multipath(dev))
+		return 0;
 
 	if (mp)
 		err = mlx5_lag_activate_multipath(dev);
