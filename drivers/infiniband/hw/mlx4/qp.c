@@ -725,7 +725,7 @@ static int set_qp_rss(struct mlx4_ib_dev *dev, struct mlx4_ib_rss *rss_ctx,
 	return 0;
 }
 
-static int create_qp_rss(struct mlx4_ib_dev *dev, struct ib_pd *ibpd,
+static int create_qp_rss(struct mlx4_ib_dev *dev,
 			 struct ib_qp_init_attr *init_attr,
 			 struct mlx4_ib_create_qp_rss *ucmd,
 			 struct mlx4_ib_qp *qp)
@@ -848,7 +848,7 @@ static struct ib_qp *_mlx4_ib_create_qp_rss(struct ib_pd *pd,
 	qp->pri.vid = 0xFFFF;
 	qp->alt.vid = 0xFFFF;
 
-	err = create_qp_rss(to_mdev(pd->device), pd, init_attr, &ucmd, qp);
+	err = create_qp_rss(to_mdev(pd->device), init_attr, &ucmd, qp);
 	if (err) {
 		kfree(qp);
 		return ERR_PTR(err);
@@ -1038,6 +1038,8 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 			struct mlx4_ib_create_wq wq;
 		} ucmd;
 		size_t copy_len;
+		int shift;
+		int n;
 
 		copy_len = (src == MLX4_IB_QP_SRC) ?
 			   sizeof(struct mlx4_ib_create_qp) :
@@ -1100,8 +1102,10 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 			goto err;
 		}
 
-		err = mlx4_mtt_init(dev->dev, ib_umem_page_count(qp->umem),
-				    qp->umem->page_shift, &qp->mtt);
+		n = ib_umem_page_count(qp->umem);
+		shift = mlx4_ib_umem_calc_optimal_mtt_size(qp->umem, 0, &n);
+		err = mlx4_mtt_init(dev->dev, n, shift, &qp->mtt);
+
 		if (err)
 			goto err_buf;
 
@@ -2216,7 +2220,7 @@ static int __mlx4_ib_modify_qp(void *src, enum mlx4_ib_source_type src_type,
 			context->mtu_msgmax = (IB_MTU_4096 << 5) |
 					      ilog2(dev->dev->caps.max_gso_sz);
 		else
-			context->mtu_msgmax = (IB_MTU_4096 << 5) | 12;
+			context->mtu_msgmax = (IB_MTU_4096 << 5) | 13;
 	} else if (attr_mask & IB_QP_PATH_MTU) {
 		if (attr->path_mtu < IB_MTU_256 || attr->path_mtu > IB_MTU_4096) {
 			pr_err("path MTU (%u) is invalid\n",

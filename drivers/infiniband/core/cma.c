@@ -1540,7 +1540,7 @@ static struct rdma_id_private *cma_id_from_event(struct ib_cm_id *cm_id,
 	return id_priv;
 }
 
-static inline int cma_user_data_offset(struct rdma_id_private *id_priv)
+static inline u8 cma_user_data_offset(struct rdma_id_private *id_priv)
 {
 	return cma_family(id_priv) == AF_IB ? 0 : sizeof(struct cma_hdr);
 }
@@ -1942,7 +1942,8 @@ static int cma_req_handler(struct ib_cm_id *cm_id, struct ib_cm_event *ib_event)
 	struct rdma_id_private *listen_id, *conn_id = NULL;
 	struct rdma_cm_event event;
 	struct net_device *net_dev;
-	int offset, ret;
+	u8 offset;
+	int ret;
 
 	listen_id = cma_id_from_event(cm_id, ib_event, &net_dev);
 	if (IS_ERR(listen_id))
@@ -3440,7 +3441,8 @@ static int cma_resolve_ib_udp(struct rdma_id_private *id_priv,
 	struct ib_cm_sidr_req_param req;
 	struct ib_cm_id	*id;
 	void *private_data;
-	int offset, ret;
+	u8 offset;
+	int ret;
 
 	memset(&req, 0, sizeof req);
 	offset = cma_user_data_offset(id_priv);
@@ -3497,7 +3499,8 @@ static int cma_connect_ib(struct rdma_id_private *id_priv,
 	struct rdma_route *route;
 	void *private_data;
 	struct ib_cm_id	*id;
-	int offset, ret;
+	u8 offset;
+	int ret;
 
 	memset(&req, 0, sizeof req);
 	offset = cma_user_data_offset(id_priv);
@@ -4432,7 +4435,7 @@ static int cma_get_id_stats(struct sk_buff *skb, struct netlink_callback *cb)
 					  RDMA_NL_RDMA_CM_ATTR_SRC_ADDR))
 				goto out;
 			if (ibnl_put_attr(skb, nlh,
-					  rdma_addr_size(cma_src_addr(id_priv)),
+					  rdma_addr_size(cma_dst_addr(id_priv)),
 					  cma_dst_addr(id_priv),
 					  RDMA_NL_RDMA_CM_ATTR_DST_ADDR))
 				goto out;
