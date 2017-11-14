@@ -1943,6 +1943,12 @@ struct ib_flow_spec_action_drop {
 	u16			      size;
 };
 
+struct ib_flow_spec_sniffer {
+	u16			      size;
+	u32                           port_num;
+	bool			      is_rx;
+};
+
 union ib_flow_spec {
 	struct {
 		u32			type;
@@ -1956,6 +1962,7 @@ union ib_flow_spec {
 	struct ib_flow_spec_tunnel      tunnel;
 	struct ib_flow_spec_action_tag  flow_tag;
 	struct ib_flow_spec_action_drop drop;
+	struct ib_flow_spec_sniffer	sniffer;
 };
 
 struct ib_flow_attr {
