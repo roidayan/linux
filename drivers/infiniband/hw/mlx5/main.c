@@ -2122,7 +2122,7 @@ static void set_tos(void *outer_c, void *outer_v, u8 mask, u8 val)
 #define IPV6_VERSION 6
 static int parse_flow_attr(struct mlx5_core_dev *mdev, u32 *match_c,
 			   u32 *match_v, const union ib_flow_spec *ib_spec,
-			   u32 *tag_id, bool *is_drop)
+			   u32 *tag_id, bool *is_drop, bool is_sniffer)
 {
 	void *misc_params_c = MLX5_ADDR_OF(fte_match_param, match_c,
 					   misc_parameters);
@@ -2146,6 +2146,23 @@ static int parse_flow_attr(struct mlx5_core_dev *mdev, u32 *match_c,
 					 outer_headers);
 		match_ipv = MLX5_CAP_FLOWTABLE_NIC_RX(mdev,
 					ft_field_support.outer_ip_version);
+	}
+
+	if (is_sniffer) {
+		bool rx_cap = MLX5_CAP_FLOWTABLE_SNIFFER_RX(mdev,
+					ft_field_support.source_vhca_port);
+		bool tx_cap = MLX5_CAP_FLOWTABLE_SNIFFER_TX(mdev,
+					ft_field_support.source_vhca_port);
+
+		if ((tx_cap && !ib_spec->sniffer.is_rx) ||
+		    (rx_cap && ib_spec->sniffer.is_rx)) {
+			MLX5_SET(fte_match_set_misc, misc_params_v,
+				 source_vhca_port, ib_spec->sniffer.port_num);
+			MLX5_SET_TO_ONES(fte_match_set_misc, misc_params_c,
+					 source_vhca_port);
+		}
+
+		return 0;
 	}
 
 	switch (ib_spec->type & ~IB_FLOW_SPEC_INNER) {
@@ -2595,7 +2612,7 @@ static struct mlx5_ib_flow_handler *_create_flow_rule(struct mlx5_ib_dev *dev,
 						      struct mlx5_ib_flow_prio *ft_prio,
 						      const struct ib_flow_attr *flow_attr,
 						      struct mlx5_flow_destination *dst,
-						      u32 underlay_qpn)
+						      u32 underlay_qpn, bool is_sniffer)
 {
 	struct mlx5_flow_table	*ft = ft_prio->flow_table;
 	struct mlx5_ib_flow_handler *handler;
@@ -2624,7 +2641,7 @@ static struct mlx5_ib_flow_handler *_create_flow_rule(struct mlx5_ib_dev *dev,
 	for (spec_index = 0; spec_index < flow_attr->num_of_specs; spec_index++) {
 		err = parse_flow_attr(dev->mdev, spec->match_criteria,
 				      spec->match_value,
-				      ib_flow, &flow_tag, &is_drop);
+				      ib_flow, &flow_tag, &is_drop, is_sniffer);
 		if (err < 0)
 			goto free;
 
@@ -2678,7 +2695,7 @@ static struct mlx5_ib_flow_handler *create_flow_rule(struct mlx5_ib_dev *dev,
 						     const struct ib_flow_attr *flow_attr,
 						     struct mlx5_flow_destination *dst)
 {
-	return _create_flow_rule(dev, ft_prio, flow_attr, dst, 0);
+	return _create_flow_rule(dev, ft_prio, flow_attr, dst, 0, false);
 }
 
 static struct mlx5_ib_flow_handler *create_dont_trap_rule(struct mlx5_ib_dev *dev,
@@ -2772,23 +2789,37 @@ static struct mlx5_ib_flow_handler *create_leftovers_rule(struct mlx5_ib_dev *de
 static struct mlx5_ib_flow_handler *create_sniffer_rule(struct mlx5_ib_dev *dev,
 							struct mlx5_ib_flow_prio *ft_rx,
 							struct mlx5_ib_flow_prio *ft_tx,
-							struct mlx5_flow_destination *dst)
+							struct mlx5_flow_destination *dst,
+							u8 port)
 {
 	struct mlx5_ib_flow_handler *handler_rx;
 	struct mlx5_ib_flow_handler *handler_tx;
 	int err;
-	static const struct ib_flow_attr flow_attr  = {
-		.num_of_specs = 0,
-		.size = sizeof(flow_attr)
+	struct {
+		struct ib_flow_attr flow_attr;
+		struct ib_flow_spec_sniffer sniffer;
+	} sniffer_spec = {
+		.flow_attr = {
+			.num_of_specs = 1,
+			.size = sizeof(sniffer_spec)
+		},
+		.sniffer = {
+			.size = sizeof(struct ib_flow_spec_sniffer),
+			.port_num = port,
+			.is_rx = true
+		}
 	};
 
-	handler_rx = create_flow_rule(dev, ft_rx, &flow_attr, dst);
+	handler_rx = _create_flow_rule(dev, ft_rx, &sniffer_spec.flow_attr,
+				       dst, 0, true);
 	if (IS_ERR(handler_rx)) {
 		err = PTR_ERR(handler_rx);
 		goto err;
 	}
 
-	handler_tx = create_flow_rule(dev, ft_tx, &flow_attr, dst);
+	sniffer_spec.sniffer.is_rx = false;
+	handler_tx = _create_flow_rule(dev, ft_tx, &sniffer_spec.flow_attr,
+				       dst, 0, true);
 	if (IS_ERR(handler_tx)) {
 		err = PTR_ERR(handler_tx);
 		goto err_tx;
@@ -2861,14 +2892,15 @@ static struct ib_flow *mlx5_ib_create_flow(struct ib_qp *qp,
 			underlay_qpn = (mqp->flags & MLX5_IB_QP_UNDERLAY) ?
 					mqp->underlay_qpn : 0;
 			handler = _create_flow_rule(dev, ft_prio, flow_attr,
-						    dst, underlay_qpn);
+						    dst, underlay_qpn, false);
 		}
 	} else if (flow_attr->type == IB_FLOW_ATTR_ALL_DEFAULT ||
 		   flow_attr->type == IB_FLOW_ATTR_MC_DEFAULT) {
 		handler = create_leftovers_rule(dev, ft_prio, flow_attr,
 						dst);
 	} else if (flow_attr->type == IB_FLOW_ATTR_SNIFFER) {
-		handler = create_sniffer_rule(dev, ft_prio, ft_prio_tx, dst);
+		handler = create_sniffer_rule(dev, ft_prio, ft_prio_tx, dst,
+					      mqp->port);
 	} else {
 		err = -EINVAL;
 		goto destroy_ft;
