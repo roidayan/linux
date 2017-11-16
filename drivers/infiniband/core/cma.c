@@ -2523,6 +2523,7 @@ int rdma_set_ib_path(struct rdma_cm_id *id,
 {
 	struct rdma_id_private *id_priv;
 	struct sa_path_rec *in_path_rec;
+	struct net_device *ndev;
 	struct sa_path_rec opa;
 	int ret;
 
@@ -2543,6 +2544,18 @@ int rdma_set_ib_path(struct rdma_cm_id *id,
 	if (!id->route.path_rec) {
 		ret = -ENOMEM;
 		goto err;
+	}
+
+	if (rdma_protocol_roce(id->device, id->port_num)) {
+		ndev = cma_iboe_set_path_rec_l2_fields(id_priv);
+		if (!ndev) {
+			ret = -ENODEV;
+			kfree(id->route.path_rec);
+			id->route.path_rec = NULL;
+			goto err;
+		} else {
+			dev_put(ndev);
+		}
 	}
 
 	id->route.num_paths = 1;
