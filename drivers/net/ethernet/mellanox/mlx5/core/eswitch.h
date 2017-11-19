@@ -117,6 +117,10 @@ struct mlx5_vport {
 	u16                     enabled_events;
 };
 
+enum {
+	FDB_HAS_PEER_MISS_RULES = BIT(0),
+};
+
 struct mlx5_eswitch_fdb {
 	union {
 		struct legacy_fdb {
@@ -127,10 +131,13 @@ struct mlx5_eswitch_fdb {
 		} legacy;
 
 		struct offloads_fdb {
+			u8 flags;
 			struct mlx5_flow_table *fast_fdb;
 			struct mlx5_flow_table *fwd_fdb;
 			struct mlx5_flow_table *slow_fdb;
 			struct mlx5_flow_group *send_to_vport_grp;
+			struct mlx5_flow_group *peer_miss_grp;
+			struct mlx5_flow_handle **peer_miss_rules;
 			struct mlx5_flow_group *miss_grp;
 			struct mlx5_flow_handle *miss_rule_uni;
 			struct mlx5_flow_handle *miss_rule_multi;
