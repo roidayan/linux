@@ -72,7 +72,7 @@ MODULE_PARM_DESC(debug_level, "Enable debug tracing if > 0");
 
 static int msi_x = 1;
 module_param(msi_x, int, 0444);
-MODULE_PARM_DESC(msi_x, "attempt to use MSI-X if nonzero");
+MODULE_PARM_DESC(msi_x, "0 - don't use MSI-X, 1 - use MSI-X, >1 - limit number of MSI-X irqs to msi_x");
 
 #else /* CONFIG_PCI_MSI */
 
@@ -2875,7 +2875,8 @@ static int mlx4_init_affinity_hint(struct mlx4_dev *dev, int port, int eqn)
 	if (!zalloc_cpumask_var(&eq->affinity_mask, GFP_KERNEL))
 		return -ENOMEM;
 
-	cpumask_set_cpu(requested_cpu, eq->affinity_mask);
+	cpumask_set_cpu(cpumask_local_spread(requested_cpu, dev->numa_node),
+			eq->affinity_mask);
 
 	return 0;
 }
@@ -2892,6 +2893,9 @@ static void mlx4_enable_msi_x(struct mlx4_dev *dev)
 				(int)num_online_cpus() + 1,
 				dev->caps.num_eqs - dev->caps.reserved_eqs,
 				MAX_MSIX);
+
+		if (msi_x > 1)
+			nreq = min_t(int, nreq, msi_x);
 
 		entries = kcalloc(nreq, sizeof(*entries), GFP_KERNEL);
 		if (!entries)
@@ -4066,6 +4070,7 @@ int mlx4_restart_one(struct pci_dev *pdev)
 #define MLX_GN(id) { PCI_VDEVICE(MELLANOX, id), 0 }
 
 static const struct pci_device_id mlx4_pci_table[] = {
+#ifdef CONFIG_MLX4_CORE_GEN2
 	/* MT25408 "Hermon" */
 	MLX_SP(PCI_DEVICE_ID_MELLANOX_HERMON_SDR),	/* SDR */
 	MLX_SP(PCI_DEVICE_ID_MELLANOX_HERMON_DDR),	/* DDR */
@@ -4085,6 +4090,7 @@ static const struct pci_device_id mlx4_pci_table[] = {
 	MLX_SP(PCI_DEVICE_ID_MELLANOX_CONNECTX2),
 	/* MT25400 Family [ConnectX-2] */
 	MLX_VF(0x1002),					/* Virtual Function */
+#endif /* CONFIG_MLX4_CORE_GEN2 */
 	/* MT27500 Family [ConnectX-3] */
 	MLX_GN(PCI_DEVICE_ID_MELLANOX_CONNECTX3),
 	MLX_VF(0x1004),					/* Virtual Function */
@@ -4212,6 +4218,11 @@ static struct pci_driver mlx4_driver = {
 
 static int __init mlx4_verify_params(void)
 {
+	if (msi_x < 0) {
+		pr_warn("mlx4_core: bad msi_x: %d\n", msi_x);
+		return -1;
+	}
+
 	if ((log_num_mac < 0) || (log_num_mac > 7)) {
 		pr_warn("mlx4_core: bad num_mac: %d\n", log_num_mac);
 		return -1;
