@@ -768,13 +768,24 @@ static void path_rec_completion(int status,
 	if (!status) {
 		struct rdma_ah_attr av;
 
-		if (!ib_init_ah_from_path(priv->ca, priv->port, pathrec, &av))
+		if (!ib_init_ah_attr_from_path(priv->ca, priv->port,
+					       pathrec, &av))
 			ah = ipoib_create_ah(dev, priv->pd, &av);
 	}
 
 	spin_lock_irqsave(&priv->lock, flags);
 
 	if (!IS_ERR_OR_NULL(ah)) {
+		/* check there is no mismatch from the request */
+		if (memcmp(pathrec->dgid.raw, path->pathrec.dgid.raw,
+			   sizeof(union ib_gid))) {
+			pr_warn("%s got PathRec for gid %pI6 while asked for %pI6\n",
+				dev->name, pathrec->dgid.raw, path->pathrec.dgid.raw);
+			/* overwrite the response from the sm  before copy to the db */
+			memcpy(pathrec->dgid.raw, path->pathrec.dgid.raw,
+			       sizeof(union ib_gid));
+		}
+
 		path->pathrec = *pathrec;
 
 		old_ah   = path->ah;
@@ -840,6 +851,23 @@ static void path_rec_completion(int status,
 	}
 }
 
+static void init_path_rec(struct ipoib_dev_priv *priv, struct ipoib_path *path,
+			  void *gid)
+{
+	path->dev = priv->dev;
+
+	if (rdma_cap_opa_ah(priv->ca, priv->port))
+		path->pathrec.rec_type = SA_PATH_REC_TYPE_OPA;
+	else
+		path->pathrec.rec_type = SA_PATH_REC_TYPE_IB;
+
+	memcpy(path->pathrec.dgid.raw, gid, sizeof(union ib_gid));
+	path->pathrec.sgid	    = priv->local_gid;
+	path->pathrec.pkey	    = cpu_to_be16(priv->pkey);
+	path->pathrec.numb_path     = 1;
+	path->pathrec.traffic_class = priv->broadcast->mcmember.traffic_class;
+}
+
 static struct ipoib_path *path_rec_create(struct net_device *dev, void *gid)
 {
 	struct ipoib_dev_priv *priv = ipoib_priv(dev);
@@ -852,21 +880,11 @@ static struct ipoib_path *path_rec_create(struct net_device *dev, void *gid)
 	if (!path)
 		return NULL;
 
-	path->dev = dev;
-
 	skb_queue_head_init(&path->queue);
 
 	INIT_LIST_HEAD(&path->neigh_list);
 
-	if (rdma_cap_opa_ah(priv->ca, priv->port))
-		path->pathrec.rec_type = SA_PATH_REC_TYPE_OPA;
-	else
-		path->pathrec.rec_type = SA_PATH_REC_TYPE_IB;
-	memcpy(path->pathrec.dgid.raw, gid, sizeof (union ib_gid));
-	path->pathrec.sgid	    = priv->local_gid;
-	path->pathrec.pkey	    = cpu_to_be16(priv->pkey);
-	path->pathrec.numb_path     = 1;
-	path->pathrec.traffic_class = priv->broadcast->mcmember.traffic_class;
+	init_path_rec(priv, path, gid);
 
 	return path;
 }
@@ -995,6 +1013,10 @@ static void unicast_arp_send(struct sk_buff *skb, struct net_device *dev,
 
 	spin_lock_irqsave(&priv->lock, flags);
 
+	/* no broadcast means that all paths are (going to be) not valid */
+	if (!priv->broadcast)
+		goto drop_and_unlock;
+
 	path = __path_find(dev, phdr->hwaddr + 4);
 	if (!path || !path->valid) {
 		int new_path = 0;
@@ -1004,6 +1026,10 @@ static void unicast_arp_send(struct sk_buff *skb, struct net_device *dev,
 			new_path = 1;
 		}
 		if (path) {
+			if (!new_path)
+				/* make sure there is no changes in the existing path record */
+				init_path_rec(priv, path, phdr->hwaddr + 4);
+
 			if (skb_queue_len(&path->queue) < IPOIB_MAX_PATH_REC_QUEUE) {
 				push_pseudo_header(skb, phdr->hwaddr);
 				__skb_queue_tail(&path->queue, skb);
@@ -1020,8 +1046,7 @@ static void unicast_arp_send(struct sk_buff *skb, struct net_device *dev,
 			} else
 				__path_add(dev, path);
 		} else {
-			++dev->stats.tx_dropped;
-			dev_kfree_skb_any(skb);
+			goto drop_and_unlock;
 		}
 
 		spin_unlock_irqrestore(&priv->lock, flags);
@@ -1041,10 +1066,15 @@ static void unicast_arp_send(struct sk_buff *skb, struct net_device *dev,
 		push_pseudo_header(skb, phdr->hwaddr);
 		__skb_queue_tail(&path->queue, skb);
 	} else {
-		++dev->stats.tx_dropped;
-		dev_kfree_skb_any(skb);
+		goto drop_and_unlock;
 	}
 
+	spin_unlock_irqrestore(&priv->lock, flags);
+	return;
+
+drop_and_unlock:
+	++dev->stats.tx_dropped;
+	dev_kfree_skb_any(skb);
 	spin_unlock_irqrestore(&priv->lock, flags);
 }
 
