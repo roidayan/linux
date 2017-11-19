@@ -521,7 +521,7 @@ static int esw_create_offloads_fdb_tables(struct mlx5_eswitch *esw, int nvports)
 	if (err)
 		goto fast_fdb_err;
 
-	table_size = nvports + MAX_PF_SQ + 1;
+	table_size = nvports + MAX_PF_SQ + 1 + esw->total_vports;
 
 	ft_attr.max_fte = table_size;
 	ft_attr.prio = FDB_SLOW_PATH;
@@ -556,6 +556,29 @@ static int esw_create_offloads_fdb_tables(struct mlx5_eswitch *esw, int nvports)
 	}
 	esw->fdb_table.offloads.send_to_vport_grp = g;
 
+	/* create peer esw miss group */
+	memset(flow_group_in, 0, inlen);
+	MLX5_SET(create_flow_group_in, flow_group_in, match_criteria_enable,
+		MLX5_MATCH_MISC_PARAMETERS);
+
+	match_criteria = MLX5_ADDR_OF(create_flow_group_in, flow_group_in, match_criteria);
+
+	MLX5_SET_TO_ONES(fte_match_param, match_criteria, misc_parameters.source_port);
+	MLX5_SET_TO_ONES(fte_match_param, match_criteria, misc_parameters.source_eswitch_owner_vhca_id);
+
+	MLX5_SET(create_flow_group_in, flow_group_in, source_eswitch_owner_vhca_id_valid, 1);
+	MLX5_SET(create_flow_group_in, flow_group_in, start_flow_index, ix);
+	MLX5_SET(create_flow_group_in, flow_group_in, end_flow_index, ix + esw->total_vports - 1);
+	ix += esw->total_vports;
+
+	g = mlx5_create_flow_group(fdb, flow_group_in);
+	if (IS_ERR(g)) {
+		err = PTR_ERR(g);
+		esw_warn(dev, "Failed to create peer miss flow group err(%d)\n", err);
+		goto peer_miss_err;
+	}
+	esw->fdb_table.offloads.peer_miss_grp = g;
+
 	/* create miss group */
 	memset(flow_group_in, 0, inlen);
 	MLX5_SET(create_flow_group_in, flow_group_in, match_criteria_enable, 0);
@@ -580,6 +603,8 @@ static int esw_create_offloads_fdb_tables(struct mlx5_eswitch *esw, int nvports)
 miss_rule_err:
 	mlx5_destroy_flow_group(esw->fdb_table.offloads.miss_grp);
 miss_err:
+	mlx5_destroy_flow_group(esw->fdb_table.offloads.peer_miss_grp);
+peer_miss_err:
 	mlx5_destroy_flow_group(esw->fdb_table.offloads.send_to_vport_grp);
 send_vport_err:
 	mlx5_destroy_flow_table(esw->fdb_table.offloads.fdb);
@@ -589,6 +614,96 @@ fast_fdb_err:
 ns_err:
 	kvfree(flow_group_in);
 	return err;
+}
+
+static struct mlx5_flow_handle *
+esw_add_fdb_peer_miss_rule(struct mlx5_eswitch *esw,
+			   struct mlx5_core_dev *peer_dev,
+			   int vport)
+{
+	struct mlx5_flow_act flow_act = {0};
+	struct mlx5_flow_destination dest= {};
+	struct mlx5_flow_handle *flow_rule = NULL;
+	struct mlx5_flow_spec *spec;
+	void *misc;
+
+	spec = kvzalloc(sizeof(*spec), GFP_KERNEL);
+	if (!spec) {
+		flow_rule = ERR_PTR(-ENOMEM);
+		goto out;
+	}
+
+	misc = MLX5_ADDR_OF(fte_match_param, spec->match_value, misc_parameters);
+
+	MLX5_SET(fte_match_set_misc, misc, source_port, vport);
+	MLX5_SET(fte_match_set_misc, misc, source_eswitch_owner_vhca_id,
+		 MLX5_CAP_GEN(peer_dev, vhca_id));
+
+	spec->match_criteria_enable = MLX5_MATCH_MISC_PARAMETERS;
+
+	misc = MLX5_ADDR_OF(fte_match_param, spec->match_criteria, misc_parameters);
+	MLX5_SET_TO_ONES(fte_match_set_misc, misc, source_port);
+	MLX5_SET_TO_ONES(fte_match_set_misc, misc, source_eswitch_owner_vhca_id);
+
+	dest.type = MLX5_FLOW_DESTINATION_TYPE_VPORT;
+	dest.vport_num = 0;
+	dest.destination_eswitch_owner_vhca_id = MLX5_CAP_GEN(peer_dev, vhca_id);
+	dest.destination_eswitch_owner_vhca_id_valid = 1;
+	flow_act.action = MLX5_FLOW_CONTEXT_ACTION_FWD_DEST;
+
+	return mlx5_add_flow_rules(esw->fdb_table.offloads.fdb, spec,
+					&flow_act, &dest, 1);
+out:
+	kvfree(spec);
+	return flow_rule;
+}
+
+static void esw_del_peer_miss_rules(struct mlx5_eswitch *esw)
+{
+	struct mlx5_flow_handle **flows;
+	int nvports;
+	int i;
+
+	flows = esw->fdb_table.offloads.peer_miss_rules;
+	nvports = esw->fdb_table.offloads.peer_miss_rules_count;
+
+	for (i = 1; i < nvports; i++)
+		if (flows[i])
+			mlx5_del_flow_rules(flows[i]);
+	kvfree(flows);
+	esw->fdb_table.offloads.peer_miss_rules = NULL;
+}
+
+static void esw_add_peer_miss_rules(struct mlx5_eswitch *esw, int nvports)
+{
+	struct mlx5_core_dev *peer_dev = mlx5_lag_get_peer_mdev(esw->dev);
+	struct mlx5_flow_handle *flow_rule;
+	struct mlx5_flow_handle **flows;
+	int i;
+
+	flows = kvzalloc(nvports * sizeof(*flows), GFP_KERNEL);
+	if (!flows) {
+		esw_warn(esw->dev, "Error allocating memory for peer miss rules\n");
+		// TODO return error
+		return;
+	}
+
+	esw->fdb_table.offloads.peer_miss_rules = flows;
+	esw->fdb_table.offloads.peer_miss_rules_count = nvports;
+
+	for (i = 1; i < nvports; i++) {
+		flow_rule = esw_add_fdb_peer_miss_rule(esw, peer_dev, i);
+		if (IS_ERR(flow_rule)) {
+			esw_warn(esw->dev, "FDB: Failed to add miss flow rule err %d\n",(int) PTR_ERR(flow_rule));
+			goto out;
+		}
+		flows[i] = flow_rule;
+	}
+
+	return;
+out:
+	esw_del_peer_miss_rules(esw);
+	// TODO return error
 }
 
 static void esw_destroy_offloads_fdb_tables(struct mlx5_eswitch *esw)
@@ -783,6 +898,27 @@ int esw_offloads_init(struct mlx5_eswitch *esw, int nvports)
 			goto err_reps;
 	}
 
+	if (mlx5_lag_is_multipath(esw->dev)) {
+		struct mlx5_core_dev *peer_dev = mlx5_lag_get_peer_mdev(esw->dev);
+		struct mlx5_eswitch *peer_esw = peer_dev->priv.eswitch;
+		int peer_nvports;
+
+		if (!peer_esw || !MLX5_CAP_GEN(peer_dev, vport_group_manager) ||
+		    MLX5_CAP_GEN(peer_dev, port_type) != MLX5_CAP_PORT_TYPE_ETH)
+			return 0;
+
+		if (peer_esw->mode != SRIOV_OFFLOADS) {
+			return 0;
+		}
+
+		peer_nvports = peer_dev->priv.eswitch->enabled_vports;
+
+		esw_add_peer_miss_rules(esw, peer_nvports);
+		esw_add_peer_miss_rules(peer_esw, nvports);
+		// TODO check error
+		mlx5_lag_set_multipath_ready(esw->dev);
+	}
+
 	return 0;
 
 err_reps:
@@ -835,12 +971,22 @@ void esw_offloads_cleanup(struct mlx5_eswitch *esw, int nvports)
 	struct mlx5_eswitch_rep *rep;
 	int vport;
 
+	mlx5_lag_unset_multipath_ready(esw->dev);
+
 	for (vport = nvports - 1; vport >= 0; vport--) {
 		rep = &esw->offloads.vport_reps[vport];
 		if (!rep->valid)
 			continue;
 		rep->unload(esw, rep);
 	}
+
+	if (esw->fdb_table.offloads.peer_miss_rules) {
+		// TODO need to clean peer miss grp as well if peer is still
+		// switchdev
+		esw_del_peer_miss_rules(esw);
+	}
+	// TODO we always allocate peer_miss_grp so always need to release it
+	mlx5_destroy_flow_group(esw->fdb_table.offloads.peer_miss_grp);
 
 	esw_destroy_vport_rx_group(esw);
 	esw_destroy_offloads_table(esw);
