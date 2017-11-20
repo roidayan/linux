@@ -165,6 +165,9 @@ static inline u16 rdma_vlan_dev_vlan_id(const struct net_device *dev)
 
 static inline int rdma_ip2gid(struct sockaddr *addr, union ib_gid *gid)
 {
+	if (!gid)
+		return 0;
+
 	switch (addr->sa_family) {
 	case AF_INET:
 		ipv6_addr_set_v4mapped(((struct sockaddr_in *)
@@ -205,6 +208,9 @@ static inline void rdma_gid2ip(struct sockaddr *out, const union ib_gid *gid)
 static inline void rdma_addr_get_sgid(struct rdma_dev_addr *dev_addr,
 				      union ib_gid *gid)
 {
+	if (!gid)
+		return;
+
 	memcpy(gid,
 	       dev_addr->src_dev_addr + rdma_addr_gid_offset(dev_addr),
 	       sizeof(*gid));
@@ -215,9 +221,15 @@ static inline void rdma_addr_set_sgid(struct rdma_dev_addr *dev_addr, union ib_g
 	memcpy(dev_addr->src_dev_addr + rdma_addr_gid_offset(dev_addr), gid, sizeof *gid);
 }
 
-static inline void rdma_addr_get_dgid(struct rdma_dev_addr *dev_addr, union ib_gid *gid)
+static inline void rdma_addr_get_dgid(struct rdma_dev_addr *dev_addr,
+				      union ib_gid *gid)
 {
-	memcpy(gid, dev_addr->dst_dev_addr + rdma_addr_gid_offset(dev_addr), sizeof *gid);
+	if (!gid)
+		return;
+
+	memcpy(gid,
+	       dev_addr->dst_dev_addr + rdma_addr_gid_offset(dev_addr),
+	       sizeof(*gid));
 }
 
 static inline void rdma_addr_set_dgid(struct rdma_dev_addr *dev_addr, union ib_gid *gid)
