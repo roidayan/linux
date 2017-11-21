@@ -263,6 +263,11 @@ struct ib_device *ib_alloc_device(size_t size)
 	if (!device)
 		return NULL;
 
+	if (rdma_restrack_init(&device->res)) {
+		kfree(device);
+		return NULL;
+	}
+
 	device->dev.class = &ib_class;
 	device_initialize(&device->dev);
 
@@ -595,6 +600,8 @@ void ib_unregister_device(struct ib_device *device)
 			context->client->remove(device, context->data);
 	}
 	up_read(&lists_rwsem);
+
+	rdma_restrack_clean(&device->res);
 
 	ib_device_unregister_rdmacg(device);
 	ib_device_unregister_sysfs(device);
