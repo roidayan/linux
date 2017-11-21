@@ -69,7 +69,6 @@
 #define MLX5E_PARAMS_MAXIMUM_LOG_RQ_SIZE                0xd
 
 #define MLX5E_PARAMS_MINIMUM_LOG_RQ_SIZE_MPW            0x2
-#define MLX5E_PARAMS_DEFAULT_LOG_RQ_SIZE_MPW            0x3
 #define MLX5E_PARAMS_MAXIMUM_LOG_RQ_SIZE_MPW            0x6
 
 #define MLX5_RX_HEADROOM NET_SKB_PAD
@@ -230,13 +229,18 @@ struct mlx5e_cq_moder {
 	u8 cq_period_mode;
 };
 
+struct mlx5e_mpwqe_params {
+	u8 log_rq_size;
+	u8 log_stride_size;
+	u8 log_num_strides;
+};
+
 struct mlx5e_params {
 	u8  log_sq_size;
 	u8  rq_wq_type;
 	u16 rq_headroom;
-	u8  mpwqe_log_stride_sz;
-	u8  mpwqe_log_num_strides;
-	u8  log_rq_size;
+	struct mlx5e_mpwqe_params mpwqe;
+	u8  log_rx_ring_mtu_size;
 	u16 num_channels;
 	u8  num_tc;
 	bool rx_cqe_compress_def;
@@ -936,9 +940,11 @@ void mlx5e_set_tx_cq_mode_params(struct mlx5e_params *params,
 				 u8 cq_period_mode);
 void mlx5e_set_rx_cq_mode_params(struct mlx5e_params *params,
 				 u8 cq_period_mode);
-void mlx5e_init_rq_type_params(struct mlx5_core_dev *mdev,
+void mlx5e_init_rq_type_params(struct mlx5e_priv *priv,
 			       struct mlx5e_params *params,
 			       u8 rq_type);
+void mlx5e_align_rq_mpwqe_params(struct mlx5e_priv *priv,
+				 struct mlx5e_params *params);
 
 static inline bool mlx5e_tunnel_inner_ft_supported(struct mlx5_core_dev *mdev)
 {
@@ -1103,7 +1109,7 @@ mlx5e_create_netdev(struct mlx5_core_dev *mdev, const struct mlx5e_profile *prof
 int mlx5e_attach_netdev(struct mlx5e_priv *priv);
 void mlx5e_detach_netdev(struct mlx5e_priv *priv);
 void mlx5e_destroy_netdev(struct mlx5e_priv *priv);
-void mlx5e_build_nic_params(struct mlx5_core_dev *mdev,
+void mlx5e_build_nic_params(struct mlx5e_priv *priv,
 			    struct mlx5e_params *params,
 			    u16 max_channels);
 u8 mlx5e_params_calculate_tx_min_inline(struct mlx5_core_dev *mdev);

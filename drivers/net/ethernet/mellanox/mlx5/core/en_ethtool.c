@@ -235,8 +235,8 @@ static u32 mlx5e_rx_wqes_to_packets(struct mlx5e_priv *priv, int rq_wq_type,
 	if (rq_wq_type != MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ)
 		return num_wqe;
 
-	stride_size = 1 << priv->channels.params.mpwqe_log_stride_sz;
-	num_strides = 1 << priv->channels.params.mpwqe_log_num_strides;
+	stride_size = 1 << priv->channels.params.mpwqe.log_stride_size;
+	num_strides = 1 << priv->channels.params.mpwqe.log_num_strides;
 	wqe_size = stride_size * num_strides;
 
 	packets_per_wqe = wqe_size /
@@ -244,40 +244,12 @@ static u32 mlx5e_rx_wqes_to_packets(struct mlx5e_priv *priv, int rq_wq_type,
 	return (1 << (order_base_2(num_wqe * packets_per_wqe) - 1));
 }
 
-static u32 mlx5e_packets_to_rx_wqes(struct mlx5e_priv *priv, int rq_wq_type,
-				    int num_packets)
-{
-	int packets_per_wqe;
-	int stride_size;
-	int num_strides;
-	int wqe_size;
-	int num_wqes;
-
-	if (rq_wq_type != MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ)
-		return num_packets;
-
-	stride_size = 1 << priv->channels.params.mpwqe_log_stride_sz;
-	num_strides = 1 << priv->channels.params.mpwqe_log_num_strides;
-	wqe_size = stride_size * num_strides;
-
-	num_packets = (1 << order_base_2(num_packets));
-
-	packets_per_wqe = wqe_size /
-			  ALIGN(ETH_DATA_LEN, stride_size);
-	num_wqes = DIV_ROUND_UP(num_packets, packets_per_wqe);
-	return 1 << (order_base_2(num_wqes));
-}
-
 void mlx5e_ethtool_get_ringparam(struct mlx5e_priv *priv,
 				 struct ethtool_ringparam *param)
 {
-	int rq_wq_type = priv->channels.params.rq_wq_type;
-
-	param->rx_max_pending = mlx5e_rx_wqes_to_packets(priv, rq_wq_type,
-							 1 << mlx5_max_log_rq_size(rq_wq_type));
+	param->rx_max_pending = 1 << MLX5E_PARAMS_MAXIMUM_LOG_RQ_SIZE;
 	param->tx_max_pending = 1 << MLX5E_PARAMS_MAXIMUM_LOG_SQ_SIZE;
-	param->rx_pending = mlx5e_rx_wqes_to_packets(priv, rq_wq_type,
-						     1 << priv->channels.params.log_rq_size);
+	param->rx_pending     = 1 << priv->channels.params.log_rx_ring_mtu_size;
 	param->tx_pending     = 1 << priv->channels.params.log_sq_size;
 }
 
@@ -294,12 +266,9 @@ int mlx5e_ethtool_set_ringparam(struct mlx5e_priv *priv,
 {
 	int rq_wq_type = priv->channels.params.rq_wq_type;
 	struct mlx5e_channels new_channels = {};
-	u32 rx_pending_wqes;
 	u32 min_rq_size;
-	u32 max_rq_size;
 	u8 log_rq_size;
 	u8 log_sq_size;
-	u32 num_mtts;
 	int err = 0;
 
 	if (param->rx_jumbo_pending) {
@@ -315,29 +284,10 @@ int mlx5e_ethtool_set_ringparam(struct mlx5e_priv *priv,
 
 	min_rq_size = mlx5e_rx_wqes_to_packets(priv, rq_wq_type,
 					       1 << mlx5_min_log_rq_size(rq_wq_type));
-	max_rq_size = mlx5e_rx_wqes_to_packets(priv, rq_wq_type,
-					       1 << mlx5_max_log_rq_size(rq_wq_type));
-	rx_pending_wqes = mlx5e_packets_to_rx_wqes(priv, rq_wq_type,
-						   param->rx_pending);
-
 	if (param->rx_pending < min_rq_size) {
 		netdev_info(priv->netdev, "%s: rx_pending (%d) < min (%d)\n",
 			    __func__, param->rx_pending,
 			    min_rq_size);
-		return -EINVAL;
-	}
-	if (param->rx_pending > max_rq_size) {
-		netdev_info(priv->netdev, "%s: rx_pending (%d) > max (%d)\n",
-			    __func__, param->rx_pending,
-			    max_rq_size);
-		return -EINVAL;
-	}
-
-	num_mtts = MLX5E_REQUIRED_MTTS(rx_pending_wqes);
-	if (priv->channels.params.rq_wq_type == MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ &&
-	    !MLX5E_VALID_NUM_MTTS(num_mtts)) {
-		netdev_info(priv->netdev, "%s: rx_pending (%d) request can't be satisfied, try to reduce.\n",
-			    __func__, param->rx_pending);
 		return -EINVAL;
 	}
 
@@ -347,25 +297,20 @@ int mlx5e_ethtool_set_ringparam(struct mlx5e_priv *priv,
 			    1 << MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE);
 		return -EINVAL;
 	}
-	if (param->tx_pending > (1 << MLX5E_PARAMS_MAXIMUM_LOG_SQ_SIZE)) {
-		netdev_info(priv->netdev, "%s: tx_pending (%d) > max (%d)\n",
-			    __func__, param->tx_pending,
-			    1 << MLX5E_PARAMS_MAXIMUM_LOG_SQ_SIZE);
-		return -EINVAL;
-	}
 
-	log_rq_size = order_base_2(rx_pending_wqes);
+	log_rq_size = order_base_2(param->rx_pending);
 	log_sq_size = order_base_2(param->tx_pending);
 
-	if (log_rq_size == priv->channels.params.log_rq_size &&
+	if (log_rq_size == priv->channels.params.log_rx_ring_mtu_size &&
 	    log_sq_size == priv->channels.params.log_sq_size)
 		return 0;
 
 	mutex_lock(&priv->state_lock);
 
 	new_channels.params = priv->channels.params;
-	new_channels.params.log_rq_size = log_rq_size;
+	new_channels.params.log_rx_ring_mtu_size = log_rq_size;
 	new_channels.params.log_sq_size = log_sq_size;
+	mlx5e_align_rq_mpwqe_params(priv, &new_channels.params);
 
 	if (!test_bit(MLX5E_STATE_OPENED, &priv->state)) {
 		priv->channels.params = new_channels.params;
@@ -1523,10 +1468,7 @@ int mlx5e_modify_rx_cqe_compression_locked(struct mlx5e_priv *priv, bool new_val
 	new_channels.params = priv->channels.params;
 	MLX5E_SET_PFLAG(&new_channels.params, MLX5E_PFLAG_RX_CQE_COMPRESS, new_val);
 
-	new_channels.params.mpwqe_log_stride_sz =
-		MLX5E_MPWQE_STRIDE_SZ(priv->mdev, new_val);
-	new_channels.params.mpwqe_log_num_strides =
-		MLX5_MPWRQ_LOG_WQE_SZ - new_channels.params.mpwqe_log_stride_sz;
+	mlx5e_align_rq_mpwqe_params(priv, &new_channels.params);
 
 	if (!test_bit(MLX5E_STATE_OPENED, &priv->state)) {
 		priv->channels.params = new_channels.params;
