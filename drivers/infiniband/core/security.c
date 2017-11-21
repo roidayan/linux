@@ -417,7 +417,16 @@ void ib_close_shared_qp_security(struct ib_qp_security *sec)
 
 int ib_create_qp_security(struct ib_qp *qp, struct ib_device *dev)
 {
+	u8 i = rdma_start_port(dev);
+	bool is_ib = false;
 	int ret;
+
+	while (i <= rdma_end_port(dev) && !is_ib)
+		is_ib = rdma_protocol_ib(dev, i++);
+
+	/* If this isn't an IB device don't create the security context */
+	if (!is_ib)
+		return 0;
 
 	qp->qp_sec = kzalloc(sizeof(*qp->qp_sec), GFP_KERNEL);
 	if (!qp->qp_sec)
