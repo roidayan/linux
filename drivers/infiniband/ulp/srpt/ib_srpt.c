@@ -1672,6 +1672,7 @@ retry:
 		qp_init->cap.max_recv_sge = qp_init->cap.max_send_sge;
 	}
 
+	strncpy(qp_init->comm, "srpt", TASK_COMM_LEN);
 	ch->qp = ib_create_qp(sdev->pd, qp_init);
 	if (IS_ERR(ch->qp)) {
 		ret = PTR_ERR(ch->qp);
