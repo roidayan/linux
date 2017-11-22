@@ -1033,6 +1033,7 @@ static struct ib_ucq_object *create_cq(struct ib_uverbs_file *file,
 		goto err_cb;
 
 	uobj_alloc_commit(&obj->uobject);
+	rdma_restrack_add(&cq->res, RDMA_RESTRACK_CQ, NULL);
 
 	return obj;
 
