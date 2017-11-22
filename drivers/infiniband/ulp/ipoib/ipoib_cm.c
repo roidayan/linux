@@ -263,6 +263,7 @@ static struct ib_qp *ipoib_cm_create_rx_qp(struct net_device *dev,
 		.sq_sig_type = IB_SIGNAL_ALL_WR,
 		.qp_type = IB_QPT_RC,
 		.qp_context = p,
+		.comm = "ipoib-cm",
 	};
 
 	if (!ipoib_cm_has_srq(dev)) {
@@ -1062,7 +1063,8 @@ static struct ib_qp *ipoib_cm_create_tx_qp(struct net_device *dev, struct ipoib_
 		.sq_sig_type		= IB_SIGNAL_ALL_WR,
 		.qp_type		= IB_QPT_RC,
 		.qp_context		= tx,
-		.create_flags		= 0
+		.create_flags		= 0,
+		.comm			= "ipoib-cm",
 	};
 	struct ib_qp *tx_qp;
 
