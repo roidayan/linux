@@ -184,6 +184,7 @@ struct ib_qp *mlx5_ib_gsi_create_qp(struct ib_pd *pd,
 		hw_init_attr.cap.max_send_sge = 0;
 		hw_init_attr.cap.max_inline_data = 0;
 	}
+	strncpy(hw_init_attr.comm, "mlx5-gsi", TASK_COMM_LEN);
 	gsi->rx_qp = ib_create_qp(pd, &hw_init_attr);
 	if (IS_ERR(gsi->rx_qp)) {
 		mlx5_ib_warn(dev, "unable to create hardware GSI QP. error %ld\n",
@@ -264,6 +265,7 @@ static struct ib_qp *create_gsi_ud_qp(struct mlx5_ib_gsi_qp *gsi)
 		.sq_sig_type = gsi->sq_sig_type,
 		.qp_type = IB_QPT_UD,
 		.create_flags = mlx5_ib_create_qp_sqpn_qp1(),
+		.comm = "mlx5-gsi",
 	};
 
 	return ib_create_qp(pd, &init_attr);

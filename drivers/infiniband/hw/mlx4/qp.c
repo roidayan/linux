@@ -1677,6 +1677,7 @@ struct ib_qp *mlx4_ib_create_qp(struct ib_pd *pd,
 		if (is_eth &&
 		    dev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_ROCE_V1_V2) {
 			init_attr->create_flags |= MLX4_IB_QP_CREATE_ROCE_V2_GSI;
+			strncpy(init_attr->comm, "mlx4-gsi", TASK_COMM_LEN);
 			sqp->roce_v2_gsi = ib_create_qp(pd, init_attr);
 
 			if (IS_ERR(sqp->roce_v2_gsi)) {
