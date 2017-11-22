@@ -243,6 +243,7 @@ int smc_ib_create_queue_pair(struct smc_link *lnk)
 		},
 		.sq_sig_type = IB_SIGNAL_REQ_WR,
 		.qp_type = IB_QPT_RC,
+		.comm = "sec-ib",
 	};
 	int rc;
 
