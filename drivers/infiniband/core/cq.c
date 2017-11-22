@@ -154,6 +154,8 @@ struct ib_cq *ib_alloc_cq(struct ib_device *dev, void *private,
 	if (!cq->wc)
 		goto out_destroy_cq;
 
+	rdma_restrack_add(&cq->res, RDMA_RESTRACK_CQ, NULL);
+
 	switch (cq->poll_ctx) {
 	case IB_POLL_DIRECT:
 		cq->comp_handler = ib_cq_completion_direct;
@@ -208,6 +210,7 @@ void ib_free_cq(struct ib_cq *cq)
 		WARN_ON_ONCE(1);
 	}
 
+	rdma_restrack_del(&cq->res, RDMA_RESTRACK_CQ);
 	kfree(cq->wc);
 	ret = cq->device->destroy_cq(cq);
 	WARN_ON_ONCE(ret);
