@@ -306,4 +306,23 @@ struct ib_device *ib_device_get_by_index(u32 ifindex);
 /* RDMA device netlink */
 void nldev_init(void);
 void nldev_exit(void);
+
+static inline struct ib_qp *_ib_create_qp(struct ib_device *dev,
+					  struct ib_pd *pd,
+					  struct ib_qp_init_attr *attr,
+					  struct ib_udata *udata)
+{
+	struct ib_qp *qp;
+
+	qp = dev->create_qp(pd, attr, udata);
+	if (!IS_ERR(qp)) {
+		qp->device = dev;
+		if (attr->qp_type < IB_QPT_MAX)
+			rdma_restrack_add(&qp->res,
+					  RDMA_RESTRACK_QP,
+					  attr->comm);
+	}
+
+	return qp;
+}
 #endif /* _CORE_PRIV_H */

@@ -1140,6 +1140,12 @@ struct ib_qp_init_attr {
 	u8			port_num;
 	struct ib_rwq_ind_table *rwq_ind_tbl;
 	u32			source_qpn;
+
+	/*
+	 * Name of entity which created this QP, empty string means that
+	 * it will be taken automatically from task_struct.
+	 */
+	char comm[TASK_COMM_LEN];
 };
 
 struct ib_qp_open_attr {
