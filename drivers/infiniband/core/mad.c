@@ -3103,6 +3103,7 @@ static int create_mad_qp(struct ib_mad_qp_info *qp_info,
 	qp_init_attr.port_num = qp_info->port_priv->port_num;
 	qp_init_attr.qp_context = qp_info;
 	qp_init_attr.event_handler = qp_event_handler;
+	strncpy(qp_init_attr.comm, "rdma-mad", TASK_COMM_LEN);
 	qp_info->qp = ib_create_qp(qp_info->port_priv->pd, &qp_init_attr);
 	if (IS_ERR(qp_info->qp)) {
 		dev_err(&qp_info->port_priv->device->dev,
