@@ -1834,6 +1834,7 @@ static int create_pv_sqp(struct mlx4_ib_demux_pv_ctx *ctx,
 	qp_init_attr.init_attr.port_num = ctx->port;
 	qp_init_attr.init_attr.qp_context = ctx;
 	qp_init_attr.init_attr.event_handler = pv_qp_event_handler;
+	strncpy(qp_init_attr.init_attr.comm, "mlx4-sriov", TASK_COMM_LEN);
 	tun_qp->qp = ib_create_qp(ctx->pd, &qp_init_attr.init_attr);
 	if (IS_ERR(tun_qp->qp)) {
 		ret = PTR_ERR(tun_qp->qp);

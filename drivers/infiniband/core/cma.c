@@ -858,6 +858,7 @@ int rdma_create_qp(struct rdma_cm_id *id, struct ib_pd *pd,
 		return -EINVAL;
 
 	qp_init_attr->port_num = id->port_num;
+	strncpy(qp_init_attr->comm, "rdma-cm", TASK_COMM_LEN);
 	qp = ib_create_qp(pd, qp_init_attr);
 	if (IS_ERR(qp))
 		return PTR_ERR(qp);
