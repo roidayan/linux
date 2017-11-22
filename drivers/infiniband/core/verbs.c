@@ -246,6 +246,7 @@ struct ib_pd *__ib_alloc_pd(struct ib_device *device, unsigned int flags,
 		pr_warn("%s: enabling unsafe global rkey\n", caller);
 		mr_access_flags |= IB_ACCESS_REMOTE_READ | IB_ACCESS_REMOTE_WRITE;
 	}
+	rdma_restrack_add(&pd->res, RDMA_RESTRACK_PD, NULL);
 
 	if (mr_access_flags) {
 		struct ib_mr *mr;
@@ -296,6 +297,7 @@ void ib_dealloc_pd(struct ib_pd *pd)
 	   requires the caller to guarantee we can't race here. */
 	WARN_ON(atomic_read(&pd->usecnt));
 
+	rdma_restrack_del(&pd->res, RDMA_RESTRACK_PD);
 	/* Making delalloc_pd a void return is a WIP, no driver should return
 	   an error here. */
 	ret = pd->device->dealloc_pd(pd);
