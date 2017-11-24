@@ -37,6 +37,7 @@
 #include <linux/mlx5/fs.h>
 #include "mlx5_core.h"
 #include "eswitch.h"
+#include "en.h"
 
 enum {
 	FDB_FAST_PATH = 0,
@@ -64,6 +65,13 @@ mlx5_eswitch_add_offloaded_rule(struct mlx5_eswitch *esw,
 	if (flow_act.action & MLX5_FLOW_CONTEXT_ACTION_FWD_DEST) {
 		dest[i].type = MLX5_FLOW_DESTINATION_TYPE_VPORT;
 		dest[i].vport_num = attr->out_rep->vport;
+
+		if (mlx5_lag_is_multipath_ready(esw->dev)) {
+			struct mlx5e_priv* priv = netdev_priv(attr->in_rep->netdev);
+
+			dest[i].destination_eswitch_owner_vhca_id = MLX5_CAP_GEN(priv->mdev, vhca_id);
+			dest[i].destination_eswitch_owner_vhca_id_valid = 1;
+		}
 		i++;
 	}
 	if (flow_act.action & MLX5_FLOW_CONTEXT_ACTION_COUNT) {
