@@ -1257,6 +1257,8 @@ static struct mlx5_flow_group *create_autogroup(struct mlx5_flow_table *ft,
 	MLX5_SET(create_flow_group_in, in, start_flow_index, candidate_index);
 	MLX5_SET(create_flow_group_in, in, end_flow_index,   candidate_index +
 		 group_size - 1);
+	MLX5_SET(create_flow_group_in, in, source_eswitch_owner_vhca_id_valid,
+		 1);
 	match_criteria_addr = MLX5_ADDR_OF(create_flow_group_in,
 					   in, match_criteria);
 	memcpy(match_criteria_addr, match_criteria,
