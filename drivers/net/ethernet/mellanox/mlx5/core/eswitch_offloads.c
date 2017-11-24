@@ -89,7 +89,11 @@ mlx5_eswitch_add_offloaded_rule(struct mlx5_eswitch *esw,
 	MLX5_SET(fte_match_set_misc, misc, source_port, attr->in_rep->vport);
 
 	if (flow_act.action & MLX5_FLOW_CONTEXT_ACTION_FWD_DEST) {
-		struct mlx5e_priv* priv = netdev_priv(attr->in_rep->netdev);
+		struct net_device *up_dev = mlx5_eswitch_get_uplink_netdev(esw);
+		struct mlx5e_priv *priv = netdev_priv(up_dev);
+
+		if (flow_act.action & MLX5_FLOW_CONTEXT_ACTION_ENCAP)
+			priv = netdev_priv(attr->in_rep->netdev);
 
 		MLX5_SET(fte_match_set_misc, misc,
 			 source_eswitch_owner_vhca_id,
