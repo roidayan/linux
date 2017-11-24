@@ -282,6 +282,14 @@ static int mlx5_cmd_set_fte(struct mlx5_core_dev *dev,
 				id = dst->dest_attr.ft->id;
 			} else {
 				id = dst->dest_attr.tir_num;
+
+				if (dst->dest_attr.type ==
+				    MLX5_FLOW_DESTINATION_TYPE_VPORT) {
+					MLX5_SET(dest_format_struct, in_dests, destination_eswitch_owner_vhca_id_valid,
+						 dst->dest_attr.destination_eswitch_owner_vhca_id_valid);
+					MLX5_SET(dest_format_struct, in_dests, destination_eswitch_owner_vhca_id,
+						 dst->dest_attr.destination_eswitch_owner_vhca_id);
+				}
 			}
 			MLX5_SET(dest_format_struct, in_dests, destination_id, id);
 			in_dests += MLX5_ST_SZ_BYTES(dest_format_struct);
