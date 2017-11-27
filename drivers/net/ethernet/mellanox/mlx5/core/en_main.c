@@ -124,8 +124,11 @@ void mlx5e_align_rq_mpwqe_params(struct mlx5e_priv *priv,
 		return;
 	}
 
-	rq_headroom = MLX5_RX_HEADROOM + NET_IP_ALIGN;
-	linear_frag_sz = MLX5_SKB_FRAG_SZ(rq_headroom + hw_mtu);
+	rq_headroom = params->xdp_prog ? XDP_PACKET_HEADROOM : MLX5_RX_HEADROOM;
+	rq_headroom += NET_IP_ALIGN;
+
+	linear_frag_sz = params->xdp_prog ? PAGE_SIZE :
+		MLX5_SKB_FRAG_SZ(rq_headroom + hw_mtu);
 
 	log_mtus_per_mpwqe = MLX5_MPWRQ_LOG_WQE_SZ - order_base_2(linear_frag_sz);
 	mpwqe->log_rq_size = params->log_rx_ring_mtu_size - log_mtus_per_mpwqe;
@@ -180,9 +183,11 @@ static void mlx5e_set_rq_params(struct mlx5e_priv *priv,
 {
 	struct mlx5_core_dev *mdev = priv->mdev;
 	u8 rq_type = mlx5e_check_fragmented_striding_rq_cap(mdev) &&
-		    !params->xdp_prog && !MLX5_IPSEC_DEV(mdev) ?
-		    MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ :
-		    MLX5_WQ_TYPE_LINKED_LIST;
+		!MLX5_IPSEC_DEV(mdev) &&
+		!(params->xdp_prog &&
+		  !mlx5e_rx_mpwqe_is_linear_skb(mdev, params, PAGE_SIZE)) ?
+		MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ :
+		MLX5_WQ_TYPE_LINKED_LIST;
 	mlx5e_init_rq_type_params(priv, params, rq_type);
 }
 
