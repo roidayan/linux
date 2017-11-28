@@ -34,6 +34,7 @@
 #define __MLX5_EN_TC_H__
 
 #include <net/pkt_cls.h>
+#include "en.h"
 
 #define MLX5E_TC_FLOW_ID_MASK 0x0000ffff
 
@@ -62,6 +63,8 @@ static inline int mlx5e_tc_num_filters(struct mlx5e_priv *priv)
 {
 	return atomic_read(&priv->fs.tc.ht.nelems);
 }
+
+void mlx5e_restore_rules(struct net_device *ndev);
 
 #else /* CONFIG_MLX5_ESWITCH */
 static inline int  mlx5e_tc_init(struct mlx5e_priv *priv) { return 0; }
