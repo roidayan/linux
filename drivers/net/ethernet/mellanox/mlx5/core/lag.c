@@ -35,6 +35,7 @@
 #include <linux/mlx5/vport.h>
 #include "mlx5_core.h"
 #include "eswitch.h"
+#include "en_tc.h"
 
 enum {
 	MLX5_LAG_FLAG_BONDED = 1 << 0,
@@ -411,6 +412,9 @@ static int mlx5_handle_change_event(struct mlx5_lag *ldev,
 
 	tracker->netdev_state[port].link_up = link_up;
 	tracker->netdev_state[port].tx_enabled = link_up;
+
+	if (link_up && mlx5_lag_is_multipath_ready(ldev->pf[0].dev))
+		mlx5e_restore_rules(ndev);
 
 	return 1;
 }
