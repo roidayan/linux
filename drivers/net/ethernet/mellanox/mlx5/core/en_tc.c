@@ -2871,3 +2871,62 @@ void mlx5_hairpin_unset(struct mlx5_hairpin_ctx *func_ctx,
 
 	mlx5_hairpin_free(func_ctx);
 }
+
+void mlx5e_restore_rules(struct net_device *ndev) {
+	struct mlx5e_priv *priv = netdev_priv(ndev);
+	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
+	struct mlx5_eswitch_rep *rep;
+	struct mlx5e_tc_table *tc;
+	struct rhashtable_iter iter;
+	struct mlx5e_tc_flow *flow;
+	int vport;
+	int err;
+
+	for (vport = 0; vport < esw->enabled_vports; vport++) {
+		rep = &esw->offloads.vport_reps[vport];
+		priv = netdev_priv(rep->netdev);
+		tc = &priv->fs.tc;
+
+		if (!rep->netdev)
+			continue;
+
+		rhashtable_walk_enter(&tc->ht, &iter);
+		err = rhashtable_walk_start(&iter);
+		if (err) {
+			rhashtable_walk_stop(&iter);
+			rhashtable_walk_exit(&iter);
+			continue;
+		}
+
+		while ((flow = rhashtable_walk_next(&iter))) {
+			if (IS_ERR(flow)) {
+				if (PTR_ERR(flow) == -EAGAIN)
+					continue;
+				break;
+			}
+
+			if (flow->flags & MLX5E_TC_FLOW_OFFLOADED)
+				continue;
+
+			if (!(flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP))
+				continue;
+
+			if (!(flow->flags & MLX5E_TC_FLOW_VALID)) {
+				err = mlx5e_tc_add_fdb_flow(priv,
+					flow->esw_attr->parse_attr, flow);
+
+				if (err && err != -EAGAIN) {
+					continue;
+				} else {
+					flow->flags |= MLX5E_TC_FLOW_VALID;
+				}
+
+				if (!err)
+					flow->flags |= MLX5E_TC_FLOW_OFFLOADED;
+			}
+		}
+
+		rhashtable_walk_stop(&iter);
+		rhashtable_walk_exit(&iter);
+	}
+}
