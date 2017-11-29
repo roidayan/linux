@@ -137,7 +137,7 @@ static int ib_device_check_mandatory(struct ib_device *device)
 /*
  * Caller to this function should hold lists_rwsem
  */
-struct ib_device *__ib_device_get_by_index(u32 index)
+static struct ib_device *__ib_device_get_by_index(u32 index)
 {
 	struct ib_device *device;
 
