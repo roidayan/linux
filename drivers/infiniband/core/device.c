@@ -145,6 +145,22 @@ struct ib_device *__ib_device_get_by_index(u32 index)
 	return NULL;
 }
 
+/*
+ * Caller is responsible to return refrerence count by calling put_device()
+ */
+struct ib_device *ib_device_get_by_index(u32 index)
+{
+	struct ib_device *device;
+
+	down_read(&lists_rwsem);
+	device = __ib_device_get_by_index(index);
+	if (device)
+		get_device(&device->dev);
+
+	up_read(&lists_rwsem);
+	return device;
+}
+
 static struct ib_device *__ib_device_get_by_name(const char *name)
 {
 	struct ib_device *device;
