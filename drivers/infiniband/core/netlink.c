@@ -91,7 +91,8 @@ static bool is_nl_valid(unsigned int type, unsigned int op)
 
 	cb_table = rdma_nl_types[type].cb_table;
 
-	if (!cb_table || (!cb_table[op].dump && !cb_table[op].doit))
+	if (!cb_table || !cb_table[op] ||
+	    (!cb_table[op].dump && !cb_table[op].doit))
 		return false;
 	return true;
 }
