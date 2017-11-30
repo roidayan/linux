@@ -2295,6 +2295,7 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv, __be16 protocol,
 		err = parse_tc_fdb_actions(priv, f->exts, parse_attr, flow);
 		if (err < 0)
 			goto err_free;
+		flow->esw_attr->counter_dev = priv->mdev;
 		err = mlx5e_tc_add_fdb_flow(priv, parse_attr, flow);
 	} else {
 		err = parse_tc_nic_actions(priv, f->exts, parse_attr, flow);
@@ -2333,6 +2334,12 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv, __be16 protocol,
 		err2 = parse_tc_fdb_actions(priv, f->exts, peer_parse_attr, peer_flow);
 		if (err2 < 0)
 			goto err_free2;
+
+		if ((MLX5_CAP_ESW(esw->dev, counter_eswitch_affinity) == MLX5_COUNTER_SOURCE_ESWITCH) &&
+		    (flow->esw_attr->in_rep->vport != FDB_UPLINK_VPORT))
+			peer_flow->esw_attr->counter_dev = priv->mdev;
+		else
+			peer_flow->esw_attr->counter_dev = peer_priv->mdev;
 
 		err2 = mlx5e_tc_add_fdb_flow(peer_priv, peer_parse_attr, peer_flow);
 
