@@ -274,6 +274,7 @@ struct mlx5_esw_flow_attr {
 	struct mlx5_eswitch_rep *out_rep[MLX5_MAX_FLOW_FWD_VPORTS];
 	struct mlx5_core_dev	*out_mdev[MLX5_MAX_FLOW_FWD_VPORTS];
 	struct mlx5_core_dev	*in_mdev;
+	struct mlx5_core_dev    *counter_dev;
 
 	int mirror_count;
 	int out_count;
