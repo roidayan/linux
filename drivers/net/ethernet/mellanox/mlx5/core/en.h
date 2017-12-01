@@ -398,6 +398,44 @@ struct mlx5e_txqsq {
 	u32                        rate_limit;
 } ____cacheline_aligned_in_smp;
 
+struct mlx5e_dma_info {
+	struct page	*page;
+	dma_addr_t	addr;
+};
+
+struct mlx5e_dma_info_fifo {
+	struct mlx5e_dma_info *di;
+	u32 cc;
+	u32 pc;
+	u32 mask;
+};
+
+static inline void
+mlx5e_dma_fifo_push(struct mlx5e_dma_info_fifo *fifo, struct mlx5e_dma_info *di)
+{
+	u32 i = fifo->pc & fifo->mask;
+
+	fifo->di[i] = *di;
+	fifo->pc++;
+}
+
+static inline struct mlx5e_dma_info *
+mlx5e_dma_fifo_get(struct mlx5e_dma_info_fifo *fifo, u32 i)
+{
+	return &fifo->di[i & fifo->mask];
+}
+
+static inline void
+mlx5e_dma_fifo_pop(struct mlx5e_dma_info_fifo *fifo, u32 cc)
+{
+	fifo->cc = cc;
+}
+
+struct mlx5e_xdp_empwqe_info {
+	u16 num_wqebbs;
+	u16 num_di;
+};
+
 struct mlx5e_xdpsq {
 	/* data path */
 
@@ -409,8 +447,20 @@ struct mlx5e_xdpsq {
 
 	/* write@xmit, read@completion */
 	struct {
-		struct mlx5e_dma_info     *di;
 		bool                       doorbell;
+		union {
+			struct mlx5e_dma_info     *di;
+			struct {
+				struct mlx5e_xdp_empwqe_info *info;
+				struct mlx5e_dma_info_fifo    fifo;
+
+				bool                      full;
+				/* Current WQE in use */
+				struct mlx5e_tx_wqe      *wqe;
+				struct mlx5_wqe_data_seg *dseg;
+				u16                       ds_count;
+			} empwqe;
+		};
 	} db;
 
 	/* read only */
@@ -457,11 +507,6 @@ mlx5e_wqc_has_room_for(struct mlx5_wq_cyc *wq, u16 cc, u16 pc, u16 n)
 {
 	return (((wq->sz_m1 & (cc - pc)) >= n) || (cc == pc));
 }
-
-struct mlx5e_dma_info {
-	struct page	*page;
-	dma_addr_t	addr;
-};
 
 struct mlx5e_wqe_frag_info {
 	struct mlx5e_dma_info di;

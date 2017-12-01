@@ -997,6 +997,33 @@ static int mlx5e_alloc_xdpsq_db(struct mlx5e_xdpsq *sq, int numa)
 	return 0;
 }
 
+static void mlx5e_free_xdpsq_db_empwqe(struct mlx5e_xdpsq *sq)
+{
+	kfree(sq->db.empwqe.info);
+	kfree(sq->db.empwqe.fifo.di);
+}
+
+static int mlx5e_alloc_xdpsq_db_empwqe(struct mlx5e_xdpsq *sq, int numa)
+{
+	int wq_sz = mlx5_wq_cyc_get_size(&sq->wq);
+	int dsegs_per_wq = wq_sz * MLX5_SEND_WQEBB_NUM_DS;
+
+	sq->db.empwqe.info =
+		kzalloc_node(sizeof(*sq->db.empwqe.info) * wq_sz, GFP_KERNEL, numa);
+	if (!sq->db.empwqe.info)
+		return -ENOMEM;
+
+	sq->db.empwqe.fifo.di =
+		kzalloc_node(sizeof(*sq->db.empwqe.fifo.di) * dsegs_per_wq, GFP_KERNEL, numa);
+	if (!sq->db.empwqe.fifo.di) {
+		mlx5e_free_xdpsq_db_empwqe(sq);
+		return -ENOMEM;
+	}
+	sq->db.empwqe.fifo.mask = dsegs_per_wq - 1;
+
+	return 0;
+}
+
 static int mlx5e_alloc_xdpsq(struct mlx5e_channel *c,
 			     struct mlx5e_params *params,
 			     struct mlx5e_sq_param *param,
@@ -1018,7 +1045,11 @@ static int mlx5e_alloc_xdpsq(struct mlx5e_channel *c,
 		return err;
 	sq->wq.db = &sq->wq.db[MLX5_SND_DBR];
 
-	err = mlx5e_alloc_xdpsq_db(sq, mlx5e_get_node(c->priv, c->ix));
+	/* TODO: better desing */
+	if (MLX5_CAP_ETH(c->priv->mdev, enhanced_multi_pkt_send_wqe))
+		err = mlx5e_alloc_xdpsq_db_empwqe(sq, mlx5e_get_node(c->priv, c->ix));
+	else
+		err = mlx5e_alloc_xdpsq_db(sq, mlx5e_get_node(c->priv, c->ix));
 	if (err)
 		goto err_sq_wq_destroy;
 
@@ -1032,7 +1063,10 @@ err_sq_wq_destroy:
 
 static void mlx5e_free_xdpsq(struct mlx5e_xdpsq *sq)
 {
-	mlx5e_free_xdpsq_db(sq);
+	if (MLX5_CAP_ETH(sq->channel->priv->mdev, enhanced_multi_pkt_send_wqe))
+		mlx5e_free_xdpsq_db_empwqe(sq);
+	else
+		mlx5e_free_xdpsq_db(sq);
 	mlx5_wq_destroy(&sq->wq_ctrl);
 }
 
@@ -1195,6 +1229,7 @@ static int mlx5e_create_sq(struct mlx5_core_dev *mdev,
 	MLX5_SET(sqc,  sqc, tis_lst_sz, csp->tis_lst_sz);
 	MLX5_SET(sqc,  sqc, tis_num_0, csp->tisn);
 	MLX5_SET(sqc,  sqc, cqn, csp->cqn);
+
 	MLX5_SET(sqc,  sqc, allow_multi_pkt_send_wqe, MLX5_CAP_ETH(mdev, multi_pkt_send_wqe));
 
 	if (MLX5_CAP_ETH(mdev, wqe_inline_mode) == MLX5_CAP_INLINE_MODE_VPORT_CONTEXT)
@@ -1439,6 +1474,21 @@ static int mlx5e_open_xdpsq(struct mlx5e_channel *c,
 	/* If XDP TX MPWQE is requested, override sq min inline mode */
 	if (MLX5E_GET_PFLAG(params, MLX5E_PFLAG_XDP_TX_MPWQE))
 		sq->min_inline_mode = MLX5_INLINE_MODE_MPWQE;
+
+	if (MLX5_CAP_ETH(c->priv->mdev, enhanced_multi_pkt_send_wqe)) {
+		struct mlx5e_tx_wqe *wqe  = mlx5_wq_cyc_get_wqe(&sq->wq, 0);
+
+		sq->min_inline_mode = MLX5_INLINE_MODE_EMPWQE;
+
+		/* prepare for next eMPWQE */
+		prefetchw(wqe);
+		sq->db.empwqe.wqe      = wqe;
+		sq->db.empwqe.dseg     = (struct mlx5_wqe_data_seg *)wqe + 2;
+		sq->db.empwqe.ds_count = 2;
+		printk(KERN_CRIT"===>XXX %s WQE(%p) pc(%d) dscnt(%d) dseg(%p)SQN(0x%x)\n",
+		       __func__, wqe, 0, sq->db.empwqe.ds_count, sq->db.empwqe.dseg, sq->sqn);
+		return 0;
+	}
 
 	if (sq->min_inline_mode == MLX5_INLINE_MODE_L2) {
 		inline_hdr_sz = MLX5E_XDP_MIN_INLINE;
@@ -3984,6 +4034,9 @@ static int mlx5e_check_required_hca_cap(struct mlx5_core_dev *mdev)
 	if (!MLX5_CAP_GEN(mdev, cq_moderation))
 		mlx5_core_warn(mdev, "CQ moderation is not supported\n");
 
+	/* TODO: Remove this */
+	if (MLX5_CAP_ETH(mdev, enhanced_multi_pkt_send_wqe))
+		mlx5_core_warn(mdev, "enhanced MPWQE is ON!\n");
 	return 0;
 }
 
