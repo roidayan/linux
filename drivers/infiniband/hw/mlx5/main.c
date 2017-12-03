@@ -60,6 +60,10 @@
 #include "ib_rep.h"
 #include "cmd.h"
 #include <linux/mlx5/fs_helpers.h>
+#include <rdma/uverbs_std_types.h>
+
+#define UVERBS_MODULE_NAME mlx5_ib
+#include <rdma/uverbs_named_ioctl.h>
 
 #define DRIVER_NAME "mlx5_ib"
 #define DRIVER_VERSION "5.0-0"
@@ -4546,6 +4550,28 @@ static void mlx5_ib_cleanup_multiport_master(struct mlx5_ib_dev *dev)
 	mlx5_nic_vport_disable_roce(dev->mdev);
 }
 
+#define NUM_TREES	0
+static int populate_specs_root(struct mlx5_ib_dev *dev)
+{
+	const struct uverbs_object_tree_def *default_root[NUM_TREES + 1] = {};
+	size_t num_trees = 0;
+
+	if (WARN_ON(num_trees > NUM_TREES))
+		num_trees = NUM_TREES;
+
+	default_root[num_trees++] = uverbs_default_get_objects();
+
+	dev->ib_dev.specs_root =
+		uverbs_alloc_spec_tree(num_trees, default_root);
+
+	return PTR_ERR_OR_ZERO(dev->ib_dev.specs_root);
+}
+
+static void depopulate_specs_root(struct mlx5_ib_dev *dev)
+{
+	uverbs_free_spec_tree(dev->ib_dev.specs_root);
+}
+
 void mlx5_ib_stage_init_cleanup(struct mlx5_ib_dev *dev)
 {
 	mlx5_ib_cleanup_multiport_master(dev);
@@ -4993,12 +5019,21 @@ void mlx5_ib_stage_bfrag_cleanup(struct mlx5_ib_dev *dev)
 
 int mlx5_ib_stage_ib_reg_init(struct mlx5_ib_dev *dev)
 {
-	return ib_register_device(&dev->ib_dev, NULL);
+	int err = populate_specs_root(dev);
+
+	if (!err) {
+		err = ib_register_device(&dev->ib_dev, NULL);
+		if (err)
+			depopulate_specs_root(dev);
+	}
+
+	return err;
 }
 
 void mlx5_ib_stage_ib_reg_cleanup(struct mlx5_ib_dev *dev)
 {
 	ib_unregister_device(&dev->ib_dev);
+	depopulate_specs_root(dev);
 }
 
 int mlx5_ib_stage_umr_res_init(struct mlx5_ib_dev *dev)
