@@ -68,9 +68,20 @@ static int uverbs_process_attr(struct ib_device *ibdev,
 
 	switch (spec->type) {
 	case UVERBS_ATTR_TYPE_PTR_IN:
+		if (uattr->len > spec->ptr.len &&
+		    spec->flags & UVERBS_ATTR_SPEC_F_MIN_SZ_OR_ZERO &&
+		    ((uattr->len > sizeof(((struct ib_uverbs_attr *)0)->data) &&
+		      !ib_is_buffer_cleared(u64_to_user_ptr(uattr->data) + spec->ptr.len,
+					   uattr->len - spec->ptr.len)) ||
+		     (uattr->len <= sizeof(((struct ib_uverbs_attr *)0)->data) &&
+		      memchr_inv((const void *)&uattr->data + spec->ptr.len,
+				 0, uattr->len - spec->ptr.len))))
+			return -EOPNOTSUPP;
+
+	/* fall through */
 	case UVERBS_ATTR_TYPE_PTR_OUT:
-		if (uattr->len < spec->ptr.len ||
-		    (!(spec->flags & UVERBS_ATTR_SPEC_F_MIN_SZ) &&
+		if (uattr->len < spec->ptr.min_len ||
+		    (!(spec->flags & UVERBS_ATTR_SPEC_F_MIN_SZ_OR_ZERO) &&
 		     uattr->len > spec->ptr.len))
 			return -EINVAL;
 
