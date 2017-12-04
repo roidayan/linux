@@ -2117,20 +2117,62 @@ static const char *ib_qp_type_str(enum ib_qp_type type)
 		return "IB_QPT_RAW_PACKET";
 	case MLX5_IB_QPT_REG_UMR:
 		return "MLX5_IB_QPT_REG_UMR";
+	case IB_QPT_DRIVER:
+		return "IB_QPT_DRIVER";
 	case IB_QPT_MAX:
 	default:
 		return "Invalid QP type";
 	}
 }
 
+static int validate_driver_qp(struct mlx5_ib_dev *dev,
+			      struct ib_qp_init_attr *init_attr,
+			      struct mlx5_ib_create_qp *ucmd,
+			      struct ib_udata *udata)
+{
+	int err;
+	bool dc_supp = MLX5_CAP_GEN(dev->mdev, dct);
+
+	if (!udata)
+		return -EINVAL;
+
+	if (udata->inlen < sizeof(*ucmd)) {
+		mlx5_ib_dbg(dev, "create_qp user command is smaller than expected\n");
+		return -EINVAL;
+	}
+	err = ib_copy_from_udata(ucmd, udata, sizeof(*ucmd));
+	if (err)
+		return err;
+
+	if ((ucmd->flags & MLX5_QP_FLAG_TYPE_DCT) && (ucmd->flags & MLX5_QP_FLAG_TYPE_DCI)) {
+		mlx5_ib_dbg(dev, "Only one DC QP type should be specified\n");
+		return -EINVAL;
+	}
+	if (!((ucmd->flags & MLX5_QP_FLAG_TYPE_DCT) || (ucmd->flags & MLX5_QP_FLAG_TYPE_DCI))) {
+		mlx5_ib_dbg(dev, "DC QP type is not specified\n");
+		return -EINVAL;
+	}
+	if (!dc_supp) {
+		mlx5_ib_dbg(dev, "DC transport is not supported\n");
+		return -EOPNOTSUPP;
+	}
+	if (ucmd->flags & MLX5_QP_FLAG_TYPE_DCI)
+		init_attr->qp_type = MLX5_IB_QPT_DCI;
+	else
+		init_attr->qp_type = MLX5_IB_QPT_DCT;
+	return 0;
+}
+
 struct ib_qp *mlx5_ib_create_qp(struct ib_pd *pd,
-				struct ib_qp_init_attr *init_attr,
+				struct ib_qp_init_attr *verbs_init_attr,
 				struct ib_udata *udata)
 {
 	struct mlx5_ib_dev *dev;
 	struct mlx5_ib_qp *qp;
 	u16 xrcdn = 0;
 	int err;
+	struct ib_qp_init_attr mlx_init_attr;
+	struct ib_qp_init_attr *init_attr = verbs_init_attr;
 
 	if (pd) {
 		dev = to_mdev(pd->device);
@@ -2153,6 +2195,16 @@ struct ib_qp *mlx5_ib_create_qp(struct ib_pd *pd,
 			return ERR_PTR(-EINVAL);
 		}
 		dev = to_mdev(to_mxrcd(init_attr->xrcd)->ibxrcd.device);
+	}
+
+	if (init_attr->qp_type == IB_QPT_DRIVER) {
+		struct mlx5_ib_create_qp ucmd;
+
+		init_attr = &mlx_init_attr;
+		memcpy(init_attr, verbs_init_attr, sizeof(*verbs_init_attr));
+		err = validate_driver_qp(dev, init_attr, &ucmd, udata);
+		if (err)
+			return ERR_PTR(err);
 	}
 
 	switch (init_attr->qp_type) {
@@ -2215,6 +2267,9 @@ struct ib_qp *mlx5_ib_create_qp(struct ib_pd *pd,
 		/* Don't support raw QPs */
 		return ERR_PTR(-EINVAL);
 	}
+
+	if (verbs_init_attr->qp_type == IB_QPT_DRIVER)
+		qp->driver_qp_type = init_attr->qp_type;
 
 	return &qp->ibqp;
 }
