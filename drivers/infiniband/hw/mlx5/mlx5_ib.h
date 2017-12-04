@@ -364,12 +364,18 @@ struct mlx5_bf {
 	struct mlx5_sq_bfreg   *bfreg;
 };
 
+struct mlx5_ib_dct {
+	struct mlx5_core_dct	mdct;
+	u32			*in;
+};
+
 struct mlx5_ib_qp {
 	struct ib_qp		ibqp;
 	union {
 		struct mlx5_ib_qp_trans trans_qp;
 		struct mlx5_ib_raw_packet_qp raw_packet_qp;
 		struct mlx5_ib_rss_qp rss_qp;
+		struct mlx5_ib_dct dct;
 	};
 	struct mlx5_buf		buf;
 
@@ -1022,6 +1028,8 @@ struct ib_rwq_ind_table *mlx5_ib_create_rwq_ind_table(struct ib_device *device,
 						      struct ib_rwq_ind_table_init_attr *init_attr,
 						      struct ib_udata *udata);
 int mlx5_ib_destroy_rwq_ind_table(struct ib_rwq_ind_table *wq_ind_table);
+bool mlx5_ib_dc_atomic_is_supported(struct mlx5_ib_dev *dev);
+
 
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
 void mlx5_ib_internal_fill_odp_caps(struct mlx5_ib_dev *dev);
