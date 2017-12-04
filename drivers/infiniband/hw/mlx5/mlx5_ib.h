@@ -202,6 +202,8 @@ struct mlx5_ib_flow_db {
  * creates the actual hardware QP.
  */
 #define MLX5_IB_QPT_HW_GSI	IB_QPT_RESERVED2
+#define MLX5_IB_QPT_DCI		IB_QPT_RESERVED3
+#define MLX5_IB_QPT_DCT		IB_QPT_RESERVED4
 #define MLX5_IB_WR_UMR		IB_WR_RESERVED1
 
 #define MLX5_IB_UMR_OCTOWORD	       16
@@ -406,6 +408,7 @@ struct mlx5_ib_qp {
 	u32			rate_limit;
 	u32                     underlay_qpn;
 	bool			tunnel_offload_en;
+	u32			driver_qp_type;
 };
 
 struct mlx5_ib_cq_buf {
