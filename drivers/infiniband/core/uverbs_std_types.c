@@ -181,6 +181,17 @@ static int uverbs_free_mr(struct ib_uobject *uobject,
 	return ib_dereg_mr((struct ib_mr *)uobject->object);
 }
 
+static int uverbs_free_dm(struct ib_uobject *uobject,
+			  enum rdma_remove_reason why)
+{
+	struct ib_dm *dm = uobject->object;
+
+	if (why == RDMA_REMOVE_DESTROY && atomic_read(&dm->usecnt))
+		return -EBUSY;
+
+	return dm->device->dealloc_dm(dm);
+}
+
 static int uverbs_free_xrcd(struct ib_uobject *uobject,
 			    enum rdma_remove_reason why)
 {
@@ -822,6 +833,63 @@ static DECLARE_UVERBS_METHOD(UVERBS_METHOD(UVERBS_METHOD_FLOW_ACTION_DESTROY),
 			 UVERBS_ACCESS_DESTROY,
 			 UA_FLAGS(UVERBS_ATTR_SPEC_F_MANDATORY)));
 
+static int UVERBS_HANDLER(UVERBS_METHOD_DM_ALLOC)(struct ib_device *ib_dev,
+						  struct ib_uverbs_file *file,
+						  struct uverbs_attr_bundle *attrs)
+{
+	struct ib_ucontext *ucontext = file->ucontext;
+	struct ib_dm_alloc_attr attr = {};
+	struct ib_uobject *uobj;
+	struct ib_dm *dm;
+	int ret;
+
+	if (!ib_dev->alloc_dm)
+		return -EOPNOTSUPP;
+
+	ret = uverbs_copy_from(&attr.length, attrs,
+			       UVERBS_ATTR_ALLOC_DM_LENGTH);
+	if (ret)
+		return ret;
+
+	ret = uverbs_copy_from(&attr.alignment, attrs,
+			       UVERBS_ATTR_ALLOC_DM_ALIGNMENT);
+	if (ret)
+		return ret;
+
+	uobj = uverbs_attr_get(attrs, UVERBS_ATTR_ALLOC_DM_HANDLE)->obj_attr.uobject;
+
+	dm = ib_dev->alloc_dm(ib_dev, ucontext, &attr, attrs);
+	if (IS_ERR(dm))
+		return PTR_ERR(dm);
+
+	dm->device  = ib_dev;
+	dm->length  = attr.length;
+	dm->uobject = uobj;
+	atomic_set(&dm->usecnt, 0);
+
+	uobj->object = dm;
+
+	return 0;
+}
+
+static DECLARE_COMMON_METHOD(UVERBS_METHOD_DM_ALLOC,
+	&UVERBS_ATTR_IDR(UVERBS_ATTR_ALLOC_DM_HANDLE, UVERBS_OBJECT_DM,
+			 UVERBS_ACCESS_NEW,
+			 UA_FLAGS(UVERBS_ATTR_SPEC_F_MANDATORY)),
+	&UVERBS_ATTR_PTR_IN(UVERBS_ATTR_ALLOC_DM_LENGTH,
+			    UVERBS_ATTR_TYPE(u64),
+			    UA_FLAGS(UVERBS_ATTR_SPEC_F_MANDATORY)),
+	&UVERBS_ATTR_PTR_IN(UVERBS_ATTR_ALLOC_DM_ALIGNMENT,
+			    UVERBS_ATTR_TYPE(u32),
+			    UA_FLAGS(UVERBS_ATTR_SPEC_F_MANDATORY)));
+
+static DECLARE_UVERBS_METHOD(UVERBS_METHOD(UVERBS_METHOD_DM_FREE),
+	UVERBS_METHOD_DM_FREE, uverbs_destroy_def_handler,
+	&UVERBS_ATTR_IDR(UVERBS_ATTR_FREE_DM_HANDLE,
+			 UVERBS_OBJECT_DM,
+			 UVERBS_ACCESS_DESTROY,
+			 UA_FLAGS(UVERBS_ATTR_SPEC_F_MANDATORY)));
+
 DECLARE_COMMON_OBJECT(UVERBS_OBJECT_COMP_CHANNEL,
 		      &UVERBS_TYPE_ALLOC_FD(0,
 					      sizeof(struct ib_uverbs_completion_event_file),
@@ -866,6 +934,12 @@ DECLARE_COMMON_OBJECT(UVERBS_OBJECT_FLOW_ACTION,
 		      &UVERBS_METHOD(UVERBS_METHOD_FLOW_ACTION_DESTROY),
 		      &UVERBS_METHOD(UVERBS_METHOD_FLOW_ACTION_ESP_MODIFY));
 
+DECLARE_COMMON_OBJECT(UVERBS_OBJECT_DM,
+		      /* 1 is used in order to free the DM after MRs */
+		      &UVERBS_TYPE_ALLOC_IDR(1, uverbs_free_dm),
+		      &UVERBS_METHOD(UVERBS_METHOD_DM_ALLOC),
+		      &UVERBS_METHOD(UVERBS_METHOD_DM_FREE));
+
 DECLARE_COMMON_OBJECT(UVERBS_OBJECT_WQ,
 		      &UVERBS_TYPE_ALLOC_IDR_SZ(sizeof(struct ib_uwq_object), 0,
 						  uverbs_free_wq));
@@ -897,7 +971,8 @@ static DECLARE_UVERBS_OBJECT_TREE(uverbs_default_objects,
 				  &UVERBS_OBJECT(UVERBS_OBJECT_WQ),
 				  &UVERBS_OBJECT(UVERBS_OBJECT_RWQ_IND_TBL),
 				  &UVERBS_OBJECT(UVERBS_OBJECT_XRCD),
-				  &UVERBS_OBJECT(UVERBS_OBJECT_FLOW_ACTION));
+				  &UVERBS_OBJECT(UVERBS_OBJECT_FLOW_ACTION),
+				  &UVERBS_OBJECT(UVERBS_OBJECT_DM));
 
 const struct uverbs_object_tree_def *uverbs_default_get_objects(void)
 {
