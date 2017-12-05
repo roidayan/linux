@@ -234,6 +234,7 @@ int ib_uverbs_dealloc_xrcd(struct ib_uverbs_device *dev, struct ib_xrcd *xrcd,
 			   enum rdma_remove_reason why);
 
 int uverbs_dealloc_mw(struct ib_mw *mw);
+int uverbs_dealloc_dm(struct ib_dm *dm);
 void ib_uverbs_detach_umcast(struct ib_qp *qp,
 			     struct ib_uqp_object *uobj);
 
@@ -286,6 +287,7 @@ extern const struct uverbs_object_def UVERBS_OBJECT(UVERBS_OBJECT_WQ);
 extern const struct uverbs_object_def UVERBS_OBJECT(UVERBS_OBJECT_RWQ_IND_TBL);
 extern const struct uverbs_object_def UVERBS_OBJECT(UVERBS_OBJECT_XRCD);
 extern const struct uverbs_object_def UVERBS_OBJECT(UVERBS_OBJECT_FLOW_ACTION);
+extern const struct uverbs_object_def UVERBS_OBJECT(UVERBS_OBJECT_DM);
 
 #define IB_UVERBS_DECLARE_CMD(name)					\
 	ssize_t ib_uverbs_##name(struct ib_uverbs_file *file,		\
