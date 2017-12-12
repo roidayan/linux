@@ -346,19 +346,25 @@ static int kobject_uevent_net_broadcast(struct kobject *kobj,
 static void zap_modalias_env(struct kobj_uevent_env *env)
 {
 	static const char modalias_prefix[] = "MODALIAS=";
+	size_t offset = 0, len;
 	int i;
 
 	for (i = 0; i < env->envp_idx;) {
+		len = strlen(env->envp[i]) + 1;
 		if (strncmp(env->envp[i], modalias_prefix,
 			    sizeof(modalias_prefix) - 1)) {
 			i++;
+			offset += len;
 			continue;
 		}
 
-		if (i != env->envp_idx - 1)
+		env->buflen -= len;
+		if (i != env->envp_idx - 1) {
+			memmove(env->envp[i], env->envp[i + 1],
+				env->buflen - offset);
 			memmove(&env->envp[i], &env->envp[i + 1],
 				sizeof(env->envp[i]) * env->envp_idx - 1);
-
+		}
 		env->envp_idx--;
 	}
 }
