@@ -125,7 +125,7 @@ void mlx5_odp_populate_klm(struct mlx5_klm *pklm, size_t offset,
 	if (flags & MLX5_IB_UPD_XLT_ZAP) {
 		for (i = 0; i < nentries; i++, pklm++) {
 			pklm->bcount = cpu_to_be32(MLX5_IMR_MTT_SIZE);
-			pklm->key = cpu_to_be32(dev->null_mkey);
+			pklm->key = cpu_to_be32(dev->odp.null_mkey);
 			pklm->va = 0;
 		}
 		return;
@@ -143,7 +143,7 @@ void mlx5_odp_populate_klm(struct mlx5_klm *pklm, size_t offset,
 			pklm->key = cpu_to_be32(mtt->ibmr.lkey);
 			odp = odp_next(odp);
 		} else {
-			pklm->key = cpu_to_be32(dev->null_mkey);
+			pklm->key = cpu_to_be32(dev->odp.null_mkey);
 		}
 		mlx5_ib_dbg(dev, "[%d] va %lx key %x\n",
 			    i, va, be32_to_cpu(pklm->key));
@@ -157,7 +157,7 @@ static void mr_leaf_free_action(struct work_struct *work)
 	struct mlx5_ib_mr *mr = odp->private, *imr = mr->parent;
 
 	mr->parent = NULL;
-	synchronize_srcu(&mr->dev->mr_srcu);
+	mr->dev->odp.sync(mr->dev);
 
 	ib_umem_release(odp->umem);
 	if (imr->live)
@@ -249,7 +249,7 @@ void mlx5_ib_invalidate_range(struct ib_umem *umem, unsigned long start,
 
 void mlx5_ib_internal_fill_odp_caps(struct mlx5_ib_dev *dev)
 {
-	struct ib_odp_caps *caps = &dev->odp_caps;
+	struct ib_odp_caps *caps = &dev->odp.caps;
 
 	memset(caps, 0, sizeof(*caps));
 
@@ -259,9 +259,9 @@ void mlx5_ib_internal_fill_odp_caps(struct mlx5_ib_dev *dev)
 	caps->general_caps = IB_ODP_SUPPORT;
 
 	if (MLX5_CAP_GEN(dev->mdev, umr_extended_translation_offset))
-		dev->odp_max_size = U64_MAX;
+		dev->odp.max_size = U64_MAX;
 	else
-		dev->odp_max_size = BIT_ULL(MLX5_MAX_UMR_SHIFT + PAGE_SHIFT);
+		dev->odp.max_size = BIT_ULL(MLX5_MAX_UMR_SHIFT + PAGE_SHIFT);
 
 	if (MLX5_CAP_ODP(dev->mdev, ud_odp_caps.send))
 		caps->per_transport_caps.ud_odp_caps |= IB_ODP_SUPPORT_SEND;
@@ -641,7 +641,7 @@ static int pagefault_single_data_segment(struct mlx5_ib_dev *dev,
 	u32 *out = NULL;
 	size_t offset;
 
-	srcu_key = srcu_read_lock(&dev->mr_srcu);
+	srcu_key = srcu_read_lock(&dev->odp.mr_srcu);
 
 	io_virt += *bytes_committed;
 	bcnt -= *bytes_committed;
@@ -754,7 +754,7 @@ srcu_unlock:
 	}
 	kfree(out);
 
-	srcu_read_unlock(&dev->mr_srcu, srcu_key);
+	srcu_read_unlock(&dev->odp.mr_srcu, srcu_key);
 	*bytes_committed = 0;
 	return ret ? ret : npages;
 }
@@ -919,10 +919,10 @@ static int mlx5_ib_mr_initiator_pfault_handler(
 
 	switch (qp->ibqp.qp_type) {
 	case IB_QPT_RC:
-		transport_caps = dev->odp_caps.per_transport_caps.rc_odp_caps;
+		transport_caps = dev->odp.caps.per_transport_caps.rc_odp_caps;
 		break;
 	case IB_QPT_UD:
-		transport_caps = dev->odp_caps.per_transport_caps.ud_odp_caps;
+		transport_caps = dev->odp.caps.per_transport_caps.ud_odp_caps;
 		break;
 	default:
 		mlx5_ib_err(dev, "ODP fault on QP of an unsupported transport 0x%x\n",
@@ -989,7 +989,7 @@ static int mlx5_ib_mr_responder_pfault_handler(
 
 	switch (qp->ibqp.qp_type) {
 	case IB_QPT_RC:
-		if (!(dev->odp_caps.per_transport_caps.rc_odp_caps &
+		if (!(dev->odp.caps.per_transport_caps.rc_odp_caps &
 		      IB_ODP_SUPPORT_RECV))
 			goto invalid_transport_or_opcode;
 		break;
@@ -1179,7 +1179,7 @@ void mlx5_ib_pfault(struct mlx5_core_dev *mdev, void *context,
 
 void mlx5_odp_init_mr_cache_entry(struct mlx5_cache_ent *ent)
 {
-	if (!(ent->dev->odp_caps.general_caps & IB_ODP_SUPPORT_IMPLICIT))
+	if (!(ent->dev->odp.caps.general_caps & IB_ODP_SUPPORT_IMPLICIT))
 		return;
 
 	switch (ent->order - 2) {
@@ -1203,28 +1203,34 @@ void mlx5_odp_init_mr_cache_entry(struct mlx5_cache_ent *ent)
 	}
 }
 
+static void mlx5_ib_odp_sync(struct mlx5_ib_dev *dev)
+{
+	synchronize_srcu(&dev->odp.mr_srcu);
+}
+
 int mlx5_ib_odp_init_one(struct mlx5_ib_dev *dev)
 {
 	int ret;
 
-	ret = init_srcu_struct(&dev->mr_srcu);
+	ret = init_srcu_struct(&dev->odp.mr_srcu);
 	if (ret)
 		return ret;
 
-	if (dev->odp_caps.general_caps & IB_ODP_SUPPORT_IMPLICIT) {
-		ret = mlx5_cmd_null_mkey(dev->mdev, &dev->null_mkey);
+	if (dev->odp.caps.general_caps & IB_ODP_SUPPORT_IMPLICIT) {
+		ret = mlx5_cmd_null_mkey(dev->mdev, &dev->odp.null_mkey);
 		if (ret) {
 			mlx5_ib_err(dev, "Error getting null_mkey %d\n", ret);
 			return ret;
 		}
 	}
+	dev->odp.sync = mlx5_ib_odp_sync;
 
 	return 0;
 }
 
 void mlx5_ib_odp_remove_one(struct mlx5_ib_dev *dev)
 {
-	cleanup_srcu_struct(&dev->mr_srcu);
+	cleanup_srcu_struct(&dev->odp.mr_srcu);
 }
 
 int mlx5_ib_odp_init(void)
