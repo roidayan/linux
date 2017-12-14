@@ -41,7 +41,6 @@
 static int mlx5i_open(struct net_device *netdev);
 static int mlx5i_close(struct net_device *netdev);
 static int mlx5i_change_mtu(struct net_device *netdev, int new_mtu);
-static int mlx5i_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd);
 
 static const struct net_device_ops mlx5i_netdev_ops = {
 	.ndo_open                = mlx5i_open,
@@ -57,7 +56,7 @@ static void mlx5i_build_nic_params(struct mlx5_core_dev *mdev,
 				   struct mlx5e_params *params)
 {
 	/* Override RQ params as IPoIB supports only LINKED LIST RQ for now */
-	mlx5e_set_rq_type_params(mdev, params, MLX5_WQ_TYPE_LINKED_LIST);
+	mlx5e_init_rq_type_params(mdev, params, MLX5_WQ_TYPE_LINKED_LIST);
 
 	/* RQ size in ipoib by default is 512 */
 	params->log_rq_size = is_kdump_kernel() ?
@@ -396,7 +395,7 @@ int mlx5i_dev_init(struct net_device *dev)
 	return 0;
 }
 
-static int mlx5i_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+int mlx5i_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 {
 	struct mlx5e_priv *priv = mlx5i_epriv(dev);
 
