@@ -14,7 +14,6 @@
 #include <linux/netdevice.h>
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
-#include <linux/of.h>
 #include <linux/phy.h>
 #include <linux/phy_fixed.h>
 #include <linux/mii.h>
@@ -34,12 +33,6 @@
 #include "bcm_sf2_regs.h"
 #include "b53/b53_priv.h"
 #include "b53/b53_regs.h"
-
-static enum dsa_tag_protocol bcm_sf2_sw_get_tag_protocol(struct dsa_switch *ds,
-							 int port)
-{
-	return DSA_TAG_PROTO_BRCM;
-}
 
 static void bcm_sf2_imp_setup(struct dsa_switch *ds, int port)
 {
@@ -861,7 +854,7 @@ static const struct b53_io_ops bcm_sf2_io_ops = {
 };
 
 static const struct dsa_switch_ops bcm_sf2_ops = {
-	.get_tag_protocol	= bcm_sf2_sw_get_tag_protocol,
+	.get_tag_protocol	= b53_get_tag_protocol,
 	.setup			= bcm_sf2_sw_setup,
 	.get_strings		= b53_get_strings,
 	.get_ethtool_stats	= b53_get_ethtool_stats,
