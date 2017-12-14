@@ -247,6 +247,7 @@ static int uverbs_destroy_def_handler(struct ib_device *ib_dev,
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_INFINIBAND_EXP_LEGACY_VERBS_NEW_UAPI)
 /*
  * This spec is used in order to pass information to the hardware driver in a
  * legacy way. Every verb that could get driver specific data should get this
@@ -437,6 +438,25 @@ static DECLARE_COMMON_METHOD(UVERBS_METHOD_CQ_DESTROY,
 	&UVERBS_ATTR_PTR_OUT(UVERBS_ATTR_DESTROY_CQ_RESP,
 			     UVERBS_ATTR_TYPE(struct ib_uverbs_destroy_cq_resp),
 			     UA_FLAGS(UVERBS_ATTR_SPEC_F_MANDATORY)));
+
+#else
+
+static int uverbs_not_supported_def_handler(struct ib_device *ib_dev,
+					    struct ib_uverbs_file *file,
+					    struct uverbs_attr_bundle *attrs)
+{
+	return -EOPNOTSUPP;
+}
+
+
+#define DECLARE_UVERBS_NOT_SUPPORTED_METHOD(id)				\
+static DECLARE_UVERBS_METHOD(UVERBS_METHOD(id),				\
+	id, uverbs_not_supported_def_handler)
+
+DECLARE_UVERBS_NOT_SUPPORTED_METHOD(UVERBS_METHOD_CQ_CREATE);
+DECLARE_UVERBS_NOT_SUPPORTED_METHOD(UVERBS_METHOD_CQ_DESTROY);
+
+#endif
 
 static u64 esp_flags_uverbs_to_verbs(struct uverbs_attr_bundle *attrs,
 				     u32 flags, bool is_modify)
