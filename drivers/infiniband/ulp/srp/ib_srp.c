@@ -521,6 +521,7 @@ static int srp_create_ch_ib(struct srp_rdma_ch *ch)
 	init_attr->send_cq             = send_cq;
 	init_attr->recv_cq             = recv_cq;
 
+	strncpy(init_attr->comm, "srp", TASK_COMM_LEN);
 	qp = ib_create_qp(dev->pd, init_attr);
 	if (IS_ERR(qp)) {
 		ret = PTR_ERR(qp);
