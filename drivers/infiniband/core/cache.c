@@ -573,27 +573,24 @@ static int ib_cache_gid_find_by_filter(struct ib_device *ib_dev,
 		struct ib_gid_attr attr;
 
 		if (table->data_vec[i].props & GID_TABLE_ENTRY_INVALID)
-			goto next;
+			continue;
 
 		if (memcmp(gid, &table->data_vec[i].gid, sizeof(*gid)))
-			goto next;
+			continue;
 
 		memcpy(&attr, &table->data_vec[i].attr, sizeof(attr));
 
-		if (filter(gid, &attr, context))
+		if (filter(gid, &attr, context)) {
 			found = true;
-
-next:
-		if (found)
+			if (index)
+				*index = i;
 			break;
+		}
 	}
 	read_unlock_irqrestore(&table->rwlock, flags);
 
 	if (!found)
 		return -ENOENT;
-
-	if (index)
-		*index = i;
 	return 0;
 }
 
@@ -669,6 +666,15 @@ void ib_cache_gid_set_default_gid(struct ib_device *ib_dev, u8 port,
 	make_default_gid(ndev, &gid);
 	memset(&gid_attr, 0, sizeof(gid_attr));
 	gid_attr.ndev = ndev;
+
+	/* Default GID is created using unique GUID and local subnet prefix,
+	 * as described in section 4.1.1 and 3.5.10 in IB spec 1.3.
+	 * Therefore don't create RoCEv2 default GID based on it that
+	 * resembles as IPv6 GID based on link local address when IPv6 is
+	 * disabled in kernel.
+	 */
+	if (!IS_ENABLED(CONFIG_IPV6))
+		gid_type_mask &= ~BIT(IB_GID_TYPE_ROCE_UDP_ENCAP);
 
 	for (gid_type = 0; gid_type < IB_GID_TYPE_SIZE; ++gid_type) {
 		int ix;
@@ -824,12 +830,7 @@ static int gid_table_setup_one(struct ib_device *ib_dev)
 	if (err)
 		return err;
 
-	err = roce_rescan_device(ib_dev);
-
-	if (err) {
-		gid_table_cleanup_one(ib_dev);
-		gid_table_release_one(ib_dev);
-	}
+	rdma_roce_rescan_device(ib_dev);
 
 	return err;
 }
@@ -883,7 +884,6 @@ int ib_find_gid_by_filter(struct ib_device *device,
 					   port_num, filter,
 					   context, index);
 }
-EXPORT_SYMBOL(ib_find_gid_by_filter);
 
 int ib_get_cached_pkey(struct ib_device *device,
 		       u8                port_num,

@@ -40,6 +40,7 @@
 #include <rdma/ib_verbs.h>
 #include <rdma/opa_addr.h>
 #include <rdma/ib_mad.h>
+#include <rdma/restrack.h>
 #include "mad_priv.h"
 
 struct pkey_index_qp_list {
@@ -137,7 +138,6 @@ int ib_cache_gid_del_all_netdev_gids(struct ib_device *ib_dev, u8 port,
 int roce_gid_mgmt_init(void);
 void roce_gid_mgmt_cleanup(void);
 
-int roce_rescan_device(struct ib_device *ib_dev);
 unsigned long roce_gid_type_mask_support(struct ib_device *ib_dev, u8 port);
 
 int ib_cache_setup_one(struct ib_device *device);
@@ -213,11 +213,6 @@ int ib_get_cached_subnet_prefix(struct ib_device *device,
 				u64              *sn_pfx);
 
 #ifdef CONFIG_SECURITY_INFINIBAND
-int ib_security_pkey_access(struct ib_device *dev,
-			    u8 port_num,
-			    u16 pkey_index,
-			    void *sec);
-
 void ib_security_destroy_port_pkey_list(struct ib_device *device);
 
 void ib_security_cache_change(struct ib_device *device,
@@ -240,14 +235,6 @@ int ib_mad_agent_security_setup(struct ib_mad_agent *agent,
 void ib_mad_agent_security_cleanup(struct ib_mad_agent *agent);
 int ib_mad_enforce_security(struct ib_mad_agent_private *map, u16 pkey_index);
 #else
-static inline int ib_security_pkey_access(struct ib_device *dev,
-					  u8 port_num,
-					  u16 pkey_index,
-					  void *sec)
-{
-	return 0;
-}
-
 static inline void ib_security_destroy_port_pkey_list(struct ib_device *device)
 {
 }
@@ -315,7 +302,27 @@ static inline int ib_mad_enforce_security(struct ib_mad_agent_private *map,
 #endif
 
 struct ib_device *__ib_device_get_by_index(u32 ifindex);
+struct ib_device *ib_device_get_by_index(u32 ifindex);
 /* RDMA device netlink */
 void nldev_init(void);
 void nldev_exit(void);
+
+static inline struct ib_qp *_ib_create_qp(struct ib_device *dev,
+					  struct ib_pd *pd,
+					  struct ib_qp_init_attr *attr,
+					  struct ib_udata *udata)
+{
+	struct ib_qp *qp;
+
+	qp = dev->create_qp(pd, attr, udata);
+	if (!IS_ERR(qp)) {
+		qp->device = dev;
+		if (attr->qp_type < IB_QPT_MAX)
+			rdma_restrack_add(&qp->res,
+					  RDMA_RESTRACK_QP,
+					  attr->comm);
+	}
+
+	return qp;
+}
 #endif /* _CORE_PRIV_H */
