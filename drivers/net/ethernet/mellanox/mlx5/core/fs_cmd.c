@@ -420,8 +420,11 @@ int mlx5_cmd_fc_query(struct mlx5_core_dev *dev, u32 id,
 		return err;
 
 	stats = MLX5_ADDR_OF(query_flow_counter_out, out, flow_statistics);
-	*packets = MLX5_GET64(traffic_counter, stats, packets);
-	*bytes = MLX5_GET64(traffic_counter, stats, octets);
+	if (packets)
+		*packets = MLX5_GET64(traffic_counter, stats, packets);
+	if (bytes)
+		*bytes = MLX5_GET64(traffic_counter, stats, octets);
+
 	return 0;
 }
 
