@@ -58,7 +58,8 @@ static int destroy_mkey(struct mlx5_ib_dev *dev, struct mlx5_ib_mr *mr)
 
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
 	/* Wait until all page fault handlers using the mr complete. */
-	synchronize_srcu(&dev->mr_srcu);
+	if (dev->odp.sync)
+		dev->odp.sync(dev);
 #endif
 
 	return err;
@@ -1206,13 +1207,16 @@ struct ib_mr *mlx5_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 	int err;
 	bool use_umr = true;
 
+	if (!IS_ENABLED(CONFIG_INFINIBAND_USER_MEM))
+		return ERR_PTR(-EINVAL);
+
 	mlx5_ib_dbg(dev, "start 0x%llx, virt_addr 0x%llx, length 0x%llx, access_flags 0x%x\n",
 		    start, virt_addr, length, access_flags);
 
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
 	if (!start && length == U64_MAX) {
 		if (!(access_flags & IB_ACCESS_ON_DEMAND) ||
-		    !(dev->odp_caps.general_caps & IB_ODP_SUPPORT_IMPLICIT))
+		    !(dev->odp.caps.general_caps & IB_ODP_SUPPORT_IMPLICIT))
 			return ERR_PTR(-EINVAL);
 
 		mr = mlx5_ib_alloc_implicit_mr(to_mpd(pd), access_flags);
@@ -1518,7 +1522,7 @@ static int dereg_mr(struct mlx5_ib_dev *dev, struct mlx5_ib_mr *mr)
 		/* Prevent new page faults from succeeding */
 		mr->live = 0;
 		/* Wait for all running page-fault handlers to finish. */
-		synchronize_srcu(&dev->mr_srcu);
+		dev->odp.sync(dev);
 		/* Destroy all page mappings */
 		if (umem->odp_data->page_list)
 			mlx5_ib_invalidate_range(umem, ib_umem_start(umem),
