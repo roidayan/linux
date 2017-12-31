@@ -130,6 +130,8 @@
 #define MLX5E_XDP_MIN_INLINE (ETH_HLEN + VLAN_HLEN)
 #define MLX5E_XDP_TX_DS_COUNT \
 	((sizeof(struct mlx5e_tx_wqe) / MLX5_SEND_WQE_DS) + 1 /* SG DS */)
+#define MLX5E_MAX_XDP_MTU ((int)(PAGE_SIZE - ETH_HLEN - (2 * VLAN_HLEN) - \
+				 XDP_PACKET_HEADROOM))
 
 #define MLX5E_NUM_MAIN_GROUPS 9
 
