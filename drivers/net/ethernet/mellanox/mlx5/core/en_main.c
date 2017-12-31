@@ -3401,18 +3401,37 @@ static netdev_features_t mlx5e_fix_features(struct net_device *netdev,
 	return features;
 }
 
+static bool mlx5e_check_xdp_mtu(struct net_device *netdev, int mtu)
+{
+	if (mtu > MLX5E_MAX_XDP_MTU) {
+		netdev_err(netdev, "Conflicting MTU/XDP configs. Max MTU allowed with XDP: %d\n",
+			   MLX5E_MAX_XDP_MTU);
+		return false;
+	}
+
+	return true;
+}
+
 static int mlx5e_change_mtu(struct net_device *netdev, int new_mtu)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
 	struct mlx5e_channels new_channels = {};
+	struct mlx5e_params *params;
 	int curr_mtu;
 	int err = 0;
 	bool reset;
 
 	mutex_lock(&priv->state_lock);
 
-	reset = !priv->channels.params.lro_en &&
-		(priv->channels.params.rq_wq_type !=
+	params = &priv->channels.params;
+
+	if (params->xdp_prog && !mlx5e_check_xdp_mtu(netdev, new_mtu)) {
+		err = -EINVAL;
+		goto out;
+	}
+
+	reset = !params->lro_en &&
+		(params->rq_wq_type !=
 		 MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ);
 
 	reset = reset && test_bit(MLX5E_STATE_OPENED, &priv->state);
@@ -3425,7 +3444,7 @@ static int mlx5e_change_mtu(struct net_device *netdev, int new_mtu)
 		goto out;
 	}
 
-	new_channels.params = priv->channels.params;
+	new_channels.params = *params;
 	err = mlx5e_open_channels(priv, &new_channels);
 	if (err) {
 		netdev->mtu = curr_mtu;
@@ -3813,6 +3832,11 @@ static int mlx5e_xdp_set(struct net_device *netdev, struct bpf_prog *prog)
 
 	if ((netdev->features & NETIF_F_HW_ESP) && prog) {
 		netdev_warn(netdev, "can't set XDP with IPSec offload\n");
+		err = -EINVAL;
+		goto unlock;
+	}
+
+	if (prog && !mlx5e_check_xdp_mtu(netdev, netdev->mtu)) {
 		err = -EINVAL;
 		goto unlock;
 	}
