@@ -34,6 +34,7 @@
 #include <linux/highmem.h>
 #include <rdma/mlx5-abi.h>
 #include "en.h"
+#include "clock.h"
 
 #ifndef smp_store_mb
 #define smp_store_mb set_mb
