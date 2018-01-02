@@ -49,7 +49,6 @@
 #include "smi.h"
 #include "opa_smi.h"
 #include "agent.h"
-#include "core_priv.h"
 
 static int mad_sendq_size = IB_MAD_QP_SEND_SIZE;
 static int mad_recvq_size = IB_MAD_QP_RECV_SIZE;
@@ -3104,6 +3103,7 @@ static int create_mad_qp(struct ib_mad_qp_info *qp_info,
 	qp_init_attr.port_num = qp_info->port_priv->port_num;
 	qp_init_attr.qp_context = qp_info;
 	qp_init_attr.event_handler = qp_event_handler;
+	strncpy(qp_init_attr.comm, "rdma-mad", TASK_COMM_LEN);
 	qp_info->qp = ib_create_qp(qp_info->port_priv->pd, &qp_init_attr);
 	if (IS_ERR(qp_info->qp)) {
 		dev_err(&qp_info->port_priv->device->dev,
