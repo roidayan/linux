@@ -76,6 +76,23 @@ enum {
 	MLX5_ATOMIC_SIZE_QP_8BYTES = 1 << 3,
 };
 
+static LIST_HEAD(mlx5_ib_unaffiliated_port_list);
+static LIST_HEAD(mlx5_ib_dev_list);
+/*
+ * This mutex should be held when accessing either of the above lists
+ */
+static DEFINE_MUTEX(mlx5_ib_multiport_mutex);
+
+struct mlx5_ib_dev *mlx5_ib_get_ibdev_from_mpi(struct mlx5_ib_multiport_info *mpi)
+{
+	struct mlx5_ib_dev *dev;
+
+	mutex_lock(&mlx5_ib_multiport_mutex);
+	dev = mpi->ibdev;
+	mutex_unlock(&mlx5_ib_multiport_mutex);
+	return dev;
+}
+
 static enum rdma_link_layer
 mlx5_port_type_cap_to_rdma_ll(int port_type_cap)
 {
@@ -150,10 +167,15 @@ static struct net_device *mlx5_ib_get_netdev(struct ib_device *device,
 {
 	struct mlx5_ib_dev *ibdev = to_mdev(device);
 	struct net_device *ndev;
+	struct mlx5_core_dev *mdev;
 
-	ndev = mlx5_lag_get_roce_netdev(ibdev->mdev);
+	mdev = mlx5_ib_get_native_port_mdev(ibdev, port_num, NULL);
+	if (!mdev)
+		return NULL;
+
+	ndev = mlx5_lag_get_roce_netdev(mdev);
 	if (ndev)
-		return ndev;
+		goto out;
 
 	/* Ensure ndev does not disappear before we invoke dev_hold()
 	 */
@@ -2489,12 +2511,11 @@ static void get_ext_port_caps(struct mlx5_ib_dev *dev)
 		mlx5_query_ext_port_caps(dev, port);
 }
 
-static int get_port_caps(struct mlx5_ib_dev *dev)
+static int get_port_caps(struct mlx5_ib_dev *dev, u8 port)
 {
 	struct ib_device_attr *dprops = NULL;
 	struct ib_port_attr *pprops = NULL;
 	int err = -ENOMEM;
-	int port;
 	struct ib_udata uhw = {.inlen = 0, .outlen = 0};
 
 	pprops = kmalloc(sizeof(*pprops), GFP_KERNEL);
