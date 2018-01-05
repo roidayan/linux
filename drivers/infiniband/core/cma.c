@@ -1314,11 +1314,11 @@ static bool validate_ipv4_net_dev(struct net_device *net_dev,
 		return false;
 
 	memset(&fl4, 0, sizeof(fl4));
-	fl4.flowi4_iif = net_dev->ifindex;
 	fl4.daddr = daddr;
 	fl4.saddr = saddr;
 
 	rcu_read_lock();
+	fl4.flowi4_iif = net_dev->ifindex;
 	err = fib_lookup(dev_net(net_dev), &fl4, &res, 0);
 	ret = err == 0 && FIB_RES_DEV(res) == net_dev;
 	rcu_read_unlock();
