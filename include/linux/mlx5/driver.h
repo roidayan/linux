@@ -660,6 +660,7 @@ struct mlx5_priv {
 	struct list_head        pgdir_list;
 	/* end: alloc staff */
 	struct dentry	       *dbg_root;
+	struct dentry          *dbg_lag_affinity;
 
 	/* protect mkey key part */
 	spinlock_t		mkey_lock;
