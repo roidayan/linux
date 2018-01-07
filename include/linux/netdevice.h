@@ -4427,4 +4427,23 @@ do {                                                            \
 #define netdev_warn_once(dev, fmt, ...) \
 	netdev_level_once(KERN_WARNING, dev, fmt, ##__VA_ARGS__)
 
+static inline const char *netdev_reg_state(const struct net_device *dev)
+{
+	switch (dev->reg_state) {
+	case NETREG_UNINITIALIZED: return " (uninitialized)";
+	case NETREG_REGISTERED: return "";
+	case NETREG_UNREGISTERING: return " (unregistering)";
+	case NETREG_UNREGISTERED: return " (unregistered)";
+	case NETREG_RELEASED: return " (released)";
+	case NETREG_DUMMY: return " (dummy)";
+	}
+
+	WARN_ONCE(1, "%s: unknown reg_state %d\n", dev->name, dev->reg_state);
+	return " (unknown)";
+}
+
+#define netdev_WARN_ONCE(dev, format, args...)                          \
+	WARN_ONCE(1, "netdevice: %s%s: " format, netdev_name(dev),      \
+		  netdev_reg_state(dev), ##args)
+
 #endif	/* _LINUX_NETDEVICE_H */
