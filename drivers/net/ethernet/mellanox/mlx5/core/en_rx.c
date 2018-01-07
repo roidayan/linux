@@ -524,8 +524,10 @@ bool mlx5e_post_rx_mpwqes(struct mlx5e_rq *rq)
 	if (mlx5_wq_ll_is_full(wq))
 		return false;
 
-	if (!rq->mpwqe.umr_in_progress)
-		mlx5e_alloc_rx_mpwqe(rq, wq->head);
+	if (rq->mpwqe.umr_in_progress)
+		return false;
+
+	mlx5e_alloc_rx_mpwqe(rq, wq->head);
 
 	return true;
 }
