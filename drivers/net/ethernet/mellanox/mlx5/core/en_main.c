@@ -178,6 +178,7 @@ static void mlx5e_update_sw_counters(struct mlx5e_priv *priv)
 	struct mlx5e_sw_stats temp, *s = &temp;
 	struct mlx5e_rq_stats *rq_stats;
 	struct mlx5e_sq_stats *sq_stats;
+	struct mlx5e_ch_stats *ch_stats;
 	int i, j;
 
 	memset(s, 0, sizeof(*s));
@@ -185,6 +186,7 @@ static void mlx5e_update_sw_counters(struct mlx5e_priv *priv)
 		struct mlx5e_channel *c = priv->channels.c[i];
 
 		rq_stats = &c->rq.stats;
+		ch_stats = &c->stats;
 
 		s->rx_packets	+= rq_stats->packets;
 		s->rx_bytes	+= rq_stats->bytes;
@@ -209,6 +211,7 @@ static void mlx5e_update_sw_counters(struct mlx5e_priv *priv)
 		s->rx_cache_empty += rq_stats->cache_empty;
 		s->rx_cache_busy  += rq_stats->cache_busy;
 		s->rx_cache_waive += rq_stats->cache_waive;
+		s->ch_eq_rearm += ch_stats->eq_rearm;
 
 		for (j = 0; j < priv->channels.params.num_tc; j++) {
 			sq_stats = &c->sq[j].stats;
@@ -3741,26 +3744,62 @@ static netdev_features_t mlx5e_features_check(struct sk_buff *skb,
 	return features;
 }
 
+static bool mlx5e_tx_timeout_eq_recover(struct net_device *dev,
+					struct mlx5e_txqsq *sq)
+{
+	struct mlx5e_priv *priv = netdev_priv(dev);
+	struct mlx5_core_dev *mdev = priv->mdev;
+	int irqn_not_used, eqn;
+	struct mlx5_eq *eq;
+	u32 eqe_count;
+
+	if (mlx5_vector2eqn(mdev, sq->cq.mcq.vector, &eqn, &irqn_not_used))
+		return false;
+
+	eq = mlx5_eqn2eq(mdev, eqn);
+	if (IS_ERR(eq))
+		return false;
+
+	netdev_err(dev, "EQ 0x%x: Cons = 0x%x, irqn = 0x%x\n",
+		   eqn, eq->cons_index, eq->irqn);
+
+	eqe_count = mlx5_eq_poll_irq_disabled(eq);
+	if (!eqe_count)
+		return false;
+
+	netdev_err(dev, "Recover %d eqes on EQ 0x%x\n", eqe_count, eq->eqn);
+	sq->channel->stats.eq_rearm++;
+	return true;
+}
+
 static void mlx5e_tx_timeout(struct net_device *dev)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
-	bool sched_work = false;
+	bool reopen_channels = false;
 	int i;
 
 	netdev_err(dev, "TX timeout detected\n");
 
 	for (i = 0; i < priv->channels.num * priv->channels.params.num_tc; i++) {
+		struct netdev_queue *dev_queue = netdev_get_tx_queue(dev, i);
 		struct mlx5e_txqsq *sq = priv->txq2sq[i];
 
-		if (!netif_xmit_stopped(netdev_get_tx_queue(dev, i)))
+		if (!netif_xmit_stopped(dev_queue))
 			continue;
-		sched_work = true;
-		clear_bit(MLX5E_SQ_STATE_ENABLED, &sq->state);
-		netdev_err(dev, "TX timeout on queue: %d, SQ: 0x%x, CQ: 0x%x, SQ Cons: 0x%x SQ Prod: 0x%x\n",
-			   i, sq->sqn, sq->cq.mcq.cqn, sq->cc, sq->pc);
+		netdev_err(dev, "TX timeout on queue: %d, SQ: 0x%x, CQ: 0x%x, SQ Cons: 0x%x SQ Prod: 0x%x, usecs since last trans: %u\n",
+			   i, sq->sqn, sq->cq.mcq.cqn, sq->cc, sq->pc,
+			   jiffies_to_usecs(jiffies - dev_queue->trans_start));
+
+		/* If we recover a lost interrupt, most likely TX timeout will
+		 * be resolved, skip reopening channels
+		 */
+		if (!mlx5e_tx_timeout_eq_recover(dev, sq)) {
+			clear_bit(MLX5E_SQ_STATE_ENABLED, &sq->state);
+			reopen_channels = true;
+		}
 	}
 
-	if (sched_work && test_bit(MLX5E_STATE_OPENED, &priv->state))
+	if (reopen_channels && test_bit(MLX5E_STATE_OPENED, &priv->state))
 		schedule_work(&priv->tx_timeout_work);
 }
 
