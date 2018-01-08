@@ -46,6 +46,7 @@
 #include <linux/mlx5/transobj.h>
 #include <linux/rhashtable.h>
 #include <net/switchdev.h>
+#include <net/xdp.h>
 #include "wq.h"
 #include "mlx5_core.h"
 #include "en_stats.h"
@@ -571,6 +572,9 @@ struct mlx5e_rq {
 	u32                    rqn;
 	struct mlx5_core_dev  *mdev;
 	struct mlx5_core_mkey  umr_mkey;
+
+	/* XDP read-mostly */
+	struct xdp_rxq_info    xdp_rxq;
 } ____cacheline_aligned_in_smp;
 
 struct mlx5e_channel {
@@ -587,6 +591,7 @@ struct mlx5e_channel {
 
 	/* data path - accessed per napi poll */
 	struct irq_desc *irq_desc;
+	struct mlx5e_ch_stats      stats;
 
 	/* control */
 	struct mlx5e_priv         *priv;
@@ -655,6 +660,7 @@ struct mlx5e_tc_table {
 	struct rhashtable               ht;
 
 	DECLARE_HASHTABLE(mod_hdr_tbl, 8);
+	DECLARE_HASHTABLE(hairpin_tbl, 8);
 };
 
 struct mlx5e_vlan_table {
