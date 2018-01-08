@@ -446,4 +446,18 @@ enum {
 enum {
 	MLX5_IB_CLOCK_INFO_V1              = 0,
 };
+
+struct mlx5_ib_flow_counters_data {
+	__aligned_u64   counters_data;
+	__u32   ncounters;
+	__u32   reserved;
+};
+
+struct mlx5_ib_create_flow {
+	__u32   ncounters_data;
+	__u32   reserved;
+	/* Following are counters data based on ncounters_data */
+	struct mlx5_ib_flow_counters_data data[];
+};
+
 #endif /* MLX5_ABI_USER_H */
