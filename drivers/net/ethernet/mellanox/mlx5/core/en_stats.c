@@ -67,6 +67,7 @@ static const struct counter_desc sw_stats_desc[] = {
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_queue_wake) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_queue_dropped) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_xmit_more) },
+	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_cqe_err) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_wqe_err) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_mpwqe_filler) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_buff_alloc_err) },
@@ -164,6 +165,7 @@ static void mlx5e_grp_sw_update_stats(struct mlx5e_priv *priv)
 			s->tx_csum_partial_inner += sq_stats->csum_partial_inner;
 			s->tx_csum_none		+= sq_stats->csum_none;
 			s->tx_csum_partial	+= sq_stats->csum_partial;
+			s->tx_cqe_err		+= sq_stats->cqe_err;
 #ifdef CONFIG_MLX5_EN_TLS
 			s->tx_tls_ooo		+= sq_stats->tls_ooo;
 			s->tx_tls_resync_bytes	+= sq_stats->tls_resync_bytes;
@@ -1047,6 +1049,7 @@ static const struct counter_desc sq_stats_desc[] = {
 	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, wake) },
 	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, dropped) },
 	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, xmit_more) },
+	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, cqe_err) },
 };
 
 static const struct counter_desc ch_stats_desc[] = {
