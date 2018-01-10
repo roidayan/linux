@@ -1327,9 +1327,12 @@ int ib_init_ah_attr_from_path(struct ib_device *device, u8 port_num,
 	rdma_ah_set_static_rate(ah_attr, rec->rate);
 
 	if (sa_path_is_roce(rec)) {
-		ret = roce_resolve_route_from_path(device, port_num, rec);
-		if (ret)
-			return ret;
+		if (!sa_path_roce_is_route_resolved(rec)) {
+			ret = roce_resolve_route_from_path(device, port_num,
+							   rec);
+			if (ret)
+				return ret;
+		}
 
 		memcpy(ah_attr->roce.dmac, sa_path_get_dmac(rec), ETH_ALEN);
 	} else {
