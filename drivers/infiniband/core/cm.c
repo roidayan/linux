@@ -1372,7 +1372,8 @@ int ib_send_cm_req(struct ib_cm_id *cm_id,
 		goto error1;
 	if (param->alternate_path) {
 		ret = cm_init_av_by_path(param->alternate_path,
-					 &cm_id_priv->alt_av, cm_id_priv);
+					 &cm_id_priv->alt_av,
+					 cm_id_priv);
 		if (ret)
 			goto error1;
 	}
@@ -1934,12 +1935,13 @@ static int cm_req_handler(struct cm_work *work)
 		work->path[1].rec_type = work->path[0].rec_type;
 	cm_format_paths_from_req(req_msg, &work->path[0],
 				 &work->path[1]);
-	if (cm_id_priv->av.ah_attr.type == RDMA_AH_ATTR_TYPE_ROCE)
+	if (cm_id_priv->av.ah_attr.type == RDMA_AH_ATTR_TYPE_ROCE) {
 		sa_path_set_dmac(&work->path[0],
 				 cm_id_priv->av.ah_attr.roce.dmac);
+		sa_path_set_roce_req_route(&work->path[0], true);
+	}
 	work->path[0].hop_limit = grh->hop_limit;
-	ret = cm_init_av_by_path(&work->path[0], &cm_id_priv->av,
-				 cm_id_priv);
+	ret = cm_init_av_by_path(&work->path[0], &cm_id_priv->av, cm_id_priv);
 	if (ret) {
 		int err;
 
@@ -1958,6 +1960,9 @@ static int cm_req_handler(struct cm_work *work)
 		goto rejected;
 	}
 	if (cm_req_has_alt_path(req_msg)) {
+		if (sa_path_is_roce(&work->path[1]))
+			sa_path_set_roce_req_route(&work->path[1], true);
+
 		ret = cm_init_av_by_path(&work->path[1], &cm_id_priv->alt_av,
 					 cm_id_priv);
 		if (ret) {
