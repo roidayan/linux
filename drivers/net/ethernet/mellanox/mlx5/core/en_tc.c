@@ -1744,6 +1744,29 @@ static int mlx5e_route_lookup_ipv4(struct mlx5e_priv *priv,
 	return 0;
 }
 
+static bool same_hw_devs(struct mlx5e_priv *priv, struct mlx5e_priv *peer_priv)
+{
+	u16 func_id, peer_id;
+
+	func_id = (u16)((priv->mdev->pdev->bus->number << 8) | PCI_SLOT(priv->mdev->pdev->devfn));
+	peer_id = (u16)((peer_priv->mdev->pdev->bus->number << 8) | PCI_SLOT(peer_priv->mdev->pdev->devfn));
+
+	return (func_id == peer_id);
+}
+
+static bool offload_supported_between_devs(struct mlx5e_priv *priv, struct net_device *peer_netdev)
+{
+	struct mlx5e_priv *peer_priv;
+
+	peer_priv = netdev_priv(peer_netdev);
+
+	return (MLX5_CAP_ESW(priv->mdev, merged_eswitch) &&
+			(priv->netdev->netdev_ops == peer_netdev->netdev_ops) &&
+			same_hw_devs(priv, peer_priv) &&
+			peer_priv->mdev->priv.eswitch &&
+			(SRIOV_OFFLOADS == peer_priv->mdev->priv.eswitch->mode));
+}
+
 static int mlx5e_route_lookup_ipv6(struct mlx5e_priv *priv,
 				   struct net_device *mirred_dev,
 				   struct net_device **out_dev,
@@ -2198,7 +2221,8 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 
 			if (switchdev_port_same_parent_id(priv->netdev,
 							  out_dev,
-							  SWITCHDEV_F_NO_RECURSE)) {
+							  SWITCHDEV_F_NO_RECURSE) ||
+			    offload_supported_between_devs(priv, out_dev)) {
 				attr->action |= MLX5_FLOW_CONTEXT_ACTION_FWD_DEST |
 					MLX5_FLOW_CONTEXT_ACTION_COUNT;
 				out_priv = netdev_priv(out_dev);
