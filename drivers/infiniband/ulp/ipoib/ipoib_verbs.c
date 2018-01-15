@@ -178,7 +178,7 @@ int ipoib_transport_dev_init(struct net_device *dev, struct ib_device *ca)
 	priv->recv_cq = ib_create_cq(priv->ca, ipoib_ib_rx_completion, NULL,
 				     priv, &cq_attr);
 	if (IS_ERR(priv->recv_cq)) {
-		printk(KERN_WARNING "%s: failed to create receive CQ\n", ca->name);
+		pr_warn("%s: failed to create receive CQ\n", ca->name);
 		goto out_cm_dev_cleanup;
 	}
 
@@ -187,7 +187,7 @@ int ipoib_transport_dev_init(struct net_device *dev, struct ib_device *ca)
 	priv->send_cq = ib_create_cq(priv->ca, ipoib_ib_tx_completion, NULL,
 				     priv, &cq_attr);
 	if (IS_ERR(priv->send_cq)) {
-		printk(KERN_WARNING "%s: failed to create send CQ\n", ca->name);
+		pr_warn("%s: failed to create send CQ\n", ca->name);
 		goto out_free_recv_cq;
 	}
 
@@ -206,9 +206,10 @@ int ipoib_transport_dev_init(struct net_device *dev, struct ib_device *ca)
 	if (priv->hca_caps & IB_DEVICE_MANAGED_FLOW_STEERING)
 		init_attr.create_flags |= IB_QP_CREATE_NETIF_QP;
 
+	strncpy(init_attr.comm, "ipoib-verbs", TASK_COMM_LEN);
 	priv->qp = ib_create_qp(priv->pd, &init_attr);
 	if (IS_ERR(priv->qp)) {
-		printk(KERN_WARNING "%s: failed to create QP\n", ca->name);
+		pr_warn("%s: failed to create QP\n", ca->name);
 		goto out_free_send_cq;
 	}
 
