@@ -34,6 +34,7 @@
 #define MLX5_ABI_USER_H
 
 #include <linux/types.h>
+#include <linux/if_ether.h>	/* For ETH_ALEN. */
 
 enum {
 	MLX5_QP_FLAG_SIGNATURE		= 1 << 0,
@@ -281,5 +282,21 @@ struct mlx5_ib_create_rwq_ind_tbl_resp {
 struct mlx5_ib_modify_wq {
 	__u32	comp_mask;
 	__u32	reserved;
+};
+
+struct mlx5_ib_clock_info {
+	__u32 sign;
+	__u32 resv;
+	__u64 nsec;
+	__u64 cycles;
+	__u64 frac;
+	__u32 mult;
+	__u32 shift;
+	__u64 mask;
+	__u64 overflow_period;
+};
+
+enum {
+	MLX5_IB_CLOCK_INFO_KERNEL_UPDATING = 1,
 };
 #endif /* MLX5_ABI_USER_H */
