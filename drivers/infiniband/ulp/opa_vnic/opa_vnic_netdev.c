@@ -321,6 +321,16 @@ static const struct net_device_ops opa_netdev_ops = {
 	.ndo_set_mac_address = opa_vnic_set_mac_addr,
 };
 
+static void opa_free_adapter(struct opa_vnic_adapter *adapter)
+{
+	if (adapter->netdev) {
+		if (adapter->netdev->priv_destructor)
+			adapter->netdev->priv_destructor(adapter->netdev);
+		free_netdev(adapter->netdev);
+	}
+	kfree(adapter);
+}
+
 /* opa_vnic_add_netdev - create vnic netdev interface */
 struct opa_vnic_adapter *opa_vnic_add_netdev(struct ib_device *ibdev,
 					     u8 port_num, u8 vport_num)
@@ -330,21 +340,23 @@ struct opa_vnic_adapter *opa_vnic_add_netdev(struct ib_device *ibdev,
 	struct rdma_netdev *rn;
 	int rc;
 
+	adapter = kzalloc(sizeof(*adapter), GFP_KERNEL);
+	if (!adapter)
+		return ERR_PTR(-ENOMEM);
+
 	netdev = ibdev->alloc_rdma_netdev(ibdev, port_num,
 					  RDMA_NETDEV_OPA_VNIC,
 					  "veth%d", NET_NAME_UNKNOWN,
 					  ether_setup);
-	if (!netdev)
-		return ERR_PTR(-ENOMEM);
-	else if (IS_ERR(netdev))
-		return ERR_CAST(netdev);
-
-	rn = netdev_priv(netdev);
-	adapter = kzalloc(sizeof(*adapter), GFP_KERNEL);
-	if (!adapter) {
+	if (!netdev) {
 		rc = -ENOMEM;
 		goto adapter_err;
+	} else if (IS_ERR(netdev)) {
+		rc = PTR_ERR(netdev);
+		goto adapter_err;
 	}
+
+	rn = netdev_priv(netdev);
 
 	rn->clnt_priv = adapter;
 	rn->hca = ibdev;
@@ -380,9 +392,8 @@ struct opa_vnic_adapter *opa_vnic_add_netdev(struct ib_device *ibdev,
 netdev_err:
 	mutex_destroy(&adapter->lock);
 	mutex_destroy(&adapter->mactbl_lock);
-	kfree(adapter);
 adapter_err:
-	rn->free_rdma_netdev(netdev);
+	opa_free_adapter(adapter);
 
 	return ERR_PTR(rc);
 }
@@ -391,13 +402,11 @@ adapter_err:
 void opa_vnic_rem_netdev(struct opa_vnic_adapter *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
-	struct rdma_netdev *rn = netdev_priv(netdev);
 
 	v_info("removing\n");
 	unregister_netdev(netdev);
 	opa_vnic_release_mac_tbl(adapter);
 	mutex_destroy(&adapter->lock);
 	mutex_destroy(&adapter->mactbl_lock);
-	kfree(adapter);
-	rn->free_rdma_netdev(netdev);
+	opa_free_adapter(adapter);
 }
