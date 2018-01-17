@@ -675,6 +675,5 @@ void mlx5_rdma_netdev_free(struct net_device *netdev)
 		mlx5i_pkey_qpn_ht_cleanup(netdev);
 		mlx5e_destroy_mdev_resources(priv->mdev);
 	}
-	free_netdev(netdev);
 }
 EXPORT_SYMBOL(mlx5_rdma_netdev_free);

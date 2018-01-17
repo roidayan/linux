@@ -488,6 +488,7 @@ static inline void ipoib_put_ah(struct ipoib_ah *ah)
 	kref_put(&ah->ref, ipoib_free_ah);
 }
 int ipoib_open(struct net_device *dev);
+void ipoib_intf_free(struct net_device *dev);
 int ipoib_add_pkey_attr(struct net_device *dev);
 int ipoib_add_umcast_attr(struct net_device *dev);
 
