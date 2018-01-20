@@ -86,10 +86,10 @@ static void mlx5_add_cq_to_tasklet(struct mlx5_core_cq *cq)
 	spin_unlock_irqrestore(&tasklet_ctx->lock, flags);
 }
 
-void mlx5_cq_completion(struct mlx5_core_dev *dev, u32 cqn)
+void mlx5_cq_completion(struct mlx5_eq *eq, u32 cqn)
 {
+	struct mlx5_cq_table *table = &eq->cq_table;
 	struct mlx5_core_cq *cq;
-	struct mlx5_cq_table *table = &dev->priv.cq_table;
 
 	spin_lock(&table->lock);
 	cq = radix_tree_lookup(&table->tree, cqn);
@@ -98,7 +98,7 @@ void mlx5_cq_completion(struct mlx5_core_dev *dev, u32 cqn)
 	spin_unlock(&table->lock);
 
 	if (!cq) {
-		mlx5_core_warn(dev, "Completion event for bogus CQ 0x%x\n", cqn);
+		mlx5_core_warn(eq->dev, "Completion event for bogus CQ 0x%x\n", cqn);
 		return;
 	}
 
@@ -110,9 +110,9 @@ void mlx5_cq_completion(struct mlx5_core_dev *dev, u32 cqn)
 		complete(&cq->free);
 }
 
-void mlx5_cq_event(struct mlx5_core_dev *dev, u32 cqn, int event_type)
+void mlx5_cq_event(struct mlx5_eq *eq, u32 cqn, int event_type)
 {
-	struct mlx5_cq_table *table = &dev->priv.cq_table;
+	struct mlx5_cq_table *table = &eq->cq_table;
 	struct mlx5_core_cq *cq;
 
 	spin_lock(&table->lock);
@@ -124,7 +124,7 @@ void mlx5_cq_event(struct mlx5_core_dev *dev, u32 cqn, int event_type)
 	spin_unlock(&table->lock);
 
 	if (!cq) {
-		mlx5_core_warn(dev, "Async event for bogus CQ 0x%x\n", cqn);
+		mlx5_core_warn(eq->dev, "Async event for bogus CQ 0x%x\n", cqn);
 		return;
 	}
 
@@ -137,18 +137,20 @@ void mlx5_cq_event(struct mlx5_core_dev *dev, u32 cqn, int event_type)
 int mlx5_core_create_cq(struct mlx5_core_dev *dev, struct mlx5_core_cq *cq,
 			u32 *in, int inlen)
 {
-	struct mlx5_cq_table *table = &dev->priv.cq_table;
 	u32 out[MLX5_ST_SZ_DW(create_cq_out)];
 	u32 din[MLX5_ST_SZ_DW(destroy_cq_in)];
 	u32 dout[MLX5_ST_SZ_DW(destroy_cq_out)];
 	int eqn = MLX5_GET(cqc, MLX5_ADDR_OF(create_cq_in, in, cq_context),
 			   c_eqn);
+	struct mlx5_cq_table *table;
 	struct mlx5_eq *eq;
 	int err;
 
 	eq = mlx5_eqn2eq(dev, eqn);
 	if (IS_ERR(eq))
 		return PTR_ERR(eq);
+
+	table = &eq->cq_table;
 
 	memset(out, 0, sizeof(out));
 	MLX5_SET(create_cq_in, in, opcode, MLX5_CMD_OP_CREATE_CQ);
@@ -159,6 +161,7 @@ int mlx5_core_create_cq(struct mlx5_core_dev *dev, struct mlx5_core_cq *cq,
 	cq->cqn = MLX5_GET(create_cq_out, out, cqn);
 	cq->cons_index = 0;
 	cq->arm_sn     = 0;
+	cq->eq         = eq;
 	refcount_set(&cq->refcount, 1);
 	init_completion(&cq->free);
 	if (!cq->comp)
@@ -195,7 +198,7 @@ EXPORT_SYMBOL(mlx5_core_create_cq);
 
 int mlx5_core_destroy_cq(struct mlx5_core_dev *dev, struct mlx5_core_cq *cq)
 {
-	struct mlx5_cq_table *table = &dev->priv.cq_table;
+	struct mlx5_cq_table *table = &cq->eq->cq_table;
 	u32 out[MLX5_ST_SZ_DW(destroy_cq_out)] = {0};
 	u32 in[MLX5_ST_SZ_DW(destroy_cq_in)] = {0};
 	struct mlx5_core_cq *tmp;
@@ -209,7 +212,7 @@ int mlx5_core_destroy_cq(struct mlx5_core_dev *dev, struct mlx5_core_cq *cq)
 		return -EINVAL;
 	}
 	if (tmp != cq) {
-		mlx5_core_warn(dev, "corruption on srqn 0x%x\n", cq->cqn);
+		mlx5_core_warn(dev, "corruption on cqn 0x%x\n", cq->cqn);
 		return -EINVAL;
 	}
 
@@ -270,21 +273,3 @@ int mlx5_core_modify_cq_moderation(struct mlx5_core_dev *dev,
 	return mlx5_core_modify_cq(dev, cq, in, sizeof(in));
 }
 EXPORT_SYMBOL(mlx5_core_modify_cq_moderation);
-
-int mlx5_init_cq_table(struct mlx5_core_dev *dev)
-{
-	struct mlx5_cq_table *table = &dev->priv.cq_table;
-	int err;
-
-	memset(table, 0, sizeof(*table));
-	spin_lock_init(&table->lock);
-	INIT_RADIX_TREE(&table->tree, GFP_ATOMIC);
-	err = mlx5_cq_debugfs_init(dev);
-
-	return err;
-}
-
-void mlx5_cleanup_cq_table(struct mlx5_core_dev *dev)
-{
-	mlx5_cq_debugfs_cleanup(dev);
-}
