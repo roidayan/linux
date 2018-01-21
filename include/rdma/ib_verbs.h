@@ -690,11 +690,12 @@ struct ib_event_handler {
 	} while (0)
 
 struct ib_global_route {
-	union ib_gid	dgid;
-	u32		flow_label;
-	u8		sgid_index;
-	u8		hop_limit;
-	u8		traffic_class;
+	union ib_gid			dgid;
+	const struct ib_gid_attr	*sgid_attr;
+	u32				flow_label;
+	u8				sgid_index;
+	u8				hop_limit;
+	u8				traffic_class;
 };
 
 struct ib_grh {
@@ -3107,6 +3108,13 @@ int ib_get_rdma_header_version(const union rdma_network_hdr *hdr);
  *   ignored unless the work completion indicates that the GRH is valid.
  * @ah_attr: Returned attributes that can be used when creating an address
  *   handle for replying to the message.
+ * When ib_init_ah_attr_from_wc() returns success,
+ * (a) for IB link layer it optionally contains a reference to SGID attribute
+ * when GRH is present for IB link layer.
+ * (b) for RoCE link layer it contains a reference to SGID attribute.
+ * User must invoke rdma_cleanup_ah_attr_gid_attr() to release reference to SGID
+ * attributes which are initialized using ib_init_ah_attr_from_wc().
+ *
  */
 int ib_init_ah_attr_from_wc(struct ib_device *device, u8 port_num,
 			    const struct ib_wc *wc, const struct ib_grh *grh,
@@ -3126,6 +3134,8 @@ int ib_init_ah_attr_from_wc(struct ib_device *device, u8 port_num,
  */
 struct ib_ah *ib_create_ah_from_wc(struct ib_pd *pd, const struct ib_wc *wc,
 				   const struct ib_grh *grh, u8 port_num);
+
+void rdma_cleanup_ah_attr_gid_attr(struct rdma_ah_attr *ah_attr);
 
 /**
  * rdma_modify_ah - Modifies the address vector associated with an address
@@ -3995,6 +4005,20 @@ static inline enum rdma_ah_attr_type rdma_ah_find_type(struct ib_device *dev,
 	}
 
 	return RDMA_AH_ATTR_TYPE_UNDEFINED;
+}
+
+/**
+ * rdma_ah_set_grh_sgid_attr - Sets the sgid attribute of GRH
+ *
+ * @attr:	Pointer to AH attribute structure
+ * @sgid_attr:	Pointer to SGID attribute structure
+ *
+ */
+static inline
+void rdma_ah_set_grh_sgid_attr(struct rdma_ah_attr *attr,
+			       const struct ib_gid_attr *sgid_attr)
+{
+	attr->grh.sgid_attr = sgid_attr;
 }
 
 /**
