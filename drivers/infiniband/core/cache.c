@@ -618,12 +618,13 @@ static int __ib_cache_gid_get(struct ib_device *ib_dev, u8 port, int index,
 	return 0;
 }
 
-static int _ib_cache_gid_table_find(struct ib_device *ib_dev,
-				    const union ib_gid *gid,
-				    const struct ib_gid_attr *val,
-				    unsigned long mask,
-				    u8 *port, u16 *index)
+static const struct ib_gid_attr *
+_ib_cache_gid_table_find(struct ib_device *ib_dev,
+			 const union ib_gid *gid,
+			 const struct ib_gid_attr *val,
+			 unsigned long mask)
 {
+	const struct ib_gid_attr *attr;
 	struct ib_gid_table *table;
 	u8 p;
 	int local_index;
@@ -634,24 +635,22 @@ static int _ib_cache_gid_table_find(struct ib_device *ib_dev,
 		read_lock_irqsave(&table->rwlock, flags);
 		local_index = find_gid(table, gid, val, false, mask, NULL);
 		if (local_index >= 0) {
-			if (index)
-				*index = local_index;
-			if (port)
-				*port = p + rdma_start_port(ib_dev);
+			attr = get_gid_attr_locked(ib_dev, p,
+						   table, local_index);
 			read_unlock_irqrestore(&table->rwlock, flags);
-			return 0;
+			return attr;
 		}
 		read_unlock_irqrestore(&table->rwlock, flags);
 	}
 
-	return -ENOENT;
+	return ERR_PTR(-ENOENT);
 }
 
-static int ib_cache_gid_find(struct ib_device *ib_dev,
-			     const union ib_gid *gid,
-			     enum ib_gid_type gid_type,
-			     struct net_device *ndev, u8 *port,
-			     u16 *index)
+static const struct ib_gid_attr *
+ib_cache_gid_find(struct ib_device *ib_dev,
+		  const union ib_gid *gid,
+		  enum ib_gid_type gid_type,
+		  struct net_device *ndev)
 {
 	unsigned long mask = GID_ATTR_FIND_MASK_GID |
 			     GID_ATTR_FIND_MASK_GID_TYPE;
@@ -660,38 +659,40 @@ static int ib_cache_gid_find(struct ib_device *ib_dev,
 	if (ndev)
 		mask |= GID_ATTR_FIND_MASK_NETDEV;
 
-	return _ib_cache_gid_table_find(ib_dev, gid, &gid_attr_val,
-					mask, port, index);
+	return _ib_cache_gid_table_find(ib_dev, gid, &gid_attr_val, mask);
 }
 
 /**
- * ib_find_cached_gid_by_port - Returns the GID table index where a specified
- * GID value occurs. It searches for the specified GID value in the local
- * software cache.
+ * rdma_find_gid_by_port - Returns the GID entry attributes when it finds
+ * valid GID entry for given search parameters. It searches for the specified
+ * GID value in the local software cache.
  * @device: The device to query.
  * @gid: The GID value to search for.
  * @gid_type: The GID type to search for.
  * @port_num: The port number of the device where the GID value should be
  *   searched.
  * @ndev: In RoCE, the net device of the device. Null means ignore.
- * @index: The index into the cached GID table where the GID was found. This
- *   parameter may be NULL.
+ *
+ * Returns sgid attributes if the GID is found with valid reference.
+ * Or returns ERR_PTR for the error.
+ * Caller must invoke ib_put_cached_gid_attr() to release the reference.
  */
-int ib_find_cached_gid_by_port(struct ib_device *ib_dev,
-			       const union ib_gid *gid,
-			       enum ib_gid_type gid_type,
-			       u8 port, struct net_device *ndev,
-			       u16 *index)
+const struct ib_gid_attr *
+rdma_find_gid_by_port(struct ib_device *ib_dev,
+		      const union ib_gid *gid,
+		      enum ib_gid_type gid_type,
+		      u8 port, struct net_device *ndev)
 {
 	int local_index;
 	struct ib_gid_table *table;
 	unsigned long mask = GID_ATTR_FIND_MASK_GID |
 			     GID_ATTR_FIND_MASK_GID_TYPE;
 	struct ib_gid_attr val = {.ndev = ndev, .gid_type = gid_type};
+	const struct ib_gid_attr *attr;
 	unsigned long flags;
 
 	if (!rdma_is_port_valid(ib_dev, port))
-		return -ENOENT;
+		return ERR_PTR(-ENOENT);
 
 	table = ib_dev->cache.ports[port - rdma_start_port(ib_dev)].gid;
 
@@ -701,20 +702,20 @@ int ib_find_cached_gid_by_port(struct ib_device *ib_dev,
 	read_lock_irqsave(&table->rwlock, flags);
 	local_index = find_gid(table, gid, &val, false, mask, NULL);
 	if (local_index >= 0) {
-		if (index)
-			*index = local_index;
+		attr = get_gid_attr_locked(ib_dev, port,
+					   table, local_index);
 		read_unlock_irqrestore(&table->rwlock, flags);
-		return 0;
+		return attr;
 	}
 
 	read_unlock_irqrestore(&table->rwlock, flags);
-	return -ENOENT;
+	return ERR_PTR(-ENOENT);
 }
-EXPORT_SYMBOL(ib_find_cached_gid_by_port);
+EXPORT_SYMBOL(rdma_find_gid_by_port);
 
 /**
- * ib_cache_gid_find_by_filter - Returns the GID table index where a specified
- * GID value occurs
+ * ib_cache_gid_find_by_filter - Returns the GID table attribute where a
+ * specified GID value occurs
  * @device: The device to query.
  * @gid: The GID value to search for.
  * @port_num: The port number of the device where the GID value could be
@@ -724,32 +725,29 @@ EXPORT_SYMBOL(ib_find_cached_gid_by_port);
  *   otherwise, we continue searching the GID table. It's guaranteed that
  *   while filter is executed, ndev field is valid and the structure won't
  *   change. filter is executed in an atomic context. filter must not be NULL.
- * @index: The index into the cached GID table where the GID was found. This
- *   parameter may be NULL.
  *
  * ib_cache_gid_find_by_filter() searches for the specified GID value
  * of which the filter function returns true in the port's GID table.
  * This function is only supported on RoCE ports.
  *
  */
-static int ib_cache_gid_find_by_filter(struct ib_device *ib_dev,
-				       const union ib_gid *gid,
-				       u8 port,
-				       bool (*filter)(const union ib_gid *,
-						      const struct ib_gid_attr *,
-						      void *),
-				       void *context,
-				       u16 *index)
+static const struct ib_gid_attr *
+ib_cache_gid_find_by_filter(struct ib_device *ib_dev,
+			    const union ib_gid *gid,
+			    u8 port,
+			    bool (*filter)(const union ib_gid *,
+					   const struct ib_gid_attr *,
+					   void *),
+			    void *context)
 {
+	const struct ib_gid_attr *gid_attr = ERR_PTR(-ENOENT);
 	struct ib_gid_table *table;
 	unsigned int i;
 	unsigned long flags;
-	bool found = false;
-
 
 	if (!rdma_is_port_valid(ib_dev, port) ||
 	    !rdma_protocol_roce(ib_dev, port))
-		return -EPROTONOSUPPORT;
+		return ERR_PTR(-EPROTONOSUPPORT);
 
 	table = ib_dev->cache.ports[port - rdma_start_port(ib_dev)].gid;
 
@@ -766,17 +764,12 @@ static int ib_cache_gid_find_by_filter(struct ib_device *ib_dev,
 		memcpy(&attr, &table->data_vec[i].attr, sizeof(attr));
 
 		if (filter(gid, &attr, context)) {
-			found = true;
-			if (index)
-				*index = i;
+			gid_attr = get_gid_attr_locked(ib_dev, port, table, i);
 			break;
 		}
 	}
 	read_unlock_irqrestore(&table->rwlock, flags);
-
-	if (!found)
-		return -ENOENT;
-	return 0;
+	return gid_attr;
 }
 
 static struct ib_gid_table *alloc_gid_table(int sz)
@@ -981,45 +974,47 @@ int ib_get_cached_gid(struct ib_device *device,
 EXPORT_SYMBOL(ib_get_cached_gid);
 
 /**
- * ib_find_cached_gid - Returns the port number and GID table index where
- *   a specified GID value occurs.
+ * rdma_find_gid - Returns SGID attributes if the matching GID is found.
  * @device: The device to query.
  * @gid: The GID value to search for.
  * @gid_type: The GID type to search for.
  * @ndev: In RoCE, the net device of the device. NULL means ignore.
- * @port_num: The port number of the device where the GID value was found.
- * @index: The index into the cached GID table where the GID was found.  This
- *   parameter may be NULL.
  *
- * ib_find_cached_gid() searches for the specified GID value in
+ * rdma_find_gid() searches for the specified GID value in
  * the local software cache.
+ *
+ * Returns sgid attributes if the GID is found with valid reference.
+ * Or returns ERR_PTR for the error.
+ * Caller must invoke ib_put_cached_gid_attr() to release the reference.
+ *
  */
-int ib_find_cached_gid(struct ib_device *device,
-		       const union ib_gid *gid,
-		       enum ib_gid_type gid_type,
-		       struct net_device *ndev,
-		       u8               *port_num,
-		       u16              *index)
-{
-	return ib_cache_gid_find(device, gid, gid_type, ndev, port_num, index);
-}
-EXPORT_SYMBOL(ib_find_cached_gid);
 
-int ib_find_gid_by_filter(struct ib_device *device,
-			  const union ib_gid *gid,
-			  u8 port_num,
-			  bool (*filter)(const union ib_gid *gid,
-					 const struct ib_gid_attr *,
-					 void *),
-			  void *context, u16 *index)
+const struct ib_gid_attr *
+rdma_find_gid(struct ib_device *device,
+	      const union ib_gid *gid,
+	      enum ib_gid_type gid_type,
+	      struct net_device *ndev)
+{
+	return ib_cache_gid_find(device, gid, gid_type, ndev);
+}
+EXPORT_SYMBOL(rdma_find_gid);
+
+const struct ib_gid_attr *
+rdma_find_gid_by_filter(struct ib_device *device,
+			const union ib_gid *gid,
+			u8 port_num,
+			bool (*filter)(const union ib_gid *gid,
+				       const struct ib_gid_attr *,
+				       void *),
+			void *context)
 {
 	/* Only RoCE GID table supports filter function */
 	if (!rdma_protocol_roce(device, port_num) && filter)
-		return -EPROTONOSUPPORT;
+		return ERR_PTR(-EPROTONOSUPPORT);
 
 	return ib_cache_gid_find_by_filter(device, gid,
 					   port_num, filter,
-					   context, index);
+					   context);
 }
 
 int ib_get_cached_pkey(struct ib_device *device,
