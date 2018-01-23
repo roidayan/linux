@@ -5066,14 +5066,9 @@ int mlx5_ib_dealloc_xrcd(struct ib_xrcd *xrcd)
 	int err;
 
 	err = mlx5_core_xrcd_dealloc(dev->mdev, xrcdn);
-	if (err) {
-		mlx5_ib_warn(dev, "failed to dealloc xrcdn 0x%x\n", xrcdn);
-		return err;
-	}
-
 	kfree(xrcd);
 
-	return 0;
+	return err;
 }
 
 static void mlx5_ib_wq_event(struct mlx5_core_qp *core_qp, int type)
