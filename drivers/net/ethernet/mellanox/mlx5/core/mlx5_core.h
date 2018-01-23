@@ -201,4 +201,5 @@ int mlx5_lag_allow(struct mlx5_core_dev *dev);
 int mlx5_lag_forbid(struct mlx5_core_dev *dev);
 u32 mlx5_get_msix_vec(struct mlx5_core_dev *dev, int vecidx);
 
+void mlx5_reload_interface(struct mlx5_core_dev *mdev, int protocol);
 #endif /* __MLX5_CORE_H__ */
