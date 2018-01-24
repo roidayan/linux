@@ -90,14 +90,13 @@ int qedr_query_gid(struct ib_device *ibdev, u8 port, int index,
 	return 0;
 }
 
-int qedr_add_gid(struct ib_device *device, u8 port_num,
-		 unsigned int index, const union ib_gid *gid,
+int qedr_add_gid(const union ib_gid *gid,
 		 const struct ib_gid_attr *attr, void **context)
 {
-	if (!rdma_cap_roce_gid_table(device, port_num))
+	if (!rdma_cap_roce_gid_table(attr->device, attr->port_num))
 		return -EINVAL;
 
-	if (port_num > QEDR_MAX_PORT)
+	if (attr->port_num > QEDR_MAX_PORT)
 		return -EINVAL;
 
 	if (!context)
@@ -106,13 +105,12 @@ int qedr_add_gid(struct ib_device *device, u8 port_num,
 	return 0;
 }
 
-int qedr_del_gid(struct ib_device *device, u8 port_num,
-		 unsigned int index, void **context)
+int qedr_del_gid(const struct ib_gid_attr *attr, void **context)
 {
-	if (!rdma_cap_roce_gid_table(device, port_num))
+	if (!rdma_cap_roce_gid_table(attr->device, attr->port_num))
 		return -EINVAL;
 
-	if (port_num > QEDR_MAX_PORT)
+	if (attr->port_num > QEDR_MAX_PORT)
 		return -EINVAL;
 
 	if (!context)
