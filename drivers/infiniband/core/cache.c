@@ -232,9 +232,10 @@ static void schedule_free_roce_gid(struct kref *kref)
 static void del_roce_gid(struct ib_device *device, u8 port_num,
 			 struct ib_gid_table *table, int ix)
 {
-	pr_debug("%s device=%s port=%d index=%d gid %pI6\n", __func__,
-		 device->name, port_num, ix,
-		 table->data_vec[ix].gid.raw);
+	pr_debug("%s device=%s port=%d index=%d gid %pI6 refcnt=%d\n",
+		 __func__, device->name, port_num, ix,
+		 table->data_vec[ix].gid.raw,
+		 kref_read(&table->data_vec[ix].kref));
 	write_lock_irq(&table->rwlock);
 	table->data_vec[ix].state = GID_TABLE_ENTRY_PENDING_DEL;
 	write_unlock_irq(&table->rwlock);
@@ -343,6 +344,33 @@ static void del_gid(struct ib_device *ib_dev, u8 port,
 		del_roce_gid(ib_dev, port, table, ix);
 	else
 		clear_gid_entry(table, &table->data_vec[ix]);
+}
+
+static const struct ib_gid_attr *
+get_gid_attr_locked(struct ib_device *device, u8 port_num,
+		    struct ib_gid_table *table, u16 index)
+{
+	struct ib_gid_attr *attr = ERR_PTR(-ENOENT);
+	struct ib_gid_table_entry *entry;
+
+	entry = &table->data_vec[index];
+	if (rdma_protocol_roce(device, port_num)) {
+		if (kref_get_unless_zero(&entry->kref))
+			attr = &entry->attr;
+	} else {
+		attr = &entry->attr;
+	}
+	return attr;
+}
+
+static const struct ib_gid_attr *
+get_valid_gid_attr_locked(struct ib_device *device, u8 port_num,
+			  struct ib_gid_table *table, u16 index)
+{
+	if (!is_gid_table_entry_valid(&table->data_vec[index]))
+		return ERR_PTR(-ENOENT);
+
+	return get_gid_attr_locked(device, port_num, table, index);
 }
 
 /* rwlock should be read locked, or lock should be held */
@@ -1149,6 +1177,113 @@ int ib_get_cached_port_state(struct ib_device   *device,
 	return ret;
 }
 EXPORT_SYMBOL(ib_get_cached_port_state);
+
+/**
+ * rdma_get_gid_attr - Returns GID attributes for a port of a device
+ * at a requested gid_index, if a valid GID entry exist.
+ * @device:		The device to query.
+ * @port_num:		The port number of the device where the GID value
+ *			has to be queried.
+ * @gid_index:		Index of the GID table entry whose attributes to be
+ *			queried.
+ * @out_gid:		Pointer to gid where GID has to be copied, if a valid
+ *			GID is found. This is optional. If pointer is provided
+ *			than the GID is copied, otherwise skipped.
+ *
+ * rdma_get_gid_attr() acquires reference count of gid attributes from the
+ * cached GID table for the RoCE link layer. For IB link layer gid attribute
+ * reference is not taken currently. Caller must invoke rdma_put_gid_attr()
+ * to release reference to gid attribute regardless of link layer.
+ *
+ * Returns pointer to valid gid attribute or ERR_PTR for the appropriate error
+ * code.
+ */
+const struct ib_gid_attr *
+rdma_get_gid_attr(struct ib_device *device, u8 port_num,
+		  int gid_index, union ib_gid *out_gid)
+{
+	const struct ib_gid_attr *attr;
+	struct ib_gid_table *table;
+	unsigned long flags;
+
+	if (!rdma_is_port_valid(device, port_num))
+		return ERR_PTR(-EINVAL);
+
+	table = device->cache.ports[port_num - rdma_start_port(device)].gid;
+	if (gid_index < 0 || gid_index >= table->sz)
+		return ERR_PTR(-EINVAL);
+
+	read_lock_irqsave(&table->rwlock, flags);
+
+	attr = get_valid_gid_attr_locked(device, port_num, table, gid_index);
+	if (IS_ERR(attr) || !out_gid)
+		goto gid_err;
+
+	memcpy(out_gid, &table->data_vec[gid_index].gid, sizeof(*out_gid));
+
+gid_err:
+	read_unlock_irqrestore(&table->rwlock, flags);
+	return attr;
+}
+EXPORT_SYMBOL(rdma_get_gid_attr);
+
+/**
+ * rdma_put_gid_attr - Release reference to the GID attribute
+ * @attr:		Pointer to the GID attribute whose reference
+ *			needs to be released.
+ *
+ * rdma_put_gid_attr() must be used to release reference whose
+ * reference is acquired using rdma_get_gid_attr() or any APIs
+ * which returns pointer to the ib_gid_attr regardless of link layer
+ * of IB or RoCE.
+ *
+ */
+void rdma_put_gid_attr(const struct ib_gid_attr *attr)
+{
+	struct ib_gid_table_entry *entry =
+			container_of(attr, struct ib_gid_table_entry, attr);
+	struct ib_device *device = entry->attr.device;
+	u8 port_num = entry->attr.port_num;
+	struct ib_gid_table *table;
+
+	if (!rdma_protocol_roce(device, port_num))
+		return;
+	table = device->cache.ports[port_num - rdma_start_port(device)].gid;
+
+	write_lock_irq(&table->rwlock);
+	kref_put(&entry->kref, schedule_free_roce_gid);
+	write_unlock_irq(&table->rwlock);
+}
+EXPORT_SYMBOL(rdma_put_gid_attr);
+
+/**
+ * rdma_hold_gid_attr - Get reference to existing GID attribute
+ *
+ * @attr:		Pointer to the GID attribute whose reference
+ *			needs to be taken.
+ *
+ * Hold reference to GID attribute to keep it from being freed.
+ * rdma_hold_gid_attr() returns valid attr pointer on success or
+ * returns ERR_PTR with appropriate error.
+ *
+ */
+const struct ib_gid_attr *
+rdma_hold_gid_attr(const struct ib_gid_attr *attr)
+{
+	struct ib_gid_table_entry *entry =
+			container_of(attr, struct ib_gid_table_entry, attr);
+	struct ib_device *device = entry->attr.device;
+	u8 port_num = entry->attr.port_num;
+	struct ib_gid_table *table;
+	unsigned long flags;
+
+	table = device->cache.ports[port_num - rdma_start_port(device)].gid;
+
+	read_lock_irqsave(&table->rwlock, flags);
+	attr = get_valid_gid_attr_locked(device, port_num, table, attr->index);
+	read_unlock_irqrestore(&table->rwlock, flags);
+	return attr;
+}
 
 static int config_non_roce_gid_cache(struct ib_device *device,
 				     u8 port, int gid_tbl_len)
