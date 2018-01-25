@@ -51,7 +51,7 @@ static void set_kern_name(struct rdma_restrack_entry *res)
 
 	qp = container_of(res, struct ib_qp, res);
 	if (!qp->pd) {
-		WARN_ONCE(true, "XRC QPs are not supported");
+		WARN_ONCE(true, "XRC QPs are not supported\n");
 		/* Survive, despite the programmer's error */
 		res->kern_name = " ";
 		return;
