@@ -655,6 +655,18 @@ static inline bool tc_can_offload(const struct net_device *dev)
 	return true;
 }
 
+static inline bool
+tc_cls_can_offload_and_chain0(const struct net_device *dev,
+			      struct tc_cls_common_offload *common)
+{
+	if (!tc_can_offload(dev))
+		return false;
+	if (common->chain_index) {
+		return false;
+	}
+	return true;
+}
+
 static inline bool tc_skip_hw(u32 flags)
 {
 	return (flags & TCA_CLS_FLAGS_SKIP_HW) ? true : false;
