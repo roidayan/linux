@@ -149,4 +149,13 @@ int ib_get_cached_port_state(struct ib_device *device,
 			      u8                port_num,
 			      enum ib_port_state *port_active);
 
+const struct ib_gid_attr *
+rdma_get_gid_attr(struct ib_device *device,
+		  u8 port_num,
+		  int gid_index,
+		  union ib_gid *out_gid);
+void rdma_put_gid_attr(const struct ib_gid_attr *attr);
+const struct ib_gid_attr *
+rdma_hold_gid_attr(const struct ib_gid_attr *attr);
+
 #endif /* _IB_CACHE_H */
