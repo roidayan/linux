@@ -73,9 +73,18 @@ enum gid_table_entry_props {
 enum gid_table_entry_state {
 	GID_TABLE_ENTRY_FREE		= 1,
 	GID_TABLE_ENTRY_ALLOCATED	= 2,
+	/*
+	 * Indicates that entry is pending to be removed, there may
+	 * be active users of this GID entry.
+	 * When last user of the GID entry releases reference to it,
+	 * GID state moves to GID_TABLE_ENTRY_FREE.
+	 */
+	GID_TABLE_ENTRY_PENDING_DEL	= 3,
 };
 
 struct ib_gid_table_entry {
+	struct kref			kref;
+	struct work_struct		del_work;
 	enum gid_table_entry_props	props;
 	enum gid_table_entry_state	state;
 	union ib_gid			gid;
@@ -166,17 +175,70 @@ is_gid_table_entry_valid(const struct ib_gid_table_entry *entry)
 	return entry->state == GID_TABLE_ENTRY_ALLOCATED;
 }
 
+static void clear_gid_entry(struct ib_gid_table *table,
+			    struct ib_gid_table_entry *entry)
+{
+	write_lock_irq(&table->rwlock);
+	entry->state = GID_TABLE_ENTRY_FREE;
+	write_unlock_irq(&table->rwlock);
+
+	memcpy(&entry->gid, &zgid, sizeof(zgid));
+	memset(&entry->attr, 0, sizeof(entry->attr));
+	entry->context = NULL;
+}
+
+/**
+ * free_roce_gid_work - Release reference to the GID entry
+ * @work: Work structure to refer to GID entry which needs to be
+ * deleted.
+ *
+ * free_roce_gid_work() frees the entry from the HCA's hardware table
+ * if provider supports it. It releases reference to netdevice.
+ */
+static void free_roce_gid_work(struct work_struct *work)
+{
+	struct ib_gid_table_entry *entry =
+			container_of(work, struct ib_gid_table_entry, del_work);
+	struct ib_device *device = entry->attr.device;
+	u8 port_num = entry->attr.port_num;
+	u8 ix = entry->attr.index;
+	struct ib_gid_table *table;
+
+	table = device->cache.ports[port_num - rdma_start_port(device)].gid;
+
+	pr_debug("%s device=%s port=%d index=%d gid %pI6\n", __func__,
+		 device->name, port_num, ix,
+		 table->data_vec[ix].gid.raw);
+
+	mutex_lock(&table->lock);
+	if (rdma_cap_roce_gid_table(device, port_num))
+		device->del_gid(&entry->attr, &entry->context);
+	dev_put(table->data_vec[ix].attr.ndev);
+
+	clear_gid_entry(table, entry);
+	/* Now this entry is ready to be allocated */
+	mutex_unlock(&table->lock);
+}
+
+static void schedule_free_roce_gid(struct kref *kref)
+{
+	struct ib_gid_table_entry *entry =
+			container_of(kref, struct ib_gid_table_entry, kref);
+
+	INIT_WORK(&entry->del_work, free_roce_gid_work);
+	queue_work(ib_wq, &entry->del_work);
+}
+
 static void del_roce_gid(struct ib_device *device, u8 port_num,
 			 struct ib_gid_table *table, int ix)
 {
 	pr_debug("%s device=%s port=%d index=%d gid %pI6\n", __func__,
 		 device->name, port_num, ix,
 		 table->data_vec[ix].gid.raw);
-
-	if (rdma_cap_roce_gid_table(device, port_num))
-		device->del_gid(&table->data_vec[ix].attr,
-				&table->data_vec[ix].context);
-	dev_put(table->data_vec[ix].attr.ndev);
+	write_lock_irq(&table->rwlock);
+	table->data_vec[ix].state = GID_TABLE_ENTRY_PENDING_DEL;
+	write_unlock_irq(&table->rwlock);
+	kref_put(&table->data_vec[ix].kref, schedule_free_roce_gid);
 }
 
 static int add_roce_gid(struct ib_gid_table *table,
@@ -211,6 +273,7 @@ static int add_roce_gid(struct ib_gid_table *table,
 			goto add_err;
 		}
 	}
+	kref_init(&table->data_vec[ix].kref);
 	dev_hold(attr->ndev);
 
 add_err:
@@ -275,15 +338,11 @@ static void del_gid(struct ib_device *ib_dev, u8 port,
 		    struct ib_gid_table *table, int ix)
 {
 	lockdep_assert_held(&table->lock);
-	write_lock_irq(&table->rwlock);
-	table->data_vec[ix].state = GID_TABLE_ENTRY_FREE;
-	write_unlock_irq(&table->rwlock);
 
 	if (rdma_protocol_roce(ib_dev, port))
 		del_roce_gid(ib_dev, port, table, ix);
-	memcpy(&table->data_vec[ix].gid, &zgid, sizeof(zgid));
-	memset(&table->data_vec[ix].attr, 0, sizeof(table->data_vec[ix].attr));
-	table->data_vec[ix].context = NULL;
+	else
+		clear_gid_entry(table, &table->data_vec[ix]);
 }
 
 /* rwlock should be read locked, or lock should be held */
@@ -325,9 +384,8 @@ static int find_gid(struct ib_gid_table *table, const union ib_gid *gid,
 
 		/*
 		 * Additionally find_gid() is used to find valid entry during
-		 * lookup operation, where validity needs to be checked. So
-		 * find the empty entry first to continue to search for a free
-		 * slot and ignore its INVALID flag.
+		 * lookup operation; so ignore the entries which are marked as
+		 * pending for removal and the entry which is marked as invalid.
 		 */
 		if (!is_gid_table_entry_valid(data))
 			continue;
@@ -494,7 +552,8 @@ int ib_cache_gid_del_all_netdev_gids(struct ib_device *ib_dev, u8 port,
 	mutex_lock(&table->lock);
 
 	for (ix = 0; ix < table->sz; ix++) {
-		if (table->data_vec[ix].attr.ndev == ndev) {
+		if (is_gid_table_entry_valid(&table->data_vec[ix]) &&
+		    table->data_vec[ix].attr.ndev == ndev) {
 			del_gid(ib_dev, port, table, ix);
 			deleted = true;
 		}
@@ -741,8 +800,7 @@ static void cleanup_gid_table_port(struct ib_device *ib_dev, u8 port,
 
 	mutex_lock(&table->lock);
 	for (i = 0; i < table->sz; ++i) {
-		if (memcmp(&table->data_vec[i].gid, &zgid,
-			   sizeof(table->data_vec[i].gid))) {
+		if (is_gid_table_entry_valid(&table->data_vec[i])) {
 			del_gid(ib_dev, port, table, i);
 			deleted = true;
 		}
@@ -1297,6 +1355,12 @@ void ib_cache_cleanup_one(struct ib_device *device)
 	ib_unregister_event_handler(&device->cache.event_handler);
 	flush_workqueue(ib_wq);
 	gid_table_cleanup_one(device);
+
+	/*
+	 * Flush the wq second time for any pending GID delete
+	 * work for RoCE device.
+	 */
+	flush_workqueue(ib_wq);
 }
 
 void __init ib_cache_setup(void)
