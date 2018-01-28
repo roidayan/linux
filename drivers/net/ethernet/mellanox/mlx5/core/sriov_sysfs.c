@@ -534,6 +534,39 @@ static ssize_t min_tx_rate_store(struct mlx5_sriov_vf *g,
 					  max_tx_rate, min_tx_rate);
 	return err ? err : count;
 }
+
+
+static ssize_t min_pf_tx_rate_show(struct mlx5_sriov_vf *g,
+				   struct vf_attributes *oa,
+				   char *buf)
+{
+	return sprintf(buf,
+		       "usage: write <Rate (Mbit/s)> to set PF min rate\n");
+}
+
+static ssize_t min_pf_tx_rate_store(struct mlx5_sriov_vf *g,
+				    struct vf_attributes *oa,
+				    const char *buf, size_t count)
+{
+	struct mlx5_core_dev *dev = g->dev;
+	struct mlx5_eswitch *esw = dev->priv.eswitch;
+	u32 min_tx_rate;
+	u32 max_tx_rate;
+	int err;
+
+	mutex_lock(&esw->state_lock);
+	max_tx_rate = esw->vports[g->vf].info.max_rate;
+	mutex_unlock(&esw->state_lock);
+
+	err = sscanf(buf, "%u", &min_tx_rate);
+	if (err != 1)
+		return -EINVAL;
+
+	err = mlx5_eswitch_set_vport_rate(dev->priv.eswitch, g->vf,
+					  max_tx_rate, min_tx_rate);
+	return err ? err : count;
+}
+
 #define _sprintf(p, buf, format, arg...)				\
 	((PAGE_SIZE - (int)(p - buf)) <= 0 ? 0 :			\
 	scnprintf(p, PAGE_SIZE - (int)(p - buf), format, ## arg))
@@ -682,6 +715,19 @@ static struct kobj_type vf_type_eth = {
 	.sysfs_ops     = &vf_sysfs_ops,
 	.default_attrs = vf_eth_attrs
 };
+
+static struct vf_attributes pf_attr_min_pf_tx_rate = \
+	__ATTR(min_tx_rate, 0644, min_pf_tx_rate_show, min_pf_tx_rate_store);
+
+static struct attribute *pf_eth_attrs[] = {
+	&pf_attr_min_pf_tx_rate.attr,
+	NULL,
+};
+
+static struct kobj_type pf_type_eth = {
+	.sysfs_ops     = &vf_sysfs_ops,
+	.default_attrs = pf_eth_attrs
+};
 #endif /* CONFIG_MLX5_ESWITCH */
 
 static struct attribute *vf_ib_attrs[] = {
@@ -753,7 +799,7 @@ int mlx5_create_vfs_sysfs(struct mlx5_core_dev *dev, int num_vfs)
 #endif
 		sysfs = &vf_type_ib;
 
-	sriov->vfs = kcalloc(num_vfs, sizeof(*sriov->vfs), GFP_KERNEL);
+	sriov->vfs = kcalloc(num_vfs + 1, sizeof(*sriov->vfs), GFP_KERNEL);
 	if (!sriov->vfs)
 		return -ENOMEM;
 
@@ -768,6 +814,21 @@ int mlx5_create_vfs_sysfs(struct mlx5_core_dev *dev, int num_vfs)
 
 		kobject_uevent(&tmp->kobj, KOBJ_ADD);
 	}
+#ifdef CONFIG_MLX5_ESWITCH
+	if (MLX5_CAP_GEN(dev, port_type) == MLX5_CAP_PORT_TYPE_ETH) {
+		tmp = &sriov->vfs[vf];
+		tmp->dev = dev;
+		tmp->vf = 0;
+		err = kobject_init_and_add(&tmp->kobj, &pf_type_eth,
+					   sriov->config, "%s", "pf");
+		if (err) {
+			--vf;
+			goto err_vf;
+		}
+
+		kobject_uevent(&tmp->kobj, KOBJ_ADD);
+	}
+#endif
 
 	return 0;
 
@@ -788,6 +849,13 @@ void mlx5_destroy_vfs_sysfs(struct mlx5_core_dev *dev)
 	struct mlx5_sriov_vf *tmp;
 	int vf;
 
+#ifdef CONFIG_MLX5_ESWITCH
+	if (MLX5_CAP_GEN(dev, port_type) == MLX5_CAP_PORT_TYPE_ETH &&
+	    sriov->num_vfs) {
+		tmp = &sriov->vfs[sriov->num_vfs];
+		kobject_put(&tmp->kobj);
+	}
+#endif
 	for (vf = 0; vf < sriov->num_vfs; vf++) {
 		tmp = &sriov->vfs[vf];
 		kobject_put(&tmp->kobj);
