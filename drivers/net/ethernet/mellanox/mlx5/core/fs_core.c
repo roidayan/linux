@@ -2643,7 +2643,7 @@ int mlx5_init_fs(struct mlx5_core_dev *dev)
 	}
 
 	if (mlx5_accel_ipsec_device_caps(steering->dev) &
-	    MLX5_ACCEL_IPSEC_DEVICE) {
+	    MLX5_ACCEL_IPSEC_CAP_DEVICE) {
 		err = init_egress_root_ns(steering);
 		if (err)
 			goto err;
