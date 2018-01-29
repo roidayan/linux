@@ -3168,12 +3168,6 @@ static int cm_lap_handler(struct cm_work *work)
 	if (!cm_id_priv)
 		return -EINVAL;
 
-	ret = cm_init_av_for_response(work->port, work->mad_recv_wc->wc,
-				      work->mad_recv_wc->recv_buf.grh,
-				      &cm_id_priv->av);
-	if (ret)
-		goto deref;
-
 	param = &work->cm_event.param.lap_rcvd;
 	memset(&work->path[0], 0, sizeof(work->path[1]));
 	cm_path_set_rec_type(work->port->cm_dev->ib_device,
@@ -3218,10 +3212,24 @@ static int cm_lap_handler(struct cm_work *work)
 		goto unlock;
 	}
 
-	cm_id_priv->id.lap_state = IB_CM_LAP_RCVD;
-	cm_id_priv->tid = lap_msg->hdr.tid;
+	/* It is safe to release spin lock while working on AV
+	 * initialization from path record.
+	 * While AV initialization in progress, refcount is taken
+	 * by cm_acquire_id() at the start, therefore it is safe to
+	 * release spin lock and re-acquire before updating state.
+	 */
+	spin_unlock_irq(&cm_id_priv->lock);
+	ret = cm_init_av_for_response(work->port, work->mad_recv_wc->wc,
+				      work->mad_recv_wc->recv_buf.grh,
+				      &cm_id_priv->av);
+	if (ret)
+		goto deref;
+
 	cm_init_av_by_path(param->alternate_path, &cm_id_priv->alt_av,
 			   cm_id_priv);
+	spin_lock_irq(&cm_id_priv->lock);
+	cm_id_priv->id.lap_state = IB_CM_LAP_RCVD;
+	cm_id_priv->tid = lap_msg->hdr.tid;
 	ret = atomic_inc_and_test(&cm_id_priv->work_count);
 	if (!ret)
 		list_add_tail(&work->list, &cm_id_priv->work_list);
