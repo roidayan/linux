@@ -33,6 +33,7 @@
 #include <linux/clocksource.h>
 #include <linux/highmem.h>
 #include <rdma/mlx5-abi.h>
+#include "clock.h"
 #include "en.h"
 
 enum {
