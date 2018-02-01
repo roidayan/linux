@@ -34,7 +34,6 @@
 #include <linux/anon_inodes.h>
 #include <rdma/ib_verbs.h>
 #include <rdma/uverbs_types.h>
-#include <linux/rcupdate.h>
 #include <rdma/uverbs_ioctl.h>
 #include <rdma/rdma_user_ioctl.h>
 #include "uverbs.h"
@@ -96,10 +95,7 @@ static void uverbs_uobject_free(struct kref *ref)
 	struct ib_uobject *uobj =
 		container_of(ref, struct ib_uobject, ref);
 
-	if (uobj->type->type_class->needs_kfree_rcu)
-		kfree_rcu(uobj, rcu);
-	else
-		kfree(uobj);
+	kfree(uobj);
 }
 
 void uverbs_uobject_put(struct ib_uobject *uobject)
@@ -188,8 +184,7 @@ static struct ib_uobject *lookup_get_idr_uobject(const struct uverbs_obj_type *t
 {
 	struct ib_uobject *uobj;
 
-	rcu_read_lock();
-	/* object won't be released as we're protected in rcu */
+	spin_lock(&ucontext->ufile->idr_lock);
 	uobj = idr_find(&ucontext->ufile->idr, id);
 	if (!uobj) {
 		uobj = ERR_PTR(-ENOENT);
@@ -198,7 +193,7 @@ static struct ib_uobject *lookup_get_idr_uobject(const struct uverbs_obj_type *t
 
 	uverbs_uobject_get(uobj);
 free:
-	rcu_read_unlock();
+	spin_unlock(&ucontext->ufile->idr_lock);
 	return uobj;
 }
 
@@ -459,9 +454,7 @@ static int null_obj_type_class_remove_commit(struct ib_uobject *uobj,
 
 static const struct uverbs_obj_type null_obj_type = {
 	.type_class = &((const struct uverbs_obj_type_class){
-			.remove_commit = null_obj_type_class_remove_commit,
-			/* be cautious */
-			.needs_kfree_rcu = true}),
+			.remove_commit = null_obj_type_class_remove_commit}),
 };
 
 int rdma_explicit_destroy(struct ib_uobject *uobject)
@@ -583,20 +576,6 @@ const struct uverbs_obj_type_class uverbs_idr_class = {
 	.alloc_abort = alloc_abort_idr_uobject,
 	.lookup_put = lookup_put_idr_uobject,
 	.remove_commit = remove_commit_idr_uobject,
-	/*
-	 * When we destroy an object, we first just lock it for WRITE and
-	 * actually DESTROY it in the finalize stage. So, the problematic
-	 * scenario is when we just started the finalize stage of the
-	 * destruction (nothing was executed yet). Now, the other thread
-	 * fetched the object for READ access, but it didn't lock it yet.
-	 * The DESTROY thread continues and starts destroying the object.
-	 * When the other thread continue - without the RCU, it would
-	 * access freed memory. However, the rcu_read_lock delays the free
-	 * until the rcu_read_lock of the READ operation quits. Since the
-	 * exclusive lock of the object is still taken by the DESTROY flow, the
-	 * READ operation will get -EBUSY and it'll just bail out.
-	 */
-	.needs_kfree_rcu = true,
 };
 
 static void _uverbs_close_fd(struct ib_uobject_file *uobj_file)
@@ -704,7 +683,6 @@ const struct uverbs_obj_type_class uverbs_fd_class = {
 	.alloc_abort = alloc_abort_fd_uobject,
 	.lookup_put = lookup_put_fd_uobject,
 	.remove_commit = remove_commit_fd_uobject,
-	.needs_kfree_rcu = false,
 };
 
 struct ib_uobject *uverbs_get_uobject_from_context(const struct uverbs_obj_type *type_attrs,
