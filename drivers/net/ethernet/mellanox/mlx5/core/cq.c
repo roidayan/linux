@@ -137,20 +137,16 @@ void mlx5_cq_event(struct mlx5_eq *eq, u32 cqn, int event_type)
 int mlx5_core_create_cq(struct mlx5_core_dev *dev, struct mlx5_core_cq *cq,
 			u32 *in, int inlen)
 {
+	int eqn = MLX5_GET(cqc, MLX5_ADDR_OF(create_cq_in, in, cq_context), c_eqn);
+	u32 dout[MLX5_ST_SZ_DW(destroy_cq_out)];
 	u32 out[MLX5_ST_SZ_DW(create_cq_out)];
 	u32 din[MLX5_ST_SZ_DW(destroy_cq_in)];
-	u32 dout[MLX5_ST_SZ_DW(destroy_cq_out)];
-	int eqn = MLX5_GET(cqc, MLX5_ADDR_OF(create_cq_in, in, cq_context),
-			   c_eqn);
-	struct mlx5_cq_table *table;
 	struct mlx5_eq *eq;
 	int err;
 
 	eq = mlx5_eqn2eq(dev, eqn);
 	if (IS_ERR(eq))
 		return PTR_ERR(eq);
-
-	table = &eq->cq_table;
 
 	memset(out, 0, sizeof(out));
 	MLX5_SET(create_cq_in, in, opcode, MLX5_CMD_OP_CREATE_CQ);
@@ -170,9 +166,7 @@ int mlx5_core_create_cq(struct mlx5_core_dev *dev, struct mlx5_core_cq *cq,
 	cq->tasklet_ctx.priv = &eq->tasklet_ctx;
 	INIT_LIST_HEAD(&cq->tasklet_ctx.list);
 
-	spin_lock_irq(&table->lock);
-	err = radix_tree_insert(&table->tree, cq->cqn, cq);
-	spin_unlock_irq(&table->lock);
+	err = mlx5_eq_add_cq(eq, cq);
 	if (err)
 		goto err_cmd;
 
@@ -198,23 +192,13 @@ EXPORT_SYMBOL(mlx5_core_create_cq);
 
 int mlx5_core_destroy_cq(struct mlx5_core_dev *dev, struct mlx5_core_cq *cq)
 {
-	struct mlx5_cq_table *table = &cq->eq->cq_table;
 	u32 out[MLX5_ST_SZ_DW(destroy_cq_out)] = {0};
 	u32 in[MLX5_ST_SZ_DW(destroy_cq_in)] = {0};
-	struct mlx5_core_cq *tmp;
 	int err;
 
-	spin_lock_irq(&table->lock);
-	tmp = radix_tree_delete(&table->tree, cq->cqn);
-	spin_unlock_irq(&table->lock);
-	if (!tmp) {
-		mlx5_core_warn(dev, "cq 0x%x not found in tree\n", cq->cqn);
-		return -EINVAL;
-	}
-	if (tmp != cq) {
-		mlx5_core_warn(dev, "corruption on cqn 0x%x\n", cq->cqn);
-		return -EINVAL;
-	}
+	err = mlx5_eq_del_cq(cq->eq, cq);
+	if (err)
+		return err;
 
 	MLX5_SET(destroy_cq_in, in, opcode, MLX5_CMD_OP_DESTROY_CQ);
 	MLX5_SET(destroy_cq_in, in, cqn, cq->cqn);
