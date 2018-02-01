@@ -87,7 +87,6 @@ struct uverbs_obj_type_class {
 	 */
 	int __must_check (*remove_commit)(struct ib_uobject *uobj,
 					  enum rdma_remove_reason why);
-	u8    needs_kfree_rcu;
 };
 
 struct uverbs_obj_type {
