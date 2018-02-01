@@ -201,6 +201,11 @@ static struct ib_uobject *lookup_get_idr_uobject(const struct uverbs_obj_type *t
 		goto free;
 	}
 
+	if (!kref_get_unless_zero(&uobj->ref)) {
+		uobj = NULL;
+		goto free;
+	}
+
 	uverbs_uobject_get(uobj);
 free:
 	rcu_read_unlock();
