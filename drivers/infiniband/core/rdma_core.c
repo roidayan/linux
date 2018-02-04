@@ -141,7 +141,12 @@ static struct ib_uobject *alloc_uobj(struct ib_ucontext *context,
 	 */
 	uobj->context = context;
 	uobj->type = type;
-	atomic_set(&uobj->usecnt, 0);
+	/*
+	 * Allocated objects start out as write locked to deny any other
+	 * syscalls from accessing them until they are commited. See
+	 * rdma_alloc_commit_uobject
+	 */
+	atomic_set(&uobj->usecnt, -1);
 	kref_init(&uobj->ref);
 
 	return uobj;
@@ -528,6 +533,8 @@ int rdma_alloc_commit_uobject(struct ib_uobject *uobj)
 	}
 
 	uobj->type->type_class->alloc_commit(uobj);
+	/* matches atomic_set(-1) in alloc_uobj */
+	atomic_inc(&uobj->usecnt);
 	up_read(&uobj->context->cleanup_rwsem);
 
 	return 0;
