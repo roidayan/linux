@@ -6627,16 +6627,6 @@ L:	linux-i2c@vger.kernel.org
 S:	Maintained
 F:	drivers/i2c/i2c-stub.c
 
-i386 BOOT CODE
-M:	"H. Peter Anvin" <hpa@zytor.com>
-S:	Maintained
-F:	arch/x86/boot/
-
-i386 SETUP CODE / CPU ERRATA WORKAROUNDS
-M:	"H. Peter Anvin" <hpa@zytor.com>
-T:	git git://git.kernel.org/pub/scm/linux/kernel/git/hpa/linux-2.6-x86setup.git
-S:	Maintained
-
 IA64 (Itanium) PLATFORM
 M:	Tony Luck <tony.luck@intel.com>
 M:	Fenghua Yu <fenghua.yu@intel.com>
@@ -6903,7 +6893,7 @@ M:	Jason Gunthorpe <jgg@mellanox.com>
 L:	linux-rdma@vger.kernel.org
 W:	http://www.openfabrics.org/
 Q:	http://patchwork.kernel.org/project/linux-rdma/list/
-T:	git git://git.kernel.org/pub/scm/linux/kernel/git/dledford/rdma.git
+T:	git git://git.kernel.org/pub/scm/linux/kernel/git/rdma/rdma.git
 S:	Supported
 F:	Documentation/devicetree/bindings/infiniband/
 F:	Documentation/infiniband/
@@ -11214,7 +11204,8 @@ S:	Maintained
 F:	drivers/firmware/qemu_fw_cfg.c
 
 QIB DRIVER
-M:	Mike Marciniszyn <infinipath@intel.com>
+M:	Dennis Dalessandro <dennis.dalessandro@intel.com>
+M:	Mike Marciniszyn <mike.marciniszyn@intel.com>
 L:	linux-rdma@vger.kernel.org
 S:	Supported
 F:	drivers/infiniband/hw/qib/
@@ -11241,7 +11232,6 @@ F:	include/linux/qed/
 F:	drivers/net/ethernet/qlogic/qede/
 
 QLOGIC QL4xxx RDMA DRIVER
-M:	Ram Amrani <Ram.Amrani@cavium.com>
 M:	Michal Kalderon <Michal.Kalderon@cavium.com>
 M:	Ariel Elior <Ariel.Elior@cavium.com>
 L:	linux-rdma@vger.kernel.org
@@ -11512,6 +11502,7 @@ F:	drivers/net/ethernet/rdc/r6040.c
 
 RDMAVT - RDMA verbs software
 M:	Dennis Dalessandro <dennis.dalessandro@intel.com>
+M:	Mike Marciniszyn <mike.marciniszyn@intel.com>
 L:	linux-rdma@vger.kernel.org
 S:	Supported
 F:	drivers/infiniband/sw/rdmavt
@@ -11681,8 +11672,8 @@ F:	drivers/mtd/nand/r852.h
 RISC-V ARCHITECTURE
 M:	Palmer Dabbelt <palmer@sifive.com>
 M:	Albert Ou <albert@sifive.com>
-L:	patches@groups.riscv.org
-T:	git https://github.com/riscv/riscv-linux
+L:	linux-riscv@lists.infradead.org
+T:	git git://git.kernel.org/pub/scm/linux/kernel/git/palmer/riscv-linux.git
 S:	Supported
 F:	arch/riscv/
 K:	riscv
@@ -14893,7 +14884,7 @@ F:	net/x25/
 X86 ARCHITECTURE (32-BIT AND 64-BIT)
 M:	Thomas Gleixner <tglx@linutronix.de>
 M:	Ingo Molnar <mingo@redhat.com>
-M:	"H. Peter Anvin" <hpa@zytor.com>
+R:	"H. Peter Anvin" <hpa@zytor.com>
 M:	x86@kernel.org
 L:	linux-kernel@vger.kernel.org
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/tip/tip.git x86/core
