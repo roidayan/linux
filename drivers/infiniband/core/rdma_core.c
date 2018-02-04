@@ -413,9 +413,9 @@ static void lockdep_check(struct ib_uobject *uobj, bool exclusive)
 {
 #ifdef CONFIG_LOCKDEP
 	if (exclusive)
-		WARN_ON(atomic_read(&uobj->usecnt) > 0);
+		WARN_ON(atomic_read(&uobj->usecnt) != -1);
 	else
-		WARN_ON(atomic_read(&uobj->usecnt) == -1);
+		WARN_ON(atomic_read(&uobj->usecnt) <= 0);
 #endif
 }
 
