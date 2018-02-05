@@ -368,6 +368,7 @@ struct ib_ah *rdma_create_user_ah(struct ib_pd *pd,
 				  struct rdma_ah_attr *ah_attr,
 				  struct ib_udata *udata)
 {
+	struct ib_ah *ah;
 	int err;
 
 	if (ah_attr->type == RDMA_AH_ATTR_TYPE_ROCE) {
@@ -376,7 +377,9 @@ struct ib_ah *rdma_create_user_ah(struct ib_pd *pd,
 			return ERR_PTR(err);
 	}
 
-	return _rdma_create_ah(pd, ah_attr, udata);
+	ah = _rdma_create_ah(pd, ah_attr, udata);
+	rdma_cleanup_ah_attr_gid_attr(ah_attr);
+	return ah;
 }
 EXPORT_SYMBOL(rdma_create_user_ah);
 
@@ -1311,16 +1314,36 @@ bool ib_modify_qp_is_ok(enum ib_qp_state cur_state, enum ib_qp_state next_state,
 }
 EXPORT_SYMBOL(ib_modify_qp_is_ok);
 
+/**
+ * ib_resolve_eth_dmac - Resolve destination mac address
+ * @device:		Device to consider
+ * @ah_attr:		address handle attribute which describes the
+ *			source and destination parameters
+ * ib_resolve_eth_dmac() resolves destination mac address, L3 hop limit
+ * and initializes the grh sgid_attr pointer which holds the reference
+ * to the SGID attribute for SGID described using device, port, gid index.
+ * It returns 0 on success or appropriate error code. It initializes the
+ * necessary ah_attr fields when call is successful. Users must invoke
+ * rdma_cleanup_ah_attr_gid_attr() once ah_attr use is completed to free
+ * the reference to SGID attribute.
+ */
 static int ib_resolve_eth_dmac(struct ib_device *device,
 			       struct rdma_ah_attr *ah_attr)
 {
-	int           ret = 0;
+	const struct ib_gid_attr *sgid_attr;
 	struct ib_global_route *grh;
+	union ib_gid sgid;
+	int ret = 0;
 
 	if (!rdma_is_port_valid(device, rdma_ah_get_port_num(ah_attr)))
 		return -EINVAL;
 
 	grh = rdma_ah_retrieve_grh(ah_attr);
+
+	sgid_attr = rdma_get_gid_attr(device, ah_attr->port_num,
+				      grh->sgid_index, &sgid);
+	if (IS_ERR(sgid_attr))
+		return PTR_ERR(sgid_attr);
 
 	if (rdma_is_multicast_addr((struct in6_addr *)ah_attr->grh.dgid.raw)) {
 		if (ipv6_addr_v4mapped((struct in6_addr *)ah_attr->grh.dgid.raw)) {
@@ -1333,20 +1356,13 @@ static int ib_resolve_eth_dmac(struct ib_device *device,
 					(char *)ah_attr->roce.dmac);
 		}
 	} else {
-		const struct ib_gid_attr *sgid_attr;
-		union ib_gid sgid;
-
-		sgid_attr = rdma_get_gid_attr(device,
-					      rdma_ah_get_port_num(ah_attr),
-					      grh->sgid_index,
-					      &sgid);
-		if (IS_ERR(sgid_attr))
-			return PTR_ERR(sgid_attr);
-
 		ret = ib_resolve_unicast_gid_dmac(device, ah_attr,
 						  &sgid, sgid_attr);
-		rdma_put_gid_attr(sgid_attr);
 	}
+	if (ret)
+		rdma_put_gid_attr(sgid_attr);
+	else
+		rdma_ah_set_grh_sgid_attr(ah_attr, sgid_attr);
 	return ret;
 }
 
@@ -1412,7 +1428,9 @@ int ib_modify_qp_with_udata(struct ib_qp *ib_qp, struct ib_qp_attr *attr,
 		if (ret)
 			return ret;
 	}
-	return _ib_modify_qp(qp, attr, attr_mask, udata);
+	ret = _ib_modify_qp(qp, attr, attr_mask, udata);
+	rdma_cleanup_ah_attr_gid_attr(&attr->ah_attr);
+	return ret;
 }
 EXPORT_SYMBOL(ib_modify_qp_with_udata);
 
