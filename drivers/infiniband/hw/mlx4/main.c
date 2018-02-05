@@ -611,6 +611,20 @@ static int mlx4_ib_query_device(struct ib_device *ibdev,
 		}
 	}
 
+	if (uhw->outlen >= resp.response_length + sizeof(resp.tso_caps)) {
+		resp.response_length += sizeof(resp.tso_caps);
+
+		if (dev->dev->caps.max_gso_sz &&
+		    ((mlx4_ib_port_link_layer(ibdev, 1) ==
+		    IB_LINK_LAYER_ETHERNET) ||
+		    (mlx4_ib_port_link_layer(ibdev, 2) ==
+		    IB_LINK_LAYER_ETHERNET))) {
+			resp.tso_caps.max_tso = dev->dev->caps.max_gso_sz;
+			resp.tso_caps.supported_qpts |=
+				1 << IB_QPT_RAW_PACKET;
+		}
+	}
+
 	if (uhw->outlen) {
 		err = ib_copy_to_udata(uhw, &resp, resp.response_length);
 		if (err)
