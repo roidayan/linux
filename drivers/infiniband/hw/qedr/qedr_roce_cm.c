@@ -387,11 +387,11 @@ static inline int qedr_gsi_build_header(struct qedr_dev *dev,
 	bool has_vlan = false, has_grh_ipv6 = true;
 	struct rdma_ah_attr *ah_attr = &get_qedr_ah(ud_wr(swr)->ah)->attr;
 	const struct ib_global_route *grh = rdma_ah_read_grh(ah_attr);
+	const struct ib_gid_attr *sgid_attr;
 	union ib_gid sgid;
 	int send_size = 0;
 	u16 vlan_id = 0;
 	u16 ether_type;
-	struct ib_gid_attr sgid_attr;
 	int rc;
 	int ip_ver = 0;
 
@@ -402,8 +402,9 @@ static inline int qedr_gsi_build_header(struct qedr_dev *dev,
 	for (i = 0; i < swr->num_sge; ++i)
 		send_size += swr->sg_list[i].length;
 
-	rc = ib_get_cached_gid(qp->ibqp.device, rdma_ah_get_port_num(ah_attr),
-			       grh->sgid_index, &sgid, &sgid_attr);
+	rc = rdma_query_gid(qp->ibqp.device,
+			    rdma_ah_get_port_num(ah_attr),
+			    grh->sgid_index, &sgid);
 	if (rc) {
 		DP_ERR(dev,
 		       "gsi post send: failed to get cached GID (port=%d, ix=%d)\n",
@@ -412,13 +413,12 @@ static inline int qedr_gsi_build_header(struct qedr_dev *dev,
 		return rc;
 	}
 
-	vlan_id = rdma_vlan_dev_vlan_id(sgid_attr.ndev);
+	sgid_attr = ah_attr->grh.sgid_attr;
+	vlan_id = rdma_vlan_dev_vlan_id(sgid_attr->ndev);
 	if (vlan_id < VLAN_CFI_MASK)
 		has_vlan = true;
 
-	dev_put(sgid_attr.ndev);
-
-	has_udp = (sgid_attr.gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP);
+	has_udp = (sgid_attr->gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP);
 	if (!has_udp) {
 		/* RoCE v1 */
 		ether_type = ETH_P_IBOE;
