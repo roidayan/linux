@@ -587,8 +587,9 @@ static int mlx4_ib_query_device(struct ib_device *ibdev,
 			sizeof(struct mlx4_wqe_data_seg);
 	}
 
-	if (uhw->outlen >= resp.response_length + sizeof(resp.rss_caps)) {
-		resp.response_length += sizeof(resp.rss_caps);
+	if (uhw->outlen >= resp.response_length + sizeof(resp.rss_caps) +
+	    sizeof(resp.reserved)) {
+		resp.response_length += sizeof(resp.rss_caps) + sizeof(resp.reserved);
 		if (props->rss_caps.supported_qpts) {
 			resp.rss_caps.rx_hash_function =
 				MLX4_IB_RX_HASH_FUNC_TOEPLITZ;
