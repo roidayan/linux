@@ -3607,6 +3607,7 @@ static int cma_connect_ib(struct rdma_id_private *id_priv,
 	if (route->num_paths == 2)
 		req.alternate_path = &route->path_rec[1];
 	req.ppath_sgid_attr = id_priv->id.route.addr.dev_addr.sgid_attr;
+	/* Alternate path SGID attribute currently unsupported */
 	req.service_id = rdma_get_service_id(&id_priv->id, cma_dst_addr(id_priv));
 	req.qp_num = id_priv->qp_num;
 	req.qp_type = id_priv->id.qp_type;

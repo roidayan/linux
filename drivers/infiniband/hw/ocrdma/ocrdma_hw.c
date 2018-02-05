@@ -2494,8 +2494,8 @@ static int ocrdma_set_av_params(struct ocrdma_qp *qp,
 {
 	int status;
 	struct rdma_ah_attr *ah_attr = &attrs->ah_attr;
+	const struct ib_gid_attr *sgid_attr;
 	union ib_gid sgid;
-	struct ib_gid_attr sgid_attr;
 	u32 vlan_id = 0xFFFF;
 	u8 mac_addr[6], hdr_type;
 	union {
@@ -2525,23 +2525,24 @@ static int ocrdma_set_av_params(struct ocrdma_qp *qp,
 	memcpy(&cmd->params.dgid[0], &grh->dgid.raw[0],
 	       sizeof(cmd->params.dgid));
 
-	status = ib_get_cached_gid(&dev->ibdev, 1, grh->sgid_index,
-				   &sgid, &sgid_attr);
-	if (!status) {
-		vlan_id = rdma_vlan_dev_vlan_id(sgid_attr.ndev);
-		memcpy(mac_addr, sgid_attr.ndev->dev_addr, ETH_ALEN);
-		dev_put(sgid_attr.ndev);
-	}
+	status = rdma_query_gid(&dev->ibdev, 1, grh->sgid_index, &sgid);
+	if (status)
+		return status;
+
+	sgid_attr = ah_attr->grh.sgid_attr;
+	vlan_id = rdma_vlan_dev_vlan_id(sgid_attr->ndev);
+	memcpy(mac_addr, sgid_attr->ndev->dev_addr, ETH_ALEN);
 
 	qp->sgid_idx = grh->sgid_index;
 	memcpy(&cmd->params.sgid[0], &sgid.raw[0], sizeof(cmd->params.sgid));
 	status = ocrdma_resolve_dmac(dev, ah_attr, &mac_addr[0]);
 	if (status)
 		return status;
+
 	cmd->params.dmac_b0_to_b3 = mac_addr[0] | (mac_addr[1] << 8) |
 				(mac_addr[2] << 16) | (mac_addr[3] << 24);
 
-	hdr_type = ib_gid_to_network_type(sgid_attr.gid_type, &sgid);
+	hdr_type = ib_gid_to_network_type(sgid_attr->gid_type, &sgid);
 	if (hdr_type == RDMA_NETWORK_IPV4) {
 		rdma_gid2ip(&sgid_addr._sockaddr, &sgid);
 		rdma_gid2ip(&dgid_addr._sockaddr, &grh->dgid);
