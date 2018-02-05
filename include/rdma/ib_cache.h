@@ -37,24 +37,6 @@
 
 #include <rdma/ib_verbs.h>
 
-/**
- * ib_get_cached_gid - Returns a cached GID table entry
- * @device: The device to query.
- * @port_num: The port number of the device to query.
- * @index: The index into the cached GID table to query.
- * @gid: The GID value found at the specified index.
- * @attr: The GID attribute found at the specified index (only in RoCE).
- *   NULL means ignore (output parameter).
- *
- * ib_get_cached_gid() fetches the specified GID table entry stored in
- * the local software cache.
- */
-int ib_get_cached_gid(struct ib_device    *device,
-		      u8                   port_num,
-		      int                  index,
-		      union ib_gid        *gid,
-		      struct ib_gid_attr  *attr);
-
 int rdma_query_gid(struct ib_device *device, u8 port_num,
 		   int index, union ib_gid *gid);
 
