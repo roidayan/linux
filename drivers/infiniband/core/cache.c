@@ -595,29 +595,6 @@ int ib_cache_gid_del_all_netdev_gids(struct ib_device *ib_dev, u8 port,
 	return 0;
 }
 
-static int __ib_cache_gid_get(struct ib_device *ib_dev, u8 port, int index,
-			      union ib_gid *gid, struct ib_gid_attr *attr)
-{
-	struct ib_gid_table *table;
-
-	table = ib_dev->cache.ports[port - rdma_start_port(ib_dev)].gid;
-
-	if (index < 0 || index >= table->sz)
-		return -EINVAL;
-
-	if (!is_gid_table_entry_valid(&table->data_vec[index]))
-		return -EAGAIN;
-
-	memcpy(gid, &table->data_vec[index].gid, sizeof(*gid));
-	if (attr) {
-		memcpy(attr, &table->data_vec[index].attr, sizeof(*attr));
-		if (attr->ndev)
-			dev_hold(attr->ndev);
-	}
-
-	return 0;
-}
-
 static const struct ib_gid_attr *
 _ib_cache_gid_table_find(struct ib_device *ib_dev,
 			 const union ib_gid *gid,
@@ -950,28 +927,6 @@ static int gid_table_setup_one(struct ib_device *ib_dev)
 
 	return err;
 }
-
-int ib_get_cached_gid(struct ib_device *device,
-		      u8                port_num,
-		      int               index,
-		      union ib_gid     *gid,
-		      struct ib_gid_attr *gid_attr)
-{
-	int res;
-	unsigned long flags;
-	struct ib_gid_table *table;
-
-	if (!rdma_is_port_valid(device, port_num))
-		return -EINVAL;
-
-	table = device->cache.ports[port_num - rdma_start_port(device)].gid;
-	read_lock_irqsave(&table->rwlock, flags);
-	res = __ib_cache_gid_get(device, port_num, index, gid, gid_attr);
-	read_unlock_irqrestore(&table->rwlock, flags);
-
-	return res;
-}
-EXPORT_SYMBOL(ib_get_cached_gid);
 
 /**
  * rdma_query_gid - Read the GID content from the GID software cache
