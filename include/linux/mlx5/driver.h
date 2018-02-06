@@ -138,6 +138,10 @@ enum {
 	MLX5_REG_HOST_ENDIANNESS = 0x7004,
 	MLX5_REG_MCIA		 = 0x9014,
 	MLX5_REG_MLCR		 = 0x902b,
+	MLX5_REG_MTRC_CAP	 = 0x9040,
+	MLX5_REG_MTRC_CONF	 = 0x9041,
+	MLX5_REG_MTRC_STDB	 = 0x9042,
+	MLX5_REG_MTRC_CTRL	 = 0x9043,
 	MLX5_REG_MPCNT		 = 0x9051,
 	MLX5_REG_MTPPS		 = 0x9053,
 	MLX5_REG_MTPPSE		 = 0x9054,
@@ -812,6 +816,7 @@ struct mlx5_clock {
 };
 
 struct mlx5_vxlan;
+struct mlx5_fw_tracer;
 
 struct mlx5_core_dev {
 	struct pci_dev	       *pdev;
@@ -858,6 +863,7 @@ struct mlx5_core_dev {
 	struct mlx5_clock        clock;
 	struct mlx5_ib_clock_info  *clock_info;
 	struct page             *clock_info_page;
+	struct mlx5_fw_tracer   *tracer;
 };
 
 struct mlx5_db {
