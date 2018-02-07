@@ -71,7 +71,7 @@ struct mlx5e_channel_param {
 	struct mlx5e_cq_param      icosq_cq;
 };
 
-static bool mlx5e_check_fragmented_striding_rq_cap(struct mlx5_core_dev *mdev)
+bool mlx5e_check_fragmented_striding_rq_cap(struct mlx5_core_dev *mdev)
 {
 	bool striding_rq_umr = MLX5_CAP_GEN(mdev, striding_rq) &&
 		MLX5_CAP_GEN(mdev, umr_ptr_rlky) &&
@@ -200,14 +200,18 @@ void mlx5e_init_rq_type_params(struct mlx5_core_dev *mdev,
 		       MLX5E_GET_PFLAG(params, MLX5E_PFLAG_RX_CQE_COMPRESS));
 }
 
-static bool slow_pci_heuristic(struct mlx5_core_dev *mdev);
+bool mlx5e_striding_rq_possible(struct mlx5_core_dev *mdev,
+				struct mlx5e_params *params)
+{
+	return mlx5e_check_fragmented_striding_rq_cap(mdev) &&
+		!MLX5_IPSEC_DEV(mdev) &&
+		!(params->xdp_prog && !mlx5e_rx_mpwqe_is_linear_skb(mdev, params));
+}
 
 void mlx5e_set_rq_type(struct mlx5_core_dev *mdev, struct mlx5e_params *params)
 {
-	params->rq_wq_type = mlx5e_check_fragmented_striding_rq_cap(mdev) &&
-		!slow_pci_heuristic(mdev) && !MLX5_IPSEC_DEV(mdev) &&
-		!(params->xdp_prog &&
-		  !mlx5e_rx_mpwqe_is_linear_skb(mdev, params)) ?
+	params->rq_wq_type = mlx5e_striding_rq_possible(mdev, params) &&
+		MLX5E_GET_PFLAG(params, MLX5E_PFLAG_RX_STRIDING_RQ) ?
 		MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ :
 		MLX5_WQ_TYPE_LINKED_LIST;
 }
@@ -4163,6 +4167,9 @@ void mlx5e_build_nic_params(struct mlx5_core_dev *mdev,
 	MLX5E_SET_PFLAG(params, MLX5E_PFLAG_RX_CQE_COMPRESS, params->rx_cqe_compress_def);
 
 	/* RQ */
+	if (mlx5e_striding_rq_possible(mdev, params))
+		MLX5E_SET_PFLAG(params, MLX5E_PFLAG_RX_STRIDING_RQ,
+				!slow_pci_heuristic(mdev));
 	mlx5e_set_rq_type(mdev, params);
 	mlx5e_init_rq_type_params(mdev, params);
 
