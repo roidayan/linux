@@ -701,6 +701,11 @@ static ssize_t ib_uverbs_write(struct file *filp, const char __user *buf,
 		 IB_USER_VERBS_CMD_FLAGS_MASK) >> IB_USER_VERBS_CMD_FLAGS_SHIFT;
 
 	extended_command = flags & IB_USER_VERBS_CMD_FLAG_EXTENDED;
+	if (flags && !extended_command) {
+		ret = -EINVAL;
+		goto out;
+	}
+
 	if (!verify_command_idx(command, extended_command)) {
 		ret = -EINVAL;
 		goto out;
@@ -732,9 +737,7 @@ static ssize_t ib_uverbs_write(struct file *filp, const char __user *buf,
 						 buf + sizeof(hdr),
 						 hdr.in_words * 4,
 						 hdr.out_words * 4);
-
-	} else if (flags == IB_USER_VERBS_CMD_FLAG_EXTENDED) {
-		struct ib_uverbs_ex_cmd_hdr ex_hdr;
+	} else {
 		struct ib_udata ucore;
 		struct ib_udata uhw;
 		size_t written_count = count;
@@ -804,8 +807,6 @@ static ssize_t ib_uverbs_write(struct file *filp, const char __user *buf,
 		ret = uverbs_ex_cmd_table[command](file, ib_dev, &ucore, &uhw);
 		if (!ret)
 			ret = written_count;
-	} else {
-		ret = -ENOSYS;
 	}
 
 out:
