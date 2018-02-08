@@ -2008,19 +2008,16 @@ static struct net_device *ipoib_get_netdev(struct ib_device *hca, u8 port,
 {
 	struct net_device *dev;
 
-	if (hca->alloc_rdma_netdev) {
-		dev = hca->alloc_rdma_netdev(hca, port,
-					     RDMA_NETDEV_IPOIB, name,
-					     NET_NAME_UNKNOWN,
-					     ipoib_setup_common);
+	if (hca->rdma_netdev_get_params) {
+		dev = rdma_alloc_netdev(hca, port, RDMA_NETDEV_IPOIB, name,
+					NET_NAME_UNKNOWN, ipoib_setup_common);
 		if (IS_ERR_OR_NULL(dev) && PTR_ERR(dev) != -EOPNOTSUPP)
 			return NULL;
 	}
 
-	if (!hca->alloc_rdma_netdev || PTR_ERR(dev) == -EOPNOTSUPP)
+	if (!hca->rdma_netdev_get_params || PTR_ERR(dev) == -EOPNOTSUPP)
 		dev = ipoib_create_netdev_default(hca, name, NET_NAME_UNKNOWN,
 						  ipoib_setup_common);
-
 	return dev;
 }
 
