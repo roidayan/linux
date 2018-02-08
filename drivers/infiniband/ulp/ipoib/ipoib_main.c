@@ -1980,17 +1980,18 @@ static struct net_device
 *ipoib_create_netdev_default(struct ib_device *hca,
 			     const char *name,
 			     unsigned char name_assign_type,
-			     void (*setup)(struct net_device *))
+			     void (*setup)(struct net_device *),
+			     struct net_device *netdev)
 {
-	struct net_device *dev;
+	struct net_device *dev = netdev;
 	struct rdma_netdev *rn;
 
-	dev = alloc_netdev((int)sizeof(struct rdma_netdev),
-			   name,
-			   name_assign_type, setup);
-	if (!dev)
-		return NULL;
-
+	if (!netdev) {
+		dev = alloc_netdev((int)sizeof(struct rdma_netdev), name,
+				   name_assign_type, setup);
+		if (!dev)
+			return NULL;
+	}
 	rn = netdev_priv(dev);
 
 	rn->send = ipoib_send;
@@ -2004,25 +2005,43 @@ static struct net_device
 }
 
 static struct net_device *ipoib_get_netdev(struct ib_device *hca, u8 port,
-					   const char *name)
+					   const char *name,
+					   struct net_device *netdev)
 {
-	struct net_device *dev;
+	int rc;
+	struct net_device *dev = netdev;
 
 	if (hca->rdma_netdev_get_params) {
-		dev = rdma_alloc_netdev(hca, port, RDMA_NETDEV_IPOIB, name,
-					NET_NAME_UNKNOWN, ipoib_setup_common);
-		if (IS_ERR_OR_NULL(dev) && PTR_ERR(dev) != -EOPNOTSUPP)
-			return NULL;
+		if (!netdev) {
+			dev = rdma_alloc_netdev(hca, port, RDMA_NETDEV_IPOIB,
+						name,
+						NET_NAME_UNKNOWN,
+						ipoib_setup_common);
+			if (IS_ERR_OR_NULL(dev) && PTR_ERR(dev) != -EOPNOTSUPP)
+				return NULL;
+		}
+		if (!IS_ERR_OR_NULL(dev)) {
+			rc = rdma_init_netdev(hca, port, RDMA_NETDEV_IPOIB,
+					      name,
+					      NET_NAME_UNKNOWN,
+					      ipoib_setup_common, dev);
+			if (rc && rc != -EOPNOTSUPP) {
+				if (!netdev)
+					free_netdev(dev);
+				return NULL;
+			}
+		}
 	}
 
 	if (!hca->rdma_netdev_get_params || PTR_ERR(dev) == -EOPNOTSUPP)
 		dev = ipoib_create_netdev_default(hca, name, NET_NAME_UNKNOWN,
-						  ipoib_setup_common);
+						  ipoib_setup_common, netdev);
 	return dev;
 }
 
 struct ipoib_dev_priv *ipoib_intf_alloc(struct ib_device *hca, u8 port,
-					const char *name)
+					const char *name,
+					struct net_device *netdev)
 {
 	struct net_device *dev;
 	struct ipoib_dev_priv *priv;
@@ -2032,7 +2051,7 @@ struct ipoib_dev_priv *ipoib_intf_alloc(struct ib_device *hca, u8 port,
 	if (!priv)
 		return NULL;
 
-	dev = ipoib_get_netdev(hca, port, name);
+	dev = ipoib_get_netdev(hca, port, name, netdev);
 	if (!dev)
 		goto free_priv;
 
@@ -2250,8 +2269,9 @@ static struct net_device *ipoib_add_port(const char *format,
 	struct ipoib_dev_priv *priv;
 	struct ib_port_attr attr;
 	int result = -ENOMEM;
+	struct rdma_netdev_alloc_params params;
 
-	priv = ipoib_intf_alloc(hca, port, format);
+	priv = ipoib_intf_alloc(hca, port, format, NULL);
 	if (!priv) {
 		pr_warn("%s, %d: ipoib_intf_alloc failed\n", hca->name, port);
 		return ERR_PTR(result);
@@ -2323,6 +2343,16 @@ static struct net_device *ipoib_add_port(const char *format,
 		pr_warn("%s: couldn't register ipoib port %d; error %d\n",
 			hca->name, port, result);
 		goto register_failed;
+	}
+
+	if (hca->rdma_netdev_get_params) {
+		struct rtnl_link_ops *ops = ipoib_get_link_ops();
+		int rc = hca->rdma_netdev_get_params(hca, port,
+						     RDMA_NETDEV_IPOIB,
+						     &params);
+
+		if (!rc && ops->priv_size < params.sizeof_priv)
+			ops->priv_size = params.sizeof_priv;
 	}
 
 	result = -ENOMEM;
