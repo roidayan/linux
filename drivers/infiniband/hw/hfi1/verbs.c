@@ -1877,7 +1877,7 @@ int hfi1_register_ib_device(struct hfi1_devdata *dd)
 	ibdev->modify_device = modify_device;
 	ibdev->alloc_hw_stats = alloc_hw_stats;
 	ibdev->get_hw_stats = get_hw_stats;
-	ibdev->alloc_rdma_netdev = hfi1_vnic_alloc_rn;
+	ibdev->rdma_netdev_get_params = hfi1_vnic_rn_get_params;
 
 	/* keep process mad in the driver */
 	ibdev->process_mad = hfi1_process_mad;
