@@ -793,40 +793,22 @@ static void hfi1_vnic_destructor(struct net_device *netdev)
 	mutex_destroy(&vinfo->lock);
 }
 
-struct net_device *hfi1_vnic_alloc_rn(struct ib_device *device,
-				      u8 port_num,
-				      enum rdma_netdev_t type,
-				      const char *name,
-				      unsigned char name_assign_type,
-				      void (*setup)(struct net_device *))
+static int hfi1_vnic_setup_rn(struct ib_device *device, u8 port_num,
+			      struct net_device *netdev)
 {
 	struct hfi1_devdata *dd = dd_from_ibdev(device);
 	struct hfi1_vnic_vport_info *vinfo;
-	struct net_device *netdev;
 	struct rdma_netdev *rn;
-	int i, size, rc;
+	int i, rc;
 
-	if (!dd->num_vnic_contexts)
-		return ERR_PTR(-ENOMEM);
-
-	if (!port_num || (port_num > dd->num_pports))
-		return ERR_PTR(-EINVAL);
-
-	if (type != RDMA_NETDEV_OPA_VNIC)
-		return ERR_PTR(-EOPNOTSUPP);
-
-	size = sizeof(struct opa_vnic_rdma_netdev) + sizeof(*vinfo);
-	netdev = alloc_netdev_mqs(size, name, name_assign_type, setup,
-				  dd->chip_sdma_engines, dd->num_vnic_contexts);
-	if (!netdev)
-		return ERR_PTR(-ENOMEM);
-
-	rn = netdev_priv(netdev);
 	vinfo = opa_vnic_dev_priv(netdev);
 	vinfo->dd = dd;
 	vinfo->num_tx_q = dd->chip_sdma_engines;
 	vinfo->num_rx_q = dd->num_vnic_contexts;
 	vinfo->netdev = netdev;
+	mutex_init(&vinfo->lock);
+
+	rn = netdev_priv(netdev);
 	rn->set_id = hfi1_vnic_set_vesw_id;
 
 	netdev->features = NETIF_F_HIGHDMA | NETIF_F_SG;
@@ -834,7 +816,6 @@ struct net_device *hfi1_vnic_alloc_rn(struct ib_device *device,
 	netdev->vlan_features = netdev->features;
 	netdev->watchdog_timeo = msecs_to_jiffies(HFI_TX_TIMEOUT_MS);
 	netdev->netdev_ops = &hfi1_netdev_ops;
-	mutex_init(&vinfo->lock);
 
 	for (i = 0; i < vinfo->num_rx_q; i++) {
 		struct hfi1_vnic_rx_queue *rxq = &vinfo->rxq[i];
@@ -850,9 +831,36 @@ struct net_device *hfi1_vnic_alloc_rn(struct ib_device *device,
 		goto init_fail;
 
 	netdev->priv_destructor = hfi1_vnic_destructor;
-	return netdev;
+
+	return 0;
+
 init_fail:
 	mutex_destroy(&vinfo->lock);
-	free_netdev(netdev);
-	return ERR_PTR(rc);
+	return rc;
+}
+
+int hfi1_vnic_rn_get_params(struct ib_device *device, u8 port_num,
+			    enum rdma_netdev_t type,
+			    struct rdma_netdev_alloc_params *params)
+{
+	struct hfi1_devdata *dd = dd_from_ibdev(device);
+
+	if (!dd->num_vnic_contexts)
+		return -ENOMEM;
+
+	if (!port_num || port_num > dd->num_pports)
+		return -EINVAL;
+
+	if (type != RDMA_NETDEV_OPA_VNIC)
+		return -EOPNOTSUPP;
+
+	*params = (struct rdma_netdev_alloc_params){
+		.sizeof_priv = sizeof(struct opa_vnic_rdma_netdev) +
+			       sizeof(struct hfi1_vnic_vport_info),
+		.txqs = dd->chip_sdma_engines,
+		.rxqs = dd->num_vnic_contexts,
+		.initialize_rdma_netdev = hfi1_vnic_setup_rn,
+	};
+
+	return 0;
 }
