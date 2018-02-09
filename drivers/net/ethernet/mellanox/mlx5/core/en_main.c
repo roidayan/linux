@@ -153,26 +153,6 @@ static void mlx5e_update_carrier_work(struct work_struct *work)
 	mutex_unlock(&priv->state_lock);
 }
 
-static void mlx5e_tx_timeout_work(struct work_struct *work)
-{
-	struct mlx5e_priv *priv = container_of(work, struct mlx5e_priv,
-					       tx_timeout_work);
-	int err;
-
-	rtnl_lock();
-	mutex_lock(&priv->state_lock);
-	if (!test_bit(MLX5E_STATE_OPENED, &priv->state))
-		goto unlock;
-	mlx5e_close_locked(priv->netdev);
-	err = mlx5e_open_locked(priv->netdev);
-	if (err)
-		netdev_err(priv->netdev, "mlx5e_open_locked failed recovering from a tx_timeout, err(%d).\n",
-			   err);
-unlock:
-	mutex_unlock(&priv->state_lock);
-	rtnl_unlock();
-}
-
 void mlx5e_update_stats(struct mlx5e_priv *priv)
 {
 	int i;
@@ -953,6 +933,7 @@ static int mlx5e_alloc_txqsq_db(struct mlx5e_txqsq *sq, int numa)
 	return 0;
 }
 
+static void mlx5e_sq_recover(struct work_struct *work);
 static int mlx5e_alloc_txqsq(struct mlx5e_channel *c,
 			     int txq_ix,
 			     struct mlx5e_params *params,
@@ -970,8 +951,8 @@ static int mlx5e_alloc_txqsq(struct mlx5e_channel *c,
 	sq->channel   = c;
 	sq->txq_ix    = txq_ix;
 	sq->uar_map   = mdev->mlx5e_res.bfreg.map;
-	sq->max_inline      = params->tx_max_inline;
 	sq->min_inline_mode = params->tx_min_inline_mode;
+	INIT_WORK(&sq->recover.recover_work, mlx5e_sq_recover);
 	if (MLX5_IPSEC_DEV(c->priv->mdev))
 		set_bit(MLX5E_SQ_STATE_IPSEC, &sq->state);
 
@@ -1038,6 +1019,7 @@ static int mlx5e_create_sq(struct mlx5_core_dev *mdev,
 		MLX5_SET(sqc,  sqc, min_wqe_inline_mode, csp->min_inline_mode);
 
 	MLX5_SET(sqc,  sqc, state, MLX5_SQC_STATE_RST);
+	MLX5_SET(sqc,  sqc, flush_in_error_en, 1);
 
 	MLX5_SET(wq,   wq, wq_type,       MLX5_WQ_TYPE_CYCLIC);
 	MLX5_SET(wq,   wq, uar_page,      mdev->mlx5e_res.bfreg.index);
@@ -1156,9 +1138,21 @@ err_free_txqsq:
 	return err;
 }
 
+static void mlx5e_reset_txqsq_cc_pc(struct mlx5e_txqsq *sq)
+{
+	WARN_ONCE(sq->cc != sq->pc,
+		  "SQ 0x%x: cc (0x%x) != pc (0x%x)\n",
+		  sq->sqn, sq->cc, sq->pc);
+	sq->cc = 0;
+	sq->dma_fifo_cc = 0;
+	sq->pc = 0;
+}
+
 static void mlx5e_activate_txqsq(struct mlx5e_txqsq *sq)
 {
 	sq->txq = netdev_get_tx_queue(sq->channel->netdev, sq->txq_ix);
+	clear_bit(MLX5E_SQ_STATE_RECOVERING, &sq->state);
+	mlx5e_reset_txqsq_cc_pc(sq);
 	set_bit(MLX5E_SQ_STATE_ENABLED, &sq->state);
 	netdev_tx_reset_queue(sq->txq);
 	netif_tx_start_queue(sq->txq);
@@ -1201,6 +1195,106 @@ static void mlx5e_close_txqsq(struct mlx5e_txqsq *sq)
 		mlx5_rl_remove_rate(mdev, sq->rate_limit);
 	mlx5e_free_txqsq_descs(sq);
 	mlx5e_free_txqsq(sq);
+}
+
+static int mlx5e_wait_for_sq_flush(struct mlx5e_txqsq *sq)
+{
+	unsigned long exp_time = jiffies + msecs_to_jiffies(2000);
+
+	while (time_before(jiffies, exp_time)) {
+		if (sq->cc == sq->pc)
+			return 0;
+
+		msleep(20);
+	}
+
+	netdev_err(sq->channel->netdev,
+		   "Wait for SQ 0x%x flush timeout (sq cc = 0x%x, sq pc = 0x%x)\n",
+		   sq->sqn, sq->cc, sq->pc);
+
+	return -ETIMEDOUT;
+}
+
+static int mlx5e_sq_to_ready(struct mlx5e_txqsq *sq, int curr_state)
+{
+	struct mlx5_core_dev *mdev = sq->channel->mdev;
+	struct net_device *dev = sq->channel->netdev;
+	struct mlx5e_modify_sq_param msp = {0};
+	int err;
+
+	msp.curr_state = curr_state;
+	msp.next_state = MLX5_SQC_STATE_RST;
+
+	err = mlx5e_modify_sq(mdev, sq->sqn, &msp);
+	if (err) {
+		netdev_err(dev, "Failed to move sq 0x%x to reset\n", sq->sqn);
+		return err;
+	}
+
+	memset(&msp, 0, sizeof(msp));
+	msp.curr_state = MLX5_SQC_STATE_RST;
+	msp.next_state = MLX5_SQC_STATE_RDY;
+
+	err = mlx5e_modify_sq(mdev, sq->sqn, &msp);
+	if (err) {
+		netdev_err(dev, "Failed to move sq 0x%x to ready\n", sq->sqn);
+		return err;
+	}
+
+	return 0;
+}
+
+static void mlx5e_sq_recover(struct work_struct *work)
+{
+	struct mlx5e_txqsq_recover *recover =
+		container_of(work, struct mlx5e_txqsq_recover,
+			     recover_work);
+	struct mlx5e_txqsq *sq = container_of(recover, struct mlx5e_txqsq,
+					      recover);
+	struct mlx5_core_dev *mdev = sq->channel->mdev;
+	struct net_device *dev = sq->channel->netdev;
+	u8 state;
+	int err;
+
+	err = mlx5_core_query_sq_state(mdev, sq->sqn, &state);
+	if (err) {
+		netdev_err(dev, "Failed to query SQ 0x%x state. err = %d\n",
+			   sq->sqn, err);
+		return;
+	}
+
+	if (state != MLX5_RQC_STATE_ERR) {
+		netdev_err(dev, "SQ 0x%x not in ERROR state\n", sq->sqn);
+		return;
+	}
+
+	netif_tx_disable_queue(sq->txq);
+
+	if (mlx5e_wait_for_sq_flush(sq))
+		return;
+
+	/* If the interval between two consecutive recovers per SQ is too
+	 * short, don't recover to avoid infinite loop of ERR_CQE -> recover.
+	 * If we reached this state, there is probably a bug that needs to be
+	 * fixed. let's keep the queue close and let tx timeout cleanup.
+	 */
+	if (jiffies_to_msecs(jiffies - recover->last_recover) <
+	    MLX5E_SQ_RECOVER_MIN_INTERVAL) {
+		netdev_err(dev, "Recover SQ 0x%x canceled, too many error CQEs\n",
+			   sq->sqn);
+		return;
+	}
+
+	/* At this point, no new packets will arrive from the stack as TXQ is
+	 * marked with QUEUE_STATE_DRV_XOFF. In addition, NAPI cleared all
+	 * pending WQEs.  SQ can safely reset the SQ.
+	 */
+	if (mlx5e_sq_to_ready(sq, state))
+		return;
+
+	sq->stats.recover++;
+	mlx5e_activate_txqsq(sq);
+	recover->last_recover = jiffies;
 }
 
 static int mlx5e_open_icosq(struct mlx5e_channel *c,
@@ -3230,24 +3324,20 @@ static int mlx5e_set_features(struct net_device *netdev,
 			      netdev_features_t features)
 {
 	netdev_features_t oper_features = netdev->features;
-	int err;
+	int err = 0;
 
-	err  = mlx5e_handle_feature(netdev, &oper_features, features,
-				    NETIF_F_LRO, set_feature_lro);
-	err |= mlx5e_handle_feature(netdev, &oper_features, features,
-				    NETIF_F_HW_VLAN_CTAG_FILTER,
+#define MLX5E_HANDLE_FEATURE(feature, handler) \
+	mlx5e_handle_feature(netdev, &oper_features, features, feature, handler)
+
+	err |= MLX5E_HANDLE_FEATURE(NETIF_F_LRO, set_feature_lro);
+	err |= MLX5E_HANDLE_FEATURE(NETIF_F_HW_VLAN_CTAG_FILTER,
 				    set_feature_cvlan_filter);
-	err |= mlx5e_handle_feature(netdev, &oper_features, features,
-				    NETIF_F_HW_TC, set_feature_tc_num_filters);
-	err |= mlx5e_handle_feature(netdev, &oper_features, features,
-				    NETIF_F_RXALL, set_feature_rx_all);
-	err |= mlx5e_handle_feature(netdev, &oper_features, features,
-				    NETIF_F_RXFCS, set_feature_rx_fcs);
-	err |= mlx5e_handle_feature(netdev, &oper_features, features,
-				    NETIF_F_HW_VLAN_CTAG_RX, set_feature_rx_vlan);
+	err |= MLX5E_HANDLE_FEATURE(NETIF_F_HW_TC, set_feature_tc_num_filters);
+	err |= MLX5E_HANDLE_FEATURE(NETIF_F_RXALL, set_feature_rx_all);
+	err |= MLX5E_HANDLE_FEATURE(NETIF_F_RXFCS, set_feature_rx_fcs);
+	err |= MLX5E_HANDLE_FEATURE(NETIF_F_HW_VLAN_CTAG_RX, set_feature_rx_vlan);
 #ifdef CONFIG_RFS_ACCEL
-	err |= mlx5e_handle_feature(netdev, &oper_features, features,
-				    NETIF_F_NTUPLE, set_feature_arfs);
+	err |= MLX5E_HANDLE_FEATURE(NETIF_F_NTUPLE, set_feature_arfs);
 #endif
 
 	if (err) {
@@ -3623,13 +3713,19 @@ static bool mlx5e_tx_timeout_eq_recover(struct net_device *dev,
 	return true;
 }
 
-static void mlx5e_tx_timeout(struct net_device *dev)
+static void mlx5e_tx_timeout_work(struct work_struct *work)
 {
-	struct mlx5e_priv *priv = netdev_priv(dev);
+	struct mlx5e_priv *priv = container_of(work, struct mlx5e_priv,
+					       tx_timeout_work);
+	struct net_device *dev = priv->netdev;
 	bool reopen_channels = false;
-	int i;
+	int i, err;
 
-	netdev_err(dev, "TX timeout detected\n");
+	rtnl_lock();
+	mutex_lock(&priv->state_lock);
+
+	if (!test_bit(MLX5E_STATE_OPENED, &priv->state))
+		goto unlock;
 
 	for (i = 0; i < priv->channels.num * priv->channels.params.num_tc; i++) {
 		struct netdev_queue *dev_queue = netdev_get_tx_queue(dev, i);
@@ -3637,7 +3733,9 @@ static void mlx5e_tx_timeout(struct net_device *dev)
 
 		if (!netif_xmit_stopped(dev_queue))
 			continue;
-		netdev_err(dev, "TX timeout on queue: %d, SQ: 0x%x, CQ: 0x%x, SQ Cons: 0x%x SQ Prod: 0x%x, usecs since last trans: %u\n",
+
+		netdev_err(dev,
+			   "TX timeout on queue: %d, SQ: 0x%x, CQ: 0x%x, SQ Cons: 0x%x SQ Prod: 0x%x, usecs since last trans: %u\n",
 			   i, sq->sqn, sq->cq.mcq.cqn, sq->cc, sq->pc,
 			   jiffies_to_usecs(jiffies - dev_queue->trans_start));
 
@@ -3650,8 +3748,27 @@ static void mlx5e_tx_timeout(struct net_device *dev)
 		}
 	}
 
-	if (reopen_channels && test_bit(MLX5E_STATE_OPENED, &priv->state))
-		schedule_work(&priv->tx_timeout_work);
+	if (!reopen_channels)
+		goto unlock;
+
+	mlx5e_close_locked(dev);
+	err = mlx5e_open_locked(dev);
+	if (err)
+		netdev_err(priv->netdev,
+			   "mlx5e_open_locked failed recovering from a tx_timeout, err(%d).\n",
+			   err);
+
+unlock:
+	mutex_unlock(&priv->state_lock);
+	rtnl_unlock();
+}
+
+static void mlx5e_tx_timeout(struct net_device *dev)
+{
+	struct mlx5e_priv *priv = netdev_priv(dev);
+
+	netdev_err(dev, "TX timeout detected\n");
+	queue_work(priv->wq, &priv->tx_timeout_work);
 }
 
 static int mlx5e_xdp_set(struct net_device *netdev, struct bpf_prog *prog)
@@ -3846,15 +3963,6 @@ static int mlx5e_check_required_hca_cap(struct mlx5_core_dev *mdev)
 	return 0;
 }
 
-u16 mlx5e_get_max_inline_cap(struct mlx5_core_dev *mdev)
-{
-	int bf_buf_size = (1 << MLX5_CAP_GEN(mdev, log_bf_reg_size)) / 2;
-
-	return bf_buf_size -
-	       sizeof(struct mlx5e_tx_wqe) +
-	       2 /*sizeof(mlx5e_tx_wqe.inline_hdr_start)*/;
-}
-
 void mlx5e_build_default_indir_rqt(u32 *indirection_rqt, int len,
 				   int num_channels)
 {
@@ -3955,7 +4063,7 @@ void mlx5e_set_rx_cq_mode_params(struct mlx5e_params *params, u8 cq_period_mode)
 				MLX5_CQ_PERIOD_MODE_START_FROM_CQE);
 }
 
-u32 mlx5e_choose_lro_timeout(struct mlx5_core_dev *mdev, u32 wanted_timeout)
+static u32 mlx5e_choose_lro_timeout(struct mlx5_core_dev *mdev, u32 wanted_timeout)
 {
 	int i;
 
@@ -4015,7 +4123,6 @@ void mlx5e_build_nic_params(struct mlx5_core_dev *mdev,
 	mlx5e_set_tx_cq_mode_params(params, cq_period_mode);
 
 	/* TX inline */
-	params->tx_max_inline = mlx5e_get_max_inline_cap(mdev);
 	params->tx_min_inline_mode = mlx5e_params_calculate_tx_min_inline(mdev);
 
 	/* RSS */
@@ -4097,6 +4204,9 @@ static void mlx5e_build_nic_netdev(struct net_device *netdev)
 	netdev->vlan_features    |= NETIF_F_TSO6;
 	netdev->vlan_features    |= NETIF_F_RXCSUM;
 	netdev->vlan_features    |= NETIF_F_RXHASH;
+
+	netdev->hw_enc_features  |= NETIF_F_HW_VLAN_CTAG_TX;
+	netdev->hw_enc_features  |= NETIF_F_HW_VLAN_CTAG_RX;
 
 	if (!!MLX5_CAP_ETH(mdev, lro_cap))
 		netdev->vlan_features    |= NETIF_F_LRO;
