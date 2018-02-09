@@ -64,14 +64,9 @@ static void mlx5_ib_cq_event(struct mlx5_core_cq *mcq, enum mlx5_event type)
 	}
 }
 
-static void *get_cqe_from_buf(struct mlx5_ib_cq_buf *buf, int n, int size)
-{
-	return mlx5_buf_offset(&buf->buf, n * size);
-}
-
 static void *get_cqe(struct mlx5_ib_cq *cq, int n)
 {
-	return get_cqe_from_buf(&cq->buf, n, cq->mcq.cqe_sz);
+	return mlx5_frag_buf_get_wqe(&cq->buf.fbc, n);
 }
 
 static u8 sw_ownership_bit(int n, int nent)
@@ -226,7 +221,6 @@ static void handle_responder(struct ib_wc *wc, struct mlx5_cqe64 *cqe,
 		wc->ex.invalidate_rkey = be32_to_cpu(cqe->imm_inval_pkey);
 		break;
 	}
-	wc->slid	   = be16_to_cpu(cqe->slid);
 	wc->src_qp	   = be32_to_cpu(cqe->flags_rqpn) & 0xffffff;
 	wc->dlid_path_bits = cqe->ml_path;
 	g = (be32_to_cpu(cqe->flags_rqpn) >> 28) & 3;
@@ -241,10 +235,12 @@ static void handle_responder(struct ib_wc *wc, struct mlx5_cqe64 *cqe,
 	}
 
 	if (ll != IB_LINK_LAYER_ETHERNET) {
+		wc->slid = be16_to_cpu(cqe->slid);
 		wc->sl = (be32_to_cpu(cqe->flags_rqpn) >> 24) & 0xf;
 		return;
 	}
 
+	wc->slid = 0;
 	vlan_present = cqe->l4_l3_hdr_type & 0x1;
 	roce_packet_type   = (be32_to_cpu(cqe->flags_rqpn) >> 24) & 0x3;
 	if (vlan_present) {
@@ -397,7 +393,7 @@ static void handle_atomics(struct mlx5_ib_qp *qp, struct mlx5_cqe64 *cqe64,
 
 static void free_cq_buf(struct mlx5_ib_dev *dev, struct mlx5_ib_cq_buf *buf)
 {
-	mlx5_buf_free(dev->mdev, &buf->buf);
+	mlx5_frag_buf_free(dev->mdev, &buf->fbc.frag_buf);
 }
 
 static void get_sig_err_item(struct mlx5_sig_err_cqe *cqe,
@@ -718,12 +714,25 @@ int mlx5_ib_arm_cq(struct ib_cq *ibcq, enum ib_cq_notify_flags flags)
 	return ret;
 }
 
-static int alloc_cq_buf(struct mlx5_ib_dev *dev, struct mlx5_ib_cq_buf *buf,
-			int nent, int cqe_size)
+static int alloc_cq_frag_buf(struct mlx5_ib_dev *dev,
+			     struct mlx5_ib_cq_buf *buf,
+			     int nent,
+			     int cqe_size)
 {
+	struct mlx5_frag_buf_ctrl *c = &buf->fbc;
+	struct mlx5_frag_buf *frag_buf = &c->frag_buf;
+	u32 cqc_buff[MLX5_ST_SZ_DW(cqc)] = {0};
 	int err;
 
-	err = mlx5_buf_alloc(dev->mdev, nent * cqe_size, &buf->buf);
+	MLX5_SET(cqc, cqc_buff, log_cq_size, ilog2(cqe_size));
+	MLX5_SET(cqc, cqc_buff, cqe_sz, (cqe_size == 128) ? 1 : 0);
+
+	mlx5_core_init_cq_frag_buf(&buf->fbc, cqc_buff);
+
+	err = mlx5_frag_buf_alloc_node(dev->mdev,
+				       nent * cqe_size,
+				       frag_buf,
+				       dev->mdev->priv.numa_node);
 	if (err)
 		return err;
 
@@ -856,14 +865,15 @@ static void destroy_cq_user(struct mlx5_ib_cq *cq, struct ib_ucontext *context)
 	ib_umem_release(cq->buf.umem);
 }
 
-static void init_cq_buf(struct mlx5_ib_cq *cq, struct mlx5_ib_cq_buf *buf)
+static void init_cq_frag_buf(struct mlx5_ib_cq *cq,
+			     struct mlx5_ib_cq_buf *buf)
 {
 	int i;
 	void *cqe;
 	struct mlx5_cqe64 *cqe64;
 
 	for (i = 0; i < buf->nent; i++) {
-		cqe = get_cqe_from_buf(buf, i, buf->cqe_size);
+		cqe = get_cqe(cq, i);
 		cqe64 = buf->cqe_size == 64 ? cqe : cqe + 64;
 		cqe64->op_own = MLX5_CQE_INVALID << 4;
 	}
@@ -885,14 +895,15 @@ static int create_cq_kernel(struct mlx5_ib_dev *dev, struct mlx5_ib_cq *cq,
 	cq->mcq.arm_db     = cq->db.db + 1;
 	cq->mcq.cqe_sz = cqe_size;
 
-	err = alloc_cq_buf(dev, &cq->buf, entries, cqe_size);
+	err = alloc_cq_frag_buf(dev, &cq->buf, entries, cqe_size);
 	if (err)
 		goto err_db;
 
-	init_cq_buf(cq, &cq->buf);
+	init_cq_frag_buf(cq, &cq->buf);
 
 	*inlen = MLX5_ST_SZ_BYTES(create_cq_in) +
-		 MLX5_FLD_SZ_BYTES(create_cq_in, pas[0]) * cq->buf.buf.npages;
+		 MLX5_FLD_SZ_BYTES(create_cq_in, pas[0]) *
+		 cq->buf.fbc.frag_buf.npages;
 	*cqb = kvzalloc(*inlen, GFP_KERNEL);
 	if (!*cqb) {
 		err = -ENOMEM;
@@ -900,11 +911,12 @@ static int create_cq_kernel(struct mlx5_ib_dev *dev, struct mlx5_ib_cq *cq,
 	}
 
 	pas = (__be64 *)MLX5_ADDR_OF(create_cq_in, *cqb, pas);
-	mlx5_fill_page_array(&cq->buf.buf, pas);
+	mlx5_fill_page_frag_array(&cq->buf.fbc.frag_buf, pas);
 
 	cqc = MLX5_ADDR_OF(create_cq_in, *cqb, cq_context);
 	MLX5_SET(cqc, cqc, log_page_size,
-		 cq->buf.buf.page_shift - MLX5_ADAPTER_PAGE_SHIFT);
+		 cq->buf.fbc.frag_buf.page_shift -
+		 MLX5_ADAPTER_PAGE_SHIFT);
 
 	*index = dev->mdev->priv.uar->index;
 
@@ -1201,11 +1213,11 @@ static int resize_kernel(struct mlx5_ib_dev *dev, struct mlx5_ib_cq *cq,
 	if (!cq->resize_buf)
 		return -ENOMEM;
 
-	err = alloc_cq_buf(dev, cq->resize_buf, entries, cqe_size);
+	err = alloc_cq_frag_buf(dev, cq->resize_buf, entries, cqe_size);
 	if (err)
 		goto ex;
 
-	init_cq_buf(cq, cq->resize_buf);
+	init_cq_frag_buf(cq, cq->resize_buf);
 
 	return 0;
 
@@ -1250,9 +1262,8 @@ static int copy_resize_cqes(struct mlx5_ib_cq *cq)
 	}
 
 	while ((scqe64->op_own >> 4) != MLX5_CQE_RESIZE_CQ) {
-		dcqe = get_cqe_from_buf(cq->resize_buf,
-					(i + 1) & (cq->resize_buf->nent),
-					dsize);
+		dcqe = mlx5_frag_buf_get_wqe(&cq->resize_buf->fbc,
+					     (i + 1) & cq->resize_buf->nent);
 		dcqe64 = dsize == 64 ? dcqe : dcqe + 64;
 		sw_own = sw_ownership_bit(i + 1, cq->resize_buf->nent);
 		memcpy(dcqe, scqe, dsize);
@@ -1318,8 +1329,11 @@ int mlx5_ib_resize_cq(struct ib_cq *ibcq, int entries, struct ib_udata *udata)
 		cqe_size = 64;
 		err = resize_kernel(dev, cq, entries, cqe_size);
 		if (!err) {
-			npas = cq->resize_buf->buf.npages;
-			page_shift = cq->resize_buf->buf.page_shift;
+			struct mlx5_frag_buf_ctrl *c;
+
+			c = &cq->resize_buf->fbc;
+			npas = c->frag_buf.npages;
+			page_shift = c->frag_buf.page_shift;
 		}
 	}
 
@@ -1340,7 +1354,8 @@ int mlx5_ib_resize_cq(struct ib_cq *ibcq, int entries, struct ib_udata *udata)
 		mlx5_ib_populate_pas(dev, cq->resize_umem, page_shift,
 				     pas, 0);
 	else
-		mlx5_fill_page_array(&cq->resize_buf->buf, pas);
+		mlx5_fill_page_frag_array(&cq->resize_buf->fbc.frag_buf,
+					  pas);
 
 	MLX5_SET(modify_cq_in, in,
 		 modify_field_select_resize_field_select.resize_field_select.resize_field_select,
