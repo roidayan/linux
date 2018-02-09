@@ -203,11 +203,8 @@ void mlx5e_ethtool_get_ethtool_stats(struct mlx5e_priv *priv,
 {
 	int i, idx = 0;
 
-	if (!data)
-		return;
-
 	mutex_lock(&priv->state_lock);
-	mlx5e_update_stats(priv, true);
+	mlx5e_update_stats(priv);
 	mutex_unlock(&priv->state_lock);
 
 	for (i = 0; i < mlx5e_num_stats_grps; i++)
@@ -295,7 +292,6 @@ int mlx5e_ethtool_set_ringparam(struct mlx5e_priv *priv,
 	struct mlx5e_channels new_channels = {};
 	u32 rx_pending_wqes;
 	u32 min_rq_size;
-	u32 max_rq_size;
 	u8 log_rq_size;
 	u8 log_sq_size;
 	u32 num_mtts;
@@ -314,8 +310,6 @@ int mlx5e_ethtool_set_ringparam(struct mlx5e_priv *priv,
 
 	min_rq_size = mlx5e_rx_wqes_to_packets(priv, rq_wq_type,
 					       1 << mlx5_min_log_rq_size(rq_wq_type));
-	max_rq_size = mlx5e_rx_wqes_to_packets(priv, rq_wq_type,
-					       1 << mlx5_max_log_rq_size(rq_wq_type));
 	rx_pending_wqes = mlx5e_packets_to_rx_wqes(priv, rq_wq_type,
 						   param->rx_pending);
 
@@ -323,12 +317,6 @@ int mlx5e_ethtool_set_ringparam(struct mlx5e_priv *priv,
 		netdev_info(priv->netdev, "%s: rx_pending (%d) < min (%d)\n",
 			    __func__, param->rx_pending,
 			    min_rq_size);
-		return -EINVAL;
-	}
-	if (param->rx_pending > max_rq_size) {
-		netdev_info(priv->netdev, "%s: rx_pending (%d) > max (%d)\n",
-			    __func__, param->rx_pending,
-			    max_rq_size);
 		return -EINVAL;
 	}
 
@@ -344,12 +332,6 @@ int mlx5e_ethtool_set_ringparam(struct mlx5e_priv *priv,
 		netdev_info(priv->netdev, "%s: tx_pending (%d) < min (%d)\n",
 			    __func__, param->tx_pending,
 			    1 << MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE);
-		return -EINVAL;
-	}
-	if (param->tx_pending > (1 << MLX5E_PARAMS_MAXIMUM_LOG_SQ_SIZE)) {
-		netdev_info(priv->netdev, "%s: tx_pending (%d) > max (%d)\n",
-			    __func__, param->tx_pending,
-			    1 << MLX5E_PARAMS_MAXIMUM_LOG_SQ_SIZE);
 		return -EINVAL;
 	}
 
@@ -479,7 +461,7 @@ int mlx5e_ethtool_get_coalesce(struct mlx5e_priv *priv,
 	coal->rx_max_coalesced_frames = priv->channels.params.rx_cq_moderation.pkts;
 	coal->tx_coalesce_usecs       = priv->channels.params.tx_cq_moderation.usec;
 	coal->tx_max_coalesced_frames = priv->channels.params.tx_cq_moderation.pkts;
-	coal->use_adaptive_rx_coalesce = priv->channels.params.rx_am_enabled;
+	coal->use_adaptive_rx_coalesce = priv->channels.params.rx_dim_enabled;
 
 	return 0;
 }
@@ -533,7 +515,7 @@ int mlx5e_ethtool_set_coalesce(struct mlx5e_priv *priv,
 	new_channels.params.tx_cq_moderation.pkts = coal->tx_max_coalesced_frames;
 	new_channels.params.rx_cq_moderation.usec = coal->rx_coalesce_usecs;
 	new_channels.params.rx_cq_moderation.pkts = coal->rx_max_coalesced_frames;
-	new_channels.params.rx_am_enabled         = !!coal->use_adaptive_rx_coalesce;
+	new_channels.params.rx_dim_enabled        = !!coal->use_adaptive_rx_coalesce;
 
 	if (!test_bit(MLX5E_STATE_OPENED, &priv->state)) {
 		priv->channels.params = new_channels.params;
@@ -541,7 +523,7 @@ int mlx5e_ethtool_set_coalesce(struct mlx5e_priv *priv,
 	}
 	/* we are opened */
 
-	reset = !!coal->use_adaptive_rx_coalesce != priv->channels.params.rx_am_enabled;
+	reset = !!coal->use_adaptive_rx_coalesce != priv->channels.params.rx_dim_enabled;
 	if (!reset) {
 		mlx5e_set_priv_channels_coalesce(priv, coal);
 		priv->channels.params = new_channels.params;
@@ -1081,16 +1063,66 @@ static int mlx5e_get_rxnfc(struct net_device *netdev,
 	return err;
 }
 
+#define MLX5E_PFC_PREVEN_AUTO_TOUT_MSEC		100
+#define MLX5E_PFC_PREVEN_TOUT_MAX_MSEC		8000
+#define MLX5E_PFC_PREVEN_MINOR_PRECENT		85
+#define MLX5E_PFC_PREVEN_TOUT_MIN_MSEC		80
+#define MLX5E_DEVICE_STALL_MINOR_WATERMARK(critical_tout) \
+	max_t(u16, MLX5E_PFC_PREVEN_TOUT_MIN_MSEC, \
+	      (critical_tout * MLX5E_PFC_PREVEN_MINOR_PRECENT) / 100)
+
+static int mlx5e_get_pfc_prevention_tout(struct net_device *netdev,
+					 u16 *pfc_prevention_tout)
+{
+	struct mlx5e_priv *priv    = netdev_priv(netdev);
+	struct mlx5_core_dev *mdev = priv->mdev;
+
+	if (!MLX5_CAP_PCAM_FEATURE((priv)->mdev, pfcc_mask) ||
+	    !MLX5_CAP_DEBUG((priv)->mdev, stall_detect))
+		return -EOPNOTSUPP;
+
+	return mlx5_query_port_stall_watermark(mdev, pfc_prevention_tout, NULL);
+}
+
+static int mlx5e_set_pfc_prevention_tout(struct net_device *netdev,
+					 u16 pfc_preven)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+	struct mlx5_core_dev *mdev = priv->mdev;
+	u16 critical_tout;
+	u16 minor;
+
+	if (!MLX5_CAP_PCAM_FEATURE((priv)->mdev, pfcc_mask) ||
+	    !MLX5_CAP_DEBUG((priv)->mdev, stall_detect))
+		return -EOPNOTSUPP;
+
+	critical_tout = (pfc_preven == PFC_STALL_PREVENTION_AUTO) ?
+			MLX5E_PFC_PREVEN_AUTO_TOUT_MSEC :
+			pfc_preven;
+
+	if (critical_tout != PFC_STALL_PREVENTION_DISABLE &&
+	    (critical_tout > MLX5E_PFC_PREVEN_TOUT_MAX_MSEC ||
+	     critical_tout < MLX5E_PFC_PREVEN_TOUT_MIN_MSEC)) {
+		netdev_info(netdev, "%s: pfc prevention tout not in range (%d-%d)\n",
+			    __func__, MLX5E_PFC_PREVEN_TOUT_MIN_MSEC,
+			    MLX5E_PFC_PREVEN_TOUT_MAX_MSEC);
+		return -EINVAL;
+	}
+
+	minor = MLX5E_DEVICE_STALL_MINOR_WATERMARK(critical_tout);
+	return mlx5_set_port_stall_watermark(mdev, critical_tout,
+					     minor);
+}
+
 static int mlx5e_get_tunable(struct net_device *dev,
 			     const struct ethtool_tunable *tuna,
 			     void *data)
 {
-	const struct mlx5e_priv *priv = netdev_priv(dev);
-	int err = 0;
+	int err;
 
 	switch (tuna->id) {
-	case ETHTOOL_TX_COPYBREAK:
-		*(u32 *)data = priv->channels.params.tx_max_inline;
+	case ETHTOOL_PFC_PREVENTION_TOUT:
+		err = mlx5e_get_pfc_prevention_tout(dev, data);
 		break;
 	default:
 		err = -EINVAL;
@@ -1105,34 +1137,13 @@ static int mlx5e_set_tunable(struct net_device *dev,
 			     const void *data)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
-	struct mlx5_core_dev *mdev = priv->mdev;
-	struct mlx5e_channels new_channels = {};
-	int err = 0;
-	u32 val;
+	int err;
 
 	mutex_lock(&priv->state_lock);
 
 	switch (tuna->id) {
-	case ETHTOOL_TX_COPYBREAK:
-		val = *(u32 *)data;
-		if (val > mlx5e_get_max_inline_cap(mdev)) {
-			err = -EINVAL;
-			break;
-		}
-
-		new_channels.params = priv->channels.params;
-		new_channels.params.tx_max_inline = val;
-
-		if (!test_bit(MLX5E_STATE_OPENED, &priv->state)) {
-			priv->channels.params = new_channels.params;
-			break;
-		}
-
-		err = mlx5e_open_channels(priv, &new_channels);
-		if (err)
-			break;
-		mlx5e_switch_priv_channels(priv, &new_channels, NULL);
-
+	case ETHTOOL_PFC_PREVENTION_TOUT:
+		err = mlx5e_set_pfc_prevention_tout(dev, *(u16 *)data);
 		break;
 	default:
 		err = -EINVAL;

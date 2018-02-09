@@ -217,10 +217,14 @@ struct ethtool_value {
 	__u32	data;
 };
 
+#define PFC_STALL_PREVENTION_AUTO	0xffff
+#define PFC_STALL_PREVENTION_DISABLE	0
+
 enum tunable_id {
 	ETHTOOL_ID_UNSPEC,
 	ETHTOOL_RX_COPYBREAK,
 	ETHTOOL_TX_COPYBREAK,
+	ETHTOOL_PFC_PREVENTION_TOUT,
 	/*
 	 * Add your fresh new tubale attribute above and remember to update
 	 * tunable_strings[] in net/core/ethtool.c
@@ -1686,6 +1690,7 @@ enum ethtool_reset_flags {
 	ETH_RESET_PHY		= 1 << 6,	/* Transceiver/PHY */
 	ETH_RESET_RAM		= 1 << 7,	/* RAM shared between
 						 * multiple components */
+	ETH_RESET_AP		= 1 << 8,	/* Application processor */
 
 	ETH_RESET_DEDICATED	= 0x0000ffff,	/* All components dedicated to
 						 * this interface */
