@@ -641,7 +641,7 @@ static bool verify_command_mask(struct ib_device *ib_dev,
 	if (!extended)
 		return ib_dev->uverbs_cmd_mask & BIT_ULL(command);
 
-	return ib_dev->uverbs_ex_cmd_mask & BIT_ULL(command);
+	return true;
 }
 
 static bool verify_command_idx(__u32 command, bool extended)
