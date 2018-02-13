@@ -1152,7 +1152,6 @@ static void mlx5e_activate_txqsq(struct mlx5e_txqsq *sq)
 {
 	sq->txq = netdev_get_tx_queue(sq->channel->netdev, sq->txq_ix);
 	clear_bit(MLX5E_SQ_STATE_RECOVERING, &sq->state);
-	mlx5e_reset_txqsq_cc_pc(sq);
 	set_bit(MLX5E_SQ_STATE_ENABLED, &sq->state);
 	netdev_tx_reset_queue(sq->txq);
 	netif_tx_start_queue(sq->txq);
@@ -1292,9 +1291,10 @@ static void mlx5e_sq_recover(struct work_struct *work)
 	if (mlx5e_sq_to_ready(sq, state))
 		return;
 
+	mlx5e_reset_txqsq_cc_pc(sq);
 	sq->stats.recover++;
-	mlx5e_activate_txqsq(sq);
 	recover->last_recover = jiffies;
+	mlx5e_activate_txqsq(sq);
 }
 
 static int mlx5e_open_icosq(struct mlx5e_channel *c,
