@@ -124,6 +124,7 @@
 #define MLX5E_MAX_NUM_SQS              (MLX5E_MAX_NUM_CHANNELS * MLX5E_MAX_NUM_TC)
 #define MLX5E_TX_CQ_POLL_BUDGET        128
 #define MLX5E_UPDATE_STATS_INTERVAL    200 /* msecs */
+#define MLX5E_SQ_RECOVER_MIN_INTERVAL  500 /* msecs */
 
 #define MLX5E_ICOSQ_MAX_WQEBBS \
 	(DIV_ROUND_UP(sizeof(struct mlx5e_umr_wqe), MLX5_SEND_WQE_BB))
@@ -243,7 +244,6 @@ struct mlx5e_params {
 	struct net_dim_cq_moder tx_cq_moderation;
 	bool lro_en;
 	u32 lro_wqe_sz;
-	u16 tx_max_inline;
 	u8  tx_min_inline_mode;
 	u8  rss_hfunc;
 	u8  toeplitz_hash_key[40];
@@ -337,6 +337,7 @@ struct mlx5e_sq_dma {
 enum {
 	MLX5E_SQ_STATE_ENABLED,
 	MLX5E_SQ_STATE_IPSEC,
+	MLX5E_SQ_STATE_RECOVERING,
 };
 
 struct mlx5e_sq_wqe_info {
@@ -369,7 +370,6 @@ struct mlx5e_txqsq {
 	void __iomem              *uar_map;
 	struct netdev_queue       *txq;
 	u32                        sqn;
-	u16                        max_inline;
 	u8                         min_inline_mode;
 	u16                        edge;
 	struct device             *pdev;
@@ -383,6 +383,10 @@ struct mlx5e_txqsq {
 	struct mlx5e_channel      *channel;
 	int                        txq_ix;
 	u32                        rate_limit;
+	struct mlx5e_txqsq_recover {
+		struct work_struct         recover_work;
+		u64                        last_recover;
+	} recover;
 } ____cacheline_aligned_in_smp;
 
 struct mlx5e_xdpsq {
@@ -607,7 +611,9 @@ enum {
 
 struct mlx5e_vxlan_db {
 	spinlock_t			lock; /* protect vxlan table */
-	struct radix_tree_root		tree;
+	/* max_num_ports is usuallly 4, 16 buckets is more than enough */
+	DECLARE_HASHTABLE(htable, 4);
+	int				num_ports;
 };
 
 struct mlx5e_l2_rule {
@@ -1010,7 +1016,6 @@ int mlx5e_rx_flow_steer(struct net_device *dev, const struct sk_buff *skb,
 			u16 rxq_index, u32 flow_id);
 #endif
 
-u16 mlx5e_get_max_inline_cap(struct mlx5_core_dev *mdev);
 int mlx5e_create_tir(struct mlx5_core_dev *mdev,
 		     struct mlx5e_tir *tir, u32 *in, int inlen);
 void mlx5e_destroy_tir(struct mlx5_core_dev *mdev,
@@ -1061,7 +1066,6 @@ void mlx5e_cleanup_nic_tx(struct mlx5e_priv *priv);
 int mlx5e_close(struct net_device *netdev);
 int mlx5e_open(struct net_device *netdev);
 void mlx5e_update_stats_work(struct work_struct *work);
-u32 mlx5e_choose_lro_timeout(struct mlx5_core_dev *mdev, u32 wanted_timeout);
 
 int mlx5e_bits_invert(unsigned long a, int size);
 
