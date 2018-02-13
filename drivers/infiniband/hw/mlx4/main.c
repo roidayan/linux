@@ -584,8 +584,9 @@ static int mlx4_ib_query_device(struct ib_device *ibdev,
 			sizeof(struct mlx4_wqe_data_seg);
 	}
 
-	if (uhw->outlen >= resp.response_length + sizeof(resp.rss_caps)) {
-		resp.response_length += sizeof(resp.rss_caps);
+	if (uhw->outlen >= resp.response_length + sizeof(resp.rss_caps) +
+	    sizeof(resp.reserved)) {
+		resp.response_length += sizeof(resp.rss_caps) + sizeof(resp.reserved);
 		if (props->rss_caps.supported_qpts) {
 			resp.rss_caps.rx_hash_function =
 				MLX4_IB_RX_HASH_FUNC_TOEPLITZ;
@@ -604,6 +605,20 @@ static int mlx4_ib_query_device(struct ib_device *ibdev,
 			    MLX4_TUNNEL_OFFLOAD_MODE_VXLAN)
 				resp.rss_caps.rx_hash_fields_mask |=
 					MLX4_IB_RX_HASH_INNER;
+		}
+	}
+
+	if (uhw->outlen >= resp.response_length + sizeof(resp.tso_caps)) {
+		resp.response_length += sizeof(resp.tso_caps);
+
+		if (dev->dev->caps.max_gso_sz &&
+		    ((mlx4_ib_port_link_layer(ibdev, 1) ==
+		    IB_LINK_LAYER_ETHERNET) ||
+		    (mlx4_ib_port_link_layer(ibdev, 2) ==
+		    IB_LINK_LAYER_ETHERNET))) {
+			resp.tso_caps.max_tso = dev->dev->caps.max_gso_sz;
+			resp.tso_caps.supported_qpts |=
+				1 << IB_QPT_RAW_PACKET;
 		}
 	}
 
