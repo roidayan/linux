@@ -109,7 +109,6 @@ static void mlx5e_vxlan_add_port(struct mlx5e_priv *priv, u16 port)
 {
 	struct mlx5e_vxlan_db *vxlan_db = &priv->vxlan;
 	struct mlx5e_vxlan *vxlan;
-	int err;
 
 	vxlan = mlx5e_vxlan_lookup_port(priv, port);
 	if (vxlan) {
@@ -137,14 +136,10 @@ static void mlx5e_vxlan_add_port(struct mlx5e_priv *priv, u16 port)
 	spin_lock_bh(&vxlan_db->lock);
 	hash_add(vxlan_db->htable, &vxlan->hlist, port);
 	spin_unlock_bh(&vxlan_db->lock);
-	if (err)
-		goto err_free;
 
 	vxlan_db->num_ports++;
 	return;
 
-err_free:
-	kfree(vxlan);
 err_delete_port:
 	mlx5e_vxlan_core_del_port_cmd(priv->mdev, port);
 }
