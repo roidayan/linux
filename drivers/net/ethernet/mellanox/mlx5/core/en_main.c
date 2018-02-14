@@ -4005,10 +4005,10 @@ static bool slow_pci_heuristic(struct mlx5_core_dev *mdev)
 	mlx5_core_dbg_once(mdev, "Max link speed = %d, PCI BW = %d\n",
 			   link_speed, pci_bw);
 
-#define MLX5E_SLOW_PCI_THOLD (16000)
+#define MLX5E_SLOW_PCI_RATIO (2)
 
 	return link_speed && pci_bw &&
-		(pci_bw <= MLX5E_SLOW_PCI_THOLD) && (pci_bw < link_speed);
+		link_speed > MLX5E_SLOW_PCI_RATIO * pci_bw;
 }
 
 void mlx5e_set_tx_cq_mode_params(struct mlx5e_params *params, u8 cq_period_mode)
