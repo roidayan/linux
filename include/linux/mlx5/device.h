@@ -166,6 +166,10 @@ enum mlx5_inline_modes {
 	MLX5_INLINE_MODE_L2,
 	MLX5_INLINE_MODE_IP,
 	MLX5_INLINE_MODE_TCP_UDP,
+
+	/* Special Values */
+	MLX5_INLINE_MODE_MPWQE  = 0xe,
+	MLX5_INLINE_MODE_EMPWQE = 0xf
 };
 
 enum {
@@ -396,6 +400,7 @@ enum {
 	MLX5_OPCODE_ATOMIC_MASKED_FA	= 0x15,
 	MLX5_OPCODE_BIND_MW		= 0x18,
 	MLX5_OPCODE_CONFIG_CMD		= 0x1f,
+	MLX5_OPCODE_ENHANCED_MPSW	= 0x29,
 
 	MLX5_RECV_OPCODE_RDMA_WRITE_IMM	= 0x00,
 	MLX5_RECV_OPCODE_SEND		= 0x01,
@@ -781,6 +786,9 @@ static inline u64 get_cqe_ts(struct mlx5_cqe64 *cqe)
 
 	return (u64)lo | ((u64)hi << 32);
 }
+
+#define MLX5_MPWQE_LOG_NUM_STRIDES_BASE	(9)
+#define MLX5_MPWQE_LOG_STRIDE_SZ_BASE	(6)
 
 struct mpwrq_cqe_bc {
 	__be16	filler_consumed_strides;
