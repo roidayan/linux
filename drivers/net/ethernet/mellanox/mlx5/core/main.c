@@ -58,6 +58,7 @@
 #include "eswitch.h"
 #include "lib/mlx5.h"
 #include "fpga/core.h"
+#include "fpga/ipsec.h"
 #include "accel/ipsec.h"
 #include "lib/clock.h"
 
@@ -1663,6 +1664,8 @@ static int __init init(void)
 	err = pci_register_driver(&mlx5_core_driver);
 	if (err)
 		goto err_debug;
+
+	mlx5_fpga_ipsec_build_fs_cmds();
 
 #ifdef CONFIG_MLX5_CORE_EN
 	mlx5e_init();
