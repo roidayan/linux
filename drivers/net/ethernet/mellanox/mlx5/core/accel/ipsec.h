@@ -36,14 +36,14 @@
 
 #include <linux/mlx5/driver.h>
 
-#ifdef CONFIG_MLX5_ACCEL
-
 enum {
 	MLX5_ACCEL_IPSEC_DEVICE = BIT(1),
 	MLX5_ACCEL_IPSEC_IPV6 = BIT(2),
 	MLX5_ACCEL_IPSEC_ESP = BIT(3),
 	MLX5_ACCEL_IPSEC_LSO = BIT(4),
 };
+
+#ifdef CONFIG_MLX5_ACCEL
 
 #define MLX5_IPSEC_SADB_IP_AH       BIT(7)
 #define MLX5_IPSEC_SADB_IP_ESP      BIT(6)
