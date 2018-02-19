@@ -5361,6 +5361,49 @@ static void depopulate_specs_root(struct mlx5_ib_dev *dev)
 	uverbs_free_spec_tree(dev->ib_dev.specs_root);
 }
 
+static int mlx5_ib_read_counters(struct ib_counters *counters,
+				 struct ib_counters_read_attr *read_attr,
+				 struct uverbs_attr_bundle *attrs)
+{
+	struct mlx5_ib_mcounters *mcounters = to_mcounters(counters);
+	struct mlx5_read_counters_attr mread_attr = {};
+	u32 *desc, *index;
+	int ret, i;
+
+	mutex_lock(&mcounters->mcntrs_mutex);
+	if (mcounters->cntrs_max_index > read_attr->ncounters) {
+		ret = -EINVAL;
+		goto err_bound;
+	}
+
+	mread_attr.out = kcalloc(mcounters->counters_num, sizeof(u64),
+				 GFP_KERNEL);
+	if (!mread_attr.out) {
+		ret = -ENOMEM;
+		goto err_bound;
+	}
+
+	mread_attr.hw_cntrs_hndl = mcounters->hw_cntrs_hndl;
+	mread_attr.flags = read_attr->flags;
+	ret = mcounters->read_counters(counters->device, &mread_attr);
+	if (ret)
+		goto err_read;
+
+	/* do the pass over the counters data array to assign according to the
+	 * indexing and descriptions
+	 */
+	desc = mcounters->counters_data;
+	index = desc + mcounters->ncounters;
+	for (i = 0; i < mcounters->ncounters; i++)
+		read_attr->counters_buff[index[i]] += mread_attr.out[desc[i]];
+
+err_read:
+	kfree(mread_attr.out);
+err_bound:
+	mutex_unlock(&mcounters->mcntrs_mutex);
+	return ret;
+}
+
 static int mlx5_ib_destroy_counters(struct ib_counters *counters)
 {
 	struct mlx5_ib_mcounters *mcounters = to_mcounters(counters);
@@ -5634,6 +5677,7 @@ int mlx5_ib_stage_caps_init(struct mlx5_ib_dev *dev)
 	dev->ib_dev.driver_id = RDMA_DRIVER_MLX5;
 	dev->ib_dev.create_counters = mlx5_ib_create_counters;
 	dev->ib_dev.destroy_counters = mlx5_ib_destroy_counters;
+	dev->ib_dev.read_counters = mlx5_ib_read_counters;
 
 	err = init_node_data(dev);
 	if (err)
