@@ -417,6 +417,7 @@ static void __net_exit ip_rt_do_proc_exit(struct net *net)
 static struct pernet_operations ip_rt_proc_ops __net_initdata =  {
 	.init = ip_rt_do_proc_init,
 	.exit = ip_rt_do_proc_exit,
+	.async = true,
 };
 
 static int __init ip_rt_proc_init(void)
@@ -1644,19 +1645,6 @@ static void ip_del_fnhe(struct fib_nh *nh, __be32 daddr)
 	spin_unlock_bh(&fnhe_lock);
 }
 
-static void set_lwt_redirect(struct rtable *rth)
-{
-	if (lwtunnel_output_redirect(rth->dst.lwtstate)) {
-		rth->dst.lwtstate->orig_output = rth->dst.output;
-		rth->dst.output = lwtunnel_output;
-	}
-
-	if (lwtunnel_input_redirect(rth->dst.lwtstate)) {
-		rth->dst.lwtstate->orig_input = rth->dst.input;
-		rth->dst.input = lwtunnel_input;
-	}
-}
-
 /* called in rcu_read_lock() section */
 static int __mkroute_input(struct sk_buff *skb,
 			   const struct fib_result *res,
@@ -1747,7 +1735,7 @@ rt_cache:
 
 	rt_set_nexthop(rth, daddr, res, fnhe, res->fi, res->type, itag,
 		       do_cache);
-	set_lwt_redirect(rth);
+	lwtunnel_set_redirect(&rth->dst);
 	skb_dst_set(skb, &rth->dst);
 out:
 	err = 0;
@@ -1846,7 +1834,6 @@ int fib_multipath_hash(const struct fib_info *fi, const struct flowi4 *fl4,
 
 	return mhash >> 1;
 }
-EXPORT_SYMBOL_GPL(fib_multipath_hash);
 #endif /* CONFIG_IP_ROUTE_MULTIPATH */
 
 static int ip_mkroute_input(struct sk_buff *skb,
@@ -2267,7 +2254,7 @@ add:
 	}
 
 	rt_set_nexthop(rth, fl4->daddr, res, fnhe, fi, type, 0, do_cache);
-	set_lwt_redirect(rth);
+	lwtunnel_set_redirect(&rth->dst);
 
 	return rth;
 }
@@ -2994,6 +2981,7 @@ static __net_exit void sysctl_route_net_exit(struct net *net)
 static __net_initdata struct pernet_operations sysctl_route_ops = {
 	.init = sysctl_route_net_init,
 	.exit = sysctl_route_net_exit,
+	.async = true,
 };
 #endif
 
@@ -3007,6 +2995,7 @@ static __net_init int rt_genid_init(struct net *net)
 
 static __net_initdata struct pernet_operations rt_genid_ops = {
 	.init = rt_genid_init,
+	.async = true,
 };
 
 static int __net_init ipv4_inetpeer_init(struct net *net)
@@ -3032,6 +3021,7 @@ static void __net_exit ipv4_inetpeer_exit(struct net *net)
 static __net_initdata struct pernet_operations ipv4_inetpeer_ops = {
 	.init	=	ipv4_inetpeer_init,
 	.exit	=	ipv4_inetpeer_exit,
+	.async	=	true,
 };
 
 #ifdef CONFIG_IP_ROUTE_CLASSID
