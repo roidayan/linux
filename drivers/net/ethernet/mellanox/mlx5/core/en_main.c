@@ -216,7 +216,7 @@ void mlx5e_set_rq_type(struct mlx5_core_dev *mdev, struct mlx5e_params *params)
 	params->rq_wq_type = mlx5e_striding_rq_possible(mdev, params) &&
 		MLX5E_GET_PFLAG(params, MLX5E_PFLAG_RX_STRIDING_RQ) ?
 		MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ :
-		MLX5_WQ_TYPE_LINKED_LIST;
+		MLX5_WQ_TYPE_CYCLIC;
 }
 
 static void mlx5e_update_carrier(struct mlx5e_priv *priv)
