@@ -539,6 +539,7 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
 		dev_set_mtu(dev, ipoib_cm_max_mtu(dev));
 		rtnl_unlock();
 		priv->tx_wr.wr.send_flags &= ~IB_SEND_IP_CSUM;
+		priv->tx_wr.wr.opcode = IB_WR_SEND;
 
 		ipoib_flush_paths(dev);
 		return (!rtnl_trylock()) ? -EBUSY : 0;
