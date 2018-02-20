@@ -4354,7 +4354,9 @@ void mlx5e_build_nic_params(struct mlx5_core_dev *mdev,
 	MLX5E_SET_PFLAG(params, MLX5E_PFLAG_RX_CQE_COMPRESS, params->rx_cqe_compress_def);
 
 	/* RQ */
-	if (mlx5e_striding_rq_possible(mdev, params))
+	if (mlx5e_striding_rq_possible(mdev, params) &&
+	    (mlx5e_rx_mpwqe_is_linear_skb(mdev, params) ||
+	     !mlx5e_rx_is_linear_skb(mdev, params)))
 		MLX5E_SET_PFLAG(params, MLX5E_PFLAG_RX_STRIDING_RQ,
 				!slow_pci_heuristic(mdev));
 	mlx5e_set_rq_type(mdev, params);
