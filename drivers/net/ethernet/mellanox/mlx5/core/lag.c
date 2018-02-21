@@ -265,8 +265,8 @@ static int mlx5_lag_set_affinity(struct mlx5_lag *ldev, int affinity)
 	return 0;
 }
 
-static void mlx5_create_lag(struct mlx5_lag *ldev,
-			    struct lag_tracker *tracker)
+static int mlx5_create_lag(struct mlx5_lag *ldev,
+			   struct lag_tracker *tracker)
 {
 	struct mlx5_core_dev *dev0 = ldev->pf[0].dev;
 	int err;
@@ -282,6 +282,7 @@ static void mlx5_create_lag(struct mlx5_lag *ldev,
 		mlx5_core_err(dev0,
 			      "Failed to create LAG (%d)\n",
 			      err);
+	return err;
 }
 
 static void mlx5_activate_lag(struct mlx5_lag *ldev,
