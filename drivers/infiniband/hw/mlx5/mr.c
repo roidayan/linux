@@ -220,26 +220,32 @@ static void remove_keys(struct mlx5_ib_dev *dev, int c, int num)
 {
 	struct mlx5_mr_cache *cache = &dev->cache;
 	struct mlx5_cache_ent *ent = &cache->ent[c];
+	struct mlx5_ib_mr *tmp_mr;
 	struct mlx5_ib_mr *mr;
-	int err;
+	LIST_HEAD(del_list);
 	int i;
 
 	for (i = 0; i < num; i++) {
 		spin_lock_irq(&ent->lock);
 		if (list_empty(&ent->head)) {
 			spin_unlock_irq(&ent->lock);
-			return;
+			break;
 		}
 		mr = list_first_entry(&ent->head, struct mlx5_ib_mr, list);
-		list_del(&mr->list);
+		list_move(&mr->list, &del_list);
 		ent->cur--;
 		ent->size--;
 		spin_unlock_irq(&ent->lock);
-		err = destroy_mkey(dev, mr);
-		if (err)
-			mlx5_ib_warn(dev, "failed destroy mkey\n");
-		else
-			kfree(mr);
+		mlx5_core_destroy_mkey(dev->mdev, &mr->mmkey);
+	}
+
+#ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
+	synchronize_srcu(&dev->mr_srcu);
+#endif
+
+	list_for_each_entry_safe(mr, tmp_mr, &del_list, list) {
+		list_del(&mr->list);
+		kfree(mr);
 	}
 }
 
@@ -562,32 +568,38 @@ static void clean_keys(struct mlx5_ib_dev *dev, int c)
 {
 	struct mlx5_mr_cache *cache = &dev->cache;
 	struct mlx5_cache_ent *ent = &cache->ent[c];
+	struct mlx5_ib_mr *tmp_mr;
 	struct mlx5_ib_mr *mr;
-	int err;
+	LIST_HEAD(del_list);
 
 	cancel_delayed_work(&ent->dwork);
 	while (1) {
 		spin_lock_irq(&ent->lock);
 		if (list_empty(&ent->head)) {
 			spin_unlock_irq(&ent->lock);
-			return;
+			break;
 		}
 		mr = list_first_entry(&ent->head, struct mlx5_ib_mr, list);
-		list_del(&mr->list);
+		list_move(&mr->list, &del_list);
 		ent->cur--;
 		ent->size--;
 		spin_unlock_irq(&ent->lock);
-		err = destroy_mkey(dev, mr);
-		if (err)
-			mlx5_ib_warn(dev, "failed destroy mkey\n");
-		else
-			kfree(mr);
+		mlx5_core_destroy_mkey(dev->mdev, &mr->mmkey);
+	}
+
+#ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
+	synchronize_srcu(&dev->mr_srcu);
+#endif
+
+	list_for_each_entry_safe(mr, tmp_mr, &del_list, list) {
+		list_del(&mr->list);
+		kfree(mr);
 	}
 }
 
 static void mlx5_mr_cache_debugfs_cleanup(struct mlx5_ib_dev *dev)
 {
-	if (!mlx5_debugfs_root)
+	if (!mlx5_debugfs_root || dev->rep)
 		return;
 
 	debugfs_remove_recursive(dev->cache.root);
@@ -600,7 +612,7 @@ static int mlx5_mr_cache_debugfs_init(struct mlx5_ib_dev *dev)
 	struct mlx5_cache_ent *ent;
 	int i;
 
-	if (!mlx5_debugfs_root)
+	if (!mlx5_debugfs_root || dev->rep)
 		return 0;
 
 	cache->root = debugfs_create_dir("mr_cache", dev->mdev->priv.dbg_root);
@@ -690,6 +702,7 @@ int mlx5_mr_cache_init(struct mlx5_ib_dev *dev)
 			   MLX5_IB_UMR_OCTOWORD;
 		ent->access_mode = MLX5_MKC_ACCESS_MODE_MTT;
 		if ((dev->mdev->profile->mask & MLX5_PROF_MASK_MR_CACHE) &&
+		    !dev->rep &&
 		    mlx5_core_is_pf(dev->mdev))
 			ent->limit = dev->mdev->profile->mr_cache[i].limit;
 		else
@@ -972,7 +985,6 @@ int mlx5_ib_update_xlt(struct mlx5_ib_mr *mr, u64 idx, int npages,
 {
 	struct mlx5_ib_dev *dev = mr->dev;
 	struct device *ddev = dev->ib_dev.dev.parent;
-	struct mlx5_ib_ucontext *uctx = NULL;
 	int size;
 	void *xlt;
 	dma_addr_t dma;
@@ -988,6 +1000,7 @@ int mlx5_ib_update_xlt(struct mlx5_ib_mr *mr, u64 idx, int npages,
 	size_t pages_to_map = 0;
 	size_t pages_iter = 0;
 	gfp_t gfp;
+	bool use_emergency_page = false;
 
 	/* UMR copies MTTs in units of MLX5_UMR_MTT_ALIGNMENT bytes,
 	 * so we need to align the offset and length accordingly
@@ -1014,12 +1027,11 @@ int mlx5_ib_update_xlt(struct mlx5_ib_mr *mr, u64 idx, int npages,
 	}
 
 	if (!xlt) {
-		uctx = to_mucontext(mr->ibmr.pd->uobject->context);
 		mlx5_ib_warn(dev, "Using XLT emergency buffer\n");
+		xlt = (void *)mlx5_ib_get_xlt_emergency_page();
 		size = PAGE_SIZE;
-		xlt = (void *)uctx->upd_xlt_page;
-		mutex_lock(&uctx->upd_xlt_page_mutex);
 		memset(xlt, 0, size);
+		use_emergency_page = true;
 	}
 	pages_iter = size / desc_size;
 	dma = dma_map_single(ddev, xlt, size, DMA_TO_DEVICE);
@@ -1083,8 +1095,8 @@ int mlx5_ib_update_xlt(struct mlx5_ib_mr *mr, u64 idx, int npages,
 	dma_unmap_single(ddev, dma, size, DMA_TO_DEVICE);
 
 free_xlt:
-	if (uctx)
-		mutex_unlock(&uctx->upd_xlt_page_mutex);
+	if (use_emergency_page)
+		mlx5_ib_put_xlt_emergency_page();
 	else
 		free_pages((unsigned long)xlt, get_order(size));
 
@@ -1816,7 +1828,6 @@ mlx5_ib_sg_to_klms(struct mlx5_ib_mr *mr,
 
 	mr->ibmr.iova = sg_dma_address(sg) + sg_offset;
 	mr->ibmr.length = 0;
-	mr->ndescs = sg_nents;
 
 	for_each_sg(sgl, sg, sg_nents, i) {
 		if (unlikely(i >= mr->max_descs))
@@ -1828,6 +1839,7 @@ mlx5_ib_sg_to_klms(struct mlx5_ib_mr *mr,
 
 		sg_offset = 0;
 	}
+	mr->ndescs = i;
 
 	if (sg_offset_p)
 		*sg_offset_p = sg_offset;
