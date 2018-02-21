@@ -1298,9 +1298,6 @@ int mlx5_devlink_eswitch_multipath_mode_set(struct devlink *devlink, u8 mp)
 	if (!MLX5_CAP_GEN(dev, vport_group_manager))
 		return -EOPNOTSUPP;
 
-	if (dev->priv.eswitch->mode != SRIOV_NONE)
-		return -EOPNOTSUPP;
-
 	if (mp && mlx5_lag_is_multipath(dev))
 		return 0;
 
@@ -1310,7 +1307,7 @@ int mlx5_devlink_eswitch_multipath_mode_set(struct devlink *devlink, u8 mp)
 	if (mp)
 		err = mlx5_lag_activate_multipath(dev);
 	else
-		mlx5_lag_deactivate_multipath(dev);
+		err = mlx5_lag_deactivate_multipath(dev);
 
 	return err;
 }
