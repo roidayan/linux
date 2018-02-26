@@ -309,6 +309,9 @@ static inline struct ib_qp *_ib_create_qp(struct ib_device *dev,
 {
 	struct ib_qp *qp;
 
+	if (!dev->create_qp)
+		return ERR_PTR(-EOPNOTSUPP);
+
 	qp = dev->create_qp(pd, attr, udata);
 	if (IS_ERR(qp))
 		return qp;
@@ -328,4 +331,9 @@ static inline struct ib_qp *_ib_create_qp(struct ib_device *dev,
 
 	return qp;
 }
+
+int rdma_addr_find_l2_eth_by_grh(const union ib_gid *sgid,
+				 const union ib_gid *dgid,
+				 u8 *dmac, const struct net_device *ndev,
+				 int *hoplimit);
 #endif /* _CORE_PRIV_H */
