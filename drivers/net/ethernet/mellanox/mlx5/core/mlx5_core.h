@@ -43,18 +43,17 @@
 #define DRIVER_NAME "mlx5_core"
 #define DRIVER_VERSION "5.0-0"
 
-#define MLX5_TOTAL_VPORTS(mdev) (1 + pci_sriov_get_totalvfs(mdev->pdev))
-#define MLX5_VPORT_MANAGER(mdev) \
-	(MLX5_CAP_GEN(mdev, vport_group_manager) && \
-	(MLX5_CAP_GEN(mdev, port_type) == MLX5_CAP_PORT_TYPE_ETH) && \
-	 mlx5_core_is_pf(mdev))
-
 extern uint mlx5_core_debug_mask;
 
 #define mlx5_core_dbg(__dev, format, ...)				\
 	dev_dbg(&(__dev)->pdev->dev, "%s:%d:(pid %d): " format,		\
 		 __func__, __LINE__, current->pid,			\
 		 ##__VA_ARGS__)
+
+#define mlx5_core_dbg_once(__dev, format, ...)				\
+	dev_dbg_once(&(__dev)->pdev->dev, "%s:%d:(pid %d): " format,	\
+		     __func__, __LINE__, current->pid,			\
+		     ##__VA_ARGS__)
 
 #define mlx5_core_dbg_mask(__dev, mask, format, ...)			\
 do {									\
@@ -207,4 +206,5 @@ static inline int mlx5_lag_is_lacp_owner(struct mlx5_core_dev *dev)
 int mlx5_lag_allow(struct mlx5_core_dev *dev);
 int mlx5_lag_forbid(struct mlx5_core_dev *dev);
 
+void mlx5_reload_interface(struct mlx5_core_dev *mdev, int protocol);
 #endif /* __MLX5_CORE_H__ */
