@@ -3,7 +3,8 @@
  *
  * This file is part of the SCTP kernel implementation
  *
- * These functions manipulate sctp stream queue/scheduling.
+ * These functions implement sctp stream message interleaving, mostly
+ * including I-DATA and I-FORWARD-TSN chunks process.
  *
  * This SCTP implementation is free software;
  * you can redistribute it and/or modify it under the terms of
@@ -967,9 +968,8 @@ static void sctp_renege_events(struct sctp_ulpq *ulpq, struct sctp_chunk *chunk,
 						       needed);
 	}
 
-	if (chunk && freed >= needed)
-		if (sctp_ulpevent_idata(ulpq, chunk, gfp) <= 0)
-			sctp_intl_start_pd(ulpq, gfp);
+	if (freed >= needed && sctp_ulpevent_idata(ulpq, chunk, gfp) <= 0)
+		sctp_intl_start_pd(ulpq, gfp);
 
 	sk_mem_reclaim(asoc->base.sk);
 }
