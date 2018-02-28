@@ -650,6 +650,38 @@ static inline int _uverbs_copy_from_or_zero(void *to,
 	return 0;
 }
 
+static inline void *uverbs_copy_from_and_alloc(const struct uverbs_attr_bundle *attrs_bundle,
+					       size_t idx, gfp_t flags)
+{
+	int len = uverbs_attr_get_len(attrs_bundle, idx);
+	void *to;
+	int ret;
+
+	if (len < 0)
+		return ERR_PTR(len);
+
+	/* It doesn't make any sense to re-allocate and copy if it was already
+	 * done by the parser.
+	 */
+	ret = uverbs_validate_actual_spec_debug(attrs_bundle, idx, spec,
+						spec->type == UVERBS_ATTR_TYPE_PTR_IN &&
+						spec->flags & ~UVERBS_ATTR_SPEC_F_ALLOC_AND_COPY);
+	if (ret)
+		return ERR_PTR(ret);
+
+	to = kmalloc(len, flags);
+	if (!to)
+		return ERR_PTR(-ENOMEM);
+
+	ret = _uverbs_copy_from(to, attrs_bundle, idx, len);
+	if (ret) {
+		kfree(to);
+		return ERR_PTR(ret);
+	}
+
+	return to;
+}
+
 #define uverbs_copy_from(to, attrs_bundle, idx)				      \
 	_uverbs_copy_from(to, attrs_bundle, idx, sizeof(*to))
 
