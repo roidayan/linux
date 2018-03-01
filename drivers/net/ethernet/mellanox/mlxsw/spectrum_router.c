@@ -1,10 +1,10 @@
 /*
  * drivers/net/ethernet/mellanox/mlxsw/spectrum_router.c
- * Copyright (c) 2016-2017 Mellanox Technologies. All rights reserved.
+ * Copyright (c) 2016-2018 Mellanox Technologies. All rights reserved.
  * Copyright (c) 2016 Jiri Pirko <jiri@mellanox.com>
  * Copyright (c) 2016 Ido Schimmel <idosch@mellanox.com>
  * Copyright (c) 2016 Yotam Gigi <yotamg@mellanox.com>
- * Copyright (c) 2017 Petr Machata <petrm@mellanox.com>
+ * Copyright (c) 2017-2018 Petr Machata <petrm@mellanox.com>
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -70,6 +70,7 @@
 #include "spectrum_mr.h"
 #include "spectrum_mr_tcam.h"
 #include "spectrum_router.h"
+#include "spectrum_span.h"
 
 struct mlxsw_sp_fib;
 struct mlxsw_sp_vr;
@@ -796,7 +797,7 @@ static struct mlxsw_sp_vr *mlxsw_sp_vr_create(struct mlxsw_sp *mlxsw_sp,
 
 	vr = mlxsw_sp_vr_find_unused(mlxsw_sp);
 	if (!vr) {
-		NL_SET_ERR_MSG(extack, "spectrum: Exceeded number of supported virtual routers");
+		NL_SET_ERR_MSG_MOD(extack, "Exceeded number of supported virtual routers");
 		return ERR_PTR(-EBUSY);
 	}
 	fib4 = mlxsw_sp_fib_create(mlxsw_sp, vr, MLXSW_SP_L3_PROTO_IPV4);
@@ -1024,9 +1025,11 @@ mlxsw_sp_ipip_entry_alloc(struct mlxsw_sp *mlxsw_sp,
 			  enum mlxsw_sp_ipip_type ipipt,
 			  struct net_device *ol_dev)
 {
+	const struct mlxsw_sp_ipip_ops *ipip_ops;
 	struct mlxsw_sp_ipip_entry *ipip_entry;
 	struct mlxsw_sp_ipip_entry *ret = NULL;
 
+	ipip_ops = mlxsw_sp->router->ipip_ops_arr[ipipt];
 	ipip_entry = kzalloc(sizeof(*ipip_entry), GFP_KERNEL);
 	if (!ipip_entry)
 		return ERR_PTR(-ENOMEM);
@@ -1040,7 +1043,15 @@ mlxsw_sp_ipip_entry_alloc(struct mlxsw_sp *mlxsw_sp,
 
 	ipip_entry->ipipt = ipipt;
 	ipip_entry->ol_dev = ol_dev;
-	ipip_entry->parms = mlxsw_sp_ipip_netdev_parms(ol_dev);
+
+	switch (ipip_ops->ul_proto) {
+	case MLXSW_SP_L3_PROTO_IPV4:
+		ipip_entry->parms4 = mlxsw_sp_ipip_netdev_parms4(ol_dev);
+		break;
+	case MLXSW_SP_L3_PROTO_IPV6:
+		WARN_ON(1);
+		break;
+	}
 
 	return ipip_entry;
 
@@ -2320,6 +2331,8 @@ static void mlxsw_sp_router_neigh_event_work(struct work_struct *work)
 	read_unlock_bh(&n->lock);
 
 	rtnl_lock();
+	mlxsw_sp_span_respin(mlxsw_sp);
+
 	entry_connected = nud_state & NUD_VALID && !dead;
 	neigh_entry = mlxsw_sp_neigh_entry_lookup(mlxsw_sp, n);
 	if (!entry_connected && !neigh_entry)
@@ -5579,6 +5592,8 @@ static void mlxsw_sp_router_fib4_event_work(struct work_struct *work)
 
 	/* Protect internal structures from changes */
 	rtnl_lock();
+	mlxsw_sp_span_respin(mlxsw_sp);
+
 	switch (fib_work->event) {
 	case FIB_EVENT_ENTRY_REPLACE: /* fall through */
 	case FIB_EVENT_ENTRY_APPEND: /* fall through */
@@ -5621,6 +5636,8 @@ static void mlxsw_sp_router_fib6_event_work(struct work_struct *work)
 	int err;
 
 	rtnl_lock();
+	mlxsw_sp_span_respin(mlxsw_sp);
+
 	switch (fib_work->event) {
 	case FIB_EVENT_ENTRY_REPLACE: /* fall through */
 	case FIB_EVENT_ENTRY_ADD:
@@ -5793,7 +5810,7 @@ static int mlxsw_sp_router_fib_rule_event(unsigned long event,
 	}
 
 	if (err < 0)
-		NL_SET_ERR_MSG(extack, "spectrum: FIB rules not supported. Aborting offload");
+		NL_SET_ERR_MSG_MOD(extack, "FIB rules not supported. Aborting offload");
 
 	return err;
 }
@@ -6032,7 +6049,7 @@ mlxsw_sp_rif_create(struct mlxsw_sp *mlxsw_sp,
 
 	err = mlxsw_sp_rif_index_alloc(mlxsw_sp, &rif_index);
 	if (err) {
-		NL_SET_ERR_MSG(extack, "spectrum: Exceeded number of supported router interfaces");
+		NL_SET_ERR_MSG_MOD(extack, "Exceeded number of supported router interfaces");
 		goto err_rif_index_alloc;
 	}
 

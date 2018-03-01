@@ -1517,6 +1517,7 @@ static struct pernet_operations ip6gre_net_ops = {
 	.exit_batch = ip6gre_exit_batch_net,
 	.id   = &ip6gre_net_id,
 	.size = sizeof(struct ip6gre_net),
+	.async = true,
 };
 
 static int ip6gre_tunnel_validate(struct nlattr *tb[], struct nlattr *data[],
@@ -1783,6 +1784,12 @@ static void ip6gre_tap_setup(struct net_device *dev)
 	dev->priv_flags |= IFF_LIVE_ADDR_CHANGE;
 	netif_keep_dst(dev);
 }
+
+bool is_ip6gretap_dev(const struct net_device *dev)
+{
+	return dev->netdev_ops == &ip6gre_tap_netdev_ops;
+}
+EXPORT_SYMBOL_GPL(is_ip6gretap_dev);
 
 static bool ip6gre_netlink_encap_parms(struct nlattr *data[],
 				       struct ip_tunnel_encap *ipencap)

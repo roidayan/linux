@@ -522,7 +522,7 @@ static void icmp6_send(struct sk_buff *skb, u8 type, u8 code, __u32 info,
 	fl6.fl6_icmp_type = type;
 	fl6.fl6_icmp_code = code;
 	fl6.flowi6_uid = sock_net_uid(net, NULL);
-	fl6.mp_hash = rt6_multipath_hash(&fl6, skb);
+	fl6.mp_hash = rt6_multipath_hash(&fl6, skb, NULL);
 	security_skb_classify_flow(skb, flowi6_to_flowi(&fl6));
 
 	sk = icmpv6_xmit_lock(net);
@@ -997,6 +997,7 @@ static void __net_exit icmpv6_sk_exit(struct net *net)
 static struct pernet_operations icmpv6_sk_ops = {
 	.init = icmpv6_sk_init,
 	.exit = icmpv6_sk_exit,
+	.async = true,
 };
 
 int __init icmpv6_init(void)
