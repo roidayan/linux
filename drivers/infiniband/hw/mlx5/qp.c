@@ -2153,7 +2153,6 @@ static struct ib_qp *mlx5_ib_create_dct(struct ib_pd *pd,
 					struct ib_qp_init_attr *attr,
 					struct mlx5_ib_create_qp *ucmd)
 {
-	struct mlx5_ib_dev *dev;
 	struct mlx5_ib_qp *qp;
 	int err = 0;
 	u32 uidx = MLX5_IB_DEFAULT_UIDX;
@@ -2161,8 +2160,6 @@ static struct ib_qp *mlx5_ib_create_dct(struct ib_pd *pd,
 
 	if (!attr->srq || !attr->recv_cq)
 		return ERR_PTR(-EINVAL);
-
-	dev = to_mdev(pd->device);
 
 	err = get_qp_user_index(to_mucontext(pd->uobject->context),
 				ucmd, sizeof(*ucmd), &uidx);
@@ -4726,26 +4723,14 @@ static int query_raw_packet_qp_sq_state(struct mlx5_ib_dev *dev,
 					struct mlx5_ib_sq *sq,
 					u8 *sq_state)
 {
-	void *out;
-	void *sqc;
-	int inlen;
 	int err;
 
-	inlen = MLX5_ST_SZ_BYTES(query_sq_out);
-	out = kvzalloc(inlen, GFP_KERNEL);
-	if (!out)
-		return -ENOMEM;
-
-	err = mlx5_core_query_sq(dev->mdev, sq->base.mqp.qpn, out);
+	err = mlx5_core_query_sq_state(dev->mdev, sq->base.mqp.qpn, sq_state);
 	if (err)
 		goto out;
-
-	sqc = MLX5_ADDR_OF(query_sq_out, out, sq_context);
-	*sq_state = MLX5_GET(sqc, sqc, state);
 	sq->state = *sq_state;
 
 out:
-	kvfree(out);
 	return err;
 }
 
