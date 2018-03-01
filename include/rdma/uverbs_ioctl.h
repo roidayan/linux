@@ -495,6 +495,24 @@ uverbs_get_actual_spec(const struct uverbs_attr_bundle *attrs_bundle, u16 idx)
 		WARN_ON(!(_cond)) ? -EINVAL : 0;		  \
 })
 
+static inline struct ib_uobject *uverbs_attr_get_uobject(const struct uverbs_attr_bundle *attrs_bundle,
+							 u16 idx)
+{
+	const struct uverbs_attr *attr = uverbs_attr_get(attrs_bundle, idx);
+	int ret;
+
+	if (IS_ERR(attr))
+		return (void *)attr;
+
+	ret = uverbs_validate_actual_spec_debug(attrs_bundle, idx, spec,
+						spec->type == UVERBS_ATTR_TYPE_IDR ||
+						spec->type == UVERBS_ATTR_TYPE_FD);
+	if (ret)
+		return ERR_PTR(ret);
+
+	return attr->obj_attr.uobject;
+}
+
 static inline int uverbs_copy_to(const struct uverbs_attr_bundle *attrs_bundle,
 				 size_t idx, const void *from, size_t size)
 {
