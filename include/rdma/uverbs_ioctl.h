@@ -366,6 +366,35 @@ struct uverbs_attr_bundle {
 	struct uverbs_attr_bundle_hash  hash[];
 };
 
+static inline int uverbs_ns_idx(u16 *id, unsigned int ns_count)
+{
+	int ret = (*id & UVERBS_ID_NS_MASK) >> UVERBS_ID_NS_SHIFT;
+
+	if (ret >= ns_count)
+		return -EINVAL;
+
+	*id &= ~UVERBS_ID_NS_MASK;
+	return ret;
+}
+
+static inline const struct uverbs_attr_spec *
+uverbs_get_spec(const struct uverbs_method_spec *method, u16 idx)
+{
+	u16 id = idx;
+	int ns = uverbs_ns_idx(&id, method->num_buckets);
+	const struct uverbs_attr_spec_hash *curr_spec_bucket;
+
+	if (ns < 0)
+		return ERR_PTR(ns);
+
+	curr_spec_bucket = method->attr_buckets[ns];
+
+	if (id >= curr_spec_bucket->num_attrs)
+		return ERR_PTR(-ENOENT);
+
+	return &curr_spec_bucket->attrs[id];
+}
+
 static inline bool uverbs_attr_is_valid_in_hash(const struct uverbs_attr_bundle_hash *attrs_hash,
 						unsigned int idx)
 {
