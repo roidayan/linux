@@ -7542,6 +7542,12 @@ static netdev_features_t netdev_fix_features(struct net_device *dev,
 		}
 	}
 
+	/* LRO feature cannot be combined with RX-FCS */
+	if ((features & NETIF_F_LRO) && (features & NETIF_F_RXFCS)) {
+		netdev_dbg(dev, "Dropping LRO feature since RX-FCS is requested.\n");
+		features &= ~NETIF_F_LRO;
+	}
+
 	return features;
 }
 
@@ -7610,6 +7616,24 @@ sync_lower:
 				udp_tunnel_get_rx_info(dev);
 			} else {
 				udp_tunnel_drop_rx_info(dev);
+			}
+		}
+
+		if (diff & NETIF_F_HW_VLAN_CTAG_FILTER) {
+			if (features & NETIF_F_HW_VLAN_CTAG_FILTER) {
+				dev->features = features;
+				err |= vlan_get_rx_ctag_filter_info(dev);
+			} else {
+				vlan_drop_rx_ctag_filter_info(dev);
+			}
+		}
+
+		if (diff & NETIF_F_HW_VLAN_STAG_FILTER) {
+			if (features & NETIF_F_HW_VLAN_STAG_FILTER) {
+				dev->features = features;
+				err |= vlan_get_rx_stag_filter_info(dev);
+			} else {
+				vlan_drop_rx_stag_filter_info(dev);
 			}
 		}
 
