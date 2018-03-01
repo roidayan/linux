@@ -43,7 +43,6 @@
 #include <rdma/ib_verbs.h>
 #include <linux/mutex.h>
 
-int uverbs_ns_idx(u16 *id, unsigned int ns_count);
 const struct uverbs_object_spec *uverbs_get_object(const struct ib_device *ibdev,
 						   uint16_t object);
 const struct uverbs_method_spec *uverbs_get_method(const struct uverbs_object_spec *object,

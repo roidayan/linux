@@ -41,17 +41,6 @@
 #include "core_priv.h"
 #include "rdma_core.h"
 
-int uverbs_ns_idx(u16 *id, unsigned int ns_count)
-{
-	int ret = (*id & UVERBS_ID_NS_MASK) >> UVERBS_ID_NS_SHIFT;
-
-	if (ret >= ns_count)
-		return -EINVAL;
-
-	*id &= ~UVERBS_ID_NS_MASK;
-	return ret;
-}
-
 const struct uverbs_object_spec *uverbs_get_object(const struct ib_device *ibdev,
 						   uint16_t object)
 {
