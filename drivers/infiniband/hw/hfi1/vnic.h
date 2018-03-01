@@ -156,12 +156,9 @@ bool hfi1_vnic_sdma_write_avail(struct hfi1_vnic_vport_info *vinfo,
 				u8 q_idx);
 
 /* vnic rdma netdev operations */
-struct net_device *hfi1_vnic_alloc_rn(struct ib_device *device,
-				      u8 port_num,
-				      enum rdma_netdev_t type,
-				      const char *name,
-				      unsigned char name_assign_type,
-				      void (*setup)(struct net_device *));
+int hfi1_vnic_rn_get_params(struct ib_device *device, u8 port_num,
+			    enum rdma_netdev_t type,
+			    struct rdma_netdev_alloc_params *params);
 int hfi1_vnic_send_dma(struct hfi1_devdata *dd, u8 q_idx,
 		       struct hfi1_vnic_vport_info *vinfo,
 		       struct sk_buff *skb, u64 pbc, u8 plen);
