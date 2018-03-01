@@ -2194,9 +2194,6 @@ struct rdma_netdev {
 	struct ib_device  *hca;
 	u8                 port_num;
 
-	/* cleanup function must be specified */
-	void (*free_rdma_netdev)(struct net_device *netdev);
-
 	/* control functions */
 	void (*set_id)(struct net_device *netdev, int id);
 	/* send packet */
