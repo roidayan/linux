@@ -87,22 +87,7 @@ int qedr_iw_query_gid(struct ib_device *ibdev, u8 port,
 int qedr_query_gid(struct ib_device *ibdev, u8 port, int index,
 		   union ib_gid *sgid)
 {
-	struct qedr_dev *dev = get_qedr_dev(ibdev);
-	int rc = 0;
-
-	if (!rdma_cap_roce_gid_table(ibdev, port))
-		return -ENODEV;
-
-	rc = ib_get_cached_gid(ibdev, port, index, sgid, NULL);
-	if (rc == -EAGAIN) {
-		memcpy(sgid, &zgid, sizeof(*sgid));
-		return 0;
-	}
-
-	DP_DEBUG(dev, QEDR_MSG_INIT, "query gid: index=%d %llx:%llx\n", index,
-		 sgid->global.interface_id, sgid->global.subnet_prefix);
-
-	return rc;
+	return 0;
 }
 
 int qedr_add_gid(struct ib_device *device, u8 port_num,
