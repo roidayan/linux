@@ -1057,6 +1057,8 @@ mlx5e_vport_rep_unload(struct mlx5_eswitch *esw, struct mlx5_eswitch_rep *rep)
 	mlx5e_detach_netdev(priv);
 	mlx5e_destroy_netdev(priv);
 	kfree(ppriv); /* mlx5e_rep_priv */
+	mlx5_eswitch_set_vport_state(priv->mdev->priv.eswitch, rep->vport,
+				     MLX5_ESW_VPORT_ADMIN_STATE_AUTO);
 }
 
 static void mlx5e_rep_register_vf_vports(struct mlx5e_priv *priv)
