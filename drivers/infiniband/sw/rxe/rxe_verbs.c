@@ -80,18 +80,7 @@ out:
 static int rxe_query_gid(struct ib_device *device,
 			 u8 port_num, int index, union ib_gid *gid)
 {
-	int ret;
-
-	if (index > RXE_PORT_GID_TBL_LEN)
-		return -EINVAL;
-
-	ret = ib_get_cached_gid(device, port_num, index, gid, NULL);
-	if (ret == -EAGAIN) {
-		memcpy(gid, &zgid, sizeof(*gid));
-		return 0;
-	}
-
-	return ret;
+	return 0;
 }
 
 static int rxe_add_gid(struct ib_device *device, u8 port_num, unsigned int
