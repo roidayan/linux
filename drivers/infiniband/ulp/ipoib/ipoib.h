@@ -94,6 +94,7 @@ enum {
 	IPOIB_NEIGH_TBL_FLUSH	  = 12,
 	IPOIB_FLAG_DEV_ADDR_SET	  = 13,
 	IPOIB_FLAG_DEV_ADDR_CTRL  = 14,
+	IPOIB_FLAG_CHILD_DELETED  = 15,
 
 	IPOIB_MAX_BACKOFF_SECONDS = 16,
 
@@ -332,7 +333,6 @@ struct ipoib_dev_priv {
 
 	struct rw_semaphore vlan_rwsem;
 	struct mutex mcast_mutex;
-	struct mutex sysfs_mutex;
 
 	struct rb_root  path_tree;
 	struct list_head path_list;
