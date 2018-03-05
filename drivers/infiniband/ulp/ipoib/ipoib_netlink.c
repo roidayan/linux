@@ -98,7 +98,7 @@ static int ipoib_new_child_link(struct net *src_net, struct net_device *dev,
 				struct netlink_ext_ack *extack)
 {
 	struct net_device *pdev;
-	struct ipoib_dev_priv *ppriv;
+	struct ipoib_dev_priv *ppriv, *priv;
 	u16 child_pkey;
 	int err;
 
@@ -131,8 +131,15 @@ static int ipoib_new_child_link(struct net *src_net, struct net_device *dev,
 	 */
 	child_pkey |= 0x8000;
 
+	priv = ipoib_intf_alloc(ppriv->ca, ppriv->port, dev->name, dev);
+	if (!priv) {
+		ipoib_warn(ppriv, "failed to initialize pkey device\n");
+		return -ENOMEM;
+	}
+	down_write(&ppriv->vlan_rwsem);
 	err = __ipoib_vlan_add(ppriv, ipoib_priv(dev),
 			       child_pkey, IPOIB_RTNL_CHILD);
+	up_write(&ppriv->vlan_rwsem);
 
 	if (!err && data)
 		err = ipoib_changelink(dev, tb, data, extack);
@@ -171,6 +178,11 @@ static struct rtnl_link_ops ipoib_link_ops __read_mostly = {
 	.get_size	= ipoib_get_size,
 	.fill_info	= ipoib_fill_info,
 };
+
+struct rtnl_link_ops *ipoib_get_link_ops(void)
+{
+	return &ipoib_link_ops;
+}
 
 int __init ipoib_netlink_init(void)
 {

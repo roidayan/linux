@@ -488,6 +488,7 @@ static inline void ipoib_put_ah(struct ipoib_ah *ah)
 	kref_put(&ah->ref, ipoib_free_ah);
 }
 int ipoib_open(struct net_device *dev);
+void ipoib_intf_free(struct net_device *dev);
 int ipoib_add_pkey_attr(struct net_device *dev);
 int ipoib_add_umcast_attr(struct net_device *dev);
 
@@ -499,7 +500,8 @@ struct ipoib_path *__path_find(struct net_device *dev, void *gid);
 void ipoib_mark_paths_invalid(struct net_device *dev);
 void ipoib_flush_paths(struct net_device *dev);
 struct ipoib_dev_priv *ipoib_intf_alloc(struct ib_device *hca, u8 port,
-					const char *format);
+					const char *format,
+					struct net_device *netdev);
 void ipoib_ib_tx_timer_func(struct timer_list *t);
 void ipoib_ib_dev_flush_light(struct work_struct *work);
 void ipoib_ib_dev_flush_normal(struct work_struct *work);
@@ -532,6 +534,8 @@ void ipoib_mcast_dev_flush(struct net_device *dev);
 int ipoib_dma_map_tx(struct ib_device *ca, struct ipoib_tx_buf *tx_req);
 void ipoib_dma_unmap_tx(struct ipoib_dev_priv *priv,
 			struct ipoib_tx_buf *tx_req);
+
+struct rtnl_link_ops *ipoib_get_link_ops(void);
 
 static inline void ipoib_build_sge(struct ipoib_dev_priv *priv,
 				   struct ipoib_tx_buf *tx_req)
