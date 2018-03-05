@@ -42,7 +42,7 @@ void mlx5e_vxlan_init(struct mlx5e_priv *priv)
 {
 	struct mlx5e_vxlan_db *vxlan_db = &priv->vxlan;
 
-	spin_lock_init(&vxlan_db->lock);
+	rwlock_init(&vxlan_db->lock);
 	hash_init(vxlan_db->htable);
 
 	if (mlx5e_vxlan_allowed(priv->mdev))
@@ -98,9 +98,9 @@ struct mlx5e_vxlan *mlx5e_vxlan_lookup_port(struct mlx5e_priv *priv, u16 port)
 	struct mlx5e_vxlan_db *vxlan_db = &priv->vxlan;
 	struct mlx5e_vxlan *vxlan;
 
-	spin_lock_bh(&vxlan_db->lock);
+	read_lock_bh(&vxlan_db->lock);
 	vxlan = mlx5e_vxlan_lookup_port_locked(priv, port);
-	spin_unlock_bh(&vxlan_db->lock);
+	read_unlock_bh(&vxlan_db->lock);
 
 	return vxlan;
 }
@@ -133,9 +133,9 @@ static void mlx5e_vxlan_add_port(struct mlx5e_priv *priv, u16 port)
 	vxlan->udp_port = port;
 	atomic_set(&vxlan->refcount, 1);
 
-	spin_lock_bh(&vxlan_db->lock);
+	write_lock_bh(&vxlan_db->lock);
 	hash_add(vxlan_db->htable, &vxlan->hlist, port);
-	spin_unlock_bh(&vxlan_db->lock);
+	write_unlock_bh(&vxlan_db->lock);
 
 	vxlan_db->num_ports++;
 	return;
@@ -169,7 +169,7 @@ static void mlx5e_vxlan_del_work(struct work_struct *work)
 	bool remove = false;
 
 	mutex_lock(&priv->state_lock);
-	spin_lock_bh(&vxlan_db->lock);
+	write_lock_bh(&vxlan_db->lock);
 	vxlan = mlx5e_vxlan_lookup_port_locked(priv, port);
 	if (!vxlan)
 		goto out_unlock;
@@ -180,7 +180,7 @@ static void mlx5e_vxlan_del_work(struct work_struct *work)
 	}
 
 out_unlock:
-	spin_unlock_bh(&vxlan_db->lock);
+	write_unlock_bh(&vxlan_db->lock);
 
 	if (remove) {
 		mlx5e_vxlan_core_del_port_cmd(priv->mdev, port);
