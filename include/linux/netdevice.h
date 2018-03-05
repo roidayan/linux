@@ -1798,11 +1798,17 @@ struct net_device {
 #if IS_ENABLED(CONFIG_TIPC)
 	struct tipc_bearer __rcu *tipc_ptr;
 #endif
+#if IS_ENABLED(CONFIG_IRDA) || IS_ENABLED(CONFIG_ATALK)
 	void 			*atalk_ptr;
+#endif
 	struct in_device __rcu	*ip_ptr;
+#if IS_ENABLED(CONFIG_DECNET)
 	struct dn_dev __rcu     *dn_ptr;
+#endif
 	struct inet6_dev __rcu	*ip6_ptr;
+#if IS_ENABLED(CONFIG_AX25)
 	void			*ax25_ptr;
+#endif
 	struct wireless_dev	*ieee80211_ptr;
 	struct wpan_dev		*ieee802154_ptr;
 #if IS_ENABLED(CONFIG_MPLS_ROUTING)
@@ -2337,6 +2343,10 @@ struct netdev_lag_lower_state_info {
 #define NETDEV_UDP_TUNNEL_PUSH_INFO	0x001C
 #define NETDEV_UDP_TUNNEL_DROP_INFO	0x001D
 #define NETDEV_CHANGE_TX_QUEUE_LEN	0x001E
+#define NETDEV_CVLAN_FILTER_PUSH_INFO	0x001F
+#define NETDEV_CVLAN_FILTER_DROP_INFO	0x0020
+#define NETDEV_SVLAN_FILTER_PUSH_INFO	0x0021
+#define NETDEV_SVLAN_FILTER_DROP_INFO	0x0022
 
 int register_netdevice_notifier(struct notifier_block *nb);
 int unregister_netdevice_notifier(struct notifier_block *nb);
