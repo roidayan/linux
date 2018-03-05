@@ -30,6 +30,8 @@
  * SOFTWARE.
  */
 
+#include <linux/mlx5/driver.h>
+
 #ifndef __LIB_CLOCK_H__
 #define __LIB_CLOCK_H__
 
