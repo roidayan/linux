@@ -333,4 +333,9 @@ static inline struct ib_qp *_ib_create_qp(struct ib_device *dev,
 
 	return qp;
 }
+
+int rdma_addr_find_l2_eth_by_grh(const union ib_gid *sgid,
+				 const union ib_gid *dgid,
+				 u8 *dmac, const struct net_device *ndev,
+				 int *hoplimit);
 #endif /* _CORE_PRIV_H */

@@ -462,14 +462,33 @@ static int cm_init_av_for_response(struct cm_port *port, struct ib_wc *wc,
 				       grh, &av->ah_attr);
 }
 
-static int cm_init_av_by_path(struct sa_path_rec *path, struct cm_av *av,
-			      struct cm_id_private *cm_id_priv)
+static int add_cm_id_to_port_list(struct cm_id_private *cm_id_priv,
+				  struct cm_av *av,
+				  struct cm_port *port)
 {
-	struct cm_device *cm_dev;
-	struct cm_port *port = NULL;
 	unsigned long flags;
-	int ret;
+	int ret = 0;
+
+	spin_lock_irqsave(&cm.lock, flags);
+
+	if (&cm_id_priv->av == av)
+		list_add_tail(&cm_id_priv->prim_list, &port->cm_priv_prim_list);
+	else if (&cm_id_priv->alt_av == av)
+		list_add_tail(&cm_id_priv->altr_list, &port->cm_priv_altr_list);
+	else
+		ret = -EINVAL;
+
+	spin_unlock_irqrestore(&cm.lock, flags);
+	return ret;
+}
+
+static struct cm_port *get_cm_port_from_path(struct sa_path_rec *path)
+{
+	struct cm_port *port = NULL;
+	struct cm_device *cm_dev;
+	unsigned long flags;
 	u8 p;
+
 	struct net_device *ndev = ib_get_ndev_from_path(path);
 
 	read_lock_irqsave(&cm.device_lock, flags);
@@ -477,7 +496,7 @@ static int cm_init_av_by_path(struct sa_path_rec *path, struct cm_av *av,
 		if (!ib_find_cached_gid(cm_dev->ib_device, &path->sgid,
 					sa_conv_pathrec_to_gid_type(path),
 					ndev, &p, NULL)) {
-			port = cm_dev->port[p-1];
+			port = cm_dev->port[p - 1];
 			break;
 		}
 	}
@@ -485,9 +504,20 @@ static int cm_init_av_by_path(struct sa_path_rec *path, struct cm_av *av,
 
 	if (ndev)
 		dev_put(ndev);
+	return port;
+}
 
+static int cm_init_av_by_path(struct sa_path_rec *path, struct cm_av *av,
+			      struct cm_id_private *cm_id_priv)
+{
+	struct cm_device *cm_dev;
+	struct cm_port *port;
+	int ret;
+
+	port = get_cm_port_from_path(path);
 	if (!port)
 		return -EINVAL;
+	cm_dev = port->cm_dev;
 
 	ret = ib_find_cached_pkey(cm_dev->ib_device, port->port_num,
 				  be16_to_cpu(path->pkey), &av->pkey_index);
@@ -502,16 +532,7 @@ static int cm_init_av_by_path(struct sa_path_rec *path, struct cm_av *av,
 
 	av->timeout = path->packet_life_time + 1;
 
-	spin_lock_irqsave(&cm.lock, flags);
-	if (&cm_id_priv->av == av)
-		list_add_tail(&cm_id_priv->prim_list, &port->cm_priv_prim_list);
-	else if (&cm_id_priv->alt_av == av)
-		list_add_tail(&cm_id_priv->altr_list, &port->cm_priv_altr_list);
-	else
-		ret = -EINVAL;
-
-	spin_unlock_irqrestore(&cm.lock, flags);
-
+	ret = add_cm_id_to_port_list(cm_id_priv, av, port);
 	return ret;
 }
 
@@ -1923,9 +1944,11 @@ static int cm_req_handler(struct cm_work *work)
 		work->path[1].rec_type = work->path[0].rec_type;
 	cm_format_paths_from_req(req_msg, &work->path[0],
 				 &work->path[1]);
-	if (cm_id_priv->av.ah_attr.type == RDMA_AH_ATTR_TYPE_ROCE)
+	if (cm_id_priv->av.ah_attr.type == RDMA_AH_ATTR_TYPE_ROCE) {
 		sa_path_set_dmac(&work->path[0],
 				 cm_id_priv->av.ah_attr.roce.dmac);
+		sa_path_set_roce_route_resolved(&work->path[0], false);
+	}
 	work->path[0].hop_limit = grh->hop_limit;
 	ret = cm_init_av_by_path(&work->path[0], &cm_id_priv->av,
 				 cm_id_priv);
@@ -1947,6 +1970,9 @@ static int cm_req_handler(struct cm_work *work)
 		goto rejected;
 	}
 	if (cm_req_has_alt_path(req_msg)) {
+		if (sa_path_is_roce(&work->path[1]))
+			sa_path_set_roce_route_resolved(&work->path[1], false);
+
 		ret = cm_init_av_by_path(&work->path[1], &cm_id_priv->alt_av,
 					 cm_id_priv);
 		if (ret) {
@@ -3157,12 +3183,6 @@ static int cm_lap_handler(struct cm_work *work)
 	if (!cm_id_priv)
 		return -EINVAL;
 
-	ret = cm_init_av_for_response(work->port, work->mad_recv_wc->wc,
-				      work->mad_recv_wc->recv_buf.grh,
-				      &cm_id_priv->av);
-	if (ret)
-		goto deref;
-
 	param = &work->cm_event.param.lap_rcvd;
 	memset(&work->path[0], 0, sizeof(work->path[1]));
 	cm_path_set_rec_type(work->port->cm_dev->ib_device,
@@ -3207,10 +3227,24 @@ static int cm_lap_handler(struct cm_work *work)
 		goto unlock;
 	}
 
-	cm_id_priv->id.lap_state = IB_CM_LAP_RCVD;
-	cm_id_priv->tid = lap_msg->hdr.tid;
+	/* It is safe to release spin lock while working on AV
+	 * initialization from path record.
+	 * While AV initialization in progress, refcount is taken
+	 * by cm_acquire_id() at the start, therefore it is safe to
+	 * release spin lock and re-acquire before updating state.
+	 */
+	spin_unlock_irq(&cm_id_priv->lock);
+	ret = cm_init_av_for_response(work->port, work->mad_recv_wc->wc,
+				      work->mad_recv_wc->recv_buf.grh,
+				      &cm_id_priv->av);
+	if (ret)
+		goto deref;
+
 	cm_init_av_by_path(param->alternate_path, &cm_id_priv->alt_av,
 			   cm_id_priv);
+	spin_lock_irq(&cm_id_priv->lock);
+	cm_id_priv->id.lap_state = IB_CM_LAP_RCVD;
+	cm_id_priv->tid = lap_msg->hdr.tid;
 	ret = atomic_inc_and_test(&cm_id_priv->work_count);
 	if (!ret)
 		list_add_tail(&work->list, &cm_id_priv->work_list);
