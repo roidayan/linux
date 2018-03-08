@@ -2402,19 +2402,18 @@ err_free2:
 	if (!err)
 		flow->flags |= MLX5E_TC_FLOW_OFFLOADED;
 
-	err = rhashtable_insert_fast(&tc->ht, &flow->node,
-				     tc->ht_params);
-	if (err)
-		goto err_del_rule;
-
-	if (flow->flags & MLX5E_TC_FLOW_ESWITCH &&
+	if (!(flow->flags & MLX5E_TC_FLOW_ESWITCH) ||
 	    !(flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP))
 		kvfree(parse_attr);
 
-	return err;
+	err = rhashtable_insert_fast(&tc->ht, &flow->node,
+				     tc->ht_params);
+	if (err) {
+		mlx5e_tc_del_flow(priv, flow);
+		kfree(flow);
+	}
 
-err_del_rule:
-	mlx5e_tc_del_flow(priv, flow);
+	return err;
 
 err_free:
 	kvfree(parse_attr);
