@@ -509,7 +509,7 @@ static int hns_roce_v2_post_recv(struct ib_qp *ibqp, struct ib_recv_wr *wr,
 	spin_lock_irqsave(&hr_qp->rq.lock, flags);
 	ind = hr_qp->rq.head & (hr_qp->rq.wqe_cnt - 1);
 
-	if (hr_qp->state == IB_QPS_RESET || hr_qp->state == IB_QPS_ERR) {
+	if (hr_qp->state == IB_QPS_RESET) {
 		spin_unlock_irqrestore(&hr_qp->rq.lock, flags);
 		*bad_wr = wr;
 		return -EINVAL;
@@ -1228,14 +1228,14 @@ static int hns_roce_v2_post_mbox(struct hns_roce_dev *hr_dev, u64 in_param,
 	roce_set_field(val1, HNS_ROCE_VF_MB5_TOKEN_MASK,
 		       HNS_ROCE_VF_MB5_TOKEN_SHIFT, token);
 
-	__raw_writeq(cpu_to_le64(in_param), hcr + 0);
-	__raw_writeq(cpu_to_le64(out_param), hcr + 2);
+	writeq(in_param, hcr + 0);
+	writeq(out_param, hcr + 2);
 
 	/* Memory barrier */
 	wmb();
 
-	__raw_writel(cpu_to_le32(val0), hcr + 4);
-	__raw_writel(cpu_to_le32(val1), hcr + 5);
+	writel(val0, hcr + 4);
+	writel(val1, hcr + 5);
 
 	mmiowb();
 

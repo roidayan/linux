@@ -130,9 +130,6 @@ struct mlx5_ib_ucontext {
 	/* protect vma_private_list add/del */
 	struct mutex		vma_private_list_mutex;
 
-	unsigned long		upd_xlt_page;
-	/* protect ODP/KSM */
-	struct mutex		upd_xlt_page_mutex;
 	u64			lib_caps;
 };
 
@@ -406,7 +403,7 @@ struct mlx5_ib_qp {
 	struct list_head	qps_list;
 	struct list_head	cq_recv_list;
 	struct list_head	cq_send_list;
-	u32			rate_limit;
+	struct mlx5_rate_limit	rl;
 	u32                     underlay_qpn;
 	bool			tunnel_offload_en;
 	/* storage for qp sub type when core qp type is IB_QPT_DRIVER */
@@ -1219,5 +1216,8 @@ static inline int get_num_static_uars(struct mlx5_ib_dev *dev,
 {
 	return get_uars_per_sys_page(dev, bfregi->lib_uar_4k) * bfregi->num_static_sys_pages;
 }
+
+unsigned long mlx5_ib_get_xlt_emergency_page(void);
+void mlx5_ib_put_xlt_emergency_page(void);
 
 #endif /* MLX5_IB_H */
