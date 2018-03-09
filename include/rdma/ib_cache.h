@@ -55,6 +55,9 @@ int ib_get_cached_gid(struct ib_device    *device,
 		      union ib_gid        *gid,
 		      struct ib_gid_attr  *attr);
 
+int rdma_query_gid(struct ib_device *device, u8 port_num,
+		   int index, union ib_gid *gid);
+
 const struct ib_gid_attr *
 rdma_find_gid(struct ib_device *device,
 	      const union ib_gid *gid,

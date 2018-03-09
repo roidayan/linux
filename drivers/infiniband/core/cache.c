@@ -974,6 +974,46 @@ int ib_get_cached_gid(struct ib_device *device,
 EXPORT_SYMBOL(ib_get_cached_gid);
 
 /**
+ * rdma_query_gid - Read the GID content from the GID software cache
+ * @device:		Device to query the GID
+ * @port_num:		Port number of the device
+ * @index:		Index of the GID table entry to read
+ * @gid:		Pointer to GID where to read the entry.
+ *
+ * rdma_query_gid() only reads the GID entry content for requested
+ * device, port and index. It reads for IB, RoCE and iWarp link layers.
+ * It doesn't hold any reference to GID table entry in HCA or software cache.
+ *
+ * Returns 0 on success or appropriate error code.
+ *
+ */
+int rdma_query_gid(struct ib_device *device, u8 port_num,
+		   int index, union ib_gid *gid)
+{
+	struct ib_gid_table *table;
+	unsigned long flags;
+	int res = -EINVAL;
+
+	if (!rdma_is_port_valid(device, port_num))
+		return -EINVAL;
+
+	table = device->cache.ports[port_num - rdma_start_port(device)].gid;
+	read_lock_irqsave(&table->rwlock, flags);
+
+	if (index < 0 || index >= table->sz ||
+	    !is_gid_table_entry_valid(&table->data_vec[index]))
+		goto done;
+
+	memcpy(gid, &table->data_vec[index].gid, sizeof(*gid));
+	res = 0;
+
+done:
+	read_unlock_irqrestore(&table->rwlock, flags);
+	return res;
+}
+EXPORT_SYMBOL(rdma_query_gid);
+
+/**
  * rdma_find_gid - Returns SGID attributes if the matching GID is found.
  * @device: The device to query.
  * @gid: The GID value to search for.
