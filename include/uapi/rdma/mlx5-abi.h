@@ -107,6 +107,14 @@ enum mlx5_user_inline_mode {
 	MLX5_USER_INLINE_MODE_TCP_UDP,
 };
 
+enum {
+	MLX5_USER_ALLOC_UCONTEXT_FLOW_ACTION_FLAGS_ESP_AES_GCM = 1 << 0,
+	MLX5_USER_ALLOC_UCONTEXT_FLOW_ACTION_FLAGS_ESP_AES_GCM_REQ_METADATA = 1 << 1,
+	MLX5_USER_ALLOC_UCONTEXT_FLOW_ACTION_FLAGS_ESP_AES_GCM_SPI_STEERING = 1 << 2,
+	MLX5_USER_ALLOC_UCONTEXT_FLOW_ACTION_FLAGS_ESP_AES_GCM_FULL_OFFLOAD = 1 << 3,
+	MLX5_USER_ALLOC_UCONTEXT_FLOW_ACTION_FLAGS_ESP_AES_GCM_TX_IV_IS_ESN = 1 << 4,
+};
+
 struct mlx5_ib_alloc_ucontext_resp {
 	__u32	qp_tab_size;
 	__u32	bf_reg_size;
@@ -118,7 +126,7 @@ struct mlx5_ib_alloc_ucontext_resp {
 	__u32	max_recv_wr;
 	__u32	max_srq_recv_wr;
 	__u16	num_ports;
-	__u16	reserved1;
+	__u16	flow_action_flags;
 	__u32	comp_mask;
 	__u32	response_length;
 	__u8	cqe_version;
@@ -163,6 +171,10 @@ struct mlx5_ib_cqe_comp_caps {
 	__u32 supported_format; /* enum mlx5_ib_cqe_comp_res_format */
 };
 
+enum mlx5_ib_packet_pacing_cap_flags {
+	MLX5_IB_PP_SUPPORT_BURST	= 1 << 0,
+};
+
 struct mlx5_packet_pacing_caps {
 	__u32 qp_rate_limit_min;
 	__u32 qp_rate_limit_max; /* In kpbs */
@@ -172,7 +184,8 @@ struct mlx5_packet_pacing_caps {
 	 * supported_qpts |= 1 << IB_QPT_RAW_PACKET
 	 */
 	__u32 supported_qpts;
-	__u32 reserved;
+	__u8  cap_flags; /* enum mlx5_ib_packet_pacing_cap_flags */
+	__u8  reserved[3];
 };
 
 enum mlx5_ib_mpw_caps {
@@ -314,6 +327,7 @@ enum mlx5_rx_hash_fields {
 	MLX5_RX_HASH_DST_PORT_TCP	= 1 << 5,
 	MLX5_RX_HASH_SRC_PORT_UDP	= 1 << 6,
 	MLX5_RX_HASH_DST_PORT_UDP	= 1 << 7,
+	MLX5_RX_HASH_IPSEC_SPI		= 1 << 8,
 	/* Save bits for future fields */
 	MLX5_RX_HASH_INNER		= (1UL << 31),
 };
@@ -362,6 +376,17 @@ struct mlx5_ib_create_ah_resp {
 	__u8	reserved[6];
 };
 
+struct mlx5_ib_burst_info {
+	__u32       max_burst_sz;
+	__u16       typical_pkt_sz;
+};
+
+struct mlx5_ib_modify_qp {
+	__u32			   comp_mask;
+	struct mlx5_ib_burst_info  burst_info;
+	__u8                       reserved[6];
+};
+
 struct mlx5_ib_modify_qp_resp {
 	__u32	response_length;
 	__u32	dctn;
@@ -403,6 +428,7 @@ enum mlx5_ib_mmap_cmd {
 	MLX5_IB_MMAP_CORE_CLOCK                 = 5,
 	MLX5_IB_MMAP_ALLOC_WC                   = 6,
 	MLX5_IB_MMAP_CLOCK_INFO                 = 7,
+	MLX5_IB_MMAP_DEVICE_MEM                 = 8,
 };
 
 enum {
