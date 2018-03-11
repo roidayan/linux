@@ -907,7 +907,7 @@ static ssize_t pktgen_if_write(struct file *file,
 
 	if (debug) {
 		size_t copy = min_t(size_t, count, 1023);
-		char tb[copy + 1];
+		char tb[1024];
 		if (copy_from_user(tb, user_buffer, copy))
 			return -EFAULT;
 		tb[copy] = 0;
@@ -3851,6 +3851,7 @@ static struct pernet_operations pg_net_ops = {
 	.exit = pg_net_exit,
 	.id   = &pg_net_id,
 	.size = sizeof(struct pktgen_net),
+	.async = true,
 };
 
 static int __init pg_init(void)
