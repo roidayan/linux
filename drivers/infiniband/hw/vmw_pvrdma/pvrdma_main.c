@@ -763,7 +763,7 @@ static int pvrdma_netdevice_event(struct notifier_block *this,
 	struct net_device *event_netdev = netdev_notifier_info_to_dev(ptr);
 	struct pvrdma_netdevice_work *netdev_work;
 
-	netdev_work = kmalloc(sizeof(*netdev_work), GFP_ATOMIC);
+	netdev_work = kzalloc(sizeof(*netdev_work), GFP_ATOMIC);
 	if (!netdev_work)
 		return NOTIFY_BAD;
 
