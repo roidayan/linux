@@ -93,7 +93,7 @@ int mthca_reset(struct mthca_dev *mdev)
 	}
 
 	/* For Arbel do we need to save off the full 4K PCI Express header?? */
-	hca_header = kmalloc(256, GFP_KERNEL);
+	hca_header = kzalloc(256, GFP_KERNEL);
 	if (!hca_header) {
 		err = -ENOMEM;
 		goto put_dev;
@@ -114,7 +114,7 @@ int mthca_reset(struct mthca_dev *mdev)
 	hca_pcie_cap = pci_pcie_cap(mdev->pdev);
 
 	if (bridge) {
-		bridge_header = kmalloc(256, GFP_KERNEL);
+		bridge_header = kzalloc(256, GFP_KERNEL);
 		if (!bridge_header) {
 			err = -ENOMEM;
 			goto free_hca;
