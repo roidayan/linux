@@ -143,7 +143,7 @@ static struct ib_ucontext *c4iw_alloc_ucontext(struct ib_device *ibdev,
 		pr_err_once("Warning - downlevel libcxgb4 (non-fatal), device status page disabled\n");
 		rhp->rdev.flags |= T4_STATUS_PAGE_DISABLED;
 	} else {
-		mm = kmalloc(sizeof(*mm), GFP_KERNEL);
+		mm = kzalloc(sizeof(*mm), GFP_KERNEL);
 		if (!mm) {
 			ret = -ENOMEM;
 			goto err_free;
@@ -610,7 +610,7 @@ void c4iw_register_device(struct work_struct *work)
 	dev->ibdev.get_port_immutable = c4iw_port_immutable;
 	dev->ibdev.get_dev_fw_str = get_dev_fw_str;
 
-	dev->ibdev.iwcm = kmalloc(sizeof(struct iw_cm_verbs), GFP_KERNEL);
+	dev->ibdev.iwcm = kzalloc(sizeof(struct iw_cm_verbs), GFP_KERNEL);
 	if (!dev->ibdev.iwcm) {
 		ret = -ENOMEM;
 		goto err_dealloc_ctx;

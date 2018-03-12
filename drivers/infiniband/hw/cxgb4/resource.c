@@ -115,7 +115,7 @@ u32 c4iw_get_cqid(struct c4iw_rdev *rdev, struct c4iw_dev_ucontext *uctx)
 		rdev->stats.qid.cur += rdev->qpmask + 1;
 		mutex_unlock(&rdev->stats.lock);
 		for (i = qid+1; i & rdev->qpmask; i++) {
-			entry = kmalloc(sizeof *entry, GFP_KERNEL);
+			entry = kzalloc(sizeof *entry, GFP_KERNEL);
 			if (!entry)
 				goto out;
 			entry->qid = i;
@@ -126,13 +126,13 @@ u32 c4iw_get_cqid(struct c4iw_rdev *rdev, struct c4iw_dev_ucontext *uctx)
 		 * now put the same ids on the qp list since they all
 		 * map to the same db/gts page.
 		 */
-		entry = kmalloc(sizeof *entry, GFP_KERNEL);
+		entry = kzalloc(sizeof *entry, GFP_KERNEL);
 		if (!entry)
 			goto out;
 		entry->qid = qid;
 		list_add_tail(&entry->entry, &uctx->qpids);
 		for (i = qid+1; i & rdev->qpmask; i++) {
-			entry = kmalloc(sizeof *entry, GFP_KERNEL);
+			entry = kzalloc(sizeof *entry, GFP_KERNEL);
 			if (!entry)
 				goto out;
 			entry->qid = i;
@@ -154,7 +154,7 @@ void c4iw_put_cqid(struct c4iw_rdev *rdev, u32 qid,
 {
 	struct c4iw_qid_list *entry;
 
-	entry = kmalloc(sizeof *entry, GFP_KERNEL);
+	entry = kzalloc(sizeof *entry, GFP_KERNEL);
 	if (!entry)
 		return;
 	pr_debug("qid 0x%x\n", qid);
@@ -189,7 +189,7 @@ u32 c4iw_get_qpid(struct c4iw_rdev *rdev, struct c4iw_dev_ucontext *uctx)
 		rdev->stats.qid.cur += rdev->qpmask + 1;
 		mutex_unlock(&rdev->stats.lock);
 		for (i = qid+1; i & rdev->qpmask; i++) {
-			entry = kmalloc(sizeof *entry, GFP_KERNEL);
+			entry = kzalloc(sizeof *entry, GFP_KERNEL);
 			if (!entry)
 				goto out;
 			entry->qid = i;
@@ -200,13 +200,13 @@ u32 c4iw_get_qpid(struct c4iw_rdev *rdev, struct c4iw_dev_ucontext *uctx)
 		 * now put the same ids on the cq list since they all
 		 * map to the same db/gts page.
 		 */
-		entry = kmalloc(sizeof *entry, GFP_KERNEL);
+		entry = kzalloc(sizeof *entry, GFP_KERNEL);
 		if (!entry)
 			goto out;
 		entry->qid = qid;
 		list_add_tail(&entry->entry, &uctx->cqids);
 		for (i = qid; i & rdev->qpmask; i++) {
-			entry = kmalloc(sizeof *entry, GFP_KERNEL);
+			entry = kzalloc(sizeof *entry, GFP_KERNEL);
 			if (!entry)
 				goto out;
 			entry->qid = i;
@@ -228,7 +228,7 @@ void c4iw_put_qpid(struct c4iw_rdev *rdev, u32 qid,
 {
 	struct c4iw_qid_list *entry;
 
-	entry = kmalloc(sizeof *entry, GFP_KERNEL);
+	entry = kzalloc(sizeof *entry, GFP_KERNEL);
 	if (!entry)
 		return;
 	pr_debug("qid 0x%x\n", qid);

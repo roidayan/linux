@@ -955,10 +955,10 @@ struct ib_cq *c4iw_create_cq(struct ib_device *ibdev,
 
 	if (ucontext) {
 		ret = -ENOMEM;
-		mm = kmalloc(sizeof *mm, GFP_KERNEL);
+		mm = kzalloc(sizeof *mm, GFP_KERNEL);
 		if (!mm)
 			goto err_remove_handle;
-		mm2 = kmalloc(sizeof *mm2, GFP_KERNEL);
+		mm2 = kzalloc(sizeof *mm2, GFP_KERNEL);
 		if (!mm2)
 			goto err_free_mm;
 

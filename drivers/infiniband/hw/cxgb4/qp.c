@@ -1920,28 +1920,28 @@ struct ib_qp *c4iw_create_qp(struct ib_pd *pd, struct ib_qp_init_attr *attrs,
 		goto err_destroy_qp;
 
 	if (udata && ucontext) {
-		sq_key_mm = kmalloc(sizeof(*sq_key_mm), GFP_KERNEL);
+		sq_key_mm = kzalloc(sizeof(*sq_key_mm), GFP_KERNEL);
 		if (!sq_key_mm) {
 			ret = -ENOMEM;
 			goto err_remove_handle;
 		}
-		rq_key_mm = kmalloc(sizeof(*rq_key_mm), GFP_KERNEL);
+		rq_key_mm = kzalloc(sizeof(*rq_key_mm), GFP_KERNEL);
 		if (!rq_key_mm) {
 			ret = -ENOMEM;
 			goto err_free_sq_key;
 		}
-		sq_db_key_mm = kmalloc(sizeof(*sq_db_key_mm), GFP_KERNEL);
+		sq_db_key_mm = kzalloc(sizeof(*sq_db_key_mm), GFP_KERNEL);
 		if (!sq_db_key_mm) {
 			ret = -ENOMEM;
 			goto err_free_rq_key;
 		}
-		rq_db_key_mm = kmalloc(sizeof(*rq_db_key_mm), GFP_KERNEL);
+		rq_db_key_mm = kzalloc(sizeof(*rq_db_key_mm), GFP_KERNEL);
 		if (!rq_db_key_mm) {
 			ret = -ENOMEM;
 			goto err_free_sq_db_key;
 		}
 		if (t4_sq_onchip(&qhp->wq.sq)) {
-			ma_sync_key_mm = kmalloc(sizeof(*ma_sync_key_mm),
+			ma_sync_key_mm = kzalloc(sizeof(*ma_sync_key_mm),
 						 GFP_KERNEL);
 			if (!ma_sync_key_mm) {
 				ret = -ENOMEM;
