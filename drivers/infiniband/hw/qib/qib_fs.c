@@ -227,7 +227,7 @@ static ssize_t qsfp_1_read(struct file *file, char __user *buf,
 	char *tmp;
 	int ret;
 
-	tmp = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	tmp = kzalloc(PAGE_SIZE, GFP_KERNEL);
 	if (!tmp)
 		return -ENOMEM;
 
@@ -251,7 +251,7 @@ static ssize_t qsfp_2_read(struct file *file, char __user *buf,
 	if (dd->num_pports < 2)
 		return -ENODEV;
 
-	tmp = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	tmp = kzalloc(PAGE_SIZE, GFP_KERNEL);
 	if (!tmp)
 		return -ENOMEM;
 
@@ -290,7 +290,7 @@ static ssize_t flash_read(struct file *file, char __user *buf,
 	if (count > sizeof(struct qib_flash) - pos)
 		count = sizeof(struct qib_flash) - pos;
 
-	tmp = kmalloc(count, GFP_KERNEL);
+	tmp = kzalloc(count, GFP_KERNEL);
 	if (!tmp) {
 		ret = -ENOMEM;
 		goto bail;

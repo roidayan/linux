@@ -870,7 +870,7 @@ static int qib_verbs_send_dma(struct rvt_qp *qp, struct ib_header *hdr,
 
 	/* Allocate a buffer and copy the header and payload to it. */
 	tx->hdr_dwords = plen + 1;
-	phdr = kmalloc(tx->hdr_dwords << 2, GFP_ATOMIC);
+	phdr = kzalloc(tx->hdr_dwords << 2, GFP_ATOMIC);
 	if (!phdr)
 		goto err_tx;
 	phdr->pbc[0] = cpu_to_le32(plen);

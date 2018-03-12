@@ -1300,7 +1300,7 @@ static int setup_ctxt(struct qib_pportdata *ppd, int ctxt,
 	 * reduce cost of expected send setup per message segment
 	 */
 	if (rcd)
-		ptmp = kmalloc(dd->rcvtidcnt * sizeof(u16) +
+		ptmp = kzalloc(dd->rcvtidcnt * sizeof(u16) +
 			       dd->rcvtidcnt * sizeof(struct page **),
 			       GFP_KERNEL);
 
@@ -2245,7 +2245,7 @@ static ssize_t qib_write_iter(struct kiocb *iocb, struct iov_iter *from)
 
 	if (!iter_is_iovec(from) || !from->nr_segs || !pq)
 		return -EINVAL;
-			 
+
 	return qib_user_sdma_writev(rcd, pq, from->iov, from->nr_segs);
 }
 

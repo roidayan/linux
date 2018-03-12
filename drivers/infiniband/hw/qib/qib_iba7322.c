@@ -3648,7 +3648,7 @@ static int qib_do_7322_reset(struct qib_devdata *dd)
 
 	if (msix_entries) {
 		/* can be up to 512 bytes, too big for stack */
-		msix_vecsave = kmalloc(2 * dd->cspec->num_msix_entries *
+		msix_vecsave = kzalloc(2 * dd->cspec->num_msix_entries *
 			sizeof(u64), GFP_KERNEL);
 	}
 
@@ -5009,7 +5009,7 @@ static void init_7322_cntrnames(struct qib_devdata *dd)
 		dd->cspec->cntrnamelen = sizeof(cntr7322names) - 1;
 	else
 		dd->cspec->cntrnamelen = 1 + s - cntr7322names;
-	dd->cspec->cntrs = kmalloc(dd->cspec->ncntrs
+	dd->cspec->cntrs = kzalloc(dd->cspec->ncntrs
 		* sizeof(u64), GFP_KERNEL);
 
 	for (i = 0, s = (char *)portcntr7322names; s; i++)
@@ -5017,7 +5017,7 @@ static void init_7322_cntrnames(struct qib_devdata *dd)
 	dd->cspec->nportcntrs = i - 1;
 	dd->cspec->portcntrnamelen = sizeof(portcntr7322names) - 1;
 	for (i = 0; i < dd->num_pports; ++i) {
-		dd->pport[i].cpspec->portcntrs = kmalloc(dd->cspec->nportcntrs
+		dd->pport[i].cpspec->portcntrs = kzalloc(dd->cspec->nportcntrs
 			* sizeof(u64), GFP_KERNEL);
 	}
 }
@@ -6412,11 +6412,11 @@ static int qib_init_7322_variables(struct qib_devdata *dd)
 	sbufcnt = dd->piobcnt2k + dd->piobcnt4k +
 		NUM_VL15_BUFS + BITS_PER_LONG - 1;
 	sbufcnt /= BITS_PER_LONG;
-	dd->cspec->sendchkenable = kmalloc(sbufcnt *
+	dd->cspec->sendchkenable = kzalloc(sbufcnt *
 		sizeof(*dd->cspec->sendchkenable), GFP_KERNEL);
-	dd->cspec->sendgrhchk = kmalloc(sbufcnt *
+	dd->cspec->sendgrhchk = kzalloc(sbufcnt *
 		sizeof(*dd->cspec->sendgrhchk), GFP_KERNEL);
-	dd->cspec->sendibchk = kmalloc(sbufcnt *
+	dd->cspec->sendibchk = kzalloc(sbufcnt *
 		sizeof(*dd->cspec->sendibchk), GFP_KERNEL);
 	if (!dd->cspec->sendchkenable || !dd->cspec->sendgrhchk ||
 		!dd->cspec->sendibchk) {

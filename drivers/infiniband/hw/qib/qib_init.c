@@ -988,7 +988,7 @@ static void qib_verify_pioperf(struct qib_devdata *dd)
 	 */
 	cnt = 1024;
 
-	addr = vmalloc(cnt);
+	addr = vzalloc(cnt);
 	if (!addr)
 		goto done;
 
@@ -1667,9 +1667,9 @@ int qib_setup_eagerbufs(struct qib_ctxtdata *rcd)
 	}
 	if (!rcd->rcvegrbuf_phys) {
 		rcd->rcvegrbuf_phys =
-			kmalloc_array_node(chunk,
-					   sizeof(rcd->rcvegrbuf_phys[0]),
-					   GFP_KERNEL, rcd->node_id);
+			kcalloc_node(chunk,
+				     sizeof(rcd->rcvegrbuf_phys[0]),
+				     GFP_KERNEL, rcd->node_id);
 		if (!rcd->rcvegrbuf_phys)
 			goto bail_rcvegrbuf;
 	}
