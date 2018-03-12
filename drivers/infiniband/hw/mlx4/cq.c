@@ -189,7 +189,7 @@ struct ib_cq *mlx4_ib_create_cq(struct ib_device *ibdev,
 	if (attr->flags & ~CQ_CREATE_FLAGS_SUPPORTED)
 		return ERR_PTR(-EINVAL);
 
-	cq = kmalloc(sizeof *cq, GFP_KERNEL);
+	cq = kzalloc(sizeof *cq, GFP_KERNEL);
 	if (!cq)
 		return ERR_PTR(-ENOMEM);
 
@@ -297,7 +297,7 @@ static int mlx4_alloc_resize_buf(struct mlx4_ib_dev *dev, struct mlx4_ib_cq *cq,
 	if (cq->resize_buf)
 		return -EBUSY;
 
-	cq->resize_buf = kmalloc(sizeof *cq->resize_buf, GFP_KERNEL);
+	cq->resize_buf = kzalloc(sizeof(*cq->resize_buf), GFP_KERNEL);
 	if (!cq->resize_buf)
 		return -ENOMEM;
 
@@ -325,7 +325,7 @@ static int mlx4_alloc_resize_umem(struct mlx4_ib_dev *dev, struct mlx4_ib_cq *cq
 	if (ib_copy_from_udata(&ucmd, udata, sizeof ucmd))
 		return -EFAULT;
 
-	cq->resize_buf = kmalloc(sizeof *cq->resize_buf, GFP_KERNEL);
+	cq->resize_buf = kzalloc(sizeof(*cq->resize_buf), GFP_KERNEL);
 	if (!cq->resize_buf)
 		return -ENOMEM;
 

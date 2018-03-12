@@ -583,7 +583,7 @@ struct ib_mw *mlx4_ib_alloc_mw(struct ib_pd *pd, enum ib_mw_type type,
 	struct mlx4_ib_mw *mw;
 	int err;
 
-	mw = kmalloc(sizeof(*mw), GFP_KERNEL);
+	mw = kzalloc(sizeof(*mw), GFP_KERNEL);
 	if (!mw)
 		return ERR_PTR(-ENOMEM);
 
@@ -671,7 +671,7 @@ struct ib_fmr *mlx4_ib_fmr_alloc(struct ib_pd *pd, int acc,
 	struct mlx4_ib_fmr *fmr;
 	int err = -ENOMEM;
 
-	fmr = kmalloc(sizeof *fmr, GFP_KERNEL);
+	fmr = kzalloc(sizeof *fmr, GFP_KERNEL);
 	if (!fmr)
 		return ERR_PTR(-ENOMEM);
 

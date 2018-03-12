@@ -1140,7 +1140,7 @@ void mlx4_ib_mcg_port_cleanup(struct mlx4_ib_demux_ctx *ctx, int destroy_wq)
 		return;
 	}
 
-	work = kmalloc(sizeof *work, GFP_KERNEL);
+	work = kzalloc(sizeof *work, GFP_KERNEL);
 	if (!work) {
 		ctx->flushing = 0;
 		return;

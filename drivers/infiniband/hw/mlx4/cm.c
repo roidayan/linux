@@ -246,7 +246,7 @@ id_map_alloc(struct ib_device *ibdev, int slave_id, u32 sl_cm_id)
 	struct id_map_entry *ent;
 	struct mlx4_ib_sriov *sriov = &to_mdev(ibdev)->sriov;
 
-	ent = kmalloc(sizeof (struct id_map_entry), GFP_KERNEL);
+	ent = kzalloc(sizeof(*ent), GFP_KERNEL);
 	if (!ent)
 		return ERR_PTR(-ENOMEM);
 

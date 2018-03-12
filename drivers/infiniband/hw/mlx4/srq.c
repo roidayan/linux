@@ -88,7 +88,7 @@ struct ib_srq *mlx4_ib_create_srq(struct ib_pd *pd,
 	    init_attr->attr.max_sge >  dev->dev->caps.max_srq_sge)
 		return ERR_PTR(-EINVAL);
 
-	srq = kmalloc(sizeof *srq, GFP_KERNEL);
+	srq = kzalloc(sizeof *srq, GFP_KERNEL);
 	if (!srq)
 		return ERR_PTR(-ENOMEM);
 
@@ -171,7 +171,7 @@ struct ib_srq *mlx4_ib_create_srq(struct ib_pd *pd,
 			goto err_mtt;
 
 		srq->wrid = kvmalloc_array(srq->msrq.max,
-					   sizeof(u64), GFP_KERNEL);
+					   sizeof(u64), GFP_KERNEL | __GFP_ZERO);
 		if (!srq->wrid) {
 			err = -ENOMEM;
 			goto err_mtt;

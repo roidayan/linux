@@ -573,13 +573,13 @@ static int alloc_proxy_bufs(struct ib_device *dev, struct mlx4_ib_qp *qp)
 	int i;
 
 	qp->sqp_proxy_rcv =
-		kmalloc(sizeof (struct mlx4_ib_buf) * qp->rq.wqe_cnt,
+		kzalloc(sizeof (struct mlx4_ib_buf) * qp->rq.wqe_cnt,
 			GFP_KERNEL);
 	if (!qp->sqp_proxy_rcv)
 		return -ENOMEM;
 	for (i = 0; i < qp->rq.wqe_cnt; i++) {
 		qp->sqp_proxy_rcv[i].addr =
-			kmalloc(sizeof (struct mlx4_ib_proxy_sqp_hdr),
+			kzalloc(sizeof (struct mlx4_ib_proxy_sqp_hdr),
 				GFP_KERNEL);
 		if (!qp->sqp_proxy_rcv[i].addr)
 			goto err;
@@ -1217,9 +1217,9 @@ static int create_qp_common(struct mlx4_ib_dev *dev, struct ib_pd *pd,
 			goto err_mtt;
 
 		qp->sq.wrid = kvmalloc_array(qp->sq.wqe_cnt,
-					     sizeof(u64), GFP_KERNEL);
+					     sizeof(u64), GFP_KERNEL | __GFP_ZERO);
 		qp->rq.wrid = kvmalloc_array(qp->rq.wqe_cnt,
-					     sizeof(u64), GFP_KERNEL);
+					     sizeof(u64), GFP_KERNEL | __GFP_ZERO);
 		if (!qp->sq.wrid || !qp->rq.wrid) {
 			err = -ENOMEM;
 			goto err_wrid;
@@ -2030,7 +2030,7 @@ static int create_qp_lb_counter(struct mlx4_ib_dev *dev, struct mlx4_ib_qp *qp)
 	if (err)
 		return err;
 
-	new_counter_index = kmalloc(sizeof(*new_counter_index), GFP_KERNEL);
+	new_counter_index = kzalloc(sizeof(*new_counter_index), GFP_KERNEL);
 	if (!new_counter_index) {
 		mlx4_counter_free(dev->dev, tmp_idx);
 		return -ENOMEM;
