@@ -276,6 +276,7 @@ static int pvrdma_register_device(struct pvrdma_dev *dev)
 		if (!dev->srq_tbl)
 			goto err_qp_free;
 	}
+	dev->ib_dev.driver_id = RDMA_DRIVER_VMW_PVRDMA;
 	spin_lock_init(&dev->srq_tbl_lock);
 
 	ret = ib_register_device(&dev->ib_dev, NULL);
@@ -762,7 +763,7 @@ static int pvrdma_netdevice_event(struct notifier_block *this,
 	struct net_device *event_netdev = netdev_notifier_info_to_dev(ptr);
 	struct pvrdma_netdevice_work *netdev_work;
 
-	netdev_work = kmalloc(sizeof(*netdev_work), GFP_ATOMIC);
+	netdev_work = kzalloc(sizeof(*netdev_work), GFP_ATOMIC);
 	if (!netdev_work)
 		return NOTIFY_BAD;
 

@@ -337,7 +337,7 @@ static int qp_open(struct inode *inode, struct file *file)
 	struct c4iw_debugfs_data *qpd;
 	int count = 1;
 
-	qpd = kmalloc(sizeof *qpd, GFP_KERNEL);
+	qpd = kzalloc(sizeof *qpd, GFP_KERNEL);
 	if (!qpd)
 		return -ENOMEM;
 
@@ -349,7 +349,7 @@ static int qp_open(struct inode *inode, struct file *file)
 	spin_unlock_irq(&qpd->devp->lock);
 
 	qpd->bufsize = count * 180;
-	qpd->buf = vmalloc(qpd->bufsize);
+	qpd->buf = vzalloc(qpd->bufsize);
 	if (!qpd->buf) {
 		kfree(qpd);
 		return -ENOMEM;
@@ -426,7 +426,7 @@ static int stag_open(struct inode *inode, struct file *file)
 	int ret = 0;
 	int count = 1;
 
-	stagd = kmalloc(sizeof *stagd, GFP_KERNEL);
+	stagd = kzalloc(sizeof *stagd, GFP_KERNEL);
 	if (!stagd) {
 		ret = -ENOMEM;
 		goto out;
@@ -439,7 +439,7 @@ static int stag_open(struct inode *inode, struct file *file)
 	spin_unlock_irq(&stagd->devp->lock);
 
 	stagd->bufsize = count * 256;
-	stagd->buf = vmalloc(stagd->bufsize);
+	stagd->buf = vzalloc(stagd->bufsize);
 	if (!stagd->buf) {
 		ret = -ENOMEM;
 		goto err1;
@@ -672,7 +672,7 @@ static int ep_open(struct inode *inode, struct file *file)
 	int ret = 0;
 	int count = 1;
 
-	epd = kmalloc(sizeof(*epd), GFP_KERNEL);
+	epd = kzalloc(sizeof(*epd), GFP_KERNEL);
 	if (!epd) {
 		ret = -ENOMEM;
 		goto out;
@@ -687,7 +687,7 @@ static int ep_open(struct inode *inode, struct file *file)
 	spin_unlock_irq(&epd->devp->lock);
 
 	epd->bufsize = count * 240;
-	epd->buf = vmalloc(epd->bufsize);
+	epd->buf = vzalloc(epd->bufsize);
 	if (!epd->buf) {
 		ret = -ENOMEM;
 		goto err1;

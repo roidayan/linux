@@ -1290,7 +1290,7 @@ int ocrdma_mbx_rdma_stats(struct ocrdma_dev *dev, bool reset)
 	struct ocrdma_rdma_stats_resp *old_stats;
 	int status;
 
-	old_stats = kmalloc(sizeof(*old_stats), GFP_KERNEL);
+	old_stats = kzalloc(sizeof(*old_stats), GFP_KERNEL);
 	if (old_stats == NULL)
 		return -ENOMEM;
 

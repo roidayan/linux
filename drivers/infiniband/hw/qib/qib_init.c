@@ -678,11 +678,9 @@ int qib_init(struct qib_devdata *dd, int reinit)
 		lastfail = qib_create_rcvhdrq(dd, rcd);
 		if (!lastfail)
 			lastfail = qib_setup_eagerbufs(rcd);
-		if (lastfail) {
+		if (lastfail)
 			qib_dev_err(dd,
 				"failed to allocate kernel ctxt's rcvhdrq and/or egr bufs\n");
-			continue;
-		}
 	}
 
 	for (pidx = 0; pidx < dd->num_pports; ++pidx) {
@@ -990,7 +988,7 @@ static void qib_verify_pioperf(struct qib_devdata *dd)
 	 */
 	cnt = 1024;
 
-	addr = vmalloc(cnt);
+	addr = vzalloc(cnt);
 	if (!addr)
 		goto done;
 
@@ -1669,9 +1667,9 @@ int qib_setup_eagerbufs(struct qib_ctxtdata *rcd)
 	}
 	if (!rcd->rcvegrbuf_phys) {
 		rcd->rcvegrbuf_phys =
-			kmalloc_array_node(chunk,
-					   sizeof(rcd->rcvegrbuf_phys[0]),
-					   GFP_KERNEL, rcd->node_id);
+			kcalloc_node(chunk,
+				     sizeof(rcd->rcvegrbuf_phys[0]),
+				     GFP_KERNEL, rcd->node_id);
 		if (!rcd->rcvegrbuf_phys)
 			goto bail_rcvegrbuf;
 	}

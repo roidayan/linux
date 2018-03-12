@@ -142,7 +142,7 @@ struct ib_srq *pvrdma_create_srq(struct ib_pd *pd,
 	if (!atomic_add_unless(&dev->num_srqs, 1, dev->dsr->caps.max_srq))
 		return ERR_PTR(-ENOMEM);
 
-	srq = kmalloc(sizeof(*srq), GFP_KERNEL);
+	srq = kzalloc(sizeof(*srq), GFP_KERNEL);
 	if (!srq) {
 		ret = -ENOMEM;
 		goto err_srq;

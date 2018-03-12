@@ -1658,7 +1658,7 @@ static inline u8 ahg_mode(struct sdma_txreq *tx)
 }
 
 /**
- * __sdma_txclean() - clean tx of mappings, descp *kmalloc's
+ * __sdma_txclean() - clean tx of mappings, descp *kzalloc's
  * @dd: hfi1_devdata for unmapping
  * @tx: tx request to clean
  *
@@ -1688,7 +1688,7 @@ void __sdma_txclean(
 	}
 	kfree(tx->coalesce_buf);
 	tx->coalesce_buf = NULL;
-	/* kmalloc'ed descp */
+	/* kzalloc'ed descp */
 	if (unlikely(tx->desc_limit > ARRAY_SIZE(tx->descs))) {
 		tx->desc_limit = ARRAY_SIZE(tx->descs);
 		kfree(tx->descp);
@@ -3067,7 +3067,7 @@ static int _extend_sdma_tx_descs(struct hfi1_devdata *dd, struct sdma_txreq *tx)
 			tx->desc_limit = MAX_DESC;
 		} else if (!tx->coalesce_buf) {
 			/* allocate coalesce buffer with space for padding */
-			tx->coalesce_buf = kmalloc(tx->tlen + sizeof(u32),
+			tx->coalesce_buf = kzalloc(tx->tlen + sizeof(u32),
 						   GFP_ATOMIC);
 			if (!tx->coalesce_buf)
 				goto enomem;
@@ -3079,10 +3079,7 @@ static int _extend_sdma_tx_descs(struct hfi1_devdata *dd, struct sdma_txreq *tx)
 	if (unlikely(tx->num_desc == MAX_DESC))
 		goto enomem;
 
-	tx->descp = kmalloc_array(
-			MAX_DESC,
-			sizeof(struct sdma_desc),
-			GFP_ATOMIC);
+	tx->descp = kcalloc(MAX_DESC, sizeof(struct sdma_desc), GFP_ATOMIC);
 	if (!tx->descp)
 		goto enomem;
 

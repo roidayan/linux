@@ -290,7 +290,7 @@ int mlx5_query_ext_port_caps(struct mlx5_ib_dev *dev, u8 port)
 	u16 packet_error;
 
 	in_mad  = kzalloc(sizeof(*in_mad), GFP_KERNEL);
-	out_mad = kmalloc(sizeof(*out_mad), GFP_KERNEL);
+	out_mad = kzalloc(sizeof(*out_mad), GFP_KERNEL);
 	if (!in_mad || !out_mad)
 		goto out;
 
@@ -337,7 +337,7 @@ int mlx5_query_mad_ifc_system_image_guid(struct ib_device *ibdev,
 	struct ib_smp *out_mad = NULL;
 	int err = -ENOMEM;
 
-	out_mad = kmalloc(sizeof(*out_mad), GFP_KERNEL);
+	out_mad = kzalloc(sizeof(*out_mad), GFP_KERNEL);
 	if (!out_mad)
 		return -ENOMEM;
 
@@ -359,7 +359,7 @@ int mlx5_query_mad_ifc_max_pkeys(struct ib_device *ibdev,
 	struct ib_smp *out_mad = NULL;
 	int err = -ENOMEM;
 
-	out_mad = kmalloc(sizeof(*out_mad), GFP_KERNEL);
+	out_mad = kzalloc(sizeof(*out_mad), GFP_KERNEL);
 	if (!out_mad)
 		return -ENOMEM;
 
@@ -381,7 +381,7 @@ int mlx5_query_mad_ifc_vendor_id(struct ib_device *ibdev,
 	struct ib_smp *out_mad = NULL;
 	int err = -ENOMEM;
 
-	out_mad = kmalloc(sizeof(*out_mad), GFP_KERNEL);
+	out_mad = kzalloc(sizeof(*out_mad), GFP_KERNEL);
 	if (!out_mad)
 		return -ENOMEM;
 
@@ -404,7 +404,7 @@ int mlx5_query_mad_ifc_node_desc(struct mlx5_ib_dev *dev, char *node_desc)
 	int err = -ENOMEM;
 
 	in_mad  = kzalloc(sizeof(*in_mad), GFP_KERNEL);
-	out_mad = kmalloc(sizeof(*out_mad), GFP_KERNEL);
+	out_mad = kzalloc(sizeof(*out_mad), GFP_KERNEL);
 	if (!in_mad || !out_mad)
 		goto out;
 
@@ -429,7 +429,7 @@ int mlx5_query_mad_ifc_node_guid(struct mlx5_ib_dev *dev, __be64 *node_guid)
 	int err = -ENOMEM;
 
 	in_mad  = kzalloc(sizeof(*in_mad), GFP_KERNEL);
-	out_mad = kmalloc(sizeof(*out_mad), GFP_KERNEL);
+	out_mad = kzalloc(sizeof(*out_mad), GFP_KERNEL);
 	if (!in_mad || !out_mad)
 		goto out;
 
@@ -455,7 +455,7 @@ int mlx5_query_mad_ifc_pkey(struct ib_device *ibdev, u8 port, u16 index,
 	int err = -ENOMEM;
 
 	in_mad  = kzalloc(sizeof(*in_mad), GFP_KERNEL);
-	out_mad = kmalloc(sizeof(*out_mad), GFP_KERNEL);
+	out_mad = kzalloc(sizeof(*out_mad), GFP_KERNEL);
 	if (!in_mad || !out_mad)
 		goto out;
 
@@ -484,7 +484,7 @@ int mlx5_query_mad_ifc_gids(struct ib_device *ibdev, u8 port, int index,
 	int err = -ENOMEM;
 
 	in_mad  = kzalloc(sizeof(*in_mad), GFP_KERNEL);
-	out_mad = kmalloc(sizeof(*out_mad), GFP_KERNEL);
+	out_mad = kzalloc(sizeof(*out_mad), GFP_KERNEL);
 	if (!in_mad || !out_mad)
 		goto out;
 
@@ -532,7 +532,7 @@ int mlx5_query_mad_ifc_port(struct ib_device *ibdev, u8 port,
 	}
 
 	in_mad  = kzalloc(sizeof(*in_mad), GFP_KERNEL);
-	out_mad = kmalloc(sizeof(*out_mad), GFP_KERNEL);
+	out_mad = kzalloc(sizeof(*out_mad), GFP_KERNEL);
 	if (!in_mad || !out_mad)
 		goto out;
 

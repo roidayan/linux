@@ -153,7 +153,7 @@ static int mthca_buddy_init(struct mthca_buddy *buddy, int max_order)
 
 	for (i = 0; i <= buddy->max_order; ++i) {
 		s = BITS_TO_LONGS(1 << (buddy->max_order - i));
-		buddy->bits[i] = kmalloc(s * sizeof (long), GFP_KERNEL);
+		buddy->bits[i] = kzalloc(s * sizeof (long), GFP_KERNEL);
 		if (!buddy->bits[i])
 			goto err_out_free;
 		bitmap_zero(buddy->bits[i],
@@ -214,7 +214,7 @@ static struct mthca_mtt *__mthca_alloc_mtt(struct mthca_dev *dev, int size,
 	if (size <= 0)
 		return ERR_PTR(-EINVAL);
 
-	mtt = kmalloc(sizeof *mtt, GFP_KERNEL);
+	mtt = kzalloc(sizeof *mtt, GFP_KERNEL);
 	if (!mtt)
 		return ERR_PTR(-ENOMEM);
 

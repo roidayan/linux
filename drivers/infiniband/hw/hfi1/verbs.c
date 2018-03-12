@@ -1718,7 +1718,7 @@ static int init_cntr_names(const char *names_in,
 		if (names_in[i] == '\n')
 			n++;
 
-	names_out = kmalloc((n + num_extra_names) * sizeof(char *) + names_len,
+	names_out = kzalloc((n + num_extra_names) * sizeof(char *) + names_len,
 			    GFP_KERNEL);
 	if (!names_out) {
 		*num_cntrs = 0;
@@ -1960,7 +1960,7 @@ int hfi1_register_ib_device(struct hfi1_devdata *dd)
 			      i,
 			      ppd->pkeys);
 
-	ret = rvt_register_device(&dd->verbs_dev.rdi);
+	ret = rvt_register_device(&dd->verbs_dev.rdi, RDMA_DRIVER_HFI1);
 	if (ret)
 		goto err_verbs_txreq;
 

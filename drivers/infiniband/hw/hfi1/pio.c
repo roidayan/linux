@@ -452,8 +452,7 @@ int init_send_contexts(struct hfi1_devdata *dd)
 	if (ret)
 		return ret;
 
-	dd->hw_to_sw = kmalloc_array(TXE_NUM_CONTEXTS, sizeof(u8),
-					GFP_KERNEL);
+	dd->hw_to_sw = kcalloc(TXE_NUM_CONTEXTS, sizeof(u8), GFP_KERNEL);
 	dd->send_contexts = kcalloc(dd->num_send_contexts,
 				    sizeof(struct send_context_info),
 				    GFP_KERNEL);

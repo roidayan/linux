@@ -55,7 +55,7 @@ int mlx5_ib_db_map_user(struct mlx5_ib_ucontext *context, unsigned long virt,
 		if (page->user_virt == (virt & PAGE_MASK))
 			goto found;
 
-	page = kmalloc(sizeof(*page), GFP_KERNEL);
+	page = kzalloc(sizeof(*page), GFP_KERNEL);
 	if (!page) {
 		err = -ENOMEM;
 		goto out;

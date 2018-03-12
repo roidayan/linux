@@ -514,7 +514,7 @@ static int set_guid_rec(struct ib_device *ibdev,
 		goto new_schedule;
 	}
 
-	callback_context = kmalloc(sizeof *callback_context, GFP_KERNEL);
+	callback_context = kzalloc(sizeof(*callback_context), GFP_KERNEL);
 	if (!callback_context) {
 		err = -ENOMEM;
 		resched_delay = HZ * 5;

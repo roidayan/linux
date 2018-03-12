@@ -115,12 +115,12 @@ static int rxe_mem_alloc(struct rxe_dev *rxe, struct rxe_mem *mem, int num_buf)
 
 	num_map = (num_buf + RXE_BUF_PER_MAP - 1) / RXE_BUF_PER_MAP;
 
-	mem->map = kmalloc_array(num_map, sizeof(*map), GFP_KERNEL);
+	mem->map = kcalloc(num_map, sizeof(*map), GFP_KERNEL);
 	if (!mem->map)
 		goto err1;
 
 	for (i = 0; i < num_map; i++) {
-		mem->map[i] = kmalloc(sizeof(**map), GFP_KERNEL);
+		mem->map[i] = kzalloc(sizeof(**map), GFP_KERNEL);
 		if (!mem->map[i])
 			goto err2;
 	}

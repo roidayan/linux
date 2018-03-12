@@ -67,7 +67,7 @@ struct qib_user_sdma_pkt {
 	struct list_head list;  /* list element */
 
 	u8  tiddma;		/* if this is NEW tid-sdma */
-	u8  largepkt;		/* this is large pkt from kmalloc */
+	u8  largepkt;		/* this is large pkt from kzalloc */
 	u16 frag_size;		/* frag size used by PSM */
 	u16 index;              /* last header index or push index */
 	u16 naddr;              /* dimension of addr (1..3) ... */
@@ -183,7 +183,7 @@ struct qib_user_sdma_queue *
 qib_user_sdma_queue_create(struct device *dev, int unit, int ctxt, int sctxt)
 {
 	struct qib_user_sdma_queue *pq =
-		kmalloc(sizeof(struct qib_user_sdma_queue), GFP_KERNEL);
+		kzalloc(sizeof(struct qib_user_sdma_queue), GFP_KERNEL);
 	struct qib_user_sdma_rb_node *sdma_rb_node;
 
 	if (!pq)
@@ -227,7 +227,7 @@ qib_user_sdma_queue_create(struct device *dev, int unit, int ctxt, int sctxt)
 	} else {
 		int ret;
 
-		sdma_rb_node = kmalloc(sizeof(
+		sdma_rb_node = kzalloc(sizeof(
 			struct qib_user_sdma_rb_node), GFP_KERNEL);
 		if (!sdma_rb_node)
 			goto err_rb;
@@ -286,7 +286,7 @@ static void *qib_user_sdma_alloc_header(struct qib_user_sdma_queue *pq,
 		hdr = NULL;
 
 	if (!hdr) {
-		hdr = kmalloc(len, GFP_KERNEL);
+		hdr = kzalloc(len, GFP_KERNEL);
 		if (!hdr)
 			return NULL;
 
@@ -382,7 +382,7 @@ next_fragment:
 	/* If there is no more byte togo. (lastdesc==1) */
 	if (pkt->bytes_togo == 0) {
 		/* The packet is done, header is not dma mapped yet.
-		 * it should be from kmalloc */
+		 * it should be from kzalloc */
 		if (!pkt->addr[pkt->index].addr) {
 			pkt->addr[pkt->index].addr =
 				dma_map_single(&dd->pcidev->dev,
@@ -473,7 +473,7 @@ next_fragment:
 		le16_to_cpu(hdr->iph.pkt_flags));
 
 	/* The packet is done, header is not dma mapped yet.
-	 * it should be from kmalloc */
+	 * it should be from kzalloc */
 	if (!pkt->addr[pkt->index].addr) {
 		pkt->addr[pkt->index].addr =
 			dma_map_single(&dd->pcidev->dev,
@@ -641,7 +641,7 @@ static void qib_user_sdma_free_pkt_frag(struct device *dev,
 	} else if (pkt->addr[i].kvaddr) {
 		/* for headers */
 		if (pkt->addr[i].dma_mapped) {
-			/* from kmalloc & dma mapped */
+			/* from kzalloc & dma mapped */
 			dma_unmap_single(dev,
 				       pkt->addr[i].addr,
 				       pkt->addr[i].dma_length,
@@ -652,7 +652,7 @@ static void qib_user_sdma_free_pkt_frag(struct device *dev,
 			dma_pool_free(pq->header_cache,
 			      pkt->addr[i].kvaddr, pkt->addr[i].addr);
 		} else {
-			/* from kmalloc but not dma mapped */
+			/* from kzalloc but not dma mapped */
 			kfree(pkt->addr[i].kvaddr);
 		}
 	}
@@ -926,7 +926,7 @@ static int qib_user_sdma_queue_pkts(const struct qib_devdata *dd,
 			else
 				tidsmsize = 0;
 
-			pkt = kmalloc(pktsize+tidsmsize, GFP_KERNEL);
+			pkt = kzalloc(pktsize+tidsmsize, GFP_KERNEL);
 			if (!pkt) {
 				ret = -ENOMEM;
 				goto free_pbc;
@@ -997,7 +997,7 @@ static int qib_user_sdma_queue_pkts(const struct qib_devdata *dd,
 			if (dma_addr == 0) {
 				/*
 				 * the header is not dma mapped yet.
-				 * it should be from kmalloc.
+				 * it should be from kzalloc.
 				 */
 				dma_addr = dma_map_single(&dd->pcidev->dev,
 					pbc, len, DMA_TO_DEVICE);

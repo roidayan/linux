@@ -602,7 +602,7 @@ static int bnxt_qplib_alloc_pd_tbl(struct bnxt_qplib_res *res,
 	bytes = max >> 3;
 	if (!bytes)
 		bytes = 1;
-	pdt->tbl = kmalloc(bytes, GFP_KERNEL);
+	pdt->tbl = kzalloc(bytes, GFP_KERNEL);
 	if (!pdt->tbl)
 		return -ENOMEM;
 
@@ -712,7 +712,7 @@ static int bnxt_qplib_alloc_dpi_tbl(struct bnxt_qplib_res     *res,
 	if (!bytes)
 		bytes = 1;
 
-	dpit->tbl = kmalloc(bytes, GFP_KERNEL);
+	dpit->tbl = kzalloc(bytes, GFP_KERNEL);
 	if (!dpit->tbl) {
 		kfree(dpit->app_tbl);
 		dpit->app_tbl = NULL;

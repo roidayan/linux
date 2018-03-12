@@ -407,6 +407,9 @@ struct ib_mr *mlx4_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 		goto err_mr;
 
 	mr->ibmr.rkey = mr->ibmr.lkey = mr->mmr.key;
+	mr->ibmr.length = length;
+	mr->ibmr.iova = virt_addr;
+	mr->ibmr.page_size = 1U << shift;
 
 	return &mr->ibmr;
 
@@ -580,7 +583,7 @@ struct ib_mw *mlx4_ib_alloc_mw(struct ib_pd *pd, enum ib_mw_type type,
 	struct mlx4_ib_mw *mw;
 	int err;
 
-	mw = kmalloc(sizeof(*mw), GFP_KERNEL);
+	mw = kzalloc(sizeof(*mw), GFP_KERNEL);
 	if (!mw)
 		return ERR_PTR(-ENOMEM);
 
@@ -668,7 +671,7 @@ struct ib_fmr *mlx4_ib_fmr_alloc(struct ib_pd *pd, int acc,
 	struct mlx4_ib_fmr *fmr;
 	int err = -ENOMEM;
 
-	fmr = kmalloc(sizeof *fmr, GFP_KERNEL);
+	fmr = kzalloc(sizeof *fmr, GFP_KERNEL);
 	if (!fmr)
 		return ERR_PTR(-ENOMEM);
 

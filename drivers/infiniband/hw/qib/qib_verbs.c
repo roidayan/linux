@@ -870,7 +870,7 @@ static int qib_verbs_send_dma(struct rvt_qp *qp, struct ib_header *hdr,
 
 	/* Allocate a buffer and copy the header and payload to it. */
 	tx->hdr_dwords = plen + 1;
-	phdr = kmalloc(tx->hdr_dwords << 2, GFP_ATOMIC);
+	phdr = kzalloc(tx->hdr_dwords << 2, GFP_ATOMIC);
 	if (!phdr)
 		goto err_tx;
 	phdr->pbc[0] = cpu_to_le32(plen);
@@ -1646,7 +1646,7 @@ int qib_register_ib_device(struct qib_devdata *dd)
 			      dd->rcd[ctxt]->pkeys);
 	}
 
-	ret = rvt_register_device(&dd->verbs_dev.rdi);
+	ret = rvt_register_device(&dd->verbs_dev.rdi, RDMA_DRIVER_QIB);
 	if (ret)
 		goto err_tx;
 

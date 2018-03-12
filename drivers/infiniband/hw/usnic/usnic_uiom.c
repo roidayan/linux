@@ -155,7 +155,7 @@ static int usnic_uiom_get_pages(unsigned long addr, size_t size, int writable,
 		off = 0;
 
 		while (ret) {
-			chunk = kmalloc(sizeof(*chunk) +
+			chunk = kzalloc(sizeof(*chunk) +
 					sizeof(struct scatterlist) *
 					min_t(int, ret, USNIC_UIOM_PAGE_CHUNK),
 					GFP_KERNEL);
@@ -357,7 +357,7 @@ struct usnic_uiom_reg *usnic_uiom_reg_get(struct usnic_uiom_pd *pd,
 	vpn_start = (addr & PAGE_MASK) >> PAGE_SHIFT;
 	vpn_last = vpn_start + npages - 1;
 
-	uiomr = kmalloc(sizeof(*uiomr), GFP_KERNEL);
+	uiomr = kzalloc(sizeof(*uiomr), GFP_KERNEL);
 	if (!uiomr)
 		return ERR_PTR(-ENOMEM);
 

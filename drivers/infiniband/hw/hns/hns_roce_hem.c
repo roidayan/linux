@@ -204,7 +204,7 @@ static struct hns_roce_hem *hns_roce_alloc_hem(struct hns_roce_dev *hr_dev,
 
 	WARN_ON(gfp_mask & __GFP_HIGHMEM);
 
-	hem = kmalloc(sizeof(*hem),
+	hem = kzalloc(sizeof(*hem),
 		      gfp_mask & ~(__GFP_HIGHMEM | __GFP_NOWARN));
 	if (!hem)
 		return NULL;
@@ -216,7 +216,7 @@ static struct hns_roce_hem *hns_roce_alloc_hem(struct hns_roce_dev *hr_dev,
 
 	while (npages > 0) {
 		if (!chunk) {
-			chunk = kmalloc(sizeof(*chunk),
+			chunk = kzalloc(sizeof(*chunk),
 				gfp_mask & ~(__GFP_HIGHMEM | __GFP_NOWARN));
 			if (!chunk)
 				goto fail;

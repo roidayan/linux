@@ -219,8 +219,6 @@ static int mlx4_ib_update_gids_v1_v2(struct gid_entry *gids,
 			gid_tbl[i].version = 2;
 			if (!ipv6_addr_v4mapped((struct in6_addr *)&gids[i].gid))
 				gid_tbl[i].type = 1;
-			else
-				memset(&gid_tbl[i].gid, 0, 12);
 		}
 	}
 
@@ -289,7 +287,7 @@ static int mlx4_ib_add_gid(struct ib_device *device,
 		if (free < 0) {
 			ret = -ENOSPC;
 		} else {
-			port_gid_table->gids[free].ctx = kmalloc(sizeof(*port_gid_table->gids[free].ctx), GFP_ATOMIC);
+			port_gid_table->gids[free].ctx = kzalloc(sizeof(*port_gid_table->gids[free].ctx), GFP_ATOMIC);
 			if (!port_gid_table->gids[free].ctx) {
 				ret = -ENOMEM;
 			} else {
@@ -307,7 +305,7 @@ static int mlx4_ib_add_gid(struct ib_device *device,
 		ctx->refcount++;
 	}
 	if (!ret && hw_update) {
-		gids = kmalloc(sizeof(*gids) * MLX4_MAX_PORT_GIDS, GFP_ATOMIC);
+		gids = kzalloc(sizeof(*gids) * MLX4_MAX_PORT_GIDS, GFP_ATOMIC);
 		if (!gids) {
 			ret = -ENOMEM;
 		} else {
@@ -362,12 +360,17 @@ static int mlx4_ib_del_gid(struct ib_device *device,
 	if (!ret && hw_update) {
 		int i;
 
-		gids = kmalloc(sizeof(*gids) * MLX4_MAX_PORT_GIDS, GFP_ATOMIC);
+		gids = kzalloc(sizeof(*gids) * MLX4_MAX_PORT_GIDS, GFP_ATOMIC);
 		if (!gids) {
 			ret = -ENOMEM;
 		} else {
-			for (i = 0; i < MLX4_MAX_PORT_GIDS; i++)
-				memcpy(&gids[i].gid, &port_gid_table->gids[i].gid, sizeof(union ib_gid));
+			for (i = 0; i < MLX4_MAX_PORT_GIDS; i++) {
+				memcpy(&gids[i].gid,
+				       &port_gid_table->gids[i].gid,
+				       sizeof(union ib_gid));
+				gids[i].gid_type =
+				    port_gid_table->gids[i].gid_type;
+			}
 		}
 	}
 	spin_unlock_bh(&iboe->lock);
@@ -457,7 +460,7 @@ static int mlx4_ib_query_device(struct ib_device *ibdev,
 	resp.response_length = offsetof(typeof(resp), response_length) +
 		sizeof(resp.response_length);
 	in_mad  = kzalloc(sizeof *in_mad, GFP_KERNEL);
-	out_mad = kmalloc(sizeof *out_mad, GFP_KERNEL);
+	out_mad = kzalloc(sizeof *out_mad, GFP_KERNEL);
 	err = -ENOMEM;
 	if (!in_mad || !out_mad)
 		goto out;
@@ -553,14 +556,19 @@ static int mlx4_ib_query_device(struct ib_device *ibdev,
 	props->timestamp_mask = 0xFFFFFFFFFFFFULL;
 	props->max_ah = INT_MAX;
 
-	if ((dev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_RSS) &&
-	    (mlx4_ib_port_link_layer(ibdev, 1) == IB_LINK_LAYER_ETHERNET ||
-	     mlx4_ib_port_link_layer(ibdev, 2) == IB_LINK_LAYER_ETHERNET)) {
-		props->rss_caps.max_rwq_indirection_tables = props->max_qp;
-		props->rss_caps.max_rwq_indirection_table_size =
-			dev->dev->caps.max_rss_tbl_sz;
-		props->rss_caps.supported_qpts = 1 << IB_QPT_RAW_PACKET;
-		props->max_wq_type_rq = props->max_qp;
+	if (mlx4_ib_port_link_layer(ibdev, 1) == IB_LINK_LAYER_ETHERNET ||
+	    mlx4_ib_port_link_layer(ibdev, 2) == IB_LINK_LAYER_ETHERNET) {
+		if (dev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_RSS) {
+			props->rss_caps.max_rwq_indirection_tables =
+				props->max_qp;
+			props->rss_caps.max_rwq_indirection_table_size =
+				dev->dev->caps.max_rss_tbl_sz;
+			props->rss_caps.supported_qpts = 1 << IB_QPT_RAW_PACKET;
+			props->max_wq_type_rq = props->max_qp;
+		}
+
+		if (dev->dev->caps.flags & MLX4_DEV_CAP_FLAG_FCS_KEEP)
+			props->raw_packet_caps |= IB_RAW_PACKET_CAP_SCATTER_FCS;
 	}
 
 	props->cq_caps.max_cq_moderation_count = MLX4_MAX_CQ_COUNT;
@@ -584,8 +592,9 @@ static int mlx4_ib_query_device(struct ib_device *ibdev,
 			sizeof(struct mlx4_wqe_data_seg);
 	}
 
-	if (uhw->outlen >= resp.response_length + sizeof(resp.rss_caps)) {
-		resp.response_length += sizeof(resp.rss_caps);
+	if (uhw->outlen >= resp.response_length + sizeof(resp.rss_caps) +
+	    sizeof(resp.reserved)) {
+		resp.response_length += sizeof(resp.rss_caps) + sizeof(resp.reserved);
 		if (props->rss_caps.supported_qpts) {
 			resp.rss_caps.rx_hash_function =
 				MLX4_IB_RX_HASH_FUNC_TOEPLITZ;
@@ -604,6 +613,20 @@ static int mlx4_ib_query_device(struct ib_device *ibdev,
 			    MLX4_TUNNEL_OFFLOAD_MODE_VXLAN)
 				resp.rss_caps.rx_hash_fields_mask |=
 					MLX4_IB_RX_HASH_INNER;
+		}
+	}
+
+	if (uhw->outlen >= resp.response_length + sizeof(resp.tso_caps)) {
+		resp.response_length += sizeof(resp.tso_caps);
+
+		if (dev->dev->caps.max_gso_sz &&
+		    ((mlx4_ib_port_link_layer(ibdev, 1) ==
+		    IB_LINK_LAYER_ETHERNET) ||
+		    (mlx4_ib_port_link_layer(ibdev, 2) ==
+		    IB_LINK_LAYER_ETHERNET))) {
+			resp.tso_caps.max_tso = dev->dev->caps.max_gso_sz;
+			resp.tso_caps.supported_qpts |=
+				1 << IB_QPT_RAW_PACKET;
 		}
 	}
 
@@ -638,7 +661,7 @@ static int ib_link_query_port(struct ib_device *ibdev, u8 port,
 	int err = -ENOMEM;
 
 	in_mad  = kzalloc(sizeof *in_mad, GFP_KERNEL);
-	out_mad = kmalloc(sizeof *out_mad, GFP_KERNEL);
+	out_mad = kzalloc(sizeof *out_mad, GFP_KERNEL);
 	if (!in_mad || !out_mad)
 		goto out;
 
@@ -814,7 +837,7 @@ int __mlx4_ib_query_gid(struct ib_device *ibdev, u8 port, int index,
 	int mad_ifc_flags = MLX4_MAD_IFC_IGNORE_KEYS;
 
 	in_mad  = kzalloc(sizeof *in_mad, GFP_KERNEL);
-	out_mad = kmalloc(sizeof *out_mad, GFP_KERNEL);
+	out_mad = kzalloc(sizeof *out_mad, GFP_KERNEL);
 	if (!in_mad || !out_mad)
 		goto out;
 
@@ -897,7 +920,7 @@ static int mlx4_ib_query_sl2vl(struct ib_device *ibdev, u8 port, u64 *sl2vl_tbl)
 	}
 
 	in_mad  = kzalloc(sizeof(*in_mad), GFP_KERNEL);
-	out_mad = kmalloc(sizeof(*out_mad), GFP_KERNEL);
+	out_mad = kzalloc(sizeof(*out_mad), GFP_KERNEL);
 	if (!in_mad || !out_mad)
 		goto out;
 
@@ -951,7 +974,7 @@ int __mlx4_ib_query_pkey(struct ib_device *ibdev, u8 port, u16 index,
 	int err = -ENOMEM;
 
 	in_mad  = kzalloc(sizeof *in_mad, GFP_KERNEL);
-	out_mad = kmalloc(sizeof *out_mad, GFP_KERNEL);
+	out_mad = kzalloc(sizeof *out_mad, GFP_KERNEL);
 	if (!in_mad || !out_mad)
 		goto out;
 
@@ -1327,7 +1350,7 @@ static struct ib_pd *mlx4_ib_alloc_pd(struct ib_device *ibdev,
 	struct mlx4_ib_pd *pd;
 	int err;
 
-	pd = kmalloc(sizeof *pd, GFP_KERNEL);
+	pd = kzalloc(sizeof(*pd), GFP_KERNEL);
 	if (!pd)
 		return ERR_PTR(-ENOMEM);
 
@@ -1343,7 +1366,6 @@ static struct ib_pd *mlx4_ib_alloc_pd(struct ib_device *ibdev,
 			kfree(pd);
 			return ERR_PTR(-EFAULT);
 		}
-
 	return &pd->ibpd;
 }
 
@@ -1366,7 +1388,7 @@ static struct ib_xrcd *mlx4_ib_alloc_xrcd(struct ib_device *ibdev,
 	if (!(to_mdev(ibdev)->dev->caps.flags & MLX4_DEV_CAP_FLAG_XRC))
 		return ERR_PTR(-ENOSYS);
 
-	xrcd = kmalloc(sizeof *xrcd, GFP_KERNEL);
+	xrcd = kzalloc(sizeof *xrcd, GFP_KERNEL);
 	if (!xrcd)
 		return ERR_PTR(-ENOMEM);
 
@@ -1857,6 +1879,9 @@ static struct ib_flow *mlx4_ib_create_flow(struct ib_qp *qp,
 	if (flow_attr->port < 1 || flow_attr->port > qp->device->phys_port_cnt)
 		return ERR_PTR(-EINVAL);
 
+	if (flow_attr->flags & ~IB_FLOW_ATTR_FLAGS_DONT_TRAP)
+		return ERR_PTR(-EOPNOTSUPP);
+
 	if ((flow_attr->flags & IB_FLOW_ATTR_FLAGS_DONT_TRAP) &&
 	    (flow_attr->type != IB_FLOW_ATTR_NORMAL))
 		return ERR_PTR(-EOPNOTSUPP);
@@ -2000,7 +2025,7 @@ static int mlx4_ib_mcg_attach(struct ib_qp *ibqp, union ib_gid *gid, u16 lid)
 
 	if (mdev->dev->caps.steering_mode ==
 	    MLX4_STEERING_MODE_DEVICE_MANAGED) {
-		ib_steering = kmalloc(sizeof(*ib_steering), GFP_KERNEL);
+		ib_steering = kzalloc(sizeof(*ib_steering), GFP_KERNEL);
 		if (!ib_steering)
 			return -ENOMEM;
 	}
@@ -2137,7 +2162,7 @@ static int init_node_data(struct mlx4_ib_dev *dev)
 	int err = -ENOMEM;
 
 	in_mad  = kzalloc(sizeof *in_mad, GFP_KERNEL);
-	out_mad = kmalloc(sizeof *out_mad, GFP_KERNEL);
+	out_mad = kzalloc(sizeof *out_mad, GFP_KERNEL);
 	if (!in_mad || !out_mad)
 		goto out;
 
@@ -2854,7 +2879,7 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 			counter_index = mlx4_get_default_counter_index(dev,
 								       i + 1);
 		}
-		new_counter_index = kmalloc(sizeof(*new_counter_index),
+		new_counter_index = kzalloc(sizeof(*new_counter_index),
 					    GFP_KERNEL);
 		if (!new_counter_index) {
 			if (allocated)
@@ -2872,7 +2897,7 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 	if (mlx4_is_bonded(dev))
 		for (i = 1; i < ibdev->num_ports ; ++i) {
 			new_counter_index =
-					kmalloc(sizeof(struct counter_index),
+					kzalloc(sizeof(struct counter_index),
 						GFP_KERNEL);
 			if (!new_counter_index)
 				goto err_counter;
@@ -2903,7 +2928,7 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 			goto err_counter;
 
 		ibdev->ib_uc_qpns_bitmap =
-			kmalloc(BITS_TO_LONGS(ibdev->steer_qpn_count) *
+			kzalloc(BITS_TO_LONGS(ibdev->steer_qpn_count) *
 				sizeof(long),
 				GFP_KERNEL);
 		if (!ibdev->ib_uc_qpns_bitmap)
@@ -2930,6 +2955,7 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 	if (mlx4_ib_alloc_diag_counters(ibdev))
 		goto err_steer_free_bitmap;
 
+	ibdev->ib_dev.driver_id = RDMA_DRIVER_MLX4;
 	if (ib_register_device(&ibdev->ib_dev, NULL))
 		goto err_diag_counters;
 
@@ -3147,7 +3173,7 @@ static void do_slave_init(struct mlx4_ib_dev *ibdev, int slave, int do_init)
 		return;
 
 	for (i = 0; i < ports; i++) {
-		dm[i] = kmalloc(sizeof (struct mlx4_ib_demux_work), GFP_ATOMIC);
+		dm[i] = kzalloc(sizeof (struct mlx4_ib_demux_work), GFP_ATOMIC);
 		if (!dm[i]) {
 			while (--i >= 0)
 				kfree(dm[i]);
@@ -3302,7 +3328,7 @@ void mlx4_sched_ib_sl2vl_update_work(struct mlx4_ib_dev *ibdev,
 {
 	struct ib_event_work *ew;
 
-	ew = kmalloc(sizeof(*ew), GFP_ATOMIC);
+	ew = kzalloc(sizeof(*ew), GFP_ATOMIC);
 	if (ew) {
 		INIT_WORK(&ew->work, ib_sl2vl_update_work);
 		ew->port = port;
@@ -3323,7 +3349,7 @@ static void mlx4_ib_event(struct mlx4_dev *dev, void *ibdev_ptr,
 	if (mlx4_is_bonded(dev) &&
 	    ((event == MLX4_DEV_EVENT_PORT_UP) ||
 	    (event == MLX4_DEV_EVENT_PORT_DOWN))) {
-		ew = kmalloc(sizeof(*ew), GFP_ATOMIC);
+		ew = kzalloc(sizeof(*ew), GFP_ATOMIC);
 		if (!ew)
 			return;
 		INIT_WORK(&ew->work, handle_bonded_port_state_event);
@@ -3366,7 +3392,7 @@ static void mlx4_ib_event(struct mlx4_dev *dev, void *ibdev_ptr,
 		break;
 
 	case MLX4_DEV_EVENT_PORT_MGMT_CHANGE:
-		ew = kmalloc(sizeof *ew, GFP_ATOMIC);
+		ew = kzalloc(sizeof *ew, GFP_ATOMIC);
 		if (!ew)
 			break;
 

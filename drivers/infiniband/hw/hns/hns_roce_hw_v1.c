@@ -576,12 +576,12 @@ static int hns_roce_db_ext_init(struct hns_roce_dev *hr_dev, u32 sdb_ext_mod,
 	priv = (struct hns_roce_v1_priv *)hr_dev->priv;
 	db = &priv->db_table;
 
-	db->ext_db = kmalloc(sizeof(*db->ext_db), GFP_KERNEL);
+	db->ext_db = kzalloc(sizeof(*db->ext_db), GFP_KERNEL);
 	if (!db->ext_db)
 		return -ENOMEM;
 
 	if (sdb_ext_mod) {
-		db->ext_db->sdb_buf_list = kmalloc(
+		db->ext_db->sdb_buf_list = kzalloc(
 				sizeof(*db->ext_db->sdb_buf_list), GFP_KERNEL);
 		if (!db->ext_db->sdb_buf_list) {
 			ret = -ENOMEM;
@@ -605,7 +605,7 @@ static int hns_roce_db_ext_init(struct hns_roce_dev *hr_dev, u32 sdb_ext_mod,
 				 HNS_ROCE_V1_SDB_ALFUL);
 
 	if (odb_ext_mod) {
-		db->ext_db->odb_buf_list = kmalloc(
+		db->ext_db->odb_buf_list = kzalloc(
 				sizeof(*db->ext_db->odb_buf_list), GFP_KERNEL);
 		if (!db->ext_db->odb_buf_list) {
 			ret = -ENOMEM;
@@ -1687,13 +1687,13 @@ static int hns_roce_v1_post_mbox(struct hns_roce_dev *hr_dev, u64 in_param,
 	roce_set_field(val, ROCEE_MB6_ROCEE_MB_TOKEN_M,
 		       ROCEE_MB6_ROCEE_MB_TOKEN_S, token);
 
-	__raw_writeq(cpu_to_le64(in_param), hcr + 0);
-	__raw_writeq(cpu_to_le64(out_param), hcr + 2);
-	__raw_writel(cpu_to_le32(in_modifier), hcr + 4);
+	writeq(in_param, hcr + 0);
+	writeq(out_param, hcr + 2);
+	writel(in_modifier, hcr + 4);
 	/* Memory barrier */
 	wmb();
 
-	__raw_writel(cpu_to_le32(val), hcr + 5);
+	writel(val, hcr + 5);
 
 	mmiowb();
 

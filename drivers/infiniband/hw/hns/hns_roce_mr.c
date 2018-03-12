@@ -785,7 +785,7 @@ int hns_roce_buf_write_mtt(struct hns_roce_dev *hr_dev,
 	int ret;
 	u32 i;
 
-	page_list = kmalloc_array(buf->npages, sizeof(*page_list), GFP_KERNEL);
+	page_list = kcalloc(buf->npages, sizeof(*page_list), GFP_KERNEL);
 	if (!page_list)
 		return -ENOMEM;
 
@@ -851,7 +851,7 @@ struct ib_mr *hns_roce_get_dma_mr(struct ib_pd *pd, int acc)
 	struct hns_roce_mr *mr;
 	int ret;
 
-	mr = kmalloc(sizeof(*mr), GFP_KERNEL);
+	mr = kzalloc(sizeof(*mr), GFP_KERNEL);
 	if (mr == NULL)
 		return  ERR_PTR(-ENOMEM);
 
@@ -933,7 +933,7 @@ int hns_roce_ib_umem_write_mtt(struct hns_roce_dev *hr_dev,
 		ret = hns_roce_write_mtt(hr_dev, mtt, n, i, pages);
 
 out:
-	free_page((unsigned long) pages);
+	free_pages((unsigned long) pages, order);
 	return ret;
 }
 
@@ -995,7 +995,7 @@ struct ib_mr *hns_roce_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 	int n;
 	int i;
 
-	mr = kmalloc(sizeof(*mr), GFP_KERNEL);
+	mr = kzalloc(sizeof(*mr), GFP_KERNEL);
 	if (!mr)
 		return ERR_PTR(-ENOMEM);
 

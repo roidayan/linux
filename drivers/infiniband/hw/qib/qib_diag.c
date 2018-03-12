@@ -72,7 +72,7 @@ static struct qib_diag_client {
 } *client_pool;
 
 /*
- * Get a client struct. Recycled if possible, else kmalloc.
+ * Get a client struct. Recycled if possible, else kzalloc.
  * Must be called with qib_mutex held
  */
 static struct qib_diag_client *get_client(struct qib_devdata *dd)
@@ -85,7 +85,7 @@ static struct qib_diag_client *get_client(struct qib_devdata *dd)
 		client_pool = dc->next;
 	else
 		/* None in pool, alloc and init */
-		dc = kmalloc(sizeof(*dc), GFP_KERNEL);
+		dc = kzalloc(sizeof(*dc), GFP_KERNEL);
 
 	if (dc) {
 		dc->next = NULL;
@@ -607,7 +607,7 @@ static ssize_t qib_diagpkt_write(struct file *fp,
 
 	plen = sizeof(u32) + dp.len;
 
-	tmpbuf = vmalloc(plen);
+	tmpbuf = vzalloc(plen);
 	if (!tmpbuf) {
 		ret = -ENOMEM;
 		goto bail;
@@ -699,7 +699,7 @@ int qib_register_observer(struct qib_devdata *dd,
 
 	if (!dd || !op)
 		return -EINVAL;
-	olp = vmalloc(sizeof(*olp));
+	olp = vzalloc(sizeof(*olp));
 	if (!olp)
 		return -ENOMEM;
 

@@ -1139,8 +1139,8 @@ static void handle_slaves_guid_change(struct mlx4_ib_dev *dev, u8 port_num,
 	if (!mlx4_is_mfunc(dev->dev) || !mlx4_is_master(dev->dev))
 		return;
 
-	in_mad  = kmalloc(sizeof *in_mad, GFP_KERNEL);
-	out_mad = kmalloc(sizeof *out_mad, GFP_KERNEL);
+	in_mad  = kzalloc(sizeof(*in_mad), GFP_KERNEL);
+	out_mad = kzalloc(sizeof(*out_mad), GFP_KERNEL);
 	if (!in_mad || !out_mad)
 		goto out;
 
@@ -1636,7 +1636,7 @@ static int mlx4_ib_alloc_pv_bufs(struct mlx4_ib_demux_pv_ctx *ctx,
 	}
 
 	for (i = 0; i < MLX4_NUM_TUNNEL_BUFS; i++) {
-		tun_qp->ring[i].addr = kmalloc(rx_buf_size, GFP_KERNEL);
+		tun_qp->ring[i].addr = kzalloc(rx_buf_size, GFP_KERNEL);
 		if (!tun_qp->ring[i].addr)
 			goto err;
 		tun_qp->ring[i].map = ib_dma_map_single(ctx->ib_dev,
@@ -1651,7 +1651,7 @@ static int mlx4_ib_alloc_pv_bufs(struct mlx4_ib_demux_pv_ctx *ctx,
 
 	for (i = 0; i < MLX4_NUM_TUNNEL_BUFS; i++) {
 		tun_qp->tx_ring[i].buf.addr =
-			kmalloc(tx_buf_size, GFP_KERNEL);
+			kzalloc(tx_buf_size, GFP_KERNEL);
 		if (!tun_qp->tx_ring[i].buf.addr)
 			goto tx_err;
 		tun_qp->tx_ring[i].buf.map =
