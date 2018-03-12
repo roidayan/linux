@@ -215,9 +215,8 @@ int hns_roce_cmd_use_events(struct hns_roce_dev *hr_dev)
 	struct hns_roce_cmdq *hr_cmd = &hr_dev->cmd;
 	int i;
 
-	hr_cmd->context = kmalloc_array(hr_cmd->max_cmds,
-					sizeof(*hr_cmd->context),
-					GFP_KERNEL);
+	hr_cmd->context = kcalloc(hr_cmd->max_cmds, sizeof(*hr_cmd->context),
+				  GFP_KERNEL);
 	if (!hr_cmd->context)
 		return -ENOMEM;
 
@@ -259,7 +258,7 @@ struct hns_roce_cmd_mailbox
 {
 	struct hns_roce_cmd_mailbox *mailbox;
 
-	mailbox = kmalloc(sizeof(*mailbox), GFP_KERNEL);
+	mailbox = kzalloc(sizeof(*mailbox), GFP_KERNEL);
 	if (!mailbox)
 		return ERR_PTR(-ENOMEM);
 

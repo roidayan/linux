@@ -576,12 +576,12 @@ static int hns_roce_db_ext_init(struct hns_roce_dev *hr_dev, u32 sdb_ext_mod,
 	priv = (struct hns_roce_v1_priv *)hr_dev->priv;
 	db = &priv->db_table;
 
-	db->ext_db = kmalloc(sizeof(*db->ext_db), GFP_KERNEL);
+	db->ext_db = kzalloc(sizeof(*db->ext_db), GFP_KERNEL);
 	if (!db->ext_db)
 		return -ENOMEM;
 
 	if (sdb_ext_mod) {
-		db->ext_db->sdb_buf_list = kmalloc(
+		db->ext_db->sdb_buf_list = kzalloc(
 				sizeof(*db->ext_db->sdb_buf_list), GFP_KERNEL);
 		if (!db->ext_db->sdb_buf_list) {
 			ret = -ENOMEM;
@@ -605,7 +605,7 @@ static int hns_roce_db_ext_init(struct hns_roce_dev *hr_dev, u32 sdb_ext_mod,
 				 HNS_ROCE_V1_SDB_ALFUL);
 
 	if (odb_ext_mod) {
-		db->ext_db->odb_buf_list = kmalloc(
+		db->ext_db->odb_buf_list = kzalloc(
 				sizeof(*db->ext_db->odb_buf_list), GFP_KERNEL);
 		if (!db->ext_db->odb_buf_list) {
 			ret = -ENOMEM;
