@@ -171,7 +171,7 @@ static int rxe_pool_init_index(struct rxe_pool *pool, u32 max, u32 min)
 	pool->min_index = min;
 
 	size = BITS_TO_LONGS(max - min + 1) * sizeof(long);
-	pool->table = kmalloc(size, GFP_KERNEL);
+	pool->table = kzalloc(size, GFP_KERNEL);
 	if (!pool->table) {
 		err = -ENOMEM;
 		goto out;

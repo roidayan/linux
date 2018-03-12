@@ -147,7 +147,7 @@ struct rxe_mmap_info *rxe_create_mmap_info(struct rxe_dev *rxe,
 {
 	struct rxe_mmap_info *ip;
 
-	ip = kmalloc(sizeof(*ip), GFP_KERNEL);
+	ip = kzalloc(sizeof(*ip), GFP_KERNEL);
 	if (!ip)
 		return NULL;
 
