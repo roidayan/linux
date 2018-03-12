@@ -394,7 +394,7 @@ int bnxt_re_add_gid(struct ib_device *ibdev, u8 port_num,
 		return rc;
 	}
 
-	ctx = kmalloc(sizeof(*ctx), GFP_KERNEL);
+	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
 	if (!ctx)
 		return -ENOMEM;
 	ctx_tbl = sgid_tbl->ctx;
