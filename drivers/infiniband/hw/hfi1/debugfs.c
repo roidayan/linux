@@ -554,7 +554,7 @@ static ssize_t asic_flags_read(struct file *file, char __user *buf,
 	dd = ppd->dd;
 	size = PAGE_SIZE;
 	used = 0;
-	tmp = kmalloc(size, GFP_KERNEL);
+	tmp = kzalloc(size, GFP_KERNEL);
 	if (!tmp)
 		return -ENOMEM;
 
@@ -751,7 +751,7 @@ static ssize_t qsfp_debugfs_dump(struct file *file, char __user *buf,
 	int ret;
 
 	ppd = private2ppd(file);
-	tmp = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	tmp = kzalloc(PAGE_SIZE, GFP_KERNEL);
 	if (!tmp)
 		return -ENOMEM;
 
@@ -837,7 +837,7 @@ static ssize_t __i2c_debugfs_read(struct file *file, char __user *buf,
 	if (i2c_addr == 0)
 		return -EINVAL;
 
-	buff = kmalloc(count, GFP_KERNEL);
+	buff = kzalloc(count, GFP_KERNEL);
 	if (!buff)
 		return -ENOMEM;
 
@@ -939,7 +939,7 @@ static ssize_t __qsfp_debugfs_read(struct file *file, char __user *buf,
 
 	ppd = private2ppd(file);
 
-	buff = kmalloc(count, GFP_KERNEL);
+	buff = kzalloc(count, GFP_KERNEL);
 	if (!buff) {
 		ret = -ENOMEM;
 		goto _return;

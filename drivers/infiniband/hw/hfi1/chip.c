@@ -12458,7 +12458,7 @@ static int init_cntrs(struct hfi1_devdata *dd)
 
 	/* allocate space for the counter names */
 	dd->cntrnameslen = sz;
-	dd->cntrnames = kmalloc(sz, GFP_KERNEL);
+	dd->cntrnames = kzalloc(sz, GFP_KERNEL);
 	if (!dd->cntrnames)
 		goto bail;
 
@@ -12560,7 +12560,7 @@ static int init_cntrs(struct hfi1_devdata *dd)
 
 	/* allocate space for the counter names */
 	dd->portcntrnameslen = sz;
-	dd->portcntrnames = kmalloc(sz, GFP_KERNEL);
+	dd->portcntrnames = kzalloc(sz, GFP_KERNEL);
 	if (!dd->portcntrnames)
 		goto bail;
 
@@ -14256,7 +14256,7 @@ static struct rsm_map_table *alloc_rsm_map_table(struct hfi1_devdata *dd)
 	struct rsm_map_table *rmt;
 	u8 rxcontext = is_ax(dd) ? 0 : 0xff;  /* 0 is default if a0 ver. */
 
-	rmt = kmalloc(sizeof(*rmt), GFP_KERNEL);
+	rmt = kzalloc(sizeof(*rmt), GFP_KERNEL);
 	if (rmt) {
 		memset(rmt->map, rxcontext, sizeof(rmt->map));
 		rmt->used = 0;

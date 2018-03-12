@@ -256,7 +256,7 @@ static int read_partition_platform_config(struct hfi1_devdata *dd, void **data,
 	u32 length;
 	int ret;
 
-	buffer = kmalloc(P1_SIZE, GFP_KERNEL);
+	buffer = kzalloc(P1_SIZE, GFP_KERNEL);
 	if (!buffer)
 		return -ENOMEM;
 
@@ -328,7 +328,7 @@ static int read_segment_platform_config(struct hfi1_devdata *dd,
 				(directory + EP_PAGE_SIZE - directory_size);
 	} else {
 		/* need to allocate and read more */
-		table_buffer = kmalloc(directory_size, GFP_KERNEL);
+		table_buffer = kzalloc(directory_size, GFP_KERNEL);
 		if (!table_buffer)
 			return -ENOMEM;
 		ret = read_length(dd, SEG_SIZE - directory_size,
@@ -371,7 +371,7 @@ static int read_segment_platform_config(struct hfi1_devdata *dd,
 	}
 
 	/* allocate the buffer to return */
-	buffer = kmalloc(entry->size, GFP_KERNEL);
+	buffer = kzalloc(entry->size, GFP_KERNEL);
 	if (!buffer) {
 		ret = -ENOMEM;
 		goto done;

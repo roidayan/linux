@@ -1718,7 +1718,7 @@ static int init_cntr_names(const char *names_in,
 		if (names_in[i] == '\n')
 			n++;
 
-	names_out = kmalloc((n + num_extra_names) * sizeof(char *) + names_len,
+	names_out = kzalloc((n + num_extra_names) * sizeof(char *) + names_len,
 			    GFP_KERNEL);
 	if (!names_out) {
 		*num_cntrs = 0;

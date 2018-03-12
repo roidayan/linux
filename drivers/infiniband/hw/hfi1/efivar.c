@@ -56,7 +56,7 @@
 
 /*
  * Read the named EFI variable.  Return the size of the actual data in *size
- * and a kmalloc'ed buffer in *return_data.  The caller must free the
+ * and a kzalloc'ed buffer in *return_data.  The caller must free the
  * data.  It is guaranteed that *return_data will be NULL and *size = 0
  * if this routine fails.
  *
