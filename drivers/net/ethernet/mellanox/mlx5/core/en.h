@@ -55,8 +55,8 @@
 
 #define MLX5E_ETH_HARD_MTU (ETH_HLEN + VLAN_HLEN + ETH_FCS_LEN)
 
-#define MLX5E_HW2SW_MTU(priv, hwmtu) ((hwmtu) - ((priv)->hard_mtu))
-#define MLX5E_SW2HW_MTU(priv, swmtu) ((swmtu) + ((priv)->hard_mtu))
+#define MLX5E_HW2SW_MTU(params, hwmtu) ((hwmtu) - ((params)->hard_mtu))
+#define MLX5E_SW2HW_MTU(params, swmtu) ((swmtu) + ((params)->hard_mtu))
 
 #define MLX5E_MAX_DSCP          64
 #define MLX5E_MAX_NUM_TC	8
@@ -258,6 +258,8 @@ struct mlx5e_params {
 	u32 lro_timeout;
 	u32 pflags;
 	struct bpf_prog *xdp_prog;
+	unsigned int sw_mtu;
+	int hard_mtu;
 };
 
 #ifdef CONFIG_MLX5_CORE_EN_DCB
@@ -563,6 +565,7 @@ struct mlx5e_rq {
 
 	/* XDP */
 	struct bpf_prog       *xdp_prog;
+	unsigned int           hw_mtu;
 	struct mlx5e_xdpsq     xdpsq;
 
 	/* control */
@@ -791,7 +794,6 @@ struct mlx5e_priv {
 	struct mlx5e_tir           inner_indir_tir[MLX5E_NUM_INDIR_TIRS];
 	struct mlx5e_tir           direct_tir[MLX5E_MAX_NUM_CHANNELS];
 	u32                        tx_rates[MLX5E_MAX_NUM_SQS];
-	int                        hard_mtu;
 
 	struct mlx5e_flow_steering fs;
 	struct mlx5e_vxlan_db      vxlan;
@@ -1128,6 +1130,6 @@ void mlx5e_detach_netdev(struct mlx5e_priv *priv);
 void mlx5e_destroy_netdev(struct mlx5e_priv *priv);
 void mlx5e_build_nic_params(struct mlx5_core_dev *mdev,
 			    struct mlx5e_params *params,
-			    u16 max_channels);
+			    u16 max_channels, u16 mtu);
 u8 mlx5e_params_calculate_tx_min_inline(struct mlx5_core_dev *mdev);
 #endif /* __MLX5_EN_H__ */
