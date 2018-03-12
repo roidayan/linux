@@ -1363,6 +1363,9 @@ static ssize_t ucma_process_join(struct ucma_file *file,
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
 
+	if (!ctx->cm_id->device)
+		return -EINVAL;
+
 	mutex_lock(&file->mut);
 	mc = ucma_alloc_multicast(ctx);
 	if (!mc) {
