@@ -728,7 +728,7 @@ static int nes_change_quad_hash(struct nes_device *nesdev,
 		goto chg_qh_err;
 	}
 
-	qh_chg = kmalloc(sizeof *qh_chg, GFP_ATOMIC);
+	qh_chg = kzalloc(sizeof *qh_chg, GFP_ATOMIC);
 	if (!qh_chg) {
 		ret = -ENOMEM;
 		goto chg_qh_err;
