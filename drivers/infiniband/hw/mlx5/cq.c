@@ -1452,7 +1452,7 @@ int mlx5_ib_generate_wc(struct ib_cq *ibcq, struct ib_wc *wc)
 	struct mlx5_ib_cq *cq = to_mcq(ibcq);
 	unsigned long flags;
 
-	soft_wc = kmalloc(sizeof(*soft_wc), GFP_ATOMIC);
+	soft_wc = kzalloc(sizeof(*soft_wc), GFP_ATOMIC);
 	if (!soft_wc)
 		return -ENOMEM;
 

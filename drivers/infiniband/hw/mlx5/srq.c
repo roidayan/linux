@@ -196,7 +196,7 @@ static int create_srq_kernel(struct mlx5_ib_dev *dev, struct mlx5_ib_srq *srq,
 	}
 	mlx5_fill_page_array(&srq->buf, in->pas);
 
-	srq->wrid = kvmalloc_array(srq->msrq.max, sizeof(u64), GFP_KERNEL);
+	srq->wrid = kvmalloc_array(srq->msrq.max, sizeof(u64), GFP_KERNEL | __GFP_ZERO);
 	if (!srq->wrid) {
 		err = -ENOMEM;
 		goto err_in;
@@ -255,7 +255,7 @@ struct ib_srq *mlx5_ib_create_srq(struct ib_pd *pd,
 		return ERR_PTR(-EINVAL);
 	}
 
-	srq = kmalloc(sizeof(*srq), GFP_KERNEL);
+	srq = kzalloc(sizeof(*srq), GFP_KERNEL);
 	if (!srq)
 		return ERR_PTR(-ENOMEM);
 

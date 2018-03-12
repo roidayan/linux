@@ -2360,7 +2360,7 @@ static struct ib_pd *mlx5_ib_alloc_pd(struct ib_device *ibdev,
 	struct mlx5_ib_pd *pd;
 	int err;
 
-	pd = kmalloc(sizeof(*pd), GFP_KERNEL);
+	pd = kzalloc(sizeof(*pd), GFP_KERNEL);
 	if (!pd)
 		return ERR_PTR(-ENOMEM);
 
@@ -3413,7 +3413,7 @@ mlx5_ib_create_flow_action_esp(struct ib_device *device,
 	    aes_gcm->iv_algo != IB_UVERBS_FLOW_ACTION_IV_ALGO_SEQ)
 		return ERR_PTR(-EOPNOTSUPP);
 
-	action = kmalloc(sizeof(*action), GFP_KERNEL);
+	action = kzalloc(sizeof(*action), GFP_KERNEL);
 	if (!action)
 		return ERR_PTR(-ENOMEM);
 
@@ -3798,7 +3798,7 @@ static void mlx5_ib_event(struct mlx5_core_dev *dev, void *context,
 {
 	struct mlx5_ib_event_work *work;
 
-	work = kmalloc(sizeof(*work), GFP_ATOMIC);
+	work = kzalloc(sizeof(*work), GFP_ATOMIC);
 	if (!work)
 		return;
 
@@ -3855,11 +3855,11 @@ static int get_port_caps(struct mlx5_ib_dev *dev, u8 port)
 	int err = -ENOMEM;
 	struct ib_udata uhw = {.inlen = 0, .outlen = 0};
 
-	pprops = kmalloc(sizeof(*pprops), GFP_KERNEL);
+	pprops = kzalloc(sizeof(*pprops), GFP_KERNEL);
 	if (!pprops)
 		goto out;
 
-	dprops = kmalloc(sizeof(*dprops), GFP_KERNEL);
+	dprops = kzalloc(sizeof(*dprops), GFP_KERNEL);
 	if (!dprops)
 		goto out;
 

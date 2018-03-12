@@ -999,15 +999,15 @@ static int create_kernel_qp(struct mlx5_ib_dev *dev,
 	}
 
 	qp->sq.wrid = kvmalloc_array(qp->sq.wqe_cnt,
-				     sizeof(*qp->sq.wrid), GFP_KERNEL);
+				     sizeof(*qp->sq.wrid), GFP_KERNEL | __GFP_ZERO);
 	qp->sq.wr_data = kvmalloc_array(qp->sq.wqe_cnt,
-					sizeof(*qp->sq.wr_data), GFP_KERNEL);
+					sizeof(*qp->sq.wr_data), GFP_KERNEL | __GFP_ZERO);
 	qp->rq.wrid = kvmalloc_array(qp->rq.wqe_cnt,
-				     sizeof(*qp->rq.wrid), GFP_KERNEL);
+				     sizeof(*qp->rq.wrid), GFP_KERNEL | __GFP_ZERO);
 	qp->sq.w_list = kvmalloc_array(qp->sq.wqe_cnt,
-				       sizeof(*qp->sq.w_list), GFP_KERNEL);
+				       sizeof(*qp->sq.w_list), GFP_KERNEL | __GFP_ZERO);
 	qp->sq.wqe_head = kvmalloc_array(qp->sq.wqe_cnt,
-					 sizeof(*qp->sq.wqe_head), GFP_KERNEL);
+					 sizeof(*qp->sq.wqe_head), GFP_KERNEL | __GFP_ZERO);
 
 	if (!qp->sq.wrid || !qp->sq.wr_data || !qp->rq.wrid ||
 	    !qp->sq.w_list || !qp->sq.wqe_head) {
@@ -5139,7 +5139,7 @@ struct ib_xrcd *mlx5_ib_alloc_xrcd(struct ib_device *ibdev,
 	if (!MLX5_CAP_GEN(dev->mdev, xrc))
 		return ERR_PTR(-ENOSYS);
 
-	xrcd = kmalloc(sizeof(*xrcd), GFP_KERNEL);
+	xrcd = kzalloc(sizeof(*xrcd), GFP_KERNEL);
 	if (!xrcd)
 		return ERR_PTR(-ENOMEM);
 
