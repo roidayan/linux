@@ -212,7 +212,7 @@ static struct ib_cq *iwch_create_cq(struct ib_device *ibdev,
 	if (ucontext) {
 		struct iwch_mm_entry *mm;
 
-		mm = kmalloc(sizeof *mm, GFP_KERNEL);
+		mm = kzalloc(sizeof *mm, GFP_KERNEL);
 		if (!mm) {
 			iwch_destroy_cq(&chp->ibcq);
 			return ERR_PTR(-ENOMEM);
@@ -506,7 +506,7 @@ static struct ib_mr *iwch_get_dma_mr(struct ib_pd *pd, int acc)
 		goto err;
 	}
 
-	page_list = kmalloc_array(npages, sizeof(u64), GFP_KERNEL);
+	page_list = kcalloc(npages, sizeof(u64), GFP_KERNEL);
 	if (!page_list) {
 		ret = -ENOMEM;
 		goto err;
@@ -930,13 +930,13 @@ static struct ib_qp *iwch_create_qp(struct ib_pd *pd,
 
 		struct iwch_mm_entry *mm1, *mm2;
 
-		mm1 = kmalloc(sizeof *mm1, GFP_KERNEL);
+		mm1 = kzalloc(sizeof *mm1, GFP_KERNEL);
 		if (!mm1) {
 			iwch_destroy_qp(&qhp->ibqp);
 			return ERR_PTR(-ENOMEM);
 		}
 
-		mm2 = kmalloc(sizeof *mm2, GFP_KERNEL);
+		mm2 = kzalloc(sizeof *mm2, GFP_KERNEL);
 		if (!mm2) {
 			kfree(mm1);
 			iwch_destroy_qp(&qhp->ibqp);
@@ -1424,7 +1424,7 @@ int iwch_register_device(struct iwch_dev *dev)
 	dev->ibdev.get_port_immutable = iwch_port_immutable;
 	dev->ibdev.get_dev_fw_str = get_dev_fw_ver_str;
 
-	dev->ibdev.iwcm = kmalloc(sizeof(struct iw_cm_verbs), GFP_KERNEL);
+	dev->ibdev.iwcm = kzalloc(sizeof(struct iw_cm_verbs), GFP_KERNEL);
 	if (!dev->ibdev.iwcm)
 		return -ENOMEM;
 

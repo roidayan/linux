@@ -144,7 +144,7 @@ int cxio_hal_init_resource(struct cxio_rdev *rdev_p,
 	int err = 0;
 	struct cxio_hal_resource *rscp;
 
-	rscp = kmalloc(sizeof(*rscp), GFP_KERNEL);
+	rscp = kzalloc(sizeof(*rscp), GFP_KERNEL);
 	if (!rscp)
 		return -ENOMEM;
 	rdev_p->rscp = rscp;
