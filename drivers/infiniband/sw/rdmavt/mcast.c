@@ -76,7 +76,7 @@ static struct rvt_mcast_qp *rvt_mcast_qp_alloc(struct rvt_qp *qp)
 {
 	struct rvt_mcast_qp *mqp;
 
-	mqp = kmalloc(sizeof(*mqp), GFP_KERNEL);
+	mqp = kzalloc(sizeof(*mqp), GFP_KERNEL);
 	if (!mqp)
 		goto bail;
 

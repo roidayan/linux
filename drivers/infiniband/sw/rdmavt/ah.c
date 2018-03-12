@@ -106,7 +106,7 @@ struct ib_ah *rvt_create_ah(struct ib_pd *pd,
 	if (rvt_check_ah(pd->device, ah_attr))
 		return ERR_PTR(-EINVAL);
 
-	ah = kmalloc(sizeof(*ah), GFP_ATOMIC);
+	ah = kzalloc(sizeof(*ah), GFP_ATOMIC);
 	if (!ah)
 		return ERR_PTR(-ENOMEM);
 
