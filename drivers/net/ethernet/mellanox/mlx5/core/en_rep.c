@@ -44,6 +44,11 @@
 #include "en_tc.h"
 #include "fs_core.h"
 
+#define MLX5E_REP_PARAMS_LOG_SQ_SIZE \
+	max(0x6, MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE)
+#define MLX5E_REP_PARAMS_LOG_RQ_SIZE \
+	max(0x6, MLX5E_PARAMS_MINIMUM_LOG_RQ_SIZE)
+
 static const char mlx5e_rep_driver_name[] = "mlx5e_rep";
 
 static void mlx5e_rep_get_drvinfo(struct net_device *dev,
@@ -209,7 +214,7 @@ static void mlx5e_sqs2vport_stop(struct mlx5_eswitch *esw,
 
 static int mlx5e_sqs2vport_start(struct mlx5_eswitch *esw,
 				 struct mlx5_eswitch_rep *rep,
-				 u16 *sqns_array, int sqns_num)
+				 u32 *sqns_array, int sqns_num)
 {
 	struct mlx5_flow_handle *flow_rule;
 	struct mlx5e_rep_priv *rpriv;
@@ -255,9 +260,9 @@ int mlx5e_add_sqs_fwd_rules(struct mlx5e_priv *priv)
 	struct mlx5e_channel *c;
 	int n, tc, num_sqs = 0;
 	int err = -ENOMEM;
-	u16 *sqs;
+	u32 *sqs;
 
-	sqs = kcalloc(priv->channels.num * priv->channels.params.num_tc, sizeof(u16), GFP_KERNEL);
+	sqs = kcalloc(priv->channels.num * priv->channels.params.num_tc, sizeof(*sqs), GFP_KERNEL);
 	if (!sqs)
 		goto out;
 
@@ -877,9 +882,9 @@ static void mlx5e_build_rep_params(struct mlx5_core_dev *mdev,
 					 MLX5_CQ_PERIOD_MODE_START_FROM_CQE :
 					 MLX5_CQ_PERIOD_MODE_START_FROM_EQE;
 
-	params->log_sq_size = MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE;
+	params->log_sq_size = MLX5E_REP_PARAMS_LOG_SQ_SIZE;
 	params->rq_wq_type  = MLX5_WQ_TYPE_LINKED_LIST;
-	params->log_rq_size = MLX5E_PARAMS_MINIMUM_LOG_RQ_SIZE;
+	params->log_rq_size = MLX5E_REP_PARAMS_LOG_RQ_SIZE;
 
 	params->rx_dim_enabled = MLX5_CAP_GEN(mdev, cq_moderation);
 	mlx5e_set_rx_cq_mode_params(params, cq_period_mode);
@@ -899,9 +904,7 @@ static void mlx5e_build_rep_netdev(struct net_device *netdev)
 
 	netdev->ethtool_ops	  = &mlx5e_rep_ethtool_ops;
 
-#ifdef CONFIG_NET_SWITCHDEV
 	netdev->switchdev_ops = &mlx5e_rep_switchdev_ops;
-#endif
 
 	netdev->features	 |= NETIF_F_VLAN_CHALLENGED | NETIF_F_HW_TC | NETIF_F_NETNS_LOCAL;
 	netdev->hw_features      |= NETIF_F_HW_TC;
@@ -1154,6 +1157,8 @@ mlx5e_vport_rep_unload(struct mlx5_eswitch_rep *rep)
 	mlx5e_detach_netdev(priv);
 	mlx5e_destroy_netdev(priv);
 	kfree(ppriv); /* mlx5e_rep_priv */
+	mlx5_eswitch_set_vport_state(priv->mdev->priv.eswitch, rep->vport,
+				     MLX5_ESW_VPORT_ADMIN_STATE_AUTO);
 }
 
 static void mlx5e_rep_register_vf_vports(struct mlx5e_priv *priv)
