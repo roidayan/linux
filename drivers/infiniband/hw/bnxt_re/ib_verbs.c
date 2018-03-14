@@ -785,7 +785,7 @@ int bnxt_re_query_ah(struct ib_ah *ib_ah, struct rdma_ah_attr *ah_attr)
 	return 0;
 }
 
-static unsigned long bnxt_re_lock_cqs(struct bnxt_re_qp *qp)
+unsigned long bnxt_re_lock_cqs(struct bnxt_re_qp *qp)
 	__acquires(&qp->scq->cq_lock) __acquires(&qp->rcq->cq_lock)
 {
 	unsigned long flags;
@@ -799,8 +799,8 @@ static unsigned long bnxt_re_lock_cqs(struct bnxt_re_qp *qp)
 	return flags;
 }
 
-static void bnxt_re_unlock_cqs(struct bnxt_re_qp *qp,
-			       unsigned long flags)
+void bnxt_re_unlock_cqs(struct bnxt_re_qp *qp,
+			unsigned long flags)
 	__releases(&qp->scq->cq_lock) __releases(&qp->rcq->cq_lock)
 {
 	if (qp->rcq != qp->scq)
@@ -1540,14 +1540,13 @@ int bnxt_re_post_srq_recv(struct ib_srq *ib_srq, struct ib_recv_wr *wr,
 					       ib_srq);
 	struct bnxt_qplib_swqe wqe;
 	unsigned long flags;
-	int rc = 0, payload_sz = 0;
+	int rc = 0;
 
 	spin_lock_irqsave(&srq->lock, flags);
 	while (wr) {
 		/* Transcribe each ib_recv_wr to qplib_swqe */
 		wqe.num_sge = wr->num_sge;
-		payload_sz = bnxt_re_build_sgl(wr->sg_list, wqe.sg_list,
-					       wr->num_sge);
+		bnxt_re_build_sgl(wr->sg_list, wqe.sg_list, wr->num_sge);
 		wqe.wr_id = wr->wr_id;
 		wqe.type = BNXT_QPLIB_SWQE_TYPE_RECV;
 
@@ -1606,6 +1605,7 @@ int bnxt_re_modify_qp(struct ib_qp *ib_qp, struct ib_qp_attr *qp_attr,
 	int status;
 	union ib_gid sgid;
 	struct ib_gid_attr sgid_attr;
+	unsigned int flags;
 	u8 nw_type;
 
 	qp->qplib_qp.modify_flags = 0;
@@ -1634,14 +1634,18 @@ int bnxt_re_modify_qp(struct ib_qp *ib_qp, struct ib_qp_attr *qp_attr,
 			dev_dbg(rdev_to_dev(rdev),
 				"Move QP = %p to flush list\n",
 				qp);
+			flags = bnxt_re_lock_cqs(qp);
 			bnxt_qplib_add_flush_qp(&qp->qplib_qp);
+			bnxt_re_unlock_cqs(qp, flags);
 		}
 		if (!qp->sumem &&
 		    qp->qplib_qp.state == CMDQ_MODIFY_QP_NEW_STATE_RESET) {
 			dev_dbg(rdev_to_dev(rdev),
 				"Move QP = %p out of flush list\n",
 				qp);
+			flags = bnxt_re_lock_cqs(qp);
 			bnxt_qplib_clean_qp(&qp->qplib_qp);
+			bnxt_re_unlock_cqs(qp, flags);
 		}
 	}
 	if (qp_attr_mask & IB_QP_EN_SQD_ASYNC_NOTIFY) {
@@ -2227,10 +2231,13 @@ static int bnxt_re_build_inv_wqe(struct ib_send_wr *wr,
 	wqe->type = BNXT_QPLIB_SWQE_TYPE_LOCAL_INV;
 	wqe->local_inv.inv_l_key = wr->ex.invalidate_rkey;
 
+	/* Need unconditional fence for local invalidate
+	 * opcode to work as expected.
+	 */
+	wqe->flags |= BNXT_QPLIB_SWQE_FLAGS_UC_FENCE;
+
 	if (wr->send_flags & IB_SEND_SIGNALED)
 		wqe->flags |= BNXT_QPLIB_SWQE_FLAGS_SIGNAL_COMP;
-	if (wr->send_flags & IB_SEND_FENCE)
-		wqe->flags |= BNXT_QPLIB_SWQE_FLAGS_UC_FENCE;
 	if (wr->send_flags & IB_SEND_SOLICITED)
 		wqe->flags |= BNXT_QPLIB_SWQE_FLAGS_SOLICIT_EVENT;
 
@@ -2251,8 +2258,12 @@ static int bnxt_re_build_reg_wqe(struct ib_reg_wr *wr,
 	wqe->frmr.levels = qplib_frpl->hwq.level + 1;
 	wqe->type = BNXT_QPLIB_SWQE_TYPE_REG_MR;
 
-	if (wr->wr.send_flags & IB_SEND_FENCE)
-		wqe->flags |= BNXT_QPLIB_SWQE_FLAGS_UC_FENCE;
+	/* Need unconditional fence for reg_mr
+	 * opcode to function as expected.
+	 */
+
+	wqe->flags |= BNXT_QPLIB_SWQE_FLAGS_UC_FENCE;
+
 	if (wr->wr.send_flags & IB_SEND_SIGNALED)
 		wqe->flags |= BNXT_QPLIB_SWQE_FLAGS_SIGNAL_COMP;
 
@@ -3586,7 +3597,7 @@ struct ib_mr *bnxt_re_reg_user_mr(struct ib_pd *ib_pd, u64 start, u64 length,
 	int umem_pgs, page_shift, rc;
 
 	if (length > BNXT_RE_MAX_MR_SIZE) {
-		dev_err(rdev_to_dev(rdev), "MR Size: %lld > Max supported:%ld\n",
+		dev_err(rdev_to_dev(rdev), "MR Size: %lld > Max supported:%lld\n",
 			length, BNXT_RE_MAX_MR_SIZE);
 		return ERR_PTR(-ENOMEM);
 	}

@@ -476,8 +476,8 @@ static ssize_t ucma_create_id(struct ucma_file *file, const char __user *inbuf,
 		return -ENOMEM;
 
 	ctx->uid = cmd.uid;
-	ctx->cm_id = rdma_create_id(current->nsproxy->net_ns,
-				    ucma_event_handler, ctx, cmd.ps, qp_type);
+	ctx->cm_id = __rdma_create_id(current->nsproxy->net_ns,
+			      ucma_event_handler, ctx, cmd.ps, qp_type, NULL);
 	if (IS_ERR(ctx->cm_id)) {
 		ret = PTR_ERR(ctx->cm_id);
 		goto err1;
@@ -1084,12 +1084,12 @@ static ssize_t ucma_accept(struct ucma_file *file, const char __user *inbuf,
 	if (cmd.conn_param.valid) {
 		ucma_copy_conn_param(ctx->cm_id, &conn_param, &cmd.conn_param);
 		mutex_lock(&file->mut);
-		ret = rdma_accept(ctx->cm_id, &conn_param);
+		ret = __rdma_accept(ctx->cm_id, &conn_param, NULL);
 		if (!ret)
 			ctx->uid = cmd.uid;
 		mutex_unlock(&file->mut);
 	} else
-		ret = rdma_accept(ctx->cm_id, NULL);
+		ret = __rdma_accept(ctx->cm_id, NULL, NULL);
 
 	ucma_put_ctx(ctx);
 	return ret;
@@ -1148,6 +1148,9 @@ static ssize_t ucma_init_qp_attr(struct ucma_file *file,
 
 	if (copy_from_user(&cmd, inbuf, sizeof(cmd)))
 		return -EFAULT;
+
+	if (cmd.qp_state > IB_QPS_ERR)
+		return -EINVAL;
 
 	ctx = ucma_get_ctx(file, cmd.id);
 	if (IS_ERR(ctx))
@@ -1293,6 +1296,9 @@ static ssize_t ucma_set_option(struct ucma_file *file, const char __user *inbuf,
 	ctx = ucma_get_ctx(file, cmd.id);
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
+
+	if (unlikely(cmd.optval > KMALLOC_MAX_SIZE))
+		return -EINVAL;
 
 	optval = memdup_user((void __user *) (unsigned long) cmd.optval,
 			     cmd.optlen);
