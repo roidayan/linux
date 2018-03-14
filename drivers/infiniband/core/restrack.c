@@ -113,13 +113,12 @@ void rdma_restrack_add(struct rdma_restrack_entry *res)
 	if (!dev)
 		return;
 
+	res->task = NULL;
 	if (res_is_user(res)) {
-		if (!res->task)
-			rdma_restrack_set_task(res, current);
+		rdma_restrack_set_task(res, current);
 		res->kern_name = NULL;
 	} else {
 		set_kern_name(res);
-		res->task = NULL;
 	}
 
 	kref_init(&res->kref);
