@@ -1,6 +1,5 @@
-/* SPDX-License-Identifier: ((GPL-2.0 WITH Linux-syscall-note) OR BSD-2-Clause) */
 /*
- * Copyright (c) 2016 Hisilicon Limited.
+ * Copyright (c) 2018, Mellanox Technologies inc.  All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -31,37 +30,19 @@
  * SOFTWARE.
  */
 
-#ifndef HNS_ABI_USER_H
-#define HNS_ABI_USER_H
+#ifndef MLX5_USER_IOCTL_CMDS_H
+#define MLX5_USER_IOCTL_CMDS_H
 
-#include <linux/types.h>
+#include <rdma/ib_user_ioctl_cmds.h>
 
-struct hns_roce_ib_create_cq {
-	__u64   buf_addr;
-	__u64	db_addr;
+enum mlx5_ib_create_flow_action_attrs {
+	/* This attribute belong to the driver namespace */
+	MLX5_IB_ATTR_CREATE_FLOW_ACTION_FLAGS = (1U << UVERBS_ID_NS_SHIFT),
 };
 
-struct hns_roce_ib_create_cq_resp {
-	__u32	cqn;
-	__u32	reserved;
-	__u64	cap_flags;
+enum mlx5_ib_alloc_dm_attrs {
+	MLX5_IB_ATTR_ALLOC_DM_RESP_START_OFFSET = (1U << UVERBS_ID_NS_SHIFT),
+	MLX5_IB_ATTR_ALLOC_DM_RESP_PAGE_INDEX,
 };
 
-struct hns_roce_ib_create_qp {
-	__u64	buf_addr;
-	__u64   db_addr;
-	__u8    log_sq_bb_count;
-	__u8    log_sq_stride;
-	__u8    sq_no_prefetch;
-	__u8    reserved[5];
-};
-
-struct hns_roce_ib_create_qp_resp {
-	__u64	cap_flags;
-};
-
-struct hns_roce_ib_alloc_ucontext_resp {
-	__u32	qp_tab_size;
-	__u32	reserved;
-};
-#endif /* HNS_ABI_USER_H */
+#endif

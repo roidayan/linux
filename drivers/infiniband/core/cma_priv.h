@@ -1,6 +1,8 @@
-/* SPDX-License-Identifier: ((GPL-2.0 WITH Linux-syscall-note) OR BSD-2-Clause) */
 /*
- * Copyright (c) 2016 Hisilicon Limited.
+ * Copyright (c) 2005 Voltaire Inc.  All rights reserved.
+ * Copyright (c) 2002-2005, Network Appliance, Inc. All rights reserved.
+ * Copyright (c) 1999-2005, Mellanox Technologies, Inc. All rights reserved.
+ * Copyright (c) 2005-2006 Intel Corporation.  All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -31,37 +33,51 @@
  * SOFTWARE.
  */
 
-#ifndef HNS_ABI_USER_H
-#define HNS_ABI_USER_H
+#ifndef _CMA_PRIV_H
+#define _CMA_PRIV_H
 
-#include <linux/types.h>
+struct rdma_id_private {
+	struct rdma_cm_id	id;
 
-struct hns_roce_ib_create_cq {
-	__u64   buf_addr;
-	__u64	db_addr;
+	struct rdma_bind_list	*bind_list;
+	struct hlist_node	node;
+	struct list_head	list; /* listen_any_list or cma_device.list */
+	struct list_head	listen_list; /* per device listens */
+	struct cma_device	*cma_dev;
+	struct list_head	mc_list;
+
+	int			internal_id;
+	enum rdma_cm_state	state;
+	spinlock_t		lock;
+	struct mutex		qp_mutex;
+
+	struct completion	comp;
+	atomic_t		refcount;
+	struct mutex		handler_mutex;
+
+	int			backlog;
+	int			timeout_ms;
+	struct ib_sa_query	*query;
+	int			query_id;
+	union {
+		struct ib_cm_id	*ib;
+		struct iw_cm_id	*iw;
+	} cm_id;
+
+	u32			seq_num;
+	u32			qkey;
+	u32			qp_num;
+	u32			options;
+	u8			srq;
+	u8			tos;
+	bool			tos_set;
+	u8			reuseaddr;
+	u8			afonly;
+	enum ib_gid_type	gid_type;
+
+	/*
+	 * Internal to RDMA/core, don't use in the drivers
+	 */
+	struct rdma_restrack_entry     res;
 };
-
-struct hns_roce_ib_create_cq_resp {
-	__u32	cqn;
-	__u32	reserved;
-	__u64	cap_flags;
-};
-
-struct hns_roce_ib_create_qp {
-	__u64	buf_addr;
-	__u64   db_addr;
-	__u8    log_sq_bb_count;
-	__u8    log_sq_stride;
-	__u8    sq_no_prefetch;
-	__u8    reserved[5];
-};
-
-struct hns_roce_ib_create_qp_resp {
-	__u64	cap_flags;
-};
-
-struct hns_roce_ib_alloc_ucontext_resp {
-	__u32	qp_tab_size;
-	__u32	reserved;
-};
-#endif /* HNS_ABI_USER_H */
+#endif /* _CMA_PRIV_H */

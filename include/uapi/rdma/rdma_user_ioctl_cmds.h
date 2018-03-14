@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: ((GPL-2.0 WITH Linux-syscall-note) OR BSD-2-Clause) */
 /*
- * Copyright (c) 2016 Hisilicon Limited.
+ * Copyright (c) 2018, Mellanox Technologies inc.  All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -31,37 +31,70 @@
  * SOFTWARE.
  */
 
-#ifndef HNS_ABI_USER_H
-#define HNS_ABI_USER_H
+#ifndef RDMA_USER_IOCTL_CMDS_H
+#define RDMA_USER_IOCTL_CMDS_H
 
 #include <linux/types.h>
+#include <linux/ioctl.h>
 
-struct hns_roce_ib_create_cq {
-	__u64   buf_addr;
-	__u64	db_addr;
+/* Documentation/ioctl/ioctl-number.txt */
+#define RDMA_IOCTL_MAGIC	0x1b
+#define RDMA_VERBS_IOCTL \
+	_IOWR(RDMA_IOCTL_MAGIC, 1, struct ib_uverbs_ioctl_hdr)
+
+enum {
+	/* User input */
+	UVERBS_ATTR_F_MANDATORY = 1U << 0,
+	/*
+	 * Valid output bit should be ignored and considered set in
+	 * mandatory fields. This bit is kernel output.
+	 */
+	UVERBS_ATTR_F_VALID_OUTPUT = 1U << 1,
 };
 
-struct hns_roce_ib_create_cq_resp {
-	__u32	cqn;
-	__u32	reserved;
-	__u64	cap_flags;
+struct ib_uverbs_attr {
+	__u16 attr_id;		/* command specific type attribute */
+	__u16 len;		/* only for pointers */
+	__u16 flags;		/* combination of UVERBS_ATTR_F_XXXX */
+	union {
+		struct {
+			__u8 elem_id;
+			__u8 reserved;
+		} enum_data;
+		__u16 reserved;
+	} attr_data;
+	__aligned_u64 data;	/* ptr to command, inline data or idr/fd */
 };
 
-struct hns_roce_ib_create_qp {
-	__u64	buf_addr;
-	__u64   db_addr;
-	__u8    log_sq_bb_count;
-	__u8    log_sq_stride;
-	__u8    sq_no_prefetch;
-	__u8    reserved[5];
+struct ib_uverbs_ioctl_hdr {
+	__u16 length;
+	__u16 object_id;
+	__u16 method_id;
+	__u16 num_attrs;
+	__aligned_u64 reserved1;
+	__u32 driver_id;
+	__u32 reserved2;
+	struct ib_uverbs_attr  attrs[0];
 };
 
-struct hns_roce_ib_create_qp_resp {
-	__u64	cap_flags;
+enum rdma_driver_id {
+	RDMA_DRIVER_UNKNOWN,
+	RDMA_DRIVER_MLX5,
+	RDMA_DRIVER_MLX4,
+	RDMA_DRIVER_CXGB3,
+	RDMA_DRIVER_CXGB4,
+	RDMA_DRIVER_MTHCA,
+	RDMA_DRIVER_BNXT_RE,
+	RDMA_DRIVER_OCRDMA,
+	RDMA_DRIVER_NES,
+	RDMA_DRIVER_I40IW,
+	RDMA_DRIVER_VMW_PVRDMA,
+	RDMA_DRIVER_QEDR,
+	RDMA_DRIVER_HNS,
+	RDMA_DRIVER_USNIC,
+	RDMA_DRIVER_RXE,
+	RDMA_DRIVER_HFI1,
+	RDMA_DRIVER_QIB,
 };
 
-struct hns_roce_ib_alloc_ucontext_resp {
-	__u32	qp_tab_size;
-	__u32	reserved;
-};
-#endif /* HNS_ABI_USER_H */
+#endif

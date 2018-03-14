@@ -1,6 +1,5 @@
-/* SPDX-License-Identifier: ((GPL-2.0 WITH Linux-syscall-note) OR BSD-2-Clause) */
 /*
- * Copyright (c) 2016 Hisilicon Limited.
+ * Copyright (c) 2018, Mellanox Technologies inc.  All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -31,37 +30,14 @@
  * SOFTWARE.
  */
 
-#ifndef HNS_ABI_USER_H
-#define HNS_ABI_USER_H
+#ifndef MLX5_USER_IOCTL_VERBS_H
+#define MLX5_USER_IOCTL_VERBS_H
 
 #include <linux/types.h>
 
-struct hns_roce_ib_create_cq {
-	__u64   buf_addr;
-	__u64	db_addr;
+enum mlx5_ib_uapi_flow_action_flags {
+	MLX5_IB_UAPI_FLOW_ACTION_FLAGS_REQUIRE_METADATA	= 1 << 0,
 };
 
-struct hns_roce_ib_create_cq_resp {
-	__u32	cqn;
-	__u32	reserved;
-	__u64	cap_flags;
-};
+#endif
 
-struct hns_roce_ib_create_qp {
-	__u64	buf_addr;
-	__u64   db_addr;
-	__u8    log_sq_bb_count;
-	__u8    log_sq_stride;
-	__u8    sq_no_prefetch;
-	__u8    reserved[5];
-};
-
-struct hns_roce_ib_create_qp_resp {
-	__u64	cap_flags;
-};
-
-struct hns_roce_ib_alloc_ucontext_resp {
-	__u32	qp_tab_size;
-	__u32	reserved;
-};
-#endif /* HNS_ABI_USER_H */
