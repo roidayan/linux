@@ -63,6 +63,7 @@ struct addr_req {
 	unsigned long timeout;
 	struct delayed_work work;
 	int status;
+	bool canceled;
 	u32 seq;
 };
 
@@ -561,6 +562,14 @@ static int addr_resolve(struct sockaddr *src_in,
 	return ret;
 }
 
+static void complete_addr_req(struct addr_req *req)
+{
+	req->callback(req->status, (struct sockaddr *)&req->src_addr,
+		req->addr, req->context);
+	put_client(req->client);
+	kfree(req);
+}
+
 static void process_one_req(struct work_struct *_work)
 {
 	struct addr_req *req;
@@ -568,6 +577,16 @@ static void process_one_req(struct work_struct *_work)
 
 	mutex_lock(&lock);
 	req = container_of(_work, struct addr_req, work.work);
+
+	/* If rdma_addr_cancel() has canceled this request, it waits using
+	 * cancel_delayed_work_sync() before finishing the request and freeing
+	 * it, so it is guaranteed that this work item request is valid when
+	 * when work is scheduled.
+	 */
+	if (req->canceled) {
+		mutex_unlock(&lock);
+		return;
+	}
 
 	if (req->status == -ENODATA) {
 		src_in = (struct sockaddr *)&req->src_addr;
@@ -586,10 +605,7 @@ static void process_one_req(struct work_struct *_work)
 	list_del(&req->list);
 	mutex_unlock(&lock);
 
-	req->callback(req->status, (struct sockaddr *)&req->src_addr,
-		req->addr, req->context);
-	put_client(req->client);
-	kfree(req);
+	complete_addr_req(req);
 }
 
 static void process_req(struct work_struct *work)
@@ -610,6 +626,12 @@ static void process_req(struct work_struct *work)
 			if (req->status && time_after_eq(jiffies, req->timeout))
 				req->status = -ETIMEDOUT;
 			else if (req->status == -ENODATA) {
+				/* Requeue the work for retrying again.
+				 * It is safe to modify the request timeout
+				 * of req because when process_req() work is
+				 * executing on ordered workqueue, other work
+				 * cannot be executing in parallel.
+				 */
 				set_timeout(&req->work, req->timeout);
 				continue;
 			}
@@ -623,13 +645,10 @@ static void process_req(struct work_struct *work)
 		list_del(&req->list);
 		/* It is safe to cancel other work items from this work item
 		 * because at a time there can be only one work item running
-		 * with this single threaded work queue.
+		 * with ordered work queue.
 		 */
 		cancel_delayed_work(&req->work);
-		req->callback(req->status, (struct sockaddr *) &req->src_addr,
-			req->addr, req->context);
-		put_client(req->client);
-		kfree(req);
+		complete_addr_req(req);
 	}
 }
 
@@ -714,19 +733,28 @@ int rdma_resolve_ip_route(struct sockaddr *src_addr,
 
 void rdma_addr_cancel(struct rdma_dev_addr *addr)
 {
-	struct addr_req *req, *temp_req;
+	struct addr_req *req;
+	bool found = false;
 
 	mutex_lock(&lock);
-	list_for_each_entry_safe(req, temp_req, &req_list, list) {
+	list_for_each_entry(req, &req_list, list) {
 		if (req->addr == addr) {
 			req->status = -ECANCELED;
+			req->canceled = true;
 			req->timeout = jiffies;
-			list_move(&req->list, &req_list);
-			set_timeout(&req->work, req->timeout);
+			list_del(&req->list);
+			found = true;
 			break;
 		}
 	}
 	mutex_unlock(&lock);
+
+	if (!found)
+		return;
+
+	/* Wait for process_one_req() to finish accessing this work */
+	cancel_delayed_work_sync(&req->work);
+	complete_addr_req(req);
 }
 EXPORT_SYMBOL(rdma_addr_cancel);
 
