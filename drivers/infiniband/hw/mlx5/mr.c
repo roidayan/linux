@@ -167,6 +167,9 @@ static int add_keys(struct mlx5_ib_dev *dev, int c, int num)
 	int err = 0;
 	int i;
 
+	if (!ent->limit)
+		return 0;
+
 	in = kzalloc(inlen, GFP_KERNEL);
 	if (!in)
 		return -ENOMEM;
