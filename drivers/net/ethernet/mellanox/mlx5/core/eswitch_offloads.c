@@ -903,7 +903,7 @@ int esw_offloads_init(struct mlx5_eswitch *esw, int nvports)
 			goto err_reps;
 	}
 
-	if (mlx5_lag_is_multipath(esw->dev)) {
+	if (MLX5_CAP_ESW(esw->dev, merged_eswitch)) {
 		struct mlx5_core_dev *peer_dev = mlx5_lag_get_peer_mdev(esw->dev);
 		struct mlx5_eswitch *peer_esw = peer_dev->priv.eswitch;
 		int peer_nvports;
