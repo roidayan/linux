@@ -219,8 +219,6 @@ static int mlx4_ib_update_gids_v1_v2(struct gid_entry *gids,
 			gid_tbl[i].version = 2;
 			if (!ipv6_addr_v4mapped((struct in6_addr *)&gids[i].gid))
 				gid_tbl[i].type = 1;
-			else
-				memset(&gid_tbl[i].gid, 0, 12);
 		}
 	}
 
@@ -366,8 +364,13 @@ static int mlx4_ib_del_gid(struct ib_device *device,
 		if (!gids) {
 			ret = -ENOMEM;
 		} else {
-			for (i = 0; i < MLX4_MAX_PORT_GIDS; i++)
-				memcpy(&gids[i].gid, &port_gid_table->gids[i].gid, sizeof(union ib_gid));
+			for (i = 0; i < MLX4_MAX_PORT_GIDS; i++) {
+				memcpy(&gids[i].gid,
+				       &port_gid_table->gids[i].gid,
+				       sizeof(union ib_gid));
+				gids[i].gid_type =
+				    port_gid_table->gids[i].gid_type;
+			}
 		}
 	}
 	spin_unlock_bh(&iboe->lock);
@@ -425,6 +428,9 @@ int mlx4_ib_gid_index_to_real_index(struct mlx4_ib_dev *ibdev,
 	spin_unlock_irqrestore(&iboe->lock, flags);
 	return real_index;
 }
+
+#define field_avail(type, fld, sz) (offsetof(type, fld) + \
+				    sizeof(((type *)0)->fld) <= (sz))
 
 static int mlx4_ib_query_device(struct ib_device *ibdev,
 				struct ib_device_attr *props,
@@ -553,14 +559,19 @@ static int mlx4_ib_query_device(struct ib_device *ibdev,
 	props->timestamp_mask = 0xFFFFFFFFFFFFULL;
 	props->max_ah = INT_MAX;
 
-	if ((dev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_RSS) &&
-	    (mlx4_ib_port_link_layer(ibdev, 1) == IB_LINK_LAYER_ETHERNET ||
-	     mlx4_ib_port_link_layer(ibdev, 2) == IB_LINK_LAYER_ETHERNET)) {
-		props->rss_caps.max_rwq_indirection_tables = props->max_qp;
-		props->rss_caps.max_rwq_indirection_table_size =
-			dev->dev->caps.max_rss_tbl_sz;
-		props->rss_caps.supported_qpts = 1 << IB_QPT_RAW_PACKET;
-		props->max_wq_type_rq = props->max_qp;
+	if (mlx4_ib_port_link_layer(ibdev, 1) == IB_LINK_LAYER_ETHERNET ||
+	    mlx4_ib_port_link_layer(ibdev, 2) == IB_LINK_LAYER_ETHERNET) {
+		if (dev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_RSS) {
+			props->rss_caps.max_rwq_indirection_tables =
+				props->max_qp;
+			props->rss_caps.max_rwq_indirection_table_size =
+				dev->dev->caps.max_rss_tbl_sz;
+			props->rss_caps.supported_qpts = 1 << IB_QPT_RAW_PACKET;
+			props->max_wq_type_rq = props->max_qp;
+		}
+
+		if (dev->dev->caps.flags & MLX4_DEV_CAP_FLAG_FCS_KEEP)
+			props->raw_packet_caps |= IB_RAW_PACKET_CAP_SCATTER_FCS;
 	}
 
 	props->cq_caps.max_cq_moderation_count = MLX4_MAX_CQ_COUNT;
@@ -572,7 +583,7 @@ static int mlx4_ib_query_device(struct ib_device *ibdev,
 	if (uhw->outlen >= resp.response_length + sizeof(resp.hca_core_clock_offset)) {
 		resp.response_length += sizeof(resp.hca_core_clock_offset);
 		if (!err && !mlx4_is_slave(dev->dev)) {
-			resp.comp_mask |= QUERY_DEVICE_RESP_MASK_TIMESTAMP;
+			resp.comp_mask |= MLX4_IB_QUERY_DEV_RESP_MASK_CORE_CLOCK_OFFSET;
 			resp.hca_core_clock_offset = clock_params.offset % PAGE_SIZE;
 		}
 	}
@@ -584,8 +595,7 @@ static int mlx4_ib_query_device(struct ib_device *ibdev,
 			sizeof(struct mlx4_wqe_data_seg);
 	}
 
-	if (uhw->outlen >= resp.response_length + sizeof(resp.rss_caps)) {
-		resp.response_length += sizeof(resp.rss_caps);
+	if (field_avail(typeof(resp), rss_caps, uhw->outlen)) {
 		if (props->rss_caps.supported_qpts) {
 			resp.rss_caps.rx_hash_function =
 				MLX4_IB_RX_HASH_FUNC_TOEPLITZ;
@@ -605,6 +615,22 @@ static int mlx4_ib_query_device(struct ib_device *ibdev,
 				resp.rss_caps.rx_hash_fields_mask |=
 					MLX4_IB_RX_HASH_INNER;
 		}
+		resp.response_length = offsetof(typeof(resp), rss_caps) +
+				       sizeof(resp.rss_caps);
+	}
+
+	if (field_avail(typeof(resp), tso_caps, uhw->outlen)) {
+		if (dev->dev->caps.max_gso_sz &&
+		    ((mlx4_ib_port_link_layer(ibdev, 1) ==
+		    IB_LINK_LAYER_ETHERNET) ||
+		    (mlx4_ib_port_link_layer(ibdev, 2) ==
+		    IB_LINK_LAYER_ETHERNET))) {
+			resp.tso_caps.max_tso = dev->dev->caps.max_gso_sz;
+			resp.tso_caps.supported_qpts |=
+				1 << IB_QPT_RAW_PACKET;
+		}
+		resp.response_length = offsetof(typeof(resp), tso_caps) +
+				       sizeof(resp.tso_caps);
 	}
 
 	if (uhw->outlen) {
@@ -1327,7 +1353,7 @@ static struct ib_pd *mlx4_ib_alloc_pd(struct ib_device *ibdev,
 	struct mlx4_ib_pd *pd;
 	int err;
 
-	pd = kmalloc(sizeof *pd, GFP_KERNEL);
+	pd = kzalloc(sizeof(*pd), GFP_KERNEL);
 	if (!pd)
 		return ERR_PTR(-ENOMEM);
 
@@ -1343,7 +1369,6 @@ static struct ib_pd *mlx4_ib_alloc_pd(struct ib_device *ibdev,
 			kfree(pd);
 			return ERR_PTR(-EFAULT);
 		}
-
 	return &pd->ibpd;
 }
 
@@ -1856,6 +1881,9 @@ static struct ib_flow *mlx4_ib_create_flow(struct ib_qp *qp,
 
 	if (flow_attr->port < 1 || flow_attr->port > qp->device->phys_port_cnt)
 		return ERR_PTR(-EINVAL);
+
+	if (flow_attr->flags & ~IB_FLOW_ATTR_FLAGS_DONT_TRAP)
+		return ERR_PTR(-EOPNOTSUPP);
 
 	if ((flow_attr->flags & IB_FLOW_ATTR_FLAGS_DONT_TRAP) &&
 	    (flow_attr->type != IB_FLOW_ATTR_NORMAL))
@@ -2930,6 +2958,7 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 	if (mlx4_ib_alloc_diag_counters(ibdev))
 		goto err_steer_free_bitmap;
 
+	ibdev->ib_dev.driver_id = RDMA_DRIVER_MLX4;
 	if (ib_register_device(&ibdev->ib_dev, NULL))
 		goto err_diag_counters;
 
