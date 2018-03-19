@@ -1538,10 +1538,6 @@ struct ib_xrcd {
 
 	struct mutex		tgt_qp_mutex;
 	struct list_head	tgt_qp_list;
-	/*
-	 * Implementation details of the RDMA core, don't use in drivers:
-	 */
-	struct rdma_restrack_entry res;
 };
 
 struct ib_ah {
