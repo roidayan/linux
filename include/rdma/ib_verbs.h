@@ -1537,10 +1537,6 @@ struct ib_xrcd {
 
 	struct mutex		tgt_qp_mutex;
 	struct list_head	tgt_qp_list;
-	/*
-	 * Implementation details of the RDMA core, don't use in drivers:
-	 */
-	struct rdma_restrack_entry res;
 };
 
 struct ib_ah {
@@ -2871,9 +2867,11 @@ enum ib_pd_flags {
 };
 
 struct ib_pd *__ib_alloc_pd(struct ib_device *device, unsigned int flags,
-		const char *caller);
+			    const char *caller, bool skip_tracking);
 #define ib_alloc_pd(device, flags) \
-	__ib_alloc_pd((device), (flags), KBUILD_MODNAME)
+	__ib_alloc_pd((device), (flags), KBUILD_MODNAME, false)
+#define ib_alloc_pd_notrack(device, flags) \
+	__ib_alloc_pd((device), (flags), KBUILD_MODNAME, true)
 void ib_dealloc_pd(struct ib_pd *pd);
 
 /**
@@ -3152,9 +3150,12 @@ static inline int ib_post_recv(struct ib_qp *qp,
 
 struct ib_cq *__ib_alloc_cq(struct ib_device *dev, void *private,
 			    int nr_cqe, int comp_vector,
-			    enum ib_poll_context poll_ctx, const char *caller);
+			    enum ib_poll_context poll_ctx, const char *caller,
+			    bool skip_tracking);
 #define ib_alloc_cq(device, priv, nr_cqe, comp_vect, poll_ctx) \
-	__ib_alloc_cq((device), (priv), (nr_cqe), (comp_vect), (poll_ctx), KBUILD_MODNAME)
+	__ib_alloc_cq((device), (priv), (nr_cqe), (comp_vect), (poll_ctx), KBUILD_MODNAME, false)
+#define ib_alloc_cq_notrack(device, priv, nr_cqe, comp_vect, poll_ctx) \
+	__ib_alloc_cq((device), (priv), (nr_cqe), (comp_vect), (poll_ctx), KBUILD_MODNAME, true)
 
 void ib_free_cq(struct ib_cq *cq);
 int ib_process_cq_direct(struct ib_cq *cq, int budget);

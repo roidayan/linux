@@ -150,4 +150,13 @@ int __must_check rdma_restrack_get(struct rdma_restrack_entry *res);
  * @res:  resource entry
  */
 int rdma_restrack_put(struct rdma_restrack_entry *res);
+
+/**
+ * rdma_restrack_dontrack() - mark resource as not valid
+ * @res:  resource entry
+ */
+static inline void rdma_restrack_dontrack(struct rdma_restrack_entry *res)
+{
+	res->valid = false;
+}
 #endif /* _RDMA_RESTRACK_H_ */

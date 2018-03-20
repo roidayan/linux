@@ -17,6 +17,7 @@
 
 /* # of WCs to poll for with a single call to ib_poll_cq */
 #define IB_POLL_BATCH			16
+#define IB_POLL_BATCH_DIRECT		8
 
 /* # of WCs to iterate over before yielding */
 #define IB_POLL_BUDGET_IRQ		256
@@ -25,18 +26,18 @@
 #define IB_POLL_FLAGS \
 	(IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS)
 
-static int __ib_process_cq(struct ib_cq *cq, int budget, struct ib_wc *poll_wc)
+static int __ib_process_cq(struct ib_cq *cq, int budget, struct ib_wc *wcs,
+			   int batch)
 {
 	int i, n, completed = 0;
-	struct ib_wc *wcs = poll_wc ? : cq->wc;
 
 	/*
 	 * budget might be (-1) if the caller does not
 	 * want to bound this call, thus we need unsigned
 	 * minimum here.
 	 */
-	while ((n = ib_poll_cq(cq, min_t(u32, IB_POLL_BATCH,
-			budget - completed), wcs)) > 0) {
+	while ((n = ib_poll_cq(cq, min_t(u32, batch,
+					 budget - completed), wcs)) > 0) {
 		for (i = 0; i < n; i++) {
 			struct ib_wc *wc = &wcs[i];
 
@@ -48,8 +49,7 @@ static int __ib_process_cq(struct ib_cq *cq, int budget, struct ib_wc *poll_wc)
 
 		completed += n;
 
-		if (n != IB_POLL_BATCH ||
-		    (budget != -1 && completed >= budget))
+		if (n != batch || (budget != -1 && completed >= budget))
 			break;
 	}
 
@@ -72,9 +72,9 @@ static int __ib_process_cq(struct ib_cq *cq, int budget, struct ib_wc *poll_wc)
  */
 int ib_process_cq_direct(struct ib_cq *cq, int budget)
 {
-	struct ib_wc wcs[IB_POLL_BATCH];
+	struct ib_wc wcs[IB_POLL_BATCH_DIRECT];
 
-	return __ib_process_cq(cq, budget, wcs);
+	return __ib_process_cq(cq, budget, wcs, IB_POLL_BATCH_DIRECT);
 }
 EXPORT_SYMBOL(ib_process_cq_direct);
 
@@ -88,7 +88,7 @@ static int ib_poll_handler(struct irq_poll *iop, int budget)
 	struct ib_cq *cq = container_of(iop, struct ib_cq, iop);
 	int completed;
 
-	completed = __ib_process_cq(cq, budget, NULL);
+	completed = __ib_process_cq(cq, budget, cq->wc, IB_POLL_BATCH);
 	if (completed < budget) {
 		irq_poll_complete(&cq->iop);
 		if (ib_req_notify_cq(cq, IB_POLL_FLAGS) > 0)
@@ -108,7 +108,8 @@ static void ib_cq_poll_work(struct work_struct *work)
 	struct ib_cq *cq = container_of(work, struct ib_cq, work);
 	int completed;
 
-	completed = __ib_process_cq(cq, IB_POLL_BUDGET_WORKQUEUE, NULL);
+	completed = __ib_process_cq(cq, IB_POLL_BUDGET_WORKQUEUE, cq->wc,
+				    IB_POLL_BATCH);
 	if (completed >= IB_POLL_BUDGET_WORKQUEUE ||
 	    ib_req_notify_cq(cq, IB_POLL_FLAGS) > 0)
 		queue_work(ib_comp_wq, &cq->work);
@@ -127,6 +128,7 @@ static void ib_cq_completion_workqueue(struct ib_cq *cq, void *private)
  * @comp_vector:	HCA completion vectors for this CQ
  * @poll_ctx:		context to poll the CQ from.
  * @caller:		module owner name.
+ * @skip_tracking:	avoid resource tracking
  *
  * This is the proper interface to allocate a CQ for in-kernel users. A
  * CQ allocated with this interface will automatically be polled from the
@@ -135,7 +137,8 @@ static void ib_cq_completion_workqueue(struct ib_cq *cq, void *private)
  */
 struct ib_cq *__ib_alloc_cq(struct ib_device *dev, void *private,
 			    int nr_cqe, int comp_vector,
-			    enum ib_poll_context poll_ctx, const char *caller)
+			    enum ib_poll_context poll_ctx,
+			    const char *caller, bool skip_tracking)
 {
 	struct ib_cq_init_attr cq_attr = {
 		.cqe		= nr_cqe,
@@ -161,7 +164,10 @@ struct ib_cq *__ib_alloc_cq(struct ib_device *dev, void *private,
 
 	cq->res.type = RDMA_RESTRACK_CQ;
 	cq->res.kern_name = caller;
-	rdma_restrack_add(&cq->res);
+	if (skip_tracking)
+		rdma_restrack_dontrack(&cq->res);
+	else
+		rdma_restrack_add(&cq->res);
 
 	switch (cq->poll_ctx) {
 	case IB_POLL_DIRECT:
