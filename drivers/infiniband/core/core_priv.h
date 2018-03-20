@@ -325,12 +325,23 @@ static inline struct ib_qp *_ib_create_qp(struct ib_device *dev,
 	 * and more importantly they are created internaly by driver,
 	 * see mlx5 create_dev_resources() as an example.
 	 */
-	if (attr->qp_type < IB_QPT_XRC_INI) {
-		qp->res.type = RDMA_RESTRACK_QP;
+	qp->res.type = RDMA_RESTRACK_QP;
+	if (attr->qp_type < IB_QPT_XRC_INI)
 		rdma_restrack_add(&qp->res);
-	} else
-		qp->res.valid = false;
+	else
+		rdma_restrack_dontrack(&qp->res);
 
 	return qp;
 }
+
+struct rdma_dev_addr;
+int rdma_resolve_ip_route(struct sockaddr *src_addr,
+			  const struct sockaddr *dst_addr,
+			  struct rdma_dev_addr *addr);
+
+int rdma_addr_find_l2_eth_by_grh(const union ib_gid *sgid,
+				 const union ib_gid *dgid,
+				 u8 *dmac, const struct net_device *ndev,
+				 int *hoplimit);
+
 #endif /* _CORE_PRIV_H */

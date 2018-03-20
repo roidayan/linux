@@ -46,6 +46,7 @@
 #include <linux/mempool.h>
 #include <linux/interrupt.h>
 #include <linux/idr.h>
+#include <linux/bitmap.h>
 
 #include <linux/mlx5/device.h>
 #include <linux/mlx5/doorbell.h>
@@ -462,8 +463,8 @@ struct mlx5_core_srq {
 	struct mlx5_core_rsc_common	common; /* must be first */
 	u32		srqn;
 	int		max;
-	int		max_gs;
-	int		max_avail_gather;
+	size_t		max_gs;
+	size_t		max_avail_gather;
 	int		wqe_shift;
 	void (*event)	(struct mlx5_core_srq *, enum mlx5_event);
 
@@ -591,8 +592,14 @@ struct mlx5_eswitch;
 struct mlx5_lag;
 struct mlx5_pagefault;
 
+struct mlx5_rate_limit {
+	u32			rate;
+	u32			max_burst_sz;
+	u16			typical_pkt_sz;
+};
+
 struct mlx5_rl_entry {
-	u32                     rate;
+	struct mlx5_rate_limit	rl;
 	u16                     index;
 	u16                     refcount;
 };
@@ -673,6 +680,10 @@ struct mlx5_priv {
 	/* protect mkey key part */
 	spinlock_t		mkey_lock;
 	u8			mkey_key;
+
+	/* memic page allocation bitmap */
+	spinlock_t		memic_lock;
+	DECLARE_BITMAP(memic_alloc_pages, MLX5_MAX_MEMIC_PAGES);
 
 	struct list_head        dev_list;
 	struct list_head        ctx_list;
@@ -1053,6 +1064,9 @@ int mlx5_core_query_mkey(struct mlx5_core_dev *dev, struct mlx5_core_mkey *mkey,
 			 u32 *out, int outlen);
 int mlx5_core_dump_fill_mkey(struct mlx5_core_dev *dev, struct mlx5_core_mkey *_mkey,
 			     u32 *mkey);
+int mlx5_core_alloc_memic(struct mlx5_core_dev *dev, phys_addr_t *address,
+			  u64 length, u32 alignment);
+int mlx5_core_dealloc_memic(struct mlx5_core_dev *dev, u64 addr, u64 length);
 int mlx5_core_alloc_pd(struct mlx5_core_dev *dev, u32 *pdn);
 int mlx5_core_dealloc_pd(struct mlx5_core_dev *dev, u32 pdn);
 int mlx5_core_mad_ifc(struct mlx5_core_dev *dev, const void *inb, void *outb,
@@ -1107,9 +1121,12 @@ int mlx5_core_page_fault_resume(struct mlx5_core_dev *dev, u32 token,
 
 int mlx5_init_rl_table(struct mlx5_core_dev *dev);
 void mlx5_cleanup_rl_table(struct mlx5_core_dev *dev);
-int mlx5_rl_add_rate(struct mlx5_core_dev *dev, u32 rate, u16 *index);
-void mlx5_rl_remove_rate(struct mlx5_core_dev *dev, u32 rate);
+int mlx5_rl_add_rate(struct mlx5_core_dev *dev, u16 *index,
+		     struct mlx5_rate_limit *rl);
+void mlx5_rl_remove_rate(struct mlx5_core_dev *dev, struct mlx5_rate_limit *rl);
 bool mlx5_rl_is_in_range(struct mlx5_core_dev *dev, u32 rate);
+bool mlx5_rl_are_equal(struct mlx5_rate_limit *rl_0,
+		       struct mlx5_rate_limit *rl_1);
 int mlx5_alloc_bfreg(struct mlx5_core_dev *mdev, struct mlx5_sq_bfreg *bfreg,
 		     bool map_wc, bool fast_path);
 void mlx5_free_bfreg(struct mlx5_core_dev *mdev, struct mlx5_sq_bfreg *bfreg);
