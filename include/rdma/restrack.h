@@ -174,4 +174,12 @@ static inline void rdma_restrack_set_task(struct rdma_restrack_entry *res,
 	res->task = task;
 }
 
+/**
+ * rdma_restrack_dontrack() - mark resource as not valid
+ * @res:  resource entry
+ */
+static inline void rdma_restrack_dontrack(struct rdma_restrack_entry *res)
+{
+	res->valid = false;
+}
 #endif /* _RDMA_RESTRACK_H_ */
