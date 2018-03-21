@@ -1039,8 +1039,6 @@ static int mlx5e_alloc_txqsq(struct mlx5e_channel *c,
 	INIT_WORK(&sq->dim.work, mlx5e_tx_dim_work);
 	sq->dim.mode = params->tx_cq_moderation.cq_period_mode;
 
-	sq->edge = mlx5_wq_cyc_get_size(wq) - MLX5_SEND_WQE_MAX_WQEBBS;
-
 	return 0;
 
 err_sq_wq_destroy:
