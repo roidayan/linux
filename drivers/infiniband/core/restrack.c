@@ -3,20 +3,62 @@
  * Copyright (c) 2017-2018 Mellanox Technologies. All rights reserved.
  */
 
+#include <rdma/rdma_cm.h>
 #include <rdma/ib_verbs.h>
 #include <rdma/restrack.h>
 #include <linux/mutex.h>
 #include <linux/sched/task.h>
 #include <linux/pid_namespace.h>
 
+#include "cma_priv.h"
+
 void rdma_restrack_init(struct rdma_restrack_root *res)
 {
 	init_rwsem(&res->rwsem);
 }
 
+static const char *type2str(enum rdma_restrack_type type)
+{
+	static const char *names[RDMA_RESTRACK_MAX] = {
+		[RDMA_RESTRACK_PD] = "PD",
+		[RDMA_RESTRACK_CQ] = "CQ",
+		[RDMA_RESTRACK_QP] = "QP",
+		[RDMA_RESTRACK_CM_ID] = "CM_ID",
+		[RDMA_RESTRACK_MR] = "MR",
+	};
+
+	return names[type];
+};
+
 void rdma_restrack_clean(struct rdma_restrack_root *res)
 {
-	WARN_ON_ONCE(!hash_empty(res->hash));
+	struct rdma_restrack_entry *e;
+	char owner[TASK_COMM_LEN];
+	struct ib_device *dev;
+	int bkt;
+
+	if (hash_empty(res->hash))
+		return;
+
+	dev = container_of(res, struct ib_device, res);
+	pr_err("%s: %s", dev->name, CUT_HERE);
+	pr_err("%s: BUG: RESTRACK detected leak of resources\n", dev->name);
+	hash_for_each(res->hash, bkt, e, node) {
+		if (rdma_is_kernel_res(e))
+			strncpy(owner, e->kern_name, TASK_COMM_LEN);
+		else
+			/*
+			 * There is no need to call get_task_struct here,
+			 * because we can be here only if there are more
+			 * get_task_struct() call than put_task_struct().
+			 */
+			get_task_comm(owner, e->task);
+
+		pr_err("%s: %s %s object allocated by %s is not freed\n",
+		       dev->name, rdma_is_kernel_res(e) ? "Kernel" : "User",
+		       type2str(e->type), owner);
+	}
+	pr_err("%s: %s", dev->name, CUT_HERE);
 }
 
 int rdma_restrack_count(struct rdma_restrack_root *res,
@@ -40,51 +82,48 @@ EXPORT_SYMBOL(rdma_restrack_count);
 
 static void set_kern_name(struct rdma_restrack_entry *res)
 {
-	enum rdma_restrack_type type = res->type;
-	struct ib_qp *qp;
+	struct ib_pd *pd;
 
-	if (type != RDMA_RESTRACK_QP)
-		/* PD and CQ types already have this name embedded in */
-		return;
-
-	qp = container_of(res, struct ib_qp, res);
-	if (!qp->pd) {
-		WARN_ONCE(true, "XRC QPs are not supported\n");
-		/* Survive, despite the programmer's error */
-		res->kern_name = " ";
-		return;
+	switch (res->type) {
+	case RDMA_RESTRACK_QP:
+		pd = container_of(res, struct ib_qp, res)->pd;
+		if (!pd) {
+			WARN_ONCE(true, "XRC QPs are not supported\n");
+			/* Survive, despite the programmer's error */
+			res->kern_name = " ";
+		}
+		break;
+	case RDMA_RESTRACK_MR:
+		pd = container_of(res, struct ib_mr, res)->pd;
+		break;
+	default:
+		/* Other types set kern_name directly */
+		pd = NULL;
+		break;
 	}
 
-	res->kern_name = qp->pd->res.kern_name;
+	if (pd)
+		res->kern_name = pd->res.kern_name;
 }
 
 static struct ib_device *res_to_dev(struct rdma_restrack_entry *res)
 {
-	enum rdma_restrack_type type = res->type;
-	struct ib_device *dev;
-	struct ib_pd *pd;
-	struct ib_cq *cq;
-	struct ib_qp *qp;
-
-	switch (type) {
+	switch (res->type) {
 	case RDMA_RESTRACK_PD:
-		pd = container_of(res, struct ib_pd, res);
-		dev = pd->device;
-		break;
+		return container_of(res, struct ib_pd, res)->device;
 	case RDMA_RESTRACK_CQ:
-		cq = container_of(res, struct ib_cq, res);
-		dev = cq->device;
-		break;
+		return container_of(res, struct ib_cq, res)->device;
 	case RDMA_RESTRACK_QP:
-		qp = container_of(res, struct ib_qp, res);
-		dev = qp->device;
-		break;
+		return container_of(res, struct ib_qp, res)->device;
+	case RDMA_RESTRACK_CM_ID:
+		return container_of(res, struct rdma_id_private,
+				    res)->id.device;
+	case RDMA_RESTRACK_MR:
+		return container_of(res, struct ib_mr, res)->device;
 	default:
-		WARN_ONCE(true, "Wrong resource tracking type %u\n", type);
+		WARN_ONCE(true, "Wrong resource tracking type %u\n", res->type);
 		return NULL;
 	}
-
-	return dev;
 }
 
 static bool res_is_user(struct rdma_restrack_entry *res)
@@ -96,6 +135,10 @@ static bool res_is_user(struct rdma_restrack_entry *res)
 		return container_of(res, struct ib_cq, res)->uobject;
 	case RDMA_RESTRACK_QP:
 		return container_of(res, struct ib_qp, res)->uobject;
+	case RDMA_RESTRACK_CM_ID:
+		return !res->kern_name;
+	case RDMA_RESTRACK_MR:
+		return container_of(res, struct ib_mr, res)->pd->uobject;
 	default:
 		WARN_ONCE(true, "Wrong resource tracking type %u\n", res->type);
 		return false;
@@ -109,13 +152,15 @@ void rdma_restrack_add(struct rdma_restrack_entry *res)
 	if (!dev)
 		return;
 
+	if (res->type != RDMA_RESTRACK_CM_ID || !res_is_user(res))
+		res->task = NULL;
+
 	if (res_is_user(res)) {
-		get_task_struct(current);
-		res->task = current;
+		if (!res->task)
+			rdma_restrack_set_task(res, current);
 		res->kern_name = NULL;
 	} else {
 		set_kern_name(res);
-		res->task = NULL;
 	}
 
 	kref_init(&res->kref);

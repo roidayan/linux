@@ -141,10 +141,7 @@ struct ib_uverbs_cq_moderation_caps {
  */
 
 #define IB_USER_VERBS_CMD_COMMAND_MASK 0xff
-#define IB_USER_VERBS_CMD_FLAGS_MASK 0xff000000u
-#define IB_USER_VERBS_CMD_FLAGS_SHIFT 24
-
-#define IB_USER_VERBS_CMD_FLAG_EXTENDED 0x80
+#define IB_USER_VERBS_CMD_FLAG_EXTENDED 0x80000000u
 
 struct ib_uverbs_cmd_hdr {
 	__u32 command;
@@ -271,6 +268,7 @@ struct ib_uverbs_ex_query_device_resp {
 	__u32 raw_packet_caps;
 	struct ib_uverbs_tm_caps tm_caps;
 	struct ib_uverbs_cq_moderation_caps cq_moderation_caps;
+	__u64 max_dm_size;
 };
 
 struct ib_uverbs_query_port {
@@ -987,6 +985,19 @@ struct ib_uverbs_flow_spec_action_drop {
 	};
 };
 
+struct ib_uverbs_flow_spec_action_handle {
+	union {
+		struct ib_uverbs_flow_spec_hdr hdr;
+		struct {
+			__u32 type;
+			__u16 size;
+			__u16 reserved;
+		};
+	};
+	__u32			      handle;
+	__u32			      reserved1;
+};
+
 struct ib_uverbs_flow_tunnel_filter {
 	__be32 tunnel_id;
 };
@@ -1002,6 +1013,24 @@ struct ib_uverbs_flow_spec_tunnel {
 	};
 	struct ib_uverbs_flow_tunnel_filter val;
 	struct ib_uverbs_flow_tunnel_filter mask;
+};
+
+struct ib_uverbs_flow_spec_esp_filter {
+	__u32 spi;
+	__u32 seq;
+};
+
+struct ib_uverbs_flow_spec_esp {
+	union {
+		struct ib_uverbs_flow_spec_hdr hdr;
+		struct {
+			__u32 type;
+			__u16 size;
+			__u16 reserved;
+		};
+	};
+	struct ib_uverbs_flow_spec_esp_filter val;
+	struct ib_uverbs_flow_spec_esp_filter mask;
 };
 
 struct ib_uverbs_flow_attr {
