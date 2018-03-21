@@ -985,12 +985,9 @@ void esw_offloads_cleanup(struct mlx5_eswitch *esw, int nvports)
 		rep->unload(esw, rep);
 	}
 
-	if (esw->fdb_table.offloads.peer_miss_rules) {
-		// TODO need to clean peer miss grp as well if peer is still
-		// switchdev
+	if (esw->fdb_table.offloads.peer_miss_rules)
 		esw_del_peer_miss_rules(esw);
-	}
-	// TODO we always allocate peer_miss_grp so always need to release it
+
 	mlx5_destroy_flow_group(esw->fdb_table.offloads.peer_miss_grp);
 
 	esw_destroy_vport_rx_group(esw);
