@@ -918,10 +918,12 @@ int esw_offloads_init(struct mlx5_eswitch *esw, int nvports)
 
 		peer_nvports = peer_dev->priv.eswitch->enabled_vports;
 
+		// TODO check error
 		esw_add_peer_miss_rules(esw, peer_nvports);
 		esw_add_peer_miss_rules(peer_esw, nvports);
-		// TODO check error
-		mlx5_lag_set_multipath_ready(esw->dev);
+
+		if (mlx5_lag_is_multipath(esw->dev))
+			mlx5_lag_set_multipath_ready(esw->dev);
 	}
 
 	return 0;
