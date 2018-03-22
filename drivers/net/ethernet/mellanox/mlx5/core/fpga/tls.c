@@ -404,7 +404,7 @@ int mlx5_fpga_tls_init(struct mlx5_core_dev *mdev)
 	struct mlx5_fpga_tls *tls;
 	int err = 0;
 
-	if (!mlx5_fpga_is_tls_device(mdev))
+	if (!mlx5_fpga_is_tls_device(mdev) || !fdev)
 		return 0;
 
 	tls = kzalloc(sizeof(*tls), GFP_KERNEL);
@@ -451,7 +451,7 @@ void mlx5_fpga_tls_cleanup(struct mlx5_core_dev *mdev)
 {
 	struct mlx5_fpga_device *fdev = mdev->fpga;
 
-	if (!fdev->tls)
+	if (!fdev || !fdev->tls)
 		return;
 
 	mlx5_fpga_sbu_conn_destroy(fdev->tls->conn);
