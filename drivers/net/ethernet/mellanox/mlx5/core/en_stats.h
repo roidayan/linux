@@ -78,6 +78,8 @@ struct mlx5e_sw_stats {
 	u64 tx_queue_wake;
 	u64 tx_queue_dropped;
 	u64 tx_xmit_more;
+	u64 tx_cqe_err;
+	u64 tx_recover;
 	u64 rx_wqe_err;
 	u64 rx_mpwqe_filler;
 	u64 rx_buff_alloc_err;
@@ -91,12 +93,22 @@ struct mlx5e_sw_stats {
 	u64 rx_cache_waive;
 	u64 ch_eq_rearm;
 
+#ifdef CONFIG_MLX5_EN_TLS
+	u64 tx_tls_ooo;
+	u64 tx_tls_resync_bytes;
+#endif
+
 	/* Special handling counters */
 	u64 link_down_events_phy;
 };
 
 struct mlx5e_qcounter_stats {
 	u32 rx_out_of_buffer;
+	u32 rx_if_down_packets;
+};
+
+struct mlx5e_vnic_env_stats {
+	__be64 query_vnic_env_out[MLX5_ST_SZ_QW(query_vnic_env_out)];
 };
 
 #define VPORT_COUNTER_GET(vstats, c) MLX5_GET64(query_vport_counter_out, \
@@ -187,11 +199,17 @@ struct mlx5e_sq_stats {
 	u64 csum_partial_inner;
 	u64 added_vlan_packets;
 	u64 nop;
+#ifdef CONFIG_MLX5_EN_TLS
+	u64 tls_ooo;
+	u64 tls_resync_bytes;
+#endif
 	/* less likely accessed in data path */
 	u64 csum_none;
 	u64 stopped;
 	u64 wake;
 	u64 dropped;
+	u64 cqe_err;
+	u64 recover;
 };
 
 struct mlx5e_ch_stats {
@@ -201,6 +219,7 @@ struct mlx5e_ch_stats {
 struct mlx5e_stats {
 	struct mlx5e_sw_stats sw;
 	struct mlx5e_qcounter_stats qcnt;
+	struct mlx5e_vnic_env_stats vnic;
 	struct mlx5e_vport_stats vport;
 	struct mlx5e_pport_stats pport;
 	struct rtnl_link_stats64 vf_vport;

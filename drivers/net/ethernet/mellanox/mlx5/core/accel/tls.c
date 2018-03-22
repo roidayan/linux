@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Mellanox Technologies, Ltd.  All rights reserved.
+ * Copyright (c) 2018 Mellanox Technologies. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -28,35 +28,44 @@
  * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
+ *
  */
-#ifndef __MLX5_VXLAN_H__
-#define __MLX5_VXLAN_H__
 
-#include <linux/mlx5/driver.h>
-#include "en.h"
+#include <linux/mlx5/device.h>
 
-struct mlx5e_vxlan {
-	struct hlist_node hlist;
-	atomic_t refcount;
-	u16 udp_port;
-};
+#include "accel/tls.h"
+#include "mlx5_core.h"
+#include "fpga/tls.h"
 
-struct mlx5e_vxlan_work {
-	struct work_struct	work;
-	struct mlx5e_priv	*priv;
-	u16			port;
-};
-
-static inline bool mlx5e_vxlan_allowed(struct mlx5_core_dev *mdev)
+int mlx5_accel_tls_add_tx_flow(struct mlx5_core_dev *mdev, void *flow,
+			       struct tls_crypto_info *crypto_info,
+			       u32 start_offload_tcp_sn, u32 *p_swid)
 {
-	return (MLX5_CAP_ETH(mdev, tunnel_stateless_vxlan) &&
-		mlx5_core_is_pf(mdev));
+	return mlx5_fpga_tls_add_tx_flow(mdev, flow, crypto_info,
+					 start_offload_tcp_sn, p_swid);
 }
 
-void mlx5e_vxlan_init(struct mlx5e_priv *priv);
-void mlx5e_vxlan_cleanup(struct mlx5e_priv *priv);
+void mlx5_accel_tls_del_tx_flow(struct mlx5_core_dev *mdev, u32 swid)
+{
+	mlx5_fpga_tls_del_tx_flow(mdev, swid, GFP_KERNEL);
+}
 
-void mlx5e_vxlan_queue_work(struct mlx5e_priv *priv, u16 port, int add);
-struct mlx5e_vxlan *mlx5e_vxlan_lookup_port(struct mlx5e_priv *priv, u16 port);
+bool mlx5_accel_is_tls_device(struct mlx5_core_dev *mdev)
+{
+	return mlx5_fpga_is_tls_device(mdev);
+}
 
-#endif /* __MLX5_VXLAN_H__ */
+u32 mlx5_accel_tls_device_caps(struct mlx5_core_dev *mdev)
+{
+	return mlx5_fpga_tls_device_caps(mdev);
+}
+
+int mlx5_accel_tls_init(struct mlx5_core_dev *mdev)
+{
+	return mlx5_fpga_tls_init(mdev);
+}
+
+void mlx5_accel_tls_cleanup(struct mlx5_core_dev *mdev)
+{
+	mlx5_fpga_tls_cleanup(mdev);
+}
