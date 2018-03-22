@@ -877,7 +877,7 @@ int ib_query_gid(struct ib_device *device,
 		 u8 port_num, int index, union ib_gid *gid,
 		 struct ib_gid_attr *attr)
 {
-	if (rdma_cap_roce_gid_table(device, port_num))
+	if (rdma_protocol_roce(device, port_num))
 		return ib_get_cached_gid(device, port_num, index, gid, attr);
 
 	if (attr)
@@ -1049,13 +1049,12 @@ EXPORT_SYMBOL(ib_modify_port);
  *   a specified GID value occurs. Its searches only for IB link layer.
  * @device: The device to query.
  * @gid: The GID value to search for.
- * @ndev: The ndev related to the GID to search for.
  * @port_num: The port number of the device where the GID value was found.
  * @index: The index into the GID table where the GID was found.  This
  *   parameter may be NULL.
  */
 int ib_find_gid(struct ib_device *device, union ib_gid *gid,
-		struct net_device *ndev, u8 *port_num, u16 *index)
+		u8 *port_num, u16 *index)
 {
 	union ib_gid tmp_gid;
 	int ret, port, i;

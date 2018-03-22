@@ -64,6 +64,7 @@
 #include <linux/cgroup_rdma.h>
 #include <uapi/rdma/ib_user_verbs.h>
 #include <rdma/restrack.h>
+#include <uapi/rdma/rdma_user_ioctl.h>
 
 #define IB_FW_VERSION_NAME_MAX	ETHTOOL_FWVERS_LEN
 
@@ -1768,6 +1769,11 @@ struct ib_mr {
 		struct ib_uobject	*uobject;	/* user */
 		struct list_head	qp_entry;	/* FR */
 	};
+
+	/*
+	 * Implementation details of the RDMA core, don't use in drivers:
+	 */
+	struct rdma_restrack_entry res;
 };
 
 struct ib_mw {
@@ -2376,6 +2382,7 @@ struct ib_device {
 						     int comp_vector);
 
 	struct uverbs_root_spec		*specs_root;
+	enum rdma_driver_id		driver_id;
 };
 
 struct ib_client {
@@ -2435,11 +2442,9 @@ static inline int ib_copy_to_udata(struct ib_udata *udata, void *src, size_t len
 	return copy_to_user(udata->outbuf, src, len) ? -EFAULT : 0;
 }
 
-static inline bool ib_is_udata_cleared(struct ib_udata *udata,
-				       size_t offset,
-				       size_t len)
+static inline bool ib_is_buffer_cleared(const void __user *p,
+					size_t len)
 {
-	const void __user *p = udata->inbuf + offset;
 	bool ret;
 	u8 *buf;
 
@@ -2453,6 +2458,13 @@ static inline bool ib_is_udata_cleared(struct ib_udata *udata,
 	ret = !memchr_inv(buf, 0, len);
 	kfree(buf);
 	return ret;
+}
+
+static inline bool ib_is_udata_cleared(struct ib_udata *udata,
+				       size_t offset,
+				       size_t len)
+{
+	return ib_is_buffer_cleared(udata->inbuf + offset, len);
 }
 
 /**
@@ -2471,9 +2483,9 @@ static inline bool ib_is_udata_cleared(struct ib_udata *udata,
  * transition from cur_state to next_state is allowed by the IB spec,
  * and that the attribute mask supplied is allowed for the transition.
  */
-int ib_modify_qp_is_ok(enum ib_qp_state cur_state, enum ib_qp_state next_state,
-		       enum ib_qp_type type, enum ib_qp_attr_mask mask,
-		       enum rdma_link_layer ll);
+bool ib_modify_qp_is_ok(enum ib_qp_state cur_state, enum ib_qp_state next_state,
+			enum ib_qp_type type, enum ib_qp_attr_mask mask,
+			enum rdma_link_layer ll);
 
 void ib_register_event_handler(struct ib_event_handler *event_handler);
 void ib_unregister_event_handler(struct ib_event_handler *event_handler);
@@ -2848,7 +2860,7 @@ int ib_modify_port(struct ib_device *device,
 		   struct ib_port_modify *port_modify);
 
 int ib_find_gid(struct ib_device *device, union ib_gid *gid,
-		struct net_device *ndev, u8 *port_num, u16 *index);
+		u8 *port_num, u16 *index);
 
 int ib_find_pkey(struct ib_device *device,
 		 u8 port_num, u16 pkey, u16 *index);
@@ -3215,18 +3227,6 @@ static inline int ib_poll_cq(struct ib_cq *cq, int num_entries,
 {
 	return cq->device->poll_cq(cq, num_entries, wc);
 }
-
-/**
- * ib_peek_cq - Returns the number of unreaped completions currently
- *   on the specified CQ.
- * @cq: The CQ to peek.
- * @wc_cnt: A minimum number of unreaped completions to check for.
- *
- * If the number of unreaped completions is greater than or equal to wc_cnt,
- * this function returns wc_cnt, otherwise, it returns the actual number of
- * unreaped completions.
- */
-int ib_peek_cq(struct ib_cq *cq, int wc_cnt);
 
 /**
  * ib_req_notify_cq - Request completion notification on a CQ.

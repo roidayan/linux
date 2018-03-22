@@ -295,7 +295,9 @@ struct mlx5_ifc_flow_table_fields_supported_bits {
 	u8         inner_tcp_dport[0x1];
 	u8         inner_tcp_flags[0x1];
 	u8         reserved_at_37[0x9];
-	u8         reserved_at_40[0x1a];
+	u8         reserved_at_40[0x17];
+	u8	   outer_esp_spi[0x1];
+	u8	   reserved_at_58[0x2];
 	u8         bth_dst_qp[0x1];
 
 	u8         reserved_at_5b[0x25];
@@ -437,7 +439,9 @@ struct mlx5_ifc_fte_match_set_misc_bits {
 
 	u8         reserved_at_120[0x28];
 	u8         bth_dst_qp[0x18];
-	u8         reserved_at_160[0xa0];
+	u8	   reserved_at_160[0x20];
+	u8	   outer_esp_spi[0x20];
+	u8         reserved_at_1a0[0x60];
 };
 
 struct mlx5_ifc_cmd_pas_bits {
@@ -567,7 +571,10 @@ struct mlx5_ifc_qos_cap_bits {
 	u8         esw_scheduling[0x1];
 	u8         esw_bw_share[0x1];
 	u8         esw_rate_limit[0x1];
-	u8         reserved_at_4[0x1c];
+	u8         reserved_at_4[0x1];
+	u8         packet_pacing_burst_bound[0x1];
+	u8         packet_pacing_typical_size[0x1];
+	u8         reserved_at_7[0x19];
 
 	u8         reserved_at_20[0x20];
 
@@ -1091,6 +1098,7 @@ enum mlx5_flow_destination_type {
 	MLX5_FLOW_DESTINATION_TYPE_FLOW_TABLE   = 0x1,
 	MLX5_FLOW_DESTINATION_TYPE_TIR          = 0x2,
 
+	MLX5_FLOW_DESTINATION_TYPE_PORT         = 0x99,
 	MLX5_FLOW_DESTINATION_TYPE_COUNTER      = 0x100,
 };
 
@@ -7308,7 +7316,12 @@ struct mlx5_ifc_set_pp_rate_limit_in_bits {
 
 	u8         rate_limit[0x20];
 
-	u8         reserved_at_a0[0x160];
+	u8	   burst_upper_bound[0x20];
+
+	u8         reserved_at_c0[0x10];
+	u8	   typical_packet_size[0x10];
+
+	u8         reserved_at_e0[0x120];
 };
 
 struct mlx5_ifc_access_register_out_bits {
