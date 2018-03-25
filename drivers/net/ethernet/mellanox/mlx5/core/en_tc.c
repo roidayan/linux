@@ -74,6 +74,7 @@ enum {
 	MLX5E_TC_FLOW_HAIRPIN_RSS = BIT(MLX5E_TC_FLOW_BASE + 4),
 	MLX5E_TC_FLOW_DUP         = BIT(MLX5E_TC_FLOW_BASE + 5),
 	MLX5E_TC_FLOW_VALID       = BIT(MLX5E_TC_FLOW_BASE + 6),
+	MLX5E_TC_FLOW_TABLE       = BIT(MLX5E_TC_FLOW_BASE + 7),
 };
 
 #define MLX5E_TC_MAX_SPLITS 1
@@ -851,6 +852,12 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	if (err)
 		goto err_add_vlan;
 
+	if (flow->flags & MLX5E_TC_FLOW_TABLE) {
+		attr->dest_type = MLX5_FLOW_DESTINATION_TYPE_FLOW_TABLE;
+	} else {
+		attr->dest_type = MLX5_FLOW_DESTINATION_TYPE_VPORT;
+	}
+
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR) {
 		err = mlx5e_attach_mod_hdr(priv, flow, parse_attr);
 		kfree(parse_attr->mod_hdr_actions);
@@ -880,7 +887,7 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	return encap_err;
 
 err_fwd_rule:
-	mlx5_eswitch_del_offloaded_rule(esw, flow->rule[0], attr);
+	mlx5_eswitch_del_offloaded_rule(esw, flow->rule[0], attr, false);
 err_add_rule:
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR)
 		mlx5e_detach_mod_hdr(priv, flow);
@@ -910,8 +917,8 @@ static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
 	if (flow->flags & MLX5E_TC_FLOW_OFFLOADED) {
 		flow->flags &= ~MLX5E_TC_FLOW_OFFLOADED;
 		if (attr->mirror_count)
-			mlx5_eswitch_del_offloaded_rule(esw, flow->rule[1], attr);
-		mlx5_eswitch_del_offloaded_rule(esw, flow->rule[0], attr);
+			mlx5_eswitch_del_offloaded_rule(esw, flow->rule[1], attr, true);
+		mlx5_eswitch_del_offloaded_rule(esw, flow->rule[0], attr, false);
 	}
 
 	mlx5_eswitch_del_vlan_action(esw, attr);
@@ -958,7 +965,7 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 		if (esw_attr->mirror_count) {
 			flow->rule[1] = mlx5_eswitch_add_fwd_rule(esw, &esw_attr->parse_attr->spec, esw_attr);
 			if (IS_ERR(flow->rule[1])) {
-				mlx5_eswitch_del_offloaded_rule(esw, flow->rule[0], esw_attr);
+				mlx5_eswitch_del_offloaded_rule(esw, flow->rule[0], esw_attr, false);
 				err = PTR_ERR(flow->rule[1]);
 				mlx5_core_warn(priv->mdev, "Failed to update cached mirror flow, %d\n",
 					       err);
@@ -982,8 +989,8 @@ void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
 
 			flow->flags &= ~MLX5E_TC_FLOW_OFFLOADED;
 			if (attr->mirror_count)
-				mlx5_eswitch_del_offloaded_rule(esw, flow->rule[1], attr);
-			mlx5_eswitch_del_offloaded_rule(esw, flow->rule[0], attr);
+				mlx5_eswitch_del_offloaded_rule(esw, flow->rule[1], attr, true);
+			mlx5_eswitch_del_offloaded_rule(esw, flow->rule[0], attr, false);
 		}
 	}
 
@@ -2543,6 +2550,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 				struct mlx5e_tc_flow_parse_attr *parse_attr,
 				struct mlx5e_tc_flow *flow)
 {
+	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 	struct mlx5_esw_flow_attr *attr = flow->esw_attr;
 	struct mlx5e_rep_priv *rpriv = priv->ppriv;
 	struct ip_tunnel_info *info = NULL;
@@ -2655,6 +2663,18 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 
 		if (is_tcf_tunnel_release(a)) {
 			action |= MLX5_FLOW_CONTEXT_ACTION_DECAP;
+			continue;
+		}
+
+		if (is_tcf_gact_goto_chain(a)) {
+			int chain_index = tcf_gact_goto_chain_index(a);
+			if (!mlx5_eswitch_is_chain_in_range(esw, chain_index))
+				return -EOPNOTSUPP;
+			action |= MLX5_FLOW_CONTEXT_ACTION_FWD_DEST |
+				  MLX5_FLOW_CONTEXT_ACTION_COUNT;
+			attr->dest_chain = chain_index;
+			flow->flags |= MLX5E_TC_FLOW_TABLE;
+
 			continue;
 		}
 
@@ -2771,6 +2791,8 @@ __mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 
 	flow->esw_attr->in_rep = in_rep;
 	flow->esw_attr->in_mdev = in_mdev;
+	flow->esw_attr->chain = f->common.chain_index;
+	flow->esw_attr->prio = TC_H_MAJ(f->common.prio) >> 16;
 
 	if (MLX5_CAP_ESW(esw->dev, counter_eswitch_affinity) ==
 	    MLX5_COUNTER_SOURCE_ESWITCH)
@@ -2918,9 +2940,17 @@ mlx5e_tc_add_flow(struct mlx5e_priv *priv,
 int mlx5e_configure_flower(struct mlx5e_priv *priv,
 			   struct tc_cls_flower_offload *f, int flags)
 {
+	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 	struct rhashtable *tc_ht = get_tc_ht(priv);
 	struct mlx5e_tc_flow *flow;
+	u32 chain = f->common.chain_index;
+	u32 prio = TC_H_MAJ(f->common.prio) >> 16;
 	int err = 0;
+
+	if (!mlx5_eswitch_is_chain_in_range(esw, chain) ||
+	    !mlx5_eswitch_is_prio_in_range(esw, prio)) {
+		return -EOPNOTSUPP;
+	}
 
 	flow = rhashtable_lookup_fast(tc_ht, &f->cookie, tc_ht_params);
 	if (flow) {

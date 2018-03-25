@@ -63,6 +63,9 @@ enum {
 #define mlx5_esw_has_fwd_fdb(dev) \
 	MLX5_CAP_ESW_FLOWTABLE(dev, fdb_multi_path_to_table)
 
+#define FDB_MAX_CHAIN 3
+#define FDB_MAX_PRIO 16
+
 struct vport_ingress {
 	struct mlx5_flow_table *acl;
 	struct mlx5_flow_group *allow_untagged_spoofchk_grp;
@@ -132,8 +135,6 @@ struct mlx5_eswitch_fdb {
 
 		struct offloads_fdb {
 			u8 flags;
-			struct mlx5_flow_table *fast_fdb;
-			struct mlx5_flow_table *fwd_fdb;
 			struct mlx5_flow_table *slow_fdb;
 			struct mlx5_flow_group *send_to_vport_grp;
 			struct mlx5_flow_group *peer_miss_grp;
@@ -142,6 +143,12 @@ struct mlx5_eswitch_fdb {
 			struct mlx5_flow_handle *miss_rule_uni;
 			struct mlx5_flow_handle *miss_rule_multi;
 			int vlan_push_pop_refcount;
+
+			struct {
+				struct mlx5_flow_table *fast_fdb;
+				struct mlx5_flow_table *fwd_fdb;
+				u32 num_rules[2];
+			} fdb_prio[FDB_MAX_CHAIN+1][FDB_MAX_PRIO + 1];
 		} offloads;
 	};
 };
@@ -185,6 +192,8 @@ struct esw_mc_addr { /* SRIOV only */
 	u32                    refcnt;
 };
 
+extern const unsigned int ESW_POOLS[4];
+
 struct mlx5_eswitch {
 	struct mlx5_core_dev    *dev;
 	struct mlx5_eswitch_fdb fdb_table;
@@ -206,6 +215,10 @@ struct mlx5_eswitch {
 
 	struct mlx5_esw_offload offloads;
 	int                     mode;
+
+	int                     fdb_left[ARRAY_SIZE(ESW_POOLS)];
+	int                     fdb_max;
+	bool                    fdb_fixed;
 };
 
 void esw_offloads_cleanup(struct mlx5_eswitch *esw, int nvports);
@@ -249,7 +262,12 @@ mlx5_eswitch_add_fwd_rule(struct mlx5_eswitch *esw,
 void
 mlx5_eswitch_del_offloaded_rule(struct mlx5_eswitch *esw,
 				struct mlx5_flow_handle *rule,
-				struct mlx5_esw_flow_attr *attr);
+				struct mlx5_esw_flow_attr *attr,
+				bool fwd_rule);
+bool
+mlx5_eswitch_is_prio_in_range(struct mlx5_eswitch *esw, u32 prio);
+bool
+mlx5_eswitch_is_chain_in_range(struct mlx5_eswitch *esw, u32 chain);
 
 struct mlx5_flow_handle *
 mlx5_eswitch_create_vport_rx_rule(struct mlx5_eswitch *esw, int vport, u32 tirn);
@@ -287,6 +305,10 @@ struct mlx5_esw_flow_attr {
 	u32	encap_id;
 	u32	mod_hdr_id;
 	u8	match_level;
+	u32	chain;
+	u32	prio;
+	u32	dest_chain;
+	u32	dest_type;
 	struct mlx5e_tc_flow_parse_attr *parse_attr;
 };
 

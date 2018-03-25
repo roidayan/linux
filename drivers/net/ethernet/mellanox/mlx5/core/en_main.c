@@ -3097,9 +3097,6 @@ static int mlx5e_setup_tc_cls_flower(struct mlx5e_priv *priv,
 				     struct tc_cls_flower_offload *cls_flower,
 				     int flags)
 {
-	if (cls_flower->common.chain_index)
-		return -EOPNOTSUPP;
-
 	switch (cls_flower->command) {
 	case TC_CLSFLOWER_REPLACE:
 		return mlx5e_configure_flower(priv, cls_flower, flags);
