@@ -879,10 +879,13 @@ static ssize_t ucma_query_addr(struct ucma_context *ctx,
 
 	addr = (struct sockaddr *) &ctx->cm_id->route.addr.src_addr;
 	resp.src_size = rdma_addr_size(addr);
-	memcpy(&resp.src_addr, addr, resp.src_size);
-
 	addr = (struct sockaddr *) &ctx->cm_id->route.addr.dst_addr;
 	resp.dst_size = rdma_addr_size(addr);
+
+	if (!resp.src_size || !resp.dst_size)
+		return -EINVAL;
+
+	memcpy(&resp.src_addr, addr, resp.src_size);
 	memcpy(&resp.dst_addr, addr, resp.dst_size);
 
 	ucma_query_device_addr(ctx->cm_id, &resp);
