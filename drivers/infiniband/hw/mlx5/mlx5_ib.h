@@ -130,9 +130,6 @@ struct mlx5_ib_ucontext {
 	/* protect vma_private_list add/del */
 	struct mutex		vma_private_list_mutex;
 
-	unsigned long		upd_xlt_page;
-	/* protect ODP/KSM */
-	struct mutex		upd_xlt_page_mutex;
 	u64			lib_caps;
 };
 
@@ -406,7 +403,7 @@ struct mlx5_ib_qp {
 	struct list_head	qps_list;
 	struct list_head	cq_recv_list;
 	struct list_head	cq_send_list;
-	u32			rate_limit;
+	struct mlx5_rate_limit	rl;
 	u32                     underlay_qpn;
 	bool			tunnel_offload_en;
 	/* storage for qp sub type when core qp type is IB_QPT_DRIVER */
@@ -742,8 +739,9 @@ enum mlx5_ib_stages {
 	MLX5_IB_STAGE_CONG_DEBUGFS,
 	MLX5_IB_STAGE_UAR,
 	MLX5_IB_STAGE_BFREG,
+	MLX5_IB_STAGE_PRE_IB_REG_UMR,
 	MLX5_IB_STAGE_IB_REG,
-	MLX5_IB_STAGE_UMR_RESOURCES,
+	MLX5_IB_STAGE_POST_IB_REG_UMR,
 	MLX5_IB_STAGE_DELAY_DROP,
 	MLX5_IB_STAGE_CLASS_ATTR,
 	MLX5_IB_STAGE_REP_REG,
@@ -1068,10 +1066,10 @@ int mlx5_ib_stage_counters_init(struct mlx5_ib_dev *dev);
 void mlx5_ib_stage_counters_cleanup(struct mlx5_ib_dev *dev);
 int mlx5_ib_stage_bfrag_init(struct mlx5_ib_dev *dev);
 void mlx5_ib_stage_bfrag_cleanup(struct mlx5_ib_dev *dev);
+void mlx5_ib_stage_pre_ib_reg_umr_cleanup(struct mlx5_ib_dev *dev);
 int mlx5_ib_stage_ib_reg_init(struct mlx5_ib_dev *dev);
 void mlx5_ib_stage_ib_reg_cleanup(struct mlx5_ib_dev *dev);
-int mlx5_ib_stage_umr_res_init(struct mlx5_ib_dev *dev);
-void mlx5_ib_stage_umr_res_cleanup(struct mlx5_ib_dev *dev);
+int mlx5_ib_stage_post_ib_reg_umr_init(struct mlx5_ib_dev *dev);
 int mlx5_ib_stage_class_attr_init(struct mlx5_ib_dev *dev);
 void __mlx5_ib_remove(struct mlx5_ib_dev *dev,
 		      const struct mlx5_ib_profile *profile,
@@ -1219,5 +1217,8 @@ static inline int get_num_static_uars(struct mlx5_ib_dev *dev,
 {
 	return get_uars_per_sys_page(dev, bfregi->lib_uar_4k) * bfregi->num_static_sys_pages;
 }
+
+unsigned long mlx5_ib_get_xlt_emergency_page(void);
+void mlx5_ib_put_xlt_emergency_page(void);
 
 #endif /* MLX5_IB_H */
