@@ -37,6 +37,7 @@
 #include "fs_core.h"
 #include "fs_cmd.h"
 #include "diag/fs_tracepoint.h"
+#include "eswitch.h"
 
 #define INIT_TREE_NODE_ARRAY_SIZE(...)	(sizeof((struct init_tree_node[]){__VA_ARGS__}) /\
 					 sizeof(struct init_tree_node))
@@ -1021,9 +1022,6 @@ struct mlx5_flow_group *mlx5_create_flow_group(struct mlx5_flow_table *ft,
 
 	if (!check_valid_mask(match_criteria_enable, match_criteria))
 		return ERR_PTR(-EINVAL);
-
-	if (ft->autogroup.active)
-		return ERR_PTR(-EPERM);
 
 	lock_ref_node(&ft->node);
 	fg = create_flow_group_common(ft, fg_in, ft->node.children.prev, false);
@@ -2135,18 +2133,21 @@ static int init_sniffer_rx_root_ns(struct mlx5_flow_steering *steering)
 
 static int init_fdb_root_ns(struct mlx5_flow_steering *steering)
 {
-	struct fs_prio *prio;
+	struct fs_prio *fs_prio;
+	int prio;
 
 	steering->fdb_root_ns = create_root_ns(steering, FS_FT_FDB);
 	if (!steering->fdb_root_ns)
 		return -ENOMEM;
 
-	prio = fs_create_prio(&steering->fdb_root_ns->ns, 0, 1);
-	if (IS_ERR(prio))
-		goto out_err;
+	for (prio = 0; prio < (FDB_MAX_PRIO + 1) * (FDB_MAX_CHAIN + 1); prio++) {
+		fs_prio = fs_create_prio(&steering->fdb_root_ns->ns, prio, 1);
+		if (IS_ERR(fs_prio))
+			goto out_err;
+	}
 
-	prio = fs_create_prio(&steering->fdb_root_ns->ns, 1, 1);
-	if (IS_ERR(prio))
+	fs_prio = fs_create_prio(&steering->fdb_root_ns->ns, prio++, 1);
+	if (IS_ERR(fs_prio))
 		goto out_err;
 
 	set_prio_attrs(steering->fdb_root_ns);
@@ -2155,7 +2156,7 @@ static int init_fdb_root_ns(struct mlx5_flow_steering *steering)
 out_err:
 	cleanup_root_ns(steering->fdb_root_ns);
 	steering->fdb_root_ns = NULL;
-	return PTR_ERR(prio);
+	return PTR_ERR(fs_prio);
 }
 
 static int init_ingress_acl_root_ns(struct mlx5_flow_steering *steering)

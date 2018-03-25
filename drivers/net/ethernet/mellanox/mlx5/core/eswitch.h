@@ -60,6 +60,9 @@ enum {
 #define MLX5_RATE_TO_BW_SHARE(rate, divider, limit) \
 	min_t(u32, max_t(u32, (rate) / (divider), MLX5_MIN_BW_SHARE), limit)
 
+#define FDB_MAX_CHAIN 3
+#define FDB_MAX_PRIO 16
+
 struct vport_ingress {
 	struct mlx5_flow_table *acl;
 	struct mlx5_flow_group *allow_untagged_spoofchk_grp;
@@ -115,7 +118,14 @@ struct mlx5_vport {
 };
 
 struct mlx5_eswitch_fdb {
-	void *fdb;
+	struct {
+		void *fdb;
+		struct mlx5_flow_group *miss_g;
+		u32 num_rules;
+	} fdb_prio[FDB_MAX_CHAIN+1][FDB_MAX_PRIO + 1];
+	u32 last_prio[FDB_MAX_CHAIN+1];
+	struct mlx5_flow_handle *miss_r[FDB_MAX_CHAIN+1];
+
 	union {
 		struct legacy_fdb {
 			struct mlx5_flow_group *addr_grp;
@@ -196,6 +206,10 @@ struct mlx5_eswitch {
 
 	struct mlx5_esw_offload offloads;
 	int                     mode;
+
+	int                     fdb_left;
+	int                     fdb_max;
+	int                     fdb_fixed;
 };
 
 void esw_offloads_cleanup(struct mlx5_eswitch *esw, int nvports);
@@ -236,6 +250,8 @@ void
 mlx5_eswitch_del_offloaded_rule(struct mlx5_eswitch *esw,
 				struct mlx5_flow_handle *rule,
 				struct mlx5_esw_flow_attr *attr);
+bool
+mlx5_eswitch_is_prio_in_range(struct mlx5_eswitch *esw, u32 prio);
 
 struct mlx5_flow_handle *
 mlx5_eswitch_create_vport_rx_rule(struct mlx5_eswitch *esw, int vport, u32 tirn);
@@ -258,6 +274,10 @@ struct mlx5_esw_flow_attr {
 	bool	vlan_handled;
 	u32	encap_id;
 	u32	mod_hdr_id;
+	u32	chain;
+	u32	prio;
+	u32	dest_chain;
+	u32	dest_type;
 	struct mlx5e_tc_flow_parse_attr *parse_attr;
 };
 

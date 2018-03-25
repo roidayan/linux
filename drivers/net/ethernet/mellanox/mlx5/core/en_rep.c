@@ -665,8 +665,9 @@ mlx5e_rep_setup_tc_cls_flower(struct net_device *dev,
 	struct mlx5e_priv *priv = netdev_priv(dev);
 
 	if (!is_classid_clsact_ingress(cls_flower->common.classid) ||
-	    cls_flower->common.chain_index)
+	    (cls_flower->common.chain_index > FDB_MAX_CHAIN)) {
 		return -EOPNOTSUPP;
+	}
 
 	if (cls_flower->egress_dev) {
 		struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
