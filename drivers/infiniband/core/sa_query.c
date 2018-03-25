@@ -1248,6 +1248,9 @@ roce_resolve_route_from_path(struct ib_device *device, u8 port_num,
 	} sgid_addr, dgid_addr;
 	int ret;
 
+	if (rec->roce.route_resolved)
+		return 0;
+
 	if (!device->get_netdev)
 		return -EOPNOTSUPP;
 
@@ -1287,6 +1290,8 @@ roce_resolve_route_from_path(struct ib_device *device, u8 port_num,
 		dev_put(ndev);
 done:
 	dev_put(idev);
+	if (!ret)
+		rec->roce.route_resolved = true;
 	return ret;
 }
 
@@ -1327,9 +1332,12 @@ int ib_init_ah_attr_from_path(struct ib_device *device, u8 port_num,
 	rdma_ah_set_static_rate(ah_attr, rec->rate);
 
 	if (sa_path_is_roce(rec)) {
-		ret = roce_resolve_route_from_path(device, port_num, rec);
-		if (ret)
-			return ret;
+		if (!rec->roce.route_resolved) {
+			ret = roce_resolve_route_from_path(device, port_num,
+							   rec);
+			if (ret)
+				return ret;
+		}
 
 		memcpy(ah_attr->roce.dmac, sa_path_get_dmac(rec), ETH_ALEN);
 	} else {
