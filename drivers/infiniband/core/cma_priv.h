@@ -1,6 +1,8 @@
-/* SPDX-License-Identifier: ((GPL-2.0 WITH Linux-syscall-note) OR BSD-2-Clause) */
 /*
- * Copyright (c) 2006 Chelsio, Inc. All rights reserved.
+ * Copyright (c) 2005 Voltaire Inc.  All rights reserved.
+ * Copyright (c) 2002-2005, Network Appliance, Inc. All rights reserved.
+ * Copyright (c) 1999-2005, Mellanox Technologies, Inc. All rights reserved.
+ * Copyright (c) 2005-2006 Intel Corporation.  All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -30,53 +32,52 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-#ifndef CXGB3_ABI_USER_H
-#define CXGB3_ABI_USER_H
 
-#include <linux/types.h>
+#ifndef _CMA_PRIV_H
+#define _CMA_PRIV_H
 
-#define IWCH_UVERBS_ABI_VERSION	1
+struct rdma_id_private {
+	struct rdma_cm_id	id;
 
-/*
- * Make sure that all structs defined in this file remain laid out so
- * that they pack the same way on 32-bit and 64-bit architectures (to
- * avoid incompatibility between 32-bit userspace and 64-bit kernels).
- * In particular do not use pointer types -- pass pointers in __u64
- * instead.
- */
-struct iwch_create_cq_req {
-	__u64 user_rptr_addr;
+	struct rdma_bind_list	*bind_list;
+	struct hlist_node	node;
+	struct list_head	list; /* listen_any_list or cma_device.list */
+	struct list_head	listen_list; /* per device listens */
+	struct cma_device	*cma_dev;
+	struct list_head	mc_list;
+
+	int			internal_id;
+	enum rdma_cm_state	state;
+	spinlock_t		lock;
+	struct mutex		qp_mutex;
+
+	struct completion	comp;
+	atomic_t		refcount;
+	struct mutex		handler_mutex;
+
+	int			backlog;
+	int			timeout_ms;
+	struct ib_sa_query	*query;
+	int			query_id;
+	union {
+		struct ib_cm_id	*ib;
+		struct iw_cm_id	*iw;
+	} cm_id;
+
+	u32			seq_num;
+	u32			qkey;
+	u32			qp_num;
+	u32			options;
+	u8			srq;
+	u8			tos;
+	bool			tos_set;
+	u8			reuseaddr;
+	u8			afonly;
+	enum ib_gid_type	gid_type;
+
+	/*
+	 * Internal to RDMA/core, don't use in the drivers
+	 */
+	struct rdma_restrack_entry     res;
 };
-
-struct iwch_create_cq_resp_v0 {
-	__u64 key;
-	__u32 cqid;
-	__u32 size_log2;
-};
-
-struct iwch_create_cq_resp {
-	__u64 key;
-	__u32 cqid;
-	__u32 size_log2;
-	__u32 memsize;
-	__u32 reserved;
-};
-
-struct iwch_create_qp_resp {
-	__u64 key;
-	__u64 db_key;
-	__u32 qpid;
-	__u32 size_log2;
-	__u32 sq_size_log2;
-	__u32 rq_size_log2;
-};
-
-struct iwch_reg_user_mr_resp {
-	__u32 pbl_addr;
-};
-
-struct iwch_alloc_pd_resp {
-	__u32 pdid;
-};
-
-#endif /* CXGB3_ABI_USER_H */
+#endif /* _CMA_PRIV_H */
