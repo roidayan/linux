@@ -879,10 +879,13 @@ static ssize_t ucma_query_addr(struct ucma_context *ctx,
 
 	addr = (struct sockaddr *) &ctx->cm_id->route.addr.src_addr;
 	resp.src_size = rdma_addr_size(addr);
-	memcpy(&resp.src_addr, addr, resp.src_size);
-
 	addr = (struct sockaddr *) &ctx->cm_id->route.addr.dst_addr;
 	resp.dst_size = rdma_addr_size(addr);
+
+	if (!resp.src_size || !resp.dst_size)
+		return -EINVAL;
+
+	memcpy(&resp.src_addr, addr, resp.src_size);
 	memcpy(&resp.dst_addr, addr, resp.dst_size);
 
 	ucma_query_device_addr(ctx->cm_id, &resp);
@@ -1166,6 +1169,11 @@ static ssize_t ucma_init_qp_attr(struct ucma_file *file,
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
 
+	if (!ctx->cm_id->device) {
+		ret = -EINVAL;
+		goto out;
+	}
+
 	resp.qp_attr_mask = 0;
 	memset(&qp_attr, 0, sizeof qp_attr);
 	qp_attr.qp_state = cmd.qp_state;
@@ -1331,7 +1339,7 @@ static ssize_t ucma_notify(struct ucma_file *file, const char __user *inbuf,
 {
 	struct rdma_ucm_notify cmd;
 	struct ucma_context *ctx;
-	int ret;
+	int ret = -EINVAL;
 
 	if (copy_from_user(&cmd, inbuf, sizeof(cmd)))
 		return -EFAULT;
@@ -1340,7 +1348,9 @@ static ssize_t ucma_notify(struct ucma_file *file, const char __user *inbuf,
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
 
-	ret = rdma_notify(ctx->cm_id, (enum ib_event_type) cmd.event);
+	if (ctx->cm_id->device)
+		ret = rdma_notify(ctx->cm_id, (enum ib_event_type)cmd.event);
+
 	ucma_put_ctx(ctx);
 	return ret;
 }
