@@ -3180,6 +3180,28 @@ static void set_underlay_qp(struct mlx5_ib_dev *dev,
 	}
 }
 
+static int read_flow_counters(struct ib_device *ibdev,
+			      struct mlx5_read_counters_attr *read_attr)
+{
+	struct mlx5_fc *fc = (struct mlx5_fc *)(read_attr->hw_cntrs_hndl);
+	struct mlx5_ib_dev *dev = to_mdev(ibdev);
+
+	return mlx5_fc_query(dev->mdev, fc->id, &read_attr->out[0],
+			     &read_attr->out[1]);
+}
+
+struct mlx5_ib_flow_counter {
+	size_t offset;
+};
+
+#define INIT_COUNTER(_struct, _name)\
+	{ .offset = MLX5_BYTE_OFF(_struct, _name)}
+
+static const struct mlx5_ib_flow_counter basic_flow_cnts[] = {
+	INIT_COUNTER(traffic_counter, packets),
+	INIT_COUNTER(traffic_counter, octets),
+};
+
 static int counters_set_description(struct ib_counters *counters,
 				    enum mlx5_ib_counters_type counters_type,
 				    const void __user *cntrs_data,
