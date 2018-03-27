@@ -80,33 +80,20 @@ out:
 static int rxe_query_gid(struct ib_device *device,
 			 u8 port_num, int index, union ib_gid *gid)
 {
-	int ret;
-
-	if (index > RXE_PORT_GID_TBL_LEN)
-		return -EINVAL;
-
-	ret = ib_get_cached_gid(device, port_num, index, gid, NULL);
-	if (ret == -EAGAIN) {
-		memcpy(gid, &zgid, sizeof(*gid));
-		return 0;
-	}
-
-	return ret;
+	return 0;
 }
 
-static int rxe_add_gid(struct ib_device *device, u8 port_num, unsigned int
-		       index, const union ib_gid *gid,
+static int rxe_add_gid(const union ib_gid *gid,
 		       const struct ib_gid_attr *attr, void **context)
 {
-	if (index >= RXE_PORT_GID_TBL_LEN)
+	if (attr->index >= RXE_PORT_GID_TBL_LEN)
 		return -EINVAL;
 	return 0;
 }
 
-static int rxe_del_gid(struct ib_device *device, u8 port_num, unsigned int
-		       index, void **context)
+static int rxe_del_gid(const struct ib_gid_attr *attr, void **context)
 {
-	if (index >= RXE_PORT_GID_TBL_LEN)
+	if (attr->index >= RXE_PORT_GID_TBL_LEN)
 		return -EINVAL;
 	return 0;
 }
@@ -273,9 +260,7 @@ static int rxe_init_av(struct rxe_dev *rxe, struct rdma_ah_attr *attr,
 
 	rxe_av_from_attr(rdma_ah_get_port_num(attr), av, attr);
 	rxe_av_fill_ip_info(av, attr, &sgid_attr, &sgid);
-
-	if (sgid_attr.ndev)
-		dev_put(sgid_attr.ndev);
+	dev_put(sgid_attr.ndev);
 	return 0;
 }
 
