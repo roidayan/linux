@@ -92,6 +92,12 @@ static LIST_HEAD(mlx5_ib_dev_list);
  */
 static DEFINE_MUTEX(mlx5_ib_multiport_mutex);
 
+/* We can't use an array for xlt_emergency_page because dma_map_single
+ * doesn't work on kernel modules memory
+ */
+static unsigned long xlt_emergency_page;
+static struct mutex xlt_emergency_page_mutex;
+
 struct mlx5_ib_dev *mlx5_ib_get_ibdev_from_mpi(struct mlx5_ib_multiport_info *mpi)
 {
 	struct mlx5_ib_dev *dev;
@@ -256,11 +262,15 @@ struct mlx5_core_dev *mlx5_ib_get_native_port_mdev(struct mlx5_ib_dev *ibdev,
 	struct mlx5_ib_multiport_info *mpi;
 	struct mlx5_ib_port *port;
 
+	if (!mlx5_core_mp_enabled(ibdev->mdev) ||
+	    ll != IB_LINK_LAYER_ETHERNET) {
+		if (native_port_num)
+			*native_port_num = ib_port_num;
+		return ibdev->mdev;
+	}
+
 	if (native_port_num)
 		*native_port_num = 1;
-
-	if (!mlx5_core_mp_enabled(ibdev->mdev) || ll != IB_LINK_LAYER_ETHERNET)
-		return ibdev->mdev;
 
 	port = &ibdev->port[ib_port_num - 1];
 	if (!port)
@@ -394,6 +404,9 @@ static int mlx5_query_port_roce(struct ib_device *device, u8 port_num,
 					     mdev_port_num);
 	if (err)
 		goto out;
+
+	props->active_width     = IB_WIDTH_4X;
+	props->active_speed     = IB_SPEED_QDR;
 
 	translate_eth_proto_oper(eth_prot_oper, &props->active_speed,
 				 &props->active_width);
@@ -976,6 +989,10 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 				MLX5_CAP_QOS(mdev, packet_pacing_min_rate);
 			resp.packet_pacing_caps.supported_qpts |=
 				1 << IB_QPT_RAW_PACKET;
+			if (MLX5_CAP_QOS(mdev, packet_pacing_burst_bound) &&
+			    MLX5_CAP_QOS(mdev, packet_pacing_typical_size))
+				resp.packet_pacing_caps.cap_flags |=
+					MLX5_IB_PP_SUPPORT_BURST;
 		}
 		resp.response_length += sizeof(resp.packet_pacing_caps);
 	}
@@ -1698,17 +1715,10 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 	context->ibucontext.invalidate_range = &mlx5_ib_invalidate_range;
 #endif
 
-	context->upd_xlt_page = __get_free_page(GFP_KERNEL);
-	if (!context->upd_xlt_page) {
-		err = -ENOMEM;
-		goto out_uars;
-	}
-	mutex_init(&context->upd_xlt_page_mutex);
-
 	if (MLX5_CAP_GEN(dev->mdev, log_max_transport_domain)) {
 		err = mlx5_ib_alloc_transport_domain(dev, &context->tdn);
 		if (err)
-			goto out_page;
+			goto out_uars;
 	}
 
 	INIT_LIST_HEAD(&context->vma_private_list);
@@ -1785,9 +1795,6 @@ out_td:
 	if (MLX5_CAP_GEN(dev->mdev, log_max_transport_domain))
 		mlx5_ib_dealloc_transport_domain(dev, context->tdn);
 
-out_page:
-	free_page(context->upd_xlt_page);
-
 out_uars:
 	deallocate_uars(dev, context);
 
@@ -1813,7 +1820,6 @@ static int mlx5_ib_dealloc_ucontext(struct ib_ucontext *ibcontext)
 	if (MLX5_CAP_GEN(dev->mdev, log_max_transport_domain))
 		mlx5_ib_dealloc_transport_domain(dev, context->tdn);
 
-	free_page(context->upd_xlt_page);
 	deallocate_uars(dev, context);
 	kfree(bfregi->sys_pages);
 	kfree(bfregi->count);
@@ -3297,7 +3303,7 @@ static void mlx5_ib_handle_event(struct work_struct *_work)
 	struct mlx5_ib_dev *ibdev;
 	struct ib_event ibev;
 	bool fatal = false;
-	u8 port = 0;
+	u8 port = (u8)work->param;
 
 	if (mlx5_core_is_mp_slave(work->dev)) {
 		ibdev = mlx5_ib_get_ibdev_from_mpi(work->context);
@@ -3317,8 +3323,6 @@ static void mlx5_ib_handle_event(struct work_struct *_work)
 	case MLX5_DEV_EVENT_PORT_UP:
 	case MLX5_DEV_EVENT_PORT_DOWN:
 	case MLX5_DEV_EVENT_PORT_INITIALIZED:
-		port = (u8)work->param;
-
 		/* In RoCE, port up/down events are handled in
 		 * mlx5_netdev_event().
 		 */
@@ -3332,24 +3336,19 @@ static void mlx5_ib_handle_event(struct work_struct *_work)
 
 	case MLX5_DEV_EVENT_LID_CHANGE:
 		ibev.event = IB_EVENT_LID_CHANGE;
-		port = (u8)work->param;
 		break;
 
 	case MLX5_DEV_EVENT_PKEY_CHANGE:
 		ibev.event = IB_EVENT_PKEY_CHANGE;
-		port = (u8)work->param;
-
 		schedule_work(&ibdev->devr.ports[port - 1].pkey_change_work);
 		break;
 
 	case MLX5_DEV_EVENT_GUID_CHANGE:
 		ibev.event = IB_EVENT_GID_CHANGE;
-		port = (u8)work->param;
 		break;
 
 	case MLX5_DEV_EVENT_CLIENT_REREG:
 		ibev.event = IB_EVENT_CLIENT_REREGISTER;
-		port = (u8)work->param;
 		break;
 	case MLX5_DEV_EVENT_DELAY_DROP_TIMEOUT:
 		schedule_work(&ibdev->delay_drop.delay_drop_work);
@@ -3361,7 +3360,7 @@ static void mlx5_ib_handle_event(struct work_struct *_work)
 	ibev.device	      = &ibdev->ib_dev;
 	ibev.element.port_num = port;
 
-	if (port < 1 || port > ibdev->num_ports) {
+	if (!rdma_is_port_valid(&ibdev->ib_dev, port)) {
 		mlx5_ib_warn(ibdev, "warning: event on port %d\n", port);
 		goto out;
 	}
@@ -3485,9 +3484,12 @@ static void destroy_umrc_res(struct mlx5_ib_dev *dev)
 	if (err)
 		mlx5_ib_warn(dev, "mr cache cleanup failed\n");
 
-	mlx5_ib_destroy_qp(dev->umrc.qp);
-	ib_free_cq(dev->umrc.cq);
-	ib_dealloc_pd(dev->umrc.pd);
+	if (dev->umrc.qp)
+		mlx5_ib_destroy_qp(dev->umrc.qp);
+	if (dev->umrc.cq)
+		ib_free_cq(dev->umrc.cq);
+	if (dev->umrc.pd)
+		ib_dealloc_pd(dev->umrc.pd);
 }
 
 enum {
@@ -3589,12 +3591,15 @@ static int create_umr_res(struct mlx5_ib_dev *dev)
 
 error_4:
 	mlx5_ib_destroy_qp(qp);
+	dev->umrc.qp = NULL;
 
 error_3:
 	ib_free_cq(cq);
+	dev->umrc.cq = NULL;
 
 error_2:
 	ib_dealloc_pd(pd);
+	dev->umrc.pd = NULL;
 
 error_0:
 	kfree(attr);
@@ -4780,6 +4785,7 @@ int mlx5_ib_stage_caps_init(struct mlx5_ib_dev *dev)
 	dev->ib_dev.uverbs_ex_cmd_mask |=
 			(1ull << IB_USER_VERBS_EX_CMD_CREATE_FLOW) |
 			(1ull << IB_USER_VERBS_EX_CMD_DESTROY_FLOW);
+	dev->ib_dev.driver_id = RDMA_DRIVER_MLX5;
 
 	err = init_node_data(dev);
 	if (err)
@@ -4999,19 +5005,19 @@ int mlx5_ib_stage_ib_reg_init(struct mlx5_ib_dev *dev)
 	return ib_register_device(&dev->ib_dev, NULL);
 }
 
+void mlx5_ib_stage_pre_ib_reg_umr_cleanup(struct mlx5_ib_dev *dev)
+{
+	destroy_umrc_res(dev);
+}
+
 void mlx5_ib_stage_ib_reg_cleanup(struct mlx5_ib_dev *dev)
 {
 	ib_unregister_device(&dev->ib_dev);
 }
 
-int mlx5_ib_stage_umr_res_init(struct mlx5_ib_dev *dev)
+int mlx5_ib_stage_post_ib_reg_umr_init(struct mlx5_ib_dev *dev)
 {
 	return create_umr_res(dev);
-}
-
-void mlx5_ib_stage_umr_res_cleanup(struct mlx5_ib_dev *dev)
-{
-	destroy_umrc_res(dev);
 }
 
 static int mlx5_ib_stage_delay_drop_init(struct mlx5_ib_dev *dev)
@@ -5130,12 +5136,15 @@ static const struct mlx5_ib_profile pf_profile = {
 	STAGE_CREATE(MLX5_IB_STAGE_BFREG,
 		     mlx5_ib_stage_bfrag_init,
 		     mlx5_ib_stage_bfrag_cleanup),
+	STAGE_CREATE(MLX5_IB_STAGE_PRE_IB_REG_UMR,
+		     NULL,
+		     mlx5_ib_stage_pre_ib_reg_umr_cleanup),
 	STAGE_CREATE(MLX5_IB_STAGE_IB_REG,
 		     mlx5_ib_stage_ib_reg_init,
 		     mlx5_ib_stage_ib_reg_cleanup),
-	STAGE_CREATE(MLX5_IB_STAGE_UMR_RESOURCES,
-		     mlx5_ib_stage_umr_res_init,
-		     mlx5_ib_stage_umr_res_cleanup),
+	STAGE_CREATE(MLX5_IB_STAGE_POST_IB_REG_UMR,
+		     mlx5_ib_stage_post_ib_reg_umr_init,
+		     NULL),
 	STAGE_CREATE(MLX5_IB_STAGE_DELAY_DROP,
 		     mlx5_ib_stage_delay_drop_init,
 		     mlx5_ib_stage_delay_drop_cleanup),
@@ -5172,12 +5181,15 @@ static const struct mlx5_ib_profile nic_rep_profile = {
 	STAGE_CREATE(MLX5_IB_STAGE_BFREG,
 		     mlx5_ib_stage_bfrag_init,
 		     mlx5_ib_stage_bfrag_cleanup),
+	STAGE_CREATE(MLX5_IB_STAGE_PRE_IB_REG_UMR,
+		     NULL,
+		     mlx5_ib_stage_pre_ib_reg_umr_cleanup),
 	STAGE_CREATE(MLX5_IB_STAGE_IB_REG,
 		     mlx5_ib_stage_ib_reg_init,
 		     mlx5_ib_stage_ib_reg_cleanup),
-	STAGE_CREATE(MLX5_IB_STAGE_UMR_RESOURCES,
-		     mlx5_ib_stage_umr_res_init,
-		     mlx5_ib_stage_umr_res_cleanup),
+	STAGE_CREATE(MLX5_IB_STAGE_POST_IB_REG_UMR,
+		     mlx5_ib_stage_post_ib_reg_umr_init,
+		     NULL),
 	STAGE_CREATE(MLX5_IB_STAGE_CLASS_ATTR,
 		     mlx5_ib_stage_class_attr_init,
 		     NULL),
@@ -5292,13 +5304,32 @@ static struct mlx5_interface mlx5_ib_interface = {
 	.protocol	= MLX5_INTERFACE_PROTOCOL_IB,
 };
 
+unsigned long mlx5_ib_get_xlt_emergency_page(void)
+{
+	mutex_lock(&xlt_emergency_page_mutex);
+	return xlt_emergency_page;
+}
+
+void mlx5_ib_put_xlt_emergency_page(void)
+{
+	mutex_unlock(&xlt_emergency_page_mutex);
+}
+
 static int __init mlx5_ib_init(void)
 {
 	int err;
 
-	mlx5_ib_event_wq = alloc_ordered_workqueue("mlx5_ib_event_wq", 0);
-	if (!mlx5_ib_event_wq)
+	xlt_emergency_page = __get_free_page(GFP_KERNEL);
+	if (!xlt_emergency_page)
 		return -ENOMEM;
+
+	mutex_init(&xlt_emergency_page_mutex);
+
+	mlx5_ib_event_wq = alloc_ordered_workqueue("mlx5_ib_event_wq", 0);
+	if (!mlx5_ib_event_wq) {
+		free_page(xlt_emergency_page);
+		return -ENOMEM;
+	}
 
 	mlx5_ib_odp_init();
 
@@ -5311,6 +5342,8 @@ static void __exit mlx5_ib_cleanup(void)
 {
 	mlx5_unregister_interface(&mlx5_ib_interface);
 	destroy_workqueue(mlx5_ib_event_wq);
+	mutex_destroy(&xlt_emergency_page_mutex);
+	free_page(xlt_emergency_page);
 }
 
 module_init(mlx5_ib_init);
