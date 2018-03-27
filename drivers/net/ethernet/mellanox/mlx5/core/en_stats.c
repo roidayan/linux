@@ -32,6 +32,7 @@
 
 #include "en.h"
 #include "en_accel/ipsec.h"
+#include "en_accel/tls.h"
 
 static const struct counter_desc sw_stats_desc[] = {
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_packets) },
@@ -43,6 +44,12 @@ static const struct counter_desc sw_stats_desc[] = {
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_tso_inner_packets) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_tso_inner_bytes) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_added_vlan_packets) },
+
+#ifdef CONFIG_MLX5_EN_TLS
+	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_tls_ooo) },
+	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_tls_resync_bytes) },
+#endif
+
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_lro_packets) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_lro_bytes) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_removed_vlan_packets) },
@@ -60,6 +67,8 @@ static const struct counter_desc sw_stats_desc[] = {
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_queue_wake) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_queue_dropped) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_xmit_more) },
+	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_cqe_err) },
+	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_recover) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_wqe_err) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_mpwqe_filler) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_buff_alloc_err) },
@@ -157,6 +166,12 @@ static void mlx5e_grp_sw_update_stats(struct mlx5e_priv *priv)
 			s->tx_csum_partial_inner += sq_stats->csum_partial_inner;
 			s->tx_csum_none		+= sq_stats->csum_none;
 			s->tx_csum_partial	+= sq_stats->csum_partial;
+			s->tx_cqe_err		+= sq_stats->cqe_err;
+			s->tx_recover		+= sq_stats->recover;
+#ifdef CONFIG_MLX5_EN_TLS
+			s->tx_tls_ooo		+= sq_stats->tls_ooo;
+			s->tx_tls_resync_bytes	+= sq_stats->tls_resync_bytes;
+#endif
 		}
 	}
 
@@ -1061,6 +1076,22 @@ static void mlx5e_grp_ipsec_update_stats(struct mlx5e_priv *priv)
 	mlx5e_ipsec_update_stats(priv);
 }
 
+static int mlx5e_grp_tls_get_num_stats(struct mlx5e_priv *priv)
+{
+	return mlx5e_tls_get_count(priv);
+}
+
+static int mlx5e_grp_tls_fill_strings(struct mlx5e_priv *priv, u8 *data,
+				      int idx)
+{
+	return idx + mlx5e_tls_get_strings(priv, data + idx * ETH_GSTRING_LEN);
+}
+
+static int mlx5e_grp_tls_fill_stats(struct mlx5e_priv *priv, u64 *data, int idx)
+{
+	return idx + mlx5e_tls_get_stats(priv, data + idx);
+}
+
 static const struct counter_desc rq_stats_desc[] = {
 	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, packets) },
 	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, bytes) },
@@ -1103,6 +1134,8 @@ static const struct counter_desc sq_stats_desc[] = {
 	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, wake) },
 	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, dropped) },
 	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, xmit_more) },
+	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, cqe_err) },
+	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, recover) },
 };
 
 static const struct counter_desc ch_stats_desc[] = {
@@ -1260,6 +1293,11 @@ const struct mlx5e_stats_grp mlx5e_stats_grps[] = {
 		.fill_strings = mlx5e_grp_ipsec_fill_strings,
 		.fill_stats = mlx5e_grp_ipsec_fill_stats,
 		.update_stats = mlx5e_grp_ipsec_update_stats,
+	},
+	{
+		.get_num_stats = mlx5e_grp_tls_get_num_stats,
+		.fill_strings = mlx5e_grp_tls_fill_strings,
+		.fill_stats = mlx5e_grp_tls_fill_stats,
 	},
 	{
 		.get_num_stats = mlx5e_grp_channels_get_num_stats,

@@ -56,7 +56,9 @@ static void mlx5i_build_nic_params(struct mlx5_core_dev *mdev,
 				   struct mlx5e_params *params)
 {
 	/* Override RQ params as IPoIB supports only LINKED LIST RQ for now */
-	mlx5e_init_rq_type_params(mdev, params, MLX5_WQ_TYPE_LINKED_LIST);
+	MLX5E_SET_PFLAG(params, MLX5E_PFLAG_RX_STRIDING_RQ, false);
+	mlx5e_set_rq_type(mdev, params);
+	mlx5e_init_rq_type_params(mdev, params);
 
 	/* RQ size in ipoib by default is 512 */
 	params->log_rq_size = is_kdump_kernel() ?
@@ -538,7 +540,7 @@ static int mlx5i_detach_mcast(struct net_device *netdev, struct ib_device *hca,
 
 	err = mlx5_core_detach_mcg(mdev, gid, ipriv->qp.qpn);
 	if (err)
-		mlx5_core_dbg(mdev, "failed dettaching QPN 0x%x, MGID %pI6\n",
+		mlx5_core_dbg(mdev, "failed detaching QPN 0x%x, MGID %pI6\n",
 			      ipriv->qp.qpn, gid->raw);
 
 	return err;

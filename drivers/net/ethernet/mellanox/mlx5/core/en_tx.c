@@ -35,12 +35,21 @@
 #include <net/dsfield.h>
 #include "en.h"
 #include "ipoib/ipoib.h"
-#include "en_accel/ipsec_rxtx.h"
+#include "en_accel/en_accel.h"
 #include "lib/clock.h"
 
 #define MLX5E_SQ_NOPS_ROOM  MLX5_SEND_WQE_MAX_WQEBBS
+
+#ifndef CONFIG_MLX5_EN_TLS
 #define MLX5E_SQ_STOP_ROOM (MLX5_SEND_WQE_MAX_WQEBBS +\
 			    MLX5E_SQ_NOPS_ROOM)
+#else
+/* TLS offload requires MLX5E_SQ_STOP_ROOM to have
+ * enough room for a resync SKB, a normal SKB and a NOP
+ */
+#define MLX5E_SQ_STOP_ROOM (2 * MLX5_SEND_WQE_MAX_WQEBBS +\
+			    MLX5E_SQ_NOPS_ROOM)
+#endif
 
 static inline void mlx5e_tx_dma_unmap(struct device *pdev,
 				      struct mlx5e_sq_dma *dma)
@@ -325,8 +334,8 @@ mlx5e_txwqe_complete(struct mlx5e_txqsq *sq, struct sk_buff *skb,
 	}
 }
 
-static netdev_tx_t mlx5e_sq_xmit(struct mlx5e_txqsq *sq, struct sk_buff *skb,
-				 struct mlx5e_tx_wqe *wqe, u16 pi)
+netdev_tx_t mlx5e_sq_xmit(struct mlx5e_txqsq *sq, struct sk_buff *skb,
+			  struct mlx5e_tx_wqe *wqe, u16 pi)
 {
 	struct mlx5e_tx_wqe_info *wi   = &sq->db.wqe_info[pi];
 
@@ -399,22 +408,32 @@ dma_unmap_wqe_err:
 netdev_tx_t mlx5e_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
-	struct mlx5e_txqsq *sq = priv->txq2sq[skb_get_queue_mapping(skb)];
-	struct mlx5_wq_cyc *wq = &sq->wq;
-	u16 pi = sq->pc & wq->sz_m1;
-	struct mlx5e_tx_wqe *wqe = mlx5_wq_cyc_get_wqe(wq, pi);
+	struct mlx5e_tx_wqe *wqe;
+	struct mlx5e_txqsq *sq;
+	u16 pi;
 
-	memset(wqe, 0, sizeof(*wqe));
+	sq = priv->txq2sq[skb_get_queue_mapping(skb)];
+	mlx5e_sq_fetch_wqe(sq, &wqe, &pi);
 
-#ifdef CONFIG_MLX5_EN_IPSEC
-	if (sq->state & BIT(MLX5E_SQ_STATE_IPSEC)) {
-		skb = mlx5e_ipsec_handle_tx_skb(dev, wqe, skb);
-		if (unlikely(!skb))
-			return NETDEV_TX_OK;
-	}
+#ifdef CONFIG_MLX5_ACCEL
+	/* might send skbs and update wqe and pi */
+	skb = mlx5e_accel_handle_tx(skb, sq, dev, &wqe, &pi);
+	if (unlikely(!skb))
+		return NETDEV_TX_OK;
 #endif
-
 	return mlx5e_sq_xmit(sq, skb, wqe, pi);
+}
+
+static void mlx5e_dump_error_cqe(struct mlx5e_txqsq *sq,
+				 struct mlx5_err_cqe *err_cqe)
+{
+	u32 ci = mlx5_cqwq_get_ci(&sq->cq.wq);
+
+	netdev_err(sq->channel->netdev,
+		   "Error cqe on cqn 0x%x, ci 0x%x, sqn 0x%x, syndrome 0x%x, vendor syndrome 0x%x\n",
+		   sq->cq.mcq.cqn, ci, sq->sqn, err_cqe->syndrome,
+		   err_cqe->vendor_err_synd);
+	mlx5_dump_err_cqe(sq->cq.mdev, err_cqe);
 }
 
 bool mlx5e_poll_tx_cq(struct mlx5e_cq *cq, int napi_budget)
@@ -455,6 +474,17 @@ bool mlx5e_poll_tx_cq(struct mlx5e_cq *cq, int napi_budget)
 		mlx5_cqwq_pop(&cq->wq);
 
 		wqe_counter = be16_to_cpu(cqe->wqe_counter);
+
+		if (unlikely(cqe->op_own >> 4 == MLX5_CQE_REQ_ERR)) {
+			if (!test_and_set_bit(MLX5E_SQ_STATE_RECOVERING,
+					      &sq->state)) {
+				mlx5e_dump_error_cqe(sq,
+						     (struct mlx5_err_cqe *)cqe);
+				queue_work(cq->channel->priv->wq,
+					   &sq->recover.recover_work);
+			}
+			sq->stats.cqe_err++;
+		}
 
 		do {
 			struct mlx5e_tx_wqe_info *wi;
@@ -509,7 +539,9 @@ bool mlx5e_poll_tx_cq(struct mlx5e_cq *cq, int napi_budget)
 	netdev_tx_completed_queue(sq->txq, npkts, nbytes);
 
 	if (netif_tx_queue_stopped(sq->txq) &&
-	    mlx5e_wqc_has_room_for(&sq->wq, sq->cc, sq->pc, MLX5E_SQ_STOP_ROOM)) {
+	    mlx5e_wqc_has_room_for(&sq->wq, sq->cc, sq->pc,
+				   MLX5E_SQ_STOP_ROOM) &&
+	    !test_bit(MLX5E_SQ_STATE_RECOVERING, &sq->state)) {
 		netif_tx_wake_queue(sq->txq);
 		sq->stats.wake++;
 	}

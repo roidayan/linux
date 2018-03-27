@@ -354,22 +354,6 @@ struct mlx5_ifc_odp_per_transport_service_cap_bits {
 	u8         reserved_at_6[0x1a];
 };
 
-struct mlx5_ifc_ipv4_layout_bits {
-	u8         reserved_at_0[0x60];
-
-	u8         ipv4[0x20];
-};
-
-struct mlx5_ifc_ipv6_layout_bits {
-	u8         ipv6[16][0x8];
-};
-
-union mlx5_ifc_ipv6_layout_ipv4_layout_auto_bits {
-	struct mlx5_ifc_ipv6_layout_bits ipv6_layout;
-	struct mlx5_ifc_ipv4_layout_bits ipv4_layout;
-	u8         reserved_at_0[0x80];
-};
-
 struct mlx5_ifc_fte_match_set_lyr_2_4_bits {
 	u8         smac_47_16[0x20];
 
@@ -632,7 +616,9 @@ struct mlx5_ifc_per_protocol_networking_offload_caps_bits {
 	u8         swp[0x1];
 	u8         swp_csum[0x1];
 	u8         swp_lso[0x1];
-	u8         reserved_at_23[0x1b];
+	u8         reserved_at_23[0xd];
+	u8         max_vxlan_udp_ports[0x8];
+	u8         reserved_at_38[0x6];
 	u8         max_geneve_opt_len[0x1];
 	u8         tunnel_stateless_geneve_rx[0x1];
 
