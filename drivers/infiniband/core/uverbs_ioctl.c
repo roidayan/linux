@@ -255,6 +255,7 @@ static int uverbs_handle_method(struct ib_uverbs_attr __user *uattr_ptr,
 	if (num_given_buckets <= 0)
 		return -EINVAL;
 
+	attr_bundle->method = method_spec;
 	attr_bundle->num_buckets = num_given_buckets;
 	ret = uverbs_validate_kernel_mandatory(method_spec, attr_bundle);
 	if (ret)
