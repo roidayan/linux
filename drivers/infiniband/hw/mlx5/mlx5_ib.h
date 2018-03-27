@@ -828,7 +828,12 @@ enum mlx5_ib_counters_type {
 struct mlx5_ib_mcounters {
 	struct ib_counters ibcntrs;
 	enum mlx5_ib_counters_type type;
+	/* number of counters supported for this counters type */
+	u32 counters_num;
 	void *hw_cntrs_hndl;
+	/* read function for this counters type */
+	int (*read_counters)(struct ib_device *ibdev,
+			     struct mlx5_read_counters_attr *read_attr);
 	/* max index set as part of create_flow */
 	u32 cntrs_max_index;
 	/* number of counters data entries (<description,index> pair) */
