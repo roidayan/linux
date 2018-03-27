@@ -53,6 +53,7 @@ mlx5_eswitch_add_offloaded_rule(struct mlx5_eswitch *esw,
 	struct mlx5_flow_act flow_act = {0};
 	struct mlx5_fc *counter = NULL;
 	struct mlx5_flow_handle *rule;
+	char *outer;
 	void *misc;
 	int i = 0;
 
@@ -106,8 +107,14 @@ mlx5_eswitch_add_offloaded_rule(struct mlx5_eswitch *esw,
 	MLX5_SET_TO_ONES(fte_match_set_misc, misc, source_port);
 	MLX5_SET_TO_ONES(fte_match_set_misc, misc, source_eswitch_owner_vhca_id);
 
-	spec->match_criteria_enable = MLX5_MATCH_OUTER_HEADERS |
-				      MLX5_MATCH_MISC_PARAMETERS;
+	spec->match_criteria_enable = MLX5_MATCH_MISC_PARAMETERS;
+
+	outer = MLX5_ADDR_OF(fte_match_param, spec->match_criteria, outer_headers);
+	if (outer[0] ||
+	    memcmp(outer, outer + 1,
+		   MLX5_ST_SZ_BYTES(fte_match_set_lyr_2_4) - 1))
+		spec->match_criteria_enable |= MLX5_MATCH_OUTER_HEADERS;
+
 	if (flow_act.action & MLX5_FLOW_CONTEXT_ACTION_DECAP)
 		spec->match_criteria_enable |= MLX5_MATCH_INNER_HEADERS;
 
