@@ -3149,6 +3149,17 @@ static void set_underlay_qp(struct mlx5_ib_dev *dev,
 	}
 }
 
+static int read_flow_counters(struct ib_device *ibdev,
+			      struct mlx5_read_counters_attr *read_attr)
+{
+	struct mlx5_fc *fc = (struct mlx5_fc *)(read_attr->hw_cntrs_hndl);
+	struct mlx5_ib_dev *dev = to_mdev(ibdev);
+
+	return mlx5_fc_query(dev->mdev, fc->id,
+			     &read_attr->out[IB_COUNTER_PACKETS],
+			     &read_attr->out[IB_COUNTER_BYTES]);
+}
+
 static int counters_set_description(struct ib_counters *counters,
 				    enum mlx5_ib_counters_type counters_type,
 				    u32 *desc_data,
@@ -3163,6 +3174,10 @@ static int counters_set_description(struct ib_counters *counters,
 
 	/* init the fields for the object */
 	mcounters->type = counters_type;
+	mcounters->read_counters = read_flow_counters;
+	/* flow counters currently expose two counters packets and bytes */
+	#define FLOW_COUNTERS_NUM 2
+	mcounters->counters_num = FLOW_COUNTERS_NUM;
 	mcounters->ncounters = ncounters;
 	/* each counter entry have both description and index pair */
 	for (i = 0; i < ncounters * 2; i += 2) {
