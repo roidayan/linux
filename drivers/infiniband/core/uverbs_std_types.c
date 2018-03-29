@@ -48,7 +48,16 @@ static int uverbs_free_ah(struct ib_uobject *uobject,
 static int uverbs_free_flow(struct ib_uobject *uobject,
 			    enum rdma_remove_reason why)
 {
-	return ib_destroy_flow((struct ib_flow *)uobject->object);
+	int ret;
+	struct ib_flow *flow = (struct ib_flow *)uobject->object;
+	struct ib_uflow_object *uflow =
+		container_of(uobject, struct ib_uflow_object, uobject);
+
+	ret = ib_destroy_flow(flow);
+	if (!ret)
+		ib_uverbs_flow_resources_free(uflow->resources);
+
+	return ret;
 }
 
 static int uverbs_free_mw(struct ib_uobject *uobject,
@@ -135,12 +144,6 @@ static int uverbs_free_srq(struct ib_uobject *uobject,
 	return ret;
 }
 
-static int uverbs_free_mr(struct ib_uobject *uobject,
-			  enum rdma_remove_reason why)
-{
-	return ib_dereg_mr((struct ib_mr *)uobject->object);
-}
-
 static int uverbs_free_xrcd(struct ib_uobject *uobject,
 			    enum rdma_remove_reason why)
 {
@@ -190,6 +193,13 @@ static int uverbs_hot_unplug_completion_event_file(struct ib_uobject_file *uobj_
 	}
 	return 0;
 };
+
+int uverbs_destroy_def_handler(struct ib_device *ib_dev,
+			       struct ib_uverbs_file *file,
+			       struct uverbs_attr_bundle *attrs)
+{
+	return 0;
+}
 
 /*
  * This spec is used in order to pass information to the hardware driver in a
@@ -249,10 +259,6 @@ DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_QP,
 DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_MW,
 			    &UVERBS_TYPE_ALLOC_IDR(0, uverbs_free_mw));
 
-DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_MR,
-			    /* 1 is used in order to free the MR after all the MWs */
-			    &UVERBS_TYPE_ALLOC_IDR(1, uverbs_free_mr));
-
 DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_SRQ,
 			    &UVERBS_TYPE_ALLOC_IDR_SZ(sizeof(struct ib_usrq_object), 0,
 						      uverbs_free_srq));
@@ -261,7 +267,8 @@ DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_AH,
 			    &UVERBS_TYPE_ALLOC_IDR(0, uverbs_free_ah));
 
 DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_FLOW,
-			    &UVERBS_TYPE_ALLOC_IDR(0, uverbs_free_flow));
+			    &UVERBS_TYPE_ALLOC_IDR_SZ(sizeof(struct ib_uflow_object),
+						      0, uverbs_free_flow));
 
 DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_WQ,
 			    &UVERBS_TYPE_ALLOC_IDR_SZ(sizeof(struct ib_uwq_object), 0,
@@ -293,7 +300,9 @@ static DECLARE_UVERBS_OBJECT_TREE(uverbs_default_objects,
 				  &UVERBS_OBJECT(UVERBS_OBJECT_FLOW),
 				  &UVERBS_OBJECT(UVERBS_OBJECT_WQ),
 				  &UVERBS_OBJECT(UVERBS_OBJECT_RWQ_IND_TBL),
-				  &UVERBS_OBJECT(UVERBS_OBJECT_XRCD));
+				  &UVERBS_OBJECT(UVERBS_OBJECT_XRCD),
+				  &UVERBS_OBJECT(UVERBS_OBJECT_FLOW_ACTION),
+				  &UVERBS_OBJECT(UVERBS_OBJECT_DM));
 
 const struct uverbs_object_tree_def *uverbs_default_get_objects(void)
 {
