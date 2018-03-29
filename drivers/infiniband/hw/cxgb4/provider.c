@@ -281,7 +281,9 @@ static struct ib_pd *c4iw_allocate_pd(struct ib_device *ibdev,
 	php->pdid = pdid;
 	php->rhp = rhp;
 	if (context) {
-		if (ib_copy_to_udata(udata, &php->pdid, sizeof(u32))) {
+		struct c4iw_alloc_pd_resp uresp = {.pdid = php->pdid};
+
+		if (ib_copy_to_udata(udata, &uresp, sizeof(uresp))) {
 			c4iw_deallocate_pd(&php->ibpd);
 			return ERR_PTR(-EFAULT);
 		}
@@ -627,6 +629,7 @@ void c4iw_register_device(struct work_struct *work)
 	memcpy(dev->ibdev.iwcm->ifname, dev->rdev.lldi.ports[0]->name,
 	       sizeof(dev->ibdev.iwcm->ifname));
 
+	dev->ibdev.driver_id = RDMA_DRIVER_CXGB4;
 	ret = ib_register_device(&dev->ibdev, NULL);
 	if (ret)
 		goto err_kfree_iwcm;

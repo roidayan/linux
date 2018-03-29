@@ -1,6 +1,5 @@
-/* SPDX-License-Identifier: ((GPL-2.0 WITH Linux-syscall-note) OR BSD-2-Clause) */
 /*
- * Copyright (c) 2006 Chelsio, Inc. All rights reserved.
+ * Copyright (c) 2018, Mellanox Technologies inc.  All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -30,53 +29,55 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-#ifndef CXGB3_ABI_USER_H
-#define CXGB3_ABI_USER_H
 
-#include <linux/types.h>
+#ifndef IB_USER_IOCTL_CMDS_H
+#define IB_USER_IOCTL_CMDS_H
 
-#define IWCH_UVERBS_ABI_VERSION	1
+#define UVERBS_ID_NS_MASK 0xF000
+#define UVERBS_ID_NS_SHIFT 12
 
-/*
- * Make sure that all structs defined in this file remain laid out so
- * that they pack the same way on 32-bit and 64-bit architectures (to
- * avoid incompatibility between 32-bit userspace and 64-bit kernels).
- * In particular do not use pointer types -- pass pointers in __u64
- * instead.
- */
-struct iwch_create_cq_req {
-	__u64 user_rptr_addr;
+#define UVERBS_UDATA_DRIVER_DATA_NS	1
+#define UVERBS_UDATA_DRIVER_DATA_FLAG	(1UL << UVERBS_ID_NS_SHIFT)
+
+enum uverbs_default_objects {
+	UVERBS_OBJECT_DEVICE, /* No instances of DEVICE are allowed */
+	UVERBS_OBJECT_PD,
+	UVERBS_OBJECT_COMP_CHANNEL,
+	UVERBS_OBJECT_CQ,
+	UVERBS_OBJECT_QP,
+	UVERBS_OBJECT_SRQ,
+	UVERBS_OBJECT_AH,
+	UVERBS_OBJECT_MR,
+	UVERBS_OBJECT_MW,
+	UVERBS_OBJECT_FLOW,
+	UVERBS_OBJECT_XRCD,
+	UVERBS_OBJECT_RWQ_IND_TBL,
+	UVERBS_OBJECT_WQ,
 };
 
-struct iwch_create_cq_resp_v0 {
-	__u64 key;
-	__u32 cqid;
-	__u32 size_log2;
+enum {
+	UVERBS_ATTR_UHW_IN = UVERBS_UDATA_DRIVER_DATA_FLAG,
+	UVERBS_ATTR_UHW_OUT,
 };
 
-struct iwch_create_cq_resp {
-	__u64 key;
-	__u32 cqid;
-	__u32 size_log2;
-	__u32 memsize;
-	__u32 reserved;
+enum uverbs_attrs_create_cq_cmd_attr_ids {
+	UVERBS_ATTR_CREATE_CQ_HANDLE,
+	UVERBS_ATTR_CREATE_CQ_CQE,
+	UVERBS_ATTR_CREATE_CQ_USER_HANDLE,
+	UVERBS_ATTR_CREATE_CQ_COMP_CHANNEL,
+	UVERBS_ATTR_CREATE_CQ_COMP_VECTOR,
+	UVERBS_ATTR_CREATE_CQ_FLAGS,
+	UVERBS_ATTR_CREATE_CQ_RESP_CQE,
 };
 
-struct iwch_create_qp_resp {
-	__u64 key;
-	__u64 db_key;
-	__u32 qpid;
-	__u32 size_log2;
-	__u32 sq_size_log2;
-	__u32 rq_size_log2;
+enum uverbs_attrs_destroy_cq_cmd_attr_ids {
+	UVERBS_ATTR_DESTROY_CQ_HANDLE,
+	UVERBS_ATTR_DESTROY_CQ_RESP,
 };
 
-struct iwch_reg_user_mr_resp {
-	__u32 pbl_addr;
+enum uverbs_methods_cq {
+	UVERBS_METHOD_CQ_CREATE,
+	UVERBS_METHOD_CQ_DESTROY,
 };
 
-struct iwch_alloc_pd_resp {
-	__u32 pdid;
-};
-
-#endif /* CXGB3_ABI_USER_H */
+#endif

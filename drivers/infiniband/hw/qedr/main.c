@@ -257,6 +257,7 @@ static int qedr_register_device(struct qedr_dev *dev)
 	dev->ibdev.get_link_layer = qedr_link_layer;
 	dev->ibdev.get_dev_fw_str = qedr_get_dev_fw_str;
 
+	dev->ibdev.driver_id = RDMA_DRIVER_QEDR;
 	return ib_register_device(&dev->ibdev, NULL);
 }
 
@@ -833,7 +834,8 @@ static struct qedr_dev *qedr_add(struct qed_dev *cdev, struct pci_dev *pdev,
 
 	dev->num_cnq = dev->ops->rdma_get_min_cnq_msix(cdev);
 	if (!dev->num_cnq) {
-		DP_ERR(dev, "not enough CNQ resources.\n");
+		DP_ERR(dev, "Failed. At least one CNQ is required.\n");
+		rc = -ENOMEM;
 		goto init_err;
 	}
 
