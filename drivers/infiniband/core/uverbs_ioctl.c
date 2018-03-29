@@ -35,6 +35,17 @@
 #include "rdma_core.h"
 #include "uverbs.h"
 
+static bool uverbs_is_attr_cleared(const struct ib_uverbs_attr *uattr,
+				   u16 len)
+{
+	if (uattr->len > sizeof(((struct ib_uverbs_attr *)0)->data))
+		return ib_is_buffer_cleared(u64_to_user_ptr(uattr->data) + len,
+					    uattr->len - len);
+
+	return !memchr_inv((const void *)&uattr->data + len,
+			   0, uattr->len - len);
+}
+
 static int uverbs_process_attr(struct ib_device *ibdev,
 			       struct ib_ucontext *ucontext,
 			       const struct ib_uverbs_attr *uattr,
@@ -68,10 +79,21 @@ static int uverbs_process_attr(struct ib_device *ibdev,
 
 	switch (spec->type) {
 	case UVERBS_ATTR_TYPE_PTR_IN:
+		/* Ensure that any data provided by userspace beyond the known
+		 * struct is zero. Userspace that knows how to use some future
+		 * longer struct will fail here if used with an old kernel and
+		 * non-zero content, making ABI compat/discovery simpler.
+		 */
+		if (uattr->len > spec->ptr.len &&
+		    spec->flags & UVERBS_ATTR_SPEC_F_MIN_SZ_OR_ZERO &&
+		    !uverbs_is_attr_cleared(uattr, spec->ptr.len))
+			return -EOPNOTSUPP;
+
+	/* fall through */
 	case UVERBS_ATTR_TYPE_PTR_OUT:
-		if (uattr->len < spec->len ||
-		    (!(spec->flags & UVERBS_ATTR_SPEC_F_MIN_SZ) &&
-		     uattr->len > spec->len))
+		if (uattr->len < spec->ptr.min_len ||
+		    (!(spec->flags & UVERBS_ATTR_SPEC_F_MIN_SZ_OR_ZERO) &&
+		     uattr->len > spec->ptr.len))
 			return -EINVAL;
 
 		e->ptr_attr.data = uattr->data;
@@ -246,6 +268,9 @@ static long ib_uverbs_cmd_verbs(struct ib_device *ib_dev,
 	size_t ctx_size;
 	uintptr_t data[UVERBS_OPTIMIZE_USING_STACK_SZ / sizeof(uintptr_t)];
 
+	if (hdr->driver_id != ib_dev->driver_id)
+		return -EINVAL;
+
 	object_spec = uverbs_get_object(ib_dev, hdr->object_id);
 	if (!object_spec)
 		return -EPROTONOSUPPORT;
@@ -350,7 +375,7 @@ long ib_uverbs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			goto out;
 		}
 
-		if (hdr.reserved) {
+		if (hdr.reserved1 || hdr.reserved2) {
 			err = -EPROTONOSUPPORT;
 			goto out;
 		}

@@ -1,5 +1,6 @@
+/* SPDX-License-Identifier: ((GPL-2.0 WITH Linux-syscall-note) OR BSD-2-Clause) */
 /*
- * Copyright (c) 2017, Mellanox Technologies inc.  All rights reserved.
+ * Copyright (c) 2017-2018, Mellanox Technologies inc.  All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -33,52 +34,10 @@
 #ifndef IB_USER_IOCTL_VERBS_H
 #define IB_USER_IOCTL_VERBS_H
 
-#include <rdma/rdma_user_ioctl.h>
+#include <linux/types.h>
 
-#define UVERBS_UDATA_DRIVER_DATA_NS	1
-#define UVERBS_UDATA_DRIVER_DATA_FLAG	(1UL << UVERBS_ID_NS_SHIFT)
-
-enum uverbs_default_objects {
-	UVERBS_OBJECT_DEVICE, /* No instances of DEVICE are allowed */
-	UVERBS_OBJECT_PD,
-	UVERBS_OBJECT_COMP_CHANNEL,
-	UVERBS_OBJECT_CQ,
-	UVERBS_OBJECT_QP,
-	UVERBS_OBJECT_SRQ,
-	UVERBS_OBJECT_AH,
-	UVERBS_OBJECT_MR,
-	UVERBS_OBJECT_MW,
-	UVERBS_OBJECT_FLOW,
-	UVERBS_OBJECT_XRCD,
-	UVERBS_OBJECT_RWQ_IND_TBL,
-	UVERBS_OBJECT_WQ,
-	UVERBS_OBJECT_LAST,
-};
-
-enum {
-	UVERBS_UHW_IN = UVERBS_UDATA_DRIVER_DATA_FLAG,
-	UVERBS_UHW_OUT,
-};
-
-enum uverbs_create_cq_cmd_attr_ids {
-	CREATE_CQ_HANDLE,
-	CREATE_CQ_CQE,
-	CREATE_CQ_USER_HANDLE,
-	CREATE_CQ_COMP_CHANNEL,
-	CREATE_CQ_COMP_VECTOR,
-	CREATE_CQ_FLAGS,
-	CREATE_CQ_RESP_CQE,
-};
-
-enum uverbs_destroy_cq_cmd_attr_ids {
-	DESTROY_CQ_HANDLE,
-	DESTROY_CQ_RESP,
-};
-
-enum uverbs_actions_cq_ops {
-	UVERBS_CQ_CREATE,
-	UVERBS_CQ_DESTROY,
-};
-
+#ifndef RDMA_UAPI_PTR
+#define RDMA_UAPI_PTR(_type, _name)	_type __attribute__((aligned(8))) _name
 #endif
 
+#endif
