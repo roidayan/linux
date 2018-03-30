@@ -41,7 +41,9 @@
 #include "en_rep.h"
 #include "en_accel/ipsec.h"
 #include "en_accel/ipsec_rxtx.h"
+#include "en_accel/tls.h"
 #include "accel/ipsec.h"
+#include "accel/tls.h"
 #include "vxlan.h"
 
 struct mlx5e_rq_param {
@@ -978,6 +980,8 @@ static int mlx5e_alloc_txqsq(struct mlx5e_channel *c,
 	INIT_WORK(&sq->recover.recover_work, mlx5e_sq_recover);
 	if (MLX5_IPSEC_DEV(c->priv->mdev))
 		set_bit(MLX5E_SQ_STATE_IPSEC, &sq->state);
+	if (mlx5_accel_is_tls_device(c->priv->mdev))
+		set_bit(MLX5E_SQ_STATE_TLS, &sq->state);
 
 	param->wq.db_numa_node = cpu_to_node(c->cpu);
 	err = mlx5_wq_cyc_create(mdev, &param->wq, sqc_wq, &sq->wq, &sq->wq_ctrl);
@@ -3649,7 +3653,7 @@ static void mlx5e_add_vxlan_port(struct net_device *netdev,
 	if (!mlx5e_vxlan_allowed(priv->mdev))
 		return;
 
-	mlx5e_vxlan_queue_work(priv, ti->sa_family, be16_to_cpu(ti->port), 1);
+	mlx5e_vxlan_queue_work(priv, be16_to_cpu(ti->port), 1);
 }
 
 static void mlx5e_del_vxlan_port(struct net_device *netdev,
@@ -3663,7 +3667,7 @@ static void mlx5e_del_vxlan_port(struct net_device *netdev,
 	if (!mlx5e_vxlan_allowed(priv->mdev))
 		return;
 
-	mlx5e_vxlan_queue_work(priv, ti->sa_family, be16_to_cpu(ti->port), 0);
+	mlx5e_vxlan_queue_work(priv, be16_to_cpu(ti->port), 0);
 }
 
 static netdev_features_t mlx5e_tunnel_features_check(struct mlx5e_priv *priv,
@@ -3728,21 +3732,11 @@ static netdev_features_t mlx5e_features_check(struct sk_buff *skb,
 static bool mlx5e_tx_timeout_eq_recover(struct net_device *dev,
 					struct mlx5e_txqsq *sq)
 {
-	struct mlx5e_priv *priv = netdev_priv(dev);
-	struct mlx5_core_dev *mdev = priv->mdev;
-	int irqn_not_used, eqn;
-	struct mlx5_eq *eq;
+	struct mlx5_eq *eq = sq->cq.mcq.eq;
 	u32 eqe_count;
 
-	if (mlx5_vector2eqn(mdev, sq->cq.mcq.vector, &eqn, &irqn_not_used))
-		return false;
-
-	eq = mlx5_eqn2eq(mdev, eqn);
-	if (IS_ERR(eq))
-		return false;
-
 	netdev_err(dev, "EQ 0x%x: Cons = 0x%x, irqn = 0x%x\n",
-		   eqn, eq->cons_index, eq->irqn);
+		   eq->eqn, eq->cons_index, eq->irqn);
 
 	eqe_count = mlx5_eq_poll_irq_disabled(eq);
 	if (!eqe_count)
@@ -4326,6 +4320,7 @@ static void mlx5e_build_nic_netdev(struct net_device *netdev)
 #endif
 
 	mlx5e_ipsec_build_netdev(priv);
+	mlx5e_tls_build_netdev(priv);
 }
 
 static void mlx5e_create_q_counters(struct mlx5e_priv *priv)
@@ -4367,12 +4362,16 @@ static void mlx5e_nic_init(struct mlx5_core_dev *mdev,
 	err = mlx5e_ipsec_init(priv);
 	if (err)
 		mlx5_core_err(mdev, "IPSec initialization failed, %d\n", err);
+	err = mlx5e_tls_init(priv);
+	if (err)
+		mlx5_core_err(mdev, "TLS initialization failed, %d\n", err);
 	mlx5e_build_nic_netdev(netdev);
 	mlx5e_vxlan_init(priv);
 }
 
 static void mlx5e_nic_cleanup(struct mlx5e_priv *priv)
 {
+	mlx5e_tls_cleanup(priv);
 	mlx5e_ipsec_cleanup(priv);
 	mlx5e_vxlan_cleanup(priv);
 }

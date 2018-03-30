@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Mellanox Technologies, Ltd.  All rights reserved.
+ * Copyright (c) 2018 Mellanox Technologies. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -28,35 +28,45 @@
  * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
+ *
  */
-#ifndef __MLX5_VXLAN_H__
-#define __MLX5_VXLAN_H__
 
-#include <linux/mlx5/driver.h>
+#ifndef __MLX5E_EN_ACCEL_H__
+#define __MLX5E_EN_ACCEL_H__
+
+#ifdef CONFIG_MLX5_ACCEL
+
+#include <linux/skbuff.h>
+#include <linux/netdevice.h>
+#include "en_accel/ipsec_rxtx.h"
+#include "en_accel/tls_rxtx.h"
 #include "en.h"
 
-struct mlx5e_vxlan {
-	struct hlist_node hlist;
-	atomic_t refcount;
-	u16 udp_port;
-};
-
-struct mlx5e_vxlan_work {
-	struct work_struct	work;
-	struct mlx5e_priv	*priv;
-	u16			port;
-};
-
-static inline bool mlx5e_vxlan_allowed(struct mlx5_core_dev *mdev)
+static inline struct sk_buff *mlx5e_accel_handle_tx(struct sk_buff *skb,
+						    struct mlx5e_txqsq *sq,
+						    struct net_device *dev,
+						    struct mlx5e_tx_wqe **wqe,
+						    u16 *pi)
 {
-	return (MLX5_CAP_ETH(mdev, tunnel_stateless_vxlan) &&
-		mlx5_core_is_pf(mdev));
+#ifdef CONFIG_MLX5_EN_TLS
+	if (sq->state & BIT(MLX5E_SQ_STATE_TLS)) {
+		skb = mlx5e_tls_handle_tx_skb(dev, sq, skb, wqe, pi);
+		if (unlikely(!skb))
+			return NULL;
+	}
+#endif
+
+#ifdef CONFIG_MLX5_EN_IPSEC
+	if (sq->state & BIT(MLX5E_SQ_STATE_IPSEC)) {
+		skb = mlx5e_ipsec_handle_tx_skb(dev, *wqe, skb);
+		if (unlikely(!skb))
+			return NULL;
+	}
+#endif
+
+	return skb;
 }
 
-void mlx5e_vxlan_init(struct mlx5e_priv *priv);
-void mlx5e_vxlan_cleanup(struct mlx5e_priv *priv);
+#endif /* CONFIG_MLX5_ACCEL */
 
-void mlx5e_vxlan_queue_work(struct mlx5e_priv *priv, u16 port, int add);
-struct mlx5e_vxlan *mlx5e_vxlan_lookup_port(struct mlx5e_priv *priv, u16 port);
-
-#endif /* __MLX5_VXLAN_H__ */
+#endif /* __MLX5E_EN_ACCEL_H__ */

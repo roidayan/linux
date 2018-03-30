@@ -60,6 +60,7 @@
 #include "fpga/core.h"
 #include "fpga/ipsec.h"
 #include "accel/ipsec.h"
+#include "accel/tls.h"
 #include "lib/clock.h"
 
 MODULE_AUTHOR("Eli Cohen <eli@mellanox.com>");
@@ -1186,6 +1187,12 @@ static int mlx5_load_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv,
 		goto err_ipsec_start;
 	}
 
+	err = mlx5_accel_tls_init(dev);
+	if (err) {
+		dev_err(&pdev->dev, "TLS device start failed %d\n", err);
+		goto err_tls_start;
+	}
+
 	err = mlx5_init_fs(dev);
 	if (err) {
 		dev_err(&pdev->dev, "Failed to init flow steering\n");
@@ -1227,6 +1234,9 @@ err_sriov:
 	mlx5_cleanup_fs(dev);
 
 err_fs:
+	mlx5_accel_tls_cleanup(dev);
+
+err_tls_start:
 	mlx5_accel_ipsec_cleanup(dev);
 
 err_ipsec_start:
@@ -1302,6 +1312,7 @@ static int mlx5_unload_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv,
 	mlx5_sriov_detach(dev);
 	mlx5_cleanup_fs(dev);
 	mlx5_accel_ipsec_cleanup(dev);
+	mlx5_accel_tls_cleanup(dev);
 	mlx5_fpga_device_stop(dev);
 	mlx5_irq_clear_affinity_hints(dev);
 	free_comp_eqs(dev);
@@ -1579,6 +1590,14 @@ static int mlx5_try_fast_unload(struct mlx5_core_dev *dev)
 		mlx5_core_dbg(dev, "Firmware couldn't do fast unload error: %d\n", ret);
 		mlx5_start_health_poll(dev);
 		return ret;
+	} else {
+		/* Some platforms requiring freeing the IRQ's in the shutdown
+		 * flow. If they aren't freed they can't be allocated after
+		 * kexec. There is no need to cleanup the mlx5_core software
+		 * contexts.
+		 */
+		mlx5_irq_clear_affinity_hints(dev);
+		mlx5_core_eq_free_irqs(dev);
 	}
 
 	mlx5_enter_error_state(dev, true);
