@@ -507,6 +507,8 @@ int devlink_param_driverinit_value_get(struct devlink *devlink, u32 param_id,
 				       union devlink_param_value *init_val);
 int devlink_param_driverinit_value_set(struct devlink *devlink, u32 param_id,
 				       union devlink_param_value init_val);
+int devlink_param_value_changed(struct devlink *devlink, u32 param_id,
+				enum devlink_param_cmode cmode);
 
 #else
 
@@ -725,6 +727,13 @@ devlink_param_driverinit_value_get(struct devlink *devlink, u32 param_id,
 static inline int
 devlink_param_driverinit_value_set(struct devlink *devlink, u32 param_id,
 				   union devlink_param_value init_val)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int
+devlink_param_value_changed(struct devlink *devlink, u32 param_id,
+			    enum devlink_param_cmode cmode)
 {
 	return -EOPNOTSUPP;
 }
