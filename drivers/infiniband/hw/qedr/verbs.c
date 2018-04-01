@@ -84,27 +84,6 @@ int qedr_iw_query_gid(struct ib_device *ibdev, u8 port,
 	return 0;
 }
 
-int qedr_query_gid(struct ib_device *ibdev, u8 port, int index,
-		   union ib_gid *sgid)
-{
-	struct qedr_dev *dev = get_qedr_dev(ibdev);
-	int rc = 0;
-
-	if (!rdma_cap_roce_gid_table(ibdev, port))
-		return -ENODEV;
-
-	rc = ib_get_cached_gid(ibdev, port, index, sgid, NULL);
-	if (rc == -EAGAIN) {
-		memcpy(sgid, &zgid, sizeof(*sgid));
-		return 0;
-	}
-
-	DP_DEBUG(dev, QEDR_MSG_INIT, "query gid: index=%d %llx:%llx\n", index,
-		 sgid->global.interface_id, sgid->global.subnet_prefix);
-
-	return rc;
-}
-
 int qedr_add_gid(struct ib_device *device, u8 port_num,
 		 unsigned int index, const union ib_gid *gid,
 		 const struct ib_gid_attr *attr, void **context)
@@ -1145,46 +1124,41 @@ static inline int get_gid_info_from_table(struct ib_qp *ibqp,
 	if (rc)
 		return rc;
 
-	if (!memcmp(&gid, &zgid, sizeof(gid)))
-		return -ENOENT;
+	qp_params->vlan_id = rdma_vlan_dev_vlan_id(gid_attr.ndev);
 
-	if (gid_attr.ndev) {
-		qp_params->vlan_id = rdma_vlan_dev_vlan_id(gid_attr.ndev);
-
-		dev_put(gid_attr.ndev);
-		nw_type = ib_gid_to_network_type(gid_attr.gid_type, &gid);
-		switch (nw_type) {
-		case RDMA_NETWORK_IPV6:
-			memcpy(&qp_params->sgid.bytes[0], &gid.raw[0],
-			       sizeof(qp_params->sgid));
-			memcpy(&qp_params->dgid.bytes[0],
-			       &grh->dgid,
-			       sizeof(qp_params->dgid));
-			qp_params->roce_mode = ROCE_V2_IPV6;
-			SET_FIELD(qp_params->modify_flags,
-				  QED_ROCE_MODIFY_QP_VALID_ROCE_MODE, 1);
-			break;
-		case RDMA_NETWORK_IB:
-			memcpy(&qp_params->sgid.bytes[0], &gid.raw[0],
-			       sizeof(qp_params->sgid));
-			memcpy(&qp_params->dgid.bytes[0],
-			       &grh->dgid,
-			       sizeof(qp_params->dgid));
-			qp_params->roce_mode = ROCE_V1;
-			break;
-		case RDMA_NETWORK_IPV4:
-			memset(&qp_params->sgid, 0, sizeof(qp_params->sgid));
-			memset(&qp_params->dgid, 0, sizeof(qp_params->dgid));
-			ipv4_addr = qedr_get_ipv4_from_gid(gid.raw);
-			qp_params->sgid.ipv4_addr = ipv4_addr;
-			ipv4_addr =
-			    qedr_get_ipv4_from_gid(grh->dgid.raw);
-			qp_params->dgid.ipv4_addr = ipv4_addr;
-			SET_FIELD(qp_params->modify_flags,
-				  QED_ROCE_MODIFY_QP_VALID_ROCE_MODE, 1);
-			qp_params->roce_mode = ROCE_V2_IPV4;
-			break;
-		}
+	dev_put(gid_attr.ndev);
+	nw_type = ib_gid_to_network_type(gid_attr.gid_type, &gid);
+	switch (nw_type) {
+	case RDMA_NETWORK_IPV6:
+		memcpy(&qp_params->sgid.bytes[0], &gid.raw[0],
+		       sizeof(qp_params->sgid));
+		memcpy(&qp_params->dgid.bytes[0],
+		       &grh->dgid,
+		       sizeof(qp_params->dgid));
+		qp_params->roce_mode = ROCE_V2_IPV6;
+		SET_FIELD(qp_params->modify_flags,
+			  QED_ROCE_MODIFY_QP_VALID_ROCE_MODE, 1);
+		break;
+	case RDMA_NETWORK_IB:
+		memcpy(&qp_params->sgid.bytes[0], &gid.raw[0],
+		       sizeof(qp_params->sgid));
+		memcpy(&qp_params->dgid.bytes[0],
+		       &grh->dgid,
+		       sizeof(qp_params->dgid));
+		qp_params->roce_mode = ROCE_V1;
+		break;
+	case RDMA_NETWORK_IPV4:
+		memset(&qp_params->sgid, 0, sizeof(qp_params->sgid));
+		memset(&qp_params->dgid, 0, sizeof(qp_params->dgid));
+		ipv4_addr = qedr_get_ipv4_from_gid(gid.raw);
+		qp_params->sgid.ipv4_addr = ipv4_addr;
+		ipv4_addr =
+		    qedr_get_ipv4_from_gid(grh->dgid.raw);
+		qp_params->dgid.ipv4_addr = ipv4_addr;
+		SET_FIELD(qp_params->modify_flags,
+			  QED_ROCE_MODIFY_QP_VALID_ROCE_MODE, 1);
+		qp_params->roce_mode = ROCE_V2_IPV4;
+		break;
 	}
 
 	for (i = 0; i < 4; i++) {
@@ -1841,14 +1815,15 @@ static void qedr_reset_qp_hwq_info(struct qedr_qp_hwq_info *qph)
 
 static int qedr_update_qp_state(struct qedr_dev *dev,
 				struct qedr_qp *qp,
+				enum qed_roce_qp_state cur_state,
 				enum qed_roce_qp_state new_state)
 {
 	int status = 0;
 
-	if (new_state == qp->state)
+	if (new_state == cur_state)
 		return 0;
 
-	switch (qp->state) {
+	switch (cur_state) {
 	case QED_ROCE_QP_STATE_RESET:
 		switch (new_state) {
 		case QED_ROCE_QP_STATE_INIT:
@@ -1870,7 +1845,7 @@ static int qedr_update_qp_state(struct qedr_dev *dev,
 
 			if (rdma_protocol_roce(&dev->ibdev, 1)) {
 				wmb();
-				writel(qp->rq.db_data.raw, qp->rq.db);
+				writel_relaxed(qp->rq.db_data.raw, qp->rq.db);
 				/* Make sure write takes effect */
 				mmiowb();
 			}
@@ -1955,6 +1930,7 @@ int qedr_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 	struct qedr_dev *dev = get_qedr_dev(&qp->dev->ibdev);
 	const struct ib_global_route *grh = rdma_ah_read_grh(&attr->ah_attr);
 	enum ib_qp_state old_qp_state, new_qp_state;
+	enum qed_roce_qp_state cur_state;
 	int rc = 0;
 
 	DP_DEBUG(dev, QEDR_MSG_QP,
@@ -2086,18 +2062,23 @@ int qedr_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 		SET_FIELD(qp_params.modify_flags,
 			  QED_ROCE_MODIFY_QP_VALID_ACK_TIMEOUT, 1);
 
-		qp_params.ack_timeout = attr->timeout;
-		if (attr->timeout) {
-			u32 temp;
-
-			temp = 4096 * (1UL << attr->timeout) / 1000 / 1000;
-			/* FW requires [msec] */
-			qp_params.ack_timeout = temp;
-		} else {
-			/* Infinite */
+		/* The received timeout value is an exponent used like this:
+		 *    "12.7.34 LOCAL ACK TIMEOUT
+		 *    Value representing the transport (ACK) timeout for use by
+		 *    the remote, expressed as: 4.096 * 2^timeout [usec]"
+		 * The FW expects timeout in msec so we need to divide the usec
+		 * result by 1000. We'll approximate 1000~2^10, and 4.096 ~ 2^2,
+		 * so we get: 2^2 * 2^timeout / 2^10 = 2^(timeout - 8).
+		 * The value of zero means infinite so we use a 'max_t' to make
+		 * sure that sub 1 msec values will be configured as 1 msec.
+		 */
+		if (attr->timeout)
+			qp_params.ack_timeout =
+					1 << max_t(int, attr->timeout - 8, 0);
+		else
 			qp_params.ack_timeout = 0;
-		}
 	}
+
 	if (attr_mask & IB_QP_RETRY_CNT) {
 		SET_FIELD(qp_params.modify_flags,
 			  QED_ROCE_MODIFY_QP_VALID_RETRY_CNT, 1);
@@ -2170,13 +2151,25 @@ int qedr_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 		qp->dest_qp_num = attr->dest_qp_num;
 	}
 
+	cur_state = qp->state;
+
+	/* Update the QP state before the actual ramrod to prevent a race with
+	 * fast path. Modifying the QP state to error will cause the device to
+	 * flush the CQEs and while polling the flushed CQEs will considered as
+	 * a potential issue if the QP isn't in error state.
+	 */
+	if ((attr_mask & IB_QP_STATE) && qp->qp_type != IB_QPT_GSI &&
+	    !udata && qp_params.new_state == QED_ROCE_QP_STATE_ERR)
+		qp->state = QED_ROCE_QP_STATE_ERR;
+
 	if (qp->qp_type != IB_QPT_GSI)
 		rc = dev->ops->rdma_modify_qp(dev->rdma_ctx,
 					      qp->qed_qp, &qp_params);
 
 	if (attr_mask & IB_QP_STATE) {
 		if ((qp->qp_type != IB_QPT_GSI) && (!udata))
-			rc = qedr_update_qp_state(dev, qp, qp_params.new_state);
+			rc = qedr_update_qp_state(dev, qp, cur_state,
+						  qp_params.new_state);
 		qp->state = qp_params.new_state;
 	}
 
@@ -3257,7 +3250,7 @@ int qedr_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 	 * redundant doorbell.
 	 */
 	wmb();
-	writel(qp->sq.db_data.raw, qp->sq.db);
+	writel_relaxed(qp->sq.db_data.raw, qp->sq.db);
 
 	/* Make sure write sticks */
 	mmiowb();
