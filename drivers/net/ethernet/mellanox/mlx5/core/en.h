@@ -459,10 +459,9 @@ typedef void (*mlx5e_fp_dealloc_wqe)(struct mlx5e_rq*, u16);
 
 struct mlx5e_rq {
 	/* data path */
-	struct mlx5_wq_ll      wq;
-
 	union {
 		struct {
+			struct mlx5_wq_ll      wq;
 			struct mlx5e_wqe_frag_info *frag_info;
 			u32 frag_sz;	/* max possible skb frag_sz */
 			union {
@@ -471,6 +470,7 @@ struct mlx5e_rq {
 			};
 		} wqe;
 		struct {
+			struct mlx5_wq_ll      wq;
 			struct mlx5e_umr_wqe   umr_wqe;
 			struct mlx5e_mpw_info *info;
 			mlx5e_fp_skb_from_cqe_mpwrq skb_from_cqe_mpwrq;
