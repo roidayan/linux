@@ -312,22 +312,18 @@ static inline int mlx5e_mpwqe_strides_per_page(struct mlx5e_rq *rq)
 	return rq->mpwqe.num_strides >> MLX5_MPWRQ_WQE_PAGE_ORDER;
 }
 
-static inline void mlx5e_add_skb_frag_mpwqe(struct mlx5e_rq *rq,
-					    struct sk_buff *skb,
-					    struct mlx5e_mpw_info *wi,
-					    u32 page_idx, u32 frag_offset,
-					    u32 len)
+static inline void
+mlx5e_add_skb_frag(struct mlx5e_rq *rq, struct sk_buff *skb,
+                   struct mlx5e_dma_info *di, u32 frag_offset, u32 len,
+                   unsigned int truesize)
 {
-	unsigned int truesize = ALIGN(len, BIT(rq->mpwqe.log_stride_sz));
-
 	dma_sync_single_for_cpu(rq->pdev,
-				wi->umr.dma_info[page_idx].addr + frag_offset,
+				di->addr + frag_offset,
 				len, DMA_FROM_DEVICE);
-	wi->skbs_frags[page_idx]++;
+	page_ref_inc(di->page);
 	skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags,
-			wi->umr.dma_info[page_idx].page, frag_offset,
-			len, truesize);
-}
+			di->page, frag_offset, len, truesize);
+	}
 
 static inline void
 mlx5e_copy_skb_header(struct device *pdev, struct sk_buff *skb,
@@ -345,19 +341,28 @@ mlx5e_copy_skb_header(struct device *pdev, struct sk_buff *skb,
 
 static inline void
 mlx5e_copy_skb_header_mpwqe(struct device *pdev,
-			    struct sk_buff *skb,
-			    struct mlx5e_mpw_info *wi,
-			    u32 page_idx, u32 offset,
-			    u32 headlen)
+                            struct sk_buff *skb,
+                            struct mlx5e_dma_info *dma_info,
+                            u32 offset, u32 headlen)
 {
 	u16 headlen_pg = min_t(u32, headlen, PAGE_SIZE - offset);
-	struct mlx5e_dma_info *dma_info = &wi->umr.dma_info[page_idx];
+	unsigned int len;
 
-	mlx5e_copy_skb_header(pdev, skb, dma_info, offset, 0, headlen_pg);
+	 /* Aligning len to sizeof(long) optimizes memcpy performance */
+	len = ALIGN(headlen_pg, sizeof(long));
+	dma_sync_single_for_cpu(pdev, dma_info->addr + offset, len,
+				DMA_FROM_DEVICE);
+	skb_copy_to_linear_data(skb, page_address(dma_info->page) + offset, len);
+
 	if (unlikely(offset + headlen > PAGE_SIZE)) {
 		dma_info++;
-		mlx5e_copy_skb_header(pdev, skb, dma_info, 0, headlen_pg,
-				      headlen - headlen_pg);
+		headlen_pg = len;
+		len = ALIGN(headlen - headlen_pg, sizeof(long));
+		dma_sync_single_for_cpu(pdev, dma_info->addr, len,
+					DMA_FROM_DEVICE);
+		skb_copy_to_linear_data_offset(skb, headlen_pg,
+					       page_address(dma_info->page),
+					       len);
 	}
 }
 
@@ -952,9 +957,10 @@ mlx5e_skb_from_cqe_mpwrq_nonlinear(struct mlx5e_rq *rq, struct mlx5e_mpw_info *w
 				   u16 cqe_bcnt, u32 head_offset, u32 page_idx)
 {
 	u16 headlen = min_t(u16, MLX5E_RX_MAX_HEAD, cqe_bcnt);
+	struct mlx5e_dma_info *di = &wi->umr.dma_info[page_idx];
 	u32 frag_offset    = head_offset + headlen;
 	u16 byte_cnt       = cqe_bcnt - headlen;
-	u32 head_page_idx  = page_idx;
+	struct mlx5e_dma_info *head_di = di;
 	struct sk_buff *skb;
 
 	skb = napi_alloc_skb(rq->cq.napi,
@@ -967,22 +973,24 @@ mlx5e_skb_from_cqe_mpwrq_nonlinear(struct mlx5e_rq *rq, struct mlx5e_mpw_info *w
 	prefetchw(skb->data);
 
 	if (unlikely(frag_offset >= PAGE_SIZE)) {
-		page_idx++;
+		di++;
 		frag_offset -= PAGE_SIZE;
 	}
 
 	while (byte_cnt) {
 		u32 pg_consumed_bytes =
 			min_t(u32, PAGE_SIZE - frag_offset, byte_cnt);
+		unsigned int truesize =
+			ALIGN(pg_consumed_bytes, BIT(rq->mpwqe.log_stride_sz));
 
-		mlx5e_add_skb_frag_mpwqe(rq, skb, wi, page_idx, frag_offset,
-					 pg_consumed_bytes);
+		mlx5e_add_skb_frag(rq, skb, di, frag_offset,
+				   pg_consumed_bytes, truesize);
 		byte_cnt -= pg_consumed_bytes;
 		frag_offset = 0;
-		page_idx++;
+		di++;
 	}
 	/* copy header */
-	mlx5e_copy_skb_header_mpwqe(rq->pdev, skb, wi, head_page_idx,
+	mlx5e_copy_skb_header_mpwqe(rq->pdev, skb, head_di,
 				    head_offset, headlen);
 	/* skb linear part was allocated with headlen and aligned to long */
 	skb->tail += headlen;
