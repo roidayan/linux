@@ -948,14 +948,14 @@ struct sk_buff *
 mlx5e_skb_from_cqe_mpwrq_nonlinear(struct mlx5e_rq *rq, struct mlx5e_mpw_info *wi,
 				   u16 cqe_bcnt, u32 head_offset, u32 page_idx)
 {
-	u16 headlen = min_t(u16, MLX5_MPWRQ_SMALL_PACKET_THRESHOLD, cqe_bcnt);
+	u16 headlen = min_t(u16, MLX5E_RX_MAX_HEAD, cqe_bcnt);
 	u32 frag_offset    = head_offset + headlen;
 	u16 byte_cnt       = cqe_bcnt - headlen;
 	u32 head_page_idx  = page_idx;
 	struct sk_buff *skb;
 
 	skb = napi_alloc_skb(rq->cq.napi,
-			     ALIGN(MLX5_MPWRQ_SMALL_PACKET_THRESHOLD, sizeof(long)));
+			     ALIGN(MLX5E_RX_MAX_HEAD, sizeof(long)));
 	if (unlikely(!skb)) {
 		rq->stats->buff_alloc_err++;
 		return NULL;
