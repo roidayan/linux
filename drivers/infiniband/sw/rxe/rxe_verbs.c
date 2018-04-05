@@ -77,40 +77,6 @@ out:
 	return rc;
 }
 
-static int rxe_query_gid(struct ib_device *device,
-			 u8 port_num, int index, union ib_gid *gid)
-{
-	int ret;
-
-	if (index > RXE_PORT_GID_TBL_LEN)
-		return -EINVAL;
-
-	ret = ib_get_cached_gid(device, port_num, index, gid, NULL);
-	if (ret == -EAGAIN) {
-		memcpy(gid, &zgid, sizeof(*gid));
-		return 0;
-	}
-
-	return ret;
-}
-
-static int rxe_add_gid(struct ib_device *device, u8 port_num, unsigned int
-		       index, const union ib_gid *gid,
-		       const struct ib_gid_attr *attr, void **context)
-{
-	if (index >= RXE_PORT_GID_TBL_LEN)
-		return -EINVAL;
-	return 0;
-}
-
-static int rxe_del_gid(struct ib_device *device, u8 port_num, unsigned int
-		       index, void **context)
-{
-	if (index >= RXE_PORT_GID_TBL_LEN)
-		return -EINVAL;
-	return 0;
-}
-
 static struct net_device *rxe_get_netdev(struct ib_device *device,
 					 u8 port_num)
 {
@@ -273,9 +239,7 @@ static int rxe_init_av(struct rxe_dev *rxe, struct rdma_ah_attr *attr,
 
 	rxe_av_from_attr(rdma_ah_get_port_num(attr), av, attr);
 	rxe_av_fill_ip_info(av, attr, &sgid_attr, &sgid);
-
-	if (sgid_attr.ndev)
-		dev_put(sgid_attr.ndev);
+	dev_put(sgid_attr.ndev);
 	return 0;
 }
 
@@ -1244,7 +1208,7 @@ int rxe_register_device(struct rxe_dev *rxe)
 			    rxe->ndev->dev_addr);
 	dev->dev.dma_ops = &dma_virt_ops;
 	dma_coerce_mask_and_coherent(&dev->dev,
-				     dma_get_required_mask(dev->dev.parent));
+				     dma_get_required_mask(&dev->dev));
 
 	dev->uverbs_abi_ver = RXE_UVERBS_ABI_VERSION;
 	dev->uverbs_cmd_mask = BIT_ULL(IB_USER_VERBS_CMD_GET_CONTEXT)
@@ -1285,10 +1249,7 @@ int rxe_register_device(struct rxe_dev *rxe)
 	dev->query_port = rxe_query_port;
 	dev->modify_port = rxe_modify_port;
 	dev->get_link_layer = rxe_get_link_layer;
-	dev->query_gid = rxe_query_gid;
 	dev->get_netdev = rxe_get_netdev;
-	dev->add_gid = rxe_add_gid;
-	dev->del_gid = rxe_del_gid;
 	dev->query_pkey = rxe_query_pkey;
 	dev->alloc_ucontext = rxe_alloc_ucontext;
 	dev->dealloc_ucontext = rxe_dealloc_ucontext;
