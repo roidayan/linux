@@ -51,6 +51,21 @@ static void clean_mr(struct mlx5_ib_dev *dev, struct mlx5_ib_mr *mr);
 static void dereg_mr(struct mlx5_ib_dev *dev, struct mlx5_ib_mr *mr);
 static int mr_cache_max_order(struct mlx5_ib_dev *dev);
 static int unreg_umr(struct mlx5_ib_dev *dev, struct mlx5_ib_mr *mr);
+static bool umr_can_modify_entity_size(struct mlx5_ib_dev *dev)
+{
+	return !MLX5_CAP_GEN(dev->mdev, umr_modify_entity_size_disabled);
+}
+
+static bool umr_can_use_indirect_mkey(struct mlx5_ib_dev *dev)
+{
+	return !MLX5_CAP_GEN(dev->mdev, umr_indirect_mkey_disabled);
+}
+
+static bool use_umr(struct mlx5_ib_dev *dev, int order)
+{
+	return order <= mr_cache_max_order(dev) &&
+		umr_can_modify_entity_size(dev);
+}
 
 static int destroy_mkey(struct mlx5_ib_dev *dev, struct mlx5_ib_mr *mr)
 {
@@ -189,7 +204,9 @@ static int add_keys(struct mlx5_ib_dev *dev, int c, int num)
 
 		MLX5_SET(mkc, mkc, free, 1);
 		MLX5_SET(mkc, mkc, umr_en, 1);
-		MLX5_SET(mkc, mkc, access_mode, ent->access_mode);
+		MLX5_SET(mkc, mkc, access_mode_1_0, ent->access_mode & 0x3);
+		MLX5_SET(mkc, mkc, access_mode_4_2,
+			 (ent->access_mode >> 2) & 0x7);
 
 		MLX5_SET(mkc, mkc, qpn, 0xffffff);
 		MLX5_SET(mkc, mkc, translations_octword_size, ent->xlt);
@@ -792,7 +809,7 @@ struct ib_mr *mlx5_ib_get_dma_mr(struct ib_pd *pd, int acc)
 
 	mkc = MLX5_ADDR_OF(create_mkey_in, in, memory_key_mkey_entry);
 
-	MLX5_SET(mkc, mkc, access_mode, MLX5_MKC_ACCESS_MODE_PA);
+	MLX5_SET(mkc, mkc, access_mode_1_0, MLX5_MKC_ACCESS_MODE_PA);
 	MLX5_SET(mkc, mkc, a, !!(acc & IB_ACCESS_REMOTE_ATOMIC));
 	MLX5_SET(mkc, mkc, rw, !!(acc & IB_ACCESS_REMOTE_WRITE));
 	MLX5_SET(mkc, mkc, rr, !!(acc & IB_ACCESS_REMOTE_READ));
@@ -849,24 +866,27 @@ static int mr_umem_get(struct ib_pd *pd, u64 start, u64 length,
 		       int *order)
 {
 	struct mlx5_ib_dev *dev = to_mdev(pd->device);
+	struct ib_umem *u;
 	int err;
 
-	*umem = ib_umem_get(pd->uobject->context, start, length,
-			    access_flags, 0);
-	err = PTR_ERR_OR_ZERO(*umem);
+	*umem = NULL;
+
+	u = ib_umem_get(pd->uobject->context, start, length, access_flags, 0);
+	err = PTR_ERR_OR_ZERO(u);
 	if (err) {
-		*umem = NULL;
-		mlx5_ib_err(dev, "umem get failed (%d)\n", err);
+		mlx5_ib_dbg(dev, "umem get failed (%d)\n", err);
 		return err;
 	}
 
-	mlx5_ib_cont_pages(*umem, start, MLX5_MKEY_PAGE_SHIFT_MASK, npages,
+	mlx5_ib_cont_pages(u, start, MLX5_MKEY_PAGE_SHIFT_MASK, npages,
 			   page_shift, ncont, order);
 	if (!*npages) {
 		mlx5_ib_warn(dev, "avoid zero region\n");
-		ib_umem_release(*umem);
+		ib_umem_release(u);
 		return -EINVAL;
 	}
+
+	*umem = u;
 
 	mlx5_ib_dbg(dev, "npages %d, ncont %d, order %d, page_shift %d\n",
 		    *npages, *ncont, *order, *page_shift);
@@ -959,7 +979,10 @@ static inline int populate_xlt(struct mlx5_ib_mr *mr, int idx, int npages,
 {
 	struct mlx5_ib_dev *dev = mr->dev;
 	struct ib_umem *umem = mr->umem;
+
 	if (flags & MLX5_IB_UPD_XLT_INDIRECT) {
+		if (!umr_can_use_indirect_mkey(dev))
+			return -EPERM;
 		mlx5_odp_populate_klm(xlt, idx, npages, mr, flags);
 		return npages;
 	}
@@ -1005,6 +1028,10 @@ int mlx5_ib_update_xlt(struct mlx5_ib_mr *mr, u64 idx, int npages,
 	size_t pages_iter = 0;
 	gfp_t gfp;
 	bool use_emergency_page = false;
+
+	if ((flags & MLX5_IB_UPD_XLT_INDIRECT) &&
+	    !umr_can_use_indirect_mkey(dev))
+		return -EPERM;
 
 	/* UMR copies MTTs in units of MLX5_UMR_MTT_ALIGNMENT bytes,
 	 * so we need to align the offset and length accordingly
@@ -1152,7 +1179,7 @@ static struct mlx5_ib_mr *reg_create(struct ib_mr *ibmr, struct ib_pd *pd,
 
 	mkc = MLX5_ADDR_OF(create_mkey_in, in, memory_key_mkey_entry);
 	MLX5_SET(mkc, mkc, free, !populate);
-	MLX5_SET(mkc, mkc, access_mode, MLX5_MKC_ACCESS_MODE_MTT);
+	MLX5_SET(mkc, mkc, access_mode_1_0, MLX5_MKC_ACCESS_MODE_MTT);
 	MLX5_SET(mkc, mkc, a, !!(access_flags & IB_ACCESS_REMOTE_ATOMIC));
 	MLX5_SET(mkc, mkc, rw, !!(access_flags & IB_ACCESS_REMOTE_WRITE));
 	MLX5_SET(mkc, mkc, rr, !!(access_flags & IB_ACCESS_REMOTE_READ));
@@ -1208,19 +1235,93 @@ static void set_mr_fileds(struct mlx5_ib_dev *dev, struct mlx5_ib_mr *mr,
 	mr->access_flags = access_flags;
 }
 
+static struct ib_mr *mlx5_ib_get_memic_mr(struct ib_pd *pd, u64 memic_addr,
+					  u64 length, int acc)
+{
+	struct mlx5_ib_dev *dev = to_mdev(pd->device);
+	int inlen = MLX5_ST_SZ_BYTES(create_mkey_in);
+	struct mlx5_core_dev *mdev = dev->mdev;
+	struct mlx5_ib_mr *mr;
+	void *mkc;
+	u32 *in;
+	int err;
+
+	mr = kzalloc(sizeof(*mr), GFP_KERNEL);
+	if (!mr)
+		return ERR_PTR(-ENOMEM);
+
+	in = kzalloc(inlen, GFP_KERNEL);
+	if (!in) {
+		err = -ENOMEM;
+		goto err_free;
+	}
+
+	mkc = MLX5_ADDR_OF(create_mkey_in, in, memory_key_mkey_entry);
+
+	MLX5_SET(mkc, mkc, access_mode_1_0, MLX5_MKC_ACCESS_MODE_MEMIC & 0x3);
+	MLX5_SET(mkc, mkc, access_mode_4_2,
+		 (MLX5_MKC_ACCESS_MODE_MEMIC >> 2) & 0x7);
+	MLX5_SET(mkc, mkc, a, !!(acc & IB_ACCESS_REMOTE_ATOMIC));
+	MLX5_SET(mkc, mkc, rw, !!(acc & IB_ACCESS_REMOTE_WRITE));
+	MLX5_SET(mkc, mkc, rr, !!(acc & IB_ACCESS_REMOTE_READ));
+	MLX5_SET(mkc, mkc, lw, !!(acc & IB_ACCESS_LOCAL_WRITE));
+	MLX5_SET(mkc, mkc, lr, 1);
+
+	MLX5_SET64(mkc, mkc, len, length);
+	MLX5_SET(mkc, mkc, pd, to_mpd(pd)->pdn);
+	MLX5_SET(mkc, mkc, qpn, 0xffffff);
+	MLX5_SET64(mkc, mkc, start_addr,
+		   memic_addr - pci_resource_start(dev->mdev->pdev, 0));
+
+	err = mlx5_core_create_mkey(mdev, &mr->mmkey, in, inlen);
+	if (err)
+		goto err_in;
+
+	kfree(in);
+
+	mr->umem = NULL;
+	set_mr_fileds(dev, mr, 0, length, acc);
+
+	return &mr->ibmr;
+
+err_in:
+	kfree(in);
+
+err_free:
+	kfree(mr);
+
+	return ERR_PTR(err);
+}
+
+struct ib_mr *mlx5_ib_reg_dm_mr(struct ib_pd *pd, struct ib_dm *dm,
+				struct ib_dm_mr_attr *attr,
+				struct uverbs_attr_bundle *attrs)
+{
+	struct mlx5_ib_dm *mdm = to_mdm(dm);
+	u64 memic_addr;
+
+	if (attr->access_flags & ~MLX5_IB_DM_ALLOWED_ACCESS)
+		return ERR_PTR(-EINVAL);
+
+	memic_addr = mdm->dev_addr + attr->offset;
+
+	return mlx5_ib_get_memic_mr(pd, memic_addr, attr->length,
+				    attr->access_flags);
+}
+
 struct ib_mr *mlx5_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 				  u64 virt_addr, int access_flags,
 				  struct ib_udata *udata)
 {
 	struct mlx5_ib_dev *dev = to_mdev(pd->device);
 	struct mlx5_ib_mr *mr = NULL;
+	bool populate_mtts = false;
 	struct ib_umem *umem;
 	int page_shift;
 	int npages;
 	int ncont;
 	int order;
 	int err;
-	bool use_umr = true;
 
 	if (!IS_ENABLED(CONFIG_INFINIBAND_USER_MEM))
 		return ERR_PTR(-EOPNOTSUPP);
@@ -1247,26 +1348,29 @@ struct ib_mr *mlx5_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 	if (err < 0)
 		return ERR_PTR(err);
 
-	if (order <= mr_cache_max_order(dev)) {
+	if (use_umr(dev, order)) {
 		mr = alloc_mr_from_cache(pd, umem, virt_addr, length, ncont,
 					 page_shift, order, access_flags);
 		if (PTR_ERR(mr) == -EAGAIN) {
 			mlx5_ib_dbg(dev, "cache empty for order %d\n", order);
 			mr = NULL;
 		}
+		populate_mtts = false;
 	} else if (!MLX5_CAP_GEN(dev->mdev, umr_extended_translation_offset)) {
 		if (access_flags & IB_ACCESS_ON_DEMAND) {
 			err = -EINVAL;
 			pr_err("Got MR registration for ODP MR > 512MB, not supported for Connect-IB\n");
 			goto error;
 		}
-		use_umr = false;
+		populate_mtts = true;
 	}
 
 	if (!mr) {
+		if (!umr_can_modify_entity_size(dev))
+			populate_mtts = true;
 		mutex_lock(&dev->slow_path_mutex);
 		mr = reg_create(NULL, pd, virt_addr, length, umem, ncont,
-				page_shift, access_flags, !use_umr);
+				page_shift, access_flags, populate_mtts);
 		mutex_unlock(&dev->slow_path_mutex);
 	}
 
@@ -1284,7 +1388,7 @@ struct ib_mr *mlx5_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 	update_odp_mr(mr);
 #endif
 
-	if (use_umr) {
+	if (!populate_mtts) {
 		int update_xlt_flags = MLX5_IB_UPD_XLT_ENABLE;
 
 		if (access_flags & IB_ACCESS_ON_DEMAND)
@@ -1357,19 +1461,29 @@ int mlx5_ib_rereg_user_mr(struct ib_mr *ib_mr, int flags, u64 start,
 	int access_flags = flags & IB_MR_REREG_ACCESS ?
 			    new_access_flags :
 			    mr->access_flags;
-	u64 addr = (flags & IB_MR_REREG_TRANS) ? virt_addr : mr->umem->address;
-	u64 len = (flags & IB_MR_REREG_TRANS) ? length : mr->umem->length;
 	int page_shift = 0;
 	int upd_flags = 0;
 	int npages = 0;
 	int ncont = 0;
 	int order = 0;
+	u64 addr, len;
 	int err;
 
 	mlx5_ib_dbg(dev, "start 0x%llx, virt_addr 0x%llx, length 0x%llx, access_flags 0x%x\n",
 		    start, virt_addr, length, access_flags);
 
 	atomic_sub(mr->npages, &dev->mdev->priv.reg_pages);
+
+	if (!mr->umem)
+		return -EINVAL;
+
+	if (flags & IB_MR_REREG_TRANS) {
+		addr = virt_addr;
+		len = length;
+	} else {
+		addr = mr->umem->address;
+		len = mr->umem->length;
+	}
 
 	if (flags != IB_MR_REREG_PD) {
 		/*
@@ -1378,6 +1492,7 @@ int mlx5_ib_rereg_user_mr(struct ib_mr *ib_mr, int flags, u64 start,
 		 */
 		flags |= IB_MR_REREG_TRANS;
 		ib_umem_release(mr->umem);
+		mr->umem = NULL;
 		err = mr_umem_get(pd, addr, len, access_flags, &mr->umem,
 				  &npages, &page_shift, &ncont, &order);
 		if (err)
@@ -1646,7 +1761,8 @@ struct ib_mr *mlx5_ib_alloc_mr(struct ib_pd *pd,
 		goto err_free_in;
 	}
 
-	MLX5_SET(mkc, mkc, access_mode, mr->access_mode);
+	MLX5_SET(mkc, mkc, access_mode_1_0, mr->access_mode & 0x3);
+	MLX5_SET(mkc, mkc, access_mode_4_2, (mr->access_mode >> 2) & 0x7);
 	MLX5_SET(mkc, mkc, umr_en, 1);
 
 	mr->ibmr.device = pd->device;
@@ -1727,7 +1843,7 @@ struct ib_mw *mlx5_ib_alloc_mw(struct ib_pd *pd, enum ib_mw_type type,
 	MLX5_SET(mkc, mkc, pd, to_mpd(pd)->pdn);
 	MLX5_SET(mkc, mkc, umr_en, 1);
 	MLX5_SET(mkc, mkc, lr, 1);
-	MLX5_SET(mkc, mkc, access_mode, MLX5_MKC_ACCESS_MODE_KLMS);
+	MLX5_SET(mkc, mkc, access_mode_1_0, MLX5_MKC_ACCESS_MODE_KLMS);
 	MLX5_SET(mkc, mkc, en_rinval, !!((type == IB_MW_TYPE_2)));
 	MLX5_SET(mkc, mkc, qpn, 0xffffff);
 

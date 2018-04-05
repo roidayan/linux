@@ -259,7 +259,11 @@ static int set_rq_size(struct mlx5_ib_dev *dev, struct ib_qp_cap *cap,
 	} else {
 		if (ucmd) {
 			qp->rq.wqe_cnt = ucmd->rq_wqe_count;
+			if (ucmd->rq_wqe_shift > BITS_PER_BYTE * sizeof(ucmd->rq_wqe_shift))
+				return -EINVAL;
 			qp->rq.wqe_shift = ucmd->rq_wqe_shift;
+			if ((1 << qp->rq.wqe_shift) / sizeof(struct mlx5_wqe_data_seg) < qp->wq_sig)
+				return -EINVAL;
 			qp->rq.max_gs = (1 << qp->rq.wqe_shift) / sizeof(struct mlx5_wqe_data_seg) - qp->wq_sig;
 			qp->rq.max_post = qp->rq.wqe_cnt;
 		} else {
@@ -880,7 +884,7 @@ static int create_user_qp(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 		goto err_free;
 	}
 
-	err = ib_copy_to_udata(udata, resp, sizeof(*resp));
+	err = ib_copy_to_udata(udata, resp, min(udata->outlen, sizeof(*resp)));
 	if (err) {
 		mlx5_ib_dbg(dev, "copy failed\n");
 		goto err_unmap;
@@ -1413,6 +1417,7 @@ static int create_rss_raw_qp_tir(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
 	void *tirc;
 	void *hfso;
 	u32 selected_fields = 0;
+	u32 outer_l4;
 	size_t min_resp_len;
 	u32 tdn = mucontext->tdn;
 	struct mlx5_ib_create_qp_rss ucmd = {};
@@ -1468,7 +1473,7 @@ static int create_rss_raw_qp_tir(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
 		return -EOPNOTSUPP;
 	}
 
-	err = ib_copy_to_udata(udata, &resp, min_resp_len);
+	err = ib_copy_to_udata(udata, &resp, min(udata->outlen, sizeof(resp)));
 	if (err) {
 		mlx5_ib_dbg(dev, "copy failed\n");
 		return -EINVAL;
@@ -1543,10 +1548,14 @@ static int create_rss_raw_qp_tir(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
 		MLX5_SET(rx_hash_field_select, hfso, l3_prot_type,
 			 MLX5_L3_PROT_TYPE_IPV6);
 
-	if (((ucmd.rx_hash_fields_mask & MLX5_RX_HASH_SRC_PORT_TCP) ||
-	     (ucmd.rx_hash_fields_mask & MLX5_RX_HASH_DST_PORT_TCP)) &&
-	     ((ucmd.rx_hash_fields_mask & MLX5_RX_HASH_SRC_PORT_UDP) ||
-	     (ucmd.rx_hash_fields_mask & MLX5_RX_HASH_DST_PORT_UDP))) {
+	outer_l4 = ((ucmd.rx_hash_fields_mask & MLX5_RX_HASH_SRC_PORT_TCP) ||
+		    (ucmd.rx_hash_fields_mask & MLX5_RX_HASH_DST_PORT_TCP)) << 0 |
+		   ((ucmd.rx_hash_fields_mask & MLX5_RX_HASH_SRC_PORT_UDP) ||
+		    (ucmd.rx_hash_fields_mask & MLX5_RX_HASH_DST_PORT_UDP)) << 1 |
+		   (ucmd.rx_hash_fields_mask & MLX5_RX_HASH_IPSEC_SPI) << 2;
+
+	/* Check that only one l4 protocol is set */
+	if (outer_l4 & (outer_l4 - 1)) {
 		err = -EINVAL;
 		goto err;
 	}
@@ -1576,6 +1585,9 @@ static int create_rss_raw_qp_tir(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
 	if ((ucmd.rx_hash_fields_mask & MLX5_RX_HASH_DST_PORT_TCP) ||
 	    (ucmd.rx_hash_fields_mask & MLX5_RX_HASH_DST_PORT_UDP))
 		selected_fields |= MLX5_HASH_FIELD_SEL_L4_DPORT;
+
+	if (ucmd.rx_hash_fields_mask & MLX5_RX_HASH_IPSEC_SPI)
+		selected_fields |= MLX5_HASH_FIELD_SEL_IPSEC_SPI;
 
 	MLX5_SET(rx_hash_field_select, hfso, selected_fields, selected_fields);
 
@@ -3697,8 +3709,19 @@ static __be64 get_umr_update_pd_mask(void)
 	return cpu_to_be64(result);
 }
 
-static void set_reg_umr_segment(struct mlx5_wqe_umr_ctrl_seg *umr,
-				struct ib_send_wr *wr, int atomic)
+static int umr_check_mkey_mask(struct mlx5_ib_dev *dev, u64 mask)
+{
+	if ((mask & MLX5_MKEY_MASK_PAGE_SIZE &&
+	     MLX5_CAP_GEN(dev->mdev, umr_modify_entity_size_disabled)) ||
+	    (mask & MLX5_MKEY_MASK_A &&
+	     MLX5_CAP_GEN(dev->mdev, umr_modify_atomic_disabled)))
+		return -EPERM;
+	return 0;
+}
+
+static int set_reg_umr_segment(struct mlx5_ib_dev *dev,
+			       struct mlx5_wqe_umr_ctrl_seg *umr,
+			       struct ib_send_wr *wr, int atomic)
 {
 	struct mlx5_umr_wr *umrwr = umr_wr(wr);
 
@@ -3730,6 +3753,8 @@ static void set_reg_umr_segment(struct mlx5_wqe_umr_ctrl_seg *umr,
 
 	if (!wr->num_sge)
 		umr->flags |= MLX5_UMR_INLINE;
+
+	return umr_check_mkey_mask(dev, be64_to_cpu(umr->mkey_mask));
 }
 
 static u8 get_umr_flags(int acc)
@@ -4552,7 +4577,9 @@ int mlx5_ib_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 			}
 			qp->sq.wr_data[idx] = MLX5_IB_WR_UMR;
 			ctrl->imm = cpu_to_be32(umr_wr(wr)->mkey);
-			set_reg_umr_segment(seg, wr, !!(MLX5_CAP_GEN(mdev, atomic)));
+			err = set_reg_umr_segment(dev, seg, wr, !!(MLX5_CAP_GEN(mdev, atomic)));
+			if (unlikely(err))
+				goto out;
 			seg += sizeof(struct mlx5_wqe_umr_ctrl_seg);
 			size += sizeof(struct mlx5_wqe_umr_ctrl_seg) / 16;
 			if (unlikely((seg == qend)))
