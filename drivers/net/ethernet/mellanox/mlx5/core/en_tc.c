@@ -1962,7 +1962,6 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 	const struct tc_action *a;
 	LIST_HEAD(actions);
 	bool encap = false;
-	int err = 0;
 	u32 action = 0;
 
 	if (!tcf_exts_has_actions(exts))
@@ -1979,6 +1978,8 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 		}
 
 		if (is_tcf_pedit(a)) {
+			int err;
+
 			err = parse_tc_pedit_action(priv, a, MLX5_FLOW_NAMESPACE_FDB,
 						    parse_attr);
 			if (err)
@@ -2070,7 +2071,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 	if (!actions_match_supported(priv, exts, parse_attr, flow))
 		return -EOPNOTSUPP;
 
-	return err;
+	return 0;
 }
 
 int mlx5e_configure_flower(struct mlx5e_priv *priv,
