@@ -423,8 +423,10 @@ int ib_cache_gid_add(struct ib_device *ib_dev, u8 port,
 	return ret;
 }
 
-int ib_cache_gid_del(struct ib_device *ib_dev, u8 port,
-		     union ib_gid *gid, struct ib_gid_attr *attr)
+static int
+_ib_cache_gid_del(struct ib_device *ib_dev, u8 port,
+		  union ib_gid *gid, struct ib_gid_attr *attr,
+		  bool default_gid)
 {
 	struct ib_gid_table *table;
 	int ret = 0;
@@ -434,9 +436,10 @@ int ib_cache_gid_del(struct ib_device *ib_dev, u8 port,
 
 	mutex_lock(&table->lock);
 
-	ix = find_gid(table, gid, attr, false,
+	ix = find_gid(table, gid, attr, default_gid,
 		      GID_ATTR_FIND_MASK_GID	  |
 		      GID_ATTR_FIND_MASK_GID_TYPE |
+		      GID_ATTR_FIND_MASK_DEFAULT  |
 		      GID_ATTR_FIND_MASK_NETDEV,
 		      NULL);
 	if (ix < 0) {
@@ -453,6 +456,12 @@ out_unlock:
 		pr_debug("%s: can't delete gid %pI6 error=%d\n",
 			 __func__, gid->raw, ret);
 	return ret;
+}
+
+int ib_cache_gid_del(struct ib_device *ib_dev, u8 port,
+		     union ib_gid *gid, struct ib_gid_attr *attr)
+{
+	return _ib_cache_gid_del(ib_dev, port, gid, attr, false);
 }
 
 int ib_cache_gid_del_all_netdev_gids(struct ib_device *ib_dev, u8 port,
@@ -755,7 +764,7 @@ void ib_cache_gid_set_default_gid(struct ib_device *ib_dev, u8 port,
 			__ib_cache_gid_add(ib_dev, port, &gid,
 					   &gid_attr, mask, true);
 		} else if (mode == IB_CACHE_GID_DEFAULT_MODE_DELETE) {
-			ib_cache_gid_del(ib_dev, port, &gid, &gid_attr);
+			_ib_cache_gid_del(ib_dev, port, &gid, &gid_attr, true);
 		}
 	}
 }
