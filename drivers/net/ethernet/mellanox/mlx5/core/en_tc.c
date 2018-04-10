@@ -2356,6 +2356,7 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv,
 
 		peer_flow->flags = flow_flags;
 		peer_flow->priv = peer_priv;
+		peer_flow->prio = flow->prio;
 
 		if (flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_DECAP) {
 			err2 = parse_cls_flower(peer_priv, flow, &peer_parse_attr->spec, f);
