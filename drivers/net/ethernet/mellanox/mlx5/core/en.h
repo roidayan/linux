@@ -605,8 +605,10 @@ enum {
 };
 
 struct mlx5e_vxlan_db {
-	spinlock_t			lock; /* protect vxlan table */
-	struct radix_tree_root		tree;
+	rwlock_t			lock; /* protect vxlan table */
+	/* max_num_ports is usuallly 4, 16 buckets is more than enough */
+	DECLARE_HASHTABLE(htable, 4);
+	int				num_ports;
 };
 
 struct mlx5e_l2_rule {
