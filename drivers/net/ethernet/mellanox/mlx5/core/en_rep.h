@@ -56,6 +56,7 @@ struct mlx5e_neigh_update_table {
 struct mlx5e_rep_priv {
 	struct mlx5_eswitch_rep *rep;
 	struct mlx5e_neigh_update_table neigh_update;
+	struct rhashtable      tc_ht; /* valid for uplink rep */
 };
 
 struct mlx5e_neigh {
