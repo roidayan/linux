@@ -376,6 +376,9 @@ config MAY_USE_DEVLINK
 
 endif   # if NET
 
+config PAGE_POOL
+	bool
+
 # Used by archs to tell that they support BPF_JIT
 config HAVE_BPF_JIT
 	bool
