@@ -53,6 +53,8 @@
 #include "mlx5_core.h"
 #include "en_stats.h"
 
+struct page_pool;
+
 #define MLX5_SET_CFG(p, f, v) MLX5_SET(create_flow_group_in, p, f, v)
 
 #define MLX5E_ETH_HARD_MTU (ETH_HLEN + VLAN_HLEN + ETH_FCS_LEN)
@@ -494,6 +496,7 @@ struct mlx5e_rq {
 
 	/* XDP */
 	unsigned int           hw_mtu;
+	struct page_pool      *page_pool;
 
 	/* control */
 	struct mlx5_wq_ctrl    wq_ctrl;
@@ -789,6 +792,7 @@ bool mlx5e_check_fragmented_striding_rq_cap(struct mlx5_core_dev *mdev);
 bool mlx5e_striding_rq_possible(struct mlx5_core_dev *mdev,
 				struct mlx5e_params *params);
 
+void mlx5e_page_dma_unmap(struct mlx5e_rq *rq, struct mlx5e_dma_info *dma_info);
 void mlx5e_page_release(struct mlx5e_rq *rq, struct mlx5e_dma_info *dma_info,
 			bool recycle);
 void mlx5e_handle_rx_cqe(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe);

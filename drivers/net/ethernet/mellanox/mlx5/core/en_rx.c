@@ -36,6 +36,7 @@
 #include <linux/tcp.h>
 #include <net/busy_poll.h>
 #include <net/ip6_checksum.h>
+#include <net/page_pool.h>
 #include "en.h"
 #include "en_tc.h"
 #include "eswitch.h"
@@ -220,7 +221,7 @@ static inline int mlx5e_page_alloc_mapped(struct mlx5e_rq *rq,
 	if (mlx5e_rx_cache_get(rq, dma_info))
 		return 0;
 
-	dma_info->page = dev_alloc_pages(rq->buff.page_order);
+	dma_info->page = page_pool_dev_alloc_pages(rq->page_pool);
 	if (unlikely(!dma_info->page))
 		return -ENOMEM;
 
@@ -235,15 +236,23 @@ static inline int mlx5e_page_alloc_mapped(struct mlx5e_rq *rq,
 	return 0;
 }
 
+void mlx5e_page_dma_unmap(struct mlx5e_rq *rq, struct mlx5e_dma_info *dma_info)
+{
+	dma_unmap_page(rq->pdev, dma_info->addr, PAGE_SIZE, rq->buff.map_dir);
+}
+
 void mlx5e_page_release(struct mlx5e_rq *rq, struct mlx5e_dma_info *dma_info,
 			bool recycle)
 {
-	if (likely(recycle) && mlx5e_rx_cache_put(rq, dma_info))
-		return;
-
-	dma_unmap_page(rq->pdev, dma_info->addr, RQ_PAGE_SIZE(rq),
-		       rq->buff.map_dir);
-	put_page(dma_info->page);
+	if (likely(recycle)) {
+		if (mlx5e_rx_cache_put(rq, dma_info))
+			return;
+		mlx5e_page_dma_unmap(rq, dma_info);
+		page_pool_recycle_direct(rq->page_pool, dma_info->page);
+	} else {
+		mlx5e_page_dma_unmap(rq, dma_info);
+		put_page(dma_info->page);
+	}
 }
 
 static inline bool mlx5e_page_reuse(struct mlx5e_rq *rq,
