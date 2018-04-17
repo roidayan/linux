@@ -111,6 +111,23 @@ int sysctl_tcp_max_orphans __read_mostly = NR_FILE;
 #define REXMIT_LOST	1 /* retransmit packets marked lost */
 #define REXMIT_NEW	2 /* FRTO-style transmit of unsent/new packets */
 
+#if IS_ENABLED(CONFIG_TLS_DEVICE)
+static DEFINE_STATIC_KEY_FALSE(clean_acked_data_enabled);
+
+void clean_acked_data_enable(struct inet_connection_sock *icsk,
+			     void (*cad)(struct sock *sk, u32 ack_seq))
+{
+	icsk->icsk_clean_acked = cad;
+	static_branch_inc(&clean_acked_data_enabled);
+}
+
+void clean_acked_data_disable(struct inet_connection_sock *icsk)
+{
+	static_branch_dec(&clean_acked_data_enabled);
+	icsk->icsk_clean_acked = NULL;
+}
+#endif
+
 static void tcp_gro_dev_warn(struct sock *sk, const struct sk_buff *skb,
 			     unsigned int len)
 {
@@ -3542,6 +3559,12 @@ static int tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 	if (after(ack, prior_snd_una)) {
 		flag |= FLAG_SND_UNA_ADVANCED;
 		icsk->icsk_retransmits = 0;
+
+#if IS_ENABLED(CONFIG_TLS_DEVICE)
+		if (static_branch_unlikely(&clean_acked_data_enabled))
+			if (icsk->icsk_clean_acked)
+				icsk->icsk_clean_acked(sk, ack);
+#endif
 	}
 
 	prior_fack = tcp_is_sack(tp) ? tcp_highest_sack_seq(tp) : tp->snd_una;
@@ -4576,6 +4599,17 @@ err:
 
 }
 
+void tcp_data_ready(struct sock *sk)
+{
+	const struct tcp_sock *tp = tcp_sk(sk);
+	int avail = tp->rcv_nxt - tp->copied_seq;
+
+	if (avail < sk->sk_rcvlowat && !sock_flag(sk, SOCK_DONE))
+		return;
+
+	sk->sk_data_ready(sk);
+}
+
 static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -4633,7 +4667,7 @@ queue_and_out:
 		if (eaten > 0)
 			kfree_skb_partial(skb, fragstolen);
 		if (!sock_flag(sk, SOCK_DEAD))
-			sk->sk_data_ready(sk);
+			tcp_data_ready(sk);
 		return;
 	}
 
@@ -5026,9 +5060,12 @@ static void __tcp_ack_snd_check(struct sock *sk, int ofo_possible)
 	    /* More than one full frame received... */
 	if (((tp->rcv_nxt - tp->rcv_wup) > inet_csk(sk)->icsk_ack.rcv_mss &&
 	     /* ... and right edge of window advances far enough.
-	      * (tcp_recvmsg() will send ACK otherwise). Or...
+	      * (tcp_recvmsg() will send ACK otherwise).
+	      * If application uses SO_RCVLOWAT, we want send ack now if
+	      * we have not received enough bytes to satisfy the condition.
 	      */
-	     __tcp_select_window(sk) >= tp->rcv_wnd) ||
+	    (tp->rcv_nxt - tp->copied_seq < sk->sk_rcvlowat ||
+	     __tcp_select_window(sk) >= tp->rcv_wnd)) ||
 	    /* We ACK each frame or... */
 	    tcp_in_quickack_mode(sk) ||
 	    /* We have out of order data. */
@@ -5431,7 +5468,7 @@ void tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 no_ack:
 			if (eaten)
 				kfree_skb_partial(skb, fragstolen);
-			sk->sk_data_ready(sk);
+			tcp_data_ready(sk);
 			return;
 		}
 	}
