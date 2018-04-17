@@ -2087,6 +2087,12 @@ static int mlx5e_route_lookup_ipv4(struct mlx5e_priv *priv,
 #if IS_ENABLED(CONFIG_INET)
 	int ret;
 
+	if (mlx5_lag_is_multipath_ready(esw->dev)) {
+		uplink_rpriv = mlx5_eswitch_get_uplink_priv(esw, REP_ETH);
+		*out_dev = uplink_rpriv->netdev;
+		fl4->flowi4_oif = (*out_dev)->ifindex;
+	}
+
 	rt = ip_route_output_key(dev_net(mirred_dev), fl4);
 	ret = PTR_ERR_OR_ZERO(rt);
 	if (ret)
