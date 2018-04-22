@@ -178,6 +178,30 @@ static bool devx_is_obj_destroy_cmd(void *in)
 	}
 }
 
+static int UVERBS_HANDLER(MLX5_IB_METHOD_DEVX_QUERY_UAR)(struct ib_device *ib_dev,
+				  struct ib_uverbs_file *file,
+				  struct uverbs_attr_bundle *attrs)
+{
+	struct mlx5_ib_ucontext *c = devx_ufile2uctx(file);
+	u32 user_idx;
+	s32 dev_idx;
+
+	if (uverbs_copy_from(&user_idx, attrs,
+			     MLX5_IB_ATTR_DEVX_QUERY_UAR_USER_IDX))
+		return -EFAULT;
+
+	dev_idx = bfregn_to_uar_index(to_mdev(ib_dev),
+				      &c->bfregi, user_idx, true);
+	if (dev_idx < 0)
+		return dev_idx;
+
+	if (uverbs_copy_to(attrs, MLX5_IB_ATTR_DEVX_QUERY_UAR_DEV_IDX,
+			   &dev_idx, sizeof(dev_idx)))
+		return -EFAULT;
+
+	return 0;
+}
+
 static int UVERBS_HANDLER(MLX5_IB_METHOD_DEVX_OTHER)(struct ib_device *ib_dev,
 				  struct ib_uverbs_file *file,
 				  struct uverbs_attr_bundle *attrs)
@@ -449,6 +473,12 @@ cmd_free:
 	return err;
 }
 
+static DECLARE_UVERBS_NAMED_METHOD(MLX5_IB_METHOD_DEVX_QUERY_UAR,
+	&UVERBS_ATTR_PTR_IN(MLX5_IB_ATTR_DEVX_QUERY_UAR_USER_IDX, UVERBS_ATTR_TYPE(u32),
+			    UA_FLAGS(UVERBS_ATTR_SPEC_F_MANDATORY)),
+	&UVERBS_ATTR_PTR_OUT(MLX5_IB_ATTR_DEVX_QUERY_UAR_DEV_IDX, UVERBS_ATTR_TYPE(u32),
+			     UA_FLAGS(UVERBS_ATTR_SPEC_F_MANDATORY)));
+
 static DECLARE_UVERBS_NAMED_METHOD(MLX5_IB_METHOD_DEVX_OTHER,
 	&UVERBS_ATTR_PTR_IN_SZ(MLX5_IB_ATTR_DEVX_OTHER_CMD_IN,
 			       UVERBS_ATTR_MIN_SIZE(MLX5_ST_SZ_BYTES(general_obj_in_cmd_hdr)),
@@ -483,7 +513,8 @@ static DECLARE_UVERBS_NAMED_METHOD(MLX5_IB_METHOD_DEVX_OBJ_DESTROY,
 			 UA_FLAGS(UVERBS_ATTR_SPEC_F_MANDATORY)));
 
 static DECLARE_UVERBS_GLOBAL_METHODS(MLX5_IB_OBJECT_DEVX,
-	&UVERBS_METHOD(MLX5_IB_METHOD_DEVX_OTHER));
+	&UVERBS_METHOD(MLX5_IB_METHOD_DEVX_OTHER),
+	&UVERBS_METHOD(MLX5_IB_METHOD_DEVX_QUERY_UAR));
 
 static DECLARE_UVERBS_NAMED_OBJECT(MLX5_IB_OBJECT_DEVX_OBJ,
 	&UVERBS_TYPE_ALLOC_IDR_SZ(sizeof(struct devx_obj), 0,
