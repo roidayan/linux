@@ -34,9 +34,12 @@
 #include <linux/mlx5/driver.h>
 #include <linux/mlx5/vport.h>
 #include "mlx5_core.h"
+#include "eswitch.h"
 
 enum {
 	MLX5_LAG_FLAG_BONDED = 1 << 0,
+	MLX5_LAG_FLAG_MULTIPATH = 1 << 1,
+	MLX5_LAG_FLAG_MULTIPATH_READY = 1 << 2,
 };
 
 struct lag_func {
@@ -743,4 +746,105 @@ struct net_device *mlx5_lag_get_peer_netdev(struct mlx5_core_dev *dev)
 unlock:
 	mutex_unlock(&lag_mutex);
 	return peer_ndev;
+}
+
+int mlx5_lag_activate_multipath(struct mlx5_core_dev *dev)
+{
+	struct mlx5_lag *ldev = mlx5_lag_dev_get(dev);
+	struct mlx5_core_dev *dev2 = mlx5_lag_get_peer_mdev(dev);
+	struct lag_tracker tracker;
+	int err;
+
+	if (!MLX5_CAP_ESW(dev, merged_eswitch)) {
+		mlx5_core_err(dev, "Merged eSwitch capability not present\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (!dev2) {
+		mlx5_core_err(dev, "Cannot find lag device\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (mlx5_lag_is_bonded(ldev)) {
+		mlx5_core_err(dev, "Bond already enabled\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (MLX5_CAP_GEN(dev2, port_type) != MLX5_CAP_PORT_TYPE_ETH)
+		return -EOPNOTSUPP;
+
+	if (!MLX5_CAP_GEN(dev2, vport_group_manager))
+		return -EOPNOTSUPP;
+
+	mlx5_core_info(dev, "Activate multipath\n");
+
+	mutex_lock(&lag_mutex);
+	tracker = ldev->tracker;
+	mutex_unlock(&lag_mutex);
+
+	err = mlx5_create_lag(ldev, &tracker);
+	if (err)
+		return err;
+
+	ldev->flags |= MLX5_LAG_FLAG_MULTIPATH;
+	return 0;
+}
+
+int mlx5_lag_deactivate_multipath(struct mlx5_core_dev *dev)
+{
+	struct mlx5_lag *ldev = mlx5_lag_dev_get(dev);
+	int err;
+
+	if (!ldev)
+		return -EOPNOTSUPP;
+
+	if (!mlx5_lag_is_multipath(dev))
+		return -EOPNOTSUPP;
+
+	mlx5_core_info(dev, "Deactivate multipath\n");
+
+	err = mlx5_cmd_destroy_lag(dev);
+	if (err) {
+		mlx5_core_err(dev, "Failed to destroy LAG (%d)\n", err);
+		return err;
+	}
+
+	ldev->flags &= ~MLX5_LAG_FLAG_MULTIPATH;
+	ldev->flags &= ~MLX5_LAG_FLAG_MULTIPATH_READY;
+
+	return err;
+}
+
+bool mlx5_lag_is_multipath(struct mlx5_core_dev *dev)
+{
+	struct mlx5_lag *ldev = mlx5_lag_dev_get(dev);
+
+	return ldev ? !!(ldev->flags & MLX5_LAG_FLAG_MULTIPATH) : false;
+}
+
+void mlx5_lag_set_multipath_ready(struct mlx5_core_dev *dev)
+{
+	struct mlx5_lag *ldev = mlx5_lag_dev_get(dev);
+
+	if (!ldev)
+		return;
+
+	ldev->flags |= MLX5_LAG_FLAG_MULTIPATH_READY;
+}
+
+void mlx5_lag_unset_multipath_ready(struct mlx5_core_dev *dev)
+{
+	struct mlx5_lag *ldev = mlx5_lag_dev_get(dev);
+
+	if (!ldev)
+		return;
+
+	ldev->flags &= ~MLX5_LAG_FLAG_MULTIPATH_READY;
+}
+
+bool mlx5_lag_is_multipath_ready(struct mlx5_core_dev *dev)
+{
+	struct mlx5_lag *ldev = mlx5_lag_dev_get(dev);
+
+	return ldev ? !!(ldev->flags & MLX5_LAG_FLAG_MULTIPATH_READY) : false;
 }
