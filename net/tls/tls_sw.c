@@ -41,6 +41,8 @@
 #include <net/strparser.h>
 #include <net/tls.h>
 
+#define MAX_IV_SIZE	TLS_CIPHER_AES_GCM_128_IV_SIZE
+
 static int tls_do_decryption(struct sock *sk,
 			     struct scatterlist *sgin,
 			     struct scatterlist *sgout,
@@ -1103,6 +1105,12 @@ int tls_set_sw_offload(struct sock *sk, struct tls_context *ctx, int tx)
 		break;
 	}
 	default:
+		rc = -EINVAL;
+		goto free_priv;
+	}
+
+	/* Sanity-check the IV size for stack allocations. */
+	if (iv_size > MAX_IV_SIZE) {
 		rc = -EINVAL;
 		goto free_priv;
 	}
