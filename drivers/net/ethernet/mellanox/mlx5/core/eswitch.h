@@ -310,6 +310,8 @@ void mlx5_eswitch_register_vport_rep(struct mlx5_eswitch *esw,
 void mlx5_eswitch_unregister_vport_rep(struct mlx5_eswitch *esw,
 				       int vport_index);
 struct net_device *mlx5_eswitch_get_uplink_netdev(struct mlx5_eswitch *esw);
+int mlx5_devlink_eswitch_multipath_mode_set(struct devlink *devlink, u8 mp);
+int mlx5_devlink_eswitch_multipath_mode_get(struct devlink *devlink, u8 *mp);
 
 int mlx5_eswitch_add_vlan_action(struct mlx5_eswitch *esw,
 				 struct mlx5_esw_flow_attr *attr);
