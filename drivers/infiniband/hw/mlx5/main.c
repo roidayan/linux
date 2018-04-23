@@ -180,7 +180,7 @@ static int mlx5_netdev_event(struct notifier_block *this,
 			if (rep_ndev == ndev)
 				roce->netdev = (event == NETDEV_UNREGISTER) ?
 					NULL : ndev;
-		} else if (ndev->dev.parent == &ibdev->mdev->pdev->dev) {
+		} else if (ndev->dev.parent == &mdev->pdev->dev) {
 			roce->netdev = (event == NETDEV_UNREGISTER) ?
 				NULL : ndev;
 		}
@@ -5427,9 +5427,7 @@ static void mlx5_ib_stage_cong_debugfs_cleanup(struct mlx5_ib_dev *dev)
 static int mlx5_ib_stage_uar_init(struct mlx5_ib_dev *dev)
 {
 	dev->mdev->priv.uar = mlx5_get_uars_page(dev->mdev);
-	if (!dev->mdev->priv.uar)
-		return -ENOMEM;
-	return 0;
+	return PTR_ERR_OR_ZERO(dev->mdev->priv.uar);
 }
 
 static void mlx5_ib_stage_uar_cleanup(struct mlx5_ib_dev *dev)
