@@ -283,6 +283,8 @@ int mlx5_eswitch_inline_mode_get(struct mlx5_eswitch *esw, int nvfs, u8 *mode);
 int mlx5_devlink_eswitch_encap_mode_set(struct devlink *devlink, u8 encap);
 int mlx5_devlink_eswitch_encap_mode_get(struct devlink *devlink, u8 *encap);
 void *mlx5_eswitch_get_uplink_priv(struct mlx5_eswitch *esw, u8 rep_type);
+int mlx5_devlink_eswitch_multipath_mode_set(struct devlink *devlink, u8 mp);
+int mlx5_devlink_eswitch_multipath_mode_get(struct devlink *devlink, u8 *mp);
 
 int mlx5_eswitch_add_vlan_action(struct mlx5_eswitch *esw,
 				 struct mlx5_esw_flow_attr *attr);
