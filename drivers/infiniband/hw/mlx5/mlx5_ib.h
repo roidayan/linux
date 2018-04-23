@@ -151,6 +151,10 @@ struct mlx5_ib_pd {
 	u32			pdn;
 };
 
+enum {
+	MLX5_IB_FLOW_ACTION_MODIFY_HEADER,
+};
+
 #define MLX5_IB_FLOW_MCAST_PRIO		(MLX5_BY_PASS_NUM_PRIOS - 1)
 #define MLX5_IB_FLOW_LAST_PRIO		(MLX5_BY_PASS_NUM_REGULAR_PRIOS - 1)
 #if (MLX5_IB_FLOW_LAST_PRIO <= 0)
@@ -815,6 +819,11 @@ struct mlx5_ib_flow_action {
 			u64			    ib_flags;
 			struct mlx5_accel_esp_xfrm *ctx;
 		} esp_aes_gcm;
+		struct {
+			struct mlx5_ib_dev *dev;
+			u32 sub_type;
+			u32 action_id;
+		} flow_action_raw;
 	};
 };
 
@@ -1238,6 +1247,7 @@ struct mlx5_ib_flow_handler *mlx5_ib_raw_fs_rule_add(
 	void *cmd_in, int inlen, int dest_id, int dest_type);
 bool mlx5_ib_devx_is_flow_dest(void *obj, int *dest_id, int *dest_type);
 int mlx5_ib_get_flow_trees(const struct uverbs_object_tree_def **root);
+void mlx5_ib_destroy_flow_action_raw(struct mlx5_ib_flow_action *maction);
 #else
 static inline int
 mlx5_ib_devx_create(struct mlx5_ib_dev *dev,
@@ -1255,6 +1265,10 @@ static inline int
 mlx5_ib_get_flow_trees(const struct uverbs_object_tree_def **root)
 {
 	return 0;
+}
+static void mlx5_ib_destroy_flow_action_raw(struct mlx5_ib_flow_action *maction)
+{
+	return;
 }
 #endif
 static inline void init_query_mad(struct ib_smp *mad)

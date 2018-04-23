@@ -3997,6 +3997,9 @@ static int mlx5_ib_destroy_flow_action(struct ib_flow_action *action)
 		 */
 		mlx5_accel_esp_destroy_xfrm(maction->esp_aes_gcm.ctx);
 		break;
+	case IB_FLOW_ACTION_UNSPECIFIED:
+		mlx5_ib_destroy_flow_action_raw(maction);
+		break;
 	default:
 		WARN_ON(true);
 		break;
@@ -5533,7 +5536,7 @@ ADD_UVERBS_ATTRIBUTES_SIMPLE(
 	UVERBS_ATTR_FLAGS_IN(MLX5_IB_ATTR_CREATE_FLOW_ACTION_FLAGS,
 			     enum mlx5_ib_uapi_flow_action_flags));
 
-#define NUM_TREES	5
+#define NUM_TREES	6
 static int populate_specs_root(struct mlx5_ib_dev *dev)
 {
 	const struct uverbs_object_tree_def *default_root[NUM_TREES + 1] = {
