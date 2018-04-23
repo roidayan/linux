@@ -48,6 +48,7 @@ enum mlx5_ib_alloc_dm_attrs {
 enum mlx5_ib_devx_methods {
 	MLX5_IB_METHOD_DEVX_OTHER  = (1U << UVERBS_ID_NS_SHIFT),
 	MLX5_IB_METHOD_DEVX_QUERY_UAR,
+	MLX5_IB_METHOD_DEVX_QUERY_EQN,
 };
 
 enum  mlx5_ib_devx_other_attrs {
@@ -68,6 +69,11 @@ enum  mlx5_ib_devx_query_uar_attrs {
 
 enum mlx5_ib_devx_obj_destroy_attrs {
 	MLX5_IB_ATTR_DEVX_OBJ_DESTROY_HANDLE = (1U << UVERBS_ID_NS_SHIFT),
+};
+
+enum  mlx5_ib_devx_query_eqn_attrs {
+	MLX5_IB_ATTR_DEVX_QUERY_EQN_USER_VEC = (1U << UVERBS_ID_NS_SHIFT),
+	MLX5_IB_ATTR_DEVX_QUERY_EQN_DEV_EQN,
 };
 
 enum mlx5_ib_devx_obj_methods {
