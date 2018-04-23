@@ -8,6 +8,7 @@
 #include <rdma/uverbs_types.h>
 #include <rdma/uverbs_ioctl.h>
 #include <rdma/mlx5_user_ioctl_cmds.h>
+#include <rdma/mlx5_user_ioctl_verbs.h>
 #include <rdma/ib_umem.h>
 #include <linux/mlx5/driver.h>
 #include <linux/mlx5/fs.h>
@@ -176,6 +177,114 @@ end:
 	return err;
 }
 
+static int mlx5_ib_ft_type_to_namespace(u8 table_type, u8 *namespace)
+{
+	switch (table_type) {
+	case MLX5_IB_UAPI_FLOW_TABLE_TYPE_NIC_RX:
+		*namespace = MLX5_FLOW_NAMESPACE_BYPASS;
+		break;
+	case MLX5_IB_UAPI_FLOW_TABLE_TYPE_NIC_TX:
+		*namespace = MLX5_FLOW_NAMESPACE_EGRESS;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+void mlx5_ib_destroy_flow_action_raw(struct mlx5_ib_flow_action *maction)
+{
+	switch (maction->flow_action_raw.sub_type) {
+	case MLX5_IB_FLOW_ACTION_MODIFY_HEADER:
+		mlx5_modify_header_dealloc(maction->flow_action_raw.dev->mdev,
+					   maction->flow_action_raw.action_id);
+		break;
+	default:
+		WARN_ON(true);
+		break;
+	}
+}
+
+static struct ib_flow_action *
+mlx5_ib_create_modify_header(struct mlx5_ib_dev *dev, u8 ft_type,
+			     u8 num_actions, void *in)
+{
+	struct mlx5_ib_flow_action *maction;
+	u8 namespace;
+	int ret;
+
+	ret = mlx5_ib_ft_type_to_namespace(ft_type, &namespace);
+	if (ret)
+		return ERR_PTR(-EINVAL);
+
+	maction = kzalloc(sizeof(*maction), GFP_KERNEL);
+	if (!maction)
+		return ERR_PTR(-ENOMEM);
+
+	ret = mlx5_modify_header_alloc(dev->mdev, namespace, num_actions, in,
+				       &maction->flow_action_raw.action_id);
+
+	if (ret) {
+		kfree(maction);
+		return ERR_PTR(ret);
+	}
+	maction->flow_action_raw.sub_type =
+		MLX5_IB_FLOW_ACTION_MODIFY_HEADER;
+	maction->flow_action_raw.dev = dev;
+
+	return &maction->ib_action;
+}
+
+static bool mlx5_ib_modify_header_supported(struct mlx5_ib_dev *dev)
+{
+	return MLX5_CAP_FLOWTABLE_NIC_RX(dev->mdev, max_modify_header_actions) ||
+	       MLX5_CAP_FLOWTABLE_NIC_TX(dev->mdev, max_modify_header_actions);
+}
+
+static int UVERBS_HANDLER(MLX5_IB_METHOD_FLOW_ACTION_CREATE_MODIFY_HEADER)(struct ib_device *ib_dev,
+									   struct ib_uverbs_file *file,
+									   struct uverbs_attr_bundle *attrs)
+{
+	struct ib_uobject *uobj = uverbs_attr_get_uobject(attrs,
+					MLX5_IB_ATTR_CREATE_MODIFY_HEADER_HANDLE);
+	struct mlx5_ib_dev *mdev = to_mdev(uobj->context->device);
+	enum mlx5_ib_uapi_flow_table_type ft_type;
+	struct ib_flow_action *action;
+	void *in;
+	int len;
+	int ret;
+
+	if (!mlx5_ib_modify_header_supported(mdev))
+		return -EOPNOTSUPP;
+
+	in = uverbs_attr_get_alloced_ptr(attrs,
+					 MLX5_IB_ATTR_CREATE_MODIFY_HEADER_ACTIONS_PRM);
+	len = uverbs_attr_get_len(attrs, MLX5_IB_ATTR_CREATE_MODIFY_HEADER_ACTIONS_PRM);
+
+	if (len % MLX5_UN_SZ_BYTES(set_action_in_add_action_in_auto))
+		return -EINVAL;
+
+	ret = uverbs_get_const(&ft_type, attrs,
+			       MLX5_IB_ATTR_CREATE_MODIFY_HEADER_FT_TYPE);
+	if (ret)
+		return -EINVAL;
+
+	action = mlx5_ib_create_modify_header(mdev, ft_type,
+					      len / MLX5_UN_SZ_BYTES(set_action_in_add_action_in_auto),
+					      in);
+	if (IS_ERR(action))
+		return PTR_ERR(action);
+
+	atomic_set(&action->usecnt, 0);
+	action->device = uobj->context->device;
+	action->type = IB_FLOW_ACTION_UNSPECIFIED;
+	action->uobject = uobj;
+	uobj->object = action;
+
+	return 0;
+}
+
 DECLARE_UVERBS_NAMED_METHOD(
 	MLX5_IB_METHOD_CREATE_FLOW,
 	UVERBS_ATTR_IDR(MLX5_IB_ATTR_CREATE_FLOW_HANDLE,
@@ -208,6 +317,24 @@ ADD_UVERBS_METHODS(mlx5_ib_fs,
 		   UVERBS_OBJECT_FLOW,
 		   &UVERBS_METHOD(MLX5_IB_METHOD_CREATE_FLOW),
 		   &UVERBS_METHOD(MLX5_IB_METHOD_DESTROY_FLOW));
+
+DECLARE_UVERBS_NAMED_METHOD(
+	MLX5_IB_METHOD_FLOW_ACTION_CREATE_MODIFY_HEADER,
+	UVERBS_ATTR_IDR(MLX5_IB_ATTR_CREATE_MODIFY_HEADER_HANDLE,
+			UVERBS_OBJECT_FLOW_ACTION,
+			UVERBS_ACCESS_NEW,
+			UA_MANDATORY),
+	UVERBS_ATTR_PTR_IN(MLX5_IB_ATTR_CREATE_MODIFY_HEADER_ACTIONS_PRM,
+			   UVERBS_ATTR_MIN_SIZE(MLX5_UN_SZ_BYTES(set_action_in_add_action_in_auto)),
+			   UA_MANDATORY,
+			   UA_ALLOC_AND_COPY),
+	UVERBS_ATTR_CONST_IN(MLX5_IB_ATTR_CREATE_MODIFY_HEADER_FT_TYPE,
+			     enum mlx5_ib_uapi_flow_table_type,
+			     UA_MANDATORY));
+
+ADD_UVERBS_METHODS(mlx5_ib_flow_actions,
+		   UVERBS_OBJECT_FLOW_ACTION,
+		   &UVERBS_METHOD(MLX5_IB_METHOD_FLOW_ACTION_CREATE_MODIFY_HEADER));
 
 DECLARE_UVERBS_NAMED_METHOD(
 	MLX5_IB_METHOD_FLOW_MATCHER_CREATE,
@@ -249,6 +376,7 @@ int mlx5_ib_get_flow_trees(const struct uverbs_object_tree_def **root)
 
 	root[i++] = &flow_objects;
 	root[i++] = &mlx5_ib_fs;
+	root[i++] = &mlx5_ib_flow_actions;
 
 	return i;
 }
