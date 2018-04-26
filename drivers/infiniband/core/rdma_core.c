@@ -41,17 +41,6 @@
 #include "core_priv.h"
 #include "rdma_core.h"
 
-int uverbs_ns_idx(u16 *id, unsigned int ns_count)
-{
-	int ret = (*id & UVERBS_ID_NS_MASK) >> UVERBS_ID_NS_SHIFT;
-
-	if (ret >= ns_count)
-		return -EINVAL;
-
-	*id &= ~UVERBS_ID_NS_MASK;
-	return ret;
-}
-
 const struct uverbs_object_spec *uverbs_get_object(const struct ib_device *ibdev,
 						   uint16_t object)
 {
@@ -611,6 +600,7 @@ const struct uverbs_obj_type_class uverbs_idr_class = {
 	 */
 	.needs_kfree_rcu = true,
 };
+EXPORT_SYMBOL(uverbs_idr_class);
 
 static void _uverbs_close_fd(struct ib_uobject_file *uobj_file)
 {
@@ -719,6 +709,7 @@ const struct uverbs_obj_type_class uverbs_fd_class = {
 	.remove_commit = remove_commit_fd_uobject,
 	.needs_kfree_rcu = false,
 };
+EXPORT_SYMBOL(uverbs_fd_class);
 
 struct ib_uobject *uverbs_get_uobject_from_context(const struct uverbs_obj_type *type_attrs,
 						   struct ib_ucontext *ucontext,
@@ -775,45 +766,5 @@ int uverbs_finalize_object(struct ib_uobject *uobj,
 		ret = -EOPNOTSUPP;
 	}
 
-	return ret;
-}
-
-int uverbs_finalize_objects(struct uverbs_attr_bundle *attrs_bundle,
-			    struct uverbs_attr_spec_hash * const *spec_hash,
-			    size_t num,
-			    bool commit)
-{
-	unsigned int i;
-	int ret = 0;
-
-	for (i = 0; i < num; i++) {
-		struct uverbs_attr_bundle_hash *curr_bundle =
-			&attrs_bundle->hash[i];
-		const struct uverbs_attr_spec_hash *curr_spec_bucket =
-			spec_hash[i];
-		unsigned int j;
-
-		for (j = 0; j < curr_bundle->num_attrs; j++) {
-			struct uverbs_attr *attr;
-			const struct uverbs_attr_spec *spec;
-
-			if (!uverbs_attr_is_valid_in_hash(curr_bundle, j))
-				continue;
-
-			attr = &curr_bundle->attrs[j];
-			spec = &curr_spec_bucket->attrs[j];
-
-			if (spec->type == UVERBS_ATTR_TYPE_IDR ||
-			    spec->type == UVERBS_ATTR_TYPE_FD) {
-				int current_ret;
-
-				current_ret = uverbs_finalize_object(attr->obj_attr.uobject,
-								     spec->obj.access,
-								     commit);
-				if (!ret)
-					ret = current_ret;
-			}
-		}
-	}
 	return ret;
 }
