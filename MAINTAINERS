@@ -5326,7 +5326,6 @@ F:	include/linux/*mdio*.h
 F:	include/linux/of_net.h
 F:	include/linux/phy.h
 F:	include/linux/phy_fixed.h
-F:	include/linux/platform_data/mdio-gpio.h
 F:	include/linux/platform_data/mdio-bcm-unimac.h
 F:	include/trace/events/mdio.h
 F:	include/uapi/linux/mdio.h
@@ -14634,7 +14633,9 @@ M:	Woojung Huh <woojung.huh@microchip.com>
 M:	Microchip Linux Driver Support <UNGLinuxDriver@microchip.com>
 L:	netdev@vger.kernel.org
 S:	Maintained
+F:	Documentation/devicetree/bindings/net/microchip,lan78xx.txt
 F:	drivers/net/usb/lan78xx.*
+F:	include/dt-bindings/net/microchip-lan78xx.h
 
 USB MASS STORAGE DRIVER
 M:	Alan Stern <stern@rowland.harvard.edu>

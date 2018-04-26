@@ -1285,6 +1285,7 @@ int dev_set_alias(struct net_device *dev, const char *alias, size_t len)
 
 	return len;
 }
+EXPORT_SYMBOL(dev_set_alias);
 
 /**
  *	dev_get_alias - get ifalias of a device
@@ -3996,9 +3997,9 @@ static u32 netif_receive_generic_xdp(struct sk_buff *skb,
 				     struct bpf_prog *xdp_prog)
 {
 	struct netdev_rx_queue *rxqueue;
+	void *orig_data, *orig_data_end;
 	u32 metalen, act = XDP_DROP;
 	struct xdp_buff xdp;
-	void *orig_data;
 	int hlen, off;
 	u32 mac_len;
 
@@ -4037,6 +4038,7 @@ static u32 netif_receive_generic_xdp(struct sk_buff *skb,
 	xdp.data_meta = xdp.data;
 	xdp.data_end = xdp.data + hlen;
 	xdp.data_hard_start = skb->data - skb_headroom(skb);
+	orig_data_end = xdp.data_end;
 	orig_data = xdp.data;
 
 	rxqueue = netif_get_rxqueue(skb);
@@ -4050,6 +4052,13 @@ static u32 netif_receive_generic_xdp(struct sk_buff *skb,
 	else if (off < 0)
 		__skb_push(skb, -off);
 	skb->mac_header += off;
+
+	/* check if bpf_xdp_adjust_tail was used. it can only "shrink"
+	 * pckt.
+	 */
+	off = orig_data_end - xdp.data_end;
+	if (off != 0)
+		skb_set_tail_pointer(skb, xdp.data_end - xdp.data);
 
 	switch (act) {
 	case XDP_REDIRECT:

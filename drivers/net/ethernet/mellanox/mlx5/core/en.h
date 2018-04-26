@@ -53,6 +53,8 @@
 #include "mlx5_core.h"
 #include "en_stats.h"
 
+struct page_pool;
+
 #define MLX5_SET_CFG(p, f, v) MLX5_SET(create_flow_group_in, p, f, v)
 
 #define MLX5E_ETH_HARD_MTU (ETH_HLEN + VLAN_HLEN + ETH_FCS_LEN)
@@ -60,6 +62,7 @@
 #define MLX5E_HW2SW_MTU(params, hwmtu) ((hwmtu) - ((params)->hard_mtu))
 #define MLX5E_SW2HW_MTU(params, swmtu) ((swmtu) + ((params)->hard_mtu))
 
+#define MLX5E_MAX_PRIORITY      8
 #define MLX5E_MAX_DSCP          64
 #define MLX5E_MAX_NUM_TC	8
 
@@ -239,6 +242,7 @@ struct mlx5e_params {
 	bool vlan_strip_disable;
 	bool scatter_fcs_en;
 	bool rx_dim_enabled;
+	bool tx_dim_enabled;
 	u32 lro_timeout;
 	u32 pflags;
 	struct bpf_prog *xdp_prog;
@@ -269,6 +273,11 @@ struct mlx5e_dcbx {
 	/* The only setting that cannot be read from FW */
 	u8                         tc_tsa[IEEE_8021QAZ_MAX_TCS];
 	u8                         cap;
+
+	/* Buffer configuration */
+	bool                       manual_buffer;
+	u32                        cable_len;
+	u32                        xoff;
 };
 
 struct mlx5e_dcbx_dp {
@@ -328,6 +337,7 @@ enum {
 	MLX5E_SQ_STATE_ENABLED,
 	MLX5E_SQ_STATE_RECOVERING,
 	MLX5E_SQ_STATE_IPSEC,
+	MLX5E_SQ_STATE_AM,
 };
 
 struct mlx5e_sq_wqe_info {
@@ -340,6 +350,7 @@ struct mlx5e_txqsq {
 	/* dirtied @completion */
 	u16                        cc;
 	u32                        dma_fifo_cc;
+	struct net_dim             dim; /* Adaptive Moderation */
 
 	/* dirtied @xmit */
 	u16                        pc ____cacheline_aligned_in_smp;
@@ -392,6 +403,7 @@ struct mlx5e_xdpsq {
 	struct {
 		struct mlx5e_dma_info     *di;
 		bool                       doorbell;
+		bool                       redirect_flush;
 	} db;
 
 	/* read only */
@@ -533,6 +545,7 @@ struct mlx5e_rq {
 	unsigned int           hw_mtu;
 	struct mlx5e_xdpsq     xdpsq;
 	DECLARE_BITMAP(flags, 8);
+	struct page_pool      *page_pool;
 
 	/* control */
 	struct mlx5_wq_ctrl    wq_ctrl;
@@ -605,8 +618,10 @@ enum {
 };
 
 struct mlx5e_vxlan_db {
-	spinlock_t			lock; /* protect vxlan table */
-	struct radix_tree_root		tree;
+	rwlock_t			lock; /* protect vxlan table */
+	/* max_num_ports is usuallly 4, 16 buckets is more than enough */
+	DECLARE_HASHTABLE(htable, 4);
+	int				num_ports;
 };
 
 struct mlx5e_l2_rule {
@@ -919,8 +934,6 @@ void mlx5e_deactivate_priv_channels(struct mlx5e_priv *priv);
 
 void mlx5e_build_default_indir_rqt(u32 *indirection_rqt, int len,
 				   int num_channels);
-int mlx5e_get_max_linkspeed(struct mlx5_core_dev *mdev, u32 *speed);
-
 void mlx5e_set_tx_cq_mode_params(struct mlx5e_params *params,
 				 u8 cq_period_mode);
 void mlx5e_set_rx_cq_mode_params(struct mlx5e_params *params,
@@ -1107,4 +1120,5 @@ void mlx5e_build_nic_params(struct mlx5_core_dev *mdev,
 			    u16 max_channels, u16 mtu);
 u8 mlx5e_params_calculate_tx_min_inline(struct mlx5_core_dev *mdev);
 void mlx5e_rx_dim_work(struct work_struct *work);
+void mlx5e_tx_dim_work(struct work_struct *work);
 #endif /* __MLX5_EN_H__ */
