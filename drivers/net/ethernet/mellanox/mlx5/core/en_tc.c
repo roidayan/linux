@@ -2707,7 +2707,7 @@ static struct rhashtable *get_tc_ht(struct mlx5e_priv *priv)
 
 static bool is_peer_flow_needed(struct mlx5_core_dev *dev)
 {
-	return false;
+	return mlx5_lag_is_multipath_ready(dev);
 }
 
 static int
