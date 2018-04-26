@@ -28,11 +28,14 @@
 #include <linux/rtnetlink.h>
 #include <linux/compat.h>
 #include <net/net_namespace.h>
+#include <net/pkt_cls.h>
 #include <linux/module.h>
 
 #include "datapath.h"
 #include "vport.h"
 #include "vport-internal_dev.h"
+
+#include <linux/yktrace.h>
 
 static LIST_HEAD(vport_ops_list);
 
@@ -442,6 +445,8 @@ int ovs_vport_receive(struct vport *vport, struct sk_buff *skb,
 	struct sw_flow_key key;
 	int error;
 
+	trace("TC_CB(skb)->recirc_id: %d", TC_CB(skb)->recirc_id);
+	OVS_CB(skb)->recirc_id = TC_CB(skb)->recirc_id;
 	OVS_CB(skb)->input_vport = vport;
 	OVS_CB(skb)->mru = 0;
 	if (unlikely(dev_net(skb->dev) != ovs_dp_get_net(vport->dp))) {

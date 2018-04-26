@@ -730,6 +730,10 @@ struct tc_cls_flower_offload {
 	struct fl_flow_key *key;
 	struct tcf_exts *exts;
 	u32 classid;
+
+	/* FIXME: ugly */
+	u8 ct_state_key;
+	u8 ct_state_mask;
 };
 
 enum tc_matchall_command {
@@ -767,4 +771,12 @@ struct tc_cls_bpf_offload {
 	bool exts_integrated;
 };
 
+/* TODO: temp, use qdisc_skb_cb's data, is it used in ingress? */
+struct tc_skb_cb {
+	struct qdisc_skb_cb cb;
+
+	u32 recirc_id;
+};
+
+#define TC_CB(skb) ((struct tc_skb_cb *)(skb)->cb)
 #endif

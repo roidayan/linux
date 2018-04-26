@@ -136,6 +136,7 @@ mlx5_eswitch_add_offloaded_rule(struct mlx5_eswitch *esw,
 		spec->match_criteria_enable = MLX5_MATCH_OUTER_HEADERS |
 					      MLX5_MATCH_MISC_PARAMETERS;
 
+	/* Can we offload an "empty" match with respect to inner headers? */
 	if (flow_act.action & MLX5_FLOW_CONTEXT_ACTION_DECAP)
 		spec->match_criteria_enable |= MLX5_MATCH_INNER_HEADERS;
 

@@ -935,6 +935,9 @@ int tcf_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 	int limit = 0;
 
 reclassify:
+	/* TODO: can we do better? */
+	if (tp && tp->chain)
+		TC_CB(skb)->recirc_id = tp->chain->index;
 #endif
 	for (; tp; tp = rcu_dereference_bh(tp->next)) {
 		int err;
@@ -2111,6 +2114,10 @@ int tc_setup_cb_call(struct tcf_block *block, struct tcf_exts *exts,
 	int ok_count;
 	int ret;
 
+	/* TODO: temporary workaround */
+	if (!block)
+		goto egdev_all;
+
 	ret = tcf_block_cb_call(block, type, type_data, err_stop);
 	if (ret < 0)
 		return ret;
@@ -2123,7 +2130,11 @@ int tc_setup_cb_call(struct tcf_block *block, struct tcf_exts *exts,
 		return ret;
 	ok_count += ret;
 
-	return ok_count;
+	if (ok_count)
+		return ok_count;
+
+egdev_all:
+	return tc_setup_cb_egdev_all_call(type, type_data);
 }
 EXPORT_SYMBOL(tc_setup_cb_call);
 

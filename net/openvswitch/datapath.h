@@ -105,6 +105,7 @@ struct datapath {
 struct ovs_skb_cb {
 	struct vport		*input_vport;
 	u16			mru;
+	u32			recirc_id;
 };
 #define OVS_CB(skb) ((struct ovs_skb_cb *)(skb)->cb)
 

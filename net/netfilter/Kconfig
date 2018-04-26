@@ -479,6 +479,12 @@ config NFT_HASH
 	  This option adds the "hash" set type that is used to build one-way
 	  mappings between matchings and actions.
 
+config NFT_GEN_FLOW_OFFLOAD
+	depends on NF_CONNTRACK
+	tristate "Netfilter nf_tables smartnic flow offload module"
+	help
+	  This option provides flow_offload add, remove, expiration  API.
+
 config NFT_COUNTER
 	tristate "Netfilter nf_tables counter module"
 	help

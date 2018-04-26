@@ -3165,12 +3165,19 @@ static int mlx5e_setup_tc_block_cb(enum tc_setup_type type, void *type_data,
 {
 	struct mlx5e_priv *priv = cb_priv;
 
-	if (!tc_cls_can_offload_and_chain0(priv->netdev, type_data))
-		return -EOPNOTSUPP;
-
 	switch (type) {
 	case TC_SETUP_CLSFLOWER:
+		/* TODO: fix this */
+		//if (!tc_cls_can_offload_and_chain0(priv->netdev, type_data)) {
+		//	printk(KERN_ERR "%s %d %s @@ got no chain 0 rule on pf ingress\n", __FILE__, __LINE__, __func__);
+		//	return -EOPNOTSUPP;
+		//}
+
 		return mlx5e_setup_tc_cls_flower(priv, type_data, MLX5E_TC_INGRESS);
+	case TC_SETUP_MICROFLOW:
+		return mlx5e_configure_microflow(priv, type_data);
+	case TC_SETUP_CT:
+		return mlx5e_configure_ct(priv, type_data);
 	default:
 		return -EOPNOTSUPP;
 	}

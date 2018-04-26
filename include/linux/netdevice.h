@@ -814,6 +814,22 @@ enum tc_setup_type {
 	TC_SETUP_CLSMATCHALL,
 	TC_SETUP_CLSBPF,
 	TC_SETUP_BLOCK,
+	TC_SETUP_MICROFLOW,
+	TC_SETUP_CT,
+};
+
+struct tc_microflow_offload {
+	struct sk_buff *skb;
+	unsigned long cookie;
+	bool last_flow;
+	uint32_t chain_index;
+};
+
+struct tc_ct_offload {
+	struct sk_buff *skb;
+	struct net *net;
+	struct nf_conntrack_tuple *tuple;
+	struct nf_conntrack_zone *zone;
 };
 
 struct tc_cls_u32_offload;

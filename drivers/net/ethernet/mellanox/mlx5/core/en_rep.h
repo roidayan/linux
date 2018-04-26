@@ -60,6 +60,7 @@ struct mlx5e_rep_priv {
 	struct mlx5_flow_handle *vport_rx_rule;
 	struct list_head       vport_sqs_list;
 	struct rhashtable      tc_ht; /* valid for uplink rep */
+	struct rhashtable      mf_ht;
 };
 
 static inline

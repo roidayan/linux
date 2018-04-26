@@ -138,6 +138,9 @@ struct mlx5_fc_cache {
 	u64 lastuse;
 };
 
+/* TODO: fix this */
+#define MICROFLOW_MAX_FLOWS 8
+
 struct mlx5_fc {
 	struct list_head list;
 	struct llist_node addlist;
@@ -151,6 +154,10 @@ struct mlx5_fc {
 
 	u32 id;
 	bool aging;
+	bool dummy;
+
+	atomic_t nr_dummies;
+	struct mlx5_fc *dummies[MICROFLOW_MAX_FLOWS];
 
 	struct mlx5_fc_cache cache ____cacheline_aligned_in_smp;
 };
