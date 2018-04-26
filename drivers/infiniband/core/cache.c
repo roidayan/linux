@@ -291,14 +291,18 @@ static int find_gid(struct ib_gid_table *table, const union ib_gid *gid,
 		 * so lookup free slot only if requested.
 		 */
 		if (pempty && empty < 0) {
-			if (data->props & GID_TABLE_ENTRY_INVALID) {
-				/* Found an invalid (free) entry; allocate it */
-				if (data->props & GID_TABLE_ENTRY_DEFAULT) {
-					if (default_gid)
-						empty = curr_index;
-				} else {
-					empty = curr_index;
-				}
+			if (data->props & GID_TABLE_ENTRY_INVALID &&
+			    (default_gid ==
+			     !!(data->props & GID_TABLE_ENTRY_DEFAULT))) {
+				/*
+				 * Found an invalid (free) entry; allocate it.
+				 * If default GID is requested, then our
+				 * found slot must be one of the DEFAULT
+				 * reserved slots or we fail.
+				 * This ensures that only DEFAULT reserved
+				 * slots are used for default property GIDs.
+				 */
+				empty = curr_index;
 			}
 		}
 
@@ -420,8 +424,10 @@ int ib_cache_gid_add(struct ib_device *ib_dev, u8 port,
 	return ret;
 }
 
-int ib_cache_gid_del(struct ib_device *ib_dev, u8 port,
-		     union ib_gid *gid, struct ib_gid_attr *attr)
+static int
+_ib_cache_gid_del(struct ib_device *ib_dev, u8 port,
+		  union ib_gid *gid, struct ib_gid_attr *attr,
+		  unsigned long mask, bool default_gid)
 {
 	struct ib_gid_table *table;
 	int ret = 0;
@@ -431,11 +437,7 @@ int ib_cache_gid_del(struct ib_device *ib_dev, u8 port,
 
 	mutex_lock(&table->lock);
 
-	ix = find_gid(table, gid, attr, false,
-		      GID_ATTR_FIND_MASK_GID	  |
-		      GID_ATTR_FIND_MASK_GID_TYPE |
-		      GID_ATTR_FIND_MASK_NETDEV,
-		      NULL);
+	ix = find_gid(table, gid, attr, default_gid, mask, NULL);
 	if (ix < 0) {
 		ret = -EINVAL;
 		goto out_unlock;
@@ -450,6 +452,17 @@ out_unlock:
 		pr_debug("%s: can't delete gid %pI6 error=%d\n",
 			 __func__, gid->raw, ret);
 	return ret;
+}
+
+int ib_cache_gid_del(struct ib_device *ib_dev, u8 port,
+		     union ib_gid *gid, struct ib_gid_attr *attr)
+{
+	unsigned long mask = GID_ATTR_FIND_MASK_GID	  |
+			     GID_ATTR_FIND_MASK_GID_TYPE |
+			     GID_ATTR_FIND_MASK_DEFAULT  |
+			     GID_ATTR_FIND_MASK_NETDEV;
+
+	return _ib_cache_gid_del(ib_dev, port, gid, attr, mask, false);
 }
 
 int ib_cache_gid_del_all_netdev_gids(struct ib_device *ib_dev, u8 port,
@@ -728,7 +741,7 @@ void ib_cache_gid_set_default_gid(struct ib_device *ib_dev, u8 port,
 				  unsigned long gid_type_mask,
 				  enum ib_cache_gid_default_mode mode)
 {
-	union ib_gid gid;
+	union ib_gid gid = { };
 	struct ib_gid_attr gid_attr;
 	struct ib_gid_table *table;
 	unsigned int gid_type;
@@ -736,7 +749,9 @@ void ib_cache_gid_set_default_gid(struct ib_device *ib_dev, u8 port,
 
 	table = ib_dev->cache.ports[port - rdma_start_port(ib_dev)].gid;
 
-	make_default_gid(ndev, &gid);
+	mask = GID_ATTR_FIND_MASK_GID_TYPE |
+	       GID_ATTR_FIND_MASK_DEFAULT |
+	       GID_ATTR_FIND_MASK_NETDEV;
 	memset(&gid_attr, 0, sizeof(gid_attr));
 	gid_attr.ndev = ndev;
 
@@ -747,18 +762,18 @@ void ib_cache_gid_set_default_gid(struct ib_device *ib_dev, u8 port,
 		gid_attr.gid_type = gid_type;
 
 		if (mode == IB_CACHE_GID_DEFAULT_MODE_SET) {
-			mask = GID_ATTR_FIND_MASK_GID_TYPE |
-			       GID_ATTR_FIND_MASK_DEFAULT;
+			make_default_gid(ndev, &gid);
 			__ib_cache_gid_add(ib_dev, port, &gid,
 					   &gid_attr, mask, true);
 		} else if (mode == IB_CACHE_GID_DEFAULT_MODE_DELETE) {
-			ib_cache_gid_del(ib_dev, port, &gid, &gid_attr);
+			_ib_cache_gid_del(ib_dev, port, &gid,
+					  &gid_attr, mask, true);
 		}
 	}
 }
 
-static int gid_table_reserve_default(struct ib_device *ib_dev, u8 port,
-				     struct ib_gid_table *table)
+static void gid_table_reserve_default(struct ib_device *ib_dev, u8 port,
+				      struct ib_gid_table *table)
 {
 	unsigned int i;
 	unsigned long roce_gid_type_mask;
@@ -768,8 +783,7 @@ static int gid_table_reserve_default(struct ib_device *ib_dev, u8 port,
 	roce_gid_type_mask = roce_gid_type_mask_support(ib_dev, port);
 	num_default_gids = hweight_long(roce_gid_type_mask);
 	for (i = 0; i < num_default_gids && i < table->sz; i++) {
-		struct ib_gid_table_entry *entry =
-			&table->data_vec[i];
+		struct ib_gid_table_entry *entry = &table->data_vec[i];
 
 		entry->props |= GID_TABLE_ENTRY_DEFAULT;
 		current_gid = find_next_bit(&roce_gid_type_mask,
@@ -777,48 +791,8 @@ static int gid_table_reserve_default(struct ib_device *ib_dev, u8 port,
 					    current_gid);
 		entry->attr.gid_type = current_gid++;
 	}
-
-	return 0;
 }
 
-static int _gid_table_setup_one(struct ib_device *ib_dev)
-{
-	u8 port;
-	struct ib_gid_table *table;
-	int err = 0;
-
-	for (port = 0; port < ib_dev->phys_port_cnt; port++) {
-		u8 rdma_port = port + rdma_start_port(ib_dev);
-
-		table =
-			alloc_gid_table(
-				ib_dev->port_immutable[rdma_port].gid_tbl_len);
-		if (!table) {
-			err = -ENOMEM;
-			goto rollback_table_setup;
-		}
-
-		err = gid_table_reserve_default(ib_dev,
-						port + rdma_start_port(ib_dev),
-						table);
-		if (err)
-			goto rollback_table_setup;
-		ib_dev->cache.ports[port].gid = table;
-	}
-
-	return 0;
-
-rollback_table_setup:
-	for (port = 0; port < ib_dev->phys_port_cnt; port++) {
-		table = ib_dev->cache.ports[port].gid;
-
-		cleanup_gid_table_port(ib_dev, port + rdma_start_port(ib_dev),
-				       table);
-		release_gid_table(table);
-	}
-
-	return err;
-}
 
 static void gid_table_release_one(struct ib_device *ib_dev)
 {
@@ -830,6 +804,29 @@ static void gid_table_release_one(struct ib_device *ib_dev)
 		release_gid_table(table);
 		ib_dev->cache.ports[port].gid = NULL;
 	}
+}
+
+static int _gid_table_setup_one(struct ib_device *ib_dev)
+{
+	u8 port;
+	struct ib_gid_table *table;
+
+	for (port = 0; port < ib_dev->phys_port_cnt; port++) {
+		u8 rdma_port = port + rdma_start_port(ib_dev);
+
+		table =	alloc_gid_table(
+				ib_dev->port_immutable[rdma_port].gid_tbl_len);
+		if (!table)
+			goto rollback_table_setup;
+
+		gid_table_reserve_default(ib_dev, rdma_port, table);
+		ib_dev->cache.ports[port].gid = table;
+	}
+	return 0;
+
+rollback_table_setup:
+	gid_table_release_one(ib_dev);
+	return -ENOMEM;
 }
 
 static void gid_table_cleanup_one(struct ib_device *ib_dev)
