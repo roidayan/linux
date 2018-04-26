@@ -681,11 +681,10 @@ static inline void mlx5e_build_rx_skb(struct mlx5_cqe64 *cqe,
 				      struct mlx5e_rq *rq,
 				      struct sk_buff *skb)
 {
+	u8 lro_num_seg = be32_to_cpu(cqe->srqn) >> 24;
 	struct net_device *netdev = rq->netdev;
-	int lro_num_seg;
 
 	skb->mac_len = ETH_HLEN;
-	lro_num_seg = be32_to_cpu(cqe->srqn) >> 24;
 	if (lro_num_seg > 1) {
 		mlx5e_lro_update_hdr(skb, cqe, cqe_bcnt);
 		skb_shinfo(skb)->gso_size = DIV_ROUND_UP(cqe_bcnt, lro_num_seg);
@@ -808,9 +807,9 @@ static inline bool mlx5e_xmit_xdp_frame(struct mlx5e_rq *rq,
 }
 
 /* returns true if packet was consumed by xdp */
-static inline int mlx5e_xdp_handle(struct mlx5e_rq *rq,
-				   struct mlx5e_dma_info *di,
-				   void *va, u16 *rx_headroom, u32 *len)
+static inline bool mlx5e_xdp_handle(struct mlx5e_rq *rq,
+				    struct mlx5e_dma_info *di,
+				    void *va, u16 *rx_headroom, u32 *len)
 {
 	struct bpf_prog *prog = READ_ONCE(rq->xdp_prog);
 	struct xdp_buff xdp;
