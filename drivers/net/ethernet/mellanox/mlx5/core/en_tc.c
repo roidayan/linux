@@ -148,6 +148,11 @@ static void mlx5e_set_flow_flag_mb_before(struct mlx5e_tc_flow *flow, int flag)
 	atomic_or(flag, &flow->flags);
 }
 
+static bool mlx5e_is_simple_flow(struct mlx5e_tc_flow *flow)
+{
+	return !!(atomic_read(&flow->flags) & MLX5E_TC_FLOW_SIMPLE);
+}
+
 static inline u32 hash_mod_hdr_info(struct mod_hdr_key *key)
 {
 	return jhash(key->actions,
@@ -1091,8 +1096,8 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	return 0;
 }
 
-static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
-				  struct mlx5e_tc_flow *flow)
+static void mlx5e_tc_del_fdb_flow_simple(struct mlx5e_priv *priv,
+					 struct mlx5e_tc_flow *flow)
 {
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 	struct mlx5_esw_flow_attr *attr = flow->esw_attr;
@@ -1115,6 +1120,17 @@ static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
 
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_COUNT)
 		mlx5_fc_destroy(esw->dev, attr->counter);
+
+}
+
+static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
+				  struct mlx5e_tc_flow *flow)
+{
+	struct mlx5_esw_flow_attr *attr = flow->esw_attr;
+
+	if (mlx5e_is_simple_flow(flow)) {
+		mlx5e_tc_del_fdb_flow_simple(priv, flow);
+	}
 
 	if (attr->parse_attr) {
 		kfree(attr->parse_attr->mod_hdr_actions);
@@ -3482,6 +3498,19 @@ err_free:
 	return err;
 }
 
+static bool is_flow_simple(struct mlx5e_tc_flow *flow)
+{
+	if (flow->esw_attr->chain)
+		return false;
+
+	if (flow->esw_attr->action &
+		(MLX5_FLOW_CONTEXT_ACTION_FWD_DEST |
+		 MLX5_FLOW_CONTEXT_ACTION_DROP))
+		return true;
+
+	return false;
+}
+
 static int
 mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 		   struct tc_cls_flower_offload *f,
@@ -3493,7 +3522,7 @@ mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 	struct mlx5e_tc_flow *flow;
 	int attr_size, err;
 
-	flow_flags |= MLX5E_TC_FLOW_ESWITCH;
+	flow_flags |= MLX5E_TC_FLOW_SIMPLE | MLX5E_TC_FLOW_ESWITCH;
 	attr_size  = sizeof(struct mlx5_esw_flow_attr);
 	err = mlx5e_alloc_flow(priv, attr_size, f, flow_flags,
 			       &parse_attr, &flow);
@@ -3506,9 +3535,13 @@ mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 	if (err)
 		goto err_free;
 
-	err = mlx5e_tc_add_fdb_flow(priv, parse_attr, flow, extack);
-	if (err)
-		goto err_free;
+	if (is_flow_simple(flow)) {
+		err = mlx5e_tc_add_fdb_flow(priv, parse_attr, flow, extack);
+		if (err)
+			goto err_free;
+	} else {
+		atomic_and(~MLX5E_TC_FLOW_SIMPLE, &flow->flags);
+	}
 
 	if (!(flow->esw_attr->action &
 	      MLX5_FLOW_CONTEXT_ACTION_PACKET_REFORMAT)) {
@@ -3545,7 +3578,7 @@ mlx5e_add_nic_flow(struct mlx5e_priv *priv,
 	if (!tc_cls_can_offload_and_chain0(priv->netdev, &f->common))
 		return -EOPNOTSUPP;
 
-	flow_flags |= MLX5E_TC_FLOW_NIC;
+	flow_flags |= MLX5E_TC_FLOW_SIMPLE | MLX5E_TC_FLOW_NIC;
 	attr_size  = sizeof(struct mlx5_nic_flow_attr);
 	err = mlx5e_alloc_flow(priv, attr_size, f, flow_flags,
 			       &parse_attr, &flow);
