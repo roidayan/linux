@@ -866,7 +866,7 @@ EXPORT_SYMBOL(rdma_destroy_qp);
 static int cma_modify_qp_rtr(struct rdma_id_private *id_priv,
 			     struct rdma_conn_param *conn_param)
 {
-	struct ib_qp_attr qp_attr;
+	struct ib_qp_attr qp_attr = {};
 	int qp_attr_mask, ret;
 	union ib_gid sgid;
 
