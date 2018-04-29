@@ -70,6 +70,18 @@
  */
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]) + __must_be_array(arr))
 
+static inline u64 ptr_to_u64(const void *ptr)
+{
+	return (uintptr_t)ptr;
+}
+
+#define u64_to_ptr(T, x) (		\
+{					\
+	typecheck(u64, x);		\
+	(T *)(uintptr_t)(x);		\
+}					\
+)
+
 #define u64_to_user_ptr(x) (		\
 {					\
 	typecheck(u64, x);		\
