@@ -82,12 +82,7 @@ static inline u64 ptr_to_u64(const void *ptr)
 }					\
 )
 
-#define u64_to_user_ptr(x) (		\
-{					\
-	typecheck(u64, x);		\
-	(void __user *)(uintptr_t)x;	\
-}					\
-)
+#define u64_to_user_ptr(x)	u64_to_ptr(void __user, x)
 
 /*
  * This looks more complex than it should be. But we need to
