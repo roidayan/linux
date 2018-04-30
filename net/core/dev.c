@@ -1285,6 +1285,7 @@ int dev_set_alias(struct net_device *dev, const char *alias, size_t len)
 
 	return len;
 }
+EXPORT_SYMBOL(dev_set_alias);
 
 /**
  *	dev_get_alias - get ifalias of a device
@@ -1586,7 +1587,7 @@ const char *netdev_cmd_to_name(enum netdev_cmd cmd)
 	N(UDP_TUNNEL_DROP_INFO) N(CHANGE_TX_QUEUE_LEN)
 	N(CVLAN_FILTER_PUSH_INFO) N(CVLAN_FILTER_DROP_INFO)
 	N(SVLAN_FILTER_PUSH_INFO) N(SVLAN_FILTER_DROP_INFO)
-	};
+	}
 #undef N
 	return "UNKNOWN_NETDEV_EVENT";
 }
@@ -2614,17 +2615,16 @@ EXPORT_SYMBOL(netif_device_attach);
  * Returns a Tx hash based on the given packet descriptor a Tx queues' number
  * to be used as a distribution range.
  */
-u16 __skb_tx_hash(const struct net_device *dev, struct sk_buff *skb,
-		  unsigned int num_tx_queues)
+static u16 skb_tx_hash(const struct net_device *dev, struct sk_buff *skb)
 {
 	u32 hash;
 	u16 qoffset = 0;
-	u16 qcount = num_tx_queues;
+	u16 qcount = dev->real_num_tx_queues;
 
 	if (skb_rx_queue_recorded(skb)) {
 		hash = skb_get_rx_queue(skb);
-		while (unlikely(hash >= num_tx_queues))
-			hash -= num_tx_queues;
+		while (unlikely(hash >= qcount))
+			hash -= qcount;
 		return hash;
 	}
 
@@ -2637,7 +2637,6 @@ u16 __skb_tx_hash(const struct net_device *dev, struct sk_buff *skb,
 
 	return (u16) reciprocal_scale(skb_get_hash(skb), qcount) + qoffset;
 }
-EXPORT_SYMBOL(__skb_tx_hash);
 
 static void skb_warn_bad_offload(const struct sk_buff *skb)
 {
@@ -3996,9 +3995,9 @@ static u32 netif_receive_generic_xdp(struct sk_buff *skb,
 				     struct bpf_prog *xdp_prog)
 {
 	struct netdev_rx_queue *rxqueue;
+	void *orig_data, *orig_data_end;
 	u32 metalen, act = XDP_DROP;
 	struct xdp_buff xdp;
-	void *orig_data;
 	int hlen, off;
 	u32 mac_len;
 
@@ -4037,6 +4036,7 @@ static u32 netif_receive_generic_xdp(struct sk_buff *skb,
 	xdp.data_meta = xdp.data;
 	xdp.data_end = xdp.data + hlen;
 	xdp.data_hard_start = skb->data - skb_headroom(skb);
+	orig_data_end = xdp.data_end;
 	orig_data = xdp.data;
 
 	rxqueue = netif_get_rxqueue(skb);
@@ -4050,6 +4050,15 @@ static u32 netif_receive_generic_xdp(struct sk_buff *skb,
 	else if (off < 0)
 		__skb_push(skb, -off);
 	skb->mac_header += off;
+
+	/* check if bpf_xdp_adjust_tail was used. it can only "shrink"
+	 * pckt.
+	 */
+	off = orig_data_end - xdp.data_end;
+	if (off != 0) {
+		skb_set_tail_pointer(skb, xdp.data_end - xdp.data);
+		skb->len -= off;
+	}
 
 	switch (act) {
 	case XDP_REDIRECT:
@@ -7870,6 +7879,7 @@ int register_netdevice(struct net_device *dev)
 	int ret;
 	struct net *net = dev_net(dev);
 
+	netdev_features_size_check();
 	BUG_ON(dev_boot_phase);
 	ASSERT_RTNL();
 

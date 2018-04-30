@@ -1165,7 +1165,7 @@ struct dev_ifalias {
  *	This function is used to set or query state related to XDP on the
  *	netdevice and manage BPF offload. See definition of
  *	enum bpf_netdev_command for details.
- * int (*ndo_xdp_xmit)(struct net_device *dev, struct xdp_buff *xdp);
+ * int (*ndo_xdp_xmit)(struct net_device *dev, struct xdp_frame *xdp);
  *	This function is used to submit a XDP packet for transmit on a
  *	netdevice.
  * void (*ndo_xdp_flush)(struct net_device *dev);
@@ -1356,7 +1356,7 @@ struct net_device_ops {
 	int			(*ndo_bpf)(struct net_device *dev,
 					   struct netdev_bpf *bpf);
 	int			(*ndo_xdp_xmit)(struct net_device *dev,
-						struct xdp_buff *xdp);
+						struct xdp_frame *xdp);
 	void			(*ndo_xdp_flush)(struct net_device *dev);
 };
 
@@ -3213,19 +3213,6 @@ static inline int netif_set_xps_queue(struct net_device *dev,
 }
 #endif
 
-u16 __skb_tx_hash(const struct net_device *dev, struct sk_buff *skb,
-		  unsigned int num_tx_queues);
-
-/*
- * Returns a Tx hash for the given packet when dev->real_num_tx_queues is used
- * as a distribution range limit for the returned value.
- */
-static inline u16 skb_tx_hash(const struct net_device *dev,
-			      struct sk_buff *skb)
-{
-	return __skb_tx_hash(dev, skb, dev->real_num_tx_queues);
-}
-
 /**
  *	netif_is_multiqueue - test if device has multiple transmit queues
  *	@dev: network device
@@ -4121,6 +4108,12 @@ const char *netdev_drivername(const struct net_device *dev);
 
 void linkwatch_run_queue(void);
 
+static inline void netdev_features_size_check(void)
+{
+	BUILD_BUG_ON(sizeof(netdev_features_t) * BITS_PER_BYTE <
+		     NETDEV_FEATURE_COUNT);
+}
+
 static inline netdev_features_t netdev_intersect_features(netdev_features_t f1,
 							  netdev_features_t f2)
 {
@@ -4186,6 +4179,7 @@ static inline bool net_gso_ok(netdev_features_t features, int gso_type)
 	BUILD_BUG_ON(SKB_GSO_SCTP    != (NETIF_F_GSO_SCTP >> NETIF_F_GSO_SHIFT));
 	BUILD_BUG_ON(SKB_GSO_ESP != (NETIF_F_GSO_ESP >> NETIF_F_GSO_SHIFT));
 	BUILD_BUG_ON(SKB_GSO_UDP != (NETIF_F_GSO_UDP >> NETIF_F_GSO_SHIFT));
+	BUILD_BUG_ON(SKB_GSO_UDP_L4 != (NETIF_F_GSO_UDP_L4 >> NETIF_F_GSO_SHIFT));
 
 	return (features & feature) == feature;
 }

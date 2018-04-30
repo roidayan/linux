@@ -1839,6 +1839,20 @@ done:
 }
 EXPORT_SYMBOL(___pskb_trim);
 
+/* Note : use pskb_trim_rcsum() instead of calling this directly
+ */
+int pskb_trim_rcsum_slow(struct sk_buff *skb, unsigned int len)
+{
+	if (skb->ip_summed == CHECKSUM_COMPLETE) {
+		int delta = skb->len - len;
+
+		skb->csum = csum_sub(skb->csum,
+				     skb_checksum(skb, len, delta, 0));
+	}
+	return __pskb_trim(skb, len);
+}
+EXPORT_SYMBOL(pskb_trim_rcsum_slow);
+
 /**
  *	__pskb_pull_tail - advance tail of skb header
  *	@skb: buffer to reallocate
@@ -4926,6 +4940,8 @@ static unsigned int skb_gso_transport_seglen(const struct sk_buff *skb)
 		thlen = tcp_hdrlen(skb);
 	} else if (unlikely(skb_is_gso_sctp(skb))) {
 		thlen = sizeof(struct sctphdr);
+	} else if (shinfo->gso_type & SKB_GSO_UDP_L4) {
+		thlen = sizeof(struct udphdr);
 	}
 	/* UFO sets gso_size to the size of the fragmentation
 	 * payload, i.e. the size of the L4 (UDP) header is already
