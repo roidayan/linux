@@ -147,8 +147,13 @@ struct uverbs_obj_fd_type {
 	int				flags;
 };
 
+#if IS_ENABLED(CONFIG_INFINIBAND_USER_ACCESS)
 extern const struct uverbs_obj_type_class uverbs_idr_class;
 extern const struct uverbs_obj_type_class uverbs_fd_class;
+#else
+static const struct uverbs_obj_type_class uverbs_idr_class = {};
+static const struct uverbs_obj_type_class uverbs_fd_class = {};
+#endif
 
 #define UVERBS_BUILD_BUG_ON(cond) (sizeof(char[1 - 2 * !!(cond)]) -	\
 				   sizeof(char))
