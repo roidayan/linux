@@ -332,8 +332,8 @@ mlx5e_txwqe_complete(struct mlx5e_txqsq *sq, struct sk_buff *skb,
 	}
 }
 
-static netdev_tx_t mlx5e_sq_xmit(struct mlx5e_txqsq *sq, struct sk_buff *skb,
-				 struct mlx5e_tx_wqe *wqe, u16 pi)
+netdev_tx_t mlx5e_sq_xmit(struct mlx5e_txqsq *sq, struct sk_buff *skb,
+			  struct mlx5e_tx_wqe *wqe, u16 pi)
 {
 	struct mlx5e_tx_wqe_info *wi   = &sq->db.wqe_info[pi];
 
@@ -404,21 +404,19 @@ err_drop:
 netdev_tx_t mlx5e_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
-	struct mlx5e_txqsq *sq = priv->txq2sq[skb_get_queue_mapping(skb)];
-	struct mlx5_wq_cyc *wq = &sq->wq;
-	u16 pi = sq->pc & wq->sz_m1;
-	struct mlx5e_tx_wqe *wqe = mlx5_wq_cyc_get_wqe(wq, pi);
+	struct mlx5e_tx_wqe *wqe;
+	struct mlx5e_txqsq *sq;
+	u16 pi;
 
-	memset(wqe, 0, sizeof(*wqe));
+	sq = priv->txq2sq[skb_get_queue_mapping(skb)];
+	mlx5e_sq_fetch_wqe(sq, &wqe, &pi);
 
-#ifdef CONFIG_MLX5_EN_IPSEC
-	if (sq->state & BIT(MLX5E_SQ_STATE_IPSEC)) {
-		skb = mlx5e_ipsec_handle_tx_skb(dev, wqe, skb);
-		if (unlikely(!skb))
-			return NETDEV_TX_OK;
-	}
+#ifdef CONFIG_MLX5_ACCEL
+	/* might send skbs and update wqe and pi */
+	skb = mlx5e_accel_handle_tx(skb, sq, dev, &wqe, &pi);
+	if (unlikely(!skb))
+		return NETDEV_TX_OK;
 #endif
-
 	return mlx5e_sq_xmit(sq, skb, wqe, pi);
 }
 
