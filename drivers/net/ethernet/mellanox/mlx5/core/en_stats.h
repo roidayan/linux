@@ -93,6 +93,9 @@ struct mlx5e_sw_stats {
 	u64 rx_cache_empty;
 	u64 rx_cache_busy;
 	u64 rx_cache_waive;
+	u64 ch_poll;
+	u64 ch_arm;
+	u64 ch_aff_change;
 	u64 ch_eq_rearm;
 
 #ifdef CONFIG_MLX5_EN_TLS
@@ -215,6 +218,9 @@ struct mlx5e_sq_stats {
 };
 
 struct mlx5e_ch_stats {
+	u64 poll;
+	u64 arm;
+	u64 aff_change;
 	u64 eq_rearm;
 };
 
