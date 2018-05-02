@@ -67,15 +67,20 @@ enum gid_attr_find_mask {
 };
 
 enum gid_table_entry_props {
-	GID_TABLE_ENTRY_INVALID		= 1UL << 0,
-	GID_TABLE_ENTRY_DEFAULT		= 1UL << 1,
+	GID_TABLE_ENTRY_DEFAULT		= 1 << 1,
+};
+
+enum gid_table_entry_state {
+	GID_TABLE_ENTRY_FREE		= 1,
+	GID_TABLE_ENTRY_ALLOCATED	= 2,
 };
 
 struct ib_gid_table_entry {
-	unsigned long	    props;
-	union ib_gid        gid;
-	struct ib_gid_attr  attr;
-	void		   *context;
+	enum gid_table_entry_props	props;
+	enum gid_table_entry_state	state;
+	union ib_gid			gid;
+	struct ib_gid_attr		attr;
+	void				*context;
 };
 
 struct ib_gid_table {
@@ -91,11 +96,11 @@ struct ib_gid_table {
 	 *
 	 **/
 	/* Any writer to data_vec must hold this lock and the write side of
-	 * rwlock. readers must hold only rwlock. All writers must be in a
+	 * rwlock. Readers must hold only rwlock. All writers must be in a
 	 * sleepable context.
 	 */
 	struct mutex         lock;
-	/* rwlock protects data_vec[ix]->props. */
+	/* rwlock protects data_vec[ix]->props and data)vec[ix->state. */
 	rwlock_t	     rwlock;
 	struct ib_gid_table_entry *data_vec;
 };
@@ -149,6 +154,18 @@ int ib_cache_gid_parse_type_str(const char *buf)
 }
 EXPORT_SYMBOL(ib_cache_gid_parse_type_str);
 
+static inline bool
+is_gid_table_entry_free(const struct ib_gid_table_entry *entry)
+{
+	return entry->state == GID_TABLE_ENTRY_FREE;
+}
+
+static inline bool
+is_gid_table_entry_valid(const struct ib_gid_table_entry *entry)
+{
+	return entry->state == GID_TABLE_ENTRY_ALLOCATED;
+}
+
 static void del_roce_gid(struct ib_device *device, u8 port_num,
 			 struct ib_gid_table *table, int ix)
 {
@@ -178,7 +195,7 @@ static int add_roce_gid(struct ib_gid_table *table,
 	}
 
 	entry = &table->data_vec[ix];
-	if ((entry->props & GID_TABLE_ENTRY_INVALID) == 0) {
+	if (!is_gid_table_entry_free(entry)) {
 		WARN(1, "GID table corruption device=%s port=%d index=%d\n",
 		     attr->device->name, attr->port_num,
 		     attr->index);
@@ -240,7 +257,7 @@ static int add_modify_gid(struct ib_gid_table *table,
 	memcpy(&table->data_vec[attr->index].attr, attr, sizeof(*attr));
 
 	write_lock_irq(&table->rwlock);
-	table->data_vec[attr->index].props &= ~GID_TABLE_ENTRY_INVALID;
+	table->data_vec[attr->index].state = GID_TABLE_ENTRY_ALLOCATED;
 	write_unlock_irq(&table->rwlock);
 	return 0;
 }
@@ -259,7 +276,7 @@ static void del_gid(struct ib_device *ib_dev, u8 port,
 {
 	lockdep_assert_held(&table->lock);
 	write_lock_irq(&table->rwlock);
-	table->data_vec[ix].props |= GID_TABLE_ENTRY_INVALID;
+	table->data_vec[ix].state = GID_TABLE_ENTRY_FREE;
 	write_unlock_irq(&table->rwlock);
 
 	if (rdma_protocol_roce(ib_dev, port))
@@ -291,7 +308,7 @@ static int find_gid(struct ib_gid_table *table, const union ib_gid *gid,
 		 * so lookup free slot only if requested.
 		 */
 		if (pempty && empty < 0) {
-			if (data->props & GID_TABLE_ENTRY_INVALID &&
+			if (is_gid_table_entry_free(data) &&
 			    (default_gid ==
 			     !!(data->props & GID_TABLE_ENTRY_DEFAULT))) {
 				/*
@@ -312,7 +329,7 @@ static int find_gid(struct ib_gid_table *table, const union ib_gid *gid,
 		 * find the empty entry first to continue to search for a free
 		 * slot and ignore its INVALID flag.
 		 */
-		if (data->props & GID_TABLE_ENTRY_INVALID)
+		if (!is_gid_table_entry_valid(data))
 			continue;
 
 		if (found >= 0)
@@ -501,7 +518,7 @@ static int __ib_cache_gid_get(struct ib_device *ib_dev, u8 port, int index,
 	if (index < 0 || index >= table->sz)
 		return -EINVAL;
 
-	if (table->data_vec[index].props & GID_TABLE_ENTRY_INVALID)
+	if (!is_gid_table_entry_valid(&table->data_vec[index]))
 		return -EAGAIN;
 
 	memcpy(gid, &table->data_vec[index].gid, sizeof(*gid));
@@ -653,7 +670,7 @@ static int ib_cache_gid_find_by_filter(struct ib_device *ib_dev,
 	for (i = 0; i < table->sz; i++) {
 		struct ib_gid_attr attr;
 
-		if (table->data_vec[i].props & GID_TABLE_ENTRY_INVALID)
+		if (!is_gid_table_entry_valid(&table->data_vec[i]))
 			continue;
 
 		if (memcmp(gid, &table->data_vec[i].gid, sizeof(*gid)))
@@ -697,7 +714,7 @@ static struct ib_gid_table *alloc_gid_table(int sz)
 	 * one of the invalid (free) entry.
 	 */
 	for (i = 0; i < sz; i++)
-		table->data_vec[i].props |= GID_TABLE_ENTRY_INVALID;
+		table->data_vec[i].state = GID_TABLE_ENTRY_FREE;
 	return table;
 
 err_free_table:
