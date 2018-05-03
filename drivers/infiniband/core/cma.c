@@ -156,7 +156,6 @@ static struct ib_client cma_client = {
 };
 
 static struct ib_sa_client sa_client;
-static struct rdma_addr_client addr_client;
 static LIST_HEAD(dev_list);
 static LIST_HEAD(listen_any_list);
 static DEFINE_MUTEX(lock);
@@ -868,7 +867,6 @@ static int cma_modify_qp_rtr(struct rdma_id_private *id_priv,
 {
 	struct ib_qp_attr qp_attr = {};
 	int qp_attr_mask, ret;
-	union ib_gid sgid;
 
 	mutex_lock(&id_priv->qp_mutex);
 	if (!id_priv->id.qp) {
@@ -888,12 +886,6 @@ static int cma_modify_qp_rtr(struct rdma_id_private *id_priv,
 
 	qp_attr.qp_state = IB_QPS_RTR;
 	ret = rdma_init_qp_attr(&id_priv->id, &qp_attr, &qp_attr_mask);
-	if (ret)
-		goto out;
-
-	ret = ib_query_gid(id_priv->id.device, id_priv->id.port_num,
-			   rdma_ah_read_grh(&qp_attr.ah_attr)->sgid_index,
-			   &sgid, NULL);
 	if (ret)
 		goto out;
 
@@ -2943,7 +2935,7 @@ int rdma_resolve_addr(struct rdma_cm_id *id, struct sockaddr *src_addr,
 		if (dst_addr->sa_family == AF_IB) {
 			ret = cma_resolve_ib_addr(id_priv);
 		} else {
-			ret = rdma_resolve_ip(&addr_client, cma_src_addr(id_priv),
+			ret = rdma_resolve_ip(cma_src_addr(id_priv),
 					      dst_addr, &id->route.addr.dev_addr,
 					      timeout_ms, addr_handler, id_priv);
 		}
@@ -4580,7 +4572,6 @@ static int __init cma_init(void)
 		goto err_wq;
 
 	ib_sa_register_client(&sa_client);
-	rdma_addr_register_client(&addr_client);
 	register_netdevice_notifier(&cma_nb);
 
 	ret = ib_register_client(&cma_client);
@@ -4594,7 +4585,6 @@ static int __init cma_init(void)
 
 err:
 	unregister_netdevice_notifier(&cma_nb);
-	rdma_addr_unregister_client(&addr_client);
 	ib_sa_unregister_client(&sa_client);
 err_wq:
 	destroy_workqueue(cma_wq);
@@ -4607,7 +4597,6 @@ static void __exit cma_cleanup(void)
 	rdma_nl_unregister(RDMA_NL_RDMA_CM);
 	ib_unregister_client(&cma_client);
 	unregister_netdevice_notifier(&cma_nb);
-	rdma_addr_unregister_client(&addr_client);
 	ib_sa_unregister_client(&sa_client);
 	unregister_pernet_subsys(&cma_pernet_operations);
 	destroy_workqueue(cma_wq);
