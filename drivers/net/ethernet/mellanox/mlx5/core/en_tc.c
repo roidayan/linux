@@ -2112,6 +2112,8 @@ static int mlx5e_route_lookup_ipv4(struct mlx5e_priv *priv,
 	ret = PTR_ERR_OR_ZERO(rt);
 	if (ret)
 		return ret;
+	if (mlx5_lag_is_multipath_ready(esw->dev) && !rt->rt_gateway)
+		return -EOPNOTSUPP;
 #else
 	return -EOPNOTSUPP;
 #endif
