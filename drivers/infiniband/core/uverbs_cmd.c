@@ -691,6 +691,7 @@ ssize_t ib_uverbs_reg_mr(struct ib_uverbs_file *file,
 
 	mr->device  = pd->device;
 	mr->pd      = pd;
+	mr->dm	    = NULL;
 	mr->uobject = uobj;
 	atomic_inc(&pd->usecnt);
 	mr->res.type = RDMA_RESTRACK_MR;
@@ -764,6 +765,11 @@ ssize_t ib_uverbs_rereg_mr(struct ib_uverbs_file *file,
 		return PTR_ERR(uobj);
 
 	mr = uobj->object;
+
+	if (mr->dm) {
+		ret = -EINVAL;
+		goto put_uobjs;
+	}
 
 	if (cmd.flags & IB_MR_REREG_ACCESS) {
 		ret = ib_check_mr_access(cmd.access_flags);
@@ -1973,20 +1979,28 @@ static int modify_qp(struct ib_uverbs_file *file,
 	}
 
 	if ((cmd->base.attr_mask & IB_QP_PORT) &&
-	    !rdma_is_port_valid(qp->device, cmd->base.port_num)) {
+	    !(rdma_is_port_valid(qp->device, cmd->base.port_num) &&
+	      rdma_validate_av(qp->device, cmd->base.port_num,
+			       cmd->base.dest.is_global))) {
 		ret = -EINVAL;
 		goto release_qp;
 	}
 
 	if ((cmd->base.attr_mask & IB_QP_AV) &&
-	    !rdma_is_port_valid(qp->device, cmd->base.dest.port_num)) {
+	    !(rdma_is_port_valid(qp->device, cmd->base.dest.port_num) &&
+	      rdma_validate_av(qp->device, cmd->base.dest.port_num,
+			       cmd->base.dest.is_global))) {
 		ret = -EINVAL;
 		goto release_qp;
 	}
 
 	if ((cmd->base.attr_mask & IB_QP_ALT_PATH) &&
-	    (!rdma_is_port_valid(qp->device, cmd->base.alt_port_num) ||
-	    !rdma_is_port_valid(qp->device, cmd->base.alt_dest.port_num))) {
+	    !(rdma_is_port_valid(qp->device, cmd->base.alt_port_num) &&
+	      rdma_validate_av(qp->device, cmd->base.alt_port_num,
+			       cmd->base.alt_dest.is_global) &&
+	      rdma_is_port_valid(qp->device, cmd->base.alt_dest.port_num) &&
+	      rdma_validate_av(qp->device, cmd->base.alt_dest.port_num,
+			       cmd->base.alt_dest.is_global))) {
 		ret = -EINVAL;
 		goto release_qp;
 	}
@@ -2559,6 +2573,9 @@ ssize_t ib_uverbs_create_ah(struct ib_uverbs_file *file,
 	if (!rdma_is_port_valid(ib_dev, cmd.attr.port_num))
 		return -EINVAL;
 
+	if (!rdma_validate_av(ib_dev, cmd.attr.port_num, cmd.attr.is_global))
+		return -EINVAL;
+
 	ib_uverbs_init_udata(&udata, buf + sizeof(cmd),
 		   u64_to_user_ptr(cmd.response) + sizeof(resp),
 		   in_len - sizeof(cmd) - sizeof(struct ib_uverbs_cmd_hdr),
@@ -2941,6 +2958,28 @@ int ib_uverbs_kern_spec_to_ib_spec_filter(enum ib_flow_spec_type type,
 		ib_spec->esp.size = sizeof(struct ib_flow_spec_esp);
 		memcpy(&ib_spec->esp.val, kern_spec_val, actual_filter_sz);
 		memcpy(&ib_spec->esp.mask, kern_spec_mask, actual_filter_sz);
+		break;
+	case IB_FLOW_SPEC_GRE:
+		ib_filter_sz = offsetof(struct ib_flow_gre_filter, real_sz);
+		actual_filter_sz = spec_filter_size(kern_spec_mask,
+						    kern_filter_sz,
+						    ib_filter_sz);
+		if (actual_filter_sz <= 0)
+			return -EINVAL;
+		ib_spec->gre.size = sizeof(struct ib_flow_spec_gre);
+		memcpy(&ib_spec->gre.val, kern_spec_val, actual_filter_sz);
+		memcpy(&ib_spec->gre.mask, kern_spec_mask, actual_filter_sz);
+		break;
+	case IB_FLOW_SPEC_MPLS:
+		ib_filter_sz = offsetof(struct ib_flow_mpls_filter, real_sz);
+		actual_filter_sz = spec_filter_size(kern_spec_mask,
+						    kern_filter_sz,
+						    ib_filter_sz);
+		if (actual_filter_sz <= 0)
+			return -EINVAL;
+		ib_spec->mpls.size = sizeof(struct ib_flow_spec_mpls);
+		memcpy(&ib_spec->mpls.val, kern_spec_val, actual_filter_sz);
+		memcpy(&ib_spec->mpls.mask, kern_spec_mask, actual_filter_sz);
 		break;
 	default:
 		return -EINVAL;
@@ -3501,6 +3540,7 @@ int ib_uverbs_ex_create_flow(struct ib_uverbs_file *file,
 					   uflow_res);
 		if (err)
 			goto err_free;
+
 		flow_attr->size +=
 			((union ib_flow_spec *) ib_spec)->size;
 		cmd.flow_attr.size -= ((struct ib_uverbs_flow_spec *)kern_spec)->size;
