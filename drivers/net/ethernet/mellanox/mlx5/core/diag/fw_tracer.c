@@ -633,6 +633,7 @@ static void mlx5_fw_tracer_handle_traces(struct work_struct *work)
 	struct mlx5_core_dev *dev;
 	int i;
 
+	mlx5_core_dbg(dev, "FWTracer: Handle Trace event, owner=(%d)\n", tracer->owner);
 	if (!tracer->owner)
 		return;
 
@@ -762,6 +763,7 @@ static int mlx5_fw_tracer_start(struct mlx5_fw_tracer *tracer)
 		goto release_ownership;
 	}
 
+	mlx5_core_dbg(dev, "FWTracer: Ownership granted and active\n");
 	return 0;
 
 release_ownership:
@@ -774,6 +776,7 @@ static void mlx5_fw_tracer_ownership_change(struct work_struct *work)
 	struct mlx5_fw_tracer *tracer =
 		container_of(work, struct mlx5_fw_tracer, ownership_change_work);
 
+	mlx5_core_dbg(tracer->dev, "FWTracer: ownership changed, current=(%d)\n", tracer->owner);
 	if (tracer->owner) {
 		tracer->owner = false;
 		tracer->buff.consumer_index = 0;
@@ -829,6 +832,8 @@ struct mlx5_fw_tracer *mlx5_fw_tracer_create(struct mlx5_core_dev *dev)
 		mlx5_core_warn(dev, "FWTracer: Allocate strings database failed %d\n", err);
 		goto free_log_buf;
 	}
+
+	mlx5_core_dbg(dev, "FWTracer: Tracer created\n");
 
 	return tracer;
 
@@ -887,6 +892,9 @@ void mlx5_fw_tracer_cleanup(struct mlx5_fw_tracer *tracer)
 	if (!tracer)
 		return;
 
+	mlx5_core_dbg(tracer->dev, "FWTracer: Cleanup, is owner ? (%d)\n",
+		      tracer->owner);
+
 	cancel_work_sync(&tracer->ownership_change_work);
 	cancel_work_sync(&tracer->handle_traces_work);
 
@@ -902,6 +910,8 @@ void mlx5_fw_tracer_destroy(struct mlx5_fw_tracer *tracer)
 {
 	if (!tracer)
 		return;
+
+	mlx5_core_dbg(tracer->dev, "FWTracer: Destroy\n");
 
 	cancel_work_sync(&tracer->read_fw_strings_work);
 	mlx5_fw_tracer_clean_ready_list(tracer);
