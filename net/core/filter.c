@@ -57,6 +57,7 @@
 #include <net/sock_reuseport.h>
 #include <net/busy_poll.h>
 #include <net/tcp.h>
+#include <net/xfrm.h>
 #include <linux/bpf_trace.h>
 
 /**
@@ -2692,8 +2693,9 @@ static unsigned long xdp_get_metalen(const struct xdp_buff *xdp)
 
 BPF_CALL_2(bpf_xdp_adjust_head, struct xdp_buff *, xdp, int, offset)
 {
+	void *xdp_frame_end = xdp->data_hard_start + sizeof(struct xdp_frame);
 	unsigned long metalen = xdp_get_metalen(xdp);
-	void *data_start = xdp->data_hard_start + metalen;
+	void *data_start = xdp_frame_end + metalen;
 	void *data = xdp->data + offset;
 
 	if (unlikely(data < data_start ||
@@ -2717,14 +2719,39 @@ static const struct bpf_func_proto bpf_xdp_adjust_head_proto = {
 	.arg2_type	= ARG_ANYTHING,
 };
 
+BPF_CALL_2(bpf_xdp_adjust_tail, struct xdp_buff *, xdp, int, offset)
+{
+	void *data_end = xdp->data_end + offset;
+
+	/* only shrinking is allowed for now. */
+	if (unlikely(offset >= 0))
+		return -EINVAL;
+
+	if (unlikely(data_end < xdp->data + ETH_HLEN))
+		return -EINVAL;
+
+	xdp->data_end = data_end;
+
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_xdp_adjust_tail_proto = {
+	.func		= bpf_xdp_adjust_tail,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_CTX,
+	.arg2_type	= ARG_ANYTHING,
+};
+
 BPF_CALL_2(bpf_xdp_adjust_meta, struct xdp_buff *, xdp, int, offset)
 {
+	void *xdp_frame_end = xdp->data_hard_start + sizeof(struct xdp_frame);
 	void *meta = xdp->data_meta + offset;
 	unsigned long metalen = xdp->data - meta;
 
 	if (xdp_data_meta_unsupported(xdp))
 		return -ENOTSUPP;
-	if (unlikely(meta < xdp->data_hard_start ||
+	if (unlikely(meta < xdp_frame_end ||
 		     meta > xdp->data))
 		return -EINVAL;
 	if (unlikely((metalen & (sizeof(__u32) - 1)) ||
@@ -2749,13 +2776,18 @@ static int __bpf_tx_xdp(struct net_device *dev,
 			struct xdp_buff *xdp,
 			u32 index)
 {
+	struct xdp_frame *xdpf;
 	int err;
 
 	if (!dev->netdev_ops->ndo_xdp_xmit) {
 		return -EOPNOTSUPP;
 	}
 
-	err = dev->netdev_ops->ndo_xdp_xmit(dev, xdp);
+	xdpf = convert_to_xdp_frame(xdp);
+	if (unlikely(!xdpf))
+		return -EOVERFLOW;
+
+	err = dev->netdev_ops->ndo_xdp_xmit(dev, xdpf);
 	if (err)
 		return err;
 	dev->netdev_ops->ndo_xdp_flush(dev);
@@ -2771,11 +2803,19 @@ static int __bpf_tx_xdp_map(struct net_device *dev_rx, void *fwd,
 
 	if (map->map_type == BPF_MAP_TYPE_DEVMAP) {
 		struct net_device *dev = fwd;
+		struct xdp_frame *xdpf;
 
 		if (!dev->netdev_ops->ndo_xdp_xmit)
 			return -EOPNOTSUPP;
 
-		err = dev->netdev_ops->ndo_xdp_xmit(dev, xdp);
+		xdpf = convert_to_xdp_frame(xdp);
+		if (unlikely(!xdpf))
+			return -EOVERFLOW;
+
+		/* TODO: move to inside map code instead, for bulk support
+		 * err = dev_map_enqueue(dev, xdp);
+		 */
+		err = dev->netdev_ops->ndo_xdp_xmit(dev, xdpf);
 		if (err)
 			return err;
 		__dev_map_insert_ctx(map, index);
@@ -3053,7 +3093,8 @@ bool bpf_helper_changes_pkt_data(void *func)
 	    func == bpf_l4_csum_replace ||
 	    func == bpf_xdp_adjust_head ||
 	    func == bpf_xdp_adjust_meta ||
-	    func == bpf_msg_pull_data)
+	    func == bpf_msg_pull_data ||
+	    func == bpf_xdp_adjust_tail)
 		return true;
 
 	return false;
@@ -3704,6 +3745,49 @@ static const struct bpf_func_proto bpf_bind_proto = {
 	.arg3_type	= ARG_CONST_SIZE,
 };
 
+#ifdef CONFIG_XFRM
+BPF_CALL_5(bpf_skb_get_xfrm_state, struct sk_buff *, skb, u32, index,
+	   struct bpf_xfrm_state *, to, u32, size, u64, flags)
+{
+	const struct sec_path *sp = skb_sec_path(skb);
+	const struct xfrm_state *x;
+
+	if (!sp || unlikely(index >= sp->len || flags))
+		goto err_clear;
+
+	x = sp->xvec[index];
+
+	if (unlikely(size != sizeof(struct bpf_xfrm_state)))
+		goto err_clear;
+
+	to->reqid = x->props.reqid;
+	to->spi = x->id.spi;
+	to->family = x->props.family;
+	if (to->family == AF_INET6) {
+		memcpy(to->remote_ipv6, x->props.saddr.a6,
+		       sizeof(to->remote_ipv6));
+	} else {
+		to->remote_ipv4 = x->props.saddr.a4;
+	}
+
+	return 0;
+err_clear:
+	memset(to, 0, size);
+	return -EINVAL;
+}
+
+static const struct bpf_func_proto bpf_skb_get_xfrm_state_proto = {
+	.func		= bpf_skb_get_xfrm_state,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_CTX,
+	.arg2_type	= ARG_ANYTHING,
+	.arg3_type	= ARG_PTR_TO_UNINIT_MEM,
+	.arg4_type	= ARG_CONST_SIZE,
+	.arg5_type	= ARG_ANYTHING,
+};
+#endif
+
 static const struct bpf_func_proto *
 bpf_base_func_proto(enum bpf_func_id func_id)
 {
@@ -3845,6 +3929,10 @@ tc_cls_act_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_get_socket_cookie_proto;
 	case BPF_FUNC_get_socket_uid:
 		return &bpf_get_socket_uid_proto;
+#ifdef CONFIG_XFRM
+	case BPF_FUNC_skb_get_xfrm_state:
+		return &bpf_skb_get_xfrm_state_proto;
+#endif
 	default:
 		return bpf_base_func_proto(func_id);
 	}
@@ -3868,6 +3956,8 @@ xdp_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_xdp_redirect_proto;
 	case BPF_FUNC_redirect_map:
 		return &bpf_xdp_redirect_map_proto;
+	case BPF_FUNC_xdp_adjust_tail:
+		return &bpf_xdp_adjust_tail_proto;
 	default:
 		return bpf_base_func_proto(func_id);
 	}
