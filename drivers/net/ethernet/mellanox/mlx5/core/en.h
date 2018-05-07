@@ -65,6 +65,7 @@ struct page_pool;
 #define MLX5E_HW2SW_MTU(params, hwmtu) ((hwmtu) - ((params)->hard_mtu))
 #define MLX5E_SW2HW_MTU(params, swmtu) ((swmtu) + ((params)->hard_mtu))
 
+#define MLX5E_MAX_PRIORITY      8
 #define MLX5E_MAX_DSCP          64
 #define MLX5E_MAX_NUM_TC	8
 
@@ -275,6 +276,11 @@ struct mlx5e_dcbx {
 	/* The only setting that cannot be read from FW */
 	u8                         tc_tsa[IEEE_8021QAZ_MAX_TCS];
 	u8                         cap;
+
+	/* Buffer configuration */
+	bool                       manual_buffer;
+	u32                        cable_len;
+	u32                        xoff;
 };
 
 struct mlx5e_dcbx_dp {
@@ -616,8 +622,10 @@ enum {
 };
 
 struct mlx5e_vxlan_db {
-	spinlock_t			lock; /* protect vxlan table */
-	struct radix_tree_root		tree;
+	rwlock_t			lock; /* protect vxlan table */
+	/* max_num_ports is usuallly 4, 16 buckets is more than enough */
+	DECLARE_HASHTABLE(htable, 4);
+	int				num_ports;
 };
 
 struct mlx5e_l2_rule {
@@ -636,7 +644,6 @@ struct mlx5e_flow_table {
 struct mlx5e_tc_table {
 	struct mlx5_flow_table		*t;
 
-	struct rhashtable_params        ht_params;
 	struct rhashtable               ht;
 
 	DECLARE_HASHTABLE(mod_hdr_tbl, 8);
@@ -935,8 +942,6 @@ void mlx5e_deactivate_priv_channels(struct mlx5e_priv *priv);
 
 void mlx5e_build_default_indir_rqt(u32 *indirection_rqt, int len,
 				   int num_channels);
-int mlx5e_get_max_linkspeed(struct mlx5_core_dev *mdev, u32 *speed);
-
 void mlx5e_set_tx_cq_mode_params(struct mlx5e_params *params,
 				 u8 cq_period_mode);
 void mlx5e_set_rx_cq_mode_params(struct mlx5e_params *params,
@@ -1119,9 +1124,6 @@ int mlx5e_ethtool_get_ts_info(struct mlx5e_priv *priv,
 			      struct ethtool_ts_info *info);
 int mlx5e_ethtool_flash_device(struct mlx5e_priv *priv,
 			       struct ethtool_flash *flash);
-
-int mlx5e_setup_tc_block_cb(enum tc_setup_type type, void *type_data,
-			    void *cb_priv);
 
 /* mlx5e generic netdev management API */
 struct net_device*
