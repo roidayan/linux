@@ -65,6 +65,8 @@ enum {
 	UVERBS_ATTR_SPEC_F_MANDATORY	= 1U << 0,
 	/* Support extending attributes by length, validate all unknown size == zero  */
 	UVERBS_ATTR_SPEC_F_MIN_SZ_OR_ZERO = 1U << 1,
+	/* Valid only for PTR_IN. Allocate and copy the data inside the parser */
+	UVERBS_ATTR_SPEC_F_ALLOC_AND_COPY = 1U << 2,
 };
 
 /* Specification of a single attribute inside the ioctl message */
@@ -211,6 +213,8 @@ struct uverbs_object_tree_def {
 	.min_len = ((uintptr_t)(&((_type *)0)->_last + 1)), .len = sizeof(_type)
 #define UVERBS_ATTR_SIZE(_min_len, _len)			\
 	.min_len = _min_len, .len = _len
+#define UVERBS_ATTR_MIN_SIZE(_min_len)				\
+	UVERBS_ATTR_SIZE(_min_len, USHRT_MAX)
 
 /*
  * In new compiler, UVERBS_ATTR could be simplified by declaring it as
@@ -362,9 +366,39 @@ struct uverbs_attr_bundle_hash {
 };
 
 struct uverbs_attr_bundle {
+	const struct uverbs_method_spec	*method;
 	size_t				num_buckets;
 	struct uverbs_attr_bundle_hash  hash[];
 };
+
+static inline int uverbs_ns_idx(u16 *id, unsigned int ns_count)
+{
+	int ret = (*id & UVERBS_ID_NS_MASK) >> UVERBS_ID_NS_SHIFT;
+
+	if (ret >= ns_count)
+		return -EINVAL;
+
+	*id &= ~UVERBS_ID_NS_MASK;
+	return ret;
+}
+
+static inline const struct uverbs_attr_spec *
+uverbs_get_spec(const struct uverbs_method_spec *method, u16 idx)
+{
+	u16 id = idx;
+	int ns = uverbs_ns_idx(&id, method->num_buckets);
+	const struct uverbs_attr_spec_hash *curr_spec_bucket;
+
+	if (ns < 0)
+		return ERR_PTR(ns);
+
+	curr_spec_bucket = method->attr_buckets[ns];
+
+	if (id >= curr_spec_bucket->num_attrs)
+		return ERR_PTR(-ENOENT);
+
+	return &curr_spec_bucket->attrs[id];
+}
 
 static inline bool uverbs_attr_is_valid_in_hash(const struct uverbs_attr_bundle_hash *attrs_hash,
 						unsigned int idx)
@@ -397,13 +431,27 @@ static inline const struct uverbs_attr *uverbs_attr_get(const struct uverbs_attr
 	return &attrs_bundle->hash[idx_bucket].attrs[idx & ~UVERBS_ID_NS_MASK];
 }
 
+#define uverbs_validate_spec_debug(_method, _idx, _name, _cond) ({\
+	const struct uverbs_attr_spec *_name;			  \
+								  \
+	_name = uverbs_get_spec(_method, idx);			  \
+	WARN_ON(IS_ERR(_name)) ? PTR_ERR(_name) :		  \
+		WARN_ON(!(_cond)) ? -EINVAL : 0;		  \
+})
+
 static inline int uverbs_attr_get_enum_id(const struct uverbs_attr_bundle *attrs_bundle,
 					  u16 idx)
 {
 	const struct uverbs_attr *attr = uverbs_attr_get(attrs_bundle, idx);
+	int ret;
 
 	if (IS_ERR(attr))
 		return PTR_ERR(attr);
+
+	ret = uverbs_validate_spec_debug(attrs_bundle->method, idx, spec,
+					 spec->type == UVERBS_ATTR_TYPE_ENUM_IN);
+	if (ret)
+		return ret;
 
 	return attr->ptr_attr.enum_id;
 }
@@ -420,15 +468,88 @@ static inline void *uverbs_attr_get_obj(const struct uverbs_attr_bundle *attrs_b
 	return uobj->object;
 }
 
+static inline const struct uverbs_attr_spec *
+uverbs_get_actual_spec(const struct uverbs_attr_bundle *attrs_bundle, u16 idx)
+{
+	const struct uverbs_attr_spec *spec =
+		uverbs_get_spec(attrs_bundle->method, idx);
+	int enum_id;
+
+	if (IS_ERR(spec))
+		return spec;
+
+	if (likely(spec->type != UVERBS_ATTR_TYPE_ENUM_IN))
+		return spec;
+
+	enum_id = uverbs_attr_get_enum_id(attrs_bundle, idx);
+	if (enum_id < 0)
+		return ERR_PTR(enum_id);
+
+	/* We already know that enum_id is correct, because we didn't fail at
+	 * the parsing stage.
+	 */
+	return &spec->enum_def.ids[enum_id];
+}
+
+#define uverbs_validate_actual_spec_debug(_method, _idx, _name, _cond) ({\
+	const struct uverbs_attr_spec *_name;			  \
+								  \
+	_name = uverbs_get_actual_spec(_method, idx);		  \
+	WARN_ON(IS_ERR(_name)) ? PTR_ERR(_name) :		  \
+		WARN_ON(!(_cond)) ? -EINVAL : 0;		  \
+})
+
+static inline struct ib_uobject *uverbs_attr_get_uobject(const struct uverbs_attr_bundle *attrs_bundle,
+							 u16 idx)
+{
+	const struct uverbs_attr *attr = uverbs_attr_get(attrs_bundle, idx);
+	int ret;
+
+	if (IS_ERR(attr))
+		return (void *)attr;
+
+	ret = uverbs_validate_actual_spec_debug(attrs_bundle, idx, spec,
+						spec->type == UVERBS_ATTR_TYPE_IDR ||
+						spec->type == UVERBS_ATTR_TYPE_FD);
+	if (ret)
+		return ERR_PTR(ret);
+
+	return attr->obj_attr.uobject;
+}
+
+static inline int uverbs_attr_get_len(const struct uverbs_attr_bundle *attrs_bundle,
+				      u16 idx)
+{
+	const struct uverbs_attr *attr = uverbs_attr_get(attrs_bundle, idx);
+	int ret;
+
+	if (IS_ERR(attr))
+		return PTR_ERR(attr);
+
+	ret = uverbs_validate_actual_spec_debug(attrs_bundle, idx, spec,
+						spec->type == UVERBS_ATTR_TYPE_PTR_IN ||
+						spec->type == UVERBS_ATTR_TYPE_PTR_OUT);
+	if (ret)
+		return ret;
+
+	return attr->ptr_attr.len;
+}
+
 static inline int uverbs_copy_to(const struct uverbs_attr_bundle *attrs_bundle,
 				 size_t idx, const void *from, size_t size)
 {
 	const struct uverbs_attr *attr = uverbs_attr_get(attrs_bundle, idx);
 	u16 flags;
 	size_t min_size;
+	int ret;
 
 	if (IS_ERR(attr))
 		return PTR_ERR(attr);
+
+	ret = uverbs_validate_actual_spec_debug(attrs_bundle, idx, spec,
+						spec->type == UVERBS_ATTR_TYPE_PTR_OUT);
+	if (ret)
+		return ret;
 
 	min_size = min_t(size_t, attr->ptr_attr.len, size);
 	if (copy_to_user(u64_to_user_ptr(attr->ptr_attr.data), from, min_size))
@@ -446,15 +567,41 @@ static inline bool uverbs_attr_ptr_is_inline(const struct uverbs_attr *attr)
 	return attr->ptr_attr.len <= sizeof(attr->ptr_attr.data);
 }
 
+static inline void *uverbs_attr_get_alloced_ptr(const struct uverbs_attr_bundle *attrs_bundle,
+						u16 idx)
+{
+	const struct uverbs_attr *attr = uverbs_attr_get(attrs_bundle, idx);
+	int ret;
+
+	if (IS_ERR(attr))
+		return (void *)attr;
+
+	ret = uverbs_validate_actual_spec_debug(attrs_bundle, idx, spec,
+						spec->type == UVERBS_ATTR_TYPE_PTR_IN &&
+						spec->flags & UVERBS_ATTR_SPEC_F_ALLOC_AND_COPY);
+	if (ret)
+		return ERR_PTR(ret);
+
+	return uverbs_attr_ptr_is_inline(attr) ? u64_to_ptr(void *, attr->ptr_attr.data) :
+		u64_to_ptr(void, attr->ptr_attr.data);
+}
+
 static inline int _uverbs_copy_from(void *to,
 				    const struct uverbs_attr_bundle *attrs_bundle,
 				    size_t idx,
 				    size_t size)
 {
 	const struct uverbs_attr *attr = uverbs_attr_get(attrs_bundle, idx);
+	int ret;
 
 	if (IS_ERR(attr))
 		return PTR_ERR(attr);
+
+	ret = uverbs_validate_actual_spec_debug(attrs_bundle, idx, spec,
+						spec->type == UVERBS_ATTR_TYPE_PTR_IN &&
+						spec->flags & ~UVERBS_ATTR_SPEC_F_MIN_SZ_OR_ZERO);
+	if (ret)
+		return ret;
 
 	/*
 	 * Validation ensures attr->ptr_attr.len >= size. If the caller is
@@ -480,9 +627,16 @@ static inline int _uverbs_copy_from_or_zero(void *to,
 {
 	const struct uverbs_attr *attr = uverbs_attr_get(attrs_bundle, idx);
 	size_t min_size;
+	int ret;
 
 	if (IS_ERR(attr))
 		return PTR_ERR(attr);
+
+	ret = uverbs_validate_actual_spec_debug(attrs_bundle, idx, spec,
+						spec->type == UVERBS_ATTR_TYPE_PTR_IN &&
+						spec->flags & UVERBS_ATTR_SPEC_F_MIN_SZ_OR_ZERO);
+	if (ret)
+		return ret;
 
 	min_size = min_t(size_t, size, attr->ptr_attr.len);
 
@@ -496,6 +650,38 @@ static inline int _uverbs_copy_from_or_zero(void *to,
 		memset(to + min_size, 0, size - min_size);
 
 	return 0;
+}
+
+static inline void *uverbs_copy_from_and_alloc(const struct uverbs_attr_bundle *attrs_bundle,
+					       size_t idx, gfp_t flags)
+{
+	int len = uverbs_attr_get_len(attrs_bundle, idx);
+	void *to;
+	int ret;
+
+	if (len < 0)
+		return ERR_PTR(len);
+
+	/* It doesn't make any sense to re-allocate and copy if it was already
+	 * done by the parser.
+	 */
+	ret = uverbs_validate_actual_spec_debug(attrs_bundle, idx, spec,
+						spec->type == UVERBS_ATTR_TYPE_PTR_IN &&
+						spec->flags & ~UVERBS_ATTR_SPEC_F_ALLOC_AND_COPY);
+	if (ret)
+		return ERR_PTR(ret);
+
+	to = kmalloc(len, flags);
+	if (!to)
+		return ERR_PTR(-ENOMEM);
+
+	ret = _uverbs_copy_from(to, attrs_bundle, idx, len);
+	if (ret) {
+		kfree(to);
+		return ERR_PTR(ret);
+	}
+
+	return to;
 }
 
 #define uverbs_copy_from(to, attrs_bundle, idx)				      \
