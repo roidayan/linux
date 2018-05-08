@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Mellanox Technologies, Ltd.  All rights reserved.
+ * Copyright (c) 2018, Mellanox Technologies. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -29,34 +29,20 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-#ifndef __MLX5_VXLAN_H__
-#define __MLX5_VXLAN_H__
+
+#ifndef __MLX5E_EN_PORT_H
+#define __MLX5E_EN_PORT_H
 
 #include <linux/mlx5/driver.h>
 #include "en.h"
 
-struct mlx5e_vxlan {
-	struct hlist_node hlist;
-	atomic_t refcount;
-	u16 udp_port;
-};
+u32 mlx5e_port_ptys2speed(u32 eth_proto_oper);
+int mlx5e_port_linkspeed(struct mlx5_core_dev *mdev, u32 *speed);
+int mlx5e_port_max_linkspeed(struct mlx5_core_dev *mdev, u32 *speed);
+u32 mlx5e_port_speed2linkmodes(u32 speed);
 
-struct mlx5e_vxlan_work {
-	struct work_struct	work;
-	struct mlx5e_priv	*priv;
-	u16			port;
-};
-
-static inline bool mlx5e_vxlan_allowed(struct mlx5_core_dev *mdev)
-{
-	return (MLX5_CAP_ETH(mdev, tunnel_stateless_vxlan) &&
-		mlx5_core_is_pf(mdev));
-}
-
-void mlx5e_vxlan_init(struct mlx5e_priv *priv);
-void mlx5e_vxlan_cleanup(struct mlx5e_priv *priv);
-
-void mlx5e_vxlan_queue_work(struct mlx5e_priv *priv, u16 port, int add);
-struct mlx5e_vxlan *mlx5e_vxlan_lookup_port(struct mlx5e_priv *priv, u16 port);
-
-#endif /* __MLX5_VXLAN_H__ */
+int mlx5e_port_query_pbmc(struct mlx5_core_dev *mdev, void *out);
+int mlx5e_port_set_pbmc(struct mlx5_core_dev *mdev, void *in);
+int mlx5e_port_query_priority2buffer(struct mlx5_core_dev *mdev, u8 *buffer);
+int mlx5e_port_set_priority2buffer(struct mlx5_core_dev *mdev, u8 *buffer);
+#endif
