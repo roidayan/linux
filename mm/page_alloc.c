@@ -129,7 +129,7 @@ unsigned long totalram_pages __read_mostly;
 unsigned long totalreserve_pages __read_mostly;
 unsigned long totalcma_pages __read_mostly;
 
-int percpu_pagelist_fraction;
+int percpu_pagelist_fraction = 512;
 gfp_t gfp_allowed_mask __read_mostly = GFP_BOOT_MASK;
 
 /*
