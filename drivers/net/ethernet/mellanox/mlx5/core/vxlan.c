@@ -38,8 +38,9 @@
 
 struct mlx5_vxlan {
 	struct mlx5_core_dev		*mdev;
-	rwlock_t			lock; /* protect vxlan table */
 	int				num_ports;
+	struct mutex                    sync_lock; /* sync add/del port HW operations */
+	rwlock_t                        lock; /* sync vxlan table with data path access */
 	/* max_num_ports is usuallly 4, 16 buckets is more than enough */
 	DECLARE_HASHTABLE(htable, 4);
 };
@@ -115,17 +116,18 @@ int mlx5_vxlan_add_port(struct mlx5_vxlan *vxlan, u16 port)
 		return 0;
 	}
 
+	mutex_lock(&vxlan->sync_lock);
 	if (vxlan->num_ports >= mlx5_vxlan_max_udp_ports(vxlan->mdev)) {
 		mlx5_core_info(vxlan->mdev,
 			       "UDP port (%d) not offloaded, max number of UDP ports (%d) are already offloaded\n",
 			       port, mlx5_vxlan_max_udp_ports(vxlan->mdev));
 		ret = -ENOSPC;
-		return ret;
+		goto unlock;
 	}
 
 	ret = mlx5_vxlan_core_add_port_cmd(vxlan->mdev, port);
 	if (ret)
-		return ret;
+		goto unlock;
 
 	vxlanp = kzalloc(sizeof(*vxlanp), GFP_KERNEL);
 	if (!vxlanp) {
@@ -141,10 +143,14 @@ int mlx5_vxlan_add_port(struct mlx5_vxlan *vxlan, u16 port)
 	write_unlock_bh(&vxlan->lock);
 
 	vxlan->num_ports++;
+	mutex_unlock(&vxlan->sync_lock);
 	return 0;
 
 err_delete_port:
 	mlx5_vxlan_core_del_port_cmd(vxlan->mdev, port);
+
+unlock:
+	mutex_unlock(&vxlan->sync_lock);
 	return ret;
 }
 
@@ -153,6 +159,8 @@ int mlx5_vxlan_del_port(struct mlx5_vxlan *vxlan, u16 port)
 	struct mlx5_vxlan_port *vxlanp;
 	bool remove = false;
 	int ret = 0;
+
+	mutex_lock(&vxlan->sync_lock);
 
 	write_lock_bh(&vxlan->lock);
 	vxlanp = mlx5_vxlan_lookup_port_locked(vxlan, port);
@@ -174,6 +182,9 @@ out_unlock:
 		kfree(vxlanp);
 		vxlan->num_ports--;
 	}
+
+	mutex_unlock(&vxlan->sync_lock);
+
 	return ret;
 }
 
@@ -189,6 +200,7 @@ struct mlx5_vxlan *mlx5_vxlan_create(struct mlx5_core_dev *mdev)
 		return ERR_PTR(-ENOMEM);
 
 	vxlan->mdev = mdev;
+	mutex_init(&vxlan->sync_lock);
 	rwlock_init(&vxlan->lock);
 	hash_init(vxlan->htable);
 
