@@ -227,19 +227,18 @@ static int rxe_init_av(struct rxe_dev *rxe, struct rdma_ah_attr *attr,
 {
 	int err;
 	union ib_gid sgid;
-	struct ib_gid_attr sgid_attr;
 
-	err = ib_get_cached_gid(&rxe->ib_dev, rdma_ah_get_port_num(attr),
-				rdma_ah_read_grh(attr)->sgid_index, &sgid,
-				&sgid_attr);
+	err = rdma_query_gid(&rxe->ib_dev,
+			     rdma_ah_get_port_num(attr),
+			     rdma_ah_read_grh(attr)->sgid_index,
+			     &sgid);
 	if (err) {
 		pr_err("Failed to query sgid. err = %d\n", err);
 		return err;
 	}
 
 	rxe_av_from_attr(rdma_ah_get_port_num(attr), av, attr);
-	rxe_av_fill_ip_info(av, attr, &sgid_attr, &sgid);
-	dev_put(sgid_attr.ndev);
+	rxe_av_fill_ip_info(av, attr, &sgid);
 	return 0;
 }
 
@@ -1003,7 +1002,7 @@ static struct ib_mr *rxe_get_dma_mr(struct ib_pd *ibpd, int access)
 
 	rxe_add_ref(pd);
 
-	err = rxe_mem_init_dma(rxe, pd, access, mr);
+	err = rxe_mem_init_dma(pd, access, mr);
 	if (err)
 		goto err2;
 
@@ -1038,7 +1037,7 @@ static struct ib_mr *rxe_reg_user_mr(struct ib_pd *ibpd,
 
 	rxe_add_ref(pd);
 
-	err = rxe_mem_init_user(rxe, pd, start, length, iova,
+	err = rxe_mem_init_user(pd, start, length, iova,
 				access, udata, mr);
 	if (err)
 		goto err3;
@@ -1086,7 +1085,7 @@ static struct ib_mr *rxe_alloc_mr(struct ib_pd *ibpd,
 
 	rxe_add_ref(pd);
 
-	err = rxe_mem_init_fast(rxe, pd, max_num_sg, mr);
+	err = rxe_mem_init_fast(pd, max_num_sg, mr);
 	if (err)
 		goto err2;
 

@@ -54,6 +54,7 @@ enum {
 
 enum {
 	MLX5_IB_SQ_STRIDE	= 6,
+	MLX5_IB_SQ_UMR_INLINE_THRESHOLD = 64,
 };
 
 static const u32 mlx5_ib_opcode[] = {
@@ -302,7 +303,9 @@ static int sq_overhead(struct ib_qp_init_attr *attr)
 			max(sizeof(struct mlx5_wqe_atomic_seg) +
 			    sizeof(struct mlx5_wqe_raddr_seg),
 			    sizeof(struct mlx5_wqe_umr_ctrl_seg) +
-			    sizeof(struct mlx5_mkey_seg));
+			    sizeof(struct mlx5_mkey_seg) +
+			    MLX5_IB_SQ_UMR_INLINE_THRESHOLD /
+			    MLX5_IB_UMR_OCTOWORD);
 		break;
 
 	case IB_QPT_XRC_TGT:
@@ -638,9 +641,9 @@ static void mlx5_ib_lock_cqs(struct mlx5_ib_cq *send_cq,
 static void mlx5_ib_unlock_cqs(struct mlx5_ib_cq *send_cq,
 			       struct mlx5_ib_cq *recv_cq);
 
-static int bfregn_to_uar_index(struct mlx5_ib_dev *dev,
-			       struct mlx5_bfreg_info *bfregi, int bfregn,
-			       bool dyn_bfreg)
+int bfregn_to_uar_index(struct mlx5_ib_dev *dev,
+			struct mlx5_bfreg_info *bfregi, int bfregn,
+			bool dyn_bfreg)
 {
 	int bfregs_per_sys_page;
 	int index_of_sys_page;
@@ -649,6 +652,9 @@ static int bfregn_to_uar_index(struct mlx5_ib_dev *dev,
 	bfregs_per_sys_page = get_uars_per_sys_page(dev, bfregi->lib_uar_4k) *
 				MLX5_NON_FP_BFREGS_PER_UAR;
 	index_of_sys_page = bfregn / bfregs_per_sys_page;
+
+	if (index_of_sys_page >= bfregi->num_sys_pages)
+		return -EINVAL;
 
 	if (dyn_bfreg) {
 		index_of_sys_page += bfregi->num_static_sys_pages;
@@ -2552,18 +2558,16 @@ static int mlx5_set_path(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
 	if (ah->type == RDMA_AH_ATTR_TYPE_ROCE) {
 		if (!(ah_flags & IB_AH_GRH))
 			return -EINVAL;
-		err = mlx5_get_roce_gid_type(dev, port, grh->sgid_index,
-					     &gid_type);
-		if (err)
-			return err;
+
 		memcpy(path->rmac, ah->roce.dmac, sizeof(ah->roce.dmac));
 		if (qp->ibqp.qp_type == IB_QPT_RC ||
 		    qp->ibqp.qp_type == IB_QPT_UC ||
 		    qp->ibqp.qp_type == IB_QPT_XRC_INI ||
 		    qp->ibqp.qp_type == IB_QPT_XRC_TGT)
-			path->udp_sport = mlx5_get_roce_udp_sport(dev, port,
-								  grh->sgid_index);
+			path->udp_sport =
+				mlx5_get_roce_udp_sport(dev, ah->grh.sgid_attr);
 		path->dci_cfi_prio_sl = (sl & 0x7) << 4;
+		gid_type = ah->grh.sgid_attr->gid_type;
 		if (gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP)
 			path->ecn_dscp = (grh->traffic_class >> 2) & 0x3f;
 	} else {
@@ -3641,13 +3645,15 @@ static __be64 sig_mkey_mask(void)
 }
 
 static void set_reg_umr_seg(struct mlx5_wqe_umr_ctrl_seg *umr,
-			    struct mlx5_ib_mr *mr)
+			    struct mlx5_ib_mr *mr, bool umr_inline)
 {
 	int size = mr->ndescs * mr->desc_size;
 
 	memset(umr, 0, sizeof(*umr));
 
 	umr->flags = MLX5_UMR_CHECK_NOT_FREE;
+	if (umr_inline)
+		umr->flags |= MLX5_UMR_INLINE;
 	umr->xlt_octowords = cpu_to_be16(get_xlt_octo(size));
 	umr->mkey_mask = frwr_mkey_mask();
 }
@@ -3829,6 +3835,24 @@ static void set_reg_data_seg(struct mlx5_wqe_data_seg *dseg,
 	dseg->addr = cpu_to_be64(mr->desc_map);
 	dseg->byte_count = cpu_to_be32(ALIGN(bcount, 64));
 	dseg->lkey = cpu_to_be32(pd->ibpd.local_dma_lkey);
+}
+
+static void set_reg_umr_inline_seg(void *seg, struct mlx5_ib_qp *qp,
+				   struct mlx5_ib_mr *mr, int mr_list_size)
+{
+	void *qend = qp->sq.qend;
+	void *addr = mr->descs;
+	int copy;
+
+	if (unlikely(seg + mr_list_size > qend)) {
+		copy = qend - seg;
+		memcpy(seg, addr, copy);
+		addr += copy;
+		mr_list_size -= copy;
+		seg = mlx5_get_send_wqe(qp, 0);
+	}
+	memcpy(seg, addr, mr_list_size);
+	seg += mr_list_size;
 }
 
 static __be32 send_ieth(struct ib_send_wr *wr)
@@ -4225,6 +4249,8 @@ static int set_reg_wr(struct mlx5_ib_qp *qp,
 {
 	struct mlx5_ib_mr *mr = to_mmr(wr->mr);
 	struct mlx5_ib_pd *pd = to_mpd(qp->ibqp.pd);
+	int mr_list_size = mr->ndescs * mr->desc_size;
+	bool umr_inline = mr_list_size <= MLX5_IB_SQ_UMR_INLINE_THRESHOLD;
 
 	if (unlikely(wr->wr.send_flags & IB_SEND_INLINE)) {
 		mlx5_ib_warn(to_mdev(qp->ibqp.device),
@@ -4232,7 +4258,7 @@ static int set_reg_wr(struct mlx5_ib_qp *qp,
 		return -EINVAL;
 	}
 
-	set_reg_umr_seg(*seg, mr);
+	set_reg_umr_seg(*seg, mr, umr_inline);
 	*seg += sizeof(struct mlx5_wqe_umr_ctrl_seg);
 	*size += sizeof(struct mlx5_wqe_umr_ctrl_seg) / 16;
 	if (unlikely((*seg == qp->sq.qend)))
@@ -4244,10 +4270,14 @@ static int set_reg_wr(struct mlx5_ib_qp *qp,
 	if (unlikely((*seg == qp->sq.qend)))
 		*seg = mlx5_get_send_wqe(qp, 0);
 
-	set_reg_data_seg(*seg, mr, pd);
-	*seg += sizeof(struct mlx5_wqe_data_seg);
-	*size += (sizeof(struct mlx5_wqe_data_seg) / 16);
-
+	if (umr_inline) {
+		set_reg_umr_inline_seg(*seg, qp, mr, mr_list_size);
+		*size += get_xlt_octo(mr_list_size);
+	} else {
+		set_reg_data_seg(*seg, mr, pd);
+		*seg += sizeof(struct mlx5_wqe_data_seg);
+		*size += (sizeof(struct mlx5_wqe_data_seg) / 16);
+	}
 	return 0;
 }
 
