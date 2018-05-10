@@ -30,6 +30,8 @@
  * SOFTWARE.
  */
 
+#include <rdma/rdma_cm.h>
+
 #include "iw_cxgb4.h"
 #include <rdma/restrack.h>
 #include <uapi/rdma/rdma_netlink.h>
@@ -188,6 +190,76 @@ err:
 	return -EMSGSIZE;
 }
 
+static int fill_res_ep_entry(struct sk_buff *msg,
+			     struct rdma_restrack_entry *res)
+{
+	struct rdma_cm_id *cm_id = rdma_res_to_id(res);
+	struct nlattr *table_attr;
+	struct c4iw_ep_common epc, *epcp;
+	struct c4iw_listen_ep listen_ep;
+	struct iw_cm_id *iw_cm_id;
+	struct c4iw_ep ep;
+
+	iw_cm_id = rdma_iw_cm_id(cm_id);
+	if (!iw_cm_id)
+		return 0;
+	epcp = (struct c4iw_ep_common *)iw_cm_id->provider_data;
+	if (!epcp)
+		return 0;
+
+	table_attr = nla_nest_start(msg, RDMA_NLDEV_ATTR_DRIVER);
+	if (!table_attr)
+		goto err;
+
+	/* Get a consistent snapshot */
+	mutex_lock(&epcp->mutex);
+	if (epcp->state == LISTEN) {
+		listen_ep = *(struct c4iw_listen_ep *)epcp;
+		mutex_unlock(&epcp->mutex);
+		epcp = &listen_ep.com;
+	} else {
+		ep = *(struct c4iw_ep *)epcp;
+		mutex_unlock(&epcp->mutex);
+		epcp = &ep.com;
+	}
+	epc = *epcp;
+
+	if (rdma_nl_put_driver_u32(msg, "state", epc.state))
+		goto err_cancel_table;
+	if (rdma_nl_put_driver_u64_hex(msg, "flags", epc.flags))
+		goto err_cancel_table;
+	if (rdma_nl_put_driver_u64_hex(msg, "history", epc.history))
+		goto err_cancel_table;
+
+	if (epc.state == LISTEN) {
+		if (rdma_nl_put_driver_u32(msg, "stid", listen_ep.stid))
+			goto err_cancel_table;
+		if (rdma_nl_put_driver_u32(msg, "backlog", listen_ep.backlog))
+			goto err_cancel_table;
+	} else {
+		if (rdma_nl_put_driver_u32(msg, "hwtid", ep.hwtid))
+			goto err_cancel_table;
+		if (rdma_nl_put_driver_u32(msg, "ord", ep.ord))
+			goto err_cancel_table;
+		if (rdma_nl_put_driver_u32(msg, "ird", ep.ird))
+			goto err_cancel_table;
+		if (rdma_nl_put_driver_u32(msg, "emss", ep.emss))
+			goto err_cancel_table;
+
+		if (!ep.parent_ep && rdma_nl_put_driver_u32(msg, "atid",
+							      ep.atid))
+			goto err_cancel_table;
+	}
+	nla_nest_end(msg, table_attr);
+	return 0;
+
+err_cancel_table:
+	nla_nest_cancel(msg, table_attr);
+err:
+	return -EMSGSIZE;
+}
+
 c4iw_restrack_func *c4iw_restrack_funcs[RDMA_RESTRACK_MAX] = {
 	[RDMA_RESTRACK_QP]	= fill_res_qp_entry,
+	[RDMA_RESTRACK_CM_ID]	= fill_res_ep_entry,
 };
