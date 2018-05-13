@@ -1476,7 +1476,10 @@ struct ib_fmr_attr {
 struct ib_umem;
 
 enum rdma_remove_reason {
-	/* Userspace requested uobject deletion. Call could fail */
+	/*
+	 * Userspace requested uobject deletion or initial try
+	 * to remove uobject via cleanup. Call could fail
+	 */
 	RDMA_REMOVE_DESTROY,
 	/* Context deletion. This call should delete the actual object itself */
 	RDMA_REMOVE_CLOSE,
@@ -1503,6 +1506,7 @@ struct ib_ucontext {
 	/* protects cleanup process from other actions */
 	struct rw_semaphore	cleanup_rwsem;
 	enum rdma_remove_reason cleanup_reason;
+	bool	cleanup_retryable;
 
 	struct pid             *tgid;
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
@@ -2682,6 +2686,15 @@ static inline bool ib_is_udata_cleared(struct ib_udata *udata,
 				       size_t len)
 {
 	return ib_is_buffer_cleared(udata->inbuf + offset, len);
+}
+
+static inline bool ib_is_remove_retry(enum rdma_remove_reason why,
+				      struct ib_uobject *uobj)
+{
+	if (why == RDMA_REMOVE_DESTROY || uobj->context->cleanup_retryable)
+		return true;
+
+	return false;
 }
 
 /**
