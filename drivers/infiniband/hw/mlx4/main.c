@@ -85,6 +85,34 @@ static enum rdma_link_layer mlx4_ib_port_link_layer(struct ib_device *device,
 
 static struct workqueue_struct *wq;
 
+enum {
+	MLX4_SUPPORTED_IB_SPEC_PORT_CAP_FLAGS =
+		IB_PORT_SM			  |
+		IB_PORT_NOTICE_SUP		  |
+		IB_PORT_TRAP_SUP		  |
+		IB_PORT_OPT_IPD_SUP		  |
+		IB_PORT_AUTO_MIGR_SUP		  |
+		IB_PORT_SL_MAP_SUP		  |
+		IB_PORT_MKEY_NVRAM		  |
+		IB_PORT_PKEY_NVRAM		  |
+		IB_PORT_LED_INFO_SUP		  |
+		IB_PORT_SM_DISABLED		  |
+		IB_PORT_SYS_IMAGE_GUID_SUP	  |
+		IB_PORT_PKEY_SW_EXT_PORT_TRAP_SUP |
+		IB_PORT_EXTENDED_SPEEDS_SUP	  |
+		IB_PORT_CM_SUP			  |
+		IB_PORT_SNMP_TUNNEL_SUP		  |
+		IB_PORT_REINIT_SUP		  |
+		IB_PORT_DEVICE_MGMT_SUP		  |
+		IB_PORT_VENDOR_CLASS_SUP	  |
+		IB_PORT_DR_NOTICE_SUP		  |
+		IB_PORT_CAP_MASK_NOTICE_SUP	  |
+		IB_PORT_BOOT_MGMT_SUP		  |
+		IB_PORT_LINK_LATENCY_SUP	  |
+		IB_PORT_CLIENT_REG_SUP
+};
+
+
 static void init_query_mad(struct ib_smp *mad)
 {
 	mad->base_version  = 1;
@@ -383,11 +411,10 @@ int mlx4_ib_gid_index_to_real_index(struct mlx4_ib_dev *ibdev,
 	struct gid_cache_context *ctx = NULL;
 	union ib_gid gid;
 	struct mlx4_port_gid_table   *port_gid_table;
+	const struct ib_gid_attr *attr;
 	int real_index = -EINVAL;
 	int i;
-	int ret;
 	unsigned long flags;
-	struct ib_gid_attr attr;
 
 	if (port_num > MLX4_MAX_PORTS)
 		return -EINVAL;
@@ -398,25 +425,23 @@ int mlx4_ib_gid_index_to_real_index(struct mlx4_ib_dev *ibdev,
 	if (!rdma_cap_roce_gid_table(&ibdev->ib_dev, port_num))
 		return index;
 
-	ret = ib_get_cached_gid(&ibdev->ib_dev, port_num, index, &gid, &attr);
-	if (ret)
-		return ret;
-
-	if (attr.ndev)
-		dev_put(attr.ndev);
+	attr = rdma_get_gid_attr(&ibdev->ib_dev, port_num, index, &gid);
+	if (IS_ERR(attr))
+		return PTR_ERR(attr);
 
 	spin_lock_irqsave(&iboe->lock, flags);
 	port_gid_table = &iboe->gids[port_num - 1];
 
 	for (i = 0; i < MLX4_MAX_PORT_GIDS; ++i)
 		if (!memcmp(&port_gid_table->gids[i].gid, &gid, sizeof(gid)) &&
-		    attr.gid_type == port_gid_table->gids[i].gid_type) {
+		    attr->gid_type == port_gid_table->gids[i].gid_type) {
 			ctx = port_gid_table->gids[i].ctx;
 			break;
 		}
 	if (ctx)
 		real_index = ctx->real_index;
 	spin_unlock_irqrestore(&iboe->lock, flags);
+	rdma_put_gid_attr(attr);
 	return real_index;
 }
 
@@ -694,6 +719,7 @@ static int ib_link_query_port(struct ib_device *ibdev, u8 port,
 	props->subnet_timeout	= out_mad->data[51] & 0x1f;
 	props->max_vl_num	= out_mad->data[37] >> 4;
 	props->init_type_reply	= out_mad->data[41] >> 4;
+	props->port_cap_flags  &= MLX4_SUPPORTED_IB_SPEC_PORT_CAP_FLAGS;
 
 	/* Check if extended speeds (EDR/FDR/...) are supported */
 	if (props->port_cap_flags & IB_PORT_EXTENDED_SPEEDS_SUP) {
@@ -1847,7 +1873,7 @@ static int mlx4_ib_add_dont_trap_rule(struct mlx4_dev *dev,
 
 static struct ib_flow *mlx4_ib_create_flow(struct ib_qp *qp,
 				    struct ib_flow_attr *flow_attr,
-				    int domain)
+				    int domain, struct ib_udata *udata)
 {
 	int err = 0, i = 0, j = 0;
 	struct mlx4_ib_flow *mflow;
@@ -1863,6 +1889,10 @@ static struct ib_flow *mlx4_ib_create_flow(struct ib_qp *qp,
 
 	if ((flow_attr->flags & IB_FLOW_ATTR_FLAGS_DONT_TRAP) &&
 	    (flow_attr->type != IB_FLOW_ATTR_NORMAL))
+		return ERR_PTR(-EOPNOTSUPP);
+
+	if (udata &&
+	    udata->inlen && !ib_is_udata_cleared(udata, 0, udata->inlen))
 		return ERR_PTR(-EOPNOTSUPP);
 
 	memset(type, 0, sizeof(type));
