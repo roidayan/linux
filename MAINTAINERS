@@ -2554,7 +2554,6 @@ F:	Documentation/devicetree/bindings/sound/axentia,*
 F:	sound/soc/atmel/tse850-pcm5142.c
 
 AZ6007 DVB DRIVER
-M:	Mauro Carvalho Chehab <mchehab@s-opensource.com>
 M:	Mauro Carvalho Chehab <mchehab@kernel.org>
 L:	linux-media@vger.kernel.org
 W:	https://linuxtv.org
@@ -3083,7 +3082,6 @@ F:	include/linux/btrfs*
 F:	include/uapi/linux/btrfs*
 
 BTTV VIDEO4LINUX DRIVER
-M:	Mauro Carvalho Chehab <mchehab@s-opensource.com>
 M:	Mauro Carvalho Chehab <mchehab@kernel.org>
 L:	linux-media@vger.kernel.org
 W:	https://linuxtv.org
@@ -3812,7 +3810,6 @@ S:	Maintained
 F:	drivers/media/dvb-frontends/cx24120*
 
 CX88 VIDEO4LINUX DRIVER
-M:	Mauro Carvalho Chehab <mchehab@s-opensource.com>
 M:	Mauro Carvalho Chehab <mchehab@kernel.org>
 L:	linux-media@vger.kernel.org
 W:	https://linuxtv.org
@@ -5053,7 +5050,6 @@ F:	drivers/edac/thunderx_edac*
 
 EDAC-CORE
 M:	Borislav Petkov <bp@alien8.de>
-M:	Mauro Carvalho Chehab <mchehab@s-opensource.com>
 M:	Mauro Carvalho Chehab <mchehab@kernel.org>
 L:	linux-edac@vger.kernel.org
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/bp/bp.git for-next
@@ -5082,7 +5078,6 @@ S:	Maintained
 F:	drivers/edac/fsl_ddr_edac.*
 
 EDAC-GHES
-M:	Mauro Carvalho Chehab <mchehab@s-opensource.com>
 M:	Mauro Carvalho Chehab <mchehab@kernel.org>
 L:	linux-edac@vger.kernel.org
 S:	Maintained
@@ -5099,21 +5094,18 @@ S:	Maintained
 F:	drivers/edac/i5000_edac.c
 
 EDAC-I5400
-M:	Mauro Carvalho Chehab <mchehab@s-opensource.com>
 M:	Mauro Carvalho Chehab <mchehab@kernel.org>
 L:	linux-edac@vger.kernel.org
 S:	Maintained
 F:	drivers/edac/i5400_edac.c
 
 EDAC-I7300
-M:	Mauro Carvalho Chehab <mchehab@s-opensource.com>
 M:	Mauro Carvalho Chehab <mchehab@kernel.org>
 L:	linux-edac@vger.kernel.org
 S:	Maintained
 F:	drivers/edac/i7300_edac.c
 
 EDAC-I7CORE
-M:	Mauro Carvalho Chehab <mchehab@s-opensource.com>
 M:	Mauro Carvalho Chehab <mchehab@kernel.org>
 L:	linux-edac@vger.kernel.org
 S:	Maintained
@@ -5163,7 +5155,6 @@ S:	Maintained
 F:	drivers/edac/r82600_edac.c
 
 EDAC-SBRIDGE
-M:	Mauro Carvalho Chehab <mchehab@s-opensource.com>
 M:	Mauro Carvalho Chehab <mchehab@kernel.org>
 L:	linux-edac@vger.kernel.org
 S:	Maintained
@@ -5222,7 +5213,6 @@ S:	Maintained
 F:	drivers/net/ethernet/ibm/ehea/
 
 EM28XX VIDEO4LINUX DRIVER
-M:	Mauro Carvalho Chehab <mchehab@s-opensource.com>
 M:	Mauro Carvalho Chehab <mchehab@kernel.org>
 L:	linux-media@vger.kernel.org
 W:	https://linuxtv.org
@@ -5399,7 +5389,6 @@ S:	Maintained
 F:	drivers/iommu/exynos-iommu.c
 
 EZchip NPS platform support
-M:	Elad Kanfi <eladkan@mellanox.com>
 M:	Vineet Gupta <vgupta@synopsys.com>
 S:	Supported
 F:	arch/arc/plat-eznps
@@ -7677,9 +7666,11 @@ L:	linux-kbuild@vger.kernel.org
 S:	Maintained
 F:	Documentation/kbuild/
 F:	Makefile
-F:	scripts/Makefile.*
+F:	scripts/Kbuild*
+F:	scripts/Makefile*
 F:	scripts/basic/
 F:	scripts/mk*
+F:	scripts/mod/
 F:	scripts/package/
 
 KERNEL JANITORS
@@ -8871,7 +8862,6 @@ F:	Documentation/devicetree/bindings/media/nvidia,tegra-vde.txt
 F:	drivers/staging/media/tegra-vde/
 
 MEDIA INPUT INFRASTRUCTURE (V4L/DVB)
-M:	Mauro Carvalho Chehab <mchehab@s-opensource.com>
 M:	Mauro Carvalho Chehab <mchehab@kernel.org>
 P:	LinuxTV.org Project
 L:	linux-media@vger.kernel.org
@@ -9031,7 +9021,6 @@ Q:	http://patchwork.ozlabs.org/project/netdev/list/
 F:	drivers/net/ethernet/mellanox/mlx5/core/en_*
 
 MELLANOX ETHERNET INNOVA DRIVER
-M:	Ilan Tayari <ilant@mellanox.com>
 R:	Boris Pismenny <borisp@mellanox.com>
 L:	netdev@vger.kernel.org
 S:	Supported
@@ -9041,7 +9030,6 @@ F:	drivers/net/ethernet/mellanox/mlx5/core/fpga/*
 F:	include/linux/mlx5/mlx5_ifc_fpga.h
 
 MELLANOX ETHERNET INNOVA IPSEC DRIVER
-M:	Ilan Tayari <ilant@mellanox.com>
 R:	Boris Pismenny <borisp@mellanox.com>
 L:	netdev@vger.kernel.org
 S:	Supported
@@ -9097,7 +9085,6 @@ F:	include/uapi/rdma/mlx4-abi.h
 
 MELLANOX MLX5 core VPI driver
 M:	Saeed Mahameed <saeedm@mellanox.com>
-M:	Matan Barak <matanb@mellanox.com>
 M:	Leon Romanovsky <leonro@mellanox.com>
 L:	netdev@vger.kernel.org
 L:	linux-rdma@vger.kernel.org
@@ -9108,7 +9095,6 @@ F:	drivers/net/ethernet/mellanox/mlx5/core/
 F:	include/linux/mlx5/
 
 MELLANOX MLX5 IB driver
-M:	Matan Barak <matanb@mellanox.com>
 M:	Leon Romanovsky <leonro@mellanox.com>
 L:	linux-rdma@vger.kernel.org
 W:	http://www.mellanox.com
@@ -9842,7 +9828,6 @@ F:	net/netfilter/xt_CONNSECMARK.c
 F:	net/netfilter/xt_SECMARK.c
 
 NETWORKING [TLS]
-M:	Ilya Lesokhin <ilyal@mellanox.com>
 M:	Aviad Yehezkel <aviadye@mellanox.com>
 M:	Dave Watson <davejwatson@fb.com>
 L:	netdev@vger.kernel.org
@@ -12260,7 +12245,6 @@ S:	Odd Fixes
 F:	drivers/media/i2c/saa6588*
 
 SAA7134 VIDEO4LINUX DRIVER
-M:	Mauro Carvalho Chehab <mchehab@s-opensource.com>
 M:	Mauro Carvalho Chehab <mchehab@kernel.org>
 L:	linux-media@vger.kernel.org
 W:	https://linuxtv.org
@@ -12765,7 +12749,6 @@ S:	Maintained
 F:	drivers/media/radio/si4713/radio-usb-si4713.c
 
 SIANO DVB DRIVER
-M:	Mauro Carvalho Chehab <mchehab@s-opensource.com>
 M:	Mauro Carvalho Chehab <mchehab@kernel.org>
 L:	linux-media@vger.kernel.org
 W:	https://linuxtv.org
@@ -13756,7 +13739,6 @@ S:	Maintained
 F:	drivers/media/i2c/tda9840*
 
 TEA5761 TUNER DRIVER
-M:	Mauro Carvalho Chehab <mchehab@s-opensource.com>
 M:	Mauro Carvalho Chehab <mchehab@kernel.org>
 L:	linux-media@vger.kernel.org
 W:	https://linuxtv.org
@@ -13765,7 +13747,6 @@ S:	Odd fixes
 F:	drivers/media/tuners/tea5761.*
 
 TEA5767 TUNER DRIVER
-M:	Mauro Carvalho Chehab <mchehab@s-opensource.com>
 M:	Mauro Carvalho Chehab <mchehab@kernel.org>
 L:	linux-media@vger.kernel.org
 W:	https://linuxtv.org
@@ -14181,7 +14162,6 @@ F:	Documentation/networking/tlan.txt
 F:	drivers/net/ethernet/ti/tlan.*
 
 TM6000 VIDEO4LINUX DRIVER
-M:	Mauro Carvalho Chehab <mchehab@s-opensource.com>
 M:	Mauro Carvalho Chehab <mchehab@kernel.org>
 L:	linux-media@vger.kernel.org
 W:	https://linuxtv.org
@@ -15408,7 +15388,6 @@ S:	Maintained
 F:	arch/x86/entry/vdso/
 
 XC2028/3028 TUNER DRIVER
-M:	Mauro Carvalho Chehab <mchehab@s-opensource.com>
 M:	Mauro Carvalho Chehab <mchehab@kernel.org>
 L:	linux-media@vger.kernel.org
 W:	https://linuxtv.org
