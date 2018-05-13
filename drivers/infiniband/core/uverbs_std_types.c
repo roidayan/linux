@@ -246,44 +246,42 @@ void create_udata(struct uverbs_attr_bundle *ctx, struct ib_udata *udata)
 }
 
 DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_COMP_CHANNEL,
-			    &UVERBS_TYPE_ALLOC_FD(0,
-						  sizeof(struct ib_uverbs_completion_event_file),
+			    &UVERBS_TYPE_ALLOC_FD(sizeof(struct ib_uverbs_completion_event_file),
 						  uverbs_hot_unplug_completion_event_file,
 						  &uverbs_event_fops,
 						  "[infinibandevent]", O_RDONLY));
 
 DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_QP,
-			    &UVERBS_TYPE_ALLOC_IDR_SZ(sizeof(struct ib_uqp_object), 0,
+			    &UVERBS_TYPE_ALLOC_IDR_SZ(sizeof(struct ib_uqp_object),
 						      uverbs_free_qp));
 
 DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_MW,
-			    &UVERBS_TYPE_ALLOC_IDR(0, uverbs_free_mw));
+			    &UVERBS_TYPE_ALLOC_IDR(uverbs_free_mw));
 
 DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_SRQ,
-			    &UVERBS_TYPE_ALLOC_IDR_SZ(sizeof(struct ib_usrq_object), 0,
+			    &UVERBS_TYPE_ALLOC_IDR_SZ(sizeof(struct ib_usrq_object),
 						      uverbs_free_srq));
 
 DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_AH,
-			    &UVERBS_TYPE_ALLOC_IDR(0, uverbs_free_ah));
+			    &UVERBS_TYPE_ALLOC_IDR(uverbs_free_ah));
 
 DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_FLOW,
 			    &UVERBS_TYPE_ALLOC_IDR_SZ(sizeof(struct ib_uflow_object),
-						      0, uverbs_free_flow));
+						      uverbs_free_flow));
 
 DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_WQ,
-			    &UVERBS_TYPE_ALLOC_IDR_SZ(sizeof(struct ib_uwq_object), 0,
+			    &UVERBS_TYPE_ALLOC_IDR_SZ(sizeof(struct ib_uwq_object),
 						      uverbs_free_wq));
 
 DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_RWQ_IND_TBL,
-			    &UVERBS_TYPE_ALLOC_IDR(0, uverbs_free_rwq_ind_tbl));
+			    &UVERBS_TYPE_ALLOC_IDR(uverbs_free_rwq_ind_tbl));
 
 DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_XRCD,
-			    &UVERBS_TYPE_ALLOC_IDR_SZ(sizeof(struct ib_uxrcd_object), 0,
+			    &UVERBS_TYPE_ALLOC_IDR_SZ(sizeof(struct ib_uxrcd_object),
 						      uverbs_free_xrcd));
 
 DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_PD,
-			    /* 2 is used in order to free the PD after MRs */
-			    &UVERBS_TYPE_ALLOC_IDR(2, uverbs_free_pd));
+			    &UVERBS_TYPE_ALLOC_IDR(uverbs_free_pd));
 
 DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_DEVICE, NULL);
 
