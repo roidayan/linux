@@ -645,61 +645,69 @@ void uverbs_close_fd(struct file *f)
 	kref_put(uverbs_file_ref, ib_uverbs_release_file);
 }
 
+static int __uverbs_cleanup_ucontext(struct ib_ucontext *ucontext,
+				    enum rdma_remove_reason reason)
+{
+	struct ib_uobject *obj, *next_obj;
+	int ret = -EINVAL;
+	int err = 0;
+
+	/*
+	 * This shouldn't run while executing other commands on this
+	 * context. Thus, the only thing we should take care of is
+	 * releasing a FD while traversing this list. The FD could be
+	 * closed and released from the _release fop of this FD.
+	 * In order to mitigate this, we add a lock.
+	 * We take and release the lock per traversal in order to let
+	 * other threads (which might still use the FDs) chance to run.
+	 */
+	mutex_lock(&ucontext->uobjects_lock);
+	ucontext->cleanup_reason = reason;
+	list_for_each_entry_safe(obj, next_obj, &ucontext->uobjects, list) {
+		/*
+		 * if we hit this WARN_ON, that means we are
+		 * racing with a lookup_get.
+		 */
+		WARN_ON(uverbs_try_lock_object(obj, true));
+		err = obj->type->type_class->remove_commit(obj, reason);
+		if (err) {
+			if (reason == RDMA_REMOVE_DESTROY) {
+				pr_debug("ib_uverbs: failed to remove uobject id %d err %d\n",
+					 obj->id, err);
+				atomic_set(&obj->usecnt, 0);
+				continue;
+			}
+
+			pr_warn("ib_uverbs: unable to remove uobject id %d err %d\n",
+				obj->id, err);
+		}
+
+		list_del(&obj->list);
+		/* put the ref we took when we created the object */
+		uverbs_uobject_put(obj);
+		ret = 0;
+	}
+	mutex_unlock(&ucontext->uobjects_lock);
+	return ret;
+}
+
 void uverbs_cleanup_ucontext(struct ib_ucontext *ucontext, bool device_removed)
 {
-	enum rdma_remove_reason reason = device_removed ?
-		RDMA_REMOVE_DRIVER_REMOVE : RDMA_REMOVE_CLOSE;
-	unsigned int cur_order = 0;
-
-	ucontext->cleanup_reason = reason;
 	/*
 	 * Waits for all remove_commit and alloc_commit to finish. Logically, We
 	 * want to hold this forever as the context is going to be destroyed,
 	 * but we'll release it since it causes a "held lock freed" BUG message.
 	 */
 	down_write(&ucontext->cleanup_rwsem);
+	while (!list_empty(&ucontext->uobjects))
+		if (__uverbs_cleanup_ucontext(ucontext, RDMA_REMOVE_DESTROY))
+			/* No entry was cleaned-up successfully during this iteration */
+			break;
 
-	while (!list_empty(&ucontext->uobjects)) {
-		struct ib_uobject *obj, *next_obj;
-		unsigned int next_order = UINT_MAX;
+	if (!list_empty(&ucontext->uobjects))
+		__uverbs_cleanup_ucontext(ucontext, device_removed ?
+			RDMA_REMOVE_DRIVER_REMOVE : RDMA_REMOVE_CLOSE);
 
-		/*
-		 * This shouldn't run while executing other commands on this
-		 * context. Thus, the only thing we should take care of is
-		 * releasing a FD while traversing this list. The FD could be
-		 * closed and released from the _release fop of this FD.
-		 * In order to mitigate this, we add a lock.
-		 * We take and release the lock per order traversal in order
-		 * to let other threads (which might still use the FDs) chance
-		 * to run.
-		 */
-		mutex_lock(&ucontext->uobjects_lock);
-		list_for_each_entry_safe(obj, next_obj, &ucontext->uobjects,
-					 list) {
-			if (obj->type->destroy_order == cur_order) {
-				int ret;
-
-				/*
-				 * if we hit this WARN_ON, that means we are
-				 * racing with a lookup_get.
-				 */
-				WARN_ON(uverbs_try_lock_object(obj, true));
-				ret = obj->type->type_class->remove_commit(obj,
-									   reason);
-				list_del(&obj->list);
-				if (ret)
-					pr_warn("ib_uverbs: failed to remove uobject id %d order %u\n",
-						obj->id, cur_order);
-				/* put the ref we took when we created the object */
-				uverbs_uobject_put(obj);
-			} else {
-				next_order = min(next_order,
-						 obj->type->destroy_order);
-			}
-		}
-		mutex_unlock(&ucontext->uobjects_lock);
-		cur_order = next_order;
-	}
 	up_write(&ucontext->cleanup_rwsem);
 }
 
