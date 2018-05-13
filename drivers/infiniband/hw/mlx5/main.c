@@ -1542,7 +1542,8 @@ static int mlx5_ib_dealloc_pd(struct ib_pd *pd)
 enum {
 	MATCH_CRITERIA_ENABLE_OUTER_BIT,
 	MATCH_CRITERIA_ENABLE_MISC_BIT,
-	MATCH_CRITERIA_ENABLE_INNER_BIT
+	MATCH_CRITERIA_ENABLE_INNER_BIT,
+	MATCH_CRITERIA_ENABLE_MISC2_BIT
 };
 
 #define HEADER_IS_ZERO(match_criteria, headers)			           \
@@ -1562,6 +1563,9 @@ static u8 get_match_criteria_enable(u32 *match_criteria)
 	match_criteria_enable |=
 		(!HEADER_IS_ZERO(match_criteria, inner_headers)) <<
 		MATCH_CRITERIA_ENABLE_INNER_BIT;
+	match_criteria_enable |=
+		(!HEADER_IS_ZERO(match_criteria, misc_parameters_2)) <<
+		MATCH_CRITERIA_ENABLE_MISC2_BIT;
 
 	return match_criteria_enable;
 }
@@ -1594,6 +1598,27 @@ static void set_tos(void *outer_c, void *outer_v, u8 mask, u8 val)
 	MLX5_SET(fte_match_set_lyr_2_4, outer_v, ip_ecn, val);
 	MLX5_SET(fte_match_set_lyr_2_4, outer_c, ip_dscp, mask >> 2);
 	MLX5_SET(fte_match_set_lyr_2_4, outer_v, ip_dscp, val >> 2);
+}
+
+static int check_mpls_supp_fields(u32 field_support, const __be32 *set_mask)
+{
+	if (MLX5_GET(fte_match_mpls, set_mask, mpls_label) &&
+	    !(field_support & MLX5_FIELD_SUPPORT_MPLS_LABEL))
+		return -EOPNOTSUPP;
+
+	if (MLX5_GET(fte_match_mpls, set_mask, mpls_exp) &&
+	    !(field_support & MLX5_FIELD_SUPPORT_MPLS_EXP))
+		return -EOPNOTSUPP;
+
+	if (MLX5_GET(fte_match_mpls, set_mask, mpls_s_bos) &&
+	    !(field_support & MLX5_FIELD_SUPPORT_MPLS_S_BOS))
+		return -EOPNOTSUPP;
+
+	if (MLX5_GET(fte_match_mpls, set_mask, mpls_ttl) &&
+	    !(field_support & MLX5_FIELD_SUPPORT_MPLS_TTL))
+		return -EOPNOTSUPP;
+
+	return 0;
 }
 
 #define LAST_ETH_FIELD vlan_tag
@@ -1794,6 +1819,70 @@ static int parse_flow_attr(u32 *match_c, u32 *match_v,
 			 ntohs(ib_spec->tcp_udp.mask.dst_port));
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v, udp_dport,
 			 ntohs(ib_spec->tcp_udp.val.dst_port));
+		break;
+	case IB_FLOW_SPEC_MPLS:
+		switch (prev_type) {
+		case IB_FLOW_SPEC_UDP:
+			if (check_mpls_supp_fields(MLX5_CAP_FLOWTABLE_NIC_RX(mdev,
+						   ft_field_support.outer_first_mpls_over_udp),
+						   &ib_spec->mpls.mask.tag))
+				return -EOPNOTSUPP;
+
+			memcpy(MLX5_ADDR_OF(fte_match_set_misc2, misc_params2_v,
+					    outer_first_mpls_over_udp),
+			       &ib_spec->mpls.val.tag,
+			       sizeof(ib_spec->mpls.val.tag));
+			memcpy(MLX5_ADDR_OF(fte_match_set_misc2, misc_params2_c,
+					    outer_first_mpls_over_udp),
+			       &ib_spec->mpls.mask.tag,
+			       sizeof(ib_spec->mpls.mask.tag));
+			break;
+		case IB_FLOW_SPEC_GRE:
+			if (check_mpls_supp_fields(MLX5_CAP_FLOWTABLE_NIC_RX(mdev,
+						   ft_field_support.outer_first_mpls_over_gre),
+						   &ib_spec->mpls.mask.tag))
+				return -EOPNOTSUPP;
+
+			memcpy(MLX5_ADDR_OF(fte_match_set_misc2, misc_params2_v,
+					    outer_first_mpls_over_gre),
+			       &ib_spec->mpls.val.tag,
+			       sizeof(ib_spec->mpls.val.tag));
+			memcpy(MLX5_ADDR_OF(fte_match_set_misc2, misc_params2_c,
+					    outer_first_mpls_over_gre),
+			       &ib_spec->mpls.mask.tag,
+			       sizeof(ib_spec->mpls.mask.tag));
+			break;
+		default:
+			if (ib_spec->type & IB_FLOW_SPEC_INNER) {
+				if (check_mpls_supp_fields(MLX5_CAP_FLOWTABLE_NIC_RX(mdev,
+							   ft_field_support.inner_first_mpls),
+							   &ib_spec->mpls.mask.tag))
+					return -EOPNOTSUPP;
+
+				memcpy(MLX5_ADDR_OF(fte_match_set_misc2, misc_params2_v,
+						    inner_first_mpls),
+				       &ib_spec->mpls.val.tag,
+				       sizeof(ib_spec->mpls.val.tag));
+				memcpy(MLX5_ADDR_OF(fte_match_set_misc2, misc_params2_c,
+						    inner_first_mpls),
+				       &ib_spec->mpls.mask.tag,
+				       sizeof(ib_spec->mpls.mask.tag));
+			} else {
+				if (check_mpls_supp_fields(MLX5_CAP_FLOWTABLE_NIC_RX(mdev,
+							   ft_field_support.outer_first_mpls),
+							   &ib_spec->mpls.mask.tag))
+					return -EOPNOTSUPP;
+
+				memcpy(MLX5_ADDR_OF(fte_match_set_misc2, misc_params2_v,
+						    outer_first_mpls),
+				       &ib_spec->mpls.val.tag,
+				       sizeof(ib_spec->mpls.val.tag));
+				memcpy(MLX5_ADDR_OF(fte_match_set_misc2, misc_params2_c,
+						    outer_first_mpls),
+				       &ib_spec->mpls.mask.tag,
+				       sizeof(ib_spec->mpls.mask.tag));
+			}
+		}
 		break;
 	case IB_FLOW_SPEC_VXLAN_TUNNEL:
 		if (FIELDS_NOT_SUPPORTED(ib_spec->tunnel.mask,
