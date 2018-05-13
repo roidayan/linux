@@ -1,5 +1,5 @@
 /*
- * Copyright(c) 2015-2017 Intel Corporation.
+ * Copyright(c) 2015-2018 Intel Corporation.
  *
  * This file is provided under a dual BSD/GPLv2 license.  When using or
  * redistributing this file, you may do so under either license.
@@ -61,6 +61,7 @@
 #include "sdma.h"
 #include "debugfs.h"
 #include "vnic.h"
+#include "fault.h"
 
 #undef pr_fmt
 #define pr_fmt(fmt) DRIVER_NAME ": " fmt
@@ -433,31 +434,43 @@ void hfi1_process_ecn_slowpath(struct rvt_qp *qp, struct hfi1_packet *pkt,
 			       bool do_cnp)
 {
 	struct hfi1_ibport *ibp = to_iport(qp->ibqp.device, qp->port_num);
+	struct hfi1_pportdata *ppd = ppd_from_ibp(ibp);
 	struct ib_other_headers *ohdr = pkt->ohdr;
 	struct ib_grh *grh = pkt->grh;
 	u32 rqpn = 0, bth1;
-	u16 pkey, rlid, dlid = ib_get_dlid(pkt->hdr);
+	u16 pkey;
+	u32 rlid, slid, dlid = 0;
 	u8 hdr_type, sc, svc_type;
 	bool is_mcast = false;
 
+	/* can be called from prescan */
 	if (pkt->etype == RHF_RCV_TYPE_BYPASS) {
 		is_mcast = hfi1_is_16B_mcast(dlid);
 		pkey = hfi1_16B_get_pkey(pkt->hdr);
 		sc = hfi1_16B_get_sc(pkt->hdr);
+		dlid = hfi1_16B_get_dlid(pkt->hdr);
+		slid = hfi1_16B_get_slid(pkt->hdr);
 		hdr_type = HFI1_PKT_TYPE_16B;
 	} else {
 		is_mcast = (dlid > be16_to_cpu(IB_MULTICAST_LID_BASE)) &&
 			   (dlid != be16_to_cpu(IB_LID_PERMISSIVE));
 		pkey = ib_bth_get_pkey(ohdr);
 		sc = hfi1_9B_get_sc5(pkt->hdr, pkt->rhf);
+		dlid = ib_get_dlid(pkt->hdr);
+		slid = ib_get_slid(pkt->hdr);
 		hdr_type = HFI1_PKT_TYPE_9B;
 	}
 
 	switch (qp->ibqp.qp_type) {
+	case IB_QPT_UD:
+		dlid = ppd->lid;
+		rlid = slid;
+		rqpn = ib_get_sqpn(pkt->ohdr);
+		svc_type = IB_CC_SVCTYPE_UD;
+		break;
 	case IB_QPT_SMI:
 	case IB_QPT_GSI:
-	case IB_QPT_UD:
-		rlid = ib_get_slid(pkt->hdr);
+		rlid = slid;
 		rqpn = ib_get_sqpn(pkt->ohdr);
 		svc_type = IB_CC_SVCTYPE_UD;
 		break;
@@ -482,7 +495,6 @@ void hfi1_process_ecn_slowpath(struct rvt_qp *qp, struct hfi1_packet *pkt,
 					      dlid, rlid, sc, grh);
 
 	if (!is_mcast && (bth1 & IB_BECN_SMASK)) {
-		struct hfi1_pportdata *ppd = ppd_from_ibp(ibp);
 		u32 lqpn = bth1 & RVT_QPN_MASK;
 		u8 sl = ibp->sc_to_sl[sc];
 
@@ -1554,10 +1566,10 @@ void handle_eflags(struct hfi1_packet *packet)
  */
 int process_receive_ib(struct hfi1_packet *packet)
 {
-	if (unlikely(hfi1_dbg_fault_packet(packet)))
+	if (hfi1_setup_9B_packet(packet))
 		return RHF_RCV_CONTINUE;
 
-	if (hfi1_setup_9B_packet(packet))
+	if (unlikely(hfi1_dbg_should_fault_rx(packet)))
 		return RHF_RCV_CONTINUE;
 
 	trace_hfi1_rcvhdr(packet);
@@ -1631,7 +1643,8 @@ int process_receive_error(struct hfi1_packet *packet)
 	/* KHdrHCRCErr -- KDETH packet with a bad HCRC */
 	if (unlikely(
 		 hfi1_dbg_fault_suppress_err(&packet->rcd->dd->verbs_dev) &&
-		 rhf_rcv_type_err(packet->rhf) == 3))
+		 (rhf_rcv_type_err(packet->rhf) == RHF_RCV_TYPE_ERROR ||
+		  packet->rhf & RHF_DC_ERR)))
 		return RHF_RCV_CONTINUE;
 
 	hfi1_setup_ib_header(packet);
@@ -1646,10 +1659,10 @@ int process_receive_error(struct hfi1_packet *packet)
 
 int kdeth_process_expected(struct hfi1_packet *packet)
 {
-	if (unlikely(hfi1_dbg_fault_packet(packet)))
+	hfi1_setup_9B_packet(packet);
+	if (unlikely(hfi1_dbg_should_fault_rx(packet)))
 		return RHF_RCV_CONTINUE;
 
-	hfi1_setup_ib_header(packet);
 	if (unlikely(rhf_err_flags(packet->rhf)))
 		handle_eflags(packet);
 
@@ -1660,11 +1673,11 @@ int kdeth_process_expected(struct hfi1_packet *packet)
 
 int kdeth_process_eager(struct hfi1_packet *packet)
 {
-	hfi1_setup_ib_header(packet);
+	hfi1_setup_9B_packet(packet);
+	if (unlikely(hfi1_dbg_should_fault_rx(packet)))
+		return RHF_RCV_CONTINUE;
 	if (unlikely(rhf_err_flags(packet->rhf)))
 		handle_eflags(packet);
-	if (unlikely(hfi1_dbg_fault_packet(packet)))
-		return RHF_RCV_CONTINUE;
 
 	dd_dev_err(packet->rcd->dd,
 		   "Unhandled eager packet received. Dropping.\n");

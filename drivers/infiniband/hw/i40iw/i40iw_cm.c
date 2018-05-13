@@ -1788,7 +1788,7 @@ static enum i40iw_status_code i40iw_add_mqh_4(
 					    &ifa->ifa_address,
 					    rdma_vlan_dev_vlan_id(dev),
 					    dev->dev_addr);
-				child_listen_node = kzalloc(sizeof(*child_listen_node), GFP_ATOMIC);
+				child_listen_node = kzalloc(sizeof(*child_listen_node), GFP_KERNEL);
 				cm_parent_listen_node->cm_core->stats_listen_nodes_created++;
 				i40iw_debug(&iwdev->sc_dev,
 					    I40IW_DEBUG_CM,
@@ -2093,7 +2093,7 @@ static int i40iw_addr_resolve_neigh_ipv6(struct i40iw_device *iwdev,
 	if (netif_is_bond_slave(netdev))
 		netdev = netdev_master_upper_dev_get(netdev);
 
-	neigh = dst_neigh_lookup(dst, &dst_addr);
+	neigh = dst_neigh_lookup(dst, dst_addr.sin6_addr.in6_u.u6_addr32);
 
 	rcu_read_lock();
 	if (neigh) {
@@ -2872,7 +2872,7 @@ static struct i40iw_cm_listener *i40iw_make_listen_node(
 
 	if (!listener) {
 		/* create a CM listen node (1/2 node to compare incoming traffic to) */
-		listener = kzalloc(sizeof(*listener), GFP_ATOMIC);
+		listener = kzalloc(sizeof(*listener), GFP_KERNEL);
 		if (!listener)
 			return NULL;
 		cm_core->stats_listen_nodes_created++;
