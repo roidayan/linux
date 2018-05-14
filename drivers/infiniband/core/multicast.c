@@ -722,8 +722,7 @@ int ib_init_ah_from_mcmember(struct ib_device *device, u8 port_num,
 			     enum ib_gid_type gid_type,
 			     struct rdma_ah_attr *ah_attr)
 {
-	int ret;
-	u16 gid_index;
+	const struct ib_gid_attr *sgid_attr;
 
 	/* GID table is not based on the netdevice for IB link layer,
 	 * so ignore ndev during search.
@@ -733,24 +732,24 @@ int ib_init_ah_from_mcmember(struct ib_device *device, u8 port_num,
 	else if (!rdma_protocol_roce(device, port_num))
 		return -EINVAL;
 
-	ret = ib_find_cached_gid_by_port(device, &rec->port_gid,
-					 gid_type, port_num,
-					 ndev,
-					 &gid_index);
-	if (ret)
-		return ret;
+	sgid_attr = rdma_find_gid_by_port(device, &rec->port_gid,
+					  gid_type, port_num,
+					  ndev);
+	if (IS_ERR(sgid_attr))
+		return PTR_ERR(sgid_attr);
 
-	memset(ah_attr, 0, sizeof *ah_attr);
+	memset(ah_attr, 0, sizeof(*ah_attr));
 	ah_attr->type = rdma_ah_find_type(device, port_num);
 
 	rdma_ah_set_dlid(ah_attr, be16_to_cpu(rec->mlid));
 	rdma_ah_set_sl(ah_attr, rec->sl);
 	rdma_ah_set_port_num(ah_attr, port_num);
 	rdma_ah_set_static_rate(ah_attr, rec->rate);
+	rdma_ah_set_grh_sgid_attr(ah_attr, sgid_attr);
 
 	rdma_ah_set_grh(ah_attr, &rec->mgid,
 			be32_to_cpu(rec->flow_label),
-			(u8)gid_index,
+			sgid_attr->index,
 			rec->hop_limit,
 			rec->traffic_class);
 	return 0;

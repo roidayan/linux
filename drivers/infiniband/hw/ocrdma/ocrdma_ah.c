@@ -164,7 +164,7 @@ struct ib_ah *ocrdma_create_ah(struct ib_pd *ibpd, struct rdma_ah_attr *attr,
 	struct ocrdma_ah *ah;
 	bool isvlan = false;
 	u16 vlan_tag = 0xffff;
-	struct ib_gid_attr sgid_attr;
+	const struct ib_gid_attr *sgid_attr;
 	struct ocrdma_pd *pd = get_ocrdma_pd(ibpd);
 	struct ocrdma_dev *dev = get_ocrdma_dev(ibpd->device);
 	const struct ib_global_route *grh;
@@ -186,18 +186,19 @@ struct ib_ah *ocrdma_create_ah(struct ib_pd *ibpd, struct rdma_ah_attr *attr,
 	if (status)
 		goto av_err;
 
-	status = ib_get_cached_gid(&dev->ibdev, 1, grh->sgid_index, &sgid,
-				   &sgid_attr);
+	status = rdma_query_gid(&dev->ibdev, 1, grh->sgid_index, &sgid);
 	if (status) {
 		pr_err("%s(): Failed to query sgid, status = %d\n",
-		      __func__, status);
+		       __func__, status);
 		goto av_conf_err;
 	}
-	if (is_vlan_dev(sgid_attr.ndev))
-		vlan_tag = vlan_dev_vlan_id(sgid_attr.ndev);
-	dev_put(sgid_attr.ndev);
+
+	sgid_attr = attr->grh.sgid_attr;
+	if (is_vlan_dev(sgid_attr->ndev))
+		vlan_tag = vlan_dev_vlan_id(sgid_attr->ndev);
+
 	/* Get network header type for this GID */
-	ah->hdr_type = ib_gid_to_network_type(sgid_attr.gid_type, &sgid);
+	ah->hdr_type = ib_gid_to_network_type(sgid_attr->gid_type, &sgid);
 
 	status = set_av_attr(dev, ah, attr, &sgid, pd->id, &isvlan, vlan_tag);
 	if (status)
