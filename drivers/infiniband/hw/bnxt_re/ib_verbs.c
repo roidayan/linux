@@ -673,8 +673,6 @@ struct ib_ah *bnxt_re_create_ah(struct ib_pd *ib_pd,
 	int rc;
 	u8 nw_type;
 
-	struct ib_gid_attr sgid_attr;
-
 	if (!(rdma_ah_get_ah_flags(ah_attr) & IB_AH_GRH)) {
 		dev_err(rdev_to_dev(rdev), "Failed to alloc AH: GRH not set");
 		return ERR_PTR(-EINVAL);
@@ -705,20 +703,20 @@ struct ib_ah *bnxt_re_create_ah(struct ib_pd *ib_pd,
 				    grh->dgid.raw) &&
 	    !rdma_link_local_addr((struct in6_addr *)
 				  grh->dgid.raw)) {
+		const struct ib_gid_attr *sgid_attr;
 		union ib_gid sgid;
 
-		rc = ib_get_cached_gid(&rdev->ibdev, 1,
-				       grh->sgid_index, &sgid,
-				       &sgid_attr);
+		rc = rdma_query_gid(&rdev->ibdev, 1, grh->sgid_index, &sgid);
 		if (rc) {
 			dev_err(rdev_to_dev(rdev),
 				"Failed to query gid at index %d",
 				grh->sgid_index);
 			goto fail;
 		}
-		dev_put(sgid_attr.ndev);
+
+		sgid_attr = grh->sgid_attr;
 		/* Get network header type for this GID */
-		nw_type = ib_gid_to_network_type(sgid_attr.gid_type, &sgid);
+		nw_type = ib_gid_to_network_type(sgid_attr->gid_type, &sgid);
 		switch (nw_type) {
 		case RDMA_NETWORK_IPV4:
 			ah->qplib_ah.nw_type = CMDQ_CREATE_AH_TYPE_V2IPV4;
@@ -1599,9 +1597,7 @@ int bnxt_re_modify_qp(struct ib_qp *ib_qp, struct ib_qp_attr *qp_attr,
 	struct bnxt_qplib_dev_attr *dev_attr = &rdev->dev_attr;
 	enum ib_qp_state curr_qp_state, new_qp_state;
 	int rc, entries;
-	int status;
 	union ib_gid sgid;
-	struct ib_gid_attr sgid_attr;
 	unsigned int flags;
 	u8 nw_type;
 
@@ -1668,6 +1664,7 @@ int bnxt_re_modify_qp(struct ib_qp *ib_qp, struct ib_qp_attr *qp_attr,
 	if (qp_attr_mask & IB_QP_AV) {
 		const struct ib_global_route *grh =
 			rdma_ah_read_grh(&qp_attr->ah_attr);
+		const struct ib_gid_attr *sgid_attr;
 
 		qp->qplib_qp.modify_flags |= CMDQ_MODIFY_QP_MODIFY_MASK_DGID |
 				     CMDQ_MODIFY_QP_MODIFY_MASK_FLOW_LABEL |
@@ -1691,29 +1688,28 @@ int bnxt_re_modify_qp(struct ib_qp *ib_qp, struct ib_qp_attr *qp_attr,
 		ether_addr_copy(qp->qplib_qp.ah.dmac,
 				qp_attr->ah_attr.roce.dmac);
 
-		status = ib_get_cached_gid(&rdev->ibdev, 1,
-					   grh->sgid_index,
-					   &sgid, &sgid_attr);
-		if (!status) {
-			memcpy(qp->qplib_qp.smac, sgid_attr.ndev->dev_addr,
-			       ETH_ALEN);
-			dev_put(sgid_attr.ndev);
-			nw_type = ib_gid_to_network_type(sgid_attr.gid_type,
-							 &sgid);
-			switch (nw_type) {
-			case RDMA_NETWORK_IPV4:
-				qp->qplib_qp.nw_type =
-					CMDQ_MODIFY_QP_NETWORK_TYPE_ROCEV2_IPV4;
-				break;
-			case RDMA_NETWORK_IPV6:
-				qp->qplib_qp.nw_type =
-					CMDQ_MODIFY_QP_NETWORK_TYPE_ROCEV2_IPV6;
-				break;
-			default:
-				qp->qplib_qp.nw_type =
-					CMDQ_MODIFY_QP_NETWORK_TYPE_ROCEV1;
-				break;
-			}
+		rc = rdma_query_gid(&rdev->ibdev, 1, grh->sgid_index, &sgid);
+		if (rc)
+			return rc;
+
+		sgid_attr = qp_attr->ah_attr.grh.sgid_attr;
+		memcpy(qp->qplib_qp.smac, sgid_attr->ndev->dev_addr,
+		       ETH_ALEN);
+		nw_type = ib_gid_to_network_type(sgid_attr->gid_type,
+						 &sgid);
+		switch (nw_type) {
+		case RDMA_NETWORK_IPV4:
+			qp->qplib_qp.nw_type =
+				CMDQ_MODIFY_QP_NETWORK_TYPE_ROCEV2_IPV4;
+			break;
+		case RDMA_NETWORK_IPV6:
+			qp->qplib_qp.nw_type =
+				CMDQ_MODIFY_QP_NETWORK_TYPE_ROCEV2_IPV6;
+			break;
+		default:
+			qp->qplib_qp.nw_type =
+				CMDQ_MODIFY_QP_NETWORK_TYPE_ROCEV1;
+			break;
 		}
 	}
 
@@ -1903,11 +1899,11 @@ static int bnxt_re_build_qp1_send_v2(struct bnxt_re_qp *qp,
 	struct bnxt_re_ah *ah = container_of(ud_wr(wr)->ah, struct bnxt_re_ah,
 					     ib_ah);
 	struct bnxt_qplib_ah *qplib_ah = &ah->qplib_ah;
+	const struct ib_gid_attr *sgid_attr;
 	struct bnxt_qplib_sge sge;
 	union ib_gid sgid;
 	u8 nw_type;
 	u16 ether_type;
-	struct ib_gid_attr sgid_attr;
 	union ib_gid dgid;
 	bool is_eth = false;
 	bool is_vlan = false;
@@ -1920,22 +1916,18 @@ static int bnxt_re_build_qp1_send_v2(struct bnxt_re_qp *qp,
 
 	memset(&qp->qp1_hdr, 0, sizeof(qp->qp1_hdr));
 
-	rc = ib_get_cached_gid(ibdev, 1,
-			       qplib_ah->host_sgid_index, &sgid,
-			       &sgid_attr);
-	if (rc) {
+	sgid_attr = rdma_get_gid_attr(ibdev, 1,
+				      qplib_ah->host_sgid_index, &sgid);
+	if (IS_ERR(sgid_attr)) {
 		dev_err(rdev_to_dev(qp->rdev),
 			"Failed to query gid at index %d",
 			qplib_ah->host_sgid_index);
-		return rc;
+		return PTR_ERR(sgid_attr);
 	}
-	if (sgid_attr.ndev) {
-		if (is_vlan_dev(sgid_attr.ndev))
-			vlan_id = vlan_dev_vlan_id(sgid_attr.ndev);
-		dev_put(sgid_attr.ndev);
-	}
+	if (is_vlan_dev(sgid_attr->ndev))
+		vlan_id = vlan_dev_vlan_id(sgid_attr->ndev);
 	/* Get network header type for this GID */
-	nw_type = ib_gid_to_network_type(sgid_attr.gid_type, &sgid);
+	nw_type = ib_gid_to_network_type(sgid_attr->gid_type, &sgid);
 	switch (nw_type) {
 	case RDMA_NETWORK_IPV4:
 		nw_type = BNXT_RE_ROCEV2_IPV4_PACKET;
@@ -1948,7 +1940,7 @@ static int bnxt_re_build_qp1_send_v2(struct bnxt_re_qp *qp,
 		break;
 	}
 	memcpy(&dgid.raw, &qplib_ah->dgid, 16);
-	is_udp = sgid_attr.gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP;
+	is_udp = sgid_attr->gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP;
 	if (is_udp) {
 		if (ipv6_addr_v4mapped((struct in6_addr *)&sgid)) {
 			ip_version = 4;
@@ -2070,6 +2062,7 @@ static int bnxt_re_build_qp1_send_v2(struct bnxt_re_qp *qp,
 		dev_err(rdev_to_dev(qp->rdev), "QP1 buffer is empty!");
 		rc = -ENOMEM;
 	}
+	rdma_put_gid_attr(sgid_attr);
 	return rc;
 }
 

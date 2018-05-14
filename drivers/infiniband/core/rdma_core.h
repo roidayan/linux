@@ -43,7 +43,6 @@
 #include <rdma/ib_verbs.h>
 #include <linux/mutex.h>
 
-int uverbs_ns_idx(u16 *id, unsigned int ns_count);
 const struct uverbs_object_spec *uverbs_get_object(const struct ib_device *ibdev,
 						   uint16_t object);
 const struct uverbs_method_spec *uverbs_get_method(const struct uverbs_object_spec *object,
@@ -94,9 +93,6 @@ struct ib_uobject *uverbs_get_uobject_from_context(const struct uverbs_obj_type 
 						   struct ib_ucontext *ucontext,
 						   enum uverbs_obj_access access,
 						   int id);
-int uverbs_finalize_object(struct ib_uobject *uobj,
-			   enum uverbs_obj_access access,
-			   bool commit);
 /*
  * Note that certain finalize stages could return a status:
  *   (a) alloc_commit could return a failure if the object is committed at the
@@ -112,9 +108,8 @@ int uverbs_finalize_object(struct ib_uobject *uobj,
  * function. For example, this could happen when we couldn't destroy an
  * object.
  */
-int uverbs_finalize_objects(struct uverbs_attr_bundle *attrs_bundle,
-			    struct uverbs_attr_spec_hash * const *spec_hash,
-			    size_t num,
-			    bool commit);
+int uverbs_finalize_object(struct ib_uobject *uobj,
+			   enum uverbs_obj_access access,
+			   bool commit);
 
 #endif /* RDMA_CORE_H */
