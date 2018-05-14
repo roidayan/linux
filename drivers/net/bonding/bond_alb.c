@@ -450,7 +450,7 @@ static void rlb_update_client(struct rlb_client_info *client_info)
 {
 	int i;
 
-	if (!client_info->slave)
+	if (!client_info->slave || !is_valid_ether_addr(client_info->mac_dst))
 		return;
 
 	for (i = 0; i < RLB_ARP_BURST_SIZE; i++) {
@@ -943,6 +943,10 @@ static void alb_send_lp_vid(struct slave *slave, u8 mac_addr[],
 	skb->priority = TC_PRIO_CONTROL;
 	skb->dev = slave->dev;
 
+	netdev_dbg(slave->bond->dev,
+		   "Send learning packet: dev %s mac %pM vlan %d\n",
+		   slave->dev->name, mac_addr, vid);
+
 	if (vid)
 		__vlan_hwaccel_put_tag(skb, vlan_proto, vid);
 
@@ -965,14 +969,13 @@ static int alb_upper_dev_walk(struct net_device *upper, void *_data)
 	u8 *mac_addr = data->mac_addr;
 	struct bond_vlan_tag *tags;
 
-	if (is_vlan_dev(upper) && vlan_get_encap_level(upper) == 0) {
-		if (strict_match &&
-		    ether_addr_equal_64bits(mac_addr,
-					    upper->dev_addr)) {
+	if (is_vlan_dev(upper) &&
+	    bond->nest_level == vlan_get_encap_level(upper) - 1) {
+		if (upper->addr_assign_type == NET_ADDR_STOLEN) {
 			alb_send_lp_vid(slave, mac_addr,
 					vlan_dev_vlan_proto(upper),
 					vlan_dev_vlan_id(upper));
-		} else if (!strict_match) {
+		} else {
 			alb_send_lp_vid(slave, upper->dev_addr,
 					vlan_dev_vlan_proto(upper),
 					vlan_dev_vlan_id(upper));
@@ -1316,8 +1319,8 @@ void bond_alb_deinitialize(struct bonding *bond)
 		rlb_deinitialize(bond);
 }
 
-static int bond_do_alb_xmit(struct sk_buff *skb, struct bonding *bond,
-			    struct slave *tx_slave)
+static netdev_tx_t bond_do_alb_xmit(struct sk_buff *skb, struct bonding *bond,
+				    struct slave *tx_slave)
 {
 	struct alb_bond_info *bond_info = &(BOND_ALB_INFO(bond));
 	struct ethhdr *eth_data = eth_hdr(skb);
@@ -1351,7 +1354,7 @@ out:
 	return NETDEV_TX_OK;
 }
 
-int bond_tlb_xmit(struct sk_buff *skb, struct net_device *bond_dev)
+netdev_tx_t bond_tlb_xmit(struct sk_buff *skb, struct net_device *bond_dev)
 {
 	struct bonding *bond = netdev_priv(bond_dev);
 	struct ethhdr *eth_data;
@@ -1389,7 +1392,7 @@ int bond_tlb_xmit(struct sk_buff *skb, struct net_device *bond_dev)
 	return bond_do_alb_xmit(skb, bond, tx_slave);
 }
 
-int bond_alb_xmit(struct sk_buff *skb, struct net_device *bond_dev)
+netdev_tx_t bond_alb_xmit(struct sk_buff *skb, struct net_device *bond_dev)
 {
 	struct bonding *bond = netdev_priv(bond_dev);
 	struct ethhdr *eth_data;
