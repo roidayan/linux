@@ -54,7 +54,7 @@ static inline bool mlx5e_rx_hw_stamp(struct hwtstamp_config *config)
 static inline void mlx5e_read_cqe_slot(struct mlx5e_cq *cq, u32 cqcc,
 				       void *data)
 {
-	u32 ci = cqcc & cq->wq.fbc.sz_m1;
+	u32 ci = mlx5_cqwq_ctr2ix(&cq->wq, cqcc);
 
 	memcpy(data, mlx5_cqwq_get_wqe(&cq->wq, ci), sizeof(struct mlx5_cqe64));
 }
@@ -76,10 +76,11 @@ static inline void mlx5e_read_mini_arr_slot(struct mlx5e_cq *cq, u32 cqcc)
 
 static inline void mlx5e_cqes_update_owner(struct mlx5e_cq *cq, u32 cqcc, int n)
 {
-	struct mlx5_frag_buf_ctrl *fbc = &cq->wq.fbc;
-	u8 op_own = (cqcc >> fbc->log_sz) & 1;
-	u32 wq_sz = 1 << fbc->log_sz;
-	u32 ci = cqcc & fbc->sz_m1;
+	struct mlx5_cqwq *wq = &cq->wq;
+
+	u8  op_own = mlx5_cqwq_get_ctr_wrap_cnt(wq, cqcc) & 1;
+	u32 ci     = mlx5_cqwq_ctr2ix(wq, cqcc);
+	u32 wq_sz  = mlx5_cqwq_get_size(wq);
 	u32 ci_top = min_t(u32, wq_sz, ci + n);
 
 	for (; ci < ci_top; ci++, n--) {
@@ -112,7 +113,7 @@ static inline void mlx5e_decompress_cqe(struct mlx5e_rq *rq,
 			mpwrq_get_cqe_consumed_strides(&cq->title);
 	else
 		cq->decmprs_wqe_counter =
-			(cq->decmprs_wqe_counter + 1) & rq->wq.sz_m1;
+			mlx5_wq_ll_ctr2ix(&rq->wq, cq->decmprs_wqe_counter + 1);
 }
 
 static inline void mlx5e_decompress_cqe_no_hash(struct mlx5e_rq *rq,
@@ -395,7 +396,7 @@ static int mlx5e_alloc_rx_mpwqe(struct mlx5e_rq *rq, u16 ix)
 	int i;
 
 	/* fill sq edge with nops to avoid wqe wrap around */
-	while ((pi = (sq->pc & wq->sz_m1)) > sq->edge) {
+	while ((pi = mlx5_wq_cyc_ctr2ix(wq, sq->pc)) > sq->edge) {
 		sq->db.ico_wqe[pi].opcode = MLX5_OPCODE_NOP;
 		mlx5e_post_nop(wq, sq->sqn, &sq->pc);
 	}
@@ -450,7 +451,7 @@ bool mlx5e_post_rx_wqes(struct mlx5e_rq *rq)
 	struct mlx5_wq_ll *wq = &rq->wq;
 	int err;
 
-	if (unlikely(!MLX5E_TEST_BIT(rq->state, MLX5E_RQ_STATE_ENABLED)))
+	if (unlikely(!test_bit(MLX5E_RQ_STATE_ENABLED, &rq->state)))
 		return false;
 
 	if (mlx5_wq_ll_is_full(wq))
@@ -482,7 +483,7 @@ static inline void mlx5e_poll_ico_single_cqe(struct mlx5e_cq *cq,
 					     struct mlx5_cqe64 *cqe)
 {
 	struct mlx5_wq_cyc *wq = &sq->wq;
-	u16 ci = be16_to_cpu(cqe->wqe_counter) & wq->sz_m1;
+	u16 ci = mlx5_wq_cyc_ctr2ix(wq, be16_to_cpu(cqe->wqe_counter));
 	struct mlx5e_sq_wqe_info *icowi = &sq->db.ico_wqe[ci];
 
 	mlx5_cqwq_pop(&cq->wq);
@@ -508,7 +509,7 @@ static void mlx5e_poll_ico_cq(struct mlx5e_cq *cq, struct mlx5e_rq *rq)
 	struct mlx5e_icosq *sq = container_of(cq, struct mlx5e_icosq, cq);
 	struct mlx5_cqe64 *cqe;
 
-	if (unlikely(!MLX5E_TEST_BIT(sq->state, MLX5E_SQ_STATE_ENABLED)))
+	if (unlikely(!test_bit(MLX5E_SQ_STATE_ENABLED, &sq->state)))
 		return;
 
 	cqe = mlx5_cqwq_get_cqe(&cq->wq);
@@ -525,7 +526,7 @@ bool mlx5e_post_rx_mpwqes(struct mlx5e_rq *rq)
 {
 	struct mlx5_wq_ll *wq = &rq->wq;
 
-	if (unlikely(!MLX5E_TEST_BIT(rq->state, MLX5E_RQ_STATE_ENABLED)))
+	if (unlikely(!test_bit(MLX5E_RQ_STATE_ENABLED, &rq->state)))
 		return false;
 
 	mlx5e_poll_ico_cq(&rq->channel->icosq.cq, rq);
@@ -681,11 +682,10 @@ static inline void mlx5e_build_rx_skb(struct mlx5_cqe64 *cqe,
 				      struct mlx5e_rq *rq,
 				      struct sk_buff *skb)
 {
+	u8 lro_num_seg = be32_to_cpu(cqe->srqn) >> 24;
 	struct net_device *netdev = rq->netdev;
-	int lro_num_seg;
 
 	skb->mac_len = ETH_HLEN;
-	lro_num_seg = be32_to_cpu(cqe->srqn) >> 24;
 	if (lro_num_seg > 1) {
 		mlx5e_lro_update_hdr(skb, cqe, cqe_bcnt);
 		skb_shinfo(skb)->gso_size = DIV_ROUND_UP(cqe_bcnt, lro_num_seg);
@@ -732,7 +732,7 @@ static inline void mlx5e_xmit_xdp_doorbell(struct mlx5e_xdpsq *sq)
 {
 	struct mlx5_wq_cyc *wq = &sq->wq;
 	struct mlx5e_tx_wqe *wqe;
-	u16 pi = (sq->pc - 1) & wq->sz_m1; /* last pi */
+	u16 pi = mlx5_wq_cyc_ctr2ix(wq, sq->pc - 1); /* last pi */
 
 	wqe  = mlx5_wq_cyc_get_wqe(wq, pi);
 
@@ -745,7 +745,7 @@ static inline bool mlx5e_xmit_xdp_frame(struct mlx5e_rq *rq,
 {
 	struct mlx5e_xdpsq       *sq   = &rq->xdpsq;
 	struct mlx5_wq_cyc       *wq   = &sq->wq;
-	u16                       pi   = sq->pc & wq->sz_m1;
+	u16                       pi   = mlx5_wq_cyc_ctr2ix(wq, sq->pc);
 	struct mlx5e_tx_wqe      *wqe  = mlx5_wq_cyc_get_wqe(wq, pi);
 
 	struct mlx5_wqe_ctrl_seg *cseg = &wqe->ctrl;
@@ -808,9 +808,9 @@ static inline bool mlx5e_xmit_xdp_frame(struct mlx5e_rq *rq,
 }
 
 /* returns true if packet was consumed by xdp */
-static inline int mlx5e_xdp_handle(struct mlx5e_rq *rq,
-				   struct mlx5e_dma_info *di,
-				   void *va, u16 *rx_headroom, u32 *len)
+static inline bool mlx5e_xdp_handle(struct mlx5e_rq *rq,
+				    struct mlx5e_dma_info *di,
+				    void *va, u16 *rx_headroom, u32 *len)
 {
 	struct bpf_prog *prog = READ_ONCE(rq->xdp_prog);
 	struct xdp_buff xdp;
@@ -1133,7 +1133,7 @@ int mlx5e_poll_rx_cq(struct mlx5e_cq *cq, int budget)
 	struct mlx5_cqe64 *cqe;
 	int work_done = 0;
 
-	if (unlikely(!MLX5E_TEST_BIT(rq->state, MLX5E_RQ_STATE_ENABLED)))
+	if (unlikely(!test_bit(MLX5E_RQ_STATE_ENABLED, &rq->state)))
 		return 0;
 
 	if (cq->decmprs_left)
@@ -1186,7 +1186,7 @@ bool mlx5e_poll_xdpsq_cq(struct mlx5e_cq *cq)
 
 	sq = container_of(cq, struct mlx5e_xdpsq, cq);
 
-	if (unlikely(!MLX5E_TEST_BIT(sq->state, MLX5E_SQ_STATE_ENABLED)))
+	if (unlikely(!test_bit(MLX5E_SQ_STATE_ENABLED, &sq->state)))
 		return false;
 
 	cqe = mlx5_cqwq_get_cqe(&cq->wq);
@@ -1215,7 +1215,7 @@ bool mlx5e_poll_xdpsq_cq(struct mlx5e_cq *cq)
 
 			last_wqe = (sqcc == wqe_counter);
 
-			ci = sqcc & sq->wq.sz_m1;
+			ci = mlx5_wq_cyc_ctr2ix(&sq->wq, sqcc);
 			di = &sq->db.di[ci];
 
 			sqcc++;
@@ -1240,7 +1240,7 @@ void mlx5e_free_xdpsq_descs(struct mlx5e_xdpsq *sq)
 	u16 ci;
 
 	while (sq->cc != sq->pc) {
-		ci = sq->cc & sq->wq.sz_m1;
+		ci = mlx5_wq_cyc_ctr2ix(&sq->wq, sq->cc);
 		di = &sq->db.di[ci];
 		sq->cc++;
 
