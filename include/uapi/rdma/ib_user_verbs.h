@@ -38,6 +38,7 @@
 #define IB_USER_VERBS_H
 
 #include <linux/types.h>
+#include <rdma/ib_user.h>
 
 /*
  * Increment this value if any changes that break userspace ABI
@@ -1254,7 +1255,5 @@ struct ib_uverbs_ex_modify_cq {
 	struct ib_uverbs_cq_moderation attr;
 	__u32 reserved;
 };
-
-#define IB_DEVICE_NAME_MAX 64
 
 #endif /* IB_USER_VERBS_H */
