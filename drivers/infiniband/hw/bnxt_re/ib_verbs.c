@@ -707,8 +707,7 @@ struct ib_ah *bnxt_re_create_ah(struct ib_pd *ib_pd,
 
 		sgid_attr = grh->sgid_attr;
 		/* Get network header type for this GID */
-		nw_type = ib_gid_to_network_type(sgid_attr->gid_type,
-						 &sgid_attr->gid);
+		nw_type = rdma_gid_attr_network_type(sgid_attr);
 		switch (nw_type) {
 		case RDMA_NETWORK_IPV4:
 			ah->qplib_ah.nw_type = CMDQ_CREATE_AH_TYPE_V2IPV4;
@@ -1682,8 +1681,7 @@ int bnxt_re_modify_qp(struct ib_qp *ib_qp, struct ib_qp_attr *qp_attr,
 		sgid_attr = qp_attr->ah_attr.grh.sgid_attr;
 		memcpy(qp->qplib_qp.smac, sgid_attr->ndev->dev_addr,
 		       ETH_ALEN);
-		nw_type = ib_gid_to_network_type(sgid_attr->gid_type,
-						 &sgid_attr->gid);
+		nw_type = rdma_gid_attr_network_type(sgid_attr);
 		switch (nw_type) {
 		case RDMA_NETWORK_IPV4:
 			qp->qplib_qp.nw_type =
@@ -1912,7 +1910,7 @@ static int bnxt_re_build_qp1_send_v2(struct bnxt_re_qp *qp,
 	if (is_vlan_dev(sgid_attr->ndev))
 		vlan_id = vlan_dev_vlan_id(sgid_attr->ndev);
 	/* Get network header type for this GID */
-	nw_type = ib_gid_to_network_type(sgid_attr->gid_type, &sgid_attr->gid);
+	nw_type = rdma_gid_attr_network_type(sgid_attr);
 	switch (nw_type) {
 	case RDMA_NETWORK_IPV4:
 		nw_type = BNXT_RE_ROCEV2_IPV4_PACKET;
