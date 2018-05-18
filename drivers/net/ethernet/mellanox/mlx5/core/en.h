@@ -65,6 +65,7 @@ struct page_pool;
 #define MLX5E_HW2SW_MTU(params, hwmtu) ((hwmtu) - ((params)->hard_mtu))
 #define MLX5E_SW2HW_MTU(params, swmtu) ((swmtu) + ((params)->hard_mtu))
 
+#define MLX5E_MAX_PRIORITY      8
 #define MLX5E_MAX_DSCP          64
 #define MLX5E_MAX_NUM_TC	8
 
@@ -182,6 +183,7 @@ static inline int mlx5e_get_max_num_channels(struct mlx5_core_dev *mdev)
 struct mlx5e_tx_wqe {
 	struct mlx5_wqe_ctrl_seg ctrl;
 	struct mlx5_wqe_eth_seg  eth;
+	struct mlx5_wqe_data_seg data[0];
 };
 
 struct mlx5e_rx_wqe {
@@ -275,6 +277,11 @@ struct mlx5e_dcbx {
 	/* The only setting that cannot be read from FW */
 	u8                         tc_tsa[IEEE_8021QAZ_MAX_TCS];
 	u8                         cap;
+
+	/* Buffer configuration */
+	bool                       manual_buffer;
+	u32                        cable_len;
+	u32                        xoff;
 };
 
 struct mlx5e_dcbx_dp {
@@ -307,7 +314,7 @@ struct mlx5e_cq {
 
 	/* control */
 	struct mlx5_core_dev      *mdev;
-	struct mlx5_frag_wq_ctrl   wq_ctrl;
+	struct mlx5_wq_ctrl        wq_ctrl;
 } ____cacheline_aligned_in_smp;
 
 struct mlx5e_tx_wqe_info {
@@ -368,7 +375,6 @@ struct mlx5e_txqsq {
 	struct netdev_queue       *txq;
 	u32                        sqn;
 	u8                         min_inline_mode;
-	u16                        edge;
 	struct device             *pdev;
 	__be32                     mkey_be;
 	unsigned long              state;
@@ -433,7 +439,6 @@ struct mlx5e_icosq {
 	struct mlx5_wq_cyc         wq;
 	void __iomem              *uar_map;
 	u32                        sqn;
-	u16                        edge;
 	unsigned long              state;
 
 	/* control path */
@@ -444,7 +449,7 @@ struct mlx5e_icosq {
 static inline bool
 mlx5e_wqc_has_room_for(struct mlx5_wq_cyc *wq, u16 cc, u16 pc, u16 n)
 {
-	return (((wq->sz_m1 & (cc - pc)) >= n) || (cc == pc));
+	return (mlx5_wq_cyc_ctr2ix(wq, cc - pc) >= n) || (cc == pc);
 }
 
 struct mlx5e_dma_info {
@@ -614,8 +619,10 @@ enum {
 };
 
 struct mlx5e_vxlan_db {
-	spinlock_t			lock; /* protect vxlan table */
-	struct radix_tree_root		tree;
+	rwlock_t			lock; /* protect vxlan table */
+	/* max_num_ports is usuallly 4, 16 buckets is more than enough */
+	DECLARE_HASHTABLE(htable, 4);
+	int				num_ports;
 };
 
 struct mlx5e_l2_rule {
@@ -932,8 +939,6 @@ void mlx5e_deactivate_priv_channels(struct mlx5e_priv *priv);
 
 void mlx5e_build_default_indir_rqt(u32 *indirection_rqt, int len,
 				   int num_channels);
-int mlx5e_get_max_linkspeed(struct mlx5_core_dev *mdev, u32 *speed);
-
 void mlx5e_set_tx_cq_mode_params(struct mlx5e_params *params,
 				 u8 cq_period_mode);
 void mlx5e_set_rx_cq_mode_params(struct mlx5e_params *params,
@@ -952,10 +957,9 @@ static inline void mlx5e_sq_fetch_wqe(struct mlx5e_txqsq *sq,
 				      struct mlx5e_tx_wqe **wqe,
 				      u16 *pi)
 {
-	struct mlx5_wq_cyc *wq;
+	struct mlx5_wq_cyc *wq = &sq->wq;
 
-	wq = &sq->wq;
-	*pi = sq->pc & wq->sz_m1;
+	*pi  = mlx5_wq_cyc_ctr2ix(wq, sq->pc);
 	*wqe = mlx5_wq_cyc_get_wqe(wq, *pi);
 	memset(*wqe, 0, sizeof(**wqe));
 }
@@ -963,7 +967,7 @@ static inline void mlx5e_sq_fetch_wqe(struct mlx5e_txqsq *sq,
 static inline
 struct mlx5e_tx_wqe *mlx5e_post_nop(struct mlx5_wq_cyc *wq, u32 sqn, u16 *pc)
 {
-	u16                         pi   = *pc & wq->sz_m1;
+	u16                         pi   = mlx5_wq_cyc_ctr2ix(wq, *pc);
 	struct mlx5e_tx_wqe        *wqe  = mlx5_wq_cyc_get_wqe(wq, pi);
 	struct mlx5_wqe_ctrl_seg   *cseg = &wqe->ctrl;
 
