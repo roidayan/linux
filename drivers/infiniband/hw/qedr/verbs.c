@@ -1084,7 +1084,7 @@ static inline int get_gid_info_from_table(struct ib_qp *ibqp,
 	gid_attr = grh->sgid_attr;
 	qp_params->vlan_id = rdma_vlan_dev_vlan_id(gid_attr->ndev);
 
-	nw_type = ib_gid_to_network_type(gid_attr->gid_type, &gid_attr->gid);
+	nw_type = rdma_gid_attr_network_type(gid_attr);
 	switch (nw_type) {
 	case RDMA_NETWORK_IPV6:
 		memcpy(&qp_params->sgid.bytes[0], &gid_attr->gid.raw[0],

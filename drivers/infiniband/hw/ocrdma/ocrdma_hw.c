@@ -2538,7 +2538,7 @@ static int ocrdma_set_av_params(struct ocrdma_qp *qp,
 	cmd->params.dmac_b0_to_b3 = mac_addr[0] | (mac_addr[1] << 8) |
 				(mac_addr[2] << 16) | (mac_addr[3] << 24);
 
-	hdr_type = ib_gid_to_network_type(sgid_attr->gid_type, &sgid_attr->gid);
+	hdr_type = rdma_gid_attr_network_type(sgid_attr);
 	if (hdr_type == RDMA_NETWORK_IPV4) {
 		rdma_gid2ip(&sgid_addr._sockaddr, &sgid_attr->gid);
 		rdma_gid2ip(&dgid_addr._sockaddr, &grh->dgid);
