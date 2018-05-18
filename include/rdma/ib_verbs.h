@@ -161,6 +161,12 @@ ib_gid_to_network_type(enum ib_gid_type gid_type, const union ib_gid *gid)
 		return RDMA_NETWORK_IPV6;
 }
 
+static inline enum rdma_network_type
+rdma_gid_attr_network_type(const struct ib_gid_attr *attr)
+{
+	return ib_gid_to_network_type(attr->gid_type, &attr->gid);
+}
+
 enum rdma_link_layer {
 	IB_LINK_LAYER_UNSPECIFIED,
 	IB_LINK_LAYER_INFINIBAND,
