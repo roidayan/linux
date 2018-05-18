@@ -388,7 +388,6 @@ static inline int qedr_gsi_build_header(struct qedr_dev *dev,
 	struct rdma_ah_attr *ah_attr = &get_qedr_ah(ud_wr(swr)->ah)->attr;
 	const struct ib_global_route *grh = rdma_ah_read_grh(ah_attr);
 	const struct ib_gid_attr *sgid_attr;
-	union ib_gid sgid;
 	int send_size = 0;
 	u16 vlan_id = 0;
 	u16 ether_type;
@@ -422,7 +421,7 @@ static inline int qedr_gsi_build_header(struct qedr_dev *dev,
 		/* RoCE v1 */
 		ether_type = ETH_P_IBOE;
 		*roce_mode = ROCE_V1;
-	} else if (ipv6_addr_v4mapped((struct in6_addr *)&sgid)) {
+	} else if (ipv6_addr_v4mapped((struct in6_addr *)&sgid_attr->gid)) {
 		/* RoCE v2 IPv4 */
 		ip_ver = 4;
 		ether_type = ETH_P_IP;
@@ -470,7 +469,7 @@ static inline int qedr_gsi_build_header(struct qedr_dev *dev,
 		udh->grh.flow_label = grh->flow_label;
 		udh->grh.hop_limit = grh->hop_limit;
 		udh->grh.destination_gid = grh->dgid;
-		memcpy(&udh->grh.source_gid.raw, &sgid.raw,
+		memcpy(&udh->grh.source_gid.raw, &sgid_attr->gid.raw,
 		       sizeof(udh->grh.source_gid.raw));
 	} else {
 		/* IPv4 header */
@@ -481,7 +480,7 @@ static inline int qedr_gsi_build_header(struct qedr_dev *dev,
 		udh->ip4.frag_off = htons(IP_DF);
 		udh->ip4.ttl = grh->hop_limit;
 
-		ipv4_addr = qedr_get_ipv4_from_gid(sgid.raw);
+		ipv4_addr = qedr_get_ipv4_from_gid(sgid_attr->gid.raw);
 		udh->ip4.saddr = ipv4_addr;
 		ipv4_addr = qedr_get_ipv4_from_gid(grh->dgid.raw);
 		udh->ip4.daddr = ipv4_addr;
