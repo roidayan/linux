@@ -190,8 +190,7 @@ struct ib_ah *ocrdma_create_ah(struct ib_pd *ibpd, struct rdma_ah_attr *attr,
 		vlan_tag = vlan_dev_vlan_id(sgid_attr->ndev);
 
 	/* Get network header type for this GID */
-	ah->hdr_type = ib_gid_to_network_type(sgid_attr->gid_type,
-					      &sgid_attr->gid);
+	ah->hdr_type = rdma_gid_attr_network_type(sgid_attr);
 
 	status = set_av_attr(dev, ah, attr, &sgid_attr->gid, pd->id,
 			     &isvlan, vlan_tag);
