@@ -1077,24 +1077,24 @@ static inline int get_gid_info_from_table(struct ib_qp *ibqp,
 					  struct qed_rdma_modify_qp_in_params
 					  *qp_params)
 {
+	const struct ib_gid_attr *gid_attr;
 	enum rdma_network_type nw_type;
-	struct ib_gid_attr gid_attr;
 	const struct ib_global_route *grh = rdma_ah_read_grh(&attr->ah_attr);
 	union ib_gid gid;
 	u32 ipv4_addr;
-	int rc = 0;
+	int rc;
 	int i;
 
-	rc = ib_get_cached_gid(ibqp->device,
-			       rdma_ah_get_port_num(&attr->ah_attr),
-			       grh->sgid_index, &gid, &gid_attr);
+	rc = rdma_query_gid(ibqp->device,
+			    rdma_ah_get_port_num(&attr->ah_attr),
+			    grh->sgid_index, &gid);
 	if (rc)
 		return rc;
 
-	qp_params->vlan_id = rdma_vlan_dev_vlan_id(gid_attr.ndev);
+	gid_attr = grh->sgid_attr;
+	qp_params->vlan_id = rdma_vlan_dev_vlan_id(gid_attr->ndev);
 
-	dev_put(gid_attr.ndev);
-	nw_type = ib_gid_to_network_type(gid_attr.gid_type, &gid);
+	nw_type = ib_gid_to_network_type(gid_attr->gid_type, &gid);
 	switch (nw_type) {
 	case RDMA_NETWORK_IPV6:
 		memcpy(&qp_params->sgid.bytes[0], &gid.raw[0],
@@ -2579,7 +2579,7 @@ static int qedr_set_page(struct ib_mr *ibmr, u64 addr)
 	u32 pbes_in_page;
 
 	if (unlikely(mr->npages == mr->info.pbl_info.num_pbes)) {
-		DP_ERR(mr->dev, "qedr_set_page failes when %d\n", mr->npages);
+		DP_ERR(mr->dev, "qedr_set_page fails when %d\n", mr->npages);
 		return -ENOMEM;
 	}
 

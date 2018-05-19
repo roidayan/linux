@@ -99,7 +99,6 @@ static int hns_roce_del_gid(const struct ib_gid_attr *attr, void **context)
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(attr->device);
 	struct ib_gid_attr zattr = { };
-	union ib_gid zgid = { {0} };
 	u8 port = attr->port_num - 1;
 	unsigned long flags;
 	int ret;
@@ -199,7 +198,7 @@ static int hns_roce_query_device(struct ib_device *ib_dev,
 
 	memset(props, 0, sizeof(*props));
 
-	props->sys_image_guid = cpu_to_be32(hr_dev->sys_image_guid);
+	props->sys_image_guid = cpu_to_be64(hr_dev->sys_image_guid);
 	props->max_mr_size = (u64)(~(0ULL));
 	props->page_size_cap = hr_dev->caps.page_size_cap;
 	props->vendor_id = hr_dev->vendor_id;
