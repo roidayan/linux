@@ -320,7 +320,7 @@ static int UVERBS_HANDLER(UVERBS_METHOD_FLOW_ACTION_ESP_CREATE)(struct ib_device
 		return ret;
 
 	/* No need to check as this attribute is marked as MANDATORY */
-	uobj = uverbs_attr_get(attrs, UVERBS_ATTR_FLOW_ACTION_ESP_HANDLE)->obj_attr.uobject;
+	uobj = uverbs_attr_get_uobject(attrs, UVERBS_ATTR_FLOW_ACTION_ESP_HANDLE);
 	action = ib_dev->create_flow_action_esp(ib_dev, &esp_attr.hdr, attrs);
 	if (IS_ERR(action))
 		return PTR_ERR(action);
@@ -350,7 +350,7 @@ static int UVERBS_HANDLER(UVERBS_METHOD_FLOW_ACTION_ESP_MODIFY)(struct ib_device
 	if (ret)
 		return ret;
 
-	uobj = uverbs_attr_get(attrs, UVERBS_ATTR_FLOW_ACTION_ESP_HANDLE)->obj_attr.uobject;
+	uobj = uverbs_attr_get_uobject(attrs, UVERBS_ATTR_FLOW_ACTION_ESP_HANDLE);
 	action = uobj->object;
 
 	if (action->type != IB_FLOW_ACTION_ESP)
@@ -428,7 +428,7 @@ static DECLARE_UVERBS_NAMED_METHOD_WITH_HANDLER(UVERBS_METHOD_FLOW_ACTION_DESTRO
 			 UA_FLAGS(UVERBS_ATTR_SPEC_F_MANDATORY)));
 
 DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_FLOW_ACTION,
-			    &UVERBS_TYPE_ALLOC_IDR(0, uverbs_free_flow_action),
+			    &UVERBS_TYPE_ALLOC_IDR(uverbs_free_flow_action),
 			    &UVERBS_METHOD(UVERBS_METHOD_FLOW_ACTION_ESP_CREATE),
 			    &UVERBS_METHOD(UVERBS_METHOD_FLOW_ACTION_DESTROY),
 			    &UVERBS_METHOD(UVERBS_METHOD_FLOW_ACTION_ESP_MODIFY));
