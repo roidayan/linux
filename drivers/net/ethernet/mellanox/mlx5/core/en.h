@@ -358,7 +358,6 @@ struct mlx5e_txqsq {
 	/* dirtied @xmit */
 	u16                        pc ____cacheline_aligned_in_smp;
 	u32                        dma_fifo_pc;
-	struct mlx5e_sq_stats     *stats;
 
 	struct mlx5e_cq            cq;
 
@@ -371,6 +370,7 @@ struct mlx5e_txqsq {
 	/* read only */
 	struct mlx5_wq_cyc         wq;
 	u32                        dma_fifo_mask;
+	struct mlx5e_sq_stats     *stats;
 	void __iomem              *uar_map;
 	struct netdev_queue       *txq;
 	u32                        sqn;
