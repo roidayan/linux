@@ -3952,7 +3952,7 @@ static void mlx5e_vxlan_del_work(struct work_struct *work)
 	kfree(vxlan_work);
 }
 
-void mlx5e_vxlan_queue_work(struct mlx5e_priv *priv, u16 port, int add)
+static void mlx5e_vxlan_queue_work(struct mlx5e_priv *priv, u16 port, int add)
 {
 	struct mlx5e_vxlan_work *vxlan_work;
 
