@@ -676,7 +676,7 @@ static int esw_add_fdb_miss_rule(struct mlx5_eswitch *esw)
 	dmac_v = MLX5_ADDR_OF(fte_match_param, headers_v,
 			      outer_headers.dmac_47_16);
 	dmac_v[0] = 0x01;
-	flow_rule = mlx5_add_flow_rules(esw->fdb_table.offloads.fdb, spec,
+	flow_rule = mlx5_add_flow_rules(esw->fdb_table.offloads.slow_fdb, spec,
 					&flow_act, &dest, 1);
 	if (IS_ERR(flow_rule)) {
 		err = PTR_ERR(flow_rule);
@@ -1503,4 +1503,14 @@ struct net_device *mlx5_eswitch_get_uplink_netdev(struct mlx5_eswitch *esw)
 
 	rep = &offloads->vport_reps[UPLINK_REP_INDEX];
 	return rep->netdev;
+}
+
+void *mlx5_eswitch_get_uplink_netdev_priv(struct mlx5_eswitch *esw, u8 rep_type)
+{
+#define UPLINK_REP_INDEX 0
+	struct mlx5_esw_offload *offloads = &esw->offloads;
+	struct mlx5_eswitch_rep *rep;
+
+	rep = &offloads->vport_reps[UPLINK_REP_INDEX];
+	return netdev_priv(rep->netdev);
 }
