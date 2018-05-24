@@ -679,8 +679,6 @@ netdev_tx_t mlx5i_sq_xmit(struct mlx5e_txqsq *sq, struct sk_buff *skb,
 	ds_cnt += skb_shinfo(skb)->nr_frags;
 
 	if (ihs) {
-		ihs += !!skb_vlan_tag_present(skb) * VLAN_HLEN;
-
 		ds_cnt_inl = DIV_ROUND_UP(ihs - INL_HDR_START_SZ, MLX5_SEND_WQE_DS);
 		ds_cnt += ds_cnt_inl;
 	}
@@ -702,6 +700,14 @@ netdev_tx_t mlx5i_sq_xmit(struct mlx5e_txqsq *sq, struct sk_buff *skb,
 	mlx5i_txwqe_build_datagram(av, dqpn, dqkey, datagram);
 
 	mlx5e_txwqe_build_eseg_csum(sq, skb, eseg);
+
+	eseg->mss = mss;
+
+	if (ihs) {
+		memcpy(eseg->inline_hdr.start, skb_data, ihs);
+		eseg->inline_hdr.sz = cpu_to_be16(ihs);
+		dseg += ds_cnt_inl;
+	}
 
 	num_dma = mlx5e_txwqe_build_dsegs(sq, skb, skb_data, headlen, dseg);
 	if (unlikely(num_dma < 0))
