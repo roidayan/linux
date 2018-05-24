@@ -75,6 +75,9 @@ enum mlx5_lib_caps {
 	MLX5_LIB_CAP_4K_UAR	= (__u64)1 << 0,
 };
 
+enum mlx5_ib_alloc_uctx_v2_flags {
+	MLX5_IB_ALLOC_UCTX_DEVX	=  1 << 0,
+};
 struct mlx5_ib_alloc_ucontext_req_v2 {
 	__u32	total_num_bfregs;
 	__u32	num_low_latency_bfregs;
@@ -233,7 +236,9 @@ enum mlx5_ib_query_dev_resp_flags {
 enum mlx5_ib_tunnel_offloads {
 	MLX5_IB_TUNNELED_OFFLOADS_VXLAN  = 1 << 0,
 	MLX5_IB_TUNNELED_OFFLOADS_GRE    = 1 << 1,
-	MLX5_IB_TUNNELED_OFFLOADS_GENEVE = 1 << 2
+	MLX5_IB_TUNNELED_OFFLOADS_GENEVE = 1 << 2,
+	MLX5_IB_TUNNELED_OFFLOADS_MPLS_GRE = 1 << 3,
+	MLX5_IB_TUNNELED_OFFLOADS_MPLS_UDP = 1 << 4,
 };
 
 struct mlx5_ib_query_device_resp {
@@ -441,4 +446,18 @@ enum {
 enum {
 	MLX5_IB_CLOCK_INFO_V1              = 0,
 };
+
+struct mlx5_ib_flow_counters_data {
+	__aligned_u64   counters_data;
+	__u32   ncounters;
+	__u32   reserved;
+};
+
+struct mlx5_ib_create_flow {
+	__u32   ncounters_data;
+	__u32   reserved;
+	/* Following are counters data based on ncounters_data */
+	struct mlx5_ib_flow_counters_data data[];
+};
+
 #endif /* MLX5_ABI_USER_H */
