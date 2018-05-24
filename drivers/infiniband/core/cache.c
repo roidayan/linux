@@ -632,7 +632,7 @@ static int __ib_cache_gid_get(struct ib_device *ib_dev, u8 port, int index,
 		return -EINVAL;
 
 	if (!is_gid_entry_valid(table->data_vec[index]))
-		return -EAGAIN;
+		return -EINVAL;
 
 	memcpy(gid, &table->data_vec[index]->attr.gid, sizeof(*gid));
 	if (attr) {
