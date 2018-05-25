@@ -217,6 +217,16 @@ int mlx5_eswitch_get_vport_config(struct mlx5_eswitch *esw,
 int mlx5_eswitch_get_vport_stats(struct mlx5_eswitch *esw,
 				 int vport,
 				 struct ifla_vf_stats *vf_stats);
+#ifndef HAVE_STRUCT_IFLA_VF_STATS_TX_BROADCAST
+struct ifla_vf_stats_backport {
+	__u64 tx_broadcast;
+	__u64 tx_multicast;
+};
+
+int mlx5_eswitch_get_vport_stats_backport(struct mlx5_eswitch *esw,
+					  int vport,
+					  struct ifla_vf_stats_backport *vf_stats_backport);
+#endif
 void mlx5_eswitch_del_send_to_vport_rule(struct mlx5_flow_handle *rule);
 int mlx5_eswitch_query_vport_drop_stats(struct mlx5_core_dev *dev,
 					int vport_idx,

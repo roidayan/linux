@@ -2214,11 +2214,67 @@ int mlx5_eswitch_get_vport_stats(struct mlx5_eswitch *esw,
 		goto free_out;
 	vf_stats->rx_dropped = stats.rx_dropped;
 	vf_stats->tx_dropped = stats.tx_dropped;
+#ifdef HAVE_STRUCT_IFLA_VF_STATS_TX_BROADCAST
+	vf_stats->tx_multicast =
+		MLX5_GET_CTR(out, transmitted_eth_multicast.packets) +
+		MLX5_GET_CTR(out, transmitted_ib_multicast.packets);
+
+	vf_stats->tx_broadcast =
+		MLX5_GET_CTR(out, transmitted_eth_broadcast.packets);
+#endif
 
 free_out:
 	kvfree(out);
 	return err;
 }
+
+#ifndef HAVE_STRUCT_IFLA_VF_STATS_TX_BROADCAST
+int mlx5_eswitch_get_vport_stats_backport(struct mlx5_eswitch *esw,
+					  int vport,
+					  struct ifla_vf_stats_backport *vf_stats_backport)
+{
+	int outlen = MLX5_ST_SZ_BYTES(query_vport_counter_out);
+	u32 in[MLX5_ST_SZ_DW(query_vport_counter_in)] = {0};
+	int err = 0;
+	u32 *out;
+
+	if (!ESW_ALLOWED(esw))
+		return -EPERM;
+	if (!LEGAL_VPORT(esw, vport))
+		return -EINVAL;
+
+	out = kvzalloc(outlen, GFP_KERNEL);
+	if (!out)
+		return -ENOMEM;
+
+	MLX5_SET(query_vport_counter_in, in, opcode,
+		 MLX5_CMD_OP_QUERY_VPORT_COUNTER);
+	MLX5_SET(query_vport_counter_in, in, op_mod, 0);
+	MLX5_SET(query_vport_counter_in, in, vport_number, vport);
+	if (vport)
+		MLX5_SET(query_vport_counter_in, in, other_vport, 1);
+
+	memset(out, 0, outlen);
+	err = mlx5_cmd_exec(esw->dev, in, sizeof(in), out, outlen);
+	if (err)
+		goto free_out;
+
+	#define MLX5_GET_CTR(p, x) \
+		MLX5_GET64(query_vport_counter_out, p, x)
+
+	memset(vf_stats_backport, 0, sizeof(*vf_stats_backport));
+	vf_stats_backport->tx_multicast =
+		MLX5_GET_CTR(out, transmitted_eth_multicast.packets) +
+		MLX5_GET_CTR(out, transmitted_ib_multicast.packets);
+
+	vf_stats_backport->tx_broadcast =
+		MLX5_GET_CTR(out, transmitted_eth_broadcast.packets);
+
+free_out:
+	kvfree(out);
+	return err;
+}
+#endif
 
 u8 mlx5_eswitch_mode(struct mlx5_eswitch *esw)
 {
