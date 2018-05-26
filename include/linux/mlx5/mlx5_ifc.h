@@ -60,6 +60,7 @@ enum {
 	MLX5_EVENT_TYPE_CODING_COMMAND_INTERFACE_COMPLETION        = 0xa,
 	MLX5_EVENT_TYPE_CODING_PAGE_REQUEST                        = 0xb,
 	MLX5_EVENT_TYPE_CODING_FPGA_ERROR                          = 0x20,
+	MLX5_EVENT_TYPE_CODING_FPGA_QP_ERROR                       = 0x21
 };
 
 enum {
@@ -524,7 +525,9 @@ struct mlx5_ifc_flow_table_nic_cap_bits {
 };
 
 struct mlx5_ifc_flow_table_eswitch_cap_bits {
-	u8     reserved_at_0[0x200];
+	u8      reserved_at_0[0x1c];
+	u8      fdb_multi_path_to_table[0x1];
+	u8      reserved_at_1d[0x1e3];
 
 	struct mlx5_ifc_flow_table_prop_layout_bits flow_table_properties_nic_esw_fdb;
 
@@ -622,7 +625,9 @@ struct mlx5_ifc_per_protocol_networking_offload_caps_bits {
 	u8         swp[0x1];
 	u8         swp_csum[0x1];
 	u8         swp_lso[0x1];
-	u8         reserved_at_23[0x1b];
+	u8         reserved_at_23[0xd];
+	u8         max_vxlan_udp_ports[0x8];
+	u8         reserved_at_38[0x6];
 	u8         max_geneve_opt_len[0x1];
 	u8         tunnel_stateless_geneve_rx[0x1];
 
@@ -910,7 +915,7 @@ struct mlx5_ifc_cmd_hca_cap_bits {
 	u8         log_max_msg[0x5];
 	u8         reserved_at_1c8[0x4];
 	u8         max_tc[0x4];
-	u8         reserved_at_1d0[0x1];
+	u8         temp_warn_event[0x1];
 	u8         dcbx[0x1];
 	u8         general_notification_event[0x1];
 	u8         reserved_at_1d3[0x2];
