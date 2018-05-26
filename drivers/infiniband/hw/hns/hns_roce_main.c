@@ -74,8 +74,7 @@ static int hns_roce_set_mac(struct hns_roce_dev *hr_dev, u8 port, u8 *addr)
 	return hr_dev->hw->set_mac(hr_dev, phy_port, addr);
 }
 
-static int hns_roce_add_gid(const union ib_gid *gid,
-			    const struct ib_gid_attr *attr, void **context)
+static int hns_roce_add_gid(const struct ib_gid_attr *attr, void **context)
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(attr->device);
 	u8 port = attr->port_num - 1;
@@ -87,8 +86,7 @@ static int hns_roce_add_gid(const union ib_gid *gid,
 
 	spin_lock_irqsave(&hr_dev->iboe.lock, flags);
 
-	ret = hr_dev->hw->set_gid(hr_dev, port, attr->index,
-				  (union ib_gid *)gid, attr);
+	ret = hr_dev->hw->set_gid(hr_dev, port, attr->index, &attr->gid, attr);
 
 	spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
 
@@ -99,7 +97,6 @@ static int hns_roce_del_gid(const struct ib_gid_attr *attr, void **context)
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(attr->device);
 	struct ib_gid_attr zattr = { };
-	union ib_gid zgid = { {0} };
 	u8 port = attr->port_num - 1;
 	unsigned long flags;
 	int ret;
@@ -199,7 +196,7 @@ static int hns_roce_query_device(struct ib_device *ib_dev,
 
 	memset(props, 0, sizeof(*props));
 
-	props->sys_image_guid = cpu_to_be32(hr_dev->sys_image_guid);
+	props->sys_image_guid = cpu_to_be64(hr_dev->sys_image_guid);
 	props->max_mr_size = (u64)(~(0ULL));
 	props->page_size_cap = hr_dev->caps.page_size_cap;
 	props->vendor_id = hr_dev->vendor_id;
