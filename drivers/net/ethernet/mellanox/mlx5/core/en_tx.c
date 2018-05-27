@@ -400,14 +400,14 @@ netdev_tx_t mlx5e_sq_xmit(struct mlx5e_txqsq *sq, struct sk_buff *skb,
 	eseg->mss = mss;
 
 	if (ihs) {
+		eseg->inline_hdr.sz = cpu_to_be16(ihs);
 		if (skb_vlan_tag_present(skb)) {
-			mlx5e_insert_vlan(eseg->inline_hdr.start, skb,
-					  ihs - VLAN_HLEN);
+			ihs -= VLAN_HLEN;
+			mlx5e_insert_vlan(eseg->inline_hdr.start, skb, ihs);
 			stats->added_vlan_packets++;
 		} else {
 			memcpy(eseg->inline_hdr.start, skb->data, ihs);
 		}
-		eseg->inline_hdr.sz = cpu_to_be16(ihs);
 		dseg += ds_cnt_inl;
 	} else if (skb_vlan_tag_present(skb)) {
 		eseg->insert.type = cpu_to_be16(MLX5_ETH_WQE_INSERT_VLAN);
@@ -697,7 +697,7 @@ netdev_tx_t mlx5i_sq_xmit(struct mlx5e_txqsq *sq, struct sk_buff *skb,
 		dseg += ds_cnt_inl;
 	}
 
-	num_dma = mlx5e_txwqe_build_dsegs(sq, skb, skb->data, headlen, dseg);
+	num_dma = mlx5e_txwqe_build_dsegs(sq, skb, skb->data + ihs, headlen, dseg);
 	if (unlikely(num_dma < 0))
 		goto err_drop;
 
