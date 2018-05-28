@@ -1303,9 +1303,6 @@ static void __ipoib_reap_neigh(struct ipoib_dev_priv *priv)
 	int i;
 	LIST_HEAD(remove_list);
 
-	if (test_bit(IPOIB_STOP_NEIGH_GC, &priv->flags))
-		return;
-
 	spin_lock_irqsave(&priv->lock, flags);
 
 	htbl = rcu_dereference_protected(ntbl->htbl,
@@ -1317,9 +1314,6 @@ static void __ipoib_reap_neigh(struct ipoib_dev_priv *priv)
 	/* neigh is obsolete if it was idle for two GC periods */
 	dt = 2 * arp_tbl.gc_interval;
 	neigh_obsolete = jiffies - dt;
-	/* handle possible race condition */
-	if (test_bit(IPOIB_STOP_NEIGH_GC, &priv->flags))
-		goto out_unlock;
 
 	for (i = 0; i < htbl->size; i++) {
 		struct ipoib_neigh *neigh;
@@ -1357,9 +1351,8 @@ static void ipoib_reap_neigh(struct work_struct *work)
 
 	__ipoib_reap_neigh(priv);
 
-	if (!test_bit(IPOIB_STOP_NEIGH_GC, &priv->flags))
-		queue_delayed_work(priv->wq, &priv->neigh_reap_task,
-				   arp_tbl.gc_interval);
+	queue_delayed_work(priv->wq, &priv->neigh_reap_task,
+			   arp_tbl.gc_interval);
 }
 
 
@@ -1521,7 +1514,6 @@ static int ipoib_neigh_hash_init(struct ipoib_dev_priv *priv)
 	htbl = kzalloc(sizeof(*htbl), GFP_KERNEL);
 	if (!htbl)
 		return -ENOMEM;
-	set_bit(IPOIB_STOP_NEIGH_GC, &priv->flags);
 	size = roundup_pow_of_two(arp_tbl.gc_thresh3);
 	buckets = kcalloc(size, sizeof(*buckets), GFP_KERNEL);
 	if (!buckets) {
@@ -1536,7 +1528,6 @@ static int ipoib_neigh_hash_init(struct ipoib_dev_priv *priv)
 	atomic_set(&ntbl->entries, 0);
 
 	/* start garbage collection */
-	clear_bit(IPOIB_STOP_NEIGH_GC, &priv->flags);
 	queue_delayed_work(priv->wq, &priv->neigh_reap_task,
 			   arp_tbl.gc_interval);
 
@@ -1646,15 +1637,11 @@ out_unlock:
 static void ipoib_neigh_hash_uninit(struct net_device *dev)
 {
 	struct ipoib_dev_priv *priv = ipoib_priv(dev);
-	int stopped;
 
 	ipoib_dbg(priv, "ipoib_neigh_hash_uninit\n");
 	init_completion(&priv->ntbl.deleted);
 
-	/* Stop GC if called at init fail need to cancel work */
-	stopped = test_and_set_bit(IPOIB_STOP_NEIGH_GC, &priv->flags);
-	if (!stopped)
-		cancel_delayed_work_sync(&priv->neigh_reap_task);
+	cancel_delayed_work_sync(&priv->neigh_reap_task);
 
 	ipoib_flush_neighs(priv);
 
@@ -1793,11 +1780,14 @@ int ipoib_dev_init(struct net_device *dev, struct ib_device *ca, int port)
 		if (ipoib_ib_dev_open(dev)) {
 			pr_warn("%s failed to open device\n", dev->name);
 			ret = -ENODEV;
-			goto out_dev_uninit;
+			goto out_hash_uninit;
 		}
 	}
 
 	return 0;
+
+out_hash_uninit:
+	ipoib_neigh_hash_uninit(dev);
 
 out_dev_uninit:
 	ipoib_ib_dev_cleanup(dev);
@@ -1854,7 +1844,6 @@ static void ipoib_ndo_uninit(struct net_device *dev)
 	/* Delete any child interfaces first */
 	list_for_each_entry_safe(cpriv, tcpriv, &priv->child_intfs, list) {
 		/* Stop GC on child */
-		set_bit(IPOIB_STOP_NEIGH_GC, &cpriv->flags);
 		cancel_delayed_work_sync(&cpriv->neigh_reap_task);
 		unregister_netdevice_queue(cpriv->dev, &head);
 	}
