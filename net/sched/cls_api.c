@@ -103,9 +103,10 @@ int unregister_tcf_proto_ops(struct tcf_proto_ops *ops)
 }
 EXPORT_SYMBOL(unregister_tcf_proto_ops);
 
-bool tcf_queue_work(struct work_struct *work)
+bool tcf_queue_work(struct rcu_work *rwork, work_func_t func)
 {
-	return queue_work(tc_filter_wq, work);
+	INIT_RCU_WORK(rwork, func);
+	return queue_rcu_work(tc_filter_wq, rwork);
 }
 EXPORT_SYMBOL(tcf_queue_work);
 
@@ -1588,7 +1589,7 @@ int tc_setup_cb_call(struct tcf_block *block, struct tcf_exts *exts,
 		return ret;
 	ok_count = ret;
 
-	if (!exts)
+	if (!exts || ok_count)
 		return ok_count;
 	ret = tc_exts_setup_cb_egdev_call(exts, type, type_data, err_stop);
 	if (ret < 0)
