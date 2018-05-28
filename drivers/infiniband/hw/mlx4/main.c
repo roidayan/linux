@@ -246,9 +246,7 @@ static int mlx4_ib_update_gids(struct gid_entry *gids,
 	return mlx4_ib_update_gids_v1(gids, ibdev, port_num);
 }
 
-static int mlx4_ib_add_gid(const union ib_gid *gid,
-			   const struct ib_gid_attr *attr,
-			   void **context)
+static int mlx4_ib_add_gid(const struct ib_gid_attr *attr, void **context)
 {
 	struct mlx4_ib_dev *ibdev = to_mdev(attr->device);
 	struct mlx4_ib_iboe *iboe = &ibdev->iboe;
@@ -271,12 +269,13 @@ static int mlx4_ib_add_gid(const union ib_gid *gid,
 	port_gid_table = &iboe->gids[attr->port_num - 1];
 	spin_lock_bh(&iboe->lock);
 	for (i = 0; i < MLX4_MAX_PORT_GIDS; ++i) {
-		if (!memcmp(&port_gid_table->gids[i].gid, gid, sizeof(*gid)) &&
+		if (!memcmp(&port_gid_table->gids[i].gid,
+			    &attr->gid, sizeof(attr->gid)) &&
 		    (port_gid_table->gids[i].gid_type == attr->gid_type))  {
 			found = i;
 			break;
 		}
-		if (free < 0 && !memcmp(&port_gid_table->gids[i].gid, &zgid, sizeof(*gid)))
+		if (free < 0 && rdma_is_zero_gid(&port_gid_table->gids[i].gid))
 			free = i; /* HW has space */
 	}
 
@@ -289,7 +288,8 @@ static int mlx4_ib_add_gid(const union ib_gid *gid,
 				ret = -ENOMEM;
 			} else {
 				*context = port_gid_table->gids[free].ctx;
-				memcpy(&port_gid_table->gids[free].gid, gid, sizeof(*gid));
+				memcpy(&port_gid_table->gids[free].gid,
+				       &attr->gid, sizeof(attr->gid));
 				port_gid_table->gids[free].gid_type = attr->gid_type;
 				port_gid_table->gids[free].ctx->real_index = free;
 				port_gid_table->gids[free].ctx->refcount = 1;
@@ -345,7 +345,8 @@ static int mlx4_ib_del_gid(const struct ib_gid_attr *attr, void **context)
 		if (!ctx->refcount) {
 			unsigned int real_index = ctx->real_index;
 
-			memcpy(&port_gid_table->gids[real_index].gid, &zgid, sizeof(zgid));
+			memset(&port_gid_table->gids[real_index].gid, 0,
+			       sizeof(port_gid_table->gids[real_index].gid));
 			kfree(port_gid_table->gids[real_index].ctx);
 			port_gid_table->gids[real_index].ctx = NULL;
 			hw_update = 1;
@@ -381,13 +382,11 @@ int mlx4_ib_gid_index_to_real_index(struct mlx4_ib_dev *ibdev,
 {
 	struct mlx4_ib_iboe *iboe = &ibdev->iboe;
 	struct gid_cache_context *ctx = NULL;
-	union ib_gid gid;
 	struct mlx4_port_gid_table   *port_gid_table;
+	const struct ib_gid_attr *attr;
 	int real_index = -EINVAL;
 	int i;
-	int ret;
 	unsigned long flags;
-	struct ib_gid_attr attr;
 
 	if (port_num > MLX4_MAX_PORTS)
 		return -EINVAL;
@@ -398,25 +397,24 @@ int mlx4_ib_gid_index_to_real_index(struct mlx4_ib_dev *ibdev,
 	if (!rdma_cap_roce_gid_table(&ibdev->ib_dev, port_num))
 		return index;
 
-	ret = ib_get_cached_gid(&ibdev->ib_dev, port_num, index, &gid, &attr);
-	if (ret)
-		return ret;
-
-	if (attr.ndev)
-		dev_put(attr.ndev);
+	attr = rdma_get_gid_attr(&ibdev->ib_dev, port_num, index);
+	if (IS_ERR(attr))
+		return PTR_ERR(attr);
 
 	spin_lock_irqsave(&iboe->lock, flags);
 	port_gid_table = &iboe->gids[port_num - 1];
 
 	for (i = 0; i < MLX4_MAX_PORT_GIDS; ++i)
-		if (!memcmp(&port_gid_table->gids[i].gid, &gid, sizeof(gid)) &&
-		    attr.gid_type == port_gid_table->gids[i].gid_type) {
+		if (!memcmp(&port_gid_table->gids[i].gid,
+			    &attr->gid, sizeof(attr->gid)) &&
+		    attr->gid_type == port_gid_table->gids[i].gid_type) {
 			ctx = port_gid_table->gids[i].ctx;
 			break;
 		}
 	if (ctx)
 		real_index = ctx->real_index;
 	spin_unlock_irqrestore(&iboe->lock, flags);
+	rdma_put_gid_attr(attr);
 	return real_index;
 }
 
@@ -1185,7 +1183,6 @@ static const struct vm_operations_struct mlx4_ib_vm_ops = {
 static void mlx4_ib_disassociate_ucontext(struct ib_ucontext *ibcontext)
 {
 	int i;
-	int ret = 0;
 	struct vm_area_struct *vma;
 	struct mlx4_ib_ucontext *context = to_mucontext(ibcontext);
 	struct task_struct *owning_process  = NULL;
@@ -1227,13 +1224,8 @@ static void mlx4_ib_disassociate_ucontext(struct ib_ucontext *ibcontext)
 		if (!vma)
 			continue;
 
-		ret = zap_vma_ptes(context->hw_bar_info[i].vma,
-				   context->hw_bar_info[i].vma->vm_start,
-				   PAGE_SIZE);
-		if (ret) {
-			pr_err("Error: zap_vma_ptes failed for index=%d, ret=%d\n", i, ret);
-			BUG_ON(1);
-		}
+		zap_vma_ptes(context->hw_bar_info[i].vma,
+			     context->hw_bar_info[i].vma->vm_start, PAGE_SIZE);
 
 		context->hw_bar_info[i].vma->vm_flags &=
 			~(VM_SHARED | VM_MAYSHARE);
@@ -1847,7 +1839,7 @@ static int mlx4_ib_add_dont_trap_rule(struct mlx4_dev *dev,
 
 static struct ib_flow *mlx4_ib_create_flow(struct ib_qp *qp,
 				    struct ib_flow_attr *flow_attr,
-				    int domain)
+				    int domain, struct ib_udata *udata)
 {
 	int err = 0, i = 0, j = 0;
 	struct mlx4_ib_flow *mflow;
@@ -1863,6 +1855,10 @@ static struct ib_flow *mlx4_ib_create_flow(struct ib_qp *qp,
 
 	if ((flow_attr->flags & IB_FLOW_ATTR_FLAGS_DONT_TRAP) &&
 	    (flow_attr->type != IB_FLOW_ATTR_NORMAL))
+		return ERR_PTR(-EOPNOTSUPP);
+
+	if (udata &&
+	    udata->inlen && !ib_is_udata_cleared(udata, 0, udata->inlen))
 		return ERR_PTR(-EOPNOTSUPP);
 
 	memset(type, 0, sizeof(type));
@@ -3050,7 +3046,12 @@ void mlx4_ib_steer_qp_free(struct mlx4_ib_dev *dev, u32 qpn, int count)
 	    dev->steering_support != MLX4_STEERING_MODE_DEVICE_MANAGED)
 		return;
 
-	BUG_ON(qpn < dev->steer_qpn_base);
+	if (qpn < dev->steer_qpn_base) {
+		/* not supposed to be here */
+		WARN(true, "qpn = %u, steer_qpn_base = %u\n", qpn,
+		     dev->steer_qpn_base);
+		return;
+	}
 
 	bitmap_release_region(dev->ib_uc_qpns_bitmap,
 			      qpn - dev->steer_qpn_base,
