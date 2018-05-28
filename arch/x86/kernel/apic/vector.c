@@ -148,6 +148,7 @@ static void apic_update_vector(struct irq_data *irqd, unsigned int newvec,
 	 * prev_vector for this and the offlined target case.
 	 */
 	apicd->prev_vector = 0;
+	apicd->move_in_progress = false;
 	if (!apicd->vector || apicd->vector == MANAGED_IRQ_SHUTDOWN_VECTOR)
 		goto setnew;
 	/*
