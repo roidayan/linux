@@ -188,28 +188,16 @@ static inline u16 mlx5e_calc_min_inline(enum mlx5_inline_modes mode,
 	return min_t(u16, hlen, skb_headlen(skb));
 }
 
-static inline void mlx5e_tx_skb_pull_inline(unsigned char **skb_data,
-					    unsigned int *skb_len,
-					    unsigned int len)
-{
-	*skb_len -= len;
-	*skb_data += len;
-}
-
-static inline void mlx5e_insert_vlan(void *start, struct sk_buff *skb, u16 ihs,
-				     unsigned char **skb_data,
-				     unsigned int *skb_len)
+static inline void mlx5e_insert_vlan(void *start, struct sk_buff *skb, u16 ihs)
 {
 	struct vlan_ethhdr *vhdr = (struct vlan_ethhdr *)start;
 	int cpy1_sz = 2 * ETH_ALEN;
 	int cpy2_sz = ihs - cpy1_sz;
 
-	memcpy(vhdr, *skb_data, cpy1_sz);
-	mlx5e_tx_skb_pull_inline(skb_data, skb_len, cpy1_sz);
+	memcpy(vhdr, skb->data, cpy1_sz);
 	vhdr->h_vlan_proto = skb->vlan_proto;
 	vhdr->h_vlan_TCI = cpu_to_be16(skb_vlan_tag_get(skb));
-	memcpy(&vhdr->h_vlan_encapsulated_proto, *skb_data, cpy2_sz);
-	mlx5e_tx_skb_pull_inline(skb_data, skb_len, cpy2_sz);
+	memcpy(&vhdr->h_vlan_encapsulated_proto, skb->data + cpy1_sz, cpy2_sz);
 }
 
 static inline void
@@ -357,8 +345,6 @@ netdev_tx_t mlx5e_sq_xmit(struct mlx5e_txqsq *sq, struct sk_buff *skb,
 	struct mlx5e_tx_wqe_info *wi;
 
 	struct mlx5e_sq_stats *stats = sq->stats;
-	unsigned char *skb_data = skb->data;
-	unsigned int skb_len = skb->len;
 	u16 ds_cnt, ds_cnt_inl = 0;
 	u16 headlen, ihs, frag_pi;
 	u8 num_wqebbs, opcode;
@@ -385,7 +371,7 @@ netdev_tx_t mlx5e_sq_xmit(struct mlx5e_txqsq *sq, struct sk_buff *skb,
 	stats->bytes     += num_bytes;
 	stats->xmit_more += skb->xmit_more;
 
-	headlen = skb_len - ihs - skb->data_len;
+	headlen = skb->len - ihs - skb->data_len;
 	ds_cnt += !!headlen;
 	ds_cnt += skb_shinfo(skb)->nr_frags;
 
@@ -414,15 +400,14 @@ netdev_tx_t mlx5e_sq_xmit(struct mlx5e_txqsq *sq, struct sk_buff *skb,
 	eseg->mss = mss;
 
 	if (ihs) {
+		eseg->inline_hdr.sz = cpu_to_be16(ihs);
 		if (skb_vlan_tag_present(skb)) {
-			mlx5e_insert_vlan(eseg->inline_hdr.start, skb,
-					  ihs - VLAN_HLEN, &skb_data, &skb_len);
+			ihs -= VLAN_HLEN;
+			mlx5e_insert_vlan(eseg->inline_hdr.start, skb, ihs);
 			stats->added_vlan_packets++;
 		} else {
-			memcpy(eseg->inline_hdr.start, skb_data, ihs);
-			mlx5e_tx_skb_pull_inline(&skb_data, &skb_len, ihs);
+			memcpy(eseg->inline_hdr.start, skb->data, ihs);
 		}
-		eseg->inline_hdr.sz = cpu_to_be16(ihs);
 		dseg += ds_cnt_inl;
 	} else if (skb_vlan_tag_present(skb)) {
 		eseg->insert.type = cpu_to_be16(MLX5_ETH_WQE_INSERT_VLAN);
@@ -432,7 +417,7 @@ netdev_tx_t mlx5e_sq_xmit(struct mlx5e_txqsq *sq, struct sk_buff *skb,
 		stats->added_vlan_packets++;
 	}
 
-	num_dma = mlx5e_txwqe_build_dsegs(sq, skb, skb_data, headlen, dseg);
+	num_dma = mlx5e_txwqe_build_dsegs(sq, skb, skb->data + ihs, headlen, dseg);
 	if (unlikely(num_dma < 0))
 		goto err_drop;
 
@@ -481,6 +466,7 @@ static void mlx5e_dump_error_cqe(struct mlx5e_txqsq *sq,
 
 bool mlx5e_poll_tx_cq(struct mlx5e_cq *cq, int napi_budget)
 {
+	struct mlx5e_sq_stats *stats;
 	struct mlx5e_txqsq *sq;
 	struct mlx5_cqe64 *cqe;
 	u32 dma_fifo_cc;
@@ -497,6 +483,8 @@ bool mlx5e_poll_tx_cq(struct mlx5e_cq *cq, int napi_budget)
 	cqe = mlx5_cqwq_get_cqe(&cq->wq);
 	if (!cqe)
 		return false;
+
+	stats = sq->stats;
 
 	npkts = 0;
 	nbytes = 0;
@@ -526,7 +514,7 @@ bool mlx5e_poll_tx_cq(struct mlx5e_cq *cq, int napi_budget)
 				queue_work(cq->channel->priv->wq,
 					   &sq->recover.recover_work);
 			}
-			sq->stats->cqe_err++;
+			stats->cqe_err++;
 		}
 
 		do {
@@ -571,6 +559,8 @@ bool mlx5e_poll_tx_cq(struct mlx5e_cq *cq, int napi_budget)
 
 	} while ((++i < MLX5E_TX_CQ_POLL_BUDGET) && (cqe = mlx5_cqwq_get_cqe(&cq->wq)));
 
+	stats->cqes += i;
+
 	mlx5_cqwq_update_db_record(&cq->wq);
 
 	/* ensure cq space is freed before enabling more cqes */
@@ -586,7 +576,7 @@ bool mlx5e_poll_tx_cq(struct mlx5e_cq *cq, int napi_budget)
 				   MLX5E_SQ_STOP_ROOM) &&
 	    !test_bit(MLX5E_SQ_STATE_RECOVERING, &sq->state)) {
 		netif_tx_wake_queue(sq->txq);
-		sq->stats->wake++;
+		stats->wake++;
 	}
 
 	return (i == MLX5E_TX_CQ_POLL_BUDGET);
@@ -644,8 +634,6 @@ netdev_tx_t mlx5i_sq_xmit(struct mlx5e_txqsq *sq, struct sk_buff *skb,
 	struct mlx5e_tx_wqe_info *wi;
 
 	struct mlx5e_sq_stats *stats = sq->stats;
-	unsigned char *skb_data = skb->data;
-	unsigned int skb_len = skb->len;
 	u16 headlen, ihs, pi, frag_pi;
 	u16 ds_cnt, ds_cnt_inl = 0;
 	u8 num_wqebbs, opcode;
@@ -674,7 +662,7 @@ netdev_tx_t mlx5i_sq_xmit(struct mlx5e_txqsq *sq, struct sk_buff *skb,
 	stats->bytes     += num_bytes;
 	stats->xmit_more += skb->xmit_more;
 
-	headlen = skb_len - ihs - skb->data_len;
+	headlen = skb->len - ihs - skb->data_len;
 	ds_cnt += !!headlen;
 	ds_cnt += skb_shinfo(skb)->nr_frags;
 
@@ -704,12 +692,12 @@ netdev_tx_t mlx5i_sq_xmit(struct mlx5e_txqsq *sq, struct sk_buff *skb,
 	eseg->mss = mss;
 
 	if (ihs) {
-		memcpy(eseg->inline_hdr.start, skb_data, ihs);
+		memcpy(eseg->inline_hdr.start, skb->data, ihs);
 		eseg->inline_hdr.sz = cpu_to_be16(ihs);
 		dseg += ds_cnt_inl;
 	}
 
-	num_dma = mlx5e_txwqe_build_dsegs(sq, skb, skb_data, headlen, dseg);
+	num_dma = mlx5e_txwqe_build_dsegs(sq, skb, skb->data + ihs, headlen, dseg);
 	if (unlikely(num_dma < 0))
 		goto err_drop;
 
