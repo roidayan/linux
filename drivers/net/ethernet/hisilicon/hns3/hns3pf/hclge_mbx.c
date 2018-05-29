@@ -264,19 +264,23 @@ static int hclge_set_vf_vlan_cfg(struct hclge_vport *vport,
 				 struct hclge_mbx_vf_to_pf_cmd *mbx_req,
 				 bool gen_resp)
 {
-	struct hclge_dev *hdev = vport->back;
 	int status = 0;
 
 	if (mbx_req->msg[1] == HCLGE_MBX_VLAN_FILTER) {
+		struct hnae3_handle *handle = &vport->nic;
 		u16 vlan, proto;
 		bool is_kill;
 
 		is_kill = !!mbx_req->msg[2];
 		memcpy(&vlan, &mbx_req->msg[3], sizeof(vlan));
 		memcpy(&proto, &mbx_req->msg[5], sizeof(proto));
-		status = hclge_set_vf_vlan_common(hdev, vport->vport_id,
-						  is_kill, vlan, 0,
-						  cpu_to_be16(proto));
+		status = hclge_set_vlan_filter(handle, cpu_to_be16(proto),
+					       vlan, is_kill);
+	} else if (mbx_req->msg[1] == HCLGE_MBX_VLAN_RX_OFF_CFG) {
+		struct hnae3_handle *handle = &vport->nic;
+		bool en = mbx_req->msg[2] ? true : false;
+
+		status = hclge_en_hw_strip_rxvtag(handle, en);
 	}
 
 	if (gen_resp)
@@ -378,6 +382,13 @@ static void hclge_reset_vf(struct hclge_vport *vport,
 	hclge_func_reset_cmd(hdev, mbx_req->mbx_src_vfid);
 }
 
+static bool hclge_cmd_crq_empty(struct hclge_hw *hw)
+{
+	u32 tail = hclge_read_dev(hw, HCLGE_NIC_CRQ_TAIL_REG);
+
+	return tail == hw->cmq.crq.next_to_use;
+}
+
 void hclge_mbx_handler(struct hclge_dev *hdev)
 {
 	struct hclge_cmq_ring *crq = &hdev->hw.cmq.crq;
@@ -386,11 +397,22 @@ void hclge_mbx_handler(struct hclge_dev *hdev)
 	struct hclge_desc *desc;
 	int ret, flag;
 
-	flag = le16_to_cpu(crq->desc[crq->next_to_use].flag);
 	/* handle all the mailbox requests in the queue */
-	while (hnae_get_bit(flag, HCLGE_CMDQ_RX_OUTVLD_B)) {
+	while (!hclge_cmd_crq_empty(&hdev->hw)) {
 		desc = &crq->desc[crq->next_to_use];
 		req = (struct hclge_mbx_vf_to_pf_cmd *)desc->data;
+
+		flag = le16_to_cpu(crq->desc[crq->next_to_use].flag);
+		if (unlikely(!hnae_get_bit(flag, HCLGE_CMDQ_RX_OUTVLD_B))) {
+			dev_warn(&hdev->pdev->dev,
+				 "dropped invalid mailbox message, code = %d\n",
+				 req->msg[0]);
+
+			/* dropping/not processing this invalid message */
+			crq->desc[crq->next_to_use].flag = 0;
+			hclge_mbx_ring_ptr_move_crq(crq);
+			continue;
+		}
 
 		vport = &hdev->vport[req->mbx_src_vfid];
 
@@ -466,7 +488,6 @@ void hclge_mbx_handler(struct hclge_dev *hdev)
 		}
 		crq->desc[crq->next_to_use].flag = 0;
 		hclge_mbx_ring_ptr_move_crq(crq);
-		flag = le16_to_cpu(crq->desc[crq->next_to_use].flag);
 	}
 
 	/* Write back CMDQ_RQ header pointer, M7 need this pointer */

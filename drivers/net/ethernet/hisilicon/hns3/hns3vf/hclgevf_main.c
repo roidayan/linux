@@ -830,6 +830,17 @@ static int hclgevf_set_vlan_filter(struct hnae3_handle *handle,
 				    HCLGEVF_VLAN_MBX_MSG_LEN, false, NULL, 0);
 }
 
+static int hclgevf_en_hw_strip_rxvtag(struct hnae3_handle *handle, bool enable)
+{
+	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
+	u8 msg_data;
+
+	msg_data = enable ? 1 : 0;
+	return hclgevf_send_mbx_msg(hdev, HCLGE_MBX_SET_VLAN,
+				    HCLGE_MBX_VLAN_RX_OFF_CFG, &msg_data,
+				    1, false, NULL, 0);
+}
+
 static void hclgevf_reset_tqp(struct hnae3_handle *handle, u16 queue_id)
 {
 	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
@@ -1489,10 +1500,12 @@ static int hclgevf_init_instance(struct hclgevf_dev *hdev,
 			return ret;
 		break;
 	case HNAE3_CLIENT_ROCE:
-		hdev->roce_client = client;
-		hdev->roce.client = client;
+		if (hnae3_dev_roce_supported(hdev)) {
+			hdev->roce_client = client;
+			hdev->roce.client = client;
+		}
 
-		if (hdev->roce_client && hnae3_dev_roce_supported(hdev)) {
+		if (hdev->roce_client && hdev->nic_client) {
 			ret = hclgevf_init_roce_base_info(hdev);
 			if (ret)
 				return ret;
@@ -1552,7 +1565,7 @@ static int hclgevf_pci_init(struct hclgevf_dev *hdev)
 	ret = pci_enable_device(pdev);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to enable PCI device\n");
-		goto err_no_drvdata;
+		return ret;
 	}
 
 	ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
@@ -1584,8 +1597,7 @@ err_clr_master:
 	pci_release_regions(pdev);
 err_disable_device:
 	pci_disable_device(pdev);
-err_no_drvdata:
-	pci_set_drvdata(pdev, NULL);
+
 	return ret;
 }
 
@@ -1597,7 +1609,6 @@ static void hclgevf_pci_uninit(struct hclgevf_dev *hdev)
 	pci_clear_master(pdev);
 	pci_release_regions(pdev);
 	pci_disable_device(pdev);
-	pci_set_drvdata(pdev, NULL);
 }
 
 static int hclgevf_init_hdev(struct hclgevf_dev *hdev)
@@ -1625,16 +1636,16 @@ static int hclgevf_init_hdev(struct hclgevf_dev *hdev)
 
 	hclgevf_state_init(hdev);
 
+	ret = hclgevf_cmd_init(hdev);
+	if (ret)
+		goto err_cmd_init;
+
 	ret = hclgevf_misc_irq_init(hdev);
 	if (ret) {
 		dev_err(&pdev->dev, "failed(%d) to init Misc IRQ(vector0)\n",
 			ret);
 		goto err_misc_irq_init;
 	}
-
-	ret = hclgevf_cmd_init(hdev);
-	if (ret)
-		goto err_cmd_init;
 
 	ret = hclgevf_configure(hdev);
 	if (ret) {
@@ -1683,10 +1694,10 @@ static int hclgevf_init_hdev(struct hclgevf_dev *hdev)
 	return 0;
 
 err_config:
-	hclgevf_cmd_uninit(hdev);
-err_cmd_init:
 	hclgevf_misc_irq_uninit(hdev);
 err_misc_irq_init:
+	hclgevf_cmd_uninit(hdev);
+err_cmd_init:
 	hclgevf_state_uninit(hdev);
 	hclgevf_uninit_msi(hdev);
 err_irq_init:
@@ -1696,9 +1707,9 @@ err_irq_init:
 
 static void hclgevf_uninit_hdev(struct hclgevf_dev *hdev)
 {
-	hclgevf_cmd_uninit(hdev);
-	hclgevf_misc_irq_uninit(hdev);
 	hclgevf_state_uninit(hdev);
+	hclgevf_misc_irq_uninit(hdev);
+	hclgevf_cmd_uninit(hdev);
 	hclgevf_uninit_msi(hdev);
 	hclgevf_pci_uninit(hdev);
 }
@@ -1825,6 +1836,7 @@ static const struct hnae3_ae_ops hclgevf_ops = {
 	.get_tc_size = hclgevf_get_tc_size,
 	.get_fw_version = hclgevf_get_fw_version,
 	.set_vlan_filter = hclgevf_set_vlan_filter,
+	.enable_hw_strip_rxvtag = hclgevf_en_hw_strip_rxvtag,
 	.reset_event = hclgevf_reset_event,
 	.get_channels = hclgevf_get_channels,
 	.get_tqps_and_rss_info = hclgevf_get_tqps_and_rss_info,
@@ -1842,7 +1854,9 @@ static int hclgevf_init(void)
 {
 	pr_info("%s is initializing\n", HCLGEVF_NAME);
 
-	return hnae3_register_ae_algo(&ae_algovf);
+	hnae3_register_ae_algo(&ae_algovf);
+
+	return 0;
 }
 
 static void hclgevf_exit(void)
