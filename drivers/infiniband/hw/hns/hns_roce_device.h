@@ -100,6 +100,9 @@
 #define SERV_TYPE_UC				2
 #define SERV_TYPE_UD				3
 
+/* Configure to HW for PAGE_SIZE larger than 4KB */
+#define PG_SHIFT_OFFSET				(PAGE_SHIFT - 12)
+
 #define PAGES_SHIFT_8				8
 #define PAGES_SHIFT_16				16
 #define PAGES_SHIFT_24				24
@@ -211,6 +214,7 @@ enum {
 struct hns_roce_uar {
 	u64		pfn;
 	unsigned long	index;
+	unsigned long	logic_idx;
 };
 
 struct hns_roce_ucontext {
@@ -724,7 +728,7 @@ struct hns_roce_hw {
 			 u16 token, int event);
 	int (*chk_mbox)(struct hns_roce_dev *hr_dev, unsigned long timeout);
 	int (*set_gid)(struct hns_roce_dev *hr_dev, u8 port, int gid_index,
-		       union ib_gid *gid, const struct ib_gid_attr *attr);
+		       const union ib_gid *gid, const struct ib_gid_attr *attr);
 	int (*set_mac)(struct hns_roce_dev *hr_dev, u8 phy_port, u8 *addr);
 	void (*set_mtu)(struct hns_roce_dev *hr_dev, u8 phy_port,
 			enum ib_mtu mtu);
