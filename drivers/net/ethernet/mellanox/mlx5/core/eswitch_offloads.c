@@ -458,7 +458,7 @@ static void peer_miss_rules_setup(struct mlx5_core_dev *peer_dev,
 	dest->vport.vhca_id_valid = 1;
 }
 
-static int esw_add_fdb_peer_miss_rules(struct mlx5_eswitch *esw, int nvports)
+static int esw_add_fdb_peer_miss_rules(struct mlx5_eswitch *esw)
 {
 	struct mlx5_core_dev *peer_dev = mlx5_lag_get_peer_mdev(esw->dev);
 	struct mlx5_flow_destination dest = {};
@@ -466,6 +466,7 @@ static int esw_add_fdb_peer_miss_rules(struct mlx5_eswitch *esw, int nvports)
 	struct mlx5_flow_handle **flows;
 	struct mlx5_flow_handle *flow;
 	struct mlx5_flow_spec *spec;
+	int nvports = esw->total_vports;
 	void *misc;
 	int err, i;
 
@@ -504,7 +505,6 @@ static int esw_add_fdb_peer_miss_rules(struct mlx5_eswitch *esw, int nvports)
 
 	esw->fdb_table.offloads.peer_miss_rules = flows;
 	esw->fdb_table.offloads.flags |= FDB_HAS_PEER_MISS_RULES;
-	esw->fdb_table.offloads.peer_miss_rules_count = nvports;
 
 	kvfree(spec);
 	return 0;
@@ -521,27 +521,24 @@ alloc_flows_err:
 static void esw_del_fdb_peer_miss_rules(struct mlx5_eswitch *esw)
 {
 	struct mlx5_flow_handle **flows;
-	int peer_nvports;
 	int i;
 
 	if (!(esw->fdb_table.offloads.flags & FDB_HAS_PEER_MISS_RULES))
 		return;
 
 	flows = esw->fdb_table.offloads.peer_miss_rules;
-	peer_nvports = esw->fdb_table.offloads.peer_miss_rules_count;
 
-	for (i = 1; i < peer_nvports; i++)
+	for (i = 1; i < esw->total_vports; i++)
 		mlx5_del_flow_rules(flows[i]);
 
 	kvfree(flows);
 	esw->fdb_table.offloads.flags &= ~FDB_HAS_PEER_MISS_RULES;
 }
 
-static int esw_offloads_init_peer_miss_rules(struct mlx5_eswitch *esw, int nvports)
+static int esw_offloads_init_peer_miss_rules(struct mlx5_eswitch *esw)
 {
 	struct mlx5_core_dev *peer_dev;
 	struct mlx5_eswitch *peer_esw;
-	int peer_nvports;
 	int err;
 
 	if (!MLX5_CAP_ESW(esw->dev, merged_eswitch))
@@ -553,13 +550,11 @@ static int esw_offloads_init_peer_miss_rules(struct mlx5_eswitch *esw, int nvpor
 	if (!peer_esw || peer_esw->mode != SRIOV_OFFLOADS)
 		return 0;
 
-	peer_nvports = peer_dev->priv.eswitch->enabled_vports;
-
-	err = esw_add_fdb_peer_miss_rules(esw, peer_nvports);
+	err = esw_add_fdb_peer_miss_rules(esw);
 	if (err)
 		goto err_miss_rules;
 
-	err = esw_add_fdb_peer_miss_rules(peer_esw, nvports);
+	err = esw_add_fdb_peer_miss_rules(peer_esw);
 	if (err)
 		goto err_peer_miss_rules;
 
@@ -840,7 +835,7 @@ static int esw_create_offloads_fdb_tables(struct mlx5_eswitch *esw, int nvports)
 	}
 	esw->fdb_table.offloads.miss_grp = g;
 
-	err = esw_offloads_init_peer_miss_rules(esw, nvports);
+	err = esw_offloads_init_peer_miss_rules(esw);
 	if (err)
 		goto peer_miss_rules_err;
 
