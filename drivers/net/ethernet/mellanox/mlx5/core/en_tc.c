@@ -245,6 +245,59 @@ mlx5e_mod_hdr_get(struct mlx5e_priv *priv, int namespace,
 	return NULL;
 }
 
+static struct mlx5e_mod_hdr_entry *
+mlx5e_mod_hdr_get_create(struct mlx5e_priv *priv, int namespace,
+			 struct mod_hdr_key *key, int num_actions,
+			 int actions_size)
+{
+	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
+	struct mlx5e_mod_hdr_entry *mh;
+	u32 hash_key;
+	int err;
+
+	hash_key = hash_mod_hdr_info(key);
+
+	mh = mlx5e_mod_hdr_get(priv, namespace, key, hash_key);
+	if (mh)
+		return mh;
+
+	mh = kzalloc(sizeof(*mh) + actions_size, GFP_KERNEL);
+	if (!mh)
+		return ERR_PTR(-ENOMEM);
+
+	mh->key.actions = (void *)mh + sizeof(*mh);
+	memcpy(mh->key.actions, key->actions, actions_size);
+	mh->key.num_actions = num_actions;
+	spin_lock_init(&mh->flows_lock);
+	INIT_LIST_HEAD(&mh->flows);
+	refcount_set(&mh->refcnt, 1);
+
+	err = mlx5_modify_header_alloc(priv->mdev, namespace,
+				       mh->key.num_actions,
+				       mh->key.actions,
+				       &mh->mod_hdr_id);
+	if (err)
+		goto out_err;
+
+	if (namespace == MLX5_FLOW_NAMESPACE_FDB) {
+		spin_lock(&esw->offloads.mod_hdr_tbl_lock);
+		hash_add_rcu(esw->offloads.mod_hdr_tbl, &mh->mod_hdr_hlist,
+			     hash_key);
+		spin_unlock(&esw->offloads.mod_hdr_tbl_lock);
+	} else {
+		spin_lock(&priv->fs.tc.mod_hdr_tbl_lock);
+		hash_add_rcu(priv->fs.tc.mod_hdr_tbl, &mh->mod_hdr_hlist,
+			     hash_key);
+		spin_unlock(&priv->fs.tc.mod_hdr_tbl_lock);
+	}
+
+	return mh;
+
+out_err:
+	kfree(mh);
+	return ERR_PTR(err);
+}
+
 static void mlx5e_mod_hdr_put(struct mlx5e_priv *priv,
 			      struct mlx5e_mod_hdr_entry *mh,
 			      spinlock_t *tbl_lock)
@@ -263,11 +316,9 @@ static int mlx5e_attach_mod_hdr(struct mlx5e_priv *priv,
 				struct mlx5e_tc_flow *flow,
 				struct mlx5e_tc_flow_parse_attr *parse_attr)
 {
-	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
-	int num_actions, actions_size, namespace, err;
+	int num_actions, actions_size, namespace;
 	struct mlx5e_mod_hdr_entry *mh;
 	struct mod_hdr_key key;
-	u32 hash_key;
 	bool is_eswitch_flow = mlx5e_is_eswitch_flow(flow);
 
 	num_actions  = parse_attr->num_mod_hdr_actions;
@@ -276,45 +327,13 @@ static int mlx5e_attach_mod_hdr(struct mlx5e_priv *priv,
 	key.actions = parse_attr->mod_hdr_actions;
 	key.num_actions = num_actions;
 
-	hash_key = hash_mod_hdr_info(&key);
-
 	namespace = is_eswitch_flow ?
 		MLX5_FLOW_NAMESPACE_FDB : MLX5_FLOW_NAMESPACE_KERNEL;
-	mh = mlx5e_mod_hdr_get(priv, namespace, &key, hash_key);
-	if (mh)
-		goto attach_flow;
+	mh = mlx5e_mod_hdr_get_create(priv, namespace, &key, num_actions,
+				      actions_size);
+	if (IS_ERR(mh))
+		return PTR_ERR(mh);
 
-	mh = kzalloc(sizeof(*mh) + actions_size, GFP_KERNEL);
-	if (!mh)
-		return -ENOMEM;
-
-	mh->key.actions = (void *)mh + sizeof(*mh);
-	memcpy(mh->key.actions, key.actions, actions_size);
-	mh->key.num_actions = num_actions;
-	spin_lock_init(&mh->flows_lock);
-	INIT_LIST_HEAD(&mh->flows);
-	refcount_set(&mh->refcnt, 1);
-
-	err = mlx5_modify_header_alloc(priv->mdev, namespace,
-				       mh->key.num_actions,
-				       mh->key.actions,
-				       &mh->mod_hdr_id);
-	if (err)
-		goto out_err;
-
-	if (is_eswitch_flow) {
-		spin_lock(&esw->offloads.mod_hdr_tbl_lock);
-		hash_add_rcu(esw->offloads.mod_hdr_tbl, &mh->mod_hdr_hlist,
-			     hash_key);
-		spin_unlock(&esw->offloads.mod_hdr_tbl_lock);
-	} else {
-		spin_lock(&priv->fs.tc.mod_hdr_tbl_lock);
-		hash_add_rcu(priv->fs.tc.mod_hdr_tbl, &mh->mod_hdr_hlist,
-			     hash_key);
-		spin_unlock(&priv->fs.tc.mod_hdr_tbl_lock);
-	}
-
-attach_flow:
 	flow->mh = mh;
 	spin_lock(&mh->flows_lock);
 	list_add(&flow->mod_hdr, &mh->flows);
@@ -325,10 +344,6 @@ attach_flow:
 		flow->nic_attr->mod_hdr_id = mh->mod_hdr_id;
 
 	return 0;
-
-out_err:
-	kfree(mh);
-	return err;
 }
 
 static void mlx5e_detach_mod_hdr(struct mlx5e_priv *priv,
