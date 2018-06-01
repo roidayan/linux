@@ -44,6 +44,7 @@ static const struct counter_desc sw_stats_desc[] = {
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_tso_inner_packets) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_tso_inner_bytes) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_added_vlan_packets) },
+	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_nop) },
 
 #ifdef CONFIG_MLX5_EN_TLS
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_tls_ooo) },
@@ -59,18 +60,21 @@ static const struct counter_desc sw_stats_desc[] = {
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_csum_unnecessary_inner) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_xdp_drop) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_xdp_tx) },
+	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_xdp_tx_cqe) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_xdp_tx_full) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_csum_none) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_csum_partial) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_csum_partial_inner) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_queue_stopped) },
-	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_queue_wake) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_queue_dropped) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_xmit_more) },
-	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_cqe_err) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_recover) },
+	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_cqes) },
+	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_queue_wake) },
+	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, tx_cqe_err) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_wqe_err) },
-	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_mpwqe_filler) },
+	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_mpwqe_filler_cqes) },
+	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_mpwqe_filler_strides) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_buff_alloc_err) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_cqe_compress_blks) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_cqe_compress_pkts) },
@@ -80,6 +84,11 @@ static const struct counter_desc sw_stats_desc[] = {
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_cache_empty) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_cache_busy) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_cache_waive) },
+	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, rx_congst_umr) },
+	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, ch_events) },
+	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, ch_poll) },
+	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, ch_arm) },
+	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, ch_aff_change) },
 	{ MLX5E_DECLARE_STAT(struct mlx5e_sw_stats, ch_eq_rearm) },
 };
 
@@ -114,9 +123,6 @@ void mlx5e_grp_sw_update_stats(struct mlx5e_priv *priv)
 	int i;
 
 	memset(s, 0, sizeof(*s));
-	read_lock(&priv->stats_lock);
-	if (!priv->channels_active)
-		goto out;
 
 	for (i = 0; i < priv->profile->max_nch(priv->mdev); i++) {
 		struct mlx5e_channel_stats *channel_stats =
@@ -136,9 +142,11 @@ void mlx5e_grp_sw_update_stats(struct mlx5e_priv *priv)
 		s->rx_csum_unnecessary_inner += rq_stats->csum_unnecessary_inner;
 		s->rx_xdp_drop += rq_stats->xdp_drop;
 		s->rx_xdp_tx += rq_stats->xdp_tx;
+		s->rx_xdp_tx_cqe  += rq_stats->xdp_tx_cqe;
 		s->rx_xdp_tx_full += rq_stats->xdp_tx_full;
 		s->rx_wqe_err   += rq_stats->wqe_err;
-		s->rx_mpwqe_filler += rq_stats->mpwqe_filler;
+		s->rx_mpwqe_filler_cqes    += rq_stats->mpwqe_filler_cqes;
+		s->rx_mpwqe_filler_strides += rq_stats->mpwqe_filler_strides;
 		s->rx_buff_alloc_err += rq_stats->buff_alloc_err;
 		s->rx_cqe_compress_blks += rq_stats->cqe_compress_blks;
 		s->rx_cqe_compress_pkts += rq_stats->cqe_compress_pkts;
@@ -148,6 +156,11 @@ void mlx5e_grp_sw_update_stats(struct mlx5e_priv *priv)
 		s->rx_cache_empty += rq_stats->cache_empty;
 		s->rx_cache_busy  += rq_stats->cache_busy;
 		s->rx_cache_waive += rq_stats->cache_waive;
+		s->rx_congst_umr  += rq_stats->congst_umr;
+		s->ch_events      += ch_stats->events;
+		s->ch_poll        += ch_stats->poll;
+		s->ch_arm         += ch_stats->arm;
+		s->ch_aff_change  += ch_stats->aff_change;
 		s->ch_eq_rearm += ch_stats->eq_rearm;
 
 		for (j = 0; j < priv->max_opened_tc; j++) {
@@ -160,6 +173,7 @@ void mlx5e_grp_sw_update_stats(struct mlx5e_priv *priv)
 			s->tx_tso_inner_packets	+= sq_stats->tso_inner_packets;
 			s->tx_tso_inner_bytes	+= sq_stats->tso_inner_bytes;
 			s->tx_added_vlan_packets += sq_stats->added_vlan_packets;
+			s->tx_nop               += sq_stats->nop;
 			s->tx_queue_stopped	+= sq_stats->stopped;
 			s->tx_queue_wake	+= sq_stats->wake;
 			s->tx_queue_dropped	+= sq_stats->dropped;
@@ -173,12 +187,11 @@ void mlx5e_grp_sw_update_stats(struct mlx5e_priv *priv)
 			s->tx_tls_ooo		+= sq_stats->tls_ooo;
 			s->tx_tls_resync_bytes	+= sq_stats->tls_resync_bytes;
 #endif
+			s->tx_cqes		+= sq_stats->cqes;
 		}
 	}
 
 	memcpy(&priv->stats.sw, s, sizeof(*s));
-out:
-	read_unlock(&priv->stats_lock);
 }
 
 static const struct counter_desc q_stats_desc[] = {
@@ -1112,12 +1125,14 @@ static const struct counter_desc rq_stats_desc[] = {
 	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, csum_none) },
 	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, xdp_drop) },
 	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, xdp_tx) },
+	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, xdp_tx_cqe) },
 	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, xdp_tx_full) },
 	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, lro_packets) },
 	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, lro_bytes) },
 	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, removed_vlan_packets) },
 	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, wqe_err) },
-	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, mpwqe_filler) },
+	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, mpwqe_filler_cqes) },
+	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, mpwqe_filler_strides) },
 	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, buff_alloc_err) },
 	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, cqe_compress_blks) },
 	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, cqe_compress_pkts) },
@@ -1127,6 +1142,7 @@ static const struct counter_desc rq_stats_desc[] = {
 	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, cache_empty) },
 	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, cache_busy) },
 	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, cache_waive) },
+	{ MLX5E_DECLARE_RX_STAT(struct mlx5e_rq_stats, congst_umr) },
 };
 
 static const struct counter_desc sq_stats_desc[] = {
@@ -1142,14 +1158,19 @@ static const struct counter_desc sq_stats_desc[] = {
 	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, nop) },
 	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, csum_none) },
 	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, stopped) },
-	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, wake) },
 	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, dropped) },
 	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, xmit_more) },
-	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, cqe_err) },
 	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, recover) },
+	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, cqes) },
+	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, wake) },
+	{ MLX5E_DECLARE_TX_STAT(struct mlx5e_sq_stats, cqe_err) },
 };
 
 static const struct counter_desc ch_stats_desc[] = {
+	{ MLX5E_DECLARE_CH_STAT(struct mlx5e_ch_stats, events) },
+	{ MLX5E_DECLARE_CH_STAT(struct mlx5e_ch_stats, poll) },
+	{ MLX5E_DECLARE_CH_STAT(struct mlx5e_ch_stats, arm) },
+	{ MLX5E_DECLARE_CH_STAT(struct mlx5e_ch_stats, aff_change) },
 	{ MLX5E_DECLARE_CH_STAT(struct mlx5e_ch_stats, eq_rearm) },
 };
 
@@ -1160,9 +1181,6 @@ static const struct counter_desc ch_stats_desc[] = {
 static int mlx5e_grp_channels_get_num_stats(struct mlx5e_priv *priv)
 {
 	int max_nch = priv->profile->max_nch(priv->mdev);
-
-	if (!test_bit(MLX5E_STATE_OPENED, &priv->state))
-		return 0;
 
 	return (NUM_RQ_STATS * max_nch) +
 	       (NUM_CH_STATS * max_nch) +
@@ -1175,9 +1193,6 @@ static int mlx5e_grp_channels_fill_strings(struct mlx5e_priv *priv, u8 *data,
 	int max_nch = priv->profile->max_nch(priv->mdev);
 	int i, j, tc;
 
-	if (!test_bit(MLX5E_STATE_OPENED, &priv->state))
-		return idx;
-
 	for (i = 0; i < max_nch; i++)
 		for (j = 0; j < NUM_CH_STATS; j++)
 			sprintf(data + (idx++) * ETH_GSTRING_LEN,
@@ -1187,7 +1202,6 @@ static int mlx5e_grp_channels_fill_strings(struct mlx5e_priv *priv, u8 *data,
 		for (j = 0; j < NUM_RQ_STATS; j++)
 			sprintf(data + (idx++) * ETH_GSTRING_LEN, rq_stats_desc[j].format, i);
 
-	/* priv->channel_tc2txq[i][tc] is valid only when device is open */
 	for (tc = 0; tc < priv->max_opened_tc; tc++)
 		for (i = 0; i < max_nch; i++)
 			for (j = 0; j < NUM_SQ_STATS; j++)
@@ -1203,9 +1217,6 @@ static int mlx5e_grp_channels_fill_stats(struct mlx5e_priv *priv, u64 *data,
 {
 	int max_nch = priv->profile->max_nch(priv->mdev);
 	int i, j, tc;
-
-	if (!test_bit(MLX5E_STATE_OPENED, &priv->state))
-		return idx;
 
 	for (i = 0; i < max_nch; i++)
 		for (j = 0; j < NUM_CH_STATS; j++)
