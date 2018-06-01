@@ -579,7 +579,7 @@ static struct mlx5e_hairpin_entry *
 mlx5e_hairpin_get_create(struct mlx5e_priv *priv, int peer_ifindex, u16 peer_id,
 			 u8 match_prio)
 {
-	struct mlx5e_hairpin_entry *hpe;
+	struct mlx5e_hairpin_entry *hpe, *hpe_dup = NULL;
 	struct mlx5_hairpin_params params;
 	struct mlx5e_hairpin *hp;
 	u64 link_speed64;
@@ -634,15 +634,26 @@ mlx5e_hairpin_get_create(struct mlx5e_priv *priv, int peer_ifindex, u16 peer_id,
 		   params.log_num_packets);
 
 	hpe->hp = hp;
+
 	spin_lock(&priv->fs.tc.hairpin_tbl_lock);
+	/* check for concurrent insertion of hairpin entry with same params */
+	hpe_dup = mlx5e_hairpin_get(priv, peer_id, match_prio);
+	if (hpe_dup)
+		goto create_hairpin_err_locked;
+
 	hash_add_rcu(priv->fs.tc.hairpin_tbl, &hpe->hairpin_hlist,
 		     hash_hairpin_info(peer_id, match_prio));
 	spin_unlock(&priv->fs.tc.hairpin_tbl_lock);
 
 	return hpe;
 
+create_hairpin_err_locked:
+	spin_unlock(&priv->fs.tc.hairpin_tbl_lock);
+	mlx5e_hairpin_destroy(hpe->hp);
 create_hairpin_err:
 	kfree(hpe);
+	if (hpe_dup)
+		return hpe_dup;
 	return ERR_PTR(err);
 }
 
