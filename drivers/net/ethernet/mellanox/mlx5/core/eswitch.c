@@ -1729,6 +1729,7 @@ int mlx5_eswitch_init(struct mlx5_core_dev *dev)
 		goto abort;
 
 	hash_init(esw->offloads.encap_tbl);
+	spin_lock_init(&esw->offloads.mod_hdr_tbl_lock);
 	hash_init(esw->offloads.mod_hdr_tbl);
 	mutex_init(&esw->state_lock);
 
