@@ -15,6 +15,7 @@ struct mlx5e_tc_table {
 	spinlock_t			ht_lock; /* protects ht */
 	struct rhashtable               ht;
 
+	spinlock_t mod_hdr_tbl_lock; /* protects mod_hdr_tbl */
 	DECLARE_HASHTABLE(mod_hdr_tbl, 8);
 	spinlock_t hairpin_tbl_lock; /* protects hairpin_tbl */
 	DECLARE_HASHTABLE(hairpin_tbl, 8);
