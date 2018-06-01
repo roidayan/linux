@@ -204,6 +204,45 @@ static inline int cmp_mod_hdr_info(struct mod_hdr_key *a,
 	return memcmp(a->actions, b->actions, a->num_actions * MLX5_MH_ACT_SZ);
 }
 
+static struct mlx5e_mod_hdr_entry *
+mlx5e_mod_hdr_get(struct mlx5e_priv *priv, int namespace,
+		  struct mod_hdr_key *key, u32 hash_key)
+{
+	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
+	struct mlx5e_mod_hdr_entry *mh;
+	bool found = false;
+
+	if (namespace == MLX5E_TC_FLOW_ESWITCH) {
+		hash_for_each_possible(esw->offloads.mod_hdr_tbl, mh,
+				       mod_hdr_hlist, hash_key) {
+			if (!cmp_mod_hdr_info(&mh->key, key)) {
+				found = true;
+				break;
+			}
+		}
+	} else {
+		hash_for_each_possible(priv->fs.tc.mod_hdr_tbl, mh,
+				       mod_hdr_hlist, hash_key) {
+			if (!cmp_mod_hdr_info(&mh->key, key)) {
+				found = true;
+				break;
+			}
+		}
+	}
+
+	if (found)
+		return mh;
+	return NULL;
+}
+
+static void mlx5e_mod_hdr_put(struct mlx5e_priv *priv,
+			      struct mlx5e_mod_hdr_entry *mh)
+{
+	mlx5_modify_header_dealloc(priv->mdev, mh->mod_hdr_id);
+	hash_del(&mh->mod_hdr_hlist);
+	kfree(mh);
+}
+
 static int mlx5e_attach_mod_hdr(struct mlx5e_priv *priv,
 				struct mlx5e_tc_flow *flow,
 				struct mlx5e_tc_flow_parse_attr *parse_attr)
@@ -212,7 +251,6 @@ static int mlx5e_attach_mod_hdr(struct mlx5e_priv *priv,
 	int num_actions, actions_size, namespace, err;
 	struct mlx5e_mod_hdr_entry *mh;
 	struct mod_hdr_key key;
-	bool found = false;
 	u32 hash_key;
 	bool is_eswitch_flow = mlx5e_is_eswitch_flow(flow);
 
@@ -224,27 +262,10 @@ static int mlx5e_attach_mod_hdr(struct mlx5e_priv *priv,
 
 	hash_key = hash_mod_hdr_info(&key);
 
-	if (is_eswitch_flow) {
-		namespace = MLX5_FLOW_NAMESPACE_FDB;
-		hash_for_each_possible(esw->offloads.mod_hdr_tbl, mh,
-				       mod_hdr_hlist, hash_key) {
-			if (!cmp_mod_hdr_info(&mh->key, &key)) {
-				found = true;
-				break;
-			}
-		}
-	} else {
-		namespace = MLX5_FLOW_NAMESPACE_KERNEL;
-		hash_for_each_possible(priv->fs.tc.mod_hdr_tbl, mh,
-				       mod_hdr_hlist, hash_key) {
-			if (!cmp_mod_hdr_info(&mh->key, &key)) {
-				found = true;
-				break;
-			}
-		}
-	}
-
-	if (found)
+	namespace = is_eswitch_flow ?
+		MLX5_FLOW_NAMESPACE_FDB : MLX5_FLOW_NAMESPACE_KERNEL;
+	mh = mlx5e_mod_hdr_get(priv, namespace, &key, hash_key);
+	if (mh)
 		goto attach_flow;
 
 	mh = kzalloc(sizeof(*mh) + actions_size, GFP_KERNEL);
@@ -297,10 +318,7 @@ static void mlx5e_detach_mod_hdr(struct mlx5e_priv *priv,
 		struct mlx5e_mod_hdr_entry *mh;
 
 		mh = list_entry(next, struct mlx5e_mod_hdr_entry, flows);
-
-		mlx5_modify_header_dealloc(priv->mdev, mh->mod_hdr_id);
-		hash_del(&mh->mod_hdr_hlist);
-		kfree(mh);
+		mlx5e_mod_hdr_put(priv, mh);
 	}
 }
 
