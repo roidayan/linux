@@ -1209,6 +1209,19 @@ void mlx5e_tc_update_neigh_used_value(struct mlx5e_neigh_hash_entry *nhe)
 	}
 }
 
+static void mlx5e_encap_put(struct mlx5e_priv *priv,
+			    struct mlx5e_encap_entry *e)
+{
+	mlx5e_rep_encap_entry_detach(netdev_priv(e->out_dev), e);
+
+	if (e->flags & MLX5_ENCAP_ENTRY_VALID)
+		mlx5_encap_dealloc(priv->mdev, e->encap_id);
+
+	hash_del_rcu(&e->encap_hlist);
+	kfree(e->encap_header);
+	kfree(e);
+}
+
 static void mlx5e_detach_encap(struct mlx5e_priv *priv,
 			       struct mlx5e_tc_flow *flow)
 {
@@ -1223,14 +1236,7 @@ static void mlx5e_detach_encap(struct mlx5e_priv *priv,
 		struct mlx5e_encap_entry *e;
 
 		e = list_entry(next, struct mlx5e_encap_entry, flows);
-		mlx5e_rep_encap_entry_detach(netdev_priv(e->out_dev), e);
-
-		if (e->flags & MLX5_ENCAP_ENTRY_VALID)
-			mlx5_encap_dealloc(priv->mdev, e->encap_id);
-
-		hash_del_rcu(&e->encap_hlist);
-		kfree(e->encap_header);
-		kfree(e);
+		mlx5e_encap_put(priv, e);
 	}
 }
 
@@ -2697,6 +2703,27 @@ out:
 	return err;
 }
 
+static struct mlx5e_encap_entry *
+mlx5e_encap_get(struct mlx5e_priv *priv, struct ip_tunnel_key *key,
+		uintptr_t hash_key)
+{
+	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
+	struct mlx5e_encap_entry *e;
+	bool found = false;
+
+	hash_for_each_possible_rcu(esw->offloads.encap_tbl, e,
+				   encap_hlist, hash_key) {
+		if (!cmp_encap_info(&e->tun_info.key, key)) {
+			found = true;
+			break;
+		}
+	}
+
+	if (found)
+		return e;
+	return NULL;
+}
+
 static int mlx5e_attach_encap(struct mlx5e_priv *priv,
 			      struct ip_tunnel_info *tun_info,
 			      struct net_device *mirred_dev,
@@ -2710,7 +2737,6 @@ static int mlx5e_attach_encap(struct mlx5e_priv *priv,
 	struct mlx5e_encap_entry *e;
 	int tunnel_type, err = 0;
 	uintptr_t hash_key;
-	bool found = false;
 
 	/* udp dst port must be set */
 	if (!memchr_inv(&key->tp_dst, 0, sizeof(key->tp_dst)))
@@ -2735,16 +2761,10 @@ vxlan_encap_offload_err:
 
 	hash_key = hash_encap_info(key);
 
-	hash_for_each_possible_rcu(esw->offloads.encap_tbl, e,
-				   encap_hlist, hash_key) {
-		if (!cmp_encap_info(&e->tun_info.key, key)) {
-			found = true;
-			break;
-		}
-	}
+	e = mlx5e_encap_get(priv, key, hash_key);
 
 	/* must verify if encap is valid or not */
-	if (found)
+	if (e)
 		goto attach_flow;
 
 	e = kzalloc(sizeof(*e), GFP_KERNEL);
