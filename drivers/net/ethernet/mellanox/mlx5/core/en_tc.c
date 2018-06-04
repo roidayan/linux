@@ -2748,7 +2748,7 @@ err_free:
 static int
 __mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 		     struct tc_cls_flower_offload *f,
-		     u8 flow_flags,
+		     u32 flow_flags,
 		     struct mlx5_eswitch_rep *in_rep,
 		     struct mlx5_core_dev *in_mdev,
 		     struct mlx5e_tc_flow **__flow)
@@ -2806,7 +2806,7 @@ out:
 static int
 mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 		   struct tc_cls_flower_offload *f,
-		   u8 flow_flags,
+		   u32 flow_flags,
 		   struct mlx5e_tc_flow **__flow)
 {
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
