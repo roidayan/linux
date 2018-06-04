@@ -3550,14 +3550,20 @@ int ib_uverbs_ex_create_flow(struct ib_uverbs_file *file,
 		goto err_free_attr;
 	}
 
-	qp = uobj_get_obj_read(qp, UVERBS_OBJECT_QP, cmd.qp_handle, file->ucontext);
+	qp = uobj_get_obj_read(qp, UVERBS_OBJECT_QP, cmd.qp_handle,
+			       file->ucontext);
 	if (!qp) {
 		err = -EINVAL;
 		goto err_uobj;
 	}
 
+	if (qp->qp_type != IB_QPT_UD && qp->qp_type != IB_QPT_RAW_PACKET) {
+		err = -EINVAL;
+		goto err_put;
+	}
+
 	flow_attr = kzalloc(struct_size(flow_attr, flows,
-				cmd.flow_attr.num_of_specs), GFP_KERNEL);
+					cmd.flow_attr.num_of_specs), GFP_KERNEL);
 	if (!flow_attr) {
 		err = -ENOMEM;
 		goto err_put;
