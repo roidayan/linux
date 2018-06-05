@@ -1314,30 +1314,52 @@ static struct mlx5_flow_group *alloc_auto_flow_group(struct mlx5_flow_table  *ft
 	struct list_head *prev = &ft->node.children;
 	struct mlx5_flow_group *fg;
 	unsigned int candidate_index = 0;
-	unsigned int group_size = 0;
+	unsigned int group_size = 1;
+	unsigned int free_index = 0;
+	u32 max_free = 0;
+	bool found = false;
+	struct list_head *prev_free = NULL;
+	const u32 div = (ft->autogroup.required_groups + 1);
 
 	if (!ft->autogroup.active)
 		return ERR_PTR(-ENOENT);
 
-	if (ft->autogroup.num_groups < ft->autogroup.required_groups)
-		/* We save place for flow groups in addition to max types */
-		group_size = ft->max_fte / (ft->autogroup.required_groups + 1);
-
-	/*  ft->max_fte == ft->autogroup.max_types */
-	if (group_size == 0)
-		group_size = 1;
+	if (likely(div > 1))
+		group_size = (ft->max_fte / div) + 1;
 
 	/* sorted by start_index */
 	fs_for_each_fg(fg, ft) {
-		if (candidate_index + group_size > fg->start_index)
-			candidate_index = fg->start_index + fg->max_ftes;
-		else
-			break;
+		if (fg->start_index - candidate_index > max_free) {
+			max_free = fg->start_index - candidate_index;
+			prev_free = prev;
+			free_index = candidate_index;
+
+			if (max_free >= group_size) {
+				found = true;
+				break;
+			}
+		}
+
 		prev = &fg->node.list;
+		candidate_index = fg->start_index + fg->max_ftes;
 	}
 
-	if (candidate_index + group_size > ft->max_fte)
-		return ERR_PTR(-ENOSPC);
+	if (!found && ft->max_fte - candidate_index > max_free) {
+		max_free = ft->max_fte - candidate_index;
+		prev_free = prev;
+		free_index = candidate_index;
+		if (max_free >= group_size)
+			found = true;
+	}
+
+	if (!found) {
+		if (!max_free)
+			return ERR_PTR(-ENOSPC);
+
+		group_size = 1;
+		prev = prev_free;
+		candidate_index = free_index;
+	}
 
 	fg = alloc_insert_flow_group(ft,
 				     spec->match_criteria_enable,
