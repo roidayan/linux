@@ -362,8 +362,8 @@ static int mlx5e_rq_alloc_mpwqe_info(struct mlx5e_rq *rq,
 {
 	int wq_sz = mlx5_wq_ll_get_size(&rq->mpwqe.wq);
 
-	rq->mpwqe.info = kcalloc_node(wq_sz, sizeof(*rq->mpwqe.info),
-				      GFP_KERNEL, cpu_to_node(c->cpu));
+	rq->mpwqe.info = kvzalloc_node(wq_sz * sizeof(*rq->mpwqe.info),
+				       GFP_KERNEL, cpu_to_node(c->cpu));
 	if (!rq->mpwqe.info)
 		return -ENOMEM;
 
@@ -623,7 +623,7 @@ static void mlx5e_free_rq(struct mlx5e_rq *rq)
 
 	switch (rq->wq_type) {
 	case MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ:
-		kfree(rq->mpwqe.info);
+		kvfree(rq->mpwqe.info);
 		mlx5_core_destroy_mkey(rq->mdev, &rq->umr_mkey);
 		break;
 	default: /* MLX5_WQ_TYPE_CYCLIC */
@@ -894,15 +894,15 @@ static void mlx5e_close_rq(struct mlx5e_rq *rq)
 
 static void mlx5e_free_icosq_db(struct mlx5e_icosq *sq)
 {
-	kfree(sq->db.ico_wqe);
+	kvfree(sq->db.ico_wqe);
 }
 
 static int mlx5e_alloc_icosq_db(struct mlx5e_icosq *sq, int numa)
 {
 	u8 wq_sz = mlx5_wq_cyc_get_size(&sq->wq);
 
-	sq->db.ico_wqe = kcalloc_node(wq_sz, sizeof(*sq->db.ico_wqe),
-				      GFP_KERNEL, numa);
+	sq->db.ico_wqe = kvzalloc_node(sizeof(*sq->db.ico_wqe) * wq_sz,
+				       GFP_KERNEL, numa);
 	if (!sq->db.ico_wqe)
 		return -ENOMEM;
 
@@ -947,8 +947,8 @@ static void mlx5e_free_icosq(struct mlx5e_icosq *sq)
 
 static void mlx5e_free_txqsq_db(struct mlx5e_txqsq *sq)
 {
-	kfree(sq->db.wqe_info);
-	kfree(sq->db.dma_fifo);
+	kvfree(sq->db.wqe_info);
+	kvfree(sq->db.dma_fifo);
 }
 
 static int mlx5e_alloc_txqsq_db(struct mlx5e_txqsq *sq, int numa)
@@ -956,10 +956,10 @@ static int mlx5e_alloc_txqsq_db(struct mlx5e_txqsq *sq, int numa)
 	int wq_sz = mlx5_wq_cyc_get_size(&sq->wq);
 	int df_sz = wq_sz * MLX5_SEND_WQEBB_NUM_DS;
 
-	sq->db.dma_fifo = kcalloc_node(df_sz, sizeof(*sq->db.dma_fifo),
-					   GFP_KERNEL, numa);
-	sq->db.wqe_info = kcalloc_node(wq_sz, sizeof(*sq->db.wqe_info),
-					   GFP_KERNEL, numa);
+	sq->db.dma_fifo = kvzalloc_node(df_sz * sizeof(*sq->db.dma_fifo),
+					GFP_KERNEL, numa);
+	sq->db.wqe_info = kvzalloc_node(wq_sz * sizeof(*sq->db.wqe_info),
+					GFP_KERNEL, numa);
 	if (!sq->db.dma_fifo || !sq->db.wqe_info) {
 		mlx5e_free_txqsq_db(sq);
 		return -ENOMEM;
@@ -1766,7 +1766,7 @@ err_close_icosq_cq:
 
 err_napi_del:
 	netif_napi_del(&c->napi);
-	kfree(c);
+	kvfree(c);
 
 	return err;
 }
@@ -1801,7 +1801,7 @@ static void mlx5e_close_channel(struct mlx5e_channel *c)
 	mlx5e_close_cq(&c->icosq.cq);
 	netif_napi_del(&c->napi);
 
-	kfree(c);
+	kvfree(c);
 }
 
 static inline u8 mlx5e_get_rqwq_log_stride(u8 wq_type, int ndsegs)
@@ -1990,7 +1990,7 @@ int mlx5e_open_channels(struct mlx5e_priv *priv,
 	chs->num = chs->params.num_channels;
 
 	chs->c = kcalloc(chs->num, sizeof(struct mlx5e_channel *), GFP_KERNEL);
-	cparam = kzalloc(sizeof(struct mlx5e_channel_param), GFP_KERNEL);
+	cparam = kvzalloc(sizeof(struct mlx5e_channel_param), GFP_KERNEL);
 	if (!chs->c || !cparam)
 		goto err_free;
 
@@ -2001,7 +2001,7 @@ int mlx5e_open_channels(struct mlx5e_priv *priv,
 			goto err_close_channels;
 	}
 
-	kfree(cparam);
+	kvfree(cparam);
 	return 0;
 
 err_close_channels:
@@ -2010,7 +2010,7 @@ err_close_channels:
 
 err_free:
 	kfree(chs->c);
-	kfree(cparam);
+	kvfree(cparam);
 	chs->num = 0;
 	return err;
 }
