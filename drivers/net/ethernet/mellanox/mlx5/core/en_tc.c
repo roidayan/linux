@@ -1253,6 +1253,8 @@ void mlx5e_tc_update_neigh_used_value(struct mlx5e_neigh_hash_entry *nhe)
 
 void mlx5e_encap_put(struct mlx5e_priv *priv, struct mlx5e_encap_entry *e)
 {
+	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
+
 	if (refcount_dec_and_test(&e->refcnt)) {
 		WARN_ON(!list_empty(&e->flows));
 		mlx5e_rep_encap_entry_detach(netdev_priv(e->out_dev), e);
@@ -1260,9 +1262,11 @@ void mlx5e_encap_put(struct mlx5e_priv *priv, struct mlx5e_encap_entry *e)
 		if (e->flags & MLX5_ENCAP_ENTRY_VALID)
 			mlx5_encap_dealloc(priv->mdev, e->encap_id);
 
+		spin_lock(&esw->offloads.encap_tbl_lock);
 		hash_del_rcu(&e->encap_hlist);
+		spin_unlock(&esw->offloads.encap_tbl_lock);
 		kfree(e->encap_header);
-		kfree(e);
+		kfree_rcu(e, rcu);
 	}
 }
 
@@ -2759,6 +2763,7 @@ mlx5e_encap_get(struct mlx5e_priv *priv, struct ip_tunnel_key *key,
 	struct mlx5e_encap_entry *e;
 	bool found = false;
 
+	rcu_read_lock();
 	hash_for_each_possible_rcu(esw->offloads.encap_tbl, e,
 				   encap_hlist, hash_key) {
 		if (!cmp_encap_info(&e->tun_info.key, key) &&
@@ -2767,6 +2772,7 @@ mlx5e_encap_get(struct mlx5e_priv *priv, struct ip_tunnel_key *key,
 			break;
 		}
 	}
+	rcu_read_unlock();
 
 	if (found)
 		return e;
@@ -2834,7 +2840,9 @@ vxlan_encap_offload_err:
 	if (err && err != -EAGAIN)
 		goto out_err;
 
+	spin_lock(&esw->offloads.encap_tbl_lock);
 	hash_add_rcu(esw->offloads.encap_tbl, &e->encap_hlist, hash_key);
+	spin_unlock(&esw->offloads.encap_tbl_lock);
 
 attach_flow:
 	flow->e = e;
