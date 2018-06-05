@@ -2,7 +2,7 @@
 VERSION = 4
 PATCHLEVEL = 17
 SUBLEVEL = 0
-EXTRAVERSION = -rc7
+EXTRAVERSION =
 NAME = Merciless Moray
 
 # *DOCUMENTATION*
@@ -508,6 +508,11 @@ ifeq ($(call shell-cached,$(CONFIG_SHELL) $(srctree)/scripts/gcc-goto.sh $(CC) $
   CC_HAVE_ASM_GOTO := 1
   KBUILD_CFLAGS += -DCC_HAVE_ASM_GOTO
   KBUILD_AFLAGS += -DCC_HAVE_ASM_GOTO
+endif
+
+ifeq ($(call shell-cached,$(CONFIG_SHELL) $(srctree)/scripts/cc-can-link.sh $(CC)), y)
+  CC_CAN_LINK := y
+  export CC_CAN_LINK
 endif
 
 ifeq ($(config-targets),1)

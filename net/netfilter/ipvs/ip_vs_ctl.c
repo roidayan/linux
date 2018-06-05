@@ -821,6 +821,10 @@ __ip_vs_update_dest(struct ip_vs_service *svc, struct ip_vs_dest *dest,
 	if (add && udest->af != svc->af)
 		ipvs->mixed_address_family_dests++;
 
+	/* keep the last_weight with latest non-0 weight */
+	if (add || udest->weight != 0)
+		atomic_set(&dest->last_weight, udest->weight);
+
 	/* set the weight and the flags */
 	atomic_set(&dest->weight, udest->weight);
 	conn_flags = udest->conn_flags & IP_VS_CONN_F_DEST_MASK;
@@ -2381,8 +2385,10 @@ do_ip_vs_set_ctl(struct sock *sk, int cmd, void __user *user, unsigned int len)
 			struct ipvs_sync_daemon_cfg cfg;
 
 			memset(&cfg, 0, sizeof(cfg));
-			strlcpy(cfg.mcast_ifn, dm->mcast_ifn,
-				sizeof(cfg.mcast_ifn));
+			ret = -EINVAL;
+			if (strscpy(cfg.mcast_ifn, dm->mcast_ifn,
+				    sizeof(cfg.mcast_ifn)) <= 0)
+				goto out_dec;
 			cfg.syncid = dm->syncid;
 			ret = start_sync_thread(ipvs, &cfg, dm->state);
 		} else {
@@ -2420,12 +2426,19 @@ do_ip_vs_set_ctl(struct sock *sk, int cmd, void __user *user, unsigned int len)
 		}
 	}
 
+	if ((cmd == IP_VS_SO_SET_ADD || cmd == IP_VS_SO_SET_EDIT) &&
+	    strnlen(usvc.sched_name, IP_VS_SCHEDNAME_MAXLEN) ==
+	    IP_VS_SCHEDNAME_MAXLEN) {
+		ret = -EINVAL;
+		goto out_unlock;
+	}
+
 	/* Check for valid protocol: TCP or UDP or SCTP, even for fwmark!=0 */
 	if (usvc.protocol != IPPROTO_TCP && usvc.protocol != IPPROTO_UDP &&
 	    usvc.protocol != IPPROTO_SCTP) {
-		pr_err("set_ctl: invalid protocol: %d %pI4:%d %s\n",
+		pr_err("set_ctl: invalid protocol: %d %pI4:%d\n",
 		       usvc.protocol, &usvc.addr.ip,
-		       ntohs(usvc.port), usvc.sched_name);
+		       ntohs(usvc.port));
 		ret = -EFAULT;
 		goto out_unlock;
 	}
@@ -2847,7 +2860,7 @@ static const struct nla_policy ip_vs_cmd_policy[IPVS_CMD_ATTR_MAX + 1] = {
 static const struct nla_policy ip_vs_daemon_policy[IPVS_DAEMON_ATTR_MAX + 1] = {
 	[IPVS_DAEMON_ATTR_STATE]	= { .type = NLA_U32 },
 	[IPVS_DAEMON_ATTR_MCAST_IFN]	= { .type = NLA_NUL_STRING,
-					    .len = IP_VS_IFNAME_MAXLEN },
+					    .len = IP_VS_IFNAME_MAXLEN - 1 },
 	[IPVS_DAEMON_ATTR_SYNC_ID]	= { .type = NLA_U32 },
 	[IPVS_DAEMON_ATTR_SYNC_MAXLEN]	= { .type = NLA_U16 },
 	[IPVS_DAEMON_ATTR_MCAST_GROUP]	= { .type = NLA_U32 },
@@ -2865,7 +2878,7 @@ static const struct nla_policy ip_vs_svc_policy[IPVS_SVC_ATTR_MAX + 1] = {
 	[IPVS_SVC_ATTR_PORT]		= { .type = NLA_U16 },
 	[IPVS_SVC_ATTR_FWMARK]		= { .type = NLA_U32 },
 	[IPVS_SVC_ATTR_SCHED_NAME]	= { .type = NLA_NUL_STRING,
-					    .len = IP_VS_SCHEDNAME_MAXLEN },
+					    .len = IP_VS_SCHEDNAME_MAXLEN - 1 },
 	[IPVS_SVC_ATTR_PE_NAME]		= { .type = NLA_NUL_STRING,
 					    .len = IP_VS_PENAME_MAXLEN },
 	[IPVS_SVC_ATTR_FLAGS]		= { .type = NLA_BINARY,
