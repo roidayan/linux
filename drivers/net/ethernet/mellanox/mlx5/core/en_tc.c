@@ -1084,17 +1084,21 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 	struct mlx5_esw_flow_attr *esw_attr;
 	struct mlx5e_tc_flow *flow, *tmp;
+	u32 encap_id;
 	int err;
 
 	err = mlx5_encap_alloc(priv->mdev, e->tunnel_type,
 			       e->encap_size, e->encap_header,
-			       &e->encap_id);
+			       &encap_id);
 	if (err) {
 		mlx5_core_warn(priv->mdev, "Failed to offload cached encapsulation header, %d\n",
 			       err);
 		return;
 	}
+	spin_lock(&e->encap_entry_lock);
+	e->encap_id = encap_id;
 	e->flags |= MLX5_ENCAP_ENTRY_VALID;
+	spin_unlock(&e->encap_entry_lock);
 	mlx5e_rep_queue_neigh_stats_work(priv);
 
 	list_for_each_entry_safe(flow, tmp, &e->flows, encap) {
@@ -1147,17 +1151,55 @@ void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
 		mlx5e_flow_put(priv, flow);
 	}
 
+	/* Caller holds rtnl and reference to encap entry, so it is not possible
+	 * for flags to be changed concurrently.
+	 */
 	if (e->flags & MLX5_ENCAP_ENTRY_VALID) {
+		spin_lock(&e->encap_entry_lock);
 		e->flags &= ~MLX5_ENCAP_ENTRY_VALID;
+		spin_unlock(&e->encap_entry_lock);
+
 		mlx5_encap_dealloc(priv->mdev, e->encap_id);
 	}
+}
+
+static struct mlx5e_tc_flow *
+mlx5e_get_next_encap_flow(struct mlx5e_encap_entry *e,
+			  struct mlx5e_tc_flow *flow)
+{
+	struct mlx5e_tc_flow *next = NULL;
+	bool found = false;
+
+	spin_lock(&e->encap_entry_lock);
+
+	if (flow) {
+		next = flow;
+		list_for_each_entry_continue(next, &e->flows, encap)
+			if (!IS_ERR(mlx5e_flow_get(next))) {
+				found = true;
+				break;
+			}
+	} else {
+		list_for_each_entry(next, &e->flows, encap)
+			if (!IS_ERR(mlx5e_flow_get(next))) {
+				found = true;
+				break;
+			}
+	}
+
+	spin_unlock(&e->encap_entry_lock);
+
+	if (flow)
+		mlx5e_flow_put(netdev_priv(e->out_dev), flow);
+
+	return found ? next : NULL;
 }
 
 void mlx5e_tc_update_neigh_used_value(struct mlx5e_neigh_hash_entry *nhe)
 {
 	struct mlx5e_neigh *m_neigh = &nhe->m_neigh;
+	struct mlx5e_tc_flow *flow = NULL;
 	u64 bytes, packets, lastuse = 0;
-	struct mlx5e_tc_flow *flow;
 	struct mlx5e_encap_entry *e;
 	struct mlx5_fc *counter;
 	struct neigh_table *tbl;
@@ -1177,9 +1219,7 @@ void mlx5e_tc_update_neigh_used_value(struct mlx5e_neigh_hash_entry *nhe)
 		if (!(e->flags & MLX5_ENCAP_ENTRY_VALID) ||
 		    !mlx5e_encap_take(e))
 			continue;
-		list_for_each_entry(flow, &e->flows, encap) {
-			if (IS_ERR(mlx5e_flow_get(flow)))
-				continue;
+		while ((flow = mlx5e_get_next_encap_flow(e, flow)) != NULL) {
 			if (mlx5e_is_offloaded_flow(flow)) {
 				counter = mlx5_flow_rule_counter(flow->rule[0]);
 				mlx5_fc_query_cached(counter, &bytes, &packets, &lastuse);
@@ -1190,7 +1230,6 @@ void mlx5e_tc_update_neigh_used_value(struct mlx5e_neigh_hash_entry *nhe)
 					break;
 				}
 			}
-			mlx5e_flow_put(netdev_priv(e->out_dev), flow);
 		}
 		mlx5e_encap_put(netdev_priv(e->out_dev), e);
 		if (neigh_used)
@@ -1230,13 +1269,17 @@ void mlx5e_encap_put(struct mlx5e_priv *priv, struct mlx5e_encap_entry *e)
 static void mlx5e_detach_encap(struct mlx5e_priv *priv,
 			       struct mlx5e_tc_flow *flow)
 {
+	struct mlx5e_encap_entry *e = flow->e;
+
 	/* flow wasn't fully initialized */
-	if (!flow->e)
+	if (!e)
 		return;
 
+	spin_lock(&e->encap_entry_lock);
 	list_del(&flow->encap);
+	spin_unlock(&e->encap_entry_lock);
 
-	mlx5e_encap_put(priv, flow->e);
+	mlx5e_encap_put(priv, e);
 	flow->e = NULL;
 }
 
@@ -2777,6 +2820,7 @@ vxlan_encap_offload_err:
 	if (!e)
 		return -ENOMEM;
 
+	spin_lock_init(&e->encap_entry_lock);
 	e->tun_info = *tun_info;
 	e->tunnel_type = tunnel_type;
 	INIT_LIST_HEAD(&e->flows);
@@ -2794,12 +2838,14 @@ vxlan_encap_offload_err:
 
 attach_flow:
 	flow->e = e;
+	spin_lock(&e->encap_entry_lock);
 	list_add(&flow->encap, &e->flows);
 	*encap_dev = e->out_dev;
 	if (e->flags & MLX5_ENCAP_ENTRY_VALID)
 		attr->encap_id = e->encap_id;
 	else
 		err = -EAGAIN;
+	spin_unlock(&e->encap_entry_lock);
 
 	return err;
 
