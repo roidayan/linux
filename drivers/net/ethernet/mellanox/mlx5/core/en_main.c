@@ -3161,7 +3161,7 @@ static int mlx5e_setup_tc_cls_flower(struct mlx5e_priv *priv,
 }
 
 static int mlx5e_setup_tc_block_cb(enum tc_setup_type type, void *type_data,
-				   void *cb_priv)
+				   void *cb_priv, bool rtnl_held)
 {
 	struct mlx5e_priv *priv = cb_priv;
 
@@ -3186,11 +3186,13 @@ static int mlx5e_setup_tc_block(struct net_device *dev,
 
 	switch (f->command) {
 	case TC_BLOCK_BIND:
-		return tcf_block_cb_register(f->block, mlx5e_setup_tc_block_cb,
-					     priv, priv);
+		return tcf_block_cb_register_unlocked(f->block,
+						      mlx5e_setup_tc_block_cb,
+						      priv, priv);
 	case TC_BLOCK_UNBIND:
-		tcf_block_cb_unregister(f->block, mlx5e_setup_tc_block_cb,
-					priv);
+		tcf_block_cb_unregister_unlocked(f->block,
+						 mlx5e_setup_tc_block_cb,
+						 priv);
 		return 0;
 	default:
 		return -EOPNOTSUPP;
