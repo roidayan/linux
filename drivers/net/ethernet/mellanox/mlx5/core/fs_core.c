@@ -1114,6 +1114,7 @@ mlx5_create_auto_grouped_flow_table(struct mlx5_flow_namespace *ns,
 
 	ft->autogroup.active = true;
 	ft->autogroup.required_groups = max_num_groups;
+	ft->autogroup.keep_deviding = true;
 
 	return ft;
 }
@@ -1356,7 +1357,14 @@ static struct mlx5_flow_group *alloc_auto_flow_group(struct mlx5_flow_table  *ft
 		if (!max_free)
 			return ERR_PTR(-ENOSPC);
 
-		group_size = 1;
+		if (ft->autogroup.keep_deviding) {
+			do {
+				group_size = (group_size / div) + 1;
+			} while (group_size > max_free);
+		} else {
+			group_size = 1;
+		}
+
 		prev = prev_free;
 		candidate_index = free_index;
 	}

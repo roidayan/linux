@@ -120,6 +120,7 @@ struct mlx5_flow_table {
 		bool			active;
 		unsigned int		required_groups;
 		unsigned int		num_groups;
+		bool			keep_deviding;
 	} autogroup;
 	/* Protect fwd_rules */
 	struct mutex			lock;
