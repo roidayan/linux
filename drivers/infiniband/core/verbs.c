@@ -516,10 +516,8 @@ static int ib_resolve_unicast_gid_dmac(struct ib_device *device,
 
 	grh = rdma_ah_retrieve_grh(ah_attr);
 
-	ret = ib_query_gid(device,
-			   rdma_ah_get_port_num(ah_attr),
-			   grh->sgid_index,
-			   &sgid, &sgid_attr);
+	ret = ib_get_cached_gid(device, rdma_ah_get_port_num(ah_attr),
+				grh->sgid_index, &sgid, &sgid_attr);
 	if (ret || !sgid_attr.ndev) {
 		if (!ret)
 			ret = -ENXIO;
@@ -1983,7 +1981,7 @@ struct ib_flow *ib_create_flow(struct ib_qp *qp,
 	if (!qp->device->create_flow)
 		return ERR_PTR(-EOPNOTSUPP);
 
-	flow_id = qp->device->create_flow(qp, flow_attr, domain);
+	flow_id = qp->device->create_flow(qp, flow_attr, domain, NULL);
 	if (!IS_ERR(flow_id)) {
 		atomic_inc(&qp->usecnt);
 		flow_id->qp = qp;
