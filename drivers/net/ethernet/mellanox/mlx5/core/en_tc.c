@@ -1257,7 +1257,12 @@ void mlx5e_encap_put(struct mlx5e_priv *priv, struct mlx5e_encap_entry *e)
 
 	if (refcount_dec_and_test(&e->refcnt)) {
 		WARN_ON(!list_empty(&e->flows));
-		mlx5e_rep_encap_entry_detach(netdev_priv(e->out_dev), e);
+		/* encap can be deleted before attachment to dev if error
+		 * happens during encap initialization
+		 */
+		if (e->out_dev)
+			mlx5e_rep_encap_entry_detach(netdev_priv(e->out_dev),
+						     e);
 
 		if (e->flags & MLX5_ENCAP_ENTRY_VALID)
 			mlx5_encap_dealloc(priv->mdev, e->encap_id);
@@ -2786,7 +2791,7 @@ mlx5e_encap_get_create(struct mlx5e_priv *priv, struct ip_tunnel_info *tun_info,
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 	unsigned short family = ip_tunnel_info_af(tun_info);
 	struct ip_tunnel_key *key = &tun_info->key;
-	struct mlx5e_encap_entry *e;
+	struct mlx5e_encap_entry *e, *e_dup = NULL;
 	int err = 0;
 	uintptr_t hash_key = hash_encap_info(key);
 
@@ -2817,10 +2822,20 @@ mlx5e_encap_get_create(struct mlx5e_priv *priv, struct ip_tunnel_info *tun_info,
 	}
 
 	spin_lock(&esw->offloads.encap_tbl_lock);
+	/* check for concurrent insertion of encap entry with same params */
+	e_dup = mlx5e_encap_get(priv, key, hash_key);
+	if (e_dup)
+		goto err_out;
 	hash_add_rcu(esw->offloads.encap_tbl, &e->encap_hlist, hash_key);
 	spin_unlock(&esw->offloads.encap_tbl_lock);
 
 	return e;
+err_out:
+	spin_unlock(&esw->offloads.encap_tbl_lock);
+	mlx5e_encap_put(priv, e);
+	if (e_dup)
+		return e_dup;
+	return ERR_PTR(err);
 }
 
 static int mlx5e_attach_encap(struct mlx5e_priv *priv,
