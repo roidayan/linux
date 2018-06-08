@@ -575,6 +575,77 @@ static struct mlx5e_hairpin_entry *mlx5e_hairpin_get(struct mlx5e_priv *priv,
 	return NULL;
 }
 
+static struct mlx5e_hairpin_entry *
+mlx5e_hairpin_get_create(struct mlx5e_priv *priv, int peer_ifindex, u16 peer_id,
+			 u8 match_prio)
+{
+	struct mlx5e_hairpin_entry *hpe;
+	struct mlx5_hairpin_params params;
+	struct mlx5e_hairpin *hp;
+	u64 link_speed64;
+	u32 link_speed;
+	int err;
+
+	hpe = mlx5e_hairpin_get(priv, peer_id, match_prio);
+	if (hpe)
+		return hpe;
+
+	hpe = kzalloc(sizeof(*hpe), GFP_KERNEL);
+	if (!hpe)
+		return ERR_PTR(-ENOMEM);
+
+	spin_lock_init(&hpe->flows_lock);
+	INIT_LIST_HEAD(&hpe->flows);
+	hpe->peer_vhca_id = peer_id;
+	hpe->prio = match_prio;
+	refcount_set(&hpe->refcnt, 1);
+
+	params.log_data_size = 15;
+	params.log_data_size = min_t(u8, params.log_data_size,
+				     MLX5_CAP_GEN(priv->mdev,
+						  log_max_hairpin_wq_data_sz));
+	params.log_data_size = max_t(u8, params.log_data_size,
+				     MLX5_CAP_GEN(priv->mdev,
+						  log_min_hairpin_wq_data_sz));
+
+	params.log_num_packets = params.log_data_size -
+				 MLX5_MPWRQ_MIN_LOG_STRIDE_SZ(priv->mdev);
+	params.log_num_packets = min_t(u8, params.log_num_packets,
+				       MLX5_CAP_GEN(priv->mdev,
+						    log_max_hairpin_num_packets));
+
+	params.q_counter = priv->q_counter;
+	/* set hairpin pair per each 50Gbs share of the link */
+	mlx5e_port_max_linkspeed(priv->mdev, &link_speed);
+	link_speed = max_t(u32, link_speed, 50000);
+	link_speed64 = link_speed;
+	do_div(link_speed64, 50000);
+	params.num_channels = link_speed64;
+
+	hp = mlx5e_hairpin_create(priv, &params, peer_ifindex);
+	if (IS_ERR(hp)) {
+		err = PTR_ERR(hp);
+		goto create_hairpin_err;
+	}
+
+	netdev_dbg(priv->netdev, "add hairpin: tirn %x rqn %x peer %s sqn %x prio %d (log) data %d packets %d\n",
+		   hp->tirn, hp->pair->rqn[0], hp->pair->peer_mdev->priv.name,
+		   hp->pair->sqn[0], match_prio, params.log_data_size,
+		   params.log_num_packets);
+
+	hpe->hp = hp;
+	spin_lock(&priv->fs.tc.hairpin_tbl_lock);
+	hash_add_rcu(priv->fs.tc.hairpin_tbl, &hpe->hairpin_hlist,
+		     hash_hairpin_info(peer_id, match_prio));
+	spin_unlock(&priv->fs.tc.hairpin_tbl_lock);
+
+	return hpe;
+
+create_hairpin_err:
+	kfree(hpe);
+	return ERR_PTR(err);
+}
+
 static void mlx5e_hairpin_put(struct mlx5e_priv *priv,
 			      struct mlx5e_hairpin_entry *hpe)
 {
@@ -634,12 +705,8 @@ static int mlx5e_hairpin_flow_add(struct mlx5e_priv *priv,
 				  struct mlx5e_tc_flow_parse_attr *parse_attr)
 {
 	int peer_ifindex = parse_attr->mirred_ifindex;
-	struct mlx5_hairpin_params params;
 	struct mlx5_core_dev *peer_mdev;
 	struct mlx5e_hairpin_entry *hpe;
-	struct mlx5e_hairpin *hp;
-	u64 link_speed64;
-	u32 link_speed;
 	u8 match_prio;
 	u16 peer_id;
 	int err;
@@ -654,56 +721,10 @@ static int mlx5e_hairpin_flow_add(struct mlx5e_priv *priv,
 	err = mlx5e_hairpin_get_prio(priv, &parse_attr->spec, &match_prio);
 	if (err)
 		return err;
-	hpe = mlx5e_hairpin_get(priv, peer_id, match_prio);
-	if (hpe)
-		goto attach_flow;
+	hpe = mlx5e_hairpin_get_create(priv, peer_ifindex, peer_id, match_prio);
+	if (IS_ERR(hpe))
+		return PTR_ERR(hpe);
 
-	hpe = kzalloc(sizeof(*hpe), GFP_KERNEL);
-	if (!hpe)
-		return -ENOMEM;
-
-	spin_lock_init(&hpe->flows_lock);
-	INIT_LIST_HEAD(&hpe->flows);
-	hpe->peer_vhca_id = peer_id;
-	hpe->prio = match_prio;
-	refcount_set(&hpe->refcnt, 1);
-
-	params.log_data_size = 15;
-	params.log_data_size = min_t(u8, params.log_data_size,
-				     MLX5_CAP_GEN(priv->mdev, log_max_hairpin_wq_data_sz));
-	params.log_data_size = max_t(u8, params.log_data_size,
-				     MLX5_CAP_GEN(priv->mdev, log_min_hairpin_wq_data_sz));
-
-	params.log_num_packets = params.log_data_size -
-				 MLX5_MPWRQ_MIN_LOG_STRIDE_SZ(priv->mdev);
-	params.log_num_packets = min_t(u8, params.log_num_packets,
-				       MLX5_CAP_GEN(priv->mdev, log_max_hairpin_num_packets));
-
-	params.q_counter = priv->q_counter;
-	/* set hairpin pair per each 50Gbs share of the link */
-	mlx5e_port_max_linkspeed(priv->mdev, &link_speed);
-	link_speed = max_t(u32, link_speed, 50000);
-	link_speed64 = link_speed;
-	do_div(link_speed64, 50000);
-	params.num_channels = link_speed64;
-
-	hp = mlx5e_hairpin_create(priv, &params, peer_ifindex);
-	if (IS_ERR(hp)) {
-		err = PTR_ERR(hp);
-		goto create_hairpin_err;
-	}
-
-	netdev_dbg(priv->netdev, "add hairpin: tirn %x rqn %x peer %s sqn %x prio %d (log) data %d packets %d\n",
-		   hp->tirn, hp->pair->rqn[0], hp->pair->peer_mdev->priv.name,
-		   hp->pair->sqn[0], match_prio, params.log_data_size, params.log_num_packets);
-
-	hpe->hp = hp;
-	spin_lock(&priv->fs.tc.hairpin_tbl_lock);
-	hash_add_rcu(priv->fs.tc.hairpin_tbl, &hpe->hairpin_hlist,
-		     hash_hairpin_info(peer_id, match_prio));
-	spin_unlock(&priv->fs.tc.hairpin_tbl_lock);
-
-attach_flow:
 	if (hpe->hp->num_channels > 1) {
 		atomic_or(MLX5E_TC_FLOW_HAIRPIN_RSS, &flow->flags);
 		flow->nic_attr->hairpin_ft = hpe->hp->ttc.ft.t;
@@ -716,10 +737,6 @@ attach_flow:
 	spin_unlock(&hpe->flows_lock);
 
 	return 0;
-
-create_hairpin_err:
-	kfree(hpe);
-	return err;
 }
 
 static void mlx5e_hairpin_flow_del(struct mlx5e_priv *priv,
