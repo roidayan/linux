@@ -128,8 +128,23 @@ int ib_get_cached_port_state(struct ib_device *device,
 			      enum ib_port_state *port_active);
 
 bool rdma_is_zero_gid(const union ib_gid *gid);
-const struct ib_gid_attr *rdma_get_gid_attr(struct ib_device *device,
-					    u8 port_num, int index);
+
+const struct ib_gid_attr *_rdma_get_gid_attr(struct ib_device *device,
+					     u8 port_num, int index,
+					     struct net *net);
+static inline const struct ib_gid_attr *
+rdma_get_gid_attr(struct ib_device *device, u8 port_num, int index)
+{
+	return _rdma_get_gid_attr(device, port_num, index, NULL);
+}
+
+static inline const struct ib_gid_attr *
+rdma_get_user_gid_attr(struct ib_device *device, u8 port_num, int index)
+{
+	return _rdma_get_gid_attr(device, port_num,
+				  index, current->nsproxy->net_ns);
+}
+
 void rdma_put_gid_attr(const struct ib_gid_attr *attr);
 void rdma_hold_gid_attr(const struct ib_gid_attr *attr);
 #endif /* _IB_CACHE_H */
