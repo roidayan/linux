@@ -138,6 +138,7 @@ struct mlx5e_hairpin_entry {
 	u8 prio;
 	struct mlx5e_hairpin *hp;
 	refcount_t refcnt;
+	struct rcu_head rcu;
 };
 
 struct mod_hdr_key {
@@ -560,13 +561,16 @@ static struct mlx5e_hairpin_entry *mlx5e_hairpin_get(struct mlx5e_priv *priv,
 	struct mlx5e_hairpin_entry *hpe;
 	u32 hash_key = hash_hairpin_info(peer_vhca_id, prio);
 
-	hash_for_each_possible(priv->fs.tc.hairpin_tbl, hpe,
-			       hairpin_hlist, hash_key) {
-		if (hpe->peer_vhca_id == peer_vhca_id && hpe->prio == prio) {
-			refcount_inc(&hpe->refcnt);
+	rcu_read_lock();
+	hash_for_each_possible_rcu(priv->fs.tc.hairpin_tbl, hpe,
+				   hairpin_hlist, hash_key) {
+		if (hpe->peer_vhca_id == peer_vhca_id && hpe->prio == prio &&
+		    refcount_inc_not_zero(&hpe->refcnt)) {
+			rcu_read_unlock();
 			return hpe;
 		}
 	}
+	rcu_read_unlock();
 
 	return NULL;
 }
@@ -581,8 +585,10 @@ static void mlx5e_hairpin_put(struct mlx5e_priv *priv,
 
 		WARN_ON(!list_empty(&hpe->flows));
 		mlx5e_hairpin_destroy(hpe->hp);
-		hash_del(&hpe->hairpin_hlist);
-		kfree(hpe);
+		spin_lock(&priv->fs.tc.hairpin_tbl_lock);
+		hash_del_rcu(&hpe->hairpin_hlist);
+		spin_unlock(&priv->fs.tc.hairpin_tbl_lock);
+		kfree_rcu(hpe, rcu);
 	}
 }
 
@@ -692,8 +698,10 @@ static int mlx5e_hairpin_flow_add(struct mlx5e_priv *priv,
 		   hp->pair->sqn[0], match_prio, params.log_data_size, params.log_num_packets);
 
 	hpe->hp = hp;
-	hash_add(priv->fs.tc.hairpin_tbl, &hpe->hairpin_hlist,
-		 hash_hairpin_info(peer_id, match_prio));
+	spin_lock(&priv->fs.tc.hairpin_tbl_lock);
+	hash_add_rcu(priv->fs.tc.hairpin_tbl, &hpe->hairpin_hlist,
+		     hash_hairpin_info(peer_id, match_prio));
+	spin_unlock(&priv->fs.tc.hairpin_tbl_lock);
 
 attach_flow:
 	if (hpe->hp->num_channels > 1) {
@@ -3016,6 +3024,7 @@ int mlx5e_tc_nic_init(struct mlx5e_priv *priv)
 	struct mlx5e_tc_table *tc = &priv->fs.tc;
 
 	hash_init(tc->mod_hdr_tbl);
+	spin_lock_init(&tc->hairpin_tbl_lock);
 	hash_init(tc->hairpin_tbl);
 
 	return rhashtable_init(&tc->ht, &tc_ht_params);
