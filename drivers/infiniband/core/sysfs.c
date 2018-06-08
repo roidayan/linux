@@ -369,10 +369,10 @@ static ssize_t _show_port_gid_attr(
 	const struct ib_gid_attr *gid_attr;
 	ssize_t ret;
 
-	gid_attr = rdma_get_gid_attr(p->ibdev, p->port_num, tab_attr->index);
+	gid_attr =
+		rdma_get_user_gid_attr(p->ibdev, p->port_num, tab_attr->index);
 	if (IS_ERR(gid_attr))
 		return PTR_ERR(gid_attr);
-
 	ret = print(gid_attr, buf);
 	rdma_put_gid_attr(gid_attr);
 	return ret;
@@ -386,7 +386,8 @@ static ssize_t show_port_gid(struct ib_port *p, struct port_attribute *attr,
 	const struct ib_gid_attr *gid_attr;
 	ssize_t ret;
 
-	gid_attr = rdma_get_gid_attr(p->ibdev, p->port_num, tab_attr->index);
+	gid_attr =
+		rdma_get_user_gid_attr(p->ibdev, p->port_num, tab_attr->index);
 	if (IS_ERR(gid_attr)) {
 		const union ib_gid zgid = {};
 

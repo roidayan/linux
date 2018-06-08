@@ -413,7 +413,8 @@ static int rdma_check_ah_attr(struct ib_device *device,
  */
 static int rdma_fill_sgid_attr(struct ib_device *device,
 			       struct rdma_ah_attr *ah_attr,
-			       const struct ib_gid_attr **old_sgid_attr)
+			       const struct ib_gid_attr **old_sgid_attr,
+			       bool is_user)
 {
 	const struct ib_gid_attr *sgid_attr;
 	struct ib_global_route *grh;
@@ -432,8 +433,13 @@ static int rdma_fill_sgid_attr(struct ib_device *device,
 	if (grh->sgid_attr)
 		return 0;
 
-	sgid_attr =
-		rdma_get_gid_attr(device, ah_attr->port_num, grh->sgid_index);
+	if (is_user)
+		sgid_attr = rdma_get_user_gid_attr(device, ah_attr->port_num,
+						   grh->sgid_index);
+	else
+		sgid_attr = rdma_get_gid_attr(device, ah_attr->port_num,
+					      grh->sgid_index);
+
 	if (IS_ERR(sgid_attr))
 		return PTR_ERR(sgid_attr);
 
@@ -510,7 +516,7 @@ struct ib_ah *rdma_create_ah(struct ib_pd *pd, struct rdma_ah_attr *ah_attr)
 	struct ib_ah *ah;
 	int ret;
 
-	ret = rdma_fill_sgid_attr(pd->device, ah_attr, &old_sgid_attr);
+	ret = rdma_fill_sgid_attr(pd->device, ah_attr, &old_sgid_attr, false);
 	if (ret)
 		return ERR_PTR(ret);
 
@@ -542,7 +548,8 @@ struct ib_ah *rdma_create_user_ah(struct ib_pd *pd,
 	struct ib_ah *ah;
 	int err;
 
-	err = rdma_fill_sgid_attr(pd->device, ah_attr, &old_sgid_attr);
+	err = rdma_fill_sgid_attr(pd->device, ah_attr, &old_sgid_attr,
+				  true);
 	if (err)
 		return ERR_PTR(err);
 
@@ -881,7 +888,7 @@ int rdma_modify_ah(struct ib_ah *ah, struct rdma_ah_attr *ah_attr)
 	if (ah->type != ah_attr->type)
 		return -EINVAL;
 
-	ret = rdma_fill_sgid_attr(ah->device, ah_attr, &old_sgid_attr);
+	ret = rdma_fill_sgid_attr(ah->device, ah_attr, &old_sgid_attr, false);
 	if (ret)
 		return ret;
 
@@ -1583,7 +1590,7 @@ static int _ib_modify_qp(struct ib_qp *qp, struct ib_qp_attr *attr,
 
 	if (attr_mask & IB_QP_AV) {
 		ret = rdma_fill_sgid_attr(qp->device, &attr->ah_attr,
-					  &old_sgid_attr_av);
+					  &old_sgid_attr_av, udata != NULL);
 		if (ret)
 			return ret;
 	}
@@ -1596,7 +1603,7 @@ static int _ib_modify_qp(struct ib_qp *qp, struct ib_qp_attr *attr,
 		 * counting does not serve any functional purpose.
 		 */
 		ret = rdma_fill_sgid_attr(qp->device, &attr->alt_ah_attr,
-					  &old_sgid_attr_alt_av);
+					  &old_sgid_attr_alt_av, udata != NULL);
 		if (ret)
 			goto out_av;
 
