@@ -251,7 +251,7 @@ mlx5e_mod_hdr_get_create(struct mlx5e_priv *priv, int namespace,
 			 int actions_size)
 {
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
-	struct mlx5e_mod_hdr_entry *mh;
+	struct mlx5e_mod_hdr_entry *mh, *mh_dup = NULL;
 	u32 hash_key;
 	int err;
 
@@ -281,11 +281,29 @@ mlx5e_mod_hdr_get_create(struct mlx5e_priv *priv, int namespace,
 
 	if (namespace == MLX5_FLOW_NAMESPACE_FDB) {
 		spin_lock(&esw->offloads.mod_hdr_tbl_lock);
+		/* check for concurrent insertion of mod header entry with same
+		 * params
+		 */
+		mh_dup = mlx5e_mod_hdr_get(priv, namespace, key, hash_key);
+		if (mh_dup) {
+			spin_unlock(&esw->offloads.mod_hdr_tbl_lock);
+			goto out_err;
+		}
+
 		hash_add_rcu(esw->offloads.mod_hdr_tbl, &mh->mod_hdr_hlist,
 			     hash_key);
 		spin_unlock(&esw->offloads.mod_hdr_tbl_lock);
 	} else {
 		spin_lock(&priv->fs.tc.mod_hdr_tbl_lock);
+		/* check for concurrent insertion of mod header entry with same
+		 * params
+		 */
+		mh_dup = mlx5e_mod_hdr_get(priv, namespace, key, hash_key);
+		if (mh_dup) {
+			spin_unlock(&priv->fs.tc.mod_hdr_tbl_lock);
+			goto out_err;
+		}
+
 		hash_add_rcu(priv->fs.tc.mod_hdr_tbl, &mh->mod_hdr_hlist,
 			     hash_key);
 		spin_unlock(&priv->fs.tc.mod_hdr_tbl_lock);
@@ -294,7 +312,11 @@ mlx5e_mod_hdr_get_create(struct mlx5e_priv *priv, int namespace,
 	return mh;
 
 out_err:
+	if (mh->mod_hdr_id)
+		mlx5_modify_header_dealloc(priv->mdev, mh->mod_hdr_id);
 	kfree(mh);
+	if (mh_dup)
+		return mh_dup;
 	return ERR_PTR(err);
 }
 
