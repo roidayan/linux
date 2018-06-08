@@ -1172,13 +1172,17 @@ int ib_get_cached_port_state(struct ib_device   *device,
 EXPORT_SYMBOL(ib_get_cached_port_state);
 
 /**
- * rdma_get_gid_attr - Returns GID attributes for a port of a device
+ * _rdma_get_gid_attr - Returns GID attributes for a port of a device
  * at a requested gid_index, if a valid GID entry exists.
  * @device:		The device to query.
  * @port_num:		The port number on the device where the GID value
  *			is to be queried.
  * @index:		Index of the GID table entry whose attributes are to
  *                      be queried.
+ * @net:		If not NULL, check that the net of gid attritube and
+ *			provided net are same. This is optional parameter
+ *			applicable and meaningful only when a GID attribute
+ *			has valid netdevice.
  *
  * rdma_get_gid_attr() acquires reference count of gid attributes from the
  * cached GID table. Caller must invoke rdma_put_gid_attr() to release
@@ -1187,8 +1191,9 @@ EXPORT_SYMBOL(ib_get_cached_port_state);
  * Returns pointer to valid gid attribute or ERR_PTR for the appropriate error
  * code.
  */
-const struct ib_gid_attr *
-rdma_get_gid_attr(struct ib_device *device, u8 port_num, int index)
+const struct ib_gid_attr *_rdma_get_gid_attr(struct ib_device *device,
+					     u8 port_num, int index,
+					     struct net *net)
 {
 	const struct ib_gid_attr *attr = ERR_PTR(-EINVAL);
 	struct ib_gid_table *table;
@@ -1205,13 +1210,32 @@ rdma_get_gid_attr(struct ib_device *device, u8 port_num, int index)
 	if (!is_gid_entry_valid(table->data_vec[index]))
 		goto done;
 
-	get_gid_entry(table->data_vec[index]);
 	attr = &table->data_vec[index]->attr;
+
+	/*
+	 * If this is user space requesting access, the caller must be in a
+	 * process context and must have the same net namespace.
+	 */
+	if (net && attr->ndev) {
+		bool matches;
+
+		rcu_read_lock();
+		matches = net_eq(dev_net(attr->ndev), net);
+		rcu_read_unlock();
+
+		if (!matches) {
+			attr = ERR_PTR(-EINVAL);
+			goto done;
+		}
+	}
+
+	get_gid_entry(table->data_vec[index]);
+
 done:
 	read_unlock_irqrestore(&table->rwlock, flags);
 	return attr;
 }
-EXPORT_SYMBOL(rdma_get_gid_attr);
+EXPORT_SYMBOL(_rdma_get_gid_attr);
 
 /**
  * rdma_put_gid_attr - Release reference to the GID attribute
