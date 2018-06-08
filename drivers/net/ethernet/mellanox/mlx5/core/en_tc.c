@@ -565,6 +565,17 @@ static struct mlx5e_hairpin_entry *mlx5e_hairpin_get(struct mlx5e_priv *priv,
 	return NULL;
 }
 
+static void mlx5e_hairpin_put(struct mlx5e_priv *priv,
+			      struct mlx5e_hairpin_entry *hpe)
+{
+	netdev_dbg(priv->netdev, "del hairpin: peer %s\n",
+		   hpe->hp->pair->peer_mdev->priv.name);
+
+	mlx5e_hairpin_destroy(hpe->hp);
+	hash_del(&hpe->hairpin_hlist);
+	kfree(hpe);
+}
+
 #define UNKNOWN_MATCH_PRIO 8
 
 static int mlx5e_hairpin_get_prio(struct mlx5e_priv *priv,
@@ -705,12 +716,7 @@ static void mlx5e_hairpin_flow_del(struct mlx5e_priv *priv,
 
 		hpe = list_entry(next, struct mlx5e_hairpin_entry, flows);
 
-		netdev_dbg(priv->netdev, "del hairpin: peer %s\n",
-			   hpe->hp->pair->peer_mdev->priv.name);
-
-		mlx5e_hairpin_destroy(hpe->hp);
-		hash_del(&hpe->hairpin_hlist);
-		kfree(hpe);
+		mlx5e_hairpin_put(priv, hpe);
 	}
 }
 
