@@ -118,6 +118,9 @@ struct mlx5e_encap_entry {
 	/* protects encap entry state */
 	spinlock_t encap_entry_lock;
 
+	/* attached neigh hash entry */
+	struct mlx5e_neigh_hash_entry *nhe;
+
 	/* neigh hash entry list of encaps sharing the same neigh */
 	struct list_head encap_list;
 	struct mlx5e_neigh m_neigh;
