@@ -2779,19 +2779,60 @@ mlx5e_encap_get(struct mlx5e_priv *priv, struct ip_tunnel_key *key,
 	return NULL;
 }
 
+static struct mlx5e_encap_entry *
+mlx5e_encap_get_create(struct mlx5e_priv *priv, struct ip_tunnel_info *tun_info,
+		       struct net_device *mirred_dev, int tunnel_type)
+{
+	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
+	unsigned short family = ip_tunnel_info_af(tun_info);
+	struct ip_tunnel_key *key = &tun_info->key;
+	struct mlx5e_encap_entry *e;
+	int err = 0;
+	uintptr_t hash_key = hash_encap_info(key);
+
+	e = mlx5e_encap_get(priv, key, hash_key);
+
+	/* must verify if encap is valid or not */
+	if (e)
+		return e;
+
+	e = kzalloc(sizeof(*e), GFP_KERNEL);
+	if (!e)
+		return ERR_PTR(-ENOMEM);
+
+	spin_lock_init(&e->encap_entry_lock);
+	e->tun_info = *tun_info;
+	e->tunnel_type = tunnel_type;
+	INIT_LIST_HEAD(&e->flows);
+	refcount_set(&e->refcnt, 1);
+
+	if (family == AF_INET)
+		err = mlx5e_create_encap_header_ipv4(priv, mirred_dev, e);
+	else if (family == AF_INET6)
+		err = mlx5e_create_encap_header_ipv6(priv, mirred_dev, e);
+
+	if (err && err != -EAGAIN) {
+		kfree(e);
+		return ERR_PTR(err);
+	}
+
+	spin_lock(&esw->offloads.encap_tbl_lock);
+	hash_add_rcu(esw->offloads.encap_tbl, &e->encap_hlist, hash_key);
+	spin_unlock(&esw->offloads.encap_tbl_lock);
+
+	return e;
+}
+
 static int mlx5e_attach_encap(struct mlx5e_priv *priv,
 			      struct ip_tunnel_info *tun_info,
 			      struct net_device *mirred_dev,
 			      struct net_device **encap_dev,
 			      struct mlx5e_tc_flow *flow)
 {
-	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
-	unsigned short family = ip_tunnel_info_af(tun_info);
 	struct mlx5_esw_flow_attr *attr = flow->esw_attr;
 	struct ip_tunnel_key *key = &tun_info->key;
 	struct mlx5e_encap_entry *e;
 	int tunnel_type, err = 0;
-	uintptr_t hash_key;
 
 	/* udp dst port must be set */
 	if (!memchr_inv(&key->tp_dst, 0, sizeof(key->tp_dst)))
@@ -2814,37 +2855,12 @@ vxlan_encap_offload_err:
 		return -EOPNOTSUPP;
 	}
 
-	hash_key = hash_encap_info(key);
-
-	e = mlx5e_encap_get(priv, key, hash_key);
+	e = mlx5e_encap_get_create(priv, tun_info, mirred_dev, tunnel_type);
 
 	/* must verify if encap is valid or not */
-	if (e)
-		goto attach_flow;
+	if (IS_ERR(e))
+		return PTR_ERR(e);
 
-	e = kzalloc(sizeof(*e), GFP_KERNEL);
-	if (!e)
-		return -ENOMEM;
-
-	spin_lock_init(&e->encap_entry_lock);
-	e->tun_info = *tun_info;
-	e->tunnel_type = tunnel_type;
-	INIT_LIST_HEAD(&e->flows);
-	refcount_set(&e->refcnt, 1);
-
-	if (family == AF_INET)
-		err = mlx5e_create_encap_header_ipv4(priv, mirred_dev, e);
-	else if (family == AF_INET6)
-		err = mlx5e_create_encap_header_ipv6(priv, mirred_dev, e);
-
-	if (err && err != -EAGAIN)
-		goto out_err;
-
-	spin_lock(&esw->offloads.encap_tbl_lock);
-	hash_add_rcu(esw->offloads.encap_tbl, &e->encap_hlist, hash_key);
-	spin_unlock(&esw->offloads.encap_tbl_lock);
-
-attach_flow:
 	flow->e = e;
 	spin_lock(&e->encap_entry_lock);
 	list_add(&flow->encap, &e->flows);
@@ -2855,10 +2871,6 @@ attach_flow:
 		err = -EAGAIN;
 	spin_unlock(&e->encap_entry_lock);
 
-	return err;
-
-out_err:
-	kfree(e);
 	return err;
 }
 
