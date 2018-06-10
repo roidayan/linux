@@ -1938,11 +1938,11 @@ static int modify_qp_mask(enum ib_qp_type qp_type, int mask)
 	}
 }
 
-static void copy_ah_attr_from_uverbs(struct ib_device *dev,
+static void copy_ah_attr_from_uverbs(struct ib_qp *qp,
 				     struct rdma_ah_attr *rdma_attr,
 				     struct ib_uverbs_qp_dest *uverb_attr)
 {
-	rdma_attr->type = rdma_ah_find_type(dev, uverb_attr->port_num);
+	rdma_attr->type = rdma_ah_find_type(qp->device, qp->real_qp->port);
 	if (uverb_attr->is_global) {
 		rdma_ah_set_grh(rdma_attr, NULL,
 				uverb_attr->flow_label,
@@ -1968,7 +1968,7 @@ static int modify_qp(struct ib_uverbs_file *file,
 	struct ib_qp *qp;
 	int ret;
 
-	attr = kmalloc(sizeof *attr, GFP_KERNEL);
+	attr = kzalloc(sizeof(*attr), GFP_KERNEL);
 	if (!attr)
 		return -ENOMEM;
 
@@ -2028,11 +2028,10 @@ static int modify_qp(struct ib_uverbs_file *file,
 	attr->rate_limit	  = cmd->rate_limit;
 
 	if (cmd->base.attr_mask & IB_QP_AV)
-		copy_ah_attr_from_uverbs(qp->device, &attr->ah_attr,
-					 &cmd->base.dest);
+		copy_ah_attr_from_uverbs(qp, &attr->ah_attr, &cmd->base.dest);
 
 	if (cmd->base.attr_mask & IB_QP_ALT_PATH)
-		copy_ah_attr_from_uverbs(qp->device, &attr->alt_ah_attr,
+		copy_ah_attr_from_uverbs(qp, &attr->alt_ah_attr,
 					 &cmd->base.alt_dest);
 
 	ret = ib_modify_qp_with_udata(qp, attr,
@@ -2552,7 +2551,7 @@ ssize_t ib_uverbs_create_ah(struct ib_uverbs_file *file,
 	struct ib_uobject		*uobj;
 	struct ib_pd			*pd;
 	struct ib_ah			*ah;
-	struct rdma_ah_attr		attr;
+	struct rdma_ah_attr		attr = {};
 	int ret;
 	struct ib_udata                   udata;
 
@@ -2760,29 +2759,24 @@ static struct ib_uflow_resources *flow_resources_alloc(size_t num_specs)
 
 	resources = kzalloc(sizeof(*resources), GFP_KERNEL);
 	if (!resources)
-		goto err_res;
+		return NULL;
 
 	resources->counters =
 		kcalloc(num_specs, sizeof(*resources->counters), GFP_KERNEL);
-
-	if (!resources->counters)
-		goto err_cnt;
-
 	resources->collection =
 		kcalloc(num_specs, sizeof(*resources->collection), GFP_KERNEL);
 
-	if (!resources->collection)
-		goto err_collection;
+	if (!resources->counters || !resources->collection)
+		goto err;
 
 	resources->max = num_specs;
 
 	return resources;
 
-err_collection:
+err:
 	kfree(resources->counters);
-err_cnt:
 	kfree(resources);
-err_res:
+
 	return NULL;
 }
 
