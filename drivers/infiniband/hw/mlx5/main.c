@@ -1582,7 +1582,10 @@ static int deallocate_uars(struct mlx5_ib_dev *dev, struct mlx5_ib_ucontext *con
 
 static int mlx5_ib_alloc_transport_domain(struct mlx5_ib_dev *dev, u32 *tdn)
 {
-	int err;
+	int err = 0;
+
+	if (!MLX5_CAP_GEN(dev->mdev, log_max_transport_domain))
+		return err;
 
 	err = mlx5_core_alloc_transport_domain(dev->mdev, tdn);
 	if (err)
@@ -1605,6 +1608,9 @@ static int mlx5_ib_alloc_transport_domain(struct mlx5_ib_dev *dev, u32 *tdn)
 
 static void mlx5_ib_dealloc_transport_domain(struct mlx5_ib_dev *dev, u32 tdn)
 {
+	if (!MLX5_CAP_GEN(dev->mdev, log_max_transport_domain))
+		return;
+
 	mlx5_core_dealloc_transport_domain(dev->mdev, tdn);
 
 	if ((MLX5_CAP_GEN(dev->mdev, port_type) != MLX5_CAP_PORT_TYPE_ETH) ||
@@ -1730,11 +1736,9 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 	context->ibucontext.invalidate_range = &mlx5_ib_invalidate_range;
 #endif
 
-	if (MLX5_CAP_GEN(dev->mdev, log_max_transport_domain)) {
-		err = mlx5_ib_alloc_transport_domain(dev, &context->tdn);
-		if (err)
-			goto out_uars;
-	}
+	err = mlx5_ib_alloc_transport_domain(dev, &context->tdn);
+	if (err)
+		goto out_uars;
 
 	if (req.flags & MLX5_IB_ALLOC_UCTX_DEVX) {
 		/* Block DEVX on Infiniband as of SELinux */
@@ -1835,8 +1839,7 @@ out_mdev:
 	if (req.flags & MLX5_IB_ALLOC_UCTX_DEVX)
 		mlx5_ib_devx_destroy(dev, context);
 out_td:
-	if (MLX5_CAP_GEN(dev->mdev, log_max_transport_domain))
-		mlx5_ib_dealloc_transport_domain(dev, context->tdn);
+	mlx5_ib_dealloc_transport_domain(dev, context->tdn);
 
 out_uars:
 	deallocate_uars(dev, context);
@@ -1863,8 +1866,7 @@ static int mlx5_ib_dealloc_ucontext(struct ib_ucontext *ibcontext)
 		mlx5_ib_devx_destroy(dev, context);
 
 	bfregi = &context->bfregi;
-	if (MLX5_CAP_GEN(dev->mdev, log_max_transport_domain))
-		mlx5_ib_dealloc_transport_domain(dev, context->tdn);
+	mlx5_ib_dealloc_transport_domain(dev, context->tdn);
 
 	deallocate_uars(dev, context);
 	kfree(bfregi->sys_pages);
