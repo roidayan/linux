@@ -3095,7 +3095,6 @@ static void restore_rule(struct mlx5e_tc_flow *flow)
 static void restore_eswitch_rules(struct mlx5_eswitch *esw, bool peer_flows)
 {
 	struct mlx5_eswitch_rep *rep;
-	struct mlx5e_rep_priv *rpriv;
 	struct rhashtable_iter iter;
 	struct mlx5e_tc_flow *flow;
 	struct mlx5e_priv *priv;
@@ -3103,8 +3102,7 @@ static void restore_eswitch_rules(struct mlx5_eswitch *esw, bool peer_flows)
 
 	for (vport = 0; vport < esw->enabled_vports; vport++) {
 		rep = &esw->offloads.vport_reps[vport];
-		rpriv = mlx5e_rep_to_rep_priv(rep);
-		priv = netdev_priv(rpriv->netdev);
+		priv = netdev_priv(rep->netdev);
 
 		rhashtable_walk_enter(get_tc_ht(priv), &iter);
 		rhashtable_walk_start(&iter);
