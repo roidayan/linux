@@ -180,19 +180,19 @@ static int idr_add_uobj(struct ib_uobject *uobj)
 	int ret;
 
 	idr_preload(GFP_KERNEL);
-	spin_lock(&uobj->context->ufile->idr_lock);
+	spin_lock(&uobj->ufile->idr_lock);
 
 	/*
 	 * We start with allocating an idr pointing to NULL. This represents an
 	 * object which isn't initialized yet. We'll replace it later on with
 	 * the real object once we commit.
 	 */
-	ret = idr_alloc(&uobj->context->ufile->idr, NULL, 0,
+	ret = idr_alloc(&uobj->ufile->idr, NULL, 0,
 			min_t(unsigned long, U32_MAX - 1, INT_MAX), GFP_NOWAIT);
 	if (ret >= 0)
 		uobj->id = ret;
 
-	spin_unlock(&uobj->context->ufile->idr_lock);
+	spin_unlock(&uobj->ufile->idr_lock);
 	idr_preload_end();
 
 	return ret < 0 ? ret : 0;
