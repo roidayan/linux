@@ -187,7 +187,7 @@ static unsigned long alchemy_ehci_data[][2] __initdata = {
 
 static int __init _new_usbres(struct resource **r, struct platform_device **d)
 {
-	*r = kzalloc(sizeof(struct resource) * 2, GFP_KERNEL);
+	*r = kcalloc(2, sizeof(struct resource), GFP_KERNEL);
 	if (!*r)
 		return -ENOMEM;
 	*d = kzalloc(sizeof(struct platform_device), GFP_KERNEL);

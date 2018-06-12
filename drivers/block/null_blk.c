@@ -388,12 +388,12 @@ static int setup_commands(struct nullb_queue *nq)
 	struct nullb_cmd *cmd;
 	int i, tag_size;
 
-	nq->cmds = kzalloc(nq->queue_depth * sizeof(*cmd), GFP_KERNEL);
+	nq->cmds = kcalloc(nq->queue_depth, sizeof(*cmd), GFP_KERNEL);
 	if (!nq->cmds)
 		return -ENOMEM;
 
 	tag_size = ALIGN(nq->queue_depth, BITS_PER_LONG) / BITS_PER_LONG;
-	nq->tag_map = kzalloc(tag_size * sizeof(unsigned long), GFP_KERNEL);
+	nq->tag_map = kcalloc(tag_size, sizeof(unsigned long), GFP_KERNEL);
 	if (!nq->tag_map) {
 		kfree(nq->cmds);
 		return -ENOMEM;

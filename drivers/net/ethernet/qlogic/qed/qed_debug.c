@@ -5876,7 +5876,7 @@ static enum dbg_status qed_mcp_trace_alloc_meta(struct qed_hwfn *p_hwfn,
 
 	/* Read number of formats and allocate memory for all formats */
 	meta->formats_num = qed_read_dword_from_buf(meta_buf_bytes, &offset);
-	meta->formats = kzalloc(meta->formats_num *
+	meta->formats = kcalloc(meta->formats_num,
 				sizeof(struct mcp_trace_format),
 				GFP_KERNEL);
 	if (!meta->formats)
