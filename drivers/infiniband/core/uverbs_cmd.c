@@ -2759,7 +2759,6 @@ static struct ib_uflow_resources *flow_resources_alloc(size_t num_specs)
 	struct ib_uflow_resources *resources;
 
 	resources = kzalloc(sizeof(*resources), GFP_KERNEL);
-
 	if (!resources)
 		goto err_res;
 
