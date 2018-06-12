@@ -371,7 +371,7 @@ mlx5e_copy_skb_header_mpwqe(struct device *pdev,
 	}
 }
 
-void mlx5e_free_rx_mpwqe(struct mlx5e_rq *rq, struct mlx5e_mpw_info *wi)
+static void mlx5e_free_rx_mpwqe(struct mlx5e_rq *rq, struct mlx5e_mpw_info *wi)
 {
 	int pg_strides = mlx5e_mpwqe_strides_per_page(rq);
 	struct mlx5e_dma_info *dma_info = &wi->umr.dma_info[0];
