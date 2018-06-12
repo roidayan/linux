@@ -798,6 +798,7 @@ err_free_table:
 static void release_gid_table(struct ib_device *device, u8 port,
 			      struct ib_gid_table *table)
 {
+	bool leak = false;
 	int i;
 
 	if (!table)
@@ -806,12 +807,15 @@ static void release_gid_table(struct ib_device *device, u8 port,
 	for (i = 0; i < table->sz; i++) {
 		if (is_gid_entry_free(table->data_vec[i]))
 			continue;
-		if (kref_read(&table->data_vec[i]->kref) > 1)
-			pr_warn("GID entry ref leak for %s (index %d) ref=%d\n",
-				device->name, i,
-				kref_read(&table->data_vec[i]->kref));
-		put_gid_entry(table->data_vec[i]);
+		if (kref_read(&table->data_vec[i]->kref) > 1) {
+			pr_err("GID entry ref leak for %s (index %d) ref=%d\n",
+			       device->name, i,
+			       kref_read(&table->data_vec[i]->kref));
+			leak = true;
+		}
 	}
+	if (leak)
+		return;
 
 	kfree(table->data_vec);
 	kfree(table);
