@@ -94,6 +94,7 @@ enum ib_gid_type {
 struct ib_gid_attr {
 	struct net_device	*ndev;
 	struct ib_device	*device;
+	union ib_gid		gid;
 	enum ib_gid_type	gid_type;
 	u16			index;
 	u8			port_num;
@@ -148,13 +149,13 @@ static inline enum ib_gid_type ib_network_to_gid_type(enum rdma_network_type net
 	return IB_GID_TYPE_IB;
 }
 
-static inline enum rdma_network_type ib_gid_to_network_type(enum ib_gid_type gid_type,
-							    union ib_gid *gid)
+static inline enum rdma_network_type
+rdma_gid_attr_network_type(const struct ib_gid_attr *attr)
 {
-	if (gid_type == IB_GID_TYPE_IB)
+	if (attr->gid_type == IB_GID_TYPE_IB)
 		return RDMA_NETWORK_IB;
 
-	if (ipv6_addr_v4mapped((struct in6_addr *)gid))
+	if (ipv6_addr_v4mapped((struct in6_addr *)&attr->gid))
 		return RDMA_NETWORK_IPV4;
 	else
 		return RDMA_NETWORK_IPV6;
@@ -689,6 +690,7 @@ struct ib_event_handler {
 	} while (0)
 
 struct ib_global_route {
+	const struct ib_gid_attr *sgid_attr;
 	union ib_gid	dgid;
 	u32		flow_label;
 	u8		sgid_index;
@@ -858,6 +860,19 @@ enum ib_sig_err_type {
 	IB_SIG_BAD_GUARD,
 	IB_SIG_BAD_REFTAG,
 	IB_SIG_BAD_APPTAG,
+};
+
+/**
+ * Signature check masks (8 bytes in total) according to the T10-PI standard:
+ *  -------- -------- ------------
+ * | GUARD  | APPTAG |   REFTAG   |
+ * |  2B    |  2B    |    4B      |
+ *  -------- -------- ------------
+ */
+enum {
+	IB_SIG_CHECK_GUARD	= 0xc0,
+	IB_SIG_CHECK_APPTAG	= 0x30,
+	IB_SIG_CHECK_REFTAG	= 0x0f,
 };
 
 /**
@@ -1460,7 +1475,7 @@ struct ib_fmr_attr {
 struct ib_umem;
 
 enum rdma_remove_reason {
-	/* Userspace requested uobject deletion. Call could fail */
+	/* Userspace requested uobject deletion or initial try to remove uobject via cleanup. Call could fail */
 	RDMA_REMOVE_DESTROY,
 	/* Context deletion. This call should delete the actual object itself */
 	RDMA_REMOVE_CLOSE,
@@ -1565,6 +1580,7 @@ struct ib_ah {
 	struct ib_device	*device;
 	struct ib_pd		*pd;
 	struct ib_uobject	*uobject;
+	const struct ib_gid_attr *sgid_attr;
 	enum rdma_ah_attr_type	type;
 };
 
@@ -1763,6 +1779,9 @@ struct ib_qp {
 	struct ib_uobject      *uobject;
 	void                  (*event_handler)(struct ib_event *, void *);
 	void		       *qp_context;
+	/* sgid_attrs associated with the AV's */
+	const struct ib_gid_attr *av_sgid_attr;
+	const struct ib_gid_attr *alt_path_sgid_attr;
 	u32			qp_num;
 	u32			max_write_sge;
 	u32			max_read_sge;
@@ -1852,14 +1871,17 @@ enum ib_flow_spec_type {
 	IB_FLOW_SPEC_TCP		= 0x40,
 	IB_FLOW_SPEC_UDP		= 0x41,
 	IB_FLOW_SPEC_VXLAN_TUNNEL	= 0x50,
+	IB_FLOW_SPEC_GRE		= 0x51,
+	IB_FLOW_SPEC_MPLS		= 0x60,
 	IB_FLOW_SPEC_INNER		= 0x100,
 	/* Actions */
 	IB_FLOW_SPEC_ACTION_TAG         = 0x1000,
 	IB_FLOW_SPEC_ACTION_DROP        = 0x1001,
 	IB_FLOW_SPEC_ACTION_HANDLE	= 0x1002,
+	IB_FLOW_SPEC_ACTION_COUNT       = 0x1003,
 };
 #define IB_FLOW_SPEC_LAYER_MASK	0xF0
-#define IB_FLOW_SPEC_SUPPORT_LAYERS 8
+#define IB_FLOW_SPEC_SUPPORT_LAYERS 10
 
 /* Flow steering rule priority is set according to it's domain.
  * Lower domain value means higher priority.
@@ -1994,6 +2016,34 @@ struct ib_flow_spec_esp {
 	struct ib_flow_esp_filter     mask;
 };
 
+struct ib_flow_gre_filter {
+	__be16 c_ks_res0_ver;
+	__be16 protocol;
+	__be32 key;
+	/* Must be last */
+	u8	real_sz[0];
+};
+
+struct ib_flow_spec_gre {
+	u32                           type;
+	u16			      size;
+	struct ib_flow_gre_filter     val;
+	struct ib_flow_gre_filter     mask;
+};
+
+struct ib_flow_mpls_filter {
+	__be32 tag;
+	/* Must be last */
+	u8	real_sz[0];
+};
+
+struct ib_flow_spec_mpls {
+	u32                           type;
+	u16			      size;
+	struct ib_flow_mpls_filter     val;
+	struct ib_flow_mpls_filter     mask;
+};
+
 struct ib_flow_spec_action_tag {
 	enum ib_flow_spec_type	      type;
 	u16			      size;
@@ -2011,6 +2061,17 @@ struct ib_flow_spec_action_handle {
 	struct ib_flow_action	     *act;
 };
 
+enum ib_counters_description {
+	IB_COUNTER_PACKETS,
+	IB_COUNTER_BYTES,
+};
+
+struct ib_flow_spec_action_count {
+	enum ib_flow_spec_type type;
+	u16 size;
+	struct ib_counters *counters;
+};
+
 union ib_flow_spec {
 	struct {
 		u32			type;
@@ -2023,9 +2084,12 @@ union ib_flow_spec {
 	struct ib_flow_spec_ipv6        ipv6;
 	struct ib_flow_spec_tunnel      tunnel;
 	struct ib_flow_spec_esp		esp;
+	struct ib_flow_spec_gre		gre;
+	struct ib_flow_spec_mpls	mpls;
 	struct ib_flow_spec_action_tag  flow_tag;
 	struct ib_flow_spec_action_drop drop;
 	struct ib_flow_spec_action_handle action;
+	struct ib_flow_spec_action_count flow_count;
 };
 
 struct ib_flow_attr {
@@ -2180,6 +2244,24 @@ struct ib_port_pkey_list {
 	struct list_head              pkey_list;
 };
 
+struct ib_counters {
+	struct ib_device	*device;
+	struct ib_uobject	*uobject;
+	/* num of objects attached */
+	atomic_t	usecnt;
+};
+
+enum ib_read_counters_flags {
+	/* prefer read values from driver cache */
+	IB_READ_COUNTERS_ATTR_PREFER_CACHED = 1 << 0,
+};
+
+struct ib_counters_read_attr {
+	u64	*counters_buff;
+	u32	ncounters;
+	u32	flags; /* use enum ib_read_counters_flags */
+};
+
 struct uverbs_attr_bundle;
 
 struct ib_device {
@@ -2268,8 +2350,7 @@ struct ib_device {
 	 * concurrently for different ports. This function is only called when
 	 * roce_gid_table is used.
 	 */
-	int		           (*add_gid)(const union ib_gid *gid,
-					      const struct ib_gid_attr *attr,
+	int		           (*add_gid)(const struct ib_gid_attr *attr,
 					      void **context);
 	/* When calling del_gid, the HW vendor's driver should delete the
 	 * gid of device @device at gid index gid_index of port port_num
@@ -2409,7 +2490,8 @@ struct ib_device {
 	struct ib_flow *	   (*create_flow)(struct ib_qp *qp,
 						  struct ib_flow_attr
 						  *flow_attr,
-						  int domain);
+						  int domain,
+						  struct ib_udata *udata);
 	int			   (*destroy_flow)(struct ib_flow *flow_id);
 	int			   (*check_mr_status)(struct ib_mr *mr, u32 check_mask,
 						      struct ib_mr_status *mr_status);
@@ -2451,6 +2533,13 @@ struct ib_device {
 	struct ib_mr *             (*reg_dm_mr)(struct ib_pd *pd, struct ib_dm *dm,
 						struct ib_dm_mr_attr *attr,
 						struct uverbs_attr_bundle *attrs);
+	struct ib_counters *	(*create_counters)(struct ib_device *device,
+						   struct uverbs_attr_bundle *attrs);
+	int	(*destroy_counters)(struct ib_counters	*counters);
+	int	(*read_counters)(struct ib_counters *counters,
+				 struct ib_counters_read_attr *counters_read_attr,
+				 struct uverbs_attr_bundle *attrs);
+
 	/**
 	 * rdma netdev operation
 	 *
@@ -2964,10 +3053,6 @@ static inline bool rdma_cap_read_inv(struct ib_device *dev, u32 port_num)
 	 */
 	return rdma_protocol_iwarp(dev, port_num);
 }
-
-int ib_query_gid(struct ib_device *device,
-		 u8 port_num, int index, union ib_gid *gid,
-		 struct ib_gid_attr *attr);
 
 int ib_set_vf_link_state(struct ib_device *device, int vf, u8 port,
 			 int state);
@@ -3734,6 +3819,20 @@ static inline int ib_check_mr_access(int flags)
 	return 0;
 }
 
+static inline bool ib_access_writable(int access_flags)
+{
+	/*
+	 * We have writable memory backing the MR if any of the following
+	 * access flags are set.  "Local write" and "remote write" obviously
+	 * require write access.  "Remote atomic" can do things like fetch and
+	 * add, which will modify memory, and "MW bind" can change permissions
+	 * by binding a window.
+	 */
+	return access_flags &
+		(IB_ACCESS_LOCAL_WRITE   | IB_ACCESS_REMOTE_WRITE |
+		 IB_ACCESS_REMOTE_ATOMIC | IB_ACCESS_MW_BIND);
+}
+
 /**
  * ib_check_mr_status: lightweight check of MR status.
  *     This routine may provide status checks on a selected
@@ -3935,7 +4034,18 @@ static inline void rdma_ah_set_grh(struct rdma_ah_attr *attr,
 	grh->sgid_index = sgid_index;
 	grh->hop_limit = hop_limit;
 	grh->traffic_class = traffic_class;
+	grh->sgid_attr = NULL;
 }
+
+void rdma_destroy_ah_attr(struct rdma_ah_attr *ah_attr);
+void rdma_move_grh_sgid_attr(struct rdma_ah_attr *attr, union ib_gid *dgid,
+			     u32 flow_label, u8 hop_limit, u8 traffic_class,
+			     const struct ib_gid_attr *sgid_attr);
+void rdma_copy_ah_attr(struct rdma_ah_attr *dest,
+		       const struct rdma_ah_attr *src);
+void rdma_replace_ah_attr(struct rdma_ah_attr *old,
+			  const struct rdma_ah_attr *new);
+void rdma_move_ah_attr(struct rdma_ah_attr *dest, struct rdma_ah_attr *src);
 
 /**
  * rdma_ah_find_type - Return address handle type.
@@ -4011,5 +4121,7 @@ ib_get_vector_affinity(struct ib_device *device, int comp_vector)
  * @device:         the rdma device
  */
 void rdma_roce_rescan_device(struct ib_device *ibdev);
+
+struct ib_ucontext *ib_uverbs_get_ucontext(struct ib_uverbs_file *ufile);
 
 #endif /* IB_VERBS_H */
