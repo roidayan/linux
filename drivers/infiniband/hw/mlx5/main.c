@@ -510,12 +510,11 @@ static int set_roce_addr(struct mlx5_ib_dev *dev, u8 port_num,
 				      vlan_id, port_num);
 }
 
-static int mlx5_ib_add_gid(const union ib_gid *gid,
-			   const struct ib_gid_attr *attr,
+static int mlx5_ib_add_gid(const struct ib_gid_attr *attr,
 			   __always_unused void **context)
 {
 	return set_roce_addr(to_mdev(attr->device), attr->port_num,
-			     attr->index, gid, attr);
+			     attr->index, &attr->gid, attr);
 }
 
 static int mlx5_ib_del_gid(const struct ib_gid_attr *attr,
@@ -525,39 +524,13 @@ static int mlx5_ib_del_gid(const struct ib_gid_attr *attr,
 			     attr->index, NULL, NULL);
 }
 
-__be16 mlx5_get_roce_udp_sport(struct mlx5_ib_dev *dev, u8 port_num,
-			       int index)
+__be16 mlx5_get_roce_udp_sport(struct mlx5_ib_dev *dev,
+			       const struct ib_gid_attr *attr)
 {
-	struct ib_gid_attr attr;
-	union ib_gid gid;
-
-	if (ib_get_cached_gid(&dev->ib_dev, port_num, index, &gid, &attr))
-		return 0;
-
-	dev_put(attr.ndev);
-
-	if (attr.gid_type != IB_GID_TYPE_ROCE_UDP_ENCAP)
+	if (attr->gid_type != IB_GID_TYPE_ROCE_UDP_ENCAP)
 		return 0;
 
 	return cpu_to_be16(MLX5_CAP_ROCE(dev->mdev, r_roce_min_src_udp_port));
-}
-
-int mlx5_get_roce_gid_type(struct mlx5_ib_dev *dev, u8 port_num,
-			   int index, enum ib_gid_type *gid_type)
-{
-	struct ib_gid_attr attr;
-	union ib_gid gid;
-	int ret;
-
-	ret = ib_get_cached_gid(&dev->ib_dev, port_num, index, &gid, &attr);
-	if (ret)
-		return ret;
-
-	dev_put(attr.ndev);
-
-	*gid_type = attr.gid_type;
-
-	return 0;
 }
 
 static int mlx5_use_mad_ifc(struct mlx5_ib_dev *dev)
@@ -1608,7 +1581,10 @@ static int deallocate_uars(struct mlx5_ib_dev *dev, struct mlx5_ib_ucontext *con
 
 static int mlx5_ib_alloc_transport_domain(struct mlx5_ib_dev *dev, u32 *tdn)
 {
-	int err;
+	int err = 0;
+
+	if (!MLX5_CAP_GEN(dev->mdev, log_max_transport_domain))
+		return err;
 
 	err = mlx5_core_alloc_transport_domain(dev->mdev, tdn);
 	if (err)
@@ -1632,6 +1608,9 @@ static int mlx5_ib_alloc_transport_domain(struct mlx5_ib_dev *dev, u32 *tdn)
 static void mlx5_ib_dealloc_transport_domain(struct mlx5_ib_dev *dev, u32 tdn)
 {
 	mlx5_core_dealloc_transport_domain(dev->mdev, tdn);
+
+	if (!MLX5_CAP_GEN(dev->mdev, log_max_transport_domain))
+		return;
 
 	if ((MLX5_CAP_GEN(dev->mdev, port_type) != MLX5_CAP_PORT_TYPE_ETH) ||
 	    (!MLX5_CAP_GEN(dev->mdev, disable_local_lb_uc) &&
@@ -1660,6 +1639,7 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 	int err;
 	size_t min_req_v2 = offsetof(struct mlx5_ib_alloc_ucontext_req_v2,
 				     max_cqe_version);
+	u32 dump_fill_mkey;
 	bool lib_uar_4k;
 
 	if (!dev->ib_active)
@@ -1676,8 +1656,8 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 	if (err)
 		return ERR_PTR(err);
 
-	if (req.flags)
-		return ERR_PTR(-EINVAL);
+	if (req.flags & ~MLX5_IB_ALLOC_UCTX_DEVX)
+		return ERR_PTR(-EOPNOTSUPP);
 
 	if (req.comp_mask || req.reserved0 || req.reserved1 || req.reserved2)
 		return ERR_PTR(-EOPNOTSUPP);
@@ -1755,10 +1735,24 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 	context->ibucontext.invalidate_range = &mlx5_ib_invalidate_range;
 #endif
 
-	if (MLX5_CAP_GEN(dev->mdev, log_max_transport_domain)) {
-		err = mlx5_ib_alloc_transport_domain(dev, &context->tdn);
+	err = mlx5_ib_alloc_transport_domain(dev, &context->tdn);
+	if (err)
+		goto out_uars;
+
+	if (req.flags & MLX5_IB_ALLOC_UCTX_DEVX) {
+		/* Block DEVX on Infiniband as of SELinux */
+		if (mlx5_ib_port_link_layer(ibdev, 1) != IB_LINK_LAYER_ETHERNET) {
+			err = -EPERM;
+			goto out_td;
+		}
+
+		err = mlx5_ib_devx_create(dev, context);
+	}
+
+	if (MLX5_CAP_GEN(dev->mdev, dump_fill_mkey)) {
+		err = mlx5_cmd_dump_fill_mkey(dev->mdev, &dump_fill_mkey);
 		if (err)
-			goto out_uars;
+			goto out_mdev;
 	}
 
 	INIT_LIST_HEAD(&context->vma_private_list);
@@ -1819,9 +1813,18 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 		resp.response_length += sizeof(resp.num_dyn_bfregs);
 	}
 
+	if (field_avail(typeof(resp), dump_fill_mkey, udata->outlen)) {
+		if (MLX5_CAP_GEN(dev->mdev, dump_fill_mkey)) {
+			resp.dump_fill_mkey = dump_fill_mkey;
+			resp.comp_mask |=
+				MLX5_IB_ALLOC_UCONTEXT_RESP_MASK_DUMP_FILL_MKEY;
+		}
+		resp.response_length += sizeof(resp.dump_fill_mkey);
+	}
+
 	err = ib_copy_to_udata(udata, &resp, resp.response_length);
 	if (err)
-		goto out_td;
+		goto out_mdev;
 
 	bfregi->ver = ver;
 	bfregi->num_low_latency_bfregs = req.num_low_latency_bfregs;
@@ -1831,9 +1834,11 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 
 	return &context->ibucontext;
 
+out_mdev:
+	if (req.flags & MLX5_IB_ALLOC_UCTX_DEVX)
+		mlx5_ib_devx_destroy(dev, context);
 out_td:
-	if (MLX5_CAP_GEN(dev->mdev, log_max_transport_domain))
-		mlx5_ib_dealloc_transport_domain(dev, context->tdn);
+	mlx5_ib_dealloc_transport_domain(dev, context->tdn);
 
 out_uars:
 	deallocate_uars(dev, context);
@@ -1856,9 +1861,11 @@ static int mlx5_ib_dealloc_ucontext(struct ib_ucontext *ibcontext)
 	struct mlx5_ib_dev *dev = to_mdev(ibcontext->device);
 	struct mlx5_bfreg_info *bfregi;
 
+	if (context->devx_uid)
+		mlx5_ib_devx_destroy(dev, context);
+
 	bfregi = &context->bfregi;
-	if (MLX5_CAP_GEN(dev->mdev, log_max_transport_domain))
-		mlx5_ib_dealloc_transport_domain(dev, context->tdn);
+	mlx5_ib_dealloc_transport_domain(dev, context->tdn);
 
 	deallocate_uars(dev, context);
 	kfree(bfregi->sys_pages);
@@ -5278,7 +5285,7 @@ ADD_UVERBS_ATTRIBUTES_SIMPLE(mlx5_ib_flow_action, UVERBS_OBJECT_FLOW_ACTION,
 						 UVERBS_ATTR_TYPE(u64),
 						 UA_FLAGS(UVERBS_ATTR_SPEC_F_MANDATORY)));
 
-#define NUM_TREES	2
+#define NUM_TREES	3
 static int populate_specs_root(struct mlx5_ib_dev *dev)
 {
 	const struct uverbs_object_tree_def *default_root[NUM_TREES + 1] = {
@@ -5292,6 +5299,11 @@ static int populate_specs_root(struct mlx5_ib_dev *dev)
 	if (MLX5_CAP_DEV_MEM(dev->mdev, memic) &&
 	    !WARN_ON(num_trees >= ARRAY_SIZE(default_root)))
 		default_root[num_trees++] = &mlx5_ib_dm;
+
+	if (MLX5_CAP_GEN_64(dev->mdev, general_obj_types) &
+			    MLX5_GENERAL_OBJ_TYPES_CAP_UCTX &&
+	    !WARN_ON(num_trees >= ARRAY_SIZE(default_root)))
+		default_root[num_trees++] = mlx5_ib_get_devx_tree();
 
 	dev->ib_dev.specs_root =
 		uverbs_alloc_spec_tree(num_trees, default_root);
@@ -5552,6 +5564,8 @@ int mlx5_ib_stage_caps_init(struct mlx5_ib_dev *dev)
 	dev->ib_dev.modify_qp		= mlx5_ib_modify_qp;
 	dev->ib_dev.query_qp		= mlx5_ib_query_qp;
 	dev->ib_dev.destroy_qp		= mlx5_ib_destroy_qp;
+	dev->ib_dev.drain_sq		= mlx5_ib_drain_sq;
+	dev->ib_dev.drain_rq		= mlx5_ib_drain_rq;
 	dev->ib_dev.post_send		= mlx5_ib_post_send;
 	dev->ib_dev.post_recv		= mlx5_ib_post_recv;
 	dev->ib_dev.create_cq		= mlx5_ib_create_cq;
