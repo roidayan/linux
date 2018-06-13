@@ -163,6 +163,9 @@ void mlx5e_rep_encap_entry_detach(struct mlx5e_priv *priv,
 				  struct mlx5e_encap_entry *e);
 
 void mlx5e_rep_queue_neigh_stats_work(struct mlx5e_priv *priv);
+bool mlx5e_rep_queue_neigh_update_work(struct mlx5e_priv *priv,
+				       struct mlx5e_neigh_hash_entry *nhe,
+				       struct neighbour *n);
 #else /* CONFIG_MLX5_ESWITCH */
 static inline void mlx5e_register_vport_reps(struct mlx5e_priv *priv) {}
 static inline void mlx5e_unregister_vport_reps(struct mlx5e_priv *priv) {}
