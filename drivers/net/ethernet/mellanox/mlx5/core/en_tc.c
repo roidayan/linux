@@ -2567,6 +2567,32 @@ static void gen_vxlan_header_ipv6(struct net_device *out_dev,
 	vxh->vx_vni = vxlan_vni_field(vx_vni);
 }
 
+static int mlx5e_encap_entry_attach_update(struct mlx5e_priv *priv,
+					   struct net_device *out_dev,
+					   struct mlx5e_encap_entry *e,
+					   struct neighbour *n,
+					   unsigned long n_updated)
+{
+	unsigned long n_updated_new;
+	int err;
+
+	err = mlx5e_rep_encap_entry_attach(netdev_priv(out_dev), e);
+	if (err)
+		return err;
+
+	read_lock_bh(&n->lock);
+	n_updated_new = n->updated;
+	read_unlock_bh(&n->lock);
+
+	/* Neigh state changed before encap was attached to nhe.
+	 * Schedule update work.
+	 */
+	if (n_updated != n_updated_new)
+		mlx5e_rep_queue_neigh_update_work(priv, e->nhe, n);
+
+	return 0;
+}
+
 static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 					  struct net_device *mirred_dev,
 					  struct mlx5e_encap_entry *e)
@@ -2576,6 +2602,7 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 	struct ip_tunnel_key *tun_key = &e->tun_info.key;
 	struct net_device *out_dev;
 	struct neighbour *n = NULL;
+	unsigned long n_updated;
 	struct flowi4 fl4 = {};
 	u8 nud_state, tos, ttl;
 	char *encap_header;
@@ -2621,18 +2648,10 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 	memcpy(&e->m_neigh.dst_ip, n->primary_key, n->tbl->key_len);
 	e->out_dev = out_dev;
 
-	/* It's importent to add the neigh to the hash table before checking
-	 * the neigh validity state. So if we'll get a notification, in case the
-	 * neigh changes it's validity state, we would find the relevant neigh
-	 * in the hash.
-	 */
-	err = mlx5e_rep_encap_entry_attach(netdev_priv(out_dev), e);
-	if (err)
-		goto free_encap;
-
 	read_lock_bh(&n->lock);
 	nud_state = n->nud_state;
 	ether_addr_copy(e->h_dest, n->ha);
+	n_updated = n->updated;
 	read_unlock_bh(&n->lock);
 
 	switch (e->tunnel_type) {
@@ -2645,12 +2664,16 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 		break;
 	default:
 		err = -EOPNOTSUPP;
-		goto destroy_neigh_entry;
+		goto free_encap;
 	}
 	e->encap_size = ipv4_encap_size;
 	e->encap_header = encap_header;
 
 	if (!(nud_state & NUD_VALID)) {
+		err = mlx5e_encap_entry_attach_update(priv, out_dev, e, n,
+						      n_updated);
+		if (err)
+			goto free_encap;
 		neigh_event_send(n, NULL);
 		err = -EAGAIN;
 		goto out;
@@ -2659,15 +2682,19 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 	err = mlx5_encap_alloc(priv->mdev, e->tunnel_type,
 			       ipv4_encap_size, encap_header, &e->encap_id);
 	if (err)
-		goto destroy_neigh_entry;
+		goto free_encap;
 
 	e->flags |= MLX5_ENCAP_ENTRY_VALID;
+
+	err = mlx5e_encap_entry_attach_update(priv, out_dev, e, n, n_updated);
+	if (err)
+		goto dealloc_encap;
 	mlx5e_rep_queue_neigh_stats_work(netdev_priv(out_dev));
 	neigh_release(n);
 	return err;
 
-destroy_neigh_entry:
-	mlx5e_rep_encap_entry_detach(netdev_priv(e->out_dev), e);
+dealloc_encap:
+	mlx5_encap_dealloc(priv->mdev, e->encap_id);
 free_encap:
 	kfree(encap_header);
 out:
@@ -2685,6 +2712,7 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 	struct ip_tunnel_key *tun_key = &e->tun_info.key;
 	struct net_device *out_dev;
 	struct neighbour *n = NULL;
+	unsigned long n_updated;
 	struct flowi6 fl6 = {};
 	u8 nud_state, tos, ttl;
 	char *encap_header;
@@ -2730,18 +2758,10 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 	memcpy(&e->m_neigh.dst_ip, n->primary_key, n->tbl->key_len);
 	e->out_dev = out_dev;
 
-	/* It's importent to add the neigh to the hash table before checking
-	 * the neigh validity state. So if we'll get a notification, in case the
-	 * neigh changes it's validity state, we would find the relevant neigh
-	 * in the hash.
-	 */
-	err = mlx5e_rep_encap_entry_attach(netdev_priv(out_dev), e);
-	if (err)
-		goto free_encap;
-
 	read_lock_bh(&n->lock);
 	nud_state = n->nud_state;
 	ether_addr_copy(e->h_dest, n->ha);
+	n_updated = n->updated;
 	read_unlock_bh(&n->lock);
 
 	switch (e->tunnel_type) {
@@ -2754,13 +2774,18 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 		break;
 	default:
 		err = -EOPNOTSUPP;
-		goto destroy_neigh_entry;
+		goto free_encap;
 	}
 
 	e->encap_size = ipv6_encap_size;
 	e->encap_header = encap_header;
 
 	if (!(nud_state & NUD_VALID)) {
+		err = mlx5e_encap_entry_attach_update(priv, out_dev, e, n,
+						      n_updated);
+		if (err)
+			goto free_encap;
+
 		neigh_event_send(n, NULL);
 		err = -EAGAIN;
 		goto out;
@@ -2769,15 +2794,20 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 	err = mlx5_encap_alloc(priv->mdev, e->tunnel_type,
 			       ipv6_encap_size, encap_header, &e->encap_id);
 	if (err)
-		goto destroy_neigh_entry;
+		goto free_encap;
 
 	e->flags |= MLX5_ENCAP_ENTRY_VALID;
+
+	err = mlx5e_encap_entry_attach_update(priv, out_dev, e, n,
+					      n_updated);
+	if (err)
+		goto dealloc_encap;
 	mlx5e_rep_queue_neigh_stats_work(netdev_priv(out_dev));
 	neigh_release(n);
 	return err;
 
-destroy_neigh_entry:
-	mlx5e_rep_encap_entry_detach(netdev_priv(e->out_dev), e);
+dealloc_encap:
+	mlx5_encap_dealloc(priv->mdev, e->encap_id);
 free_encap:
 	kfree(encap_header);
 out:
