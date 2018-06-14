@@ -61,9 +61,11 @@ int mlx5e_stats_flower(struct mlx5e_priv *priv,
 
 struct mlx5e_encap_entry;
 void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
-			      struct mlx5e_encap_entry *e);
+			      struct mlx5e_encap_entry *e,
+			      bool *resched_update);
 void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
-			      struct mlx5e_encap_entry *e);
+			      struct mlx5e_encap_entry *e,
+			      bool *resched_update);
 bool mlx5e_encap_take(struct mlx5e_encap_entry *e);
 void mlx5e_encap_put(struct mlx5e_priv *priv, struct mlx5e_encap_entry *e);
 

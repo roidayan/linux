@@ -416,7 +416,8 @@ static void mlx5e_rep_neigh_stats_work(struct work_struct *work)
 static void mlx5e_rep_update_flows(struct mlx5e_priv *priv,
 				   struct mlx5e_encap_entry *e,
 				   bool neigh_connected,
-				   unsigned char ha[ETH_ALEN])
+				   unsigned char ha[ETH_ALEN],
+				   bool *resched_update)
 {
 	struct ethhdr *eth = (struct ethhdr *)e->encap_header;
 
@@ -425,14 +426,14 @@ static void mlx5e_rep_update_flows(struct mlx5e_priv *priv,
 	if ((!neigh_connected && (e->flags & MLX5_ENCAP_ENTRY_VALID)) ||
 	    !ether_addr_equal(e->h_dest, ha) ||
 	    !list_empty(&e->offloaded_flows))
-		mlx5e_tc_encap_flows_del(priv, e);
+		mlx5e_tc_encap_flows_del(priv, e, resched_update);
 
 	if ((neigh_connected && !(e->flags & MLX5_ENCAP_ENTRY_VALID)) ||
 	    !list_empty(&e->waiting_flows)) {
 		ether_addr_copy(e->h_dest, ha);
 		ether_addr_copy(eth->h_dest, ha);
 
-		mlx5e_tc_encap_flows_add(priv, e);
+		mlx5e_tc_encap_flows_add(priv, e, resched_update);
 	}
 }
 
@@ -445,6 +446,7 @@ static void mlx5e_rep_neigh_update(struct work_struct *work)
 	unsigned char ha[ETH_ALEN];
 	struct mlx5e_priv *priv;
 	bool neigh_connected;
+	bool resched_update = false;
 	u8 nud_state, dead;
 
 	rtnl_lock();
@@ -467,12 +469,21 @@ static void mlx5e_rep_neigh_update(struct work_struct *work)
 			continue;
 
 		priv = netdev_priv(e->out_dev);
-		mlx5e_rep_update_flows(priv, e, neigh_connected, ha);
+		mlx5e_rep_update_flows(priv, e, neigh_connected, ha,
+				       &resched_update);
 		mlx5e_encap_put(priv, e);
 	}
-	mlx5e_rep_neigh_entry_release(netdev_priv(nhe->m_neigh.dev), nhe);
+
+	if (resched_update)
+		mlx5e_rep_queue_neigh_update_work(netdev_priv(nhe->m_neigh.dev),
+						  nhe, n);
+	else
+		mlx5e_rep_neigh_entry_release(netdev_priv(nhe->m_neigh.dev),
+					      nhe);
+
 	rtnl_unlock();
-	neigh_release(n);
+	if (!resched_update)
+		neigh_release(n);
 }
 
 bool mlx5e_rep_queue_neigh_update_work(struct mlx5e_priv *priv,
