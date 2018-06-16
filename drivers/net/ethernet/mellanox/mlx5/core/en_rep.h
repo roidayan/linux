@@ -114,8 +114,10 @@ struct mlx5e_neigh_hash_entry {
 };
 
 enum {
-	/* set when the encap entry is successfully offloaded into HW */
+	/* set when users are allowed to insert new flows into offloaded list */
 	MLX5_ENCAP_ENTRY_VALID     = BIT(0),
+	/* set when the encap entry is successfully offloaded into HW */
+	MLX5_ENCAP_ENTRY_OFFLOADED = BIT(1),
 };
 
 struct mlx5e_encap_entry {
