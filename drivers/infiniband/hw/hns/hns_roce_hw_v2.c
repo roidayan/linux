@@ -1308,7 +1308,7 @@ static int hns_roce_v2_chk_mbox(struct hns_roce_dev *hr_dev,
 }
 
 static int hns_roce_v2_set_gid(struct hns_roce_dev *hr_dev, u8 port,
-			       int gid_index, union ib_gid *gid,
+			       int gid_index, const union ib_gid *gid,
 			       const struct ib_gid_attr *attr)
 {
 	enum hns_roce_sgid_type sgid_type = GID_TYPE_FLAG_ROCE_V1;
@@ -3177,7 +3177,7 @@ static int hns_roce_v2_modify_qp(struct ib_qp *ibqp,
 	struct device *dev = hr_dev->dev;
 	int ret = -EINVAL;
 
-	context = kzalloc(2 * sizeof(*context), GFP_KERNEL);
+	context = kcalloc(2, sizeof(*context), GFP_KERNEL);
 	if (!context)
 		return -ENOMEM;
 

@@ -138,6 +138,12 @@ static int (*uverbs_ex_cmd_table[])(struct ib_uverbs_file *file,
 static void ib_uverbs_add_one(struct ib_device *device);
 static void ib_uverbs_remove_one(struct ib_device *device, void *client_data);
 
+struct ib_ucontext *ib_uverbs_get_ucontext(struct ib_uverbs_file *ufile)
+{
+	return ufile->ucontext;
+}
+EXPORT_SYMBOL(ib_uverbs_get_ucontext);
+
 int uverbs_dealloc_mw(struct ib_mw *mw)
 {
 	struct ib_pd *pd = mw->pd;
@@ -736,10 +742,6 @@ static ssize_t ib_uverbs_write(struct file *filp, const char __user *buf,
 	if (ret)
 		return ret;
 
-	if (!file->ucontext &&
-	    (command != IB_USER_VERBS_CMD_GET_CONTEXT || extended))
-		return -EINVAL;
-
 	if (extended) {
 		if (count < (sizeof(hdr) + sizeof(ex_hdr)))
 			return -EINVAL;
@@ -756,6 +758,16 @@ static ssize_t ib_uverbs_write(struct file *filp, const char __user *buf,
 				  &file->device->disassociate_srcu);
 	if (!ib_dev) {
 		ret = -EIO;
+		goto out;
+	}
+
+	/*
+	 * Must be after the ib_dev check, as once the RCU clears ib_dev ==
+	 * NULL means ucontext == NULL
+	 */
+	if (!file->ucontext &&
+	    (command != IB_USER_VERBS_CMD_GET_CONTEXT || extended)) {
+		ret = -EINVAL;
 		goto out;
 	}
 
