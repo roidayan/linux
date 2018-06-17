@@ -94,6 +94,7 @@ enum ib_gid_type {
 struct ib_gid_attr {
 	struct net_device	*ndev;
 	struct ib_device	*device;
+	union ib_gid		gid;
 	enum ib_gid_type	gid_type;
 	u16			index;
 	u8			port_num;
@@ -148,13 +149,13 @@ static inline enum ib_gid_type ib_network_to_gid_type(enum rdma_network_type net
 	return IB_GID_TYPE_IB;
 }
 
-static inline enum rdma_network_type ib_gid_to_network_type(enum ib_gid_type gid_type,
-							    union ib_gid *gid)
+static inline enum rdma_network_type
+rdma_gid_attr_network_type(const struct ib_gid_attr *attr)
 {
-	if (gid_type == IB_GID_TYPE_IB)
+	if (attr->gid_type == IB_GID_TYPE_IB)
 		return RDMA_NETWORK_IB;
 
-	if (ipv6_addr_v4mapped((struct in6_addr *)gid))
+	if (ipv6_addr_v4mapped((struct in6_addr *)&attr->gid))
 		return RDMA_NETWORK_IPV4;
 	else
 		return RDMA_NETWORK_IPV6;
@@ -689,6 +690,7 @@ struct ib_event_handler {
 	} while (0)
 
 struct ib_global_route {
+	const struct ib_gid_attr *sgid_attr;
 	union ib_gid	dgid;
 	u32		flow_label;
 	u8		sgid_index;
@@ -1473,7 +1475,7 @@ struct ib_fmr_attr {
 struct ib_umem;
 
 enum rdma_remove_reason {
-	/* Userspace requested uobject deletion. Call could fail */
+	/* Userspace requested uobject deletion or initial try to remove uobject via cleanup. Call could fail */
 	RDMA_REMOVE_DESTROY,
 	/* Context deletion. This call should delete the actual object itself */
 	RDMA_REMOVE_CLOSE,
@@ -1578,6 +1580,7 @@ struct ib_ah {
 	struct ib_device	*device;
 	struct ib_pd		*pd;
 	struct ib_uobject	*uobject;
+	const struct ib_gid_attr *sgid_attr;
 	enum rdma_ah_attr_type	type;
 };
 
@@ -1776,6 +1779,9 @@ struct ib_qp {
 	struct ib_uobject      *uobject;
 	void                  (*event_handler)(struct ib_event *, void *);
 	void		       *qp_context;
+	/* sgid_attrs associated with the AV's */
+	const struct ib_gid_attr *av_sgid_attr;
+	const struct ib_gid_attr *alt_path_sgid_attr;
 	u32			qp_num;
 	u32			max_write_sge;
 	u32			max_read_sge;
@@ -2341,8 +2347,7 @@ struct ib_device {
 	 * concurrently for different ports. This function is only called when
 	 * roce_gid_table is used.
 	 */
-	int		           (*add_gid)(const union ib_gid *gid,
-					      const struct ib_gid_attr *attr,
+	int		           (*add_gid)(const struct ib_gid_attr *attr,
 					      void **context);
 	/* When calling del_gid, the HW vendor's driver should delete the
 	 * gid of device @device at gid index gid_index of port port_num
@@ -3046,10 +3051,6 @@ static inline bool rdma_cap_read_inv(struct ib_device *dev, u32 port_num)
 	return rdma_protocol_iwarp(dev, port_num);
 }
 
-int ib_query_gid(struct ib_device *device,
-		 u8 port_num, int index, union ib_gid *gid,
-		 struct ib_gid_attr *attr);
-
 int ib_set_vf_link_state(struct ib_device *device, int vf, u8 port,
 			 int state);
 int ib_get_vf_config(struct ib_device *device, int vf, u8 port,
@@ -3148,6 +3149,13 @@ int ib_get_rdma_header_version(const union rdma_network_hdr *hdr);
  *   ignored unless the work completion indicates that the GRH is valid.
  * @ah_attr: Returned attributes that can be used when creating an address
  *   handle for replying to the message.
+ * When ib_init_ah_attr_from_wc() returns success,
+ * (a) for IB link layer it optionally contains a reference to SGID attribute
+ * when GRH is present for IB link layer.
+ * (b) for RoCE link layer it contains a reference to SGID attribute.
+ * User must invoke rdma_cleanup_ah_attr_gid_attr() to release reference to SGID
+ * attributes which are initialized using ib_init_ah_attr_from_wc().
+ *
  */
 int ib_init_ah_attr_from_wc(struct ib_device *device, u8 port_num,
 			    const struct ib_wc *wc, const struct ib_grh *grh,
@@ -3798,10 +3806,6 @@ struct ib_xrcd *__ib_alloc_xrcd(struct ib_device *device, const char *caller);
  */
 int ib_dealloc_xrcd(struct ib_xrcd *xrcd);
 
-struct ib_flow *ib_create_flow(struct ib_qp *qp,
-			       struct ib_flow_attr *flow_attr, int domain);
-int ib_destroy_flow(struct ib_flow *flow_id);
-
 static inline int ib_check_mr_access(int flags)
 {
 	/*
@@ -4030,7 +4034,18 @@ static inline void rdma_ah_set_grh(struct rdma_ah_attr *attr,
 	grh->sgid_index = sgid_index;
 	grh->hop_limit = hop_limit;
 	grh->traffic_class = traffic_class;
+	grh->sgid_attr = NULL;
 }
+
+void rdma_destroy_ah_attr(struct rdma_ah_attr *ah_attr);
+void rdma_move_grh_sgid_attr(struct rdma_ah_attr *attr, union ib_gid *dgid,
+			     u32 flow_label, u8 hop_limit, u8 traffic_class,
+			     const struct ib_gid_attr *sgid_attr);
+void rdma_copy_ah_attr(struct rdma_ah_attr *dest,
+		       const struct rdma_ah_attr *src);
+void rdma_replace_ah_attr(struct rdma_ah_attr *old,
+			  const struct rdma_ah_attr *new);
+void rdma_move_ah_attr(struct rdma_ah_attr *dest, struct rdma_ah_attr *src);
 
 /**
  * rdma_ah_find_type - Return address handle type.
@@ -4106,5 +4121,7 @@ ib_get_vector_affinity(struct ib_device *device, int comp_vector)
  * @device:         the rdma device
  */
 void rdma_roce_rescan_device(struct ib_device *ibdev);
+
+struct ib_ucontext *ib_uverbs_get_ucontext(struct ib_uverbs_file *ufile);
 
 #endif /* IB_VERBS_H */
