@@ -46,6 +46,79 @@ static bool uverbs_is_attr_cleared(const struct ib_uverbs_attr *uattr,
 			   0, uattr->len - len);
 }
 
+static int uverbs_process_idrs_arr_attr(struct ib_uverbs_file *ufile,
+					struct uverbs_objs_arr_attr *attr,
+					const struct ib_uverbs_attr *uattr,
+					const struct uverbs_attr_spec *spec)
+{
+	const struct uverbs_object_spec *object;
+	int err;
+	int i = 0; /* Initialization for error flow */
+
+	if (!ufile->ucontext || uattr->attr_data.reserved)
+		return -EINVAL;
+
+	if (uattr->len % sizeof(u32))
+		return -EINVAL;
+
+	attr->len = uattr->len / sizeof(u32);
+
+	if (attr->len < spec->u2.objs_arr.min_len ||
+	    attr->len > spec->u2.objs_arr.max_len)
+		return -EINVAL;
+
+	attr->uobjects = kvmalloc_array(attr->len, sizeof(*attr->uobjects),
+					GFP_KERNEL);
+	if (!attr->uobjects)
+		return -ENOMEM;
+
+	/* Since idr is 4B and *uobjects is >= 4B, we can use
+	 * attr->uobjects to store idrs array and avoid additional memory
+	 * allocation. The idrs array is offset to the end of the uobjects
+	 * array so we will be able to read a 4B idr and replace with a
+	 * 8B pointer.
+	 */
+	if (uattr->len > sizeof(uattr->data)) {
+		err = copy_from_user((u8 *)attr->uobjects + uattr->len,
+				     u64_to_user_ptr(uattr->data),
+				     uattr->len);
+		if (err) {
+			err = -EFAULT;
+			goto err_objs_arr;
+		}
+	} else {
+		memcpy((u8 *)attr->uobjects + uattr->len, &uattr->data,
+		       uattr->len);
+	}
+
+	object = uverbs_get_object(ufile, spec->u2.objs_arr.obj_type);
+	if (!object) {
+		err = -EINVAL;
+		goto err_objs_arr;
+	}
+
+	for (i = 0; i < attr->len; i++) {
+		attr->uobjects[i] =
+			uverbs_get_uobject_from_file(object->type_attrs, ufile,
+						     spec->u2.objs_arr.access,
+						     ((u32 *)attr->uobjects)[attr->len + i]);
+		if (IS_ERR(attr->uobjects[i])) {
+			err = PTR_ERR(attr->uobjects[i]);
+			goto err_objs_arr;
+		}
+	}
+
+	return 0;
+
+err_objs_arr:
+	while (i > 0)
+		uverbs_finalize_object(attr->uobjects[--i],
+				       spec->u2.objs_arr.access, false);
+
+	kvfree(attr->uobjects);
+	return err;
+}
+
 static int uverbs_process_attr(struct ib_uverbs_file *ufile,
 			       const struct ib_uverbs_attr *uattr,
 			       u16 attr_id,
@@ -59,6 +132,7 @@ static int uverbs_process_attr(struct ib_uverbs_file *ufile,
 	const struct uverbs_object_spec *object;
 	struct uverbs_obj_attr *o_attr;
 	struct uverbs_attr *elements = attr_bundle_h->attrs;
+	int err;
 
 	if (attr_id >= attr_spec_bucket->num_attrs) {
 		if (uattr->flags & UVERBS_ATTR_F_MANDATORY)
@@ -176,6 +250,14 @@ static int uverbs_process_attr(struct ib_uverbs_file *ufile,
 		}
 
 		break;
+
+	case UVERBS_ATTR_TYPE_IDRS_ARRAY:
+		err = uverbs_process_idrs_arr_attr(ufile, &e->objs_arr_attr,
+						   uattr, spec);
+		if (err)
+			return err;
+
+		break;
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -204,6 +286,7 @@ static int uverbs_finalize_attrs(struct uverbs_attr_bundle *attrs_bundle,
 		for (j = 0; j < curr_bundle->num_attrs; j++) {
 			struct uverbs_attr *attr;
 			const struct uverbs_attr_spec *spec;
+			int current_ret;
 
 			if (!uverbs_attr_is_valid_in_hash(curr_bundle, j))
 				continue;
@@ -213,8 +296,6 @@ static int uverbs_finalize_attrs(struct uverbs_attr_bundle *attrs_bundle,
 
 			if (spec->type == UVERBS_ATTR_TYPE_IDR ||
 			    spec->type == UVERBS_ATTR_TYPE_FD) {
-				int current_ret;
-
 				current_ret = uverbs_finalize_object(
 					attr->obj_attr.uobject,
 					spec->u.obj.access, commit);
@@ -224,6 +305,15 @@ static int uverbs_finalize_attrs(struct uverbs_attr_bundle *attrs_bundle,
 				   spec->alloc_and_copy &&
 				   !uverbs_attr_ptr_is_inline(attr)) {
 				kvfree(attr->ptr_attr.ptr);
+			} else if (spec->type == UVERBS_ATTR_TYPE_IDRS_ARRAY) {
+				for (i = 0; i < attr->objs_arr_attr.len; i++) {
+					current_ret =
+						uverbs_finalize_object(attr->objs_arr_attr.uobjects[i],
+								       spec->u2.objs_arr.access, commit);
+					if (!ret)
+						ret = current_ret;
+				}
+				kvfree(attr->objs_arr_attr.uobjects);
 			}
 		}
 	}
