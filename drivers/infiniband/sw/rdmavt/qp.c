@@ -780,14 +780,15 @@ struct ib_qp *rvt_create_qp(struct ib_pd *ibpd,
 	if (!rdi)
 		return ERR_PTR(-EINVAL);
 
-	if (init_attr->cap.max_send_sge > rdi->dparms.props.max_sge ||
+	if (init_attr->cap.max_send_sge > rdi->dparms.props.max_send_sge ||
 	    init_attr->cap.max_send_wr > rdi->dparms.props.max_qp_wr ||
 	    init_attr->create_flags)
 		return ERR_PTR(-EINVAL);
 
 	/* Check receive queue parameters if no SRQ is specified. */
 	if (!init_attr->srq) {
-		if (init_attr->cap.max_recv_sge > rdi->dparms.props.max_sge ||
+		if (init_attr->cap.max_recv_sge >
+		    rdi->dparms.props.max_recv_sge ||
 		    init_attr->cap.max_recv_wr > rdi->dparms.props.max_qp_wr)
 			return ERR_PTR(-EINVAL);
 
@@ -813,7 +814,7 @@ struct ib_qp *rvt_create_qp(struct ib_pd *ibpd,
 		sz = sizeof(struct rvt_sge) *
 			init_attr->cap.max_send_sge +
 			sizeof(struct rvt_swqe);
-		swq = vzalloc_node(sqsize * sz, rdi->dparms.node);
+		swq = vzalloc_node(array_size(sz, sqsize), rdi->dparms.node);
 		if (!swq)
 			return ERR_PTR(-ENOMEM);
 
@@ -836,11 +837,10 @@ struct ib_qp *rvt_create_qp(struct ib_pd *ibpd,
 		RCU_INIT_POINTER(qp->next, NULL);
 		if (init_attr->qp_type == IB_QPT_RC) {
 			qp->s_ack_queue =
-				kzalloc_node(
-					sizeof(*qp->s_ack_queue) *
-					 rvt_max_atomic(rdi),
-					GFP_KERNEL,
-					rdi->dparms.node);
+				kcalloc_node(rvt_max_atomic(rdi),
+					     sizeof(*qp->s_ack_queue),
+					     GFP_KERNEL,
+					     rdi->dparms.node);
 			if (!qp->s_ack_queue)
 				goto bail_qp;
 		}
@@ -1337,13 +1337,13 @@ int rvt_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 		qp->qp_access_flags = attr->qp_access_flags;
 
 	if (attr_mask & IB_QP_AV) {
-		qp->remote_ah_attr = attr->ah_attr;
+		rdma_replace_ah_attr(&qp->remote_ah_attr, &attr->ah_attr);
 		qp->s_srate = rdma_ah_get_static_rate(&attr->ah_attr);
 		qp->srate_mbps = ib_rate_to_mbps(qp->s_srate);
 	}
 
 	if (attr_mask & IB_QP_ALT_PATH) {
-		qp->alt_ah_attr = attr->alt_ah_attr;
+		rdma_replace_ah_attr(&qp->alt_ah_attr, &attr->alt_ah_attr);
 		qp->s_alt_pkey_index = attr->alt_pkey_index;
 	}
 
@@ -1460,6 +1460,8 @@ int rvt_destroy_qp(struct ib_qp *ibqp)
 	vfree(qp->s_wq);
 	rdi->driver_f.qp_priv_free(rdi, qp);
 	kfree(qp->s_ack_queue);
+	rdma_destroy_ah_attr(&qp->remote_ah_attr);
+	rdma_destroy_ah_attr(&qp->alt_ah_attr);
 	kfree(qp);
 	return 0;
 }
