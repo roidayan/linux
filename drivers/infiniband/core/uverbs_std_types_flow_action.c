@@ -38,7 +38,7 @@ static int uverbs_free_flow_action(struct ib_uobject *uobject,
 {
 	struct ib_flow_action *action = uobject->object;
 
-	if (why == RDMA_REMOVE_DESTROY &&
+	if (ib_is_remove_retry(why, uobject) &&
 	    atomic_read(&action->usecnt))
 		return -EBUSY;
 
@@ -428,7 +428,7 @@ static DECLARE_UVERBS_NAMED_METHOD_WITH_HANDLER(UVERBS_METHOD_FLOW_ACTION_DESTRO
 			 UA_FLAGS(UVERBS_ATTR_SPEC_F_MANDATORY)));
 
 DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_FLOW_ACTION,
-			    &UVERBS_TYPE_ALLOC_IDR(0, uverbs_free_flow_action),
+			    &UVERBS_TYPE_ALLOC_IDR(uverbs_free_flow_action),
 			    &UVERBS_METHOD(UVERBS_METHOD_FLOW_ACTION_ESP_CREATE),
 			    &UVERBS_METHOD(UVERBS_METHOD_FLOW_ACTION_DESTROY),
 			    &UVERBS_METHOD(UVERBS_METHOD_FLOW_ACTION_ESP_MODIFY));
