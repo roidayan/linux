@@ -5377,7 +5377,11 @@ static int set_user_rq_size(struct mlx5_ib_dev *dev,
 
 	rwq->wqe_count = ucmd->rq_wqe_count;
 	rwq->wqe_shift = ucmd->rq_wqe_shift;
-	rwq->buf_size = (rwq->wqe_count << rwq->wqe_shift);
+	rwq->buf_size =
+		shift_overflow((size_t)rwq->wqe_count, (size_t)rwq->wqe_shift);
+	if (rwq->buf_size == SIZE_MAX)
+		return -EINVAL;
+
 	rwq->log_rq_stride = rwq->wqe_shift;
 	rwq->log_rq_size = ilog2(rwq->wqe_count);
 	return 0;
