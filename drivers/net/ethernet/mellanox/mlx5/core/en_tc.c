@@ -681,7 +681,7 @@ mlx5e_tc_add_nic_flow(struct mlx5e_priv *priv,
 		.action = attr->action,
 		.has_flow_tag = true,
 		.flow_tag = attr->flow_tag,
-		.encap_id = 0,
+		.packet_reformat_id = 0,
 	};
 	struct mlx5_fc *counter = NULL;
 	struct mlx5_flow_handle *rule;
@@ -829,7 +829,7 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	struct mlx5e_priv *out_priv;
 	int err;
 
-	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP) {
+	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_PACKET_REFORMAT_ID) {
 		out_dev = __dev_get_by_index(dev_net(priv->netdev),
 					     attr->parse_attr->mirred_ifindex);
 		err = mlx5e_attach_encap(priv, &parse_attr->tun_info,
@@ -885,7 +885,7 @@ err_add_rule:
 err_mod_hdr:
 	mlx5_eswitch_del_vlan_action(esw, attr);
 err_add_vlan:
-	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP)
+	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_PACKET_REFORMAT_ID)
 		mlx5e_detach_encap(priv, flow);
 err_attach_encap:
 	return rule;
@@ -906,7 +906,7 @@ static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
 
 	mlx5_eswitch_del_vlan_action(esw, attr);
 
-	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP) {
+	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_PACKET_REFORMAT_ID) {
 		mlx5e_detach_encap(priv, flow);
 		kvfree(attr->parse_attr);
 	}
@@ -923,9 +923,9 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 	struct mlx5e_tc_flow *flow;
 	int err;
 
-	err = mlx5_encap_alloc(priv->mdev, e->tunnel_type,
-			       e->encap_size, e->encap_header,
-			       &e->encap_id);
+	err = mlx5_packet_reformat_alloc(priv->mdev, e->tunnel_type,
+					 e->encap_size, e->encap_header,
+					 &e->packet_reformat_id);
 	if (err) {
 		mlx5_core_warn(priv->mdev, "Failed to offload cached encapsulation header, %d\n",
 			       err);
@@ -936,7 +936,7 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 
 	list_for_each_entry(flow, &e->flows, encap) {
 		esw_attr = flow->esw_attr;
-		esw_attr->encap_id = e->encap_id;
+		esw_attr->packet_reformat_id = e->packet_reformat_id;
 		flow->rule[0] = mlx5_eswitch_add_offloaded_rule(esw, &esw_attr->parse_attr->spec, esw_attr);
 		if (IS_ERR(flow->rule[0])) {
 			err = PTR_ERR(flow->rule[0]);
@@ -979,7 +979,7 @@ void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
 
 	if (e->flags & MLX5_ENCAP_ENTRY_VALID) {
 		e->flags &= ~MLX5_ENCAP_ENTRY_VALID;
-		mlx5_encap_dealloc(priv->mdev, e->encap_id);
+		mlx5_packet_reformat_dealloc(priv->mdev, e->packet_reformat_id);
 	}
 }
 
@@ -1050,7 +1050,7 @@ static void mlx5e_detach_encap(struct mlx5e_priv *priv,
 		mlx5e_rep_encap_entry_detach(netdev_priv(e->out_dev), e);
 
 		if (e->flags & MLX5_ENCAP_ENTRY_VALID)
-			mlx5_encap_dealloc(priv->mdev, e->encap_id);
+			mlx5_packet_reformat_dealloc(priv->mdev, e->packet_reformat_id);
 
 		hash_del_rcu(&e->encap_hlist);
 		kfree(e->encap_header);
@@ -2252,7 +2252,7 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 		return -ENOMEM;
 
 	switch (e->tunnel_type) {
-	case MLX5_HEADER_TYPE_VXLAN:
+	case MLX5_REFORMAT_TYPE_L2_TO_VXLAN:
 		fl4.flowi4_proto = IPPROTO_UDP;
 		fl4.fl4_dport = tun_key->tp_dst;
 		break;
@@ -2292,7 +2292,7 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 	read_unlock_bh(&n->lock);
 
 	switch (e->tunnel_type) {
-	case MLX5_HEADER_TYPE_VXLAN:
+	case MLX5_REFORMAT_TYPE_L2_TO_VXLAN:
 		gen_vxlan_header_ipv4(out_dev, encap_header,
 				      ipv4_encap_size, e->h_dest, ttl,
 				      fl4.daddr,
@@ -2312,8 +2312,9 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 		goto out;
 	}
 
-	err = mlx5_encap_alloc(priv->mdev, e->tunnel_type,
-			       ipv4_encap_size, encap_header, &e->encap_id);
+	err = mlx5_packet_reformat_alloc(priv->mdev, e->tunnel_type,
+					 ipv4_encap_size, encap_header,
+					 &e->packet_reformat_id);
 	if (err)
 		goto destroy_neigh_entry;
 
@@ -2357,7 +2358,7 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 		return -ENOMEM;
 
 	switch (e->tunnel_type) {
-	case MLX5_HEADER_TYPE_VXLAN:
+	case MLX5_REFORMAT_TYPE_L2_TO_VXLAN:
 		fl6.flowi6_proto = IPPROTO_UDP;
 		fl6.fl6_dport = tun_key->tp_dst;
 		break;
@@ -2398,7 +2399,7 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 	read_unlock_bh(&n->lock);
 
 	switch (e->tunnel_type) {
-	case MLX5_HEADER_TYPE_VXLAN:
+	case MLX5_REFORMAT_TYPE_L2_TO_VXLAN:
 		gen_vxlan_header_ipv6(out_dev, encap_header,
 				      ipv6_encap_size, e->h_dest, ttl,
 				      &fl6.daddr,
@@ -2419,8 +2420,9 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 		goto out;
 	}
 
-	err = mlx5_encap_alloc(priv->mdev, e->tunnel_type,
-			       ipv6_encap_size, encap_header, &e->encap_id);
+	err = mlx5_packet_reformat_alloc(priv->mdev, e->tunnel_type,
+					 ipv6_encap_size, encap_header,
+					 &e->packet_reformat_id);
 	if (err)
 		goto destroy_neigh_entry;
 
@@ -2472,7 +2474,7 @@ vxlan_encap_offload_err:
 
 	if (mlx5e_vxlan_lookup_port(up_priv, be16_to_cpu(key->tp_dst)) &&
 	    MLX5_CAP_ESW(priv->mdev, vxlan_encap_decap)) {
-		tunnel_type = MLX5_HEADER_TYPE_VXLAN;
+		tunnel_type = MLX5_REFORMAT_TYPE_L2_TO_VXLAN;
 	} else {
 		netdev_warn(priv->netdev,
 			    "%d isn't an offloaded vxlan udp dport\n", be16_to_cpu(key->tp_dst));
@@ -2515,7 +2517,7 @@ attach_flow:
 	list_add(&flow->encap, &e->flows);
 	*encap_dev = e->out_dev;
 	if (e->flags & MLX5_ENCAP_ENTRY_VALID)
-		attr->encap_id = e->encap_id;
+		attr->packet_reformat_id = e->packet_reformat_id;
 	else
 		err = -EAGAIN;
 
@@ -2598,7 +2600,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 				parse_attr->mirred_ifindex = out_dev->ifindex;
 				parse_attr->tun_info = *info;
 				attr->parse_attr = parse_attr;
-				action |= MLX5_FLOW_CONTEXT_ACTION_ENCAP |
+				action |= MLX5_FLOW_CONTEXT_ACTION_PACKET_REFORMAT_ID |
 					  MLX5_FLOW_CONTEXT_ACTION_FWD_DEST |
 					  MLX5_FLOW_CONTEXT_ACTION_COUNT;
 				/* attr->out_rep is resolved when we handle encap */
@@ -2756,7 +2758,7 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv,
 		flow->flags |= MLX5E_TC_FLOW_OFFLOADED;
 
 	if (!(flow->flags & MLX5E_TC_FLOW_ESWITCH) ||
-	    !(flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP))
+	    !(flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_PACKET_REFORMAT_ID))
 		kvfree(parse_attr);
 
 	err = rhashtable_insert_fast(tc_ht, &flow->node, tc_ht_params);
