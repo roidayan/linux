@@ -37,10 +37,10 @@ static int uverbs_free_flow_action(struct ib_uobject *uobject,
 				   enum rdma_remove_reason why)
 {
 	struct ib_flow_action *action = uobject->object;
+	int ret = atomic_read(&action->usecnt) ? -EBUSY : 0;
 
-	if (why == RDMA_REMOVE_DESTROY &&
-	    atomic_read(&action->usecnt))
-		return -EBUSY;
+	if (ib_is_destroy_retryable(ret, why, uobject))
+		return ret;
 
 	return action->device->destroy_flow_action(action);
 }
@@ -428,7 +428,7 @@ static DECLARE_UVERBS_NAMED_METHOD_WITH_HANDLER(UVERBS_METHOD_FLOW_ACTION_DESTRO
 			 UA_FLAGS(UVERBS_ATTR_SPEC_F_MANDATORY)));
 
 DECLARE_UVERBS_NAMED_OBJECT(UVERBS_OBJECT_FLOW_ACTION,
-			    &UVERBS_TYPE_ALLOC_IDR(0, uverbs_free_flow_action),
+			    &UVERBS_TYPE_ALLOC_IDR(uverbs_free_flow_action),
 			    &UVERBS_METHOD(UVERBS_METHOD_FLOW_ACTION_ESP_CREATE),
 			    &UVERBS_METHOD(UVERBS_METHOD_FLOW_ACTION_DESTROY),
 			    &UVERBS_METHOD(UVERBS_METHOD_FLOW_ACTION_ESP_MODIFY));
