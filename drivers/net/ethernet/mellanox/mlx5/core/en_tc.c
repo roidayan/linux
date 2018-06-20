@@ -2546,7 +2546,9 @@ out_err:
 	return err;
 }
 
-static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
+static int parse_tc_fdb_actions(struct mlx5e_priv *priv,
+				struct mlx5e_priv *source_priv,
+				struct tcf_exts *exts,
 				struct mlx5e_tc_flow_parse_attr *parse_attr,
 				struct mlx5e_tc_flow *flow)
 {
@@ -2603,10 +2605,10 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 				return -EOPNOTSUPP;
 			}
 
-			if (switchdev_port_same_parent_id(priv->netdev,
+			if (switchdev_port_same_parent_id(source_priv->netdev,
 							  out_dev,
 							  SWITCHDEV_F_NO_RECURSE) ||
-			    is_merged_eswitch_dev(priv, out_dev)) {
+			    is_merged_eswitch_dev(source_priv, out_dev)) {
 				action |= MLX5_FLOW_CONTEXT_ACTION_FWD_DEST |
 					  MLX5_FLOW_CONTEXT_ACTION_COUNT;
 				out_priv = netdev_priv(out_dev);
@@ -2623,7 +2625,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 				/* attr->out_rep is resolved when we handle encap */
 			} else {
 				pr_err("devices %s %s not on same switch HW, can't offload forwarding\n",
-				       priv->netdev->name, out_dev->name);
+				       source_priv->netdev->name, out_dev->name);
 				return -EINVAL;
 			}
 			continue;
@@ -2767,6 +2769,7 @@ err_free:
 
 static int
 __mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
+		     struct mlx5e_priv *source_priv,
 		     struct tc_cls_flower_offload *f,
 		     u32 flow_flags,
 		     struct mlx5_eswitch_rep *in_rep,
@@ -2785,9 +2788,12 @@ __mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 	if (err)
 		goto out;
 
-	err = parse_tc_fdb_actions(priv, f->exts, parse_attr, flow);
+	err = parse_tc_fdb_actions(priv, source_priv, f->exts, parse_attr, flow);
 	if (err)
 		goto err_free;
+
+	if (flow_flags & MLX5E_TC_FLOW_EGRESS && !(flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_DECAP))
+		return -EOPNOTSUPP;
 
 	flow->esw_attr->in_rep = in_rep;
 	flow->esw_attr->in_mdev = in_mdev;
@@ -2838,7 +2844,7 @@ mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 	struct mlx5e_tc_flow *flow;
 	int err;
 
-	err = __mlx5e_add_fdb_flow(priv, f, flow_flags, in_rep, in_mdev,
+	err = __mlx5e_add_fdb_flow(priv, priv, f, flow_flags, in_rep, in_mdev,
 				   &flow);
 
 	if (err)
@@ -2860,7 +2866,7 @@ mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 		if (in_rep->vport == FDB_UPLINK_VPORT)
 			in_mdev = peer_priv->mdev;
 
-		err = __mlx5e_add_fdb_flow(peer_priv, f, flow_flags,
+		err = __mlx5e_add_fdb_flow(peer_priv, priv, f, flow_flags,
 					   in_rep, in_mdev, &peer_flow);
 		if (err) {
 			mlx5e_tc_del_fdb_flow(priv, flow);
