@@ -25,6 +25,8 @@
 #ifndef __I915_UTILS_H
 #define __I915_UTILS_H
 
+#include <linux/kernel.h>
+
 #undef WARN_ON
 /* Many gcc seem to no see through this and fall over :( */
 #if 0
@@ -100,16 +102,6 @@
 	typeof(*ptr) __T = *(ptr);					\
 	*(ptr) = (typeof(*ptr))0;					\
 	__T;								\
-})
-
-static inline u64 ptr_to_u64(const void *ptr)
-{
-	return (uintptr_t)ptr;
-}
-
-#define u64_to_ptr(T, x) ({						\
-	typecheck(u64, x);						\
-	(T *)(uintptr_t)(x);						\
 })
 
 #define __mask_next_bit(mask) ({					\
