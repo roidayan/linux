@@ -3592,9 +3592,12 @@ int ib_uverbs_ex_create_flow(struct ib_uverbs_file *file,
 	kern_spec = kern_flow_attr + 1;
 	ib_spec = flow_attr + 1;
 	for (i = 0; i < flow_attr->num_of_specs &&
-	     cmd.flow_attr.size > offsetof(struct ib_uverbs_flow_spec, reserved) &&
-	     cmd.flow_attr.size >=
-	     ((struct ib_uverbs_flow_spec *)kern_spec)->size; i++) {
+		    cmd.flow_attr.size >
+			    offsetof(struct ib_uverbs_flow_spec, reserved) +
+				    sizeof(((struct ib_uverbs_flow_spec *)kern_spec)->reserved) &&
+		    cmd.flow_attr.size >=
+			    ((struct ib_uverbs_flow_spec *)kern_spec)->size;
+	     i++) {
 		err = kern_spec_to_ib_spec(file->ucontext, kern_spec, ib_spec,
 					   uflow_res);
 		if (err)
