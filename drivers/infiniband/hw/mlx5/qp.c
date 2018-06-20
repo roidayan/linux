@@ -259,13 +259,17 @@ static int set_rq_size(struct mlx5_ib_dev *dev, struct ib_qp_cap *cap,
 		cap->max_recv_sge = 0;
 	} else {
 		if (ucmd) {
+			size_t s;
+
 			qp->rq.wqe_cnt = ucmd->rq_wqe_count;
-			if (ucmd->rq_wqe_shift > BITS_PER_BYTE * sizeof(ucmd->rq_wqe_shift))
+			s = shift_overflow(1, ucmd->rq_wqe_shift);
+			if (s == SIZE_MAX)
 				return -EINVAL;
 			qp->rq.wqe_shift = ucmd->rq_wqe_shift;
-			if ((1 << qp->rq.wqe_shift) / sizeof(struct mlx5_wqe_data_seg) < qp->wq_sig)
+			if (s / sizeof(struct mlx5_wqe_data_seg) < qp->wq_sig)
 				return -EINVAL;
-			qp->rq.max_gs = (1 << qp->rq.wqe_shift) / sizeof(struct mlx5_wqe_data_seg) - qp->wq_sig;
+			qp->rq.max_gs = s / sizeof(struct mlx5_wqe_data_seg) -
+					qp->wq_sig;
 			qp->rq.max_post = qp->rq.wqe_cnt;
 		} else {
 			wqe_size = qp->wq_sig ? sizeof(struct mlx5_wqe_signature_seg) : 0;
