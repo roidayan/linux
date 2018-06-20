@@ -454,7 +454,7 @@ static int mlx5_lag_netdev_event(struct notifier_block *this,
 	case NETDEV_UP:
 	case NETDEV_DOWN:
 	case NETDEV_CHANGE:
-		if (ldev->pf[0].dev && mlx5_lag_is_multipath_ready(ldev->pf[0].dev))
+		if (ldev->pf[0].dev)
 			changed = mlx5_handle_change_event(ldev, &tracker, ndev);
 		break;
 	case NETDEV_CHANGEUPPER:
