@@ -1007,7 +1007,7 @@ static int pio_wait(struct rvt_qp *qp,
 			int was_empty;
 
 			dev->n_piowait += !!(flag & RVT_S_WAIT_PIO);
-			dev->n_piodrain += !!(flag & RVT_S_WAIT_PIO_DRAIN);
+			dev->n_piodrain += !!(flag & HFI1_S_WAIT_PIO_DRAIN);
 			qp->s_flags |= flag;
 			was_empty = list_empty(&sc->piowait);
 			iowait_queue(ps->pkts_sent, &priv->s_iowait,
@@ -1376,7 +1376,7 @@ int hfi1_verbs_send(struct rvt_qp *qp, struct hfi1_pkt_state *ps)
 		return pio_wait(qp,
 				ps->s_txreq->psc,
 				ps,
-				RVT_S_WAIT_PIO_DRAIN);
+				HFI1_S_WAIT_PIO_DRAIN);
 	return sr(qp, ps, 0);
 }
 
@@ -1410,7 +1410,8 @@ static void hfi1_fill_device_attr(struct hfi1_devdata *dd)
 	rdi->dparms.props.max_fast_reg_page_list_len = UINT_MAX;
 	rdi->dparms.props.max_qp = hfi1_max_qps;
 	rdi->dparms.props.max_qp_wr = hfi1_max_qp_wrs;
-	rdi->dparms.props.max_sge = hfi1_max_sges;
+	rdi->dparms.props.max_send_sge = hfi1_max_sges;
+	rdi->dparms.props.max_recv_sge = hfi1_max_sges;
 	rdi->dparms.props.max_sge_rd = hfi1_max_sges;
 	rdi->dparms.props.max_cq = hfi1_max_cqs;
 	rdi->dparms.props.max_ah = hfi1_max_ahs;

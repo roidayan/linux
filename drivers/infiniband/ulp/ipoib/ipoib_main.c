@@ -770,8 +770,10 @@ static void path_rec_completion(int status,
 		struct rdma_ah_attr av;
 
 		if (!ib_init_ah_attr_from_path(priv->ca, priv->port,
-					       pathrec, &av))
+					       pathrec, &av, NULL)) {
 			ah = ipoib_create_ah(dev, priv->pd, &av);
+			rdma_destroy_ah_attr(&av);
+		}
 	}
 
 	spin_lock_irqsave(&priv->lock, flags);
@@ -1526,7 +1528,7 @@ static int ipoib_neigh_hash_init(struct ipoib_dev_priv *priv)
 		return -ENOMEM;
 	set_bit(IPOIB_STOP_NEIGH_GC, &priv->flags);
 	size = roundup_pow_of_two(arp_tbl.gc_thresh3);
-	buckets = kzalloc(size * sizeof(*buckets), GFP_KERNEL);
+	buckets = kcalloc(size, sizeof(*buckets), GFP_KERNEL);
 	if (!buckets) {
 		kfree(htbl);
 		return -ENOMEM;
@@ -1704,12 +1706,14 @@ static int ipoib_dev_init_default(struct net_device *dev)
 	ipoib_napi_add(dev);
 
 	/* Allocate RX/TX "rings" to hold queued skbs */
-	priv->rx_ring =	kzalloc(ipoib_recvq_size * sizeof *priv->rx_ring,
-				GFP_KERNEL);
+	priv->rx_ring =	kcalloc(ipoib_recvq_size,
+				       sizeof(*priv->rx_ring),
+				       GFP_KERNEL);
 	if (!priv->rx_ring)
 		goto out;
 
-	priv->tx_ring = vzalloc(ipoib_sendq_size * sizeof *priv->tx_ring);
+	priv->tx_ring = vzalloc(array_size(ipoib_sendq_size,
+					   sizeof(*priv->tx_ring)));
 	if (!priv->tx_ring) {
 		pr_warn("%s: failed to allocate TX ring (%d entries)\n",
 			priv->ca->name, ipoib_sendq_size);
@@ -2285,9 +2289,9 @@ static struct net_device *ipoib_add_port(const char *format,
 	priv->dev->broadcast[8] = priv->pkey >> 8;
 	priv->dev->broadcast[9] = priv->pkey & 0xff;
 
-	result = ib_query_gid(hca, port, 0, &priv->local_gid, NULL);
+	result = rdma_query_gid(hca, port, 0, &priv->local_gid);
 	if (result) {
-		pr_warn("%s: ib_query_gid port %d failed (ret = %d)\n",
+		pr_warn("%s: rdma_query_gid port %d failed (ret = %d)\n",
 			hca->name, port, result);
 		goto device_init_failed;
 	}

@@ -336,8 +336,8 @@ static int read_port_immutable(struct ib_device *device)
 	 * Therefore port_immutable is declared as a 1 based array with
 	 * potential empty slots at the beginning.
 	 */
-	device->port_immutable = kzalloc(sizeof(*device->port_immutable)
-					 * (end_port + 1),
+	device->port_immutable = kcalloc(end_port + 1,
+					 sizeof(*device->port_immutable),
 					 GFP_KERNEL);
 	if (!device->port_immutable)
 		return -ENOMEM;
@@ -862,25 +862,6 @@ int ib_query_port(struct ib_device *device,
 EXPORT_SYMBOL(ib_query_port);
 
 /**
- * ib_query_gid - Get GID table entry
- * @device:Device to query
- * @port_num:Port number to query
- * @index:GID table index to query
- * @gid:Returned GID
- * @attr: Returned GID attributes related to this GID index (only in RoCE).
- *   NULL means ignore.
- *
- * ib_query_gid() fetches the specified GID table entry from the cache.
- */
-int ib_query_gid(struct ib_device *device,
-		 u8 port_num, int index, union ib_gid *gid,
-		 struct ib_gid_attr *attr)
-{
-	return ib_get_cached_gid(device, port_num, index, gid, attr);
-}
-EXPORT_SYMBOL(ib_query_gid);
-
-/**
  * ib_enum_roce_netdev - enumerate all RoCE ports
  * @ib_dev : IB device we want to query
  * @filter: Should we call the callback?
@@ -1057,7 +1038,7 @@ int ib_find_gid(struct ib_device *device, union ib_gid *gid,
 			continue;
 
 		for (i = 0; i < device->port_immutable[port].gid_tbl_len; ++i) {
-			ret = ib_query_gid(device, port, i, &tmp_gid, NULL);
+			ret = rdma_query_gid(device, port, i, &tmp_gid);
 			if (ret)
 				return ret;
 			if (!memcmp(&tmp_gid, gid, sizeof *gid)) {
