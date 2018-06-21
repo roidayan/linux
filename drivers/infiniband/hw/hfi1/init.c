@@ -367,6 +367,7 @@ int hfi1_create_ctxtdata(struct hfi1_pportdata *ppd, int numa,
 		__set_bit(0, rcd->in_use_ctxts);
 		rcd->numa_id = numa;
 		rcd->rcv_array_groups = dd->rcv_entries.ngroups;
+		rcd->rhf_rcv_function_map = normal_rhf_rcv_functions;
 
 		mutex_init(&rcd->exp_mutex);
 
@@ -404,6 +405,8 @@ int hfi1_create_ctxtdata(struct hfi1_pportdata *ppd, int numa,
 
 		rcd->rcvhdrq_cnt = rcvhdrcnt;
 		rcd->rcvhdrqentsize = hfi1_hdrq_entsize;
+		rcd->rhf_offset =
+			rcd->rcvhdrqentsize - sizeof(u64) / sizeof(u32);
 		/*
 		 * Simple Eager buffer allocation: we have already pre-allocated
 		 * the number of RcvArray entry groups. Each ctxtdata structure
@@ -852,24 +855,6 @@ int hfi1_init(struct hfi1_devdata *dd, int reinit)
 	u16 i;
 	struct hfi1_ctxtdata *rcd;
 	struct hfi1_pportdata *ppd;
-
-	/* Set up recv low level handlers */
-	dd->normal_rhf_rcv_functions[RHF_RCV_TYPE_EXPECTED] =
-						kdeth_process_expected;
-	dd->normal_rhf_rcv_functions[RHF_RCV_TYPE_EAGER] =
-						kdeth_process_eager;
-	dd->normal_rhf_rcv_functions[RHF_RCV_TYPE_IB] = process_receive_ib;
-	dd->normal_rhf_rcv_functions[RHF_RCV_TYPE_ERROR] =
-						process_receive_error;
-	dd->normal_rhf_rcv_functions[RHF_RCV_TYPE_BYPASS] =
-						process_receive_bypass;
-	dd->normal_rhf_rcv_functions[RHF_RCV_TYPE_INVALID5] =
-						process_receive_invalid;
-	dd->normal_rhf_rcv_functions[RHF_RCV_TYPE_INVALID6] =
-						process_receive_invalid;
-	dd->normal_rhf_rcv_functions[RHF_RCV_TYPE_INVALID7] =
-						process_receive_invalid;
-	dd->rhf_rcv_function_map = dd->normal_rhf_rcv_functions;
 
 	/* Set up send low level handlers */
 	dd->process_pio_send = hfi1_verbs_send_pio;
@@ -1902,7 +1887,7 @@ int hfi1_create_rcvhdrq(struct hfi1_devdata *dd, struct hfi1_ctxtdata *rcd)
 			& RCV_HDR_ENT_SIZE_ENT_SIZE_MASK)
 		<< RCV_HDR_ENT_SIZE_ENT_SIZE_SHIFT;
 	write_kctxt_csr(dd, rcd->ctxt, RCV_HDR_ENT_SIZE, reg);
-	reg = (dd->rcvhdrsize & RCV_HDR_SIZE_HDR_SIZE_MASK)
+	reg = ((u64)DEFAULT_RCVHDRSIZE & RCV_HDR_SIZE_HDR_SIZE_MASK)
 		<< RCV_HDR_SIZE_HDR_SIZE_SHIFT;
 	write_kctxt_csr(dd, rcd->ctxt, RCV_HDR_SIZE, reg);
 
