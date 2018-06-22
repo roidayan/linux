@@ -3283,6 +3283,7 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv,
 	struct rhashtable *tc_ht = get_tc_ht(priv);
 	struct mlx5e_tc_flow *flow;
 	int attr_size, err = 0;
+	bool is_eswitch_flow;
 	int flow_flags = 0;
 
 	get_flags(flags, &flow_flags);
@@ -3317,31 +3318,38 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv,
 	INIT_LIST_HEAD(&flow->hairpin);
 	spin_lock_init(&flow->rule_lock);
 	refcount_set(&flow->refcnt, 1);
+	is_eswitch_flow = mlx5e_is_eswitch_flow(flow);
+
+	/* Temporary increment num_flows to prevent concurrent mode change
+	 * during flow creation.
+	 */
+	if (is_eswitch_flow)
+		mlx5_eswitch_inc_num_flows(esw);
 
 	err = parse_cls_flower(priv, flow, &parse_attr->spec, f);
 	if (err < 0)
-		goto err_free;
+		goto err_flow;
 
 	/* At this point concurrent access to flow->rule is not possible because
 	 * neither offloaded nor init done flags were set, so no need to take
 	 * rule_lock.
 	 */
-	if (mlx5e_is_eswitch_flow(flow)) {
+	if (is_eswitch_flow) {
 		err = parse_tc_fdb_actions(priv, f->exts, parse_attr, flow);
 		if (err < 0)
-			goto err_free;
+			goto err_flow;
 		flow->rule[0] = mlx5e_tc_add_fdb_flow(priv, parse_attr, flow);
 	} else {
 		err = parse_tc_nic_actions(priv, f->exts, parse_attr, flow);
 		if (err < 0)
-			goto err_free;
+			goto err_flow;
 		flow->rule[0] = mlx5e_tc_add_nic_flow(priv, parse_attr, flow);
 	}
 
 	if (IS_ERR(flow->rule[0])) {
 		err = PTR_ERR(flow->rule[0]);
 		if (err != -EAGAIN)
-			goto err_free;
+			goto err_flow;
 	}
 
 	if (err != -EAGAIN)
@@ -3353,7 +3361,7 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv,
 
 	err = rhashtable_insert_fast(tc_ht, &flow->node, tc_ht_params);
 	if (err)
-		goto err_free;
+		goto err_flow;
 
 	/* Ensure that flow->rule[] pointers are updated before flow is marked
 	 * as initialized.
@@ -3361,8 +3369,19 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv,
 	wmb();
 	atomic_or(MLX5E_TC_FLOW_INIT_DONE, &flow->flags);
 
-	return err;
+	/* Release temporary num_flows taken at the beginning of this
+	 * function.
+	 */
+	if (is_eswitch_flow)
+		mlx5_eswitch_dec_num_flows(esw);
 
+	return err;
+err_flow:
+	/* Release temporary num_flows taken at the beginning of this
+	 * function.
+	 */
+	if (is_eswitch_flow)
+		mlx5_eswitch_dec_num_flows(esw);
 err_free:
 	mlx5e_flow_put(priv, flow);
 	return err;

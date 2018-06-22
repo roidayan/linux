@@ -151,8 +151,11 @@ struct mlx5_esw_offload {
 	DECLARE_HASHTABLE(encap_tbl, 8);
 	spinlock_t mod_hdr_tbl_lock; /* protects mod_hdr_tbl */
 	DECLARE_HASHTABLE(mod_hdr_tbl, 8);
+
+	/* protects inline and encap modes variables */
+	struct mutex mode_lock;
 	u8 inline_mode;
-	u64 num_flows;
+	atomic64_t num_flows;
 	u8 encap;
 };
 
@@ -219,6 +222,8 @@ void mlx5_eswitch_del_send_to_vport_rule(struct mlx5_flow_handle *rule);
 struct mlx5_flow_spec;
 struct mlx5_esw_flow_attr;
 
+void mlx5_eswitch_inc_num_flows(struct mlx5_eswitch *esw);
+void mlx5_eswitch_dec_num_flows(struct mlx5_eswitch *esw);
 struct mlx5_flow_handle *
 mlx5_eswitch_add_offloaded_rule(struct mlx5_eswitch *esw,
 				struct mlx5_flow_spec *spec,

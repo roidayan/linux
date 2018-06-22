@@ -43,6 +43,27 @@ enum {
 	FDB_SLOW_PATH
 };
 
+/* Concurrency-safe increment of eswitch offloaded flows number. */
+
+void mlx5_eswitch_inc_num_flows(struct mlx5_eswitch *esw)
+{
+	if (!atomic64_add_unless(&esw->offloads.num_flows, 1, -1)) {
+		/* If mode change is in progress, take mode_lock to wait for it
+		 * to finish.
+		 */
+		mutex_lock(&esw->offloads.mode_lock);
+		atomic64_inc(&esw->offloads.num_flows);
+		mutex_unlock(&esw->offloads.mode_lock);
+	}
+}
+
+/* Concurrency-safe decrement of eswitch offloaded flows number. */
+
+void mlx5_eswitch_dec_num_flows(struct mlx5_eswitch *esw)
+{
+	atomic64_dec(&esw->offloads.num_flows);
+}
+
 struct mlx5_flow_handle *
 mlx5_eswitch_add_offloaded_rule(struct mlx5_eswitch *esw,
 				struct mlx5_flow_spec *spec,
@@ -134,7 +155,7 @@ mlx5_eswitch_add_offloaded_rule(struct mlx5_eswitch *esw,
 	if (IS_ERR(rule))
 		goto err_add_rule;
 	else
-		esw->offloads.num_flows++;
+		atomic64_inc(&esw->offloads.num_flows);
 
 	return rule;
 
@@ -190,7 +211,7 @@ mlx5_eswitch_add_fwd_rule(struct mlx5_eswitch *esw,
 	rule = mlx5_add_flow_rules(esw->fdb_table.offloads.fast_fdb, spec, &flow_act, dest, i);
 
 	if (!IS_ERR(rule))
-		esw->offloads.num_flows++;
+		atomic64_inc(&esw->offloads.num_flows);
 
 	return rule;
 }
@@ -205,7 +226,7 @@ mlx5_eswitch_del_offloaded_rule(struct mlx5_eswitch *esw,
 	counter = mlx5_flow_rule_counter(rule);
 	mlx5_del_flow_rules(rule);
 	mlx5_fc_destroy(esw->dev, counter);
-	esw->offloads.num_flows--;
+	atomic64_dec(&esw->offloads.num_flows);
 }
 
 static int esw_set_global_vlan_pop(struct mlx5_eswitch *esw, u8 val)
@@ -1162,14 +1183,20 @@ int mlx5_devlink_eswitch_inline_mode_set(struct devlink *devlink, u8 mode)
 		break;
 	}
 
-	if (esw->offloads.num_flows > 0) {
+	mutex_lock(&esw->offloads.mode_lock);
+
+	/* Set num_flows to -1 to indicate that mode change is in progress. This
+	 * will force all concurrent user to synchronize with mode_lock.
+	 */
+	if (atomic64_cmpxchg(&esw->offloads.num_flows, 0, -1)) {
 		esw_warn(dev, "Can't set inline mode when flows are configured\n");
-		return -EOPNOTSUPP;
+		err = -EOPNOTSUPP;
+		goto out;
 	}
 
 	err = esw_inline_mode_from_devlink(mode, &mlx5_mode);
 	if (err)
-		goto out;
+		goto out_num_flows;
 
 	for (vport = 1; vport < esw->enabled_vports; vport++) {
 		err = mlx5_modify_nic_vport_min_inline(dev, vport, mlx5_mode);
@@ -1181,6 +1208,8 @@ int mlx5_devlink_eswitch_inline_mode_set(struct devlink *devlink, u8 mode)
 	}
 
 	esw->offloads.inline_mode = mlx5_mode;
+	atomic64_set(&esw->offloads.num_flows, 0);
+	mutex_unlock(&esw->offloads.mode_lock);
 	return 0;
 
 revert_inline_mode:
@@ -1188,7 +1217,10 @@ revert_inline_mode:
 		mlx5_modify_nic_vport_min_inline(dev,
 						 vport,
 						 esw->offloads.inline_mode);
+out_num_flows:
+	atomic64_set(&esw->offloads.num_flows, 0);
 out:
+	mutex_unlock(&esw->offloads.mode_lock);
 	return err;
 }
 
@@ -1267,7 +1299,14 @@ int mlx5_devlink_eswitch_encap_mode_set(struct devlink *devlink, u8 encap)
 	if (esw->offloads.encap == encap)
 		return 0;
 
-	if (esw->offloads.num_flows > 0) {
+	mutex_lock(&esw->offloads.mode_lock);
+
+	/* Set num_flows to -1 to indicate that encap mode change is in
+	 * progress. This will force all concurrent user to synchronize with
+	 * mode_lock.
+	 */
+	if (atomic64_cmpxchg(&esw->offloads.num_flows, 0, -1)) {
+		mutex_unlock(&esw->offloads.mode_lock);
 		esw_warn(dev, "Can't set encapsulation when flows are configured\n");
 		return -EOPNOTSUPP;
 	}
@@ -1281,6 +1320,9 @@ int mlx5_devlink_eswitch_encap_mode_set(struct devlink *devlink, u8 encap)
 		esw->offloads.encap = !encap;
 		(void)esw_create_offloads_fast_fdb_table(esw);
 	}
+
+	atomic64_set(&esw->offloads.num_flows, 0);
+	mutex_unlock(&esw->offloads.mode_lock);
 	return err;
 }
 
