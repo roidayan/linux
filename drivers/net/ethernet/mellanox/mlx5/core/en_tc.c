@@ -84,6 +84,7 @@ struct mlx5e_tc_flow {
 	struct mlx5e_priv	*priv;
 	u64			cookie;
 	atomic_t		flags;
+	spinlock_t		rule_lock; /* protects rule array */
 	struct mlx5_flow_handle *rule[MLX5E_TC_MAX_SPLITS + 1];
 	struct mlx5e_encap_entry *e; /* attached encap instance */
 	struct list_head	encap;   /* flows sharing the same encap ID */
@@ -1111,6 +1112,30 @@ void mlx5e_tc_encap_flows_get_waiting(struct mlx5e_encap_entry *e)
 	spin_unlock(&e->encap_entry_lock);
 }
 
+static void mlx5e_del_offloaded_flow_rules(struct mlx5e_priv *priv,
+					   struct mlx5e_tc_flow *flow)
+{
+	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
+	struct mlx5_esw_flow_attr *attr = flow->esw_attr;
+	struct mlx5_flow_handle *rule, *rule_mir;
+
+	if (mlx5e_is_offloaded_flow(flow)) {
+		spin_lock(&flow->rule_lock);
+		atomic_and(~MLX5E_TC_FLOW_OFFLOADED, &flow->flags);
+		rule = flow->rule[0];
+		flow->rule[0] = NULL;
+		rule_mir = flow->rule[1];
+		flow->rule[1] = NULL;
+		spin_unlock(&flow->rule_lock);
+
+		if (attr->mirror_count)
+			mlx5_eswitch_del_offloaded_rule(esw,
+							rule_mir,
+							attr);
+		mlx5_eswitch_del_offloaded_rule(esw, rule, attr);
+	}
+}
+
 void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 			      struct mlx5e_encap_entry *e, bool *resched_update)
 {
@@ -1147,10 +1172,17 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 			*resched_update = true;
 			goto flow_put;
 		}
+		WARN_ON(mlx5e_is_offloaded_flow(flow));
+		WARN_ON(!IS_ERR_OR_NULL(flow->rule[0]));
 
 		esw_attr = flow->esw_attr;
 		esw_attr->encap_id = e->encap_id;
 		spec = &esw_attr->parse_attr->spec;
+
+		/* At this point concurrent access to flow->rule is not possible
+		 * because offloaded flag is not set, so no need to take
+		 * rule_lock.
+		 */
 		flow->rule[0] = mlx5_eswitch_add_offloaded_rule(esw,
 								spec,
 								esw_attr);
@@ -1162,6 +1194,8 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 		}
 
 		if (esw_attr->mirror_count) {
+			WARN_ON(!IS_ERR_OR_NULL(flow->rule[1]));
+
 			flow->rule[1] = mlx5_eswitch_add_fwd_rule(esw,
 								  spec,
 								  esw_attr);
@@ -1176,6 +1210,10 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 			}
 		}
 
+		/* Ensure that flow->rule[] pointers are updated before flow is
+		 * marked as offloaded.
+		 */
+		wmb();
 		/* Flow was successfully offloaded. Set flag and move it to
 		 * offloaded flows list.
 		 */
@@ -1191,7 +1229,6 @@ void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
 			      struct mlx5e_encap_entry *e,
 			      bool *resched_update)
 {
-	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 	struct mlx5e_tc_flow *flow, *tmp;
 	bool can_dealloc = true;
 
@@ -1205,18 +1242,7 @@ void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
 			goto put_flow;
 		}
 
-		if (mlx5e_is_offloaded_flow(flow)) {
-			struct mlx5_esw_flow_attr *attr = flow->esw_attr;
-
-			atomic_and(~MLX5E_TC_FLOW_OFFLOADED, &flow->flags);
-			if (attr->mirror_count)
-				mlx5_eswitch_del_offloaded_rule(esw,
-								flow->rule[1],
-								attr);
-			mlx5_eswitch_del_offloaded_rule(esw, flow->rule[0],
-							attr);
-		}
-
+		mlx5e_del_offloaded_flow_rules(priv, flow);
 		/* Move flow to list of flows waiting for neigh to become
 		 * valid.
 		 */
@@ -1330,16 +1356,21 @@ void mlx5e_tc_update_neigh_used_value(struct mlx5e_neigh_hash_entry *nhe)
 
 	while ((e = mlx5e_get_next_valid_encap(nhe, e)) != NULL) {
 		while ((flow = mlx5e_get_next_encap_flow(e, flow)) != NULL) {
+			spin_lock(&flow->rule_lock);
+
 			if (mlx5e_is_offloaded_flow(flow)) {
 				counter = mlx5_flow_rule_counter(flow->rule[0]);
 				mlx5_fc_query_cached(counter, &bytes, &packets, &lastuse);
 				if (time_after((unsigned long)lastuse, nhe->reported_lastuse)) {
+					spin_unlock(&flow->rule_lock);
 					mlx5e_flow_put(netdev_priv(e->out_dev),
 						       flow);
 					neigh_used = true;
 					break;
 				}
 			}
+
+			spin_unlock(&flow->rule_lock);
 		}
 		if (neigh_used) {
 			mlx5e_encap_put(netdev_priv(e->out_dev), e);
@@ -3278,12 +3309,17 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv,
 	INIT_LIST_HEAD(&flow->encap);
 	INIT_LIST_HEAD(&flow->mod_hdr);
 	INIT_LIST_HEAD(&flow->hairpin);
+	spin_lock_init(&flow->rule_lock);
 	refcount_set(&flow->refcnt, 1);
 
 	err = parse_cls_flower(priv, flow, &parse_attr->spec, f);
 	if (err < 0)
 		goto err_free;
 
+	/* At this point concurrent access to flow->rule is not possible because
+	 * neither offloaded nor init done flags were set, so no need to take
+	 * rule_lock.
+	 */
 	if (mlx5e_is_eswitch_flow(flow)) {
 		err = parse_tc_fdb_actions(priv, f->exts, parse_attr, flow);
 		if (err < 0)
@@ -3313,6 +3349,10 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv,
 	if (err)
 		goto err_free;
 
+	/* Ensure that flow->rule[] pointers are updated before flow is marked
+	 * as initialized.
+	 */
+	wmb();
 	atomic_or(MLX5E_TC_FLOW_INIT_DONE, &flow->flags);
 
 	return err;
@@ -3366,21 +3406,25 @@ int mlx5e_stats_flower(struct mlx5e_priv *priv,
 						     tc_ht_params));
 	if (IS_ERR(flow)) {
 		return PTR_ERR(flow);
-	} else if (!same_flow_direction(flow, flags)) {
+	} else if (!(atomic_read(&flow->flags) & MLX5E_TC_FLOW_INIT_DONE) ||
+		   !same_flow_direction(flow, flags)) {
 		err = -EINVAL;
 		goto errout;
 	}
 
+	spin_lock(&flow->rule_lock);
 	if (!mlx5e_is_offloaded_flow(flow))
-		goto errout;
+		goto errout_locked;
 
 	counter = mlx5_flow_rule_counter(flow->rule[0]);
 	if (!counter)
-		goto errout;
+		goto errout_locked;
 
 	mlx5_fc_query_cached(counter, &bytes, &packets, &lastuse);
 
 	tcf_exts_stats_update(f->exts, bytes, packets, lastuse);
+errout_locked:
+	spin_unlock(&flow->rule_lock);
 errout:
 	mlx5e_flow_put(priv, flow);
 	return err;
