@@ -649,6 +649,9 @@ int bfregn_to_uar_index(struct mlx5_ib_dev *dev,
 	int index_of_sys_page;
 	int offset;
 
+	if (bfregn > MLX5_MAX_BFREGS)
+		return -EINVAL;
+
 	bfregs_per_sys_page = get_uars_per_sys_page(dev, bfregi->lib_uar_4k) *
 				MLX5_NON_FP_BFREGS_PER_UAR;
 	index_of_sys_page = bfregn / bfregs_per_sys_page;
