@@ -3496,6 +3496,11 @@ int ib_uverbs_ex_create_flow(struct ib_uverbs_file *file,
 		goto err_put;
 	}
 
+	if (qp->qp_type != IB_QPT_UD && qp->qp_type != IB_QPT_RAW_PACKET) {
+		err = -EINVAL;
+		goto err_put;
+	}
+
 	flow_attr = kzalloc(struct_size(flow_attr, flows,
 				cmd.flow_attr.num_of_specs), GFP_KERNEL);
 	if (!flow_attr) {
