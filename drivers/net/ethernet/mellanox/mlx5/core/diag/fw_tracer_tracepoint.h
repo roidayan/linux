@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Mellanox Technologies, Ltd.  All rights reserved.
+ * Copyright (c) 2018, Mellanox Technologies. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -29,35 +29,50 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-#ifndef __MLX5_VXLAN_H__
-#define __MLX5_VXLAN_H__
 
-#include <linux/mlx5/driver.h>
-#include "en.h"
+#if !defined(__LIB_TRACER_TRACEPOINT_H__) || defined(TRACE_HEADER_MULTI_READ)
+#define __LIB_TRACER_TRACEPOINT_H__
 
-struct mlx5e_vxlan {
-	atomic_t refcount;
-	u16 udp_port;
-};
+#include <linux/tracepoint.h>
+#include "fw_tracer.h"
 
-struct mlx5e_vxlan_work {
-	struct work_struct	work;
-	struct mlx5e_priv	*priv;
-	sa_family_t		sa_family;
-	u16			port;
-};
+#undef TRACE_SYSTEM
+#define TRACE_SYSTEM mlx5
 
-static inline bool mlx5e_vxlan_allowed(struct mlx5_core_dev *mdev)
-{
-	return (MLX5_CAP_ETH(mdev, tunnel_stateless_vxlan) &&
-		mlx5_core_is_pf(mdev));
-}
+/* Tracepoint for FWTracer messages: */
+TRACE_EVENT(mlx5_fw,
+	TP_PROTO(const struct mlx5_fw_tracer *tracer, u64 trace_timestamp,
+		 bool lost, u8 event_id, const char *msg),
 
-void mlx5e_vxlan_init(struct mlx5e_priv *priv);
-void mlx5e_vxlan_cleanup(struct mlx5e_priv *priv);
+	TP_ARGS(tracer, trace_timestamp, lost, event_id, msg),
 
-void mlx5e_vxlan_queue_work(struct mlx5e_priv *priv, sa_family_t sa_family,
-			    u16 port, int add);
-struct mlx5e_vxlan *mlx5e_vxlan_lookup_port(struct mlx5e_priv *priv, u16 port);
+	TP_STRUCT__entry(
+		__string(dev_name, dev_name(&tracer->dev->pdev->dev))
+		__field(u64, trace_timestamp)
+		__field(bool, lost)
+		__field(u8, event_id)
+		__string(msg, msg)
+	),
 
-#endif /* __MLX5_VXLAN_H__ */
+	TP_fast_assign(
+		__assign_str(dev_name, dev_name(&tracer->dev->pdev->dev));
+		__entry->trace_timestamp = trace_timestamp;
+		__entry->lost = lost;
+		__entry->event_id = event_id;
+		__assign_str(msg, msg);
+	),
+
+	TP_printk("%s [0x%llx] %d [0x%x] %s",
+		  __get_str(dev_name),
+		  __entry->trace_timestamp,
+		  __entry->lost, __entry->event_id,
+		  __get_str(msg))
+);
+
+#endif
+
+#undef TRACE_INCLUDE_PATH
+#undef TRACE_INCLUDE_FILE
+#define TRACE_INCLUDE_PATH ./diag
+#define TRACE_INCLUDE_FILE fw_tracer_tracepoint
+#include <trace/define_trace.h>
