@@ -337,7 +337,7 @@ static const char *VAL_PARM		= "%llx";
 static const char *REPLACE_64_VAL_PARM	= "%x%x";
 static const char *PARAM_CHAR		= "%";
 
-static inline int mlx5_tracer_message_hash(u32 message_id)
+static int mlx5_tracer_message_hash(u32 message_id)
 {
 	return jhash_1word(message_id, 0) & (MESSAGE_HASH_SIZE - 1);
 }
@@ -399,7 +399,7 @@ static int mlx5_tracer_get_num_of_params(char *str)
 	/* replace %llx with %x%x */
 	substr = strstr(pstr, VAL_PARM);
 	while (substr) {
-		strncpy(substr, REPLACE_64_VAL_PARM, 4);
+		memcpy(substr, REPLACE_64_VAL_PARM, 4);
 		pstr = substr;
 		substr = strstr(pstr, VAL_PARM);
 	}
@@ -525,7 +525,7 @@ static void mlx5_tracer_print_trace(struct tracer_string_format *str_frmt,
 				    struct mlx5_core_dev *dev,
 				    u64 trace_timestamp)
 {
-	char	tmp[1024];
+	char	tmp[512];
 
 	snprintf(tmp, sizeof(tmp), str_frmt->string,
 		 str_frmt->params[0],
@@ -534,11 +534,7 @@ static void mlx5_tracer_print_trace(struct tracer_string_format *str_frmt,
 		 str_frmt->params[3],
 		 str_frmt->params[4],
 		 str_frmt->params[5],
-		 str_frmt->params[6],
-		 str_frmt->params[7],
-		 str_frmt->params[8],
-		 str_frmt->params[9],
-		 str_frmt->params[10]);
+		 str_frmt->params[6]);
 
 	trace_mlx5_fw(dev->tracer, trace_timestamp, str_frmt->lost,
 		      str_frmt->event_id, tmp);
