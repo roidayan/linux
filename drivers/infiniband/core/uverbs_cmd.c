@@ -116,6 +116,7 @@ ssize_t ib_uverbs_get_context(struct ib_uverbs_file *file,
 	ucontext->tgid = get_task_pid(current->group_leader, PIDTYPE_PID);
 	rcu_read_unlock();
 	ucontext->closing = 0;
+	ucontext->cleanup_retryable = false;
 
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
 	ucontext->umem_tree = RB_ROOT_CACHED;
@@ -189,7 +190,7 @@ static void copy_query_dev_fields(struct ib_uverbs_file *file,
 	resp->max_qp		= attr->max_qp;
 	resp->max_qp_wr		= attr->max_qp_wr;
 	resp->device_cap_flags	= lower_32_bits(attr->device_cap_flags);
-	resp->max_sge		= attr->max_sge;
+	resp->max_sge		= min(attr->max_send_sge, attr->max_recv_sge);
 	resp->max_sge_rd	= attr->max_sge_rd;
 	resp->max_cq		= attr->max_cq;
 	resp->max_cqe		= attr->max_cqe;
@@ -243,6 +244,27 @@ ssize_t ib_uverbs_query_device(struct ib_uverbs_file *file,
 	return in_len;
 }
 
+/*
+ * ib_uverbs_query_port_resp.port_cap_flags started out as just a copy of the
+ * PortInfo CapabilitMask, but was extended with unique bits.
+ */
+static u32 make_port_cap_flags(const struct ib_port_attr *attr)
+{
+	u32 res;
+
+	/* All IBA CapabilityMask bits are passed through here, except bit 26,
+	 * which is overridden with IP_BASED_GIDS. This is due to a historical
+	 * mistake in the implementation of IP_BASED_GIDS. Otherwise all other
+	 * bits match the IBA definition across all kernel versions.
+	 */
+	res = attr->port_cap_flags & ~(u32)IB_UVERBS_PCF_IP_BASED_GIDS;
+
+	if (attr->ip_gids)
+		res |= IB_UVERBS_PCF_IP_BASED_GIDS;
+
+	return res;
+}
+
 ssize_t ib_uverbs_query_port(struct ib_uverbs_file *file,
 			     struct ib_device *ib_dev,
 			     const char __user *buf,
@@ -269,11 +291,14 @@ ssize_t ib_uverbs_query_port(struct ib_uverbs_file *file,
 	resp.max_mtu 	     = attr.max_mtu;
 	resp.active_mtu      = attr.active_mtu;
 	resp.gid_tbl_len     = attr.gid_tbl_len;
-	resp.port_cap_flags  = attr.port_cap_flags;
+	resp.port_cap_flags  = make_port_cap_flags(&attr);
 	resp.max_msg_sz      = attr.max_msg_sz;
 	resp.bad_pkey_cntr   = attr.bad_pkey_cntr;
 	resp.qkey_viol_cntr  = attr.qkey_viol_cntr;
 	resp.pkey_tbl_len    = attr.pkey_tbl_len;
+
+	if (rdma_is_grh_required(ib_dev, cmd.port_num))
+		resp.flags |= IB_UVERBS_QPF_GRH_REQUIRED;
 
 	if (rdma_cap_opa_ah(ib_dev, cmd.port_num)) {
 		resp.lid     = OPA_TO_IB_UCAST_LID(attr.lid);
@@ -611,12 +636,13 @@ ssize_t ib_uverbs_close_xrcd(struct ib_uverbs_file *file,
 	return ret ?: in_len;
 }
 
-int ib_uverbs_dealloc_xrcd(struct ib_uverbs_device *dev,
+int ib_uverbs_dealloc_xrcd(struct ib_uobject *uobject,
 			   struct ib_xrcd *xrcd,
 			   enum rdma_remove_reason why)
 {
 	struct inode *inode;
 	int ret;
+	struct ib_uverbs_device *dev = uobject->context->ufile->device;
 
 	inode = xrcd->inode;
 	if (inode && !atomic_dec_and_test(&xrcd->usecnt))
@@ -624,9 +650,12 @@ int ib_uverbs_dealloc_xrcd(struct ib_uverbs_device *dev,
 
 	ret = ib_dealloc_xrcd(xrcd);
 
-	if (why == RDMA_REMOVE_DESTROY && ret)
+	if (ib_is_destroy_retryable(ret, why, uobject)) {
 		atomic_inc(&xrcd->usecnt);
-	else if (inode)
+		return ret;
+	}
+
+	if (inode)
 		xrcd_table_delete(dev, inode);
 
 	return ret;
@@ -1938,11 +1967,11 @@ static int modify_qp_mask(enum ib_qp_type qp_type, int mask)
 	}
 }
 
-static void copy_ah_attr_from_uverbs(struct ib_device *dev,
+static void copy_ah_attr_from_uverbs(struct ib_qp *qp,
 				     struct rdma_ah_attr *rdma_attr,
 				     struct ib_uverbs_qp_dest *uverb_attr)
 {
-	rdma_attr->type = rdma_ah_find_type(dev, uverb_attr->port_num);
+	rdma_attr->type = rdma_ah_find_type(qp->device, qp->real_qp->port);
 	if (uverb_attr->is_global) {
 		rdma_ah_set_grh(rdma_attr, NULL,
 				uverb_attr->flow_label,
@@ -1968,7 +1997,7 @@ static int modify_qp(struct ib_uverbs_file *file,
 	struct ib_qp *qp;
 	int ret;
 
-	attr = kmalloc(sizeof *attr, GFP_KERNEL);
+	attr = kzalloc(sizeof(*attr), GFP_KERNEL);
 	if (!attr)
 		return -ENOMEM;
 
@@ -2028,11 +2057,10 @@ static int modify_qp(struct ib_uverbs_file *file,
 	attr->rate_limit	  = cmd->rate_limit;
 
 	if (cmd->base.attr_mask & IB_QP_AV)
-		copy_ah_attr_from_uverbs(qp->device, &attr->ah_attr,
-					 &cmd->base.dest);
+		copy_ah_attr_from_uverbs(qp, &attr->ah_attr, &cmd->base.dest);
 
 	if (cmd->base.attr_mask & IB_QP_ALT_PATH)
-		copy_ah_attr_from_uverbs(qp->device, &attr->alt_ah_attr,
+		copy_ah_attr_from_uverbs(qp, &attr->alt_ah_attr,
 					 &cmd->base.alt_dest);
 
 	ret = ib_modify_qp_with_udata(qp, attr,
@@ -2552,7 +2580,7 @@ ssize_t ib_uverbs_create_ah(struct ib_uverbs_file *file,
 	struct ib_uobject		*uobj;
 	struct ib_pd			*pd;
 	struct ib_ah			*ah;
-	struct rdma_ah_attr		attr;
+	struct rdma_ah_attr		attr = {};
 	int ret;
 	struct ib_udata                   udata;
 
@@ -2761,29 +2789,27 @@ static struct ib_uflow_resources *flow_resources_alloc(size_t num_specs)
 	resources = kzalloc(sizeof(*resources), GFP_KERNEL);
 
 	if (!resources)
-		goto err_res;
+		return NULL;
+
+	if (!num_specs)
+		goto out;
 
 	resources->counters =
 		kcalloc(num_specs, sizeof(*resources->counters), GFP_KERNEL);
-
-	if (!resources->counters)
-		goto err_cnt;
-
 	resources->collection =
 		kcalloc(num_specs, sizeof(*resources->collection), GFP_KERNEL);
 
-	if (!resources->collection)
-		goto err_collection;
+	if (!resources->counters || !resources->collection)
+		goto err;
 
+out:
 	resources->max = num_specs;
-
 	return resources;
 
-err_collection:
+err:
 	kfree(resources->counters);
-err_cnt:
 	kfree(resources);
-err_res:
+
 	return NULL;
 }
 
@@ -3041,9 +3067,6 @@ static int kern_spec_to_ib_spec_filter(struct ib_uverbs_flow_spec *kern_spec,
 	ssize_t kern_filter_sz;
 	void *kern_spec_mask;
 	void *kern_spec_val;
-
-	if (kern_spec->reserved)
-		return -EINVAL;
 
 	kern_filter_sz = kern_spec_filter_sz(&kern_spec->hdr);
 
@@ -3488,8 +3511,8 @@ int ib_uverbs_ex_create_flow(struct ib_uverbs_file *file,
 	struct ib_flow_attr		  *flow_attr;
 	struct ib_qp			  *qp;
 	struct ib_uflow_resources	  *uflow_res;
+	struct ib_uverbs_flow_spec_hdr	  *kern_spec;
 	int err = 0;
-	void *kern_spec;
 	void *ib_spec;
 	int i;
 
@@ -3538,8 +3561,8 @@ int ib_uverbs_ex_create_flow(struct ib_uverbs_file *file,
 		if (!kern_flow_attr)
 			return -ENOMEM;
 
-		memcpy(kern_flow_attr, &cmd.flow_attr, sizeof(*kern_flow_attr));
-		err = ib_copy_from_udata(kern_flow_attr + 1, ucore,
+		*kern_flow_attr = cmd.flow_attr;
+		err = ib_copy_from_udata(&kern_flow_attr->flow_specs, ucore,
 					 cmd.flow_attr.size);
 		if (err)
 			goto err_free_attr;
@@ -3553,14 +3576,25 @@ int ib_uverbs_ex_create_flow(struct ib_uverbs_file *file,
 		goto err_free_attr;
 	}
 
-	qp = uobj_get_obj_read(qp, UVERBS_OBJECT_QP, cmd.qp_handle, file->ucontext);
+	qp = uobj_get_obj_read(qp, UVERBS_OBJECT_QP, cmd.qp_handle,
+			       file->ucontext);
 	if (!qp) {
 		err = -EINVAL;
 		goto err_uobj;
 	}
 
+	if (qp->qp_type != IB_QPT_UD && qp->qp_type != IB_QPT_RAW_PACKET) {
+		err = -EINVAL;
+		goto err_put;
+	}
+
+	if (!qp->device->create_flow) {
+		err = -EOPNOTSUPP;
+		goto err_put;
+	}
+
 	flow_attr = kzalloc(struct_size(flow_attr, flows,
-				cmd.flow_attr.num_of_specs), GFP_KERNEL);
+					cmd.flow_attr.num_of_specs), GFP_KERNEL);
 	if (!flow_attr) {
 		err = -ENOMEM;
 		goto err_put;
@@ -3578,21 +3612,22 @@ int ib_uverbs_ex_create_flow(struct ib_uverbs_file *file,
 	flow_attr->flags = kern_flow_attr->flags;
 	flow_attr->size = sizeof(*flow_attr);
 
-	kern_spec = kern_flow_attr + 1;
+	kern_spec = kern_flow_attr->flow_specs;
 	ib_spec = flow_attr + 1;
 	for (i = 0; i < flow_attr->num_of_specs &&
-	     cmd.flow_attr.size > offsetof(struct ib_uverbs_flow_spec, reserved) &&
-	     cmd.flow_attr.size >=
-	     ((struct ib_uverbs_flow_spec *)kern_spec)->size; i++) {
-		err = kern_spec_to_ib_spec(file->ucontext, kern_spec, ib_spec,
-					   uflow_res);
+			cmd.flow_attr.size > sizeof(*kern_spec) &&
+			cmd.flow_attr.size >= kern_spec->size;
+	     i++) {
+		err = kern_spec_to_ib_spec(
+				file->ucontext, (struct ib_uverbs_flow_spec *)kern_spec,
+				ib_spec, uflow_res);
 		if (err)
 			goto err_free;
 
 		flow_attr->size +=
 			((union ib_flow_spec *) ib_spec)->size;
-		cmd.flow_attr.size -= ((struct ib_uverbs_flow_spec *)kern_spec)->size;
-		kern_spec += ((struct ib_uverbs_flow_spec *) kern_spec)->size;
+		cmd.flow_attr.size -= kern_spec->size;
+		kern_spec = ((void *)kern_spec) + kern_spec->size;
 		ib_spec += ((union ib_flow_spec *) ib_spec)->size;
 	}
 	if (cmd.flow_attr.size || (i != flow_attr->num_of_specs)) {
@@ -3631,7 +3666,8 @@ int ib_uverbs_ex_create_flow(struct ib_uverbs_file *file,
 		kfree(kern_flow_attr);
 	return 0;
 err_copy:
-	ib_destroy_flow(flow_id);
+	if (!qp->device->destroy_flow(flow_id))
+		atomic_dec(&qp->usecnt);
 err_free:
 	ib_uverbs_flow_resources_free(uflow_res);
 err_free_flow_attr:
