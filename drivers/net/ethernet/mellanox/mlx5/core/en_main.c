@@ -2932,6 +2932,22 @@ err_clear_state_opened_flag:
 	return err;
 }
 
+static void mlx5e_set_port_admin_state_up(struct mlx5e_priv *priv)
+{
+	mlx5_modify_vport_admin_state(priv->mdev,
+				      MLX5_QUERY_VPORT_STATE_IN_OP_MOD_VNIC_VPORT,
+				      0, MLX5_ESW_VPORT_ADMIN_STATE_UP);
+	mlx5_set_port_admin_status(priv->mdev, MLX5_PORT_UP);
+}
+
+static void mlx5e_set_port_admin_state_down(struct mlx5e_priv *priv)
+{
+	mlx5_set_port_admin_status(priv->mdev, MLX5_PORT_DOWN);
+	mlx5_modify_vport_admin_state(priv->mdev,
+				      MLX5_QUERY_VPORT_STATE_IN_OP_MOD_VNIC_VPORT,
+				      0, MLX5_ESW_VPORT_ADMIN_STATE_DOWN);
+}
+
 int mlx5e_open(struct net_device *netdev)
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
@@ -2940,7 +2956,7 @@ int mlx5e_open(struct net_device *netdev)
 	mutex_lock(&priv->state_lock);
 	err = mlx5e_open_locked(netdev);
 	if (!err)
-		mlx5_set_port_admin_status(priv->mdev, MLX5_PORT_UP);
+		mlx5e_set_port_admin_state_up(priv);
 	mutex_unlock(&priv->state_lock);
 
 	if (mlx5e_vxlan_allowed(priv->mdev))
@@ -2977,7 +2993,7 @@ int mlx5e_close(struct net_device *netdev)
 		return -ENODEV;
 
 	mutex_lock(&priv->state_lock);
-	mlx5_set_port_admin_status(priv->mdev, MLX5_PORT_DOWN);
+	mlx5e_set_port_admin_state_down(priv);
 	err = mlx5e_close_locked(netdev);
 	mutex_unlock(&priv->state_lock);
 
@@ -4742,7 +4758,7 @@ static void mlx5e_nic_enable(struct mlx5e_priv *priv)
 
 	/* Marking the link as currently not needed by the Driver */
 	if (!netif_running(netdev))
-		mlx5_set_port_admin_status(mdev, MLX5_PORT_DOWN);
+		mlx5e_set_port_admin_state_down(priv);
 
 	/* MTU range: 68 - hw-specific max */
 	netdev->min_mtu = ETH_MIN_MTU;
