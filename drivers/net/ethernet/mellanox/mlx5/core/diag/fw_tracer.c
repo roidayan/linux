@@ -135,8 +135,8 @@ static int mlx5_fw_tracer_create_log_buf(struct mlx5_fw_tracer *tracer)
 	buff = (void *)__get_free_pages(gfp,
 					get_order(tracer->buff.size));
 	if (!buff) {
-		mlx5_core_warn(dev, "FWTracer: Failed to allocate pages, %d\n", err);
 		err = -ENOMEM;
+		mlx5_core_warn(dev, "FWTracer: Failed to allocate pages, %d\n", err);
 		return err;
 	}
 	tracer->buff.log_buf = buff;
