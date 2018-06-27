@@ -48,14 +48,17 @@ static int uverbs_free_ah(struct ib_uobject *uobject,
 static int uverbs_free_flow(struct ib_uobject *uobject,
 			    enum rdma_remove_reason why)
 {
-	int ret;
 	struct ib_flow *flow = (struct ib_flow *)uobject->object;
 	struct ib_uflow_object *uflow =
 		container_of(uobject, struct ib_uflow_object, uobject);
+	struct ib_qp *qp = flow->qp;
+	int ret;
 
-	ret = ib_destroy_flow(flow);
-	if (!ret)
+	ret = qp->device->destroy_flow(flow);
+	if (!ret) {
+		atomic_dec(&qp->usecnt);
 		ib_uverbs_flow_resources_free(uflow->resources);
+	}
 
 	return ret;
 }
@@ -207,10 +210,10 @@ int uverbs_destroy_def_handler(struct ib_device *ib_dev,
  * spec.
  */
 const struct uverbs_attr_def uverbs_uhw_compat_in =
-	UVERBS_ATTR_PTR_IN_SZ(UVERBS_ATTR_UHW_IN, UVERBS_ATTR_SIZE(0, USHRT_MAX),
+	UVERBS_ATTR_PTR_IN_SZ(UVERBS_ATTR_UHW_IN, UVERBS_ATTR_MIN_SIZE(0),
 			      UA_FLAGS(UVERBS_ATTR_SPEC_F_MIN_SZ_OR_ZERO));
 const struct uverbs_attr_def uverbs_uhw_compat_out =
-	UVERBS_ATTR_PTR_OUT_SZ(UVERBS_ATTR_UHW_OUT, UVERBS_ATTR_SIZE(0, USHRT_MAX),
+	UVERBS_ATTR_PTR_OUT_SZ(UVERBS_ATTR_UHW_OUT, UVERBS_ATTR_MIN_SIZE(0),
 			       UA_FLAGS(UVERBS_ATTR_SPEC_F_MIN_SZ_OR_ZERO));
 
 void create_udata(struct uverbs_attr_bundle *ctx, struct ib_udata *udata)
