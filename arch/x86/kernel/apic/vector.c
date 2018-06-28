@@ -148,6 +148,7 @@ static void apic_update_vector(struct irq_data *irqd, unsigned int newvec,
 	 * prev_vector for this and the offlined target case.
 	 */
 	apicd->prev_vector = 0;
+	apicd->move_in_progress = false;
 	if (!apicd->vector || apicd->vector == MANAGED_IRQ_SHUTDOWN_VECTOR)
 		goto setnew;
 	/*
@@ -837,6 +838,12 @@ static void free_moved_vector(struct apic_chip_data *apicd)
 	unsigned int cpu = apicd->prev_cpu;
 	bool managed = apicd->is_managed;
 
+	if (vector < FIRST_EXTERNAL_VECTOR || vector >= FIRST_SYSTEM_VECTOR) {
+		tracing_off();
+		pr_err("Trying to clear prev_vector: %u\n", vector);
+		goto out;
+	}
+
 	/*
 	 * This should never happen. Managed interrupts are not
 	 * migrated except on CPU down, which does not involve the
@@ -848,6 +855,7 @@ static void free_moved_vector(struct apic_chip_data *apicd)
 	trace_vector_free_moved(apicd->irq, cpu, vector, managed);
 	irq_matrix_free(vector_matrix, cpu, vector, managed);
 	per_cpu(vector_irq, cpu)[vector] = VECTOR_UNUSED;
+out:
 	hlist_del_init(&apicd->clist);
 	apicd->prev_vector = 0;
 	apicd->move_in_progress = 0;

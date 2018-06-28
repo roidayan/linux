@@ -137,7 +137,6 @@ struct page_pool;
 #define MLX5E_MAX_NUM_CHANNELS         (MLX5E_INDIR_RQT_SIZE >> 1)
 #define MLX5E_MAX_NUM_SQS              (MLX5E_MAX_NUM_CHANNELS * MLX5E_MAX_NUM_TC)
 #define MLX5E_TX_CQ_POLL_BUDGET        128
-#define MLX5E_UPDATE_STATS_INTERVAL    200 /* msecs */
 #define MLX5E_SQ_RECOVER_MIN_INTERVAL  500 /* msecs */
 
 #define MLX5E_UMR_WQE_INLINE_SZ \
@@ -648,11 +647,6 @@ enum {
 	MLX5E_STATE_DESTROYING,
 };
 
-struct mlx5e_vxlan_db {
-	spinlock_t			lock; /* protect vxlan table */
-	struct radix_tree_root		tree;
-};
-
 struct mlx5e_l2_rule {
 	u8  addr[ETH_ALEN + 2];
 	struct mlx5_flow_handle *rule;
@@ -810,7 +804,6 @@ struct mlx5e_priv {
 	u32                        tx_rates[MLX5E_MAX_NUM_SQS];
 
 	struct mlx5e_flow_steering fs;
-	struct mlx5e_vxlan_db      vxlan;
 
 	struct workqueue_struct    *wq;
 	struct work_struct         update_carrier_work;
