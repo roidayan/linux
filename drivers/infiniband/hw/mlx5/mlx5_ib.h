@@ -143,6 +143,7 @@ struct mlx5_ib_ucontext {
 
 	u64			lib_caps;
 	DECLARE_BITMAP(dm_pages, MLX5_MAX_MEMIC_PAGES);
+	u16			devx_uid;
 };
 
 static inline struct mlx5_ib_ucontext *to_mucontext(struct ib_ucontext *ibucontext)
@@ -665,6 +666,7 @@ struct mlx5_ib_counters {
 	size_t *offsets;
 	u32 num_q_counters;
 	u32 num_cong_counters;
+	u32 num_ext_ppcnt_counters;
 	u16 set_id;
 	bool set_id_valid;
 };
@@ -1014,6 +1016,8 @@ int mlx5_ib_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 int mlx5_ib_query_qp(struct ib_qp *ibqp, struct ib_qp_attr *qp_attr, int qp_attr_mask,
 		     struct ib_qp_init_attr *qp_init_attr);
 int mlx5_ib_destroy_qp(struct ib_qp *qp);
+void mlx5_ib_drain_sq(struct ib_qp *qp);
+void mlx5_ib_drain_rq(struct ib_qp *qp);
 int mlx5_ib_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 		      struct ib_send_wr **bad_wr);
 int mlx5_ib_post_recv(struct ib_qp *ibqp, struct ib_recv_wr *wr,
@@ -1183,10 +1187,8 @@ int mlx5_ib_get_vf_stats(struct ib_device *device, int vf,
 int mlx5_ib_set_vf_guid(struct ib_device *device, int vf, u8 port,
 			u64 guid, int type);
 
-__be16 mlx5_get_roce_udp_sport(struct mlx5_ib_dev *dev, u8 port_num,
-			       int index);
-int mlx5_get_roce_gid_type(struct mlx5_ib_dev *dev, u8 port_num,
-			   int index, enum ib_gid_type *gid_type);
+__be16 mlx5_get_roce_udp_sport(struct mlx5_ib_dev *dev,
+			       const struct ib_gid_attr *attr);
 
 void mlx5_ib_cleanup_cong_debugfs(struct mlx5_ib_dev *dev, u8 port_num);
 int mlx5_ib_init_cong_debugfs(struct mlx5_ib_dev *dev, u8 port_num);
@@ -1217,6 +1219,21 @@ struct mlx5_core_dev *mlx5_ib_get_native_port_mdev(struct mlx5_ib_dev *dev,
 void mlx5_ib_put_native_port_mdev(struct mlx5_ib_dev *dev,
 				  u8 port_num);
 
+#if IS_ENABLED(CONFIG_INFINIBAND_USER_ACCESS)
+int mlx5_ib_devx_create(struct mlx5_ib_dev *dev,
+			struct mlx5_ib_ucontext *context);
+void mlx5_ib_devx_destroy(struct mlx5_ib_dev *dev,
+			  struct mlx5_ib_ucontext *context);
+const struct uverbs_object_tree_def *mlx5_ib_get_devx_tree(void);
+#else
+static inline int
+mlx5_ib_devx_create(struct mlx5_ib_dev *dev,
+		    struct mlx5_ib_ucontext *context) { return -EOPNOTSUPP; };
+static inline void mlx5_ib_devx_destroy(struct mlx5_ib_dev *dev,
+					struct mlx5_ib_ucontext *context) {}
+static inline const struct uverbs_object_tree_def *
+mlx5_ib_get_devx_tree(void) { return NULL; }
+#endif
 static inline void init_query_mad(struct ib_smp *mad)
 {
 	mad->base_version  = 1;
@@ -1318,4 +1335,7 @@ static inline int get_num_static_uars(struct mlx5_ib_dev *dev,
 unsigned long mlx5_ib_get_xlt_emergency_page(void);
 void mlx5_ib_put_xlt_emergency_page(void);
 
+int bfregn_to_uar_index(struct mlx5_ib_dev *dev,
+			struct mlx5_bfreg_info *bfregi, int bfregn,
+			bool dyn_bfreg);
 #endif /* MLX5_IB_H */
