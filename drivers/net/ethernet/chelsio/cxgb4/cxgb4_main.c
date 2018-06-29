@@ -263,7 +263,7 @@ static void dcb_tx_queue_prio_enable(struct net_device *dev, int enable)
 				"Can't %s DCB Priority on port %d, TX Queue %d: err=%d\n",
 				enable ? "set" : "unset", pi->port_id, i, -err);
 		else
-			txq->dcb_prio = value;
+			txq->dcb_prio = enable ? value : 0;
 	}
 }
 
@@ -3016,7 +3016,7 @@ static int cxgb_setup_tc_block(struct net_device *dev,
 	switch (f->command) {
 	case TC_BLOCK_BIND:
 		return tcf_block_cb_register(f->block, cxgb_setup_tc_block_cb,
-					     pi, dev);
+					     pi, dev, f->extack);
 	case TC_BLOCK_UNBIND:
 		tcf_block_cb_unregister(f->block, cxgb_setup_tc_block_cb, pi);
 		return 0;
@@ -3217,7 +3217,7 @@ static netdev_features_t cxgb_fix_features(struct net_device *dev,
 static const struct net_device_ops cxgb4_netdev_ops = {
 	.ndo_open             = cxgb_open,
 	.ndo_stop             = cxgb_close,
-	.ndo_start_xmit       = t4_eth_xmit,
+	.ndo_start_xmit       = t4_start_xmit,
 	.ndo_select_queue     =	cxgb_select_queue,
 	.ndo_get_stats64      = cxgb_get_stats,
 	.ndo_set_rx_mode      = cxgb_set_rxmode,
