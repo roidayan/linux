@@ -203,6 +203,29 @@
 #endif /* COMPILER_HAS_GENERIC_BUILTIN_OVERFLOW */
 
 /**
+ * shift_overflow() - Peform shift operation with overflow check
+ * @a: value to be shifted
+ * @b: shift operand
+ *
+ * Checks if a << b will overflow
+ *
+ * Returns: result of shift for no overflow or SIZE_MAX for overflow
+ */
+static inline __must_check size_t shift_overflow(size_t a, size_t b)
+{
+	size_t c, res;
+
+	if (b >= sizeof(size_t) * BITS_PER_BYTE)
+		return SIZE_MAX;
+
+	c = (size_t)1 << b;
+	if (check_mul_overflow(a, c, &res))
+		return SIZE_MAX;
+
+	return res;
+}
+
+/**
  * array_size() - Calculate size of 2-dimensional array.
  *
  * @a: dimension one
