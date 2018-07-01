@@ -292,7 +292,7 @@ static void mlx5_tracer_read_strings_db(struct work_struct *work)
 		/* Strings database is aligned to 64, need to read leftovers*/
 		MLX5_SET(mtrc_stdb, in, read_size,
 			 STRINGS_DB_LEFTOVER_SIZE_BYTES);
-		for (j = 0; j < 0; j++) {
+		for (j = 0; j < leftovers; j++) {
 			MLX5_SET(mtrc_stdb, in, start_offset, offset);
 
 			err = mlx5_core_access_reg(dev, in, sizeof(in), out,
