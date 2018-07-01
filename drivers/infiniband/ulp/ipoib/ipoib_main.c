@@ -1661,7 +1661,7 @@ static void ipoib_neigh_hash_uninit(struct net_device *dev)
 	/* Stop GC if called at init fail need to cancel work */
 	stopped = test_and_set_bit(IPOIB_STOP_NEIGH_GC, &priv->flags);
 	if (!stopped)
-		cancel_delayed_work(&priv->neigh_reap_task);
+		cancel_delayed_work_sync(&priv->neigh_reap_task);
 
 	ipoib_flush_neighs(priv);
 
@@ -1837,7 +1837,7 @@ void ipoib_dev_cleanup(struct net_device *dev)
 	list_for_each_entry_safe(cpriv, tcpriv, &priv->child_intfs, list) {
 		/* Stop GC on child */
 		set_bit(IPOIB_STOP_NEIGH_GC, &cpriv->flags);
-		cancel_delayed_work(&cpriv->neigh_reap_task);
+		cancel_delayed_work_sync(&cpriv->neigh_reap_task);
 		unregister_netdevice_queue(cpriv->dev, &head);
 	}
 	unregister_netdevice_many(&head);
@@ -2346,7 +2346,7 @@ register_failed:
 	flush_workqueue(ipoib_workqueue);
 	/* Stop GC if started before flush */
 	set_bit(IPOIB_STOP_NEIGH_GC, &priv->flags);
-	cancel_delayed_work(&priv->neigh_reap_task);
+	cancel_delayed_work_sync(&priv->neigh_reap_task);
 	flush_workqueue(priv->wq);
 	ipoib_dev_cleanup(priv->dev);
 
@@ -2412,7 +2412,7 @@ static void ipoib_remove_one(struct ib_device *device, void *client_data)
 
 		/* Stop GC */
 		set_bit(IPOIB_STOP_NEIGH_GC, &priv->flags);
-		cancel_delayed_work(&priv->neigh_reap_task);
+		cancel_delayed_work_sync(&priv->neigh_reap_task);
 		flush_workqueue(priv->wq);
 
 		/* Wrap rtnl_lock/unlock with mutex to protect sysfs calls */
