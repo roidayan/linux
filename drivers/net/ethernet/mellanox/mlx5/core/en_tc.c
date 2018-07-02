@@ -3019,22 +3019,21 @@ int mlx5e_stats_flower(struct mlx5e_priv *priv,
 	struct rhashtable *tc_ht = get_tc_ht(priv);
 	struct mlx5e_tc_flow *flow;
 	struct mlx5_fc *counter;
-	u64 bytes;
-	u64 packets;
-	u64 lastuse;
+	u64 bytes = 0;
+	u64 packets = 0;
+	u64 lastuse = 0;
 
 	flow = rhashtable_lookup_fast(tc_ht, &f->cookie, tc_ht_params);
 	if (!flow || !same_flow_direction(flow, flags))
 		return -EINVAL;
 
-	if (!(flow->flags & MLX5E_TC_FLOW_OFFLOADED))
-		return 0;
+	if ((flow->flags & MLX5E_TC_FLOW_OFFLOADED)) {
+		counter = mlx5_flow_rule_counter(flow->rule[0]);
+		if (!counter)
+			return 0;
 
-	counter = mlx5_flow_rule_counter(flow->rule[0]);
-	if (!counter)
-		return 0;
-
-	mlx5_fc_query_cached(counter, &bytes, &packets, &lastuse);
+		mlx5_fc_query_cached(counter, &bytes, &packets, &lastuse);
+	}
 
 	if ((flow->flags & MLX5E_TC_FLOW_DUP) &&
 	    (flow->peer_flow->flags & MLX5E_TC_FLOW_OFFLOADED)) {
