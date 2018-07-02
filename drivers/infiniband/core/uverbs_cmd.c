@@ -1984,15 +1984,51 @@ static int modify_qp(struct ib_uverbs_file *file,
 		goto release_qp;
 	}
 
-	if ((cmd->base.attr_mask & IB_QP_AV) &&
-	    !rdma_is_port_valid(qp->device, cmd->base.dest.port_num)) {
-		ret = -EINVAL;
-		goto release_qp;
+	if ((cmd->base.attr_mask & IB_QP_AV)) {
+		if (!rdma_is_port_valid(qp->device, cmd->base.dest.port_num)) {
+			ret = -EINVAL;
+			goto release_qp;
+		} else if (cmd->base.attr_mask & IB_QP_STATE &&
+			   cmd->base.qp_state == IB_QPS_RTR) {
+		/* We are in INIT->RTR TRANSITION, cannot have IB_QP_PORT set.
+		 * (IB_QP_STATE flag is required in the INIT->RTR transition.)
+		 * Check the port number included in the primary AV against
+		 * the port number in the qp struct, which was set (and saved)
+		 * in the RST->INIT transition.
+		 */
+			if (cmd->base.dest.port_num != qp->real_qp->port) {
+				ret = -EINVAL;
+				goto release_qp;
+			}
+		} else {
+		/* We are in SQD->SQD. (If we are not, this transition will
+		 * be rejected later in the verbs layer checks).
+		 * Check for both IB_QP_PORT and IB_QP_AV, these can be set
+		 * together in the SQD->SQD transition.
+		 * If only IP_QP_AV was set, add in IB_QP_PORT as well (the
+		 * verbs layer driver does not track primary port changes
+		 * resulting from path migration. Thus, in SQD, if the primary
+		 * AV is modified, the primary port should also be modified).
+		 * Note that in this transition, the IB_QP_STATE flag
+		 * is not allowed.
+		 */
+			if (((cmd->base.attr_mask & (IB_QP_AV | IB_QP_PORT))
+			     == (IB_QP_AV | IB_QP_PORT)) &&
+			    cmd->base.port_num != cmd->base.dest.port_num) {
+				ret = -EINVAL;
+				goto release_qp;
+			} else if ((cmd->base.attr_mask &
+				    (IB_QP_AV | IB_QP_PORT)) == IB_QP_AV) {
+				cmd->base.attr_mask |= IB_QP_PORT;
+				cmd->base.port_num = cmd->base.dest.port_num;
+			}
+		}
 	}
 
 	if ((cmd->base.attr_mask & IB_QP_ALT_PATH) &&
 	    (!rdma_is_port_valid(qp->device, cmd->base.alt_port_num) ||
-	    !rdma_is_port_valid(qp->device, cmd->base.alt_dest.port_num))) {
+	    !rdma_is_port_valid(qp->device, cmd->base.alt_dest.port_num) ||
+	    cmd->base.alt_port_num != cmd->base.alt_dest.port_num)) {
 		ret = -EINVAL;
 		goto release_qp;
 	}
