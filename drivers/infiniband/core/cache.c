@@ -747,26 +747,6 @@ const struct ib_gid_attr *rdma_find_gid_by_filter(
 	return res;
 }
 
-int ib_find_cached_gid_by_port(struct ib_device *ib_dev,
-			       const union ib_gid *gid,
-			       enum ib_gid_type gid_type,
-			       u8 port, struct net_device *ndev,
-			       u16 *index)
-{
-	const struct ib_gid_attr *res;
-
-	res = rdma_find_gid_by_port(ib_dev, gid, gid_type, port, ndev);
-	if (IS_ERR(res))
-		return PTR_ERR(res);
-
-	if (index)
-		*index = res->index;
-	rdma_put_gid_attr(res);
-	return 0;
-
-}
-EXPORT_SYMBOL(ib_find_cached_gid_by_port);
-
 static struct ib_gid_table *alloc_gid_table(int sz)
 {
 	struct ib_gid_table *table = kzalloc(sizeof(*table), GFP_KERNEL);
