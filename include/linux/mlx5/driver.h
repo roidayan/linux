@@ -1076,8 +1076,6 @@ int mlx5_core_destroy_mkey(struct mlx5_core_dev *dev,
 			   struct mlx5_core_mkey *mkey);
 int mlx5_core_query_mkey(struct mlx5_core_dev *dev, struct mlx5_core_mkey *mkey,
 			 u32 *out, int outlen);
-int mlx5_core_dump_fill_mkey(struct mlx5_core_dev *dev, struct mlx5_core_mkey *_mkey,
-			     u32 *mkey);
 int mlx5_core_alloc_pd(struct mlx5_core_dev *dev, u32 *pdn);
 int mlx5_core_dealloc_pd(struct mlx5_core_dev *dev, u32 pdn);
 int mlx5_core_mad_ifc(struct mlx5_core_dev *dev, const void *inb, void *outb,
@@ -1224,14 +1222,11 @@ struct net_device *mlx5_rdma_netdev_alloc(struct mlx5_core_dev *mdev,
 {
 	return ERR_PTR(-EOPNOTSUPP);
 }
-
-static inline void mlx5_rdma_netdev_free(struct net_device *netdev) {}
 #else
 struct net_device *mlx5_rdma_netdev_alloc(struct mlx5_core_dev *mdev,
 					  struct ib_device *ibdev,
 					  const char *name,
 					  void (*setup)(struct net_device *));
-void mlx5_rdma_netdev_free(struct net_device *netdev);
 #endif /* CONFIG_MLX5_CORE_IPOIB */
 
 struct mlx5_profile {
