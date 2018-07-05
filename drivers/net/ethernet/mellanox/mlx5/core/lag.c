@@ -221,9 +221,10 @@ static void mlx5_modify_lag(struct mlx5_lag *ldev,
 /**
  * Set lag affinity
  * @affinity:
- *	0 - set normal affinity.
+ *	0 - set normal affinity. track netdev events.
  *	1 - set affinity to port 1.
  *	2 - set affinity to port 2.
+ *	3 - set normal affinity.
  *
  * When affinity is not 0 then netdev down/up events do not
  * change port affinity.
@@ -244,6 +245,7 @@ static int mlx5_lag_set_affinity(struct mlx5_lag *ldev, int affinity,
 
 	switch (affinity) {
 	case 0:
+	case 3:
 		tracker.netdev_state[0].tx_enabled = true;
 		tracker.netdev_state[1].tx_enabled = true;
 		tracker.netdev_state[0].link_up = true;
@@ -343,7 +345,8 @@ static void mlx5_do_bond(struct mlx5_lag *ldev)
 
 		mlx5_add_dev_by_protocol(dev0, MLX5_INTERFACE_PROTOCOL_IB);
 		mlx5_nic_vport_enable_roce(dev1);
-	} else if (do_bond && mlx5_lag_is_bonded(ldev)) {
+	} else if ((do_bond && mlx5_lag_is_bonded(ldev)) ||
+		   (mlx5_lag_is_multipath(dev0) && !ldev->lag_affinity)) {
 		mlx5_modify_lag(ldev, &tracker);
 	} else if (!do_bond && mlx5_lag_is_bonded(ldev)) {
 		mlx5_remove_dev_by_protocol(dev0, MLX5_INTERFACE_PROTOCOL_IB);
