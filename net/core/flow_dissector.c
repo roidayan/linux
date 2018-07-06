@@ -384,6 +384,7 @@ ipv6:
 		const struct vlan_hdr *vlan;
 		struct vlan_hdr _vlan;
 		bool vlan_tag_present = skb && skb_vlan_tag_present(skb);
+		__be16 saved_vlan_tpid = proto;
 
 		if (vlan_tag_present)
 			proto = skb->protocol;
@@ -417,6 +418,7 @@ ipv6:
 					(ntohs(vlan->h_vlan_TCI) &
 					 VLAN_PRIO_MASK) >> VLAN_PRIO_SHIFT;
 			}
+			key_vlan->vlan_tpid = saved_vlan_tpid;
 		}
 
 		goto again;
