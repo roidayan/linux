@@ -247,6 +247,11 @@ parse_ip4(void *headers_c, void *headers_v, struct ethtool_rx_flow_spec *fs)
 
 	set_ip4(headers_c, headers_v, l3_mask->ip4src, l3_val->ip4src,
 		l3_mask->ip4dst, l3_val->ip4dst);
+
+	if (l3_mask->proto) {
+		MLX5E_FTE_SET(headers_c, ip_protocol, l3_mask->proto);
+		MLX5E_FTE_SET(headers_v, ip_protocol, l3_val->proto);
+	}
 }
 
 static void
@@ -257,6 +262,11 @@ parse_ip6(void *headers_c, void *headers_v, struct ethtool_rx_flow_spec *fs)
 
 	set_ip6(headers_c, headers_v, l3_mask->ip6src,
 		l3_val->ip6src, l3_mask->ip6dst, l3_val->ip6dst);
+
+	if (l3_mask->l4_proto) {
+		MLX5E_FTE_SET(headers_c, ip_protocol, l3_mask->l4_proto);
+		MLX5E_FTE_SET(headers_v, ip_protocol, l3_val->l4_proto);
+	}
 }
 
 static void
@@ -537,7 +547,7 @@ static int validate_ip4(struct ethtool_rx_flow_spec *fs)
 	struct ethtool_usrip4_spec *l3_mask = &fs->m_u.usr_ip4_spec;
 	int ntuples = 0;
 
-	if (l3_mask->l4_4_bytes || l3_mask->tos || l3_mask->proto ||
+	if (l3_mask->l4_4_bytes || l3_mask->tos ||
 	    fs->h_u.usr_ip4_spec.ip_ver != ETH_RX_NFC_IP4)
 		return -EINVAL;
 	if (l3_mask->ip4src) {
@@ -550,6 +560,8 @@ static int validate_ip4(struct ethtool_rx_flow_spec *fs)
 			return -EINVAL;
 		ntuples++;
 	}
+	if (l3_mask->proto)
+		ntuples++;
 	/* Flow is IPv4 */
 	return ++ntuples;
 }
@@ -559,13 +571,14 @@ static int validate_ip6(struct ethtool_rx_flow_spec *fs)
 	struct ethtool_usrip6_spec *l3_mask = &fs->m_u.usr_ip6_spec;
 	int ntuples = 0;
 
-	if (l3_mask->l4_4_bytes || l3_mask->tclass || l3_mask->l4_proto)
+	if (l3_mask->l4_4_bytes || l3_mask->tclass)
 		return -EINVAL;
 	if (!is_zero_ip6(l3_mask->ip6src))
 		ntuples++;
 	if (!is_zero_ip6(l3_mask->ip6dst))
 		ntuples++;
-
+	if (l3_mask->l4_proto)
+		ntuples++;
 	/* Flow is IPv6 */
 	return ++ntuples;
 }
