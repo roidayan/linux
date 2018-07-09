@@ -2135,10 +2135,13 @@ static bool is_merged_eswitch_dev(struct mlx5e_priv *priv,
 {
 	struct mlx5e_priv *peer_priv;
 
+	if (peer_netdev->netdev_ops != &mlx5e_netdev_ops_rep &&
+	    peer_netdev->netdev_ops != &mlx5e_netdev_ops)
+		return false;
+
 	peer_priv = netdev_priv(peer_netdev);
 
 	return (MLX5_CAP_ESW(priv->mdev, merged_eswitch) &&
-		(priv->netdev->netdev_ops == peer_netdev->netdev_ops) &&
 		same_hw_devs(priv, peer_priv) &&
 		MLX5_VPORT_MANAGER(peer_priv->mdev) &&
 		(peer_priv->mdev->priv.eswitch->mode == SRIOV_OFFLOADS));
