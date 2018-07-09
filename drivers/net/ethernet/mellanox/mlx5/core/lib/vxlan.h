@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, Mellanox Technologies. All rights reserved.
+ * Copyright (c) 2016, Mellanox Technologies, Ltd.  All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -29,21 +29,36 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
+#ifndef __MLX5_VXLAN_H__
+#define __MLX5_VXLAN_H__
 
-#ifndef MLX5_IB_CMD_H
-#define MLX5_IB_CMD_H
-
-#include "mlx5_ib.h"
-#include <linux/kernel.h>
 #include <linux/mlx5/driver.h>
 
-int mlx5_cmd_dump_fill_mkey(struct mlx5_core_dev *dev, u32 *mkey);
-int mlx5_cmd_null_mkey(struct mlx5_core_dev *dev, u32 *null_mkey);
-int mlx5_cmd_query_cong_params(struct mlx5_core_dev *dev, int cong_point,
-			       void *out, int out_size);
-int mlx5_cmd_modify_cong_params(struct mlx5_core_dev *mdev,
-				void *in, int in_size);
-int mlx5_cmd_alloc_memic(struct mlx5_memic *memic, phys_addr_t *addr,
-			 u64 length, u32 alignment);
-int mlx5_cmd_dealloc_memic(struct mlx5_memic *memic, u64 addr, u64 length);
-#endif /* MLX5_IB_CMD_H */
+struct mlx5_vxlan;
+struct mlx5_vxlan_port;
+
+#ifdef CONFIG_MLX5_CORE_EN
+
+static inline bool mlx5_vxlan_allowed(struct mlx5_vxlan *vxlan)
+{
+	/* not allowed reason is encoded in vxlan pointer as error,
+	 * on mlx5_vxlan_create
+	 */
+	return !IS_ERR_OR_NULL(vxlan);
+}
+
+struct mlx5_vxlan *mlx5_vxlan_create(struct mlx5_core_dev *mdev);
+void mlx5_vxlan_destroy(struct mlx5_vxlan *vxlan);
+int mlx5_vxlan_add_port(struct mlx5_vxlan *vxlan, u16 port);
+int mlx5_vxlan_del_port(struct mlx5_vxlan *vxlan, u16 port);
+struct mlx5_vxlan_port *mlx5_vxlan_lookup_port(struct mlx5_vxlan *vxlan, u16 port);
+
+#else
+
+static inline struct mlx5_vxlan*
+mlx5_vxlan_create(struct mlx5_core_dev *mdev) { return ERR_PTR(-ENOTSUPP); }
+static inline void mlx5_vxlan_destroy(struct mlx5_vxlan *vxlan) { return; }
+
+#endif
+
+#endif /* __MLX5_VXLAN_H__ */
