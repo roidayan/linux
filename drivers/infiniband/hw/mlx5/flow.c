@@ -41,8 +41,7 @@ static const struct uverbs_attr_spec mlx5_ib_flow_type[] = {
 };
 
 static int UVERBS_HANDLER(MLX5_IB_METHOD_CREATE_FLOW)(
-	struct ib_device *ib_dev, struct ib_uverbs_file *file,
-	struct uverbs_attr_bundle *attrs)
+	struct ib_uverbs_file *file, struct uverbs_attr_bundle *attrs)
 {
 	struct mlx5_ib_flow_handler *flow_handler;
 	struct mlx5_ib_flow_matcher *fs_matcher;
@@ -110,7 +109,7 @@ static int UVERBS_HANDLER(MLX5_IB_METHOD_CREATE_FLOW)(
 	if (IS_ERR(flow_handler))
 		return PTR_ERR(flow_handler);
 
-	ib_set_flow(uobj, &flow_handler->ibflow, qp, ib_dev);
+	ib_set_flow(uobj, &flow_handler->ibflow, qp, uobj->context->device);
 
 	return 0;
 }
@@ -129,9 +128,8 @@ static int flow_matcher_cleanup(struct ib_uobject *uobject,
 	return 0;
 }
 
-static int UVERBS_HANDLER(MLX5_IB_METHOD_FLOW_MATCHER_CREATE)(struct ib_device *ib_dev,
-				   struct ib_uverbs_file *file,
-				   struct uverbs_attr_bundle *attrs)
+static int UVERBS_HANDLER(MLX5_IB_METHOD_FLOW_MATCHER_CREATE)(
+	struct ib_uverbs_file *file, struct uverbs_attr_bundle *attrs)
 {
 	struct ib_uobject *uobj = uverbs_attr_get_uobject(
 		attrs, MLX5_IB_ATTR_FLOW_MATCHER_CREATE_HANDLE);
@@ -249,9 +247,8 @@ static bool mlx5_ib_modify_header_supported(struct mlx5_ib_dev *dev)
 	       MLX5_CAP_FLOWTABLE_NIC_TX(dev->mdev, max_modify_header_actions);
 }
 
-static int UVERBS_HANDLER(MLX5_IB_METHOD_FLOW_ACTION_CREATE_MODIFY_HEADER)(struct ib_device *ib_dev,
-									   struct ib_uverbs_file *file,
-									   struct uverbs_attr_bundle *attrs)
+static int UVERBS_HANDLER(MLX5_IB_METHOD_FLOW_ACTION_CREATE_MODIFY_HEADER)(
+	struct ib_uverbs_file *file, struct uverbs_attr_bundle *attrs)
 {
 	struct ib_uobject *uobj = uverbs_attr_get_uobject(attrs,
 					MLX5_IB_ATTR_CREATE_MODIFY_HEADER_HANDLE);
@@ -369,9 +366,8 @@ static int mlx5_ib_flow_action_create_packet_reformat_ctx(struct mlx5_ib_dev *de
 	return 0;
 }
 
-static int UVERBS_HANDLER(MLX5_IB_METHOD_FLOW_ACTION_CREATE_PACKET_REFORMAT)(struct ib_device *ib_dev,
-									     struct ib_uverbs_file *file,
-									     struct uverbs_attr_bundle *attrs)
+static int UVERBS_HANDLER(MLX5_IB_METHOD_FLOW_ACTION_CREATE_PACKET_REFORMAT)(
+	struct ib_uverbs_file *file, struct uverbs_attr_bundle *attrs)
 {
 	struct ib_uobject *uobj = uverbs_attr_get_uobject(attrs,
 				       MLX5_IB_ATTR_CREATE_PACKET_REFORMAT_HANDLE);
