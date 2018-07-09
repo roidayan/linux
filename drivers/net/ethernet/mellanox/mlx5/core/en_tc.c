@@ -3131,7 +3131,7 @@ static void restore_eswitch_rules(struct mlx5_eswitch *esw, bool peer_flows)
 {
 	struct mlx5_eswitch_rep *rep;
 	struct rhashtable_iter iter;
-	struct mlx5e_tc_flow *flow;
+	struct mlx5e_tc_flow *flow, *rflow;
 	struct mlx5e_priv *priv;
 	int vport;
 
@@ -3149,10 +3149,18 @@ static void restore_eswitch_rules(struct mlx5_eswitch *esw, bool peer_flows)
 				break;
 			}
 
+			rflow = NULL;
+
 			if (!peer_flows)
-				restore_rule(flow);
+				rflow = flow;
 			else if (flow->flags & MLX5E_TC_FLOW_DUP)
-				restore_rule(flow->peer_flow);
+				rflow = flow->peer_flow;
+
+			if (rflow) {
+				rhashtable_walk_stop(&iter);
+				restore_rule(rflow);
+				rhashtable_walk_start(&iter);
+			}
 		}
 
 		rhashtable_walk_stop(&iter);
