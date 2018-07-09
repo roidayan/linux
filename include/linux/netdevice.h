@@ -975,7 +975,8 @@ struct net_device_ops_extended {
  *	Required can not be NULL.
  *
  * u16 (*ndo_select_queue)(struct net_device *dev, struct sk_buff *skb,
- *                         void *accel_priv, select_queue_fallback_t fallback);
+ *                         struct net_device *sb_dev,
+ *			   select_queue_fallback_t fallback);
  *	Called to decide which queue to when device supports multiple
  *	transmit queues.
  *
@@ -1216,7 +1217,7 @@ struct net_device_ops {
 						    struct sk_buff *skb),
 			u16	(*ndo_select_queue)(struct net_device *dev,
 						    struct sk_buff *skb,
-						    void *accel_priv,
+						    struct net_device *sb_dev,
 						    select_queue_fallback_t fallback))
 	void			(*ndo_change_rx_flags)(struct net_device *dev,
 						       int flags);
