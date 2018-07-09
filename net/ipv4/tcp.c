@@ -817,8 +817,7 @@ ssize_t tcp_splice_read(struct socket *sock, loff_t *ppos,
 				 * This occurs when user tries to read
 				 * from never connected socket.
 				 */
-				if (!sock_flag(sk, SOCK_DONE))
-					ret = -ENOTCONN;
+				ret = -ENOTCONN;
 				break;
 			}
 			if (!timeo) {
@@ -1241,7 +1240,7 @@ int tcp_sendmsg_locked(struct sock *sk, struct msghdr *msg, size_t size)
 		/* 'common' sending to sendq */
 	}
 
-	sockc.tsflags = sk->sk_tsflags;
+	sockcm_init(&sockc, sk);
 	if (msg->msg_controllen) {
 		err = sock_cmsg_send(sk, msg, &sockc);
 		if (unlikely(err)) {
@@ -2042,13 +2041,10 @@ int tcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int nonblock,
 				break;
 
 			if (sk->sk_state == TCP_CLOSE) {
-				if (!sock_flag(sk, SOCK_DONE)) {
-					/* This occurs when user tries to read
-					 * from never connected socket.
-					 */
-					copied = -ENOTCONN;
-					break;
-				}
+				/* This occurs when user tries to read
+				 * from never connected socket.
+				 */
+				copied = -ENOTCONN;
 				break;
 			}
 
@@ -2574,6 +2570,7 @@ int tcp_disconnect(struct sock *sk, int flags)
 	sk->sk_shutdown = 0;
 	sock_reset_flag(sk, SOCK_DONE);
 	tp->srtt_us = 0;
+	tp->rcv_rtt_last_tsecr = 0;
 	tp->write_seq += tp->max_window + 2;
 	if (tp->write_seq == 0)
 		tp->write_seq = 1;
