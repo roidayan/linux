@@ -3902,7 +3902,7 @@ static void mlx5e_netpoll(struct net_device *dev)
 }
 #endif
 
-static const struct net_device_ops mlx5e_netdev_ops = {
+const struct net_device_ops mlx5e_netdev_ops = {
 	.ndo_open                = mlx5e_open,
 	.ndo_stop                = mlx5e_close,
 	.ndo_start_xmit          = mlx5e_xmit,

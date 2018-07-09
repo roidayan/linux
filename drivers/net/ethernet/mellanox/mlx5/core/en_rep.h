@@ -39,6 +39,8 @@
 #include "en.h"
 
 #ifdef CONFIG_MLX5_ESWITCH
+extern const struct net_device_ops mlx5e_netdev_ops_rep;
+
 struct mlx5e_neigh_update_table {
 	struct rhashtable       neigh_ht;
 	/* Save the neigh hash entries in a list in addition to the hash table

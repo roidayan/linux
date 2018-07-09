@@ -141,6 +141,7 @@ do {                                                            \
 			    ##__VA_ARGS__);                     \
 } while (0)
 
+extern const struct net_device_ops mlx5e_netdev_ops;
 
 static inline u16 mlx5_min_rx_wqes(int wq_type, u32 wq_size)
 {

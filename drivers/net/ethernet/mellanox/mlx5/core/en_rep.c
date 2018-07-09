@@ -853,7 +853,7 @@ int mlx5e_change_rep_mtu(struct net_device *netdev, int new_mtu)
 	return mlx5e_change_mtu(netdev, new_mtu, NULL);
 }
 
-static const struct net_device_ops mlx5e_netdev_ops_rep = {
+const struct net_device_ops mlx5e_netdev_ops_rep = {
 	.ndo_open                = mlx5e_rep_open,
 	.ndo_stop                = mlx5e_rep_close,
 	.ndo_start_xmit          = mlx5e_xmit,
