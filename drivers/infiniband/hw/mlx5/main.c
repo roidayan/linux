@@ -5311,8 +5311,10 @@ static const struct cpumask *
 mlx5_ib_get_vector_affinity(struct ib_device *ibdev, int comp_vector)
 {
 	struct mlx5_ib_dev *dev = to_mdev(ibdev);
+	int irq = pci_irq_vector(dev->mdev->pdev,
+				 MLX5_EQ_VEC_COMP_BASE + comp_vector);
 
-	return mlx5_get_vector_affinity_hint(dev->mdev, comp_vector);
+	return irq_get_affinity_mask(irq);
 }
 
 /* The mlx5_ib_multiport_mutex should be held when calling this function */
