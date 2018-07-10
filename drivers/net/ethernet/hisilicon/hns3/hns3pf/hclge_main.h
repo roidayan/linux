@@ -128,6 +128,7 @@ enum HCLGE_DEV_STATE {
 	HCLGE_STATE_MBX_SERVICE_SCHED,
 	HCLGE_STATE_MBX_HANDLING,
 	HCLGE_STATE_STATISTICS_UPDATING,
+	HCLGE_STATE_CMD_DISABLE,
 	HCLGE_STATE_MAX
 };
 
@@ -190,7 +191,6 @@ struct hclge_hw {
 	int num_vec;
 	struct hclge_cmq cmq;
 	struct hclge_caps caps;
-	void *back;
 };
 
 /* TQP stats */
