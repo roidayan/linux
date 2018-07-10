@@ -741,9 +741,9 @@ of hot per cpu pagelists.  User can specify a number like 100 to allocate
 The batch value of each per cpu pagelist is also updated as a result.  It is
 set to pcp->high/4.  The upper limit of batch is (PAGE_SHIFT * 8)
 
-The initial value is zero.  Kernel does not use this value at boot time to set
+The initial value is 512.  Kernel uses this value at boot time to set
 the high water marks for each per cpu page list.  If the user writes '0' to this
-sysctl, it will revert to this default behavior.
+sysctl, it will revert to a behavior based on batchsize calculation.
 
 ==============================================================
 
