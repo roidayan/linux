@@ -1727,7 +1727,7 @@ static int bnxt_async_event_process(struct bnxt *bp,
 					    speed);
 		}
 		set_bit(BNXT_LINK_SPEED_CHNG_SP_EVENT, &bp->sp_event);
-		/* fall thru */
+		/* fall through */
 	}
 	case ASYNC_EVENT_CMPL_EVENT_ID_LINK_STATUS_CHANGE:
 		set_bit(BNXT_LINK_CHNG_SP_EVENT, &bp->sp_event);
@@ -7984,7 +7984,7 @@ static int bnxt_setup_tc_block(struct net_device *dev,
 	switch (f->command) {
 	case TC_BLOCK_BIND:
 		return tcf_block_cb_register(f->block, bnxt_setup_tc_block_cb,
-					     bp, bp);
+					     bp, bp, f->extack);
 	case TC_BLOCK_UNBIND:
 		tcf_block_cb_unregister(f->block, bnxt_setup_tc_block_cb, bp);
 		return 0;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Mellanox Technologies, Ltd.  All rights reserved.
+ * Copyright (c) 2018, Mellanox Technologies. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -29,35 +29,13 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-#ifndef __MLX5_VXLAN_H__
-#define __MLX5_VXLAN_H__
+#ifndef __MLX5_DEVLINK_H__
+#define __MLX5_DEVLINK_H__
 
+#include <net/devlink.h>
 #include <linux/mlx5/driver.h>
-#include "en.h"
 
-struct mlx5e_vxlan {
-	atomic_t refcount;
-	u16 udp_port;
-};
+int mlx5_devlink_register(struct devlink *devlink, struct device *dev);
+void mlx5_devlink_unregister(struct devlink *devlink);
 
-struct mlx5e_vxlan_work {
-	struct work_struct	work;
-	struct mlx5e_priv	*priv;
-	sa_family_t		sa_family;
-	u16			port;
-};
-
-static inline bool mlx5e_vxlan_allowed(struct mlx5_core_dev *mdev)
-{
-	return (MLX5_CAP_ETH(mdev, tunnel_stateless_vxlan) &&
-		mlx5_core_is_pf(mdev));
-}
-
-void mlx5e_vxlan_init(struct mlx5e_priv *priv);
-void mlx5e_vxlan_cleanup(struct mlx5e_priv *priv);
-
-void mlx5e_vxlan_queue_work(struct mlx5e_priv *priv, sa_family_t sa_family,
-			    u16 port, int add);
-struct mlx5e_vxlan *mlx5e_vxlan_lookup_port(struct mlx5e_priv *priv, u16 port);
-
-#endif /* __MLX5_VXLAN_H__ */
+#endif /* __MLX5_DEVLINK_H__ */

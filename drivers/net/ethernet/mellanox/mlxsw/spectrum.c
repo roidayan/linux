@@ -74,15 +74,22 @@
 #include "spectrum_span.h"
 #include "../mlxfw/mlxfw.h"
 
-#define MLXSW_FWREV_MAJOR 13
-#define MLXSW_FWREV_MINOR 1620
-#define MLXSW_FWREV_SUBMINOR 192
-#define MLXSW_FWREV_MINOR_TO_BRANCH(minor) ((minor) / 100)
+#define MLXSW_SP_FWREV_MINOR_TO_BRANCH(minor) ((minor) / 100)
 
-#define MLXSW_SP_FW_FILENAME \
-	"mellanox/mlxsw_spectrum-" __stringify(MLXSW_FWREV_MAJOR) \
-	"." __stringify(MLXSW_FWREV_MINOR) \
-	"." __stringify(MLXSW_FWREV_SUBMINOR) ".mfa2"
+#define MLXSW_SP1_FWREV_MAJOR 13
+#define MLXSW_SP1_FWREV_MINOR 1620
+#define MLXSW_SP1_FWREV_SUBMINOR 192
+
+static const struct mlxsw_fw_rev mlxsw_sp1_fw_rev = {
+	.major = MLXSW_SP1_FWREV_MAJOR,
+	.minor = MLXSW_SP1_FWREV_MINOR,
+	.subminor = MLXSW_SP1_FWREV_SUBMINOR,
+};
+
+#define MLXSW_SP1_FW_FILENAME \
+	"mellanox/mlxsw_spectrum-" __stringify(MLXSW_SP1_FWREV_MAJOR) \
+	"." __stringify(MLXSW_SP1_FWREV_MINOR) \
+	"." __stringify(MLXSW_SP1_FWREV_SUBMINOR) ".mfa2"
 
 static const char mlxsw_sp_driver_name[] = "mlxsw_spectrum";
 static const char mlxsw_sp_driver_version[] = "1.0";
@@ -338,29 +345,35 @@ static int mlxsw_sp_firmware_flash(struct mlxsw_sp *mlxsw_sp,
 static int mlxsw_sp_fw_rev_validate(struct mlxsw_sp *mlxsw_sp)
 {
 	const struct mlxsw_fw_rev *rev = &mlxsw_sp->bus_info->fw_rev;
+	const struct mlxsw_fw_rev *req_rev = mlxsw_sp->req_rev;
+	const char *fw_filename = mlxsw_sp->fw_filename;
 	const struct firmware *firmware;
 	int err;
 
+	/* Don't check if driver does not require it */
+	if (!req_rev || !fw_filename)
+		return 0;
+
 	/* Validate driver & FW are compatible */
-	if (rev->major != MLXSW_FWREV_MAJOR) {
+	if (rev->major != req_rev->major) {
 		WARN(1, "Mismatch in major FW version [%d:%d] is never expected; Please contact support\n",
-		     rev->major, MLXSW_FWREV_MAJOR);
+		     rev->major, req_rev->major);
 		return -EINVAL;
 	}
-	if (MLXSW_FWREV_MINOR_TO_BRANCH(rev->minor) ==
-	    MLXSW_FWREV_MINOR_TO_BRANCH(MLXSW_FWREV_MINOR))
+	if (MLXSW_SP_FWREV_MINOR_TO_BRANCH(rev->minor) ==
+	    MLXSW_SP_FWREV_MINOR_TO_BRANCH(req_rev->minor))
 		return 0;
 
 	dev_info(mlxsw_sp->bus_info->dev, "The firmware version %d.%d.%d is incompatible with the driver\n",
 		 rev->major, rev->minor, rev->subminor);
 	dev_info(mlxsw_sp->bus_info->dev, "Flashing firmware using file %s\n",
-		 MLXSW_SP_FW_FILENAME);
+		 fw_filename);
 
-	err = request_firmware_direct(&firmware, MLXSW_SP_FW_FILENAME,
+	err = request_firmware_direct(&firmware, fw_filename,
 				      mlxsw_sp->bus_info->dev);
 	if (err) {
 		dev_err(mlxsw_sp->bus_info->dev, "Could not request firmware file %s\n",
-			MLXSW_SP_FW_FILENAME);
+			fw_filename);
 		return err;
 	}
 
@@ -1503,7 +1516,8 @@ static int mlxsw_sp_setup_tc_block_cb_flower(enum tc_setup_type type,
 
 static int
 mlxsw_sp_setup_tc_block_flower_bind(struct mlxsw_sp_port *mlxsw_sp_port,
-				    struct tcf_block *block, bool ingress)
+				    struct tcf_block *block, bool ingress,
+				    struct netlink_ext_ack *extack)
 {
 	struct mlxsw_sp *mlxsw_sp = mlxsw_sp_port->mlxsw_sp;
 	struct mlxsw_sp_acl_block *acl_block;
@@ -1518,7 +1532,7 @@ mlxsw_sp_setup_tc_block_flower_bind(struct mlxsw_sp_port *mlxsw_sp_port,
 			return -ENOMEM;
 		block_cb = __tcf_block_cb_register(block,
 						   mlxsw_sp_setup_tc_block_cb_flower,
-						   mlxsw_sp, acl_block);
+						   mlxsw_sp, acl_block, extack);
 		if (IS_ERR(block_cb)) {
 			err = PTR_ERR(block_cb);
 			goto err_cb_register;
@@ -1541,7 +1555,7 @@ mlxsw_sp_setup_tc_block_flower_bind(struct mlxsw_sp_port *mlxsw_sp_port,
 
 err_block_bind:
 	if (!tcf_block_cb_decref(block_cb)) {
-		__tcf_block_cb_unregister(block_cb);
+		__tcf_block_cb_unregister(block, block_cb);
 err_cb_register:
 		mlxsw_sp_acl_block_destroy(acl_block);
 	}
@@ -1571,7 +1585,7 @@ mlxsw_sp_setup_tc_block_flower_unbind(struct mlxsw_sp_port *mlxsw_sp_port,
 	err = mlxsw_sp_acl_block_unbind(mlxsw_sp, acl_block,
 					mlxsw_sp_port, ingress);
 	if (!err && !tcf_block_cb_decref(block_cb)) {
-		__tcf_block_cb_unregister(block_cb);
+		__tcf_block_cb_unregister(block, block_cb);
 		mlxsw_sp_acl_block_destroy(acl_block);
 	}
 }
@@ -1596,11 +1610,12 @@ static int mlxsw_sp_setup_tc_block(struct mlxsw_sp_port *mlxsw_sp_port,
 	switch (f->command) {
 	case TC_BLOCK_BIND:
 		err = tcf_block_cb_register(f->block, cb, mlxsw_sp_port,
-					    mlxsw_sp_port);
+					    mlxsw_sp_port, f->extack);
 		if (err)
 			return err;
 		err = mlxsw_sp_setup_tc_block_flower_bind(mlxsw_sp_port,
-							  f->block, ingress);
+							  f->block, ingress,
+							  f->extack);
 		if (err) {
 			tcf_block_cb_unregister(f->block, cb, mlxsw_sp_port);
 			return err;
@@ -3619,6 +3634,14 @@ static int mlxsw_sp_init(struct mlxsw_core *mlxsw_core,
 	struct mlxsw_sp *mlxsw_sp = mlxsw_core_driver_priv(mlxsw_core);
 	int err;
 
+	mlxsw_sp->req_rev = &mlxsw_sp1_fw_rev;
+	mlxsw_sp->fw_filename = MLXSW_SP1_FW_FILENAME;
+	mlxsw_sp->kvdl_ops = &mlxsw_sp1_kvdl_ops;
+	mlxsw_sp->afa_ops = &mlxsw_sp1_act_afa_ops;
+	mlxsw_sp->afk_ops = &mlxsw_sp1_afk_ops;
+	mlxsw_sp->mr_tcam_ops = &mlxsw_sp1_mr_tcam_ops;
+	mlxsw_sp->acl_tcam_ops = &mlxsw_sp1_acl_tcam_ops;
+
 	mlxsw_sp->core = mlxsw_core;
 	mlxsw_sp->bus_info = mlxsw_bus_info;
 
@@ -3876,7 +3899,7 @@ static int mlxsw_sp_resources_register(struct mlxsw_core *mlxsw_core)
 	if (err)
 		return err;
 
-	err = mlxsw_sp_kvdl_resources_register(mlxsw_core);
+	err = mlxsw_sp1_kvdl_resources_register(mlxsw_core);
 	if  (err)
 		return err;
 
@@ -4737,4 +4760,4 @@ MODULE_LICENSE("Dual BSD/GPL");
 MODULE_AUTHOR("Jiri Pirko <jiri@mellanox.com>");
 MODULE_DESCRIPTION("Mellanox Spectrum driver");
 MODULE_DEVICE_TABLE(pci, mlxsw_sp_pci_id_table);
-MODULE_FIRMWARE(MLXSW_SP_FW_FILENAME);
+MODULE_FIRMWARE(MLXSW_SP1_FW_FILENAME);
