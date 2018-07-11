@@ -139,6 +139,10 @@ struct ib_uverbs_file {
 	struct ib_uverbs_device		       *device;
 	/* Protects writing to ucontext */
 	struct mutex				ucontext_lock;
+	/*
+	 * ucontext must be accessed via ib_uverbs_get_ucontext() or with
+	 * hw_destroy_rwsem held
+	 */
 	struct ib_ucontext		       *ucontext;
 	struct ib_event_handler			event_handler;
 	struct ib_uverbs_async_event_file       *async_file;
