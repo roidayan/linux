@@ -202,6 +202,29 @@
 
 #endif /* COMPILER_HAS_GENERIC_BUILTIN_OVERFLOW */
 
+/*
+ * Compute *d = (a << s)
+ *
+ * Returns true if '*d' cannot hold the result or 'a << s' doesn't make sense.
+ * - 'a << s' causes bits to be lost when stored in d
+ * - 's' is garbage (eg negative) or so large that a << s is guaranteed to be 0
+ * - 'a' is negative
+ * - 'a << s' sets the sign bit, if any, in '*d'
+ * *d is not defined if false is returned.
+ */
+#define check_shift_overflow(a, s, d) ({				\
+	typeof(a) _a = a;						\
+	typeof(s) _s = s;						\
+	typeof(d) _d = d;						\
+	u64 _a_full = _a;						\
+	unsigned int _to_shift =					\
+	_s >= 0 && _s < 8 * sizeof(*d) ? _s : 0;			\
+	*_d = (_a_full << _to_shift);					\
+	*d = *_d;							\
+	(_to_shift != _s || *_d < 0 || _a < 0 ||			\
+	(*_d >> _to_shift) != _a);					\
+})
+
 /**
  * array_size() - Calculate size of 2-dimensional array.
  *
