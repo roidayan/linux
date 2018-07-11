@@ -895,12 +895,17 @@ void ib_enum_roce_netdev(struct ib_device *ib_dev,
 				dev_put(idev);
 				idev = NULL;
 			}
+			/*
+			 * Filter function needs rdma netdevice, so if idev
+			 * for some reason is NULL, skip invoking filters.
+			 */
+			if (!idev)
+				continue;
 
 			if (filter(ib_dev, port, idev, filter_cookie))
 				cb(ib_dev, port, idev, cookie);
 
-			if (idev)
-				dev_put(idev);
+			dev_put(idev);
 		}
 }
 
