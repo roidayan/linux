@@ -269,6 +269,18 @@ struct uverbs_object_tree_def {
 	})
 
 /*
+ * An input value that is a bitwise combination of values of _enum_type.
+ * This permits the flag value to be passed as either a u32 or u64, it must
+ * be retrieved via uverbs_get_flag().
+ */
+#define UVERBS_ATTR_FLAGS_IN(_attr_id, _enum_type, ...)                        \
+	UVERBS_ATTR_PTR_IN(                                                    \
+		_attr_id,                                                      \
+		UVERBS_ATTR_SIZE(sizeof(_enum_type) * 0 + sizeof(u32),         \
+				 sizeof(u64)),                                 \
+		__VA_ARGS__)
+
+/*
  * This spec is used in order to pass information to the hardware driver in a
  * legacy way. Every verb that could get driver specific data should get this
  * spec.
@@ -519,6 +531,11 @@ static inline int _uverbs_copy_from_or_zero(void *to,
 
 #define uverbs_copy_from_or_zero(to, attrs_bundle, idx)			      \
 	_uverbs_copy_from_or_zero(to, attrs_bundle, idx, sizeof(*to))
+
+int uverbs_get_flags64(u64 *to, const struct uverbs_attr_bundle *attrs_bundle,
+		       size_t idx, u64 allowed_bits);
+int uverbs_get_flags32(u32 *to, const struct uverbs_attr_bundle *attrs_bundle,
+		       size_t idx, u64 allowed_bits);
 
 /* =================================================
  *	 Definitions -> Specs infrastructure
