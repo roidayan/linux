@@ -517,8 +517,9 @@ void mlx5_init_clock(struct mlx5_core_dev *mdev)
 	 * multiplied by clock multiplier where the result doesn't exceed
 	 * 64bits.
 	 */
-	overflow_cycles = min(~0ULL / 2 / clock->cycles.mult,
-			      clock->cycles.mask / 2);
+	overflow_cycles = div64_u64(~0ULL >> 1, clock->cycles.mult);
+	overflow_cycles = min(overflow_cycles, clock->cycles.mask >> 1);
+
 	ns = cyclecounter_cyc2ns(&clock->cycles, overflow_cycles,
 				 frac, &frac);
 	do_div(ns, NSEC_PER_SEC / HZ);
