@@ -150,9 +150,6 @@ is_eth_port_of_netdev_filter(struct ib_device *ib_dev, u8 port,
 	struct net_device *real_dev;
 	bool res;
 
-	if (!rdma_ndev)
-		return false;
-
 	rcu_read_lock();
 	real_dev = rdma_vlan_dev_real_dev(cookie);
 	if (!real_dev)
@@ -173,9 +170,6 @@ is_eth_port_inactive_slave_filter(struct ib_device *ib_dev, u8 port,
 {
 	struct net_device *master_dev;
 	bool res;
-
-	if (!rdma_ndev)
-		return false;
 
 	rcu_read_lock();
 	master_dev = netdev_master_upper_dev_get_rcu(rdma_ndev);
@@ -201,9 +195,6 @@ is_ndev_for_default_gid_filter(struct ib_device *ib_dev, u8 port,
 			       struct net_device *rdma_ndev, void *cookie_ndev)
 {
 	int res;
-
-	if (!rdma_ndev)
-		return false;
 
 	rcu_read_lock();
 
@@ -232,9 +223,6 @@ static bool upper_device_filter(struct ib_device *ib_dev, u8 port,
 				struct net_device *rdma_ndev, void *cookie)
 {
 	int res;
-
-	if (!rdma_ndev)
-		return false;
 
 	if (rdma_ndev == cookie)
 		return true;
