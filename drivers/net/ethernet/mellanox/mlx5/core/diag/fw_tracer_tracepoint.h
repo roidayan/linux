@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, Mellanox Technologies. All rights reserved.
+ * Copyright (c) 2018, Mellanox Technologies. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -30,20 +30,49 @@
  * SOFTWARE.
  */
 
-#ifndef MLX5_IB_CMD_H
-#define MLX5_IB_CMD_H
+#if !defined(__LIB_TRACER_TRACEPOINT_H__) || defined(TRACE_HEADER_MULTI_READ)
+#define __LIB_TRACER_TRACEPOINT_H__
 
-#include "mlx5_ib.h"
-#include <linux/kernel.h>
-#include <linux/mlx5/driver.h>
+#include <linux/tracepoint.h>
+#include "fw_tracer.h"
 
-int mlx5_cmd_dump_fill_mkey(struct mlx5_core_dev *dev, u32 *mkey);
-int mlx5_cmd_null_mkey(struct mlx5_core_dev *dev, u32 *null_mkey);
-int mlx5_cmd_query_cong_params(struct mlx5_core_dev *dev, int cong_point,
-			       void *out, int out_size);
-int mlx5_cmd_modify_cong_params(struct mlx5_core_dev *mdev,
-				void *in, int in_size);
-int mlx5_cmd_alloc_memic(struct mlx5_memic *memic, phys_addr_t *addr,
-			 u64 length, u32 alignment);
-int mlx5_cmd_dealloc_memic(struct mlx5_memic *memic, u64 addr, u64 length);
-#endif /* MLX5_IB_CMD_H */
+#undef TRACE_SYSTEM
+#define TRACE_SYSTEM mlx5
+
+/* Tracepoint for FWTracer messages: */
+TRACE_EVENT(mlx5_fw,
+	TP_PROTO(const struct mlx5_fw_tracer *tracer, u64 trace_timestamp,
+		 bool lost, u8 event_id, const char *msg),
+
+	TP_ARGS(tracer, trace_timestamp, lost, event_id, msg),
+
+	TP_STRUCT__entry(
+		__string(dev_name, dev_name(&tracer->dev->pdev->dev))
+		__field(u64, trace_timestamp)
+		__field(bool, lost)
+		__field(u8, event_id)
+		__string(msg, msg)
+	),
+
+	TP_fast_assign(
+		__assign_str(dev_name, dev_name(&tracer->dev->pdev->dev));
+		__entry->trace_timestamp = trace_timestamp;
+		__entry->lost = lost;
+		__entry->event_id = event_id;
+		__assign_str(msg, msg);
+	),
+
+	TP_printk("%s [0x%llx] %d [0x%x] %s",
+		  __get_str(dev_name),
+		  __entry->trace_timestamp,
+		  __entry->lost, __entry->event_id,
+		  __get_str(msg))
+);
+
+#endif
+
+#undef TRACE_INCLUDE_PATH
+#undef TRACE_INCLUDE_FILE
+#define TRACE_INCLUDE_PATH ./diag
+#define TRACE_INCLUDE_FILE fw_tracer_tracepoint
+#include <trace/define_trace.h>
