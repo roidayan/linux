@@ -88,7 +88,7 @@ void mlx4_crdump_collect_crspace(struct mlx4_dev *dev, u8 *cr_space, u32 id)
 
 	/* Try to collect CR space */
 	cr_res_size = pci_resource_len(pdev, 0);
-	crspace_data = vmalloc(cr_res_size);
+	crspace_data = kvmalloc(cr_res_size, GFP_KERNEL);
 	if (crspace_data) {
 		for (offset = 0; offset < cr_res_size; offset += 4)
 			*(u32 *)(crspace_data + offset) =
@@ -96,9 +96,9 @@ void mlx4_crdump_collect_crspace(struct mlx4_dev *dev, u8 *cr_space, u32 id)
 
 		err = devlink_region_snapshot_create(crdump->region_crspace,
 						     cr_res_size, crspace_data,
-						     id, &vfree);
+						     id, &kvfree);
 		if (err) {
-			vfree(crspace_data);
+			kvfree(crspace_data);
 			mlx4_warn(dev, "crdump: devlink create %s snapshot id %d err %d\n",
 				  region_cr_space_str, id, err);
 		} else {
@@ -123,7 +123,7 @@ void mlx4_crdump_collect_fw_health(struct mlx4_dev *dev, u8 *cr_space, u32 id)
 	}
 
 	/* Try to collect health buffer */
-	health_data = vmalloc(HEALTH_BUFFER_SIZE);
+	health_data = kvmalloc(HEALTH_BUFFER_SIZE, GFP_KERNEL);
 	if (health_data) {
 		u8 *health_buf_s = cr_space + dev->caps.health_buffer_addrs;
 
@@ -134,9 +134,9 @@ void mlx4_crdump_collect_fw_health(struct mlx4_dev *dev, u8 *cr_space, u32 id)
 		err = devlink_region_snapshot_create(crdump->region_fw_health,
 						     HEALTH_BUFFER_SIZE,
 						     health_data,
-						     id, &vfree);
+						     id, &kvfree);
 		if (err) {
-			vfree(health_data);
+			kvfree(health_data);
 			mlx4_warn(dev, "crdump: devlink create %s snapshot id %d err %d\n",
 				  region_fw_health_str, id, err);
 		} else {
