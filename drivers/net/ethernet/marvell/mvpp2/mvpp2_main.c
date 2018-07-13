@@ -66,7 +66,7 @@ static void mvpp2_mac_config(struct net_device *dev, unsigned int mode,
 #define MVPP2_QDIST_SINGLE_MODE	0
 #define MVPP2_QDIST_MULTI_MODE	1
 
-static int queue_mode = MVPP2_QDIST_SINGLE_MODE;
+static int queue_mode = MVPP2_QDIST_MULTI_MODE;
 
 module_param(queue_mode, int, 0444);
 MODULE_PARM_DESC(queue_mode, "Set queue_mode (single=0, multi=1)");
@@ -151,9 +151,10 @@ static dma_addr_t mvpp2_txdesc_dma_addr_get(struct mvpp2_port *port,
 					    struct mvpp2_tx_desc *tx_desc)
 {
 	if (port->priv->hw_version == MVPP21)
-		return tx_desc->pp21.buf_dma_addr;
+		return le32_to_cpu(tx_desc->pp21.buf_dma_addr);
 	else
-		return tx_desc->pp22.buf_dma_addr_ptp & MVPP2_DESC_DMA_MASK;
+		return le64_to_cpu(tx_desc->pp22.buf_dma_addr_ptp) &
+		       MVPP2_DESC_DMA_MASK;
 }
 
 static void mvpp2_txdesc_dma_addr_set(struct mvpp2_port *port,
@@ -166,12 +167,12 @@ static void mvpp2_txdesc_dma_addr_set(struct mvpp2_port *port,
 	offset = dma_addr & MVPP2_TX_DESC_ALIGN;
 
 	if (port->priv->hw_version == MVPP21) {
-		tx_desc->pp21.buf_dma_addr = addr;
+		tx_desc->pp21.buf_dma_addr = cpu_to_le32(addr);
 		tx_desc->pp21.packet_offset = offset;
 	} else {
-		u64 val = (u64)addr;
+		__le64 val = cpu_to_le64(addr);
 
-		tx_desc->pp22.buf_dma_addr_ptp &= ~MVPP2_DESC_DMA_MASK;
+		tx_desc->pp22.buf_dma_addr_ptp &= ~cpu_to_le64(MVPP2_DESC_DMA_MASK);
 		tx_desc->pp22.buf_dma_addr_ptp |= val;
 		tx_desc->pp22.packet_offset = offset;
 	}
@@ -181,9 +182,9 @@ static size_t mvpp2_txdesc_size_get(struct mvpp2_port *port,
 				    struct mvpp2_tx_desc *tx_desc)
 {
 	if (port->priv->hw_version == MVPP21)
-		return tx_desc->pp21.data_size;
+		return le16_to_cpu(tx_desc->pp21.data_size);
 	else
-		return tx_desc->pp22.data_size;
+		return le16_to_cpu(tx_desc->pp22.data_size);
 }
 
 static void mvpp2_txdesc_size_set(struct mvpp2_port *port,
@@ -191,9 +192,9 @@ static void mvpp2_txdesc_size_set(struct mvpp2_port *port,
 				  size_t size)
 {
 	if (port->priv->hw_version == MVPP21)
-		tx_desc->pp21.data_size = size;
+		tx_desc->pp21.data_size = cpu_to_le16(size);
 	else
-		tx_desc->pp22.data_size = size;
+		tx_desc->pp22.data_size = cpu_to_le16(size);
 }
 
 static void mvpp2_txdesc_txq_set(struct mvpp2_port *port,
@@ -211,9 +212,9 @@ static void mvpp2_txdesc_cmd_set(struct mvpp2_port *port,
 				 unsigned int command)
 {
 	if (port->priv->hw_version == MVPP21)
-		tx_desc->pp21.command = command;
+		tx_desc->pp21.command = cpu_to_le32(command);
 	else
-		tx_desc->pp22.command = command;
+		tx_desc->pp22.command = cpu_to_le32(command);
 }
 
 static unsigned int mvpp2_txdesc_offset_get(struct mvpp2_port *port,
@@ -229,36 +230,38 @@ static dma_addr_t mvpp2_rxdesc_dma_addr_get(struct mvpp2_port *port,
 					    struct mvpp2_rx_desc *rx_desc)
 {
 	if (port->priv->hw_version == MVPP21)
-		return rx_desc->pp21.buf_dma_addr;
+		return le32_to_cpu(rx_desc->pp21.buf_dma_addr);
 	else
-		return rx_desc->pp22.buf_dma_addr_key_hash & MVPP2_DESC_DMA_MASK;
+		return le64_to_cpu(rx_desc->pp22.buf_dma_addr_key_hash) &
+		       MVPP2_DESC_DMA_MASK;
 }
 
 static unsigned long mvpp2_rxdesc_cookie_get(struct mvpp2_port *port,
 					     struct mvpp2_rx_desc *rx_desc)
 {
 	if (port->priv->hw_version == MVPP21)
-		return rx_desc->pp21.buf_cookie;
+		return le32_to_cpu(rx_desc->pp21.buf_cookie);
 	else
-		return rx_desc->pp22.buf_cookie_misc & MVPP2_DESC_DMA_MASK;
+		return le64_to_cpu(rx_desc->pp22.buf_cookie_misc) &
+		       MVPP2_DESC_DMA_MASK;
 }
 
 static size_t mvpp2_rxdesc_size_get(struct mvpp2_port *port,
 				    struct mvpp2_rx_desc *rx_desc)
 {
 	if (port->priv->hw_version == MVPP21)
-		return rx_desc->pp21.data_size;
+		return le16_to_cpu(rx_desc->pp21.data_size);
 	else
-		return rx_desc->pp22.data_size;
+		return le16_to_cpu(rx_desc->pp22.data_size);
 }
 
 static u32 mvpp2_rxdesc_status_get(struct mvpp2_port *port,
 				   struct mvpp2_rx_desc *rx_desc)
 {
 	if (port->priv->hw_version == MVPP21)
-		return rx_desc->pp21.status;
+		return le32_to_cpu(rx_desc->pp21.status);
 	else
-		return rx_desc->pp22.status;
+		return le32_to_cpu(rx_desc->pp22.status);
 }
 
 static void mvpp2_txq_inc_get(struct mvpp2_txq_pcpu *txq_pcpu)
@@ -1735,7 +1738,7 @@ static u32 mvpp2_txq_desc_csum(int l3_offs, int l3_proto,
 	command |= (ip_hdr_len << MVPP2_TXD_IP_HLEN_SHIFT);
 	command |= MVPP2_TXD_IP_CSUM_DISABLE;
 
-	if (l3_proto == swab16(ETH_P_IP)) {
+	if (l3_proto == htons(ETH_P_IP)) {
 		command &= ~MVPP2_TXD_IP_CSUM_DISABLE;	/* enable IPv4 csum */
 		command &= ~MVPP2_TXD_L3_IP6;		/* enable IPv4 */
 	} else {
@@ -3273,6 +3276,11 @@ static void mvpp2_irqs_deinit(struct mvpp2_port *port)
 	}
 }
 
+static bool mvpp22_rss_is_supported(void)
+{
+	return queue_mode == MVPP2_QDIST_MULTI_MODE;
+}
+
 static int mvpp2_open(struct net_device *dev)
 {
 	struct mvpp2_port *port = netdev_priv(dev);
@@ -3364,9 +3372,6 @@ static int mvpp2_open(struct net_device *dev)
 	mvpp2_shared_interrupt_mask_unmask(port, false);
 
 	mvpp2_start_dev(port);
-
-	if (priv->hw_version == MVPP22)
-		mvpp22_init_rss(port);
 
 	/* Start hardware statistics gathering */
 	queue_delayed_work(priv->stats_queue, &port->stats_work,
@@ -3626,6 +3631,13 @@ static int mvpp2_set_features(struct net_device *dev,
 		}
 	}
 
+	if (changed & NETIF_F_RXHASH) {
+		if (features & NETIF_F_RXHASH)
+			mvpp22_rss_enable(port);
+		else
+			mvpp22_rss_disable(port);
+	}
+
 	return 0;
 }
 
@@ -3813,6 +3825,94 @@ static int mvpp2_ethtool_set_link_ksettings(struct net_device *dev,
 	return phylink_ethtool_ksettings_set(port->phylink, cmd);
 }
 
+static int mvpp2_ethtool_get_rxnfc(struct net_device *dev,
+				   struct ethtool_rxnfc *info, u32 *rules)
+{
+	struct mvpp2_port *port = netdev_priv(dev);
+	int ret = 0;
+
+	if (!mvpp22_rss_is_supported())
+		return -EOPNOTSUPP;
+
+	switch (info->cmd) {
+	case ETHTOOL_GRXFH:
+		ret = mvpp2_ethtool_rxfh_get(port, info);
+		break;
+	case ETHTOOL_GRXRINGS:
+		info->data = port->nrxqs;
+		break;
+	default:
+		return -ENOTSUPP;
+	}
+
+	return ret;
+}
+
+static int mvpp2_ethtool_set_rxnfc(struct net_device *dev,
+				   struct ethtool_rxnfc *info)
+{
+	struct mvpp2_port *port = netdev_priv(dev);
+	int ret = 0;
+
+	if (!mvpp22_rss_is_supported())
+		return -EOPNOTSUPP;
+
+	switch (info->cmd) {
+	case ETHTOOL_SRXFH:
+		ret = mvpp2_ethtool_rxfh_set(port, info);
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+	return ret;
+}
+
+static u32 mvpp2_ethtool_get_rxfh_indir_size(struct net_device *dev)
+{
+	return mvpp22_rss_is_supported() ? MVPP22_RSS_TABLE_ENTRIES : 0;
+}
+
+static int mvpp2_ethtool_get_rxfh(struct net_device *dev, u32 *indir, u8 *key,
+				  u8 *hfunc)
+{
+	struct mvpp2_port *port = netdev_priv(dev);
+
+	if (!mvpp22_rss_is_supported())
+		return -EOPNOTSUPP;
+
+	if (indir)
+		memcpy(indir, port->indir,
+		       ARRAY_SIZE(port->indir) * sizeof(port->indir[0]));
+
+	if (hfunc)
+		*hfunc = ETH_RSS_HASH_CRC32;
+
+	return 0;
+}
+
+static int mvpp2_ethtool_set_rxfh(struct net_device *dev, const u32 *indir,
+				  const u8 *key, const u8 hfunc)
+{
+	struct mvpp2_port *port = netdev_priv(dev);
+
+	if (!mvpp22_rss_is_supported())
+		return -EOPNOTSUPP;
+
+	if (hfunc != ETH_RSS_HASH_NO_CHANGE && hfunc != ETH_RSS_HASH_CRC32)
+		return -EOPNOTSUPP;
+
+	if (key)
+		return -EOPNOTSUPP;
+
+	if (indir) {
+		memcpy(port->indir, indir,
+		       ARRAY_SIZE(port->indir) * sizeof(port->indir[0]));
+		mvpp22_rss_fill_table(port, port->id);
+	}
+
+	return 0;
+}
+
 /* Device ops */
 
 static const struct net_device_ops mvpp2_netdev_ops = {
@@ -3844,6 +3944,12 @@ static const struct ethtool_ops mvpp2_eth_tool_ops = {
 	.set_pauseparam		= mvpp2_ethtool_set_pause_param,
 	.get_link_ksettings	= mvpp2_ethtool_get_link_ksettings,
 	.set_link_ksettings	= mvpp2_ethtool_set_link_ksettings,
+	.get_rxnfc		= mvpp2_ethtool_get_rxnfc,
+	.set_rxnfc		= mvpp2_ethtool_set_rxnfc,
+	.get_rxfh_indir_size	= mvpp2_ethtool_get_rxfh_indir_size,
+	.get_rxfh		= mvpp2_ethtool_get_rxfh,
+	.set_rxfh		= mvpp2_ethtool_set_rxfh,
+
 };
 
 /* Used for PPv2.1, or PPv2.2 with the old Device Tree binding that
@@ -3985,8 +4091,8 @@ static int mvpp2_port_init(struct mvpp2_port *port)
 	    MVPP2_MAX_PORTS * priv->max_port_rxqs)
 		return -EINVAL;
 
-	if (port->nrxqs % 4 || (port->nrxqs > priv->max_port_rxqs) ||
-	    (port->ntxqs > MVPP2_MAX_TXQ))
+	if (port->nrxqs % MVPP2_DEFAULT_RXQ ||
+	    port->nrxqs > priv->max_port_rxqs || port->ntxqs > MVPP2_MAX_TXQ)
 		return -EINVAL;
 
 	/* Disable port */
@@ -4074,6 +4180,9 @@ static int mvpp2_port_init(struct mvpp2_port *port)
 	/* Port's classifier configuration */
 	mvpp2_cls_oversize_rxq_set(port);
 	mvpp2_cls_port_config(port);
+
+	if (mvpp22_rss_is_supported())
+		mvpp22_rss_port_init(port);
 
 	/* Provide an initial Rx packet size */
 	port->pkt_size = MVPP2_RX_PKT_SIZE(port->dev->mtu);
@@ -4681,6 +4790,9 @@ static int mvpp2_port_probe(struct platform_device *pdev,
 	dev->hw_features |= features | NETIF_F_RXCSUM | NETIF_F_GRO |
 			    NETIF_F_HW_VLAN_CTAG_FILTER;
 
+	if (mvpp22_rss_is_supported())
+		dev->hw_features |= NETIF_F_RXHASH;
+
 	if (port->pool_long->id == MVPP2_BM_JUMBO && port->id != 0) {
 		dev->features &= ~(NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM);
 		dev->hw_features &= ~(NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM);
@@ -5010,6 +5122,12 @@ static int mvpp2_probe(struct platform_device *pdev)
 		priv->hw_version =
 			(unsigned long)of_device_get_match_data(&pdev->dev);
 	}
+
+	/* multi queue mode isn't supported on PPV2.1, fallback to single
+	 * mode
+	 */
+	if (priv->hw_version == MVPP21)
+		queue_mode = MVPP2_QDIST_SINGLE_MODE;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	base = devm_ioremap_resource(&pdev->dev, res);
