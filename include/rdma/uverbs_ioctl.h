@@ -544,6 +544,18 @@ int uverbs_get_flags64(u64 *to, const struct uverbs_attr_bundle *attrs_bundle,
 		       size_t idx, u64 allowed_bits);
 int uverbs_get_flags32(u32 *to, const struct uverbs_attr_bundle *attrs_bundle,
 		       size_t idx, u64 allowed_bits);
+int _uverbs_get_const(s64 *to, const struct uverbs_attr_bundle *attrs_bundle,
+		      size_t idx, s64 lower_bound, u64 upper_bound);
+
+#define uverbs_get_const(_to, _attrs_bundle, _idx)                             \
+	({                                                                     \
+		s64 _val;                                                      \
+		int _ret = _uverbs_get_const(&_val, _attrs_bundle, _idx,       \
+					     type_min(typeof(*_to)),           \
+					     type_max(typeof(*_to)));          \
+		(*_to) = _val;                                                 \
+		_ret;                                                          \
+	})
 
 #if IS_ENABLED(CONFIG_INFINIBAND_USER_ACCESS)
 int _uverbs_get_const(s64 *to, const struct uverbs_attr_bundle *attrs_bundle,
