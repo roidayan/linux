@@ -120,6 +120,23 @@ static void ib_cq_completion_workqueue(struct ib_cq *cq, void *private)
 	queue_work(ib_comp_wq, &cq->work);
 }
 
+static void ib_cq_poll_unbound_work(struct work_struct *work)
+{
+	struct ib_cq *cq = container_of(work, struct ib_cq, work);
+	int completed;
+
+	completed = __ib_process_cq(cq, IB_POLL_BUDGET_WORKQUEUE, cq->wc,
+				    IB_POLL_BATCH);
+	if (completed >= IB_POLL_BUDGET_WORKQUEUE ||
+	    ib_req_notify_cq(cq, IB_POLL_FLAGS) > 0)
+		queue_work(ib_comp_unbound_wq, &cq->work);
+}
+
+static void ib_cq_completion_unbound_workqueue(struct ib_cq *cq, void *private)
+{
+	queue_work(ib_comp_unbound_wq, &cq->work);
+}
+
 /**
  * __ib_alloc_cq - allocate a completion queue
  * @dev:		device to allocate the CQ for
@@ -179,6 +196,11 @@ struct ib_cq *__ib_alloc_cq(struct ib_device *dev, void *private,
 		INIT_WORK(&cq->work, ib_cq_poll_work);
 		ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
 		break;
+	case IB_POLL_UNBOUND_WORKQUEUE:
+		cq->comp_handler = ib_cq_completion_unbound_workqueue;
+		INIT_WORK(&cq->work, ib_cq_poll_unbound_work);
+		ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
+		break;
 	default:
 		ret = -EINVAL;
 		goto out_free_wc;
@@ -213,6 +235,7 @@ void ib_free_cq(struct ib_cq *cq)
 		irq_poll_disable(&cq->iop);
 		break;
 	case IB_POLL_WORKQUEUE:
+	case IB_POLL_UNBOUND_WORKQUEUE:
 		cancel_work_sync(&cq->work);
 		break;
 	default:
