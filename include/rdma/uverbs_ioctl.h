@@ -268,6 +268,14 @@ struct uverbs_object_tree_def {
 			  __VA_ARGS__ },                                       \
 	})
 
+/* An input value that is a member in the enum _enum_type. */
+#define UVERBS_ATTR_CONST_IN(_attr_id, _enum_type, ...)                       \
+	UVERBS_ATTR_PTR_IN(                                                    \
+		_attr_id,                                                      \
+		UVERBS_ATTR_SIZE(sizeof(_enum_type) * 0 + sizeof(u64),         \
+				 sizeof(u64)),                                 \
+		__VA_ARGS__)
+
 /*
  * An input value that is a bitwise combination of values of _enum_type.
  * This permits the flag value to be passed as either a u32 or u64, it must
@@ -536,6 +544,28 @@ int uverbs_get_flags64(u64 *to, const struct uverbs_attr_bundle *attrs_bundle,
 		       size_t idx, u64 allowed_bits);
 int uverbs_get_flags32(u32 *to, const struct uverbs_attr_bundle *attrs_bundle,
 		       size_t idx, u64 allowed_bits);
+
+#if IS_ENABLED(CONFIG_INFINIBAND_USER_ACCESS)
+int _uverbs_get_const(s64 *to, const struct uverbs_attr_bundle *attrs_bundle,
+		      size_t idx, s64 lower_bound, u64 upper_bound);
+#else
+static inline int
+_uverbs_get_const(s64 *to, const struct uverbs_attr_bundle *attrs_bundle,
+		  size_t idx, s64 lower_bound, u64 upper_bound)
+{
+	return -EINVAL;
+}
+#endif
+
+#define uverbs_get_const(_to, _attrs_bundle, _idx)                             \
+	({                                                                     \
+		s64 _val;                                                      \
+		int _ret = _uverbs_get_const(&_val, _attrs_bundle, _idx,       \
+					     type_min(typeof(*_to)),           \
+					     type_max(typeof(*_to)));          \
+		(*_to) = _val;                                                 \
+		_ret;                                                          \
+	})
 
 /* =================================================
  *	 Definitions -> Specs infrastructure

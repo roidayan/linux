@@ -537,3 +537,24 @@ int uverbs_get_flags32(u32 *to, const struct uverbs_attr_bundle *attrs_bundle,
 	return 0;
 }
 EXPORT_SYMBOL(uverbs_get_flags32);
+
+int _uverbs_get_const(s64 *to, const struct uverbs_attr_bundle *attrs_bundle,
+		      size_t idx, s64 lower_bound, u64 upper_bound)
+
+{
+	const struct uverbs_attr *attr;
+
+	attr = uverbs_attr_get(attrs_bundle, idx);
+	if (IS_ERR(attr))
+		return PTR_ERR(attr);
+
+	WARN_ON(attr->ptr_attr.len != 8);
+
+	*to = attr->ptr_attr.data;
+
+	if (*to < lower_bound || *to > upper_bound)
+		return -EINVAL;
+
+	return 0;
+}
+EXPORT_SYMBOL(_uverbs_get_const);
