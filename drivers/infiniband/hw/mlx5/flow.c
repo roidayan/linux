@@ -47,6 +47,7 @@ static int UVERBS_HANDLER(MLX5_IB_METHOD_CREATE_FLOW)(
 	struct mlx5_flow_act flow_act = {.flow_tag = MLX5_FS_DEFAULT_FLOW_TAG};
 	struct mlx5_ib_flow_handler *flow_handler;
 	struct mlx5_ib_flow_matcher *fs_matcher;
+	struct ib_uobject **arr_flow_actions;
 	void *devx_obj;
 	int dest_id, dest_type;
 	void *cmd_in;
@@ -56,6 +57,9 @@ static int UVERBS_HANDLER(MLX5_IB_METHOD_CREATE_FLOW)(
 	struct ib_uobject *uobj =
 		uverbs_attr_get_uobject(attrs, MLX5_IB_ATTR_CREATE_FLOW_HANDLE);
 	struct mlx5_ib_dev *dev = to_mdev(uobj->context->device);
+	int len;
+	int ret;
+	int i;
 
 	if (!capable(CAP_NET_RAW))
 		return -EPERM;
@@ -107,6 +111,18 @@ static int UVERBS_HANDLER(MLX5_IB_METHOD_CREATE_FLOW)(
 				    MLX5_IB_ATTR_CREATE_FLOW_MATCH_VALUE);
 	fs_matcher = uverbs_attr_get_obj(attrs,
 					 MLX5_IB_ATTR_CREATE_FLOW_MATCHER);
+
+	len = uverbs_attr_get_uobjs_arr(attrs,
+					MLX5_IB_ATTR_CREATE_FLOW_ARR_FLOW_ACTIONS,
+					&arr_flow_actions);
+	for (i = 0; i < len; i++) {
+		struct mlx5_ib_flow_action *maction = to_mflow_act(arr_flow_actions[i]->object);
+
+		ret = parse_flow_flow_action(maction, false, &flow_act);
+		if (ret)
+			return -EINVAL;
+	}
+
 	flow_handler = mlx5_ib_raw_fs_rule_add(dev, fs_matcher, &flow_act,
 					       cmd_in, inlen,
 					       dest_id, dest_type);
@@ -458,7 +474,10 @@ DECLARE_UVERBS_NAMED_METHOD(
 			UVERBS_ACCESS_READ),
 	UVERBS_ATTR_IDR(MLX5_IB_ATTR_CREATE_FLOW_DEST_DEVX,
 			MLX5_IB_OBJECT_DEVX_OBJ,
-			UVERBS_ACCESS_READ));
+			UVERBS_ACCESS_READ),
+	UVERBS_ATTR_IDRS_ARR(MLX5_IB_ATTR_CREATE_FLOW_ARR_FLOW_ACTIONS,
+			     UVERBS_OBJECT_FLOW_ACTION,
+			     UVERBS_ACCESS_READ, 1, 1));
 
 DECLARE_UVERBS_NAMED_METHOD_DESTROY(
 	MLX5_IB_METHOD_DESTROY_FLOW,
