@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 Mellanox Technologies. All rights reserved.
+ * Copyright (c) 2018, Mellanox Technologies. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -28,53 +28,36 @@
  * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
- *
  */
+#ifndef __MLX5_EN_XDP_H__
+#define __MLX5_EN_XDP_H__
 
-#ifndef __MLX5E_EN_ACCEL_H__
-#define __MLX5E_EN_ACCEL_H__
-
-#include <linux/skbuff.h>
-#include <linux/netdevice.h>
-#include "en_accel/ipsec_rxtx.h"
-#include "en_accel/tls_rxtx.h"
 #include "en.h"
 
-static inline void
-mlx5e_udp_gso_handle_tx_skb(struct sk_buff *skb)
-{
-	int payload_len = skb_shinfo(skb)->gso_size + sizeof(struct udphdr);
+#define MLX5E_XDP_MAX_MTU ((int)(PAGE_SIZE - \
+				 MLX5_SKB_FRAG_SZ(XDP_PACKET_HEADROOM)))
+#define MLX5E_XDP_MIN_INLINE (ETH_HLEN + VLAN_HLEN)
+#define MLX5E_XDP_TX_DS_COUNT \
+	((sizeof(struct mlx5e_tx_wqe) / MLX5_SEND_WQE_DS) + 1 /* SG DS */)
 
-	udp_hdr(skb)->len = htons(payload_len);
+bool mlx5e_xdp_handle(struct mlx5e_rq *rq, struct mlx5e_dma_info *di,
+		      void *va, u16 *rx_headroom, u32 *len);
+bool mlx5e_poll_xdpsq_cq(struct mlx5e_cq *cq);
+void mlx5e_free_xdpsq_descs(struct mlx5e_xdpsq *sq);
+
+bool mlx5e_xmit_xdp_frame(struct mlx5e_xdpsq *sq, struct mlx5e_xdp_info *xdpi);
+int mlx5e_xdp_xmit(struct net_device *dev, int n, struct xdp_frame **frames,
+		   u32 flags);
+
+static inline void mlx5e_xmit_xdp_doorbell(struct mlx5e_xdpsq *sq)
+{
+	struct mlx5_wq_cyc *wq = &sq->wq;
+	struct mlx5e_tx_wqe *wqe;
+	u16 pi = mlx5_wq_cyc_ctr2ix(wq, sq->pc - 1); /* last pi */
+
+	wqe  = mlx5_wq_cyc_get_wqe(wq, pi);
+
+	mlx5e_notify_hw(wq, sq->pc, sq->uar_map, &wqe->ctrl);
 }
 
-static inline struct sk_buff *
-mlx5e_accel_handle_tx(struct sk_buff *skb,
-		      struct mlx5e_txqsq *sq,
-		      struct net_device *dev,
-		      struct mlx5e_tx_wqe **wqe,
-		      u16 *pi)
-{
-#ifdef CONFIG_MLX5_EN_TLS
-	if (test_bit(MLX5E_SQ_STATE_TLS, &sq->state)) {
-		skb = mlx5e_tls_handle_tx_skb(dev, sq, skb, wqe, pi);
-		if (unlikely(!skb))
-			return NULL;
-	}
 #endif
-
-#ifdef CONFIG_MLX5_EN_IPSEC
-	if (test_bit(MLX5E_SQ_STATE_IPSEC, &sq->state)) {
-		skb = mlx5e_ipsec_handle_tx_skb(dev, *wqe, skb);
-		if (unlikely(!skb))
-			return NULL;
-	}
-#endif
-
-	if (skb_is_gso(skb) && skb_shinfo(skb)->gso_type & SKB_GSO_UDP_L4)
-		mlx5e_udp_gso_handle_tx_skb(skb);
-
-	return skb;
-}
-
-#endif /* __MLX5E_EN_ACCEL_H__ */
