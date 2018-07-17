@@ -322,7 +322,6 @@ struct mlx4_ib_qp {
 	u32			doorbell_qpn;
 	__be32			sq_signal_bits;
 	unsigned		sq_next_wqe;
-	int			sq_max_wqes_per_wr;
 	int			sq_spare_wqes;
 	struct mlx4_ib_wq	sq;
 
@@ -760,6 +759,10 @@ void mlx4_ib_cq_clean(struct mlx4_ib_cq *cq, u32 qpn, struct mlx4_ib_srq *srq);
 
 struct ib_ah *mlx4_ib_create_ah(struct ib_pd *pd, struct rdma_ah_attr *ah_attr,
 				struct ib_udata *udata);
+struct ib_ah *mlx4_ib_create_ah_slave(struct ib_pd *pd,
+				      struct rdma_ah_attr *ah_attr,
+				      int slave_sgid_index, u8 *s_mac,
+				      u16 vlan_tag);
 int mlx4_ib_query_ah(struct ib_ah *ibah, struct rdma_ah_attr *ah_attr);
 int mlx4_ib_destroy_ah(struct ib_ah *ah);
 
@@ -778,6 +781,8 @@ struct ib_qp *mlx4_ib_create_qp(struct ib_pd *pd,
 				struct ib_qp_init_attr *init_attr,
 				struct ib_udata *udata);
 int mlx4_ib_destroy_qp(struct ib_qp *qp);
+void mlx4_ib_drain_sq(struct ib_qp *qp);
+void mlx4_ib_drain_rq(struct ib_qp *qp);
 int mlx4_ib_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 		      int attr_mask, struct ib_udata *udata);
 int mlx4_ib_query_qp(struct ib_qp *ibqp, struct ib_qp_attr *qp_attr, int qp_attr_mask,
@@ -900,7 +905,7 @@ int mlx4_ib_rereg_user_mr(struct ib_mr *mr, int flags,
 			  int mr_access_flags, struct ib_pd *pd,
 			  struct ib_udata *udata);
 int mlx4_ib_gid_index_to_real_index(struct mlx4_ib_dev *ibdev,
-				    u8 port_num, int index);
+				    const struct ib_gid_attr *attr);
 
 void mlx4_sched_ib_sl2vl_update_work(struct mlx4_ib_dev *ibdev,
 				     int port);
