@@ -1662,9 +1662,16 @@ static struct smbd_connection *_smbd_get_connection(
 	info->max_receive_size = smbd_max_receive_size;
 	info->keep_alive_interval = smbd_keep_alive_interval;
 
-	if (info->id->device->attrs.max_sge < SMBDIRECT_MAX_SGE) {
-		log_rdma_event(ERR, "warning: device max_sge = %d too small\n",
-			info->id->device->attrs.max_sge);
+	if (info->id->device->attrs.max_send_sge < SMBDIRECT_MAX_SGE) {
+		log_rdma_event(ERR,
+			"warning: device max_send_sge = %d too small\n",
+			info->id->device->attrs.max_send_sge);
+		log_rdma_event(ERR, "Queue Pair creation may fail\n");
+	}
+	if (info->id->device->attrs.max_recv_sge < SMBDIRECT_MAX_SGE) {
+		log_rdma_event(ERR,
+			"warning: device max_recv_sge = %d too small\n",
+			info->id->device->attrs.max_recv_sge);
 		log_rdma_event(ERR, "Queue Pair creation may fail\n");
 	}
 
@@ -2083,8 +2090,9 @@ int smbd_recv(struct smbd_connection *info, struct msghdr *msg)
  * rqst: the data to write
  * return value: 0 if successfully write, otherwise error code
  */
-int smbd_send(struct smbd_connection *info, struct smb_rqst *rqst)
+int smbd_send(struct TCP_Server_Info *server, struct smb_rqst *rqst)
 {
+	struct smbd_connection *info = server->smbd_conn;
 	struct kvec vec;
 	int nvecs;
 	int size;
@@ -2118,7 +2126,7 @@ int smbd_send(struct smbd_connection *info, struct smb_rqst *rqst)
 	 * rq_tailsz to PAGE_SIZE when the buffer has multiple pages and
 	 * ends at page boundary
 	 */
-	buflen = smb2_rqst_len(rqst, true);
+	buflen = smb_rqst_len(server, rqst);
 
 	if (buflen + sizeof(struct smbd_data_transfer) >
 		info->max_fragmented_send_size) {
