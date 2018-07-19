@@ -1462,29 +1462,6 @@ static bool cma_protocol_roce(const struct rdma_cm_id *id)
 	return rdma_protocol_roce(device, port_num);
 }
 
-static bool cma_match_net_dev(const struct rdma_cm_id *id,
-			      const struct net_device *net_dev,
-			      u8 port_num)
-{
-	const struct rdma_addr *addr = &id->route.addr;
-
-	if (!net_dev)
-		/* This request is an AF_IB request */
-		return (!id->port_num || id->port_num == port_num) &&
-		       (addr->src_addr.ss_family == AF_IB);
-
-	/*
-	 * Net namespaces must match, and if the listner is listening
-	 * on a specific netdevice than netdevice must match as well.
-	 */
-	if (net_eq(dev_net(net_dev), addr->dev_addr.net) &&
-	    (!!addr->dev_addr.bound_dev_if ==
-	     (addr->dev_addr.bound_dev_if == net_dev->ifindex)))
-		return true;
-	else
-		return false;
-}
-
 static struct rdma_id_private *cma_find_listener(
 		const struct rdma_bind_list *bind_list,
 		const struct ib_cm_id *cm_id,
@@ -1499,14 +1476,12 @@ static struct rdma_id_private *cma_find_listener(
 
 	hlist_for_each_entry(id_priv, &bind_list->owners, node) {
 		if (cma_match_private_data(id_priv, ib_event->private_data)) {
-			if (id_priv->id.device == cm_id->device &&
-			    cma_match_net_dev(&id_priv->id, net_dev, req->port))
+			if (id_priv->id.device == cm_id->device)
 				return id_priv;
 			list_for_each_entry(id_priv_dev,
 					    &id_priv->listen_list,
 					    listen_list) {
-				if (id_priv_dev->id.device == cm_id->device &&
-				    cma_match_net_dev(&id_priv_dev->id, net_dev, req->port))
+				if (id_priv_dev->id.device == cm_id->device)
 					return id_priv_dev;
 			}
 		}
