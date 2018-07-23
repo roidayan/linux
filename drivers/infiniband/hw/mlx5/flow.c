@@ -52,8 +52,7 @@ static int UVERBS_HANDLER(MLX5_IB_METHOD_CREATE_FLOW)(
 	int inlen;
 	bool dest_devx, dest_qp;
 	struct ib_qp *qp = NULL;
-	struct ib_uobject *uobj = uverbs_attr_get_uobject(attrs,
-                         MLX5_IB_ATTR_CREATE_FLOW_HANDLE);
+	struct ib_uobject *uobj = uverbs_attr_get_uobject(attrs, MLX5_IB_ATTR_CREATE_FLOW_HANDLE);
 	struct mlx5_ib_dev *dev = to_mdev(uobj->context->device);
 
 	if (!capable(CAP_NET_RAW))
