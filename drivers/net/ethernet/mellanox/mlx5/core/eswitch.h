@@ -262,7 +262,7 @@ struct mlx5_esw_flow_attr {
 	u8	vlan_prio[MLX5_FS_VLAN_DEPTH];
 	u8	total_vlan;
 	bool	vlan_handled;
-	u32	encap_id;
+	u32	packet_reformat_id;
 	u32	mod_hdr_id;
 	u8	match_level;
 	struct mlx5e_tc_flow_parse_attr *parse_attr;
