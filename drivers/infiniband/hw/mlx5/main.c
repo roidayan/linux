@@ -3086,6 +3086,9 @@ static struct mlx5_ib_flow_prio *get_flow_table(struct mlx5_ib_dev *dev,
 			prio = &dev->flow_db->prios[priority];
 			if (MLX5_CAP_FLOWTABLE_NIC_RX(dev->mdev, decap))
 			    flags |= MLX5_FLOW_TABLE_TUNNEL_EN_DECAP;
+			if (MLX5_CAP_FLOWTABLE_NIC_RX(dev->mdev,
+						      reformat_l3_tunnel_to_l2))
+				flags |= MLX5_FLOW_TABLE_TUNNEL_EN_REFORMAT;
 		} else {
 			max_table_size = BIT(MLX5_CAP_FLOWTABLE_NIC_TX(dev->mdev,
 								       log_max_ft_size));
