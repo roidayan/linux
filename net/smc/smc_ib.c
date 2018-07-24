@@ -16,6 +16,7 @@
 #include <linux/workqueue.h>
 #include <linux/scatterlist.h>
 #include <rdma/ib_verbs.h>
+#include <rdma/ib_cache.h>
 
 #include "smc_pnet.h"
 #include "smc_ib.h"
@@ -112,8 +113,7 @@ int smc_ib_modify_qp_reset(struct smc_link *lnk)
 
 int smc_ib_ready_link(struct smc_link *lnk)
 {
-	struct smc_link_group *lgr =
-		container_of(lnk, struct smc_link_group, lnk[0]);
+	struct smc_link_group *lgr = smc_get_lgr(lnk);
 	int rc = 0;
 
 	rc = smc_ib_modify_qp_init(lnk);
@@ -372,17 +372,21 @@ void smc_ib_buf_unmap_sg(struct smc_ib_device *smcibdev,
 
 static int smc_ib_fill_gid_and_mac(struct smc_ib_device *smcibdev, u8 ibport)
 {
-	struct ib_gid_attr gattr;
-	int rc;
+	const struct ib_gid_attr *gattr;
+	int rc = 0;
 
-	rc = ib_query_gid(smcibdev->ibdev, ibport, 0,
-			  &smcibdev->gid[ibport - 1], &gattr);
-	if (rc || !gattr.ndev)
-		return -ENODEV;
-
-	memcpy(smcibdev->mac[ibport - 1], gattr.ndev->dev_addr, ETH_ALEN);
-	dev_put(gattr.ndev);
-	return 0;
+	gattr = rdma_get_gid_attr(smcibdev->ibdev, ibport, 0);
+	if (IS_ERR(gattr))
+		return PTR_ERR(gattr);
+	if (!gattr->ndev) {
+		rc = -ENODEV;
+		goto done;
+	}
+	smcibdev->gid[ibport - 1] = gattr->gid;
+	memcpy(smcibdev->mac[ibport - 1], gattr->ndev->dev_addr, ETH_ALEN);
+done:
+	rdma_put_gid_attr(gattr);
+	return rc;
 }
 
 /* Create an identifier unique for this instance of SMC-R.
@@ -454,9 +458,6 @@ long smc_ib_setup_per_ibdev(struct smc_ib_device *smcibdev)
 		smcibdev->roce_cq_recv = NULL;
 		goto err;
 	}
-	INIT_IB_EVENT_HANDLER(&smcibdev->event_handler, smcibdev->ibdev,
-			      smc_ib_global_event_handler);
-	ib_register_event_handler(&smcibdev->event_handler);
 	smc_wr_add_dev(smcibdev);
 	smcibdev->initialized = 1;
 	return rc;
@@ -472,7 +473,6 @@ static void smc_ib_cleanup_per_ibdev(struct smc_ib_device *smcibdev)
 		return;
 	smcibdev->initialized = 0;
 	smc_wr_remove_dev(smcibdev);
-	ib_unregister_event_handler(&smcibdev->event_handler);
 	ib_destroy_cq(smcibdev->roce_cq_recv);
 	ib_destroy_cq(smcibdev->roce_cq_send);
 }
@@ -483,6 +483,8 @@ static struct ib_client smc_ib_client;
 static void smc_ib_add_dev(struct ib_device *ibdev)
 {
 	struct smc_ib_device *smcibdev;
+	u8 port_cnt;
+	int i;
 
 	if (ibdev->node_type != RDMA_NODE_IB_CA)
 		return;
@@ -498,6 +500,21 @@ static void smc_ib_add_dev(struct ib_device *ibdev)
 	list_add_tail(&smcibdev->list, &smc_ib_devices.list);
 	spin_unlock(&smc_ib_devices.lock);
 	ib_set_client_data(ibdev, &smc_ib_client, smcibdev);
+	INIT_IB_EVENT_HANDLER(&smcibdev->event_handler, smcibdev->ibdev,
+			      smc_ib_global_event_handler);
+	ib_register_event_handler(&smcibdev->event_handler);
+
+	/* trigger reading of the port attributes */
+	port_cnt = smcibdev->ibdev->phys_port_cnt;
+	for (i = 0;
+	     i < min_t(size_t, port_cnt, SMC_MAX_PORTS);
+	     i++) {
+		set_bit(i, &smcibdev->port_event_mask);
+		/* determine pnetids of the port */
+		smc_pnetid_by_dev_port(ibdev->dev.parent, i,
+				       smcibdev->pnetid[i]);
+	}
+	schedule_work(&smcibdev->port_event_work);
 }
 
 /* callback function for ib_register_client() */
@@ -512,6 +529,7 @@ static void smc_ib_remove_dev(struct ib_device *ibdev, void *client_data)
 	spin_unlock(&smc_ib_devices.lock);
 	smc_pnet_remove_by_ibdev(smcibdev);
 	smc_ib_cleanup_per_ibdev(smcibdev);
+	ib_unregister_event_handler(&smcibdev->event_handler);
 	kfree(smcibdev);
 }
 

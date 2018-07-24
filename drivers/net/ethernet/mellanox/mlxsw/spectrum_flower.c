@@ -144,10 +144,12 @@ static void mlxsw_sp_flower_parse_ipv4(struct mlxsw_sp_acl_rule_info *rulei,
 					  FLOW_DISSECTOR_KEY_IPV4_ADDRS,
 					  f->mask);
 
-	mlxsw_sp_acl_rulei_keymask_u32(rulei, MLXSW_AFK_ELEMENT_SRC_IP4,
-				       ntohl(key->src), ntohl(mask->src));
-	mlxsw_sp_acl_rulei_keymask_u32(rulei, MLXSW_AFK_ELEMENT_DST_IP4,
-				       ntohl(key->dst), ntohl(mask->dst));
+	mlxsw_sp_acl_rulei_keymask_buf(rulei, MLXSW_AFK_ELEMENT_SRC_IP_0_31,
+				       (char *) &key->src,
+				       (char *) &mask->src, 4);
+	mlxsw_sp_acl_rulei_keymask_buf(rulei, MLXSW_AFK_ELEMENT_DST_IP_0_31,
+				       (char *) &key->dst,
+				       (char *) &mask->dst, 4);
 }
 
 static void mlxsw_sp_flower_parse_ipv6(struct mlxsw_sp_acl_rule_info *rulei,
@@ -161,24 +163,31 @@ static void mlxsw_sp_flower_parse_ipv6(struct mlxsw_sp_acl_rule_info *rulei,
 		skb_flow_dissector_target(f->dissector,
 					  FLOW_DISSECTOR_KEY_IPV6_ADDRS,
 					  f->mask);
-	size_t addr_half_size = sizeof(key->src) / 2;
 
-	mlxsw_sp_acl_rulei_keymask_buf(rulei, MLXSW_AFK_ELEMENT_SRC_IP6_HI,
-				       &key->src.s6_addr[0],
-				       &mask->src.s6_addr[0],
-				       addr_half_size);
-	mlxsw_sp_acl_rulei_keymask_buf(rulei, MLXSW_AFK_ELEMENT_SRC_IP6_LO,
-				       &key->src.s6_addr[addr_half_size],
-				       &mask->src.s6_addr[addr_half_size],
-				       addr_half_size);
-	mlxsw_sp_acl_rulei_keymask_buf(rulei, MLXSW_AFK_ELEMENT_DST_IP6_HI,
-				       &key->dst.s6_addr[0],
-				       &mask->dst.s6_addr[0],
-				       addr_half_size);
-	mlxsw_sp_acl_rulei_keymask_buf(rulei, MLXSW_AFK_ELEMENT_DST_IP6_LO,
-				       &key->dst.s6_addr[addr_half_size],
-				       &mask->dst.s6_addr[addr_half_size],
-				       addr_half_size);
+	mlxsw_sp_acl_rulei_keymask_buf(rulei, MLXSW_AFK_ELEMENT_SRC_IP_96_127,
+				       &key->src.s6_addr[0x0],
+				       &mask->src.s6_addr[0x0], 4);
+	mlxsw_sp_acl_rulei_keymask_buf(rulei, MLXSW_AFK_ELEMENT_SRC_IP_64_95,
+				       &key->src.s6_addr[0x4],
+				       &mask->src.s6_addr[0x4], 4);
+	mlxsw_sp_acl_rulei_keymask_buf(rulei, MLXSW_AFK_ELEMENT_SRC_IP_32_63,
+				       &key->src.s6_addr[0x8],
+				       &mask->src.s6_addr[0x8], 4);
+	mlxsw_sp_acl_rulei_keymask_buf(rulei, MLXSW_AFK_ELEMENT_SRC_IP_0_31,
+				       &key->src.s6_addr[0xC],
+				       &mask->src.s6_addr[0xC], 4);
+	mlxsw_sp_acl_rulei_keymask_buf(rulei, MLXSW_AFK_ELEMENT_DST_IP_96_127,
+				       &key->dst.s6_addr[0x0],
+				       &mask->dst.s6_addr[0x0], 4);
+	mlxsw_sp_acl_rulei_keymask_buf(rulei, MLXSW_AFK_ELEMENT_DST_IP_64_95,
+				       &key->dst.s6_addr[0x4],
+				       &mask->dst.s6_addr[0x4], 4);
+	mlxsw_sp_acl_rulei_keymask_buf(rulei, MLXSW_AFK_ELEMENT_DST_IP_32_63,
+				       &key->dst.s6_addr[0x8],
+				       &mask->dst.s6_addr[0x8], 4);
+	mlxsw_sp_acl_rulei_keymask_buf(rulei, MLXSW_AFK_ELEMENT_DST_IP_0_31,
+				       &key->dst.s6_addr[0xC],
+				       &mask->dst.s6_addr[0xC], 4);
 }
 
 static int mlxsw_sp_flower_parse_ports(struct mlxsw_sp *mlxsw_sp,
@@ -340,13 +349,17 @@ static int mlxsw_sp_flower_parse(struct mlxsw_sp *mlxsw_sp,
 						  f->mask);
 
 		mlxsw_sp_acl_rulei_keymask_buf(rulei,
-					       MLXSW_AFK_ELEMENT_DMAC,
-					       key->dst, mask->dst,
-					       sizeof(key->dst));
+					       MLXSW_AFK_ELEMENT_DMAC_32_47,
+					       key->dst, mask->dst, 2);
 		mlxsw_sp_acl_rulei_keymask_buf(rulei,
-					       MLXSW_AFK_ELEMENT_SMAC,
-					       key->src, mask->src,
-					       sizeof(key->src));
+					       MLXSW_AFK_ELEMENT_DMAC_0_31,
+					       key->dst + 2, mask->dst + 2, 4);
+		mlxsw_sp_acl_rulei_keymask_buf(rulei,
+					       MLXSW_AFK_ELEMENT_SMAC_32_47,
+					       key->src, mask->src, 2);
+		mlxsw_sp_acl_rulei_keymask_buf(rulei,
+					       MLXSW_AFK_ELEMENT_SMAC_0_31,
+					       key->src + 2, mask->src + 2, 4);
 	}
 
 	if (dissector_uses_key(f->dissector, FLOW_DISSECTOR_KEY_VLAN)) {
@@ -401,7 +414,7 @@ int mlxsw_sp_flower_replace(struct mlxsw_sp *mlxsw_sp,
 
 	ruleset = mlxsw_sp_acl_ruleset_get(mlxsw_sp, block,
 					   f->common.chain_index,
-					   MLXSW_SP_ACL_PROFILE_FLOWER);
+					   MLXSW_SP_ACL_PROFILE_FLOWER, NULL);
 	if (IS_ERR(ruleset))
 		return PTR_ERR(ruleset);
 
@@ -445,7 +458,7 @@ void mlxsw_sp_flower_destroy(struct mlxsw_sp *mlxsw_sp,
 
 	ruleset = mlxsw_sp_acl_ruleset_get(mlxsw_sp, block,
 					   f->common.chain_index,
-					   MLXSW_SP_ACL_PROFILE_FLOWER);
+					   MLXSW_SP_ACL_PROFILE_FLOWER, NULL);
 	if (IS_ERR(ruleset))
 		return;
 
@@ -471,7 +484,7 @@ int mlxsw_sp_flower_stats(struct mlxsw_sp *mlxsw_sp,
 
 	ruleset = mlxsw_sp_acl_ruleset_get(mlxsw_sp, block,
 					   f->common.chain_index,
-					   MLXSW_SP_ACL_PROFILE_FLOWER);
+					   MLXSW_SP_ACL_PROFILE_FLOWER, NULL);
 	if (WARN_ON(IS_ERR(ruleset)))
 		return -EINVAL;
 
@@ -492,4 +505,42 @@ int mlxsw_sp_flower_stats(struct mlxsw_sp *mlxsw_sp,
 err_rule_get_stats:
 	mlxsw_sp_acl_ruleset_put(mlxsw_sp, ruleset);
 	return err;
+}
+
+int mlxsw_sp_flower_tmplt_create(struct mlxsw_sp *mlxsw_sp,
+				 struct mlxsw_sp_acl_block *block,
+				 struct tc_cls_flower_offload *f)
+{
+	struct mlxsw_sp_acl_ruleset *ruleset;
+	struct mlxsw_sp_acl_rule_info rulei;
+	int err;
+
+	memset(&rulei, 0, sizeof(rulei));
+	err = mlxsw_sp_flower_parse(mlxsw_sp, block, &rulei, f);
+	if (err)
+		return err;
+	ruleset = mlxsw_sp_acl_ruleset_get(mlxsw_sp, block,
+					   f->common.chain_index,
+					   MLXSW_SP_ACL_PROFILE_FLOWER,
+					   &rulei.values.elusage);
+	if (IS_ERR(ruleset))
+		return PTR_ERR(ruleset);
+	/* keep the reference to the ruleset */
+	return 0;
+}
+
+void mlxsw_sp_flower_tmplt_destroy(struct mlxsw_sp *mlxsw_sp,
+				   struct mlxsw_sp_acl_block *block,
+				   struct tc_cls_flower_offload *f)
+{
+	struct mlxsw_sp_acl_ruleset *ruleset;
+
+	ruleset = mlxsw_sp_acl_ruleset_get(mlxsw_sp, block,
+					   f->common.chain_index,
+					   MLXSW_SP_ACL_PROFILE_FLOWER, NULL);
+	if (IS_ERR(ruleset))
+		return;
+	/* put the reference to the ruleset kept in create */
+	mlxsw_sp_acl_ruleset_put(mlxsw_sp, ruleset);
+	mlxsw_sp_acl_ruleset_put(mlxsw_sp, ruleset);
 }
