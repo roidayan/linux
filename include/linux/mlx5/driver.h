@@ -44,7 +44,7 @@
 #include <linux/workqueue.h>
 #include <linux/mempool.h>
 #include <linux/interrupt.h>
-#include <linux/idr.h>
+#include <linux/idr_ext.h>
 
 #include <linux/mlx5/device.h>
 #include <linux/mlx5/doorbell.h>
@@ -578,6 +578,8 @@ struct mlx5_irq_info {
 };
 
 struct mlx5_fc_stats {
+	spinlock_t counters_idr_lock; /* protects counters_idr */
+	struct idr_ext counters_idr;
 	struct list_head counters;
 	struct llist_head addlist;
 	struct llist_head dellist;
