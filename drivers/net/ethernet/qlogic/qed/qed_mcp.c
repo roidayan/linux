@@ -1211,6 +1211,7 @@ static void qed_mcp_handle_link_change(struct qed_hwfn *p_hwfn,
 		break;
 	default:
 		p_link->speed = 0;
+		p_link->link_up = 0;
 	}
 
 	if (p_link->link_up && p_link->speed)
@@ -1308,9 +1309,15 @@ int qed_mcp_set_link(struct qed_hwfn *p_hwfn, struct qed_ptt *p_ptt, bool b_up)
 	phy_cfg.pause |= (params->pause.forced_tx) ? ETH_PAUSE_TX : 0;
 	phy_cfg.adv_speed = params->speed.advertised_speeds;
 	phy_cfg.loopback_mode = params->loopback_mode;
-	if (p_hwfn->mcp_info->capabilities & FW_MB_PARAM_FEATURE_SUPPORT_EEE) {
-		if (params->eee.enable)
-			phy_cfg.eee_cfg |= EEE_CFG_EEE_ENABLED;
+
+	/* There are MFWs that share this capability regardless of whether
+	 * this is feasible or not. And given that at the very least adv_caps
+	 * would be set internally by qed, we want to make sure LFA would
+	 * still work.
+	 */
+	if ((p_hwfn->mcp_info->capabilities &
+	     FW_MB_PARAM_FEATURE_SUPPORT_EEE) && params->eee.enable) {
+		phy_cfg.eee_cfg |= EEE_CFG_EEE_ENABLED;
 		if (params->eee.tx_lpi_enable)
 			phy_cfg.eee_cfg |= EEE_CFG_TX_LPI;
 		if (params->eee.adv_caps & QED_EEE_1G_ADV)
@@ -2464,6 +2471,55 @@ out:
 	qed_ptt_release(p_hwfn, p_ptt);
 
 	return rc;
+}
+
+int qed_mcp_phy_sfp_read(struct qed_hwfn *p_hwfn, struct qed_ptt *p_ptt,
+			 u32 port, u32 addr, u32 offset, u32 len, u8 *p_buf)
+{
+	u32 bytes_left, bytes_to_copy, buf_size, nvm_offset = 0;
+	u32 resp, param;
+	int rc;
+
+	nvm_offset |= (port << DRV_MB_PARAM_TRANSCEIVER_PORT_OFFSET) &
+		       DRV_MB_PARAM_TRANSCEIVER_PORT_MASK;
+	nvm_offset |= (addr << DRV_MB_PARAM_TRANSCEIVER_I2C_ADDRESS_OFFSET) &
+		       DRV_MB_PARAM_TRANSCEIVER_I2C_ADDRESS_MASK;
+
+	addr = offset;
+	offset = 0;
+	bytes_left = len;
+	while (bytes_left > 0) {
+		bytes_to_copy = min_t(u32, bytes_left,
+				      MAX_I2C_TRANSACTION_SIZE);
+		nvm_offset &= (DRV_MB_PARAM_TRANSCEIVER_I2C_ADDRESS_MASK |
+			       DRV_MB_PARAM_TRANSCEIVER_PORT_MASK);
+		nvm_offset |= ((addr + offset) <<
+			       DRV_MB_PARAM_TRANSCEIVER_OFFSET_OFFSET) &
+			       DRV_MB_PARAM_TRANSCEIVER_OFFSET_MASK;
+		nvm_offset |= (bytes_to_copy <<
+			       DRV_MB_PARAM_TRANSCEIVER_SIZE_OFFSET) &
+			       DRV_MB_PARAM_TRANSCEIVER_SIZE_MASK;
+		rc = qed_mcp_nvm_rd_cmd(p_hwfn, p_ptt,
+					DRV_MSG_CODE_TRANSCEIVER_READ,
+					nvm_offset, &resp, &param, &buf_size,
+					(u32 *)(p_buf + offset));
+		if (rc) {
+			DP_NOTICE(p_hwfn,
+				  "Failed to send a transceiver read command to the MFW. rc = %d.\n",
+				  rc);
+			return rc;
+		}
+
+		if (resp == FW_MSG_CODE_TRANSCEIVER_NOT_PRESENT)
+			return -ENODEV;
+		else if (resp != FW_MSG_CODE_TRANSCEIVER_DIAG_OK)
+			return -EINVAL;
+
+		offset += buf_size;
+		bytes_left -= buf_size;
+	}
+
+	return 0;
 }
 
 int qed_mcp_bist_register_test(struct qed_hwfn *p_hwfn, struct qed_ptt *p_ptt)
