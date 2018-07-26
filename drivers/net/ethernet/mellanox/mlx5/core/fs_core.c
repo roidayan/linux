@@ -150,6 +150,17 @@ static struct init_tree_node {
 	}
 };
 
+static struct init_tree_node egress_root_fs = {
+	.type = FS_TYPE_NAMESPACE,
+	.ar_size = 1,
+	.children = (struct init_tree_node[]) {
+		ADD_PRIO(0, MLX5_BY_PASS_NUM_PRIOS, 0,
+			 FS_CHAINING_CAPS,
+			 ADD_NS(ADD_MULTIPLE_PRIO(MLX5_BY_PASS_NUM_PRIOS,
+						  BY_PASS_PRIO_NUM_LEVELS))),
+	}
+};
+
 enum fs_i_lock_class {
 	FS_LOCK_GRANDPARENT,
 	FS_LOCK_PARENT,
@@ -2008,8 +2019,10 @@ struct mlx5_flow_namespace *mlx5_get_flow_namespace(struct mlx5_core_dev *dev,
 			return &steering->sniffer_tx_root_ns->ns;
 		break;
 	case MLX5_FLOW_NAMESPACE_EGRESS:
-		if (steering->egress_root_ns)
-			return &steering->egress_root_ns->ns;
+		if (steering->egress_root_ns) {
+			steering_ns = steering->egress_root_ns;
+			prio = 0;
+		}
 		break;
 	default:
 		break;
@@ -2530,16 +2543,20 @@ cleanup_root_ns:
 
 static int init_egress_root_ns(struct mlx5_flow_steering *steering)
 {
-	struct fs_prio *prio;
-
 	steering->egress_root_ns = create_root_ns(steering,
 						  FS_FT_NIC_TX);
 	if (!steering->egress_root_ns)
 		return -ENOMEM;
 
-	/* create 1 prio*/
-	prio = fs_create_prio(&steering->egress_root_ns->ns, 0, 1);
-	return PTR_ERR_OR_ZERO(prio);
+	if (init_root_tree(steering, &egress_root_fs,
+			   &steering->egress_root_ns->ns.node))
+		goto cleanup;
+	set_prio_attrs(steering->egress_root_ns);
+	return 0;
+cleanup:
+	cleanup_root_ns(steering->egress_root_ns);
+	steering->egress_root_ns = NULL;
+	return -ENOMEM;
 }
 
 int mlx5_init_fs(struct mlx5_core_dev *dev)
@@ -2607,7 +2624,7 @@ int mlx5_init_fs(struct mlx5_core_dev *dev)
 			goto err;
 	}
 
-	if (MLX5_IPSEC_DEV(dev)) {
+	if (MLX5_IPSEC_DEV(dev) || MLX5_CAP_FLOWTABLE_NIC_TX(dev, ft_support)) {
 		err = init_egress_root_ns(steering);
 		if (err)
 			goto err;
