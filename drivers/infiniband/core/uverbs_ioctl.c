@@ -124,6 +124,7 @@ static int uverbs_process_attr(struct ib_uverbs_file *ufile,
 			       u16 attr_id,
 			       const struct uverbs_attr_spec_hash *attr_spec_bucket,
 			       struct uverbs_attr_bundle_hash *attr_bundle_h,
+			       struct uverbs_obj_attr **destroy_attr,
 			       struct ib_uverbs_attr __user *uattr_ptr)
 {
 	const struct uverbs_attr_spec *spec;
@@ -216,6 +217,10 @@ static int uverbs_process_attr(struct ib_uverbs_file *ufile,
 
 		if (uattr->len != 0)
 			return -EINVAL;
+
+		/* specs are allowed to have only one destroy attribute */
+		WARN_ON(spec->u.obj.access == UVERBS_ACCESS_DESTROY &&
+			*destroy_attr);
 
 		o_attr = &e->obj_attr;
 		object = uverbs_get_object(ufile, spec->u.obj.obj_type);
@@ -325,6 +330,7 @@ static int uverbs_uattrs_process(struct ib_uverbs_file *ufile,
 				 size_t num_uattrs,
 				 const struct uverbs_method_spec *method,
 				 struct uverbs_attr_bundle *attr_bundle,
+				 struct uverbs_obj_attr **destroy_attr,
 				 struct ib_uverbs_attr __user *uattr_ptr)
 {
 	size_t i;
@@ -358,7 +364,8 @@ static int uverbs_uattrs_process(struct ib_uverbs_file *ufile,
 		attr_spec_bucket = method->attr_buckets[ret];
 		ret = uverbs_process_attr(ufile, uattr, attr_id,
 					  attr_spec_bucket,
-					  &attr_bundle->hash[ret], uattr_ptr++);
+					  &attr_bundle->hash[ret], destroy_attr,
+					  uattr_ptr++);
 		if (ret) {
 			uverbs_finalize_attrs(attr_bundle,
 					      method->attr_buckets,
@@ -412,9 +419,11 @@ static int uverbs_handle_method(struct ib_uverbs_attr __user *uattr_ptr,
 	int ret;
 	int finalize_ret;
 	int num_given_buckets;
+	struct uverbs_obj_attr *destroy_attr = NULL;
 
-	num_given_buckets = uverbs_uattrs_process(
-		ufile, uattrs, num_uattrs, method_spec, attr_bundle, uattr_ptr);
+	num_given_buckets =
+		uverbs_uattrs_process(ufile, uattrs, num_uattrs, method_spec,
+				      attr_bundle, &destroy_attr, uattr_ptr);
 	if (num_given_buckets <= 0)
 		return -EINVAL;
 
@@ -423,7 +432,18 @@ static int uverbs_handle_method(struct ib_uverbs_attr __user *uattr_ptr,
 	if (ret)
 		goto cleanup;
 
+	/*
+	 * We destroy the HW object before invoking the handler, handlers do
+	 * not get to manipulate the HW objects.
+	 */
+	if (destroy_attr) {
+		ret = rdma_explicit_destroy(destroy_attr->uobject);
+		if (ret)
+			goto cleanup;
+	}
+
 	ret = method_spec->handler(ibdev, ufile, attr_bundle);
+
 cleanup:
 	finalize_ret = uverbs_finalize_attrs(attr_bundle,
 					     method_spec->attr_buckets,
