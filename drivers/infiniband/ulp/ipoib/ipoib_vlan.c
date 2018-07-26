@@ -232,8 +232,6 @@ static void ipoib_vlan_delete_task(struct work_struct *work)
 		unregister_netdevice(dev);
 	}
 
-	dev_put(dev);
-
 	rtnl_unlock();
 
 	kfree(pwork);
@@ -258,10 +256,10 @@ int ipoib_vlan_delete(struct net_device *pdev, unsigned short pkey)
 	ppriv = ipoib_priv(pdev);
 
 	rc = -ENODEV;
+	down_read(&ppriv->vlan_rwsem);
 	list_for_each_entry_safe(priv, tpriv, &ppriv->child_intfs, list) {
 		if (priv->pkey == pkey &&
-		    priv->child_type == IPOIB_LEGACY_CHILD &&
-		    !test_and_set_bit(IPOIB_FLAG_CHILD_DELETED, &priv->flags)) {
+		    priv->child_type == IPOIB_LEGACY_CHILD) {
 			struct ipoib_vlan_delete_work *work;
 
 			work = kmalloc(sizeof(*work), GFP_KERNEL);
@@ -270,8 +268,10 @@ int ipoib_vlan_delete(struct net_device *pdev, unsigned short pkey)
 				goto out;
 			}
 
+			down_write(&ppriv->vlan_rwsem);
+			list_del_init(&priv->list);
+			downgrade_write(&ppriv->vlan_rwsem);
 			work->dev = priv->dev;
-			dev_hold(priv->dev);
 			INIT_WORK(&work->work, ipoib_vlan_delete_task);
 			queue_work(ipoib_workqueue, &work->work);
 
@@ -281,6 +281,7 @@ int ipoib_vlan_delete(struct net_device *pdev, unsigned short pkey)
 	}
 
 out:
+	up_read(&ppriv->vlan_rwsem);
 	rtnl_unlock();
 
 	return rc;
