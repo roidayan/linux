@@ -1976,7 +1976,7 @@ struct mlx5_flow_namespace *mlx5_get_flow_namespace(struct mlx5_core_dev *dev,
 						    enum mlx5_flow_namespace_type type)
 {
 	struct mlx5_flow_steering *steering = dev->priv.steering;
-	struct mlx5_flow_root_namespace *root_ns;
+	struct mlx5_flow_root_namespace *steering_ns = NULL;
 	int prio;
 	struct fs_prio *fs_prio;
 	struct mlx5_flow_namespace *ns;
@@ -1992,37 +1992,33 @@ struct mlx5_flow_namespace *mlx5_get_flow_namespace(struct mlx5_core_dev *dev,
 	case MLX5_FLOW_NAMESPACE_KERNEL:
 	case MLX5_FLOW_NAMESPACE_LEFTOVERS:
 	case MLX5_FLOW_NAMESPACE_ANCHOR:
+		steering_ns = steering->root_ns;
 		prio = type;
 		break;
 	case MLX5_FLOW_NAMESPACE_FDB:
 		if (steering->fdb_root_ns)
 			return &steering->fdb_root_ns->ns;
-		else
-			return NULL;
+		break;
 	case MLX5_FLOW_NAMESPACE_SNIFFER_RX:
 		if (steering->sniffer_rx_root_ns)
 			return &steering->sniffer_rx_root_ns->ns;
-		else
-			return NULL;
+		break;
 	case MLX5_FLOW_NAMESPACE_SNIFFER_TX:
 		if (steering->sniffer_tx_root_ns)
 			return &steering->sniffer_tx_root_ns->ns;
-		else
-			return NULL;
+		break;
 	case MLX5_FLOW_NAMESPACE_EGRESS:
 		if (steering->egress_root_ns)
 			return &steering->egress_root_ns->ns;
-		else
-			return NULL;
+		break;
 	default:
-		return NULL;
+		break;
 	}
 
-	root_ns = steering->root_ns;
-	if (!root_ns)
+	if (!steering_ns)
 		return NULL;
 
-	fs_prio = find_prio(&root_ns->ns, prio);
+	fs_prio = find_prio(&steering_ns->ns, prio);
 	if (!fs_prio)
 		return NULL;
 
