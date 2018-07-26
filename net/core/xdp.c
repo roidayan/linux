@@ -102,7 +102,9 @@ static void __xdp_rxq_info_unreg_mem_model(struct xdp_rxq_info *xdp_rxq)
 
 	mutex_lock(&mem_id_lock);
 
+	rcu_read_lock();
 	xa = rhashtable_lookup(mem_id_ht, &id, mem_id_rht_params);
+	rcu_read_unlock();
 	if (!xa) {
 		mutex_unlock(&mem_id_lock);
 		return;
