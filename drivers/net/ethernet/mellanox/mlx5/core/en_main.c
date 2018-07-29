@@ -43,6 +43,7 @@
 #include "en_accel/ipsec_rxtx.h"
 #include "accel/ipsec.h"
 #include "lib/vxlan.h"
+#include "lib/clock.h"
 #include "en/port.h"
 
 struct mlx5e_rq_param {
@@ -3457,7 +3458,8 @@ int mlx5e_hwstamp_set(struct mlx5e_priv *priv, struct ifreq *ifr)
 	struct hwtstamp_config config;
 	int err;
 
-	if (!MLX5_CAP_GEN(priv->mdev, device_frequency_khz))
+	if (!MLX5_CAP_GEN(priv->mdev, device_frequency_khz) ||
+	    (mlx5_clock_get_ptp_index(priv->mdev) == -1))
 		return -EOPNOTSUPP;
 
 	if (copy_from_user(&config, ifr->ifr_data, sizeof(config)))

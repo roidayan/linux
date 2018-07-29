@@ -37,6 +37,7 @@
 #include "mlx5_core.h"
 #include "fpga/core.h"
 #include "eswitch.h"
+#include "lib/clock.h"
 #include "diag/fw_tracer.h"
 
 enum {
