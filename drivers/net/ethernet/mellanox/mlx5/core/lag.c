@@ -177,18 +177,18 @@ static bool mlx5_lag_is_bonded(struct mlx5_lag *ldev)
 }
 
 static void mlx5_infer_tx_affinity_mapping(struct lag_tracker *tracker,
-					   u8 *port1, u8 *port2)
+					   u8 *port1, u8 *port2, int affinity)
 {
 	*port1 = 1;
 	*port2 = 2;
 	if (!tracker->netdev_state[0].tx_enabled ||
-	    !tracker->netdev_state[0].link_up) {
+	    !tracker->netdev_state[0].link_up || (affinity == 2)) {
 		*port1 = 2;
 		return;
 	}
 
 	if (!tracker->netdev_state[1].tx_enabled ||
-	    !tracker->netdev_state[1].link_up)
+	    !tracker->netdev_state[1].link_up || (affinity == 1))
 		*port2 = 1;
 }
 
@@ -200,7 +200,7 @@ static void mlx5_modify_lag(struct mlx5_lag *ldev,
 	int err;
 
 	mlx5_infer_tx_affinity_mapping(tracker, &v2p_port1,
-				       &v2p_port2);
+				       &v2p_port2, ldev->lag_affinity);
 
 	if (v2p_port1 != ldev->v2p_map[0] ||
 	    v2p_port2 != ldev->v2p_map[1]) {
@@ -209,6 +209,20 @@ static void mlx5_modify_lag(struct mlx5_lag *ldev,
 
 		mlx5_core_info(dev0, "modify lag map port 1:%d port 2:%d",
 			       ldev->v2p_map[0], ldev->v2p_map[1]);
+
+
+		if (tracker->netdev_state[0].tx_enabled)
+			mlx5e_restore_rules(ldev->pf[0].netdev);
+		if (tracker->netdev_state[1].tx_enabled)
+			mlx5e_restore_rules(ldev->pf[1].netdev);
+
+		if (tracke->netdev_state[1].tx_enabled != tracker->netdev_state[0].tx_enabled) {
+			ldev->lag_affinity = (!!tracker->netdev_state[1].tx_enabled) * 2 + (!!tracker->netdev_state[0].tx_enabled); //2 or 1
+		} else if (tracker.netdev_state[0].tx_enabled) {
+			ldev->lag_affinity = 0;
+		} else {
+			ldev->lag_affinity = 0;
+		}
 
 		err = mlx5_cmd_modify_lag(dev0, v2p_port1, v2p_port2);
 		if (err)
@@ -242,35 +256,6 @@ static int mlx5_lag_set_affinity(struct mlx5_lag *ldev, int affinity,
 
 	if (!force && ldev->lag_affinity == affinity)
 		return 0;
-
-	switch (affinity) {
-	case 0:
-	case 3:
-		tracker.netdev_state[0].tx_enabled = true;
-		tracker.netdev_state[1].tx_enabled = true;
-		tracker.netdev_state[0].link_up = true;
-		tracker.netdev_state[1].link_up = true;
-		break;
-	case 1:
-		tracker.netdev_state[0].tx_enabled = true;
-		tracker.netdev_state[0].link_up = true;
-		tracker.netdev_state[1].tx_enabled = false;
-		tracker.netdev_state[1].link_up = false;
-		break;
-	case 2:
-		tracker.netdev_state[0].tx_enabled = false;
-		tracker.netdev_state[0].link_up = false;
-		tracker.netdev_state[1].tx_enabled = true;
-		tracker.netdev_state[1].link_up = true;
-		break;
-	default:
-		return -EOPNOTSUPP;
-	}
-
-	if (tracker.netdev_state[0].tx_enabled)
-		mlx5e_restore_rules(ldev->pf[0].netdev);
-	if (tracker.netdev_state[1].tx_enabled)
-		mlx5e_restore_rules(ldev->pf[1].netdev);
 
 	ldev->lag_affinity = affinity;
 	mlx5_modify_lag(ldev, &tracker);
@@ -346,7 +331,7 @@ static void mlx5_do_bond(struct mlx5_lag *ldev)
 		mlx5_add_dev_by_protocol(dev0, MLX5_INTERFACE_PROTOCOL_IB);
 		mlx5_nic_vport_enable_roce(dev1);
 	} else if ((do_bond && mlx5_lag_is_bonded(ldev)) ||
-		   (mlx5_lag_is_multipath(dev0) && !ldev->lag_affinity)) {
+		   mlx5_lag_is_multipath(dev0)) {
 		mlx5_modify_lag(ldev, &tracker);
 	} else if (!do_bond && mlx5_lag_is_bonded(ldev)) {
 		mlx5_remove_dev_by_protocol(dev0, MLX5_INTERFACE_PROTOCOL_IB);
@@ -487,9 +472,6 @@ static int mlx5_handle_change_event(struct mlx5_lag *ldev,
 
 	tracker->netdev_state[port].link_up = link_up;
 	tracker->netdev_state[port].tx_enabled = link_up;
-
-	if (link_up && mlx5_lag_is_multipath_ready(ldev->pf[0].dev))
-		mlx5e_restore_rules(ndev);
 
 	return 1;
 }
@@ -998,6 +980,57 @@ bool mlx5_lag_is_multipath(struct mlx5_core_dev *dev)
 	struct mlx5_lag *ldev = mlx5_lag_dev_get(dev);
 
 	return ldev ? !!(ldev->flags & MLX5_LAG_FLAG_MULTIPATH) : false;
+}
+
+int mlx5_lag_set_multipath_affinity(struct mlx5_core_dev *dev, int affinity)
+{
+	struct mlx5_lag *ldev = mlx5_lag_dev_get(dev);
+	unsigned int fn = PCI_FUNC(dev->pdev->devfn);
+
+	if (!ldev)
+		return -EOPNOTSUPP;
+
+	/*
+	if (!mlx5_lag_is_multipath_ready(ldev->pf[0].dev))
+		return -EOPNOTSUPP;
+	*/
+
+	if (fn == 1 && (affinity == 1 || affinity == 2)) {
+		affinity = 3 - affinity;
+	}
+
+	if (affinity >= 4) {
+		if (affinity == 4) { //add
+			if (ldev->lag_affinity == 0)
+				return 0;
+			else if (fn == 0 && ldev->lag_affinity == 1)
+				return 0;
+			else if (fn == 0 && ldev->lag_affinity == 2)
+				affinity = 0;
+			else if (fn == 1 && ldev->lag_affinity == 1)
+				affinity = 0;
+			else if (fn == 1 && ldev->lag_affinity == 2)
+				return;
+		} else { //del
+			if (fn == 0 && ldev->lag_affinity == 0)
+				affinity = 2;
+			else if (fn == 0 && ldev->lag_affinity == 1)
+				affinity = 0;
+			else if (fn == 0 && ldev->lag_affinity == 2)
+				return 0;
+			else if (fn == 1 && ldev->lag_affinity == 0)
+				affinity = 1;
+			else if (fn == 1 && ldev->lag_affinity == 1)
+				return 0;
+			else if (fn == 1 && ldev->lag_affinity == 2)
+				affinity = 0;
+		}
+	}
+
+	printk(KERN_ERR "%s %d %s @@ fn: %d, %d -> %d\n", __FILE__, __LINE__, __func__, fn, ldev->lag_affinity, affinity);
+
+	ldev->lag_affinity = affinity;
+	return 0;
 }
 
 void mlx5_lag_set_multipath_ready(struct mlx5_core_dev *dev)
