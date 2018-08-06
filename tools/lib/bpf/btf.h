@@ -4,11 +4,12 @@
 #ifndef __BPF_BTF_H
 #define __BPF_BTF_H
 
-#include <stdint.h>
+#include <linux/types.h>
 
 #define BTF_ELF_SEC ".BTF"
 
 struct btf;
+struct btf_type;
 
 typedef int (*btf_print_fn_t)(const char *, ...)
 	__attribute__((format(printf, 1, 2)));
