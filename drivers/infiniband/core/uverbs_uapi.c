@@ -269,7 +269,7 @@ struct uverbs_api *uverbs_alloc_api(
 	if (rc)
 		goto err;
 
-	for (; *driver_specs; driver_specs++) {
+	for (; driver_specs && *driver_specs; driver_specs++) {
 		rc = uapi_merge_tree(uapi, *driver_specs, true);
 		if (rc)
 			goto err;
