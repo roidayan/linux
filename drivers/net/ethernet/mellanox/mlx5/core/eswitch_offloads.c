@@ -948,6 +948,12 @@ int esw_offloads_init(struct mlx5_eswitch *esw, int nvports)
 	if (err)
 		return err;
 
+	/* read capabilities again since firmware may change capabilities after
+	 * creating tables with encap flags set
+	 */
+	mlx5_core_get_caps(esw->dev, MLX5_CAP_FLOW_TABLE);
+	mlx5_core_get_caps(esw->dev, MLX5_CAP_ETHERNET_OFFLOADS);
+
 	err = esw_create_offloads_table(esw);
 	if (err)
 		goto create_ft_err;
@@ -999,6 +1005,12 @@ void esw_offloads_cleanup(struct mlx5_eswitch *esw, int nvports)
 	esw_destroy_vport_rx_group(esw);
 	esw_destroy_offloads_table(esw);
 	esw_destroy_offloads_fdb_tables(esw);
+
+	/* read capabilities again since firmware may change capabilities after
+	 * destroying tables with encap flags set
+	 */
+	mlx5_core_get_caps(esw->dev, MLX5_CAP_FLOW_TABLE);
+	mlx5_core_get_caps(esw->dev, MLX5_CAP_ETHERNET_OFFLOADS);
 }
 
 static int esw_mode_from_devlink(u16 mode, u16 *mlx5_mode)
