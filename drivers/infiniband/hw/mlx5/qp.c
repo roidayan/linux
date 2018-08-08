@@ -37,6 +37,7 @@
 #include <linux/mlx5/fs.h>
 #include "mlx5_ib.h"
 #include "ib_rep.h"
+#include "cmd.h"
 
 /* not supported currently */
 static int wq_signature;
@@ -1262,17 +1263,19 @@ static bool tunnel_offload_supported(struct mlx5_core_dev *dev)
 
 static void destroy_raw_packet_qp_tir(struct mlx5_ib_dev *dev,
 				      struct mlx5_ib_rq *rq,
-				      u32 qp_flags_en)
+				      u32 qp_flags_en,
+				      u16 uid)
 {
 	if (qp_flags_en & (MLX5_QP_FLAG_TIR_ALLOW_SELF_LB_UC |
 			   MLX5_QP_FLAG_TIR_ALLOW_SELF_LB_MC))
 		mlx5_ib_disable_lb(dev, false, true);
-	mlx5_core_destroy_tir(dev->mdev, rq->tirn);
+	mlx5_cmd_destroy_tir(dev->mdev, rq->tirn, uid);
 }
 
 static int create_raw_packet_qp_tir(struct mlx5_ib_dev *dev,
 				    struct mlx5_ib_rq *rq, u32 tdn,
-				    u32 *qp_flags_en)
+				    u32 *qp_flags_en,
+				    u16 uid)
 {
 	u8 lb_flag = 0;
 	u32 *in;
@@ -1285,6 +1288,7 @@ static int create_raw_packet_qp_tir(struct mlx5_ib_dev *dev,
 	if (!in)
 		return -ENOMEM;
 
+	MLX5_SET(create_tir_in, in, uid, uid);
 	tirc = MLX5_ADDR_OF(create_tir_in, in, ctx);
 	MLX5_SET(tirc, tirc, disp_type, MLX5_TIRC_DISP_TYPE_DIRECT);
 	MLX5_SET(tirc, tirc, inline_rqn, rq->base.mqp.qpn);
@@ -1311,7 +1315,7 @@ static int create_raw_packet_qp_tir(struct mlx5_ib_dev *dev,
 		err = mlx5_ib_enable_lb(dev, false, true);
 
 		if (err)
-			destroy_raw_packet_qp_tir(dev, rq, 0);
+			destroy_raw_packet_qp_tir(dev, rq, 0, uid);
 	}
 	kvfree(in);
 
@@ -1356,8 +1360,8 @@ static int create_raw_packet_qp(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
 		if (err)
 			goto err_destroy_sq;
 
-
-		err = create_raw_packet_qp_tir(dev, rq, tdn, &qp->flags_en);
+		err = create_raw_packet_qp_tir(dev, rq, tdn, &qp->flags_en,
+					       uid);
 		if (err)
 			goto err_destroy_rq;
 	}
@@ -1385,9 +1389,10 @@ static void destroy_raw_packet_qp(struct mlx5_ib_dev *dev,
 	struct mlx5_ib_raw_packet_qp *raw_packet_qp = &qp->raw_packet_qp;
 	struct mlx5_ib_sq *sq = &raw_packet_qp->sq;
 	struct mlx5_ib_rq *rq = &raw_packet_qp->rq;
+	u16 uid = to_mucontext(qp->ibqp.uobject->context)->devx_uid;
 
 	if (qp->rq.wqe_cnt) {
-		destroy_raw_packet_qp_tir(dev, rq, qp->flags_en);
+		destroy_raw_packet_qp_tir(dev, rq, qp->flags_en, uid);
 		destroy_raw_packet_qp_rq(dev, rq);
 	}
 
@@ -1411,10 +1416,12 @@ static void raw_packet_qp_copy_info(struct mlx5_ib_qp *qp,
 
 static void destroy_rss_raw_qp_tir(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp)
 {
+	u16 uid = to_mucontext(qp->ibqp.uobject->context)->devx_uid;
+
 	if (qp->flags_en & (MLX5_QP_FLAG_TIR_ALLOW_SELF_LB_UC |
 			    MLX5_QP_FLAG_TIR_ALLOW_SELF_LB_MC))
 		mlx5_ib_disable_lb(dev, false, true);
-	mlx5_core_destroy_tir(dev->mdev, qp->rss_qp.tirn);
+	mlx5_cmd_destroy_tir(dev->mdev, qp->rss_qp.tirn, uid);
 }
 
 static int create_rss_raw_qp_tir(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
@@ -1512,6 +1519,7 @@ static int create_rss_raw_qp_tir(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
 	if (!in)
 		return -ENOMEM;
 
+	MLX5_SET(create_tir_in, in, uid, mucontext->devx_uid);
 	tirc = MLX5_ADDR_OF(create_tir_in, in, ctx);
 	MLX5_SET(tirc, tirc, disp_type,
 		 MLX5_TIRC_DISP_TYPE_INDIRECT);
