@@ -1325,7 +1325,9 @@ static int create_raw_packet_qp_tir(struct mlx5_ib_dev *dev,
 
 static int create_raw_packet_qp(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
 				u32 *in, size_t inlen,
-				struct ib_pd *pd)
+				struct ib_pd *pd,
+				struct ib_udata *udata,
+				struct mlx5_ib_create_qp_resp *resp)
 {
 	struct mlx5_ib_raw_packet_qp *raw_packet_qp = &qp->raw_packet_qp;
 	struct mlx5_ib_sq *sq = &raw_packet_qp->sq;
@@ -1346,6 +1348,13 @@ static int create_raw_packet_qp(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
 		if (err)
 			goto err_destroy_tis;
 
+		if (uid) {
+			resp->tisn = sq->tisn;
+			resp->comp_mask |= MLX5_IB_CREATE_QP_RESP_MASK_TISN;
+			resp->sqn = sq->base.mqp.qpn;
+			resp->comp_mask |= MLX5_IB_CREATE_QP_RESP_MASK_SQN;
+		}
+
 		sq->base.container_mibqp = qp;
 		sq->base.mqp.event = mlx5_ib_qp_event;
 	}
@@ -1365,13 +1374,26 @@ static int create_raw_packet_qp(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
 					       uid);
 		if (err)
 			goto err_destroy_rq;
+
+		if (uid) {
+			resp->rqn = rq->base.mqp.qpn;
+			resp->comp_mask |= MLX5_IB_CREATE_QP_RESP_MASK_RQN;
+			resp->tirn = rq->tirn;
+			resp->comp_mask |= MLX5_IB_CREATE_QP_RESP_MASK_TIRN;
+		}
 	}
 
 	qp->trans_qp.base.mqp.qpn = qp->sq.wqe_cnt ? sq->base.mqp.qpn :
 						     rq->base.mqp.qpn;
 
+	err = ib_copy_to_udata(udata, resp, min(udata->outlen, sizeof(*resp)));
+	if (err)
+		goto err_destroy_tir;
+
 	return 0;
 
+err_destroy_tir:
+	destroy_raw_packet_qp_tir(dev, rq, qp->flags_en, uid);
 err_destroy_rq:
 	destroy_raw_packet_qp_rq(dev, rq);
 err_destroy_sq:
@@ -1643,12 +1665,23 @@ create_tir:
 	if (err)
 		goto err;
 
+	if (mucontext->devx_uid) {
+		resp.comp_mask |= MLX5_IB_CREATE_QP_RESP_MASK_TIRN;
+		resp.tirn = qp->rss_qp.tirn;
+	}
+
+	err = ib_copy_to_udata(udata, &resp, min(udata->outlen, sizeof(resp)));
+	if (err)
+		goto err_copy;
+
 	kvfree(in);
 	/* qpn is reserved for that QP */
 	qp->trans_qp.base.mqp.qpn = 0;
 	qp->flags |= MLX5_IB_QP_RSS;
 	return 0;
 
+err_copy:
+	mlx5_cmd_destroy_tir(dev->mdev, qp->rss_qp.tirn, mucontext->devx_uid);
 err:
 	kvfree(in);
 	return err;
@@ -2020,7 +2053,8 @@ static int create_qp_common(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 	    qp->flags & MLX5_IB_QP_UNDERLAY) {
 		qp->raw_packet_qp.sq.ubuffer.buf_addr = ucmd.sq_buf_addr;
 		raw_packet_qp_copy_info(qp, &qp->raw_packet_qp);
-		err = create_raw_packet_qp(dev, qp, in, inlen, pd);
+		err = create_raw_packet_qp(dev, qp, in, inlen, pd, udata,
+					   &resp);
 	} else {
 		err = mlx5_core_create_qp(dev->mdev, &base->mqp, in, inlen);
 	}
