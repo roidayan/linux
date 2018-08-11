@@ -1235,14 +1235,11 @@ struct net_device *mlx5_rdma_netdev_alloc(struct mlx5_core_dev *mdev,
 {
 	return ERR_PTR(-EOPNOTSUPP);
 }
-
-static inline void mlx5_rdma_netdev_free(struct net_device *netdev) {}
 #else
 struct net_device *mlx5_rdma_netdev_alloc(struct mlx5_core_dev *mdev,
 					  struct ib_device *ibdev,
 					  const char *name,
 					  void (*setup)(struct net_device *));
-void mlx5_rdma_netdev_free(struct net_device *netdev);
 #endif /* CONFIG_MLX5_CORE_IPOIB */
 
 struct mlx5_profile {
@@ -1312,11 +1309,4 @@ static inline int mlx5_core_native_port_num(struct mlx5_core_dev *dev)
 enum {
 	MLX5_TRIGGERED_CMD_COMP = (u64)1 << 32,
 };
-
-static inline const struct cpumask *
-mlx5_get_vector_affinity_hint(struct mlx5_core_dev *dev, int vector)
-{
-	return dev->priv.irq_info[vector].mask;
-}
-
 #endif /* MLX5_DRIVER_H */
