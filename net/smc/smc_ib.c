@@ -16,6 +16,7 @@
 #include <linux/workqueue.h>
 #include <linux/scatterlist.h>
 #include <rdma/ib_verbs.h>
+#include <rdma/ib_cache.h>
 
 #include "smc_pnet.h"
 #include "smc_ib.h"
@@ -454,6 +455,66 @@ void smc_ib_buf_unmap_sg(struct smc_ib_device *smcibdev,
 			buf_slot->sgt[SMC_SINGLE_LINK].orig_nents,
 			data_direction);
 	buf_slot->sgt[SMC_SINGLE_LINK].sgl->dma_address = 0;
+}
+
+static int smc_ib_fill_gid_and_mac(struct smc_ib_device *smcibdev, u8 ibport)
+{
+	const struct ib_gid_attr *gattr;
+	int rc = 0;
+
+	gattr = rdma_get_gid_attr(smcibdev->ibdev, ibport, 0);
+	if (IS_ERR(gattr))
+		return PTR_ERR(gattr);
+	if (!gattr->ndev) {
+		rc = -ENODEV;
+		goto done;
+	}
+	smcibdev->gid[ibport - 1] = gattr->gid;
+	memcpy(smcibdev->mac[ibport - 1], gattr->ndev->dev_addr, ETH_ALEN);
+done:
+	rdma_put_gid_attr(gattr);
+	return rc;
+}
+
+/* Create an identifier unique for this instance of SMC-R.
+ * The MAC-address of the first active registered IB device
+ * plus a random 2-byte number is used to create this identifier.
+ * This name is delivered to the peer during connection initialization.
+ */
+static inline void smc_ib_define_local_systemid(struct smc_ib_device *smcibdev,
+						u8 ibport)
+{
+	memcpy(&local_systemid[2], &smcibdev->mac[ibport - 1],
+	       sizeof(smcibdev->mac[ibport - 1]));
+	get_random_bytes(&local_systemid[0], 2);
+}
+
+bool smc_ib_port_active(struct smc_ib_device *smcibdev, u8 ibport)
+{
+	return smcibdev->pattr[ibport - 1].state == IB_PORT_ACTIVE;
+}
+
+int smc_ib_remember_port_attr(struct smc_ib_device *smcibdev, u8 ibport)
+{
+	int rc;
+
+	memset(&smcibdev->pattr[ibport - 1], 0,
+	       sizeof(smcibdev->pattr[ibport - 1]));
+	rc = ib_query_port(smcibdev->ibdev, ibport,
+			   &smcibdev->pattr[ibport - 1]);
+	if (rc)
+		goto out;
+	/* the SMC protocol requires specification of the RoCE MAC address */
+	rc = smc_ib_fill_gid_and_mac(smcibdev, ibport);
+	if (rc)
+		goto out;
+	if (!strncmp(local_systemid, SMC_LOCAL_SYSTEMID_RESET,
+		     sizeof(local_systemid)) &&
+	    smc_ib_port_active(smcibdev, ibport))
+		/* create unique system identifier */
+		smc_ib_define_local_systemid(smcibdev, ibport);
+out:
+	return rc;
 }
 
 long smc_ib_setup_per_ibdev(struct smc_ib_device *smcibdev)
