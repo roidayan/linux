@@ -47,7 +47,7 @@
 #define DEFAULT_UAR_PAGE_SHIFT  12
 
 #define MAX_MSIX_P_PORT		17
-#define MAX_MSIX		64
+#define MAX_MSIX		1024
 #define MIN_MSIX_P_PORT		5
 #define MLX4_IS_LEGACY_EQ_MODE(dev_cap) ((dev_cap).num_comp_vectors < \
 					 (dev_cap).num_ports * MIN_MSIX_P_PORT)
@@ -630,6 +630,7 @@ struct mlx4_caps {
 	u32			vf_caps;
 	bool			wol_port[MLX4_MAX_PORTS + 1];
 	struct mlx4_rate_limit_caps rl_caps;
+	u32			health_buffer_addrs;
 };
 
 struct mlx4_buf_list {
@@ -851,6 +852,12 @@ struct mlx4_vf_dev {
 	u8			n_ports;
 };
 
+struct mlx4_fw_crdump {
+	bool snapshot_enable;
+	struct devlink_region *region_crspace;
+	struct devlink_region *region_fw_health;
+};
+
 enum mlx4_pci_status {
 	MLX4_PCI_STATUS_DISABLED,
 	MLX4_PCI_STATUS_ENABLED,
@@ -871,6 +878,7 @@ struct mlx4_dev_persistent {
 	u8	interface_state;
 	struct mutex		pci_status_mutex; /* sync pci state */
 	enum mlx4_pci_status	pci_status;
+	struct mlx4_fw_crdump	crdump;
 };
 
 struct mlx4_dev {
