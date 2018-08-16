@@ -1072,6 +1072,7 @@ mlx5e_nic_rep_unload(struct mlx5_eswitch *esw, struct mlx5_eswitch_rep *rep)
 	/* clean uplink offloaded TC rules, delete shared tc flow table */
 	mlx5e_tc_esw_cleanup(&rpriv->tc_ht);
 
+	mlx5e_clean_peer_rules(rep->netdev);
 	mlx5e_rep_neigh_cleanup(rpriv);
 }
 
@@ -1156,6 +1157,8 @@ mlx5e_vport_rep_unload(struct mlx5_eswitch *esw, struct mlx5_eswitch_rep *rep)
 	upriv = netdev_priv(mlx5_eswitch_get_uplink_netdev(esw));
 	tc_setup_cb_egdev_unregister(netdev, mlx5e_rep_setup_tc_cb_egdev,
 				     upriv);
+
+	mlx5e_clean_peer_rules(netdev);
 	mlx5e_rep_neigh_cleanup(rpriv);
 	mlx5e_detach_netdev(priv);
 	mlx5e_destroy_netdev(priv);

@@ -78,5 +78,6 @@ static inline int  mlx5e_tc_num_filters(struct mlx5e_priv *priv) { return 0; }
 #endif
 
 void mlx5e_restore_rules(struct net_device *ndev);
+void mlx5e_clean_peer_rules(struct net_device *ndev);
 
 #endif /* __MLX5_EN_TC_H__ */

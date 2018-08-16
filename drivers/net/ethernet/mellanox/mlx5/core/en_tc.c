@@ -3188,3 +3188,51 @@ void mlx5e_restore_rules(struct net_device *ndev)
 	esw = peer_priv->mdev->priv.eswitch;
 	restore_eswitch_rules(esw, true);
 }
+
+static void delete_eswitch_peer_rules(struct mlx5_eswitch *esw)
+{
+	struct mlx5_eswitch_rep *rep;
+	struct rhashtable_iter iter;
+	struct mlx5e_tc_flow *flow;
+	struct mlx5e_priv *priv;
+	int vport;
+
+	for (vport = 0; vport < esw->enabled_vports; vport++) {
+		rep = &esw->offloads.vport_reps[vport];
+		priv = netdev_priv(rep->netdev);
+
+		rhashtable_walk_enter(get_tc_ht(priv), &iter);
+		rhashtable_walk_start(&iter);
+
+		while ((flow = rhashtable_walk_next(&iter))) {
+			if (IS_ERR(flow)) {
+				if (PTR_ERR(flow) == -EAGAIN)
+					continue;
+				break;
+			}
+
+			if (flow->flags & MLX5E_TC_FLOW_DUP) {
+				rhashtable_walk_stop(&iter);
+				mlx5e_tc_del_fdb_peer_flow(flow->priv, flow);
+				rhashtable_walk_start(&iter);
+			}
+		}
+
+		rhashtable_walk_stop(&iter);
+		rhashtable_walk_exit(&iter);
+	}
+}
+
+void mlx5e_clean_peer_rules(struct net_device *ndev)
+{
+	struct mlx5e_priv *priv = netdev_priv(ndev);
+	struct net_device *peer_netdev = mlx5_lag_get_peer_netdev(priv->mdev);
+	struct mlx5e_priv *peer_priv = netdev_priv(peer_netdev);
+	struct mlx5_eswitch *peer_esw = peer_priv->mdev->priv.eswitch;
+
+
+	if (!peer_esw || peer_esw->mode != SRIOV_OFFLOADS)
+		return;
+
+	delete_eswitch_peer_rules(peer_esw);
+}
