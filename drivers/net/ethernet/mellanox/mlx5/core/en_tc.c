@@ -1073,15 +1073,22 @@ static void mlx5e_detach_encap(struct mlx5e_priv *priv,
 	}
 }
 
+static void mlx5e_tc_del_fdb_peer_flow(struct mlx5e_priv *priv,
+				       struct mlx5e_tc_flow *flow)
+{
+	if (flow->flags & MLX5E_TC_FLOW_ESWITCH &&
+	    flow->flags & MLX5E_TC_FLOW_DUP) {
+		flow->flags &= ~MLX5E_TC_FLOW_DUP;
+		mlx5e_tc_del_fdb_flow(flow->peer_flow->priv, flow->peer_flow);
+		kvfree(flow->peer_flow);
+	}
+}
+
 static void mlx5e_tc_del_flow(struct mlx5e_priv *priv,
 			      struct mlx5e_tc_flow *flow)
 {
 	if (flow->flags & MLX5E_TC_FLOW_ESWITCH) {
-		if (flow->flags & MLX5E_TC_FLOW_DUP) {
-			mlx5e_tc_del_fdb_flow(flow->peer_flow->priv,
-					      flow->peer_flow);
-			kvfree(flow->peer_flow);
-		}
+		mlx5e_tc_del_fdb_peer_flow(priv, flow);
 		mlx5e_tc_del_fdb_flow(priv, flow);
 	} else {
 		mlx5e_tc_del_nic_flow(priv, flow);
