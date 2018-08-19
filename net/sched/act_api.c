@@ -388,7 +388,6 @@ int tcf_idr_create(struct tc_action_net *tn, u32 index, struct nlattr *est,
 
 	p->idrinfo = idrinfo;
 	p->ops = ops;
-	INIT_LIST_HEAD(&p->list);
 	*a = p;
 	return 0;
 err3:
