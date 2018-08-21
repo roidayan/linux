@@ -39,6 +39,7 @@
 #include <linux/if_link.h>
 #include <linux/firmware.h>
 #include <linux/mlx5/cq.h>
+#include <linux/mlx5/fs.h>
 
 #define DRIVER_NAME "mlx5_core"
 #define DRIVER_VERSION "5.0-0"
@@ -65,6 +66,12 @@ do {									\
 	dev_err(&(__dev)->pdev->dev, "%s:%d:(pid %d): " format,	\
 		__func__, __LINE__, current->pid,	\
 	       ##__VA_ARGS__)
+
+#define mlx5_core_err_rl(__dev, format, ...)				\
+	dev_err_ratelimited(&(__dev)->pdev->dev,			\
+			   "%s:%d:(pid %d): " format,			\
+			   __func__, __LINE__, current->pid,		\
+			   ##__VA_ARGS__)
 
 #define mlx5_core_warn(__dev, format, ...)				\
 	dev_warn(&(__dev)->pdev->dev, "%s:%d:(pid %d): " format,	\
@@ -93,7 +100,6 @@ void mlx5_core_event(struct mlx5_core_dev *dev, enum mlx5_dev_event event,
 		     unsigned long param);
 void mlx5_core_page_fault(struct mlx5_core_dev *dev,
 			  struct mlx5_pagefault *pfault);
-void mlx5_pps_event(struct mlx5_core_dev *dev, struct mlx5_eqe *eqe);
 void mlx5_port_module_event(struct mlx5_core_dev *dev, struct mlx5_eqe *eqe);
 void mlx5_enter_error_state(struct mlx5_core_dev *dev, bool force);
 void mlx5_disable_device(struct mlx5_core_dev *dev);
@@ -164,17 +170,6 @@ struct mlx5_core_dev *mlx5_get_next_phys_dev(struct mlx5_core_dev *dev);
 void mlx5_dev_list_lock(void);
 void mlx5_dev_list_unlock(void);
 int mlx5_dev_list_trylock(void);
-int mlx5_encap_alloc(struct mlx5_core_dev *dev,
-		     int header_type,
-		     size_t size,
-		     void *encap_header,
-		     u32 *encap_id);
-void mlx5_encap_dealloc(struct mlx5_core_dev *dev, u32 encap_id);
-
-int mlx5_modify_header_alloc(struct mlx5_core_dev *dev,
-			     u8 namespace, u8 num_actions,
-			     void *modify_actions, u32 *modify_header_id);
-void mlx5_modify_header_dealloc(struct mlx5_core_dev *dev, u32 modify_header_id);
 
 bool mlx5_lag_intf_add(struct mlx5_interface *intf, struct mlx5_priv *priv);
 
