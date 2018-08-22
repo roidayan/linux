@@ -953,13 +953,11 @@ static struct ib_client uverbs_client = {
 static ssize_t show_ibdev(struct device *device, struct device_attribute *attr,
 			  char *buf)
 {
+	struct ib_uverbs_device *dev =
+			container_of(device, struct ib_uverbs_device, dev);
 	int ret = -ENODEV;
 	int srcu_key;
-	struct ib_uverbs_device *dev = dev_get_drvdata(device);
 	struct ib_device *ib_dev;
-
-	if (!dev)
-		return -ENODEV;
 
 	srcu_key = srcu_read_lock(&dev->disassociate_srcu);
 	ib_dev = srcu_dereference(dev->ib_dev, &dev->disassociate_srcu);
@@ -974,13 +972,12 @@ static DEVICE_ATTR(ibdev, S_IRUGO, show_ibdev, NULL);
 static ssize_t show_dev_abi_version(struct device *device,
 				    struct device_attribute *attr, char *buf)
 {
-	struct ib_uverbs_device *dev = dev_get_drvdata(device);
+	struct ib_uverbs_device *dev =
+			container_of(device, struct ib_uverbs_device, dev);
 	int ret = -ENODEV;
 	int srcu_key;
 	struct ib_device *ib_dev;
 
-	if (!dev)
-		return -ENODEV;
 	srcu_key = srcu_read_lock(&dev->disassociate_srcu);
 	ib_dev = srcu_dereference(dev->ib_dev, &dev->disassociate_srcu);
 	if (ib_dev)
@@ -1052,23 +1049,24 @@ static void ib_uverbs_add_one(struct ib_device *device)
 	if (ib_uverbs_create_uapi(device, uverbs_dev))
 		goto err;
 
-	cdev_init(&uverbs_dev->cdev, NULL);
+	device_initialize(&uverbs_dev->dev);
+	uverbs_dev->dev.class = uverbs_class;
+	uverbs_dev->dev.parent = device->dev.parent;
+	uverbs_dev->dev.devt = base;
+	dev_set_name(&uverbs_dev->dev, "uverbs%d", uverbs_dev->devnum);
+
+	cdev_init(&uverbs_dev->cdev,
+		  device->mmap ? &uverbs_mmap_fops : &uverbs_fops);
 	uverbs_dev->cdev.owner = THIS_MODULE;
-	uverbs_dev->cdev.ops = device->mmap ? &uverbs_mmap_fops : &uverbs_fops;
 	cdev_set_parent(&uverbs_dev->cdev, &uverbs_dev->kobj);
-	kobject_set_name(&uverbs_dev->cdev.kobj, "uverbs%d", uverbs_dev->devnum);
-	if (cdev_add(&uverbs_dev->cdev, base, 1))
+
+	ret = cdev_device_add(&uverbs_dev->cdev, &uverbs_dev->dev);
+	if (ret)
 		goto err_cdev;
 
-	uverbs_dev->dev = device_create(uverbs_class, device->dev.parent,
-					uverbs_dev->cdev.dev, uverbs_dev,
-					"uverbs%d", uverbs_dev->devnum);
-	if (IS_ERR(uverbs_dev->dev))
-		goto err_cdev;
-
-	if (device_create_file(uverbs_dev->dev, &dev_attr_ibdev))
+	if (device_create_file(&uverbs_dev->dev, &dev_attr_ibdev))
 		goto err_class;
-	if (device_create_file(uverbs_dev->dev, &dev_attr_abi_version))
+	if (device_create_file(&uverbs_dev->dev, &dev_attr_abi_version))
 		goto err_class;
 
 	ib_set_client_data(device, &uverbs_client, uverbs_dev);
@@ -1076,12 +1074,9 @@ static void ib_uverbs_add_one(struct ib_device *device)
 	return;
 
 err_class:
-	device_destroy(uverbs_class, uverbs_dev->cdev.dev);
-
+	cdev_device_del(&uverbs_dev->cdev, &uverbs_dev->dev);
 err_cdev:
-	cdev_del(&uverbs_dev->cdev);
 	clear_bit(devnum, dev_map);
-
 err:
 	if (atomic_dec_and_test(&uverbs_dev->refcount))
 		ib_uverbs_comp_dev(uverbs_dev);
@@ -1156,9 +1151,7 @@ static void ib_uverbs_remove_one(struct ib_device *device, void *client_data)
 	if (!uverbs_dev)
 		return;
 
-	dev_set_drvdata(uverbs_dev->dev, NULL);
-	device_destroy(uverbs_class, uverbs_dev->cdev.dev);
-	cdev_del(&uverbs_dev->cdev);
+	cdev_device_del(&uverbs_dev->cdev, &uverbs_dev->dev);
 	clear_bit(uverbs_dev->devnum, dev_map);
 
 	if (device->disassociate_ucontext) {

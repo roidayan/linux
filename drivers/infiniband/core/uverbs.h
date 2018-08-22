@@ -100,7 +100,7 @@ struct ib_uverbs_device {
 	atomic_t				refcount;
 	int					num_comp_vectors;
 	struct completion			comp;
-	struct device			       *dev;
+	struct device				dev;
 	struct ib_device	__rcu	       *ib_dev;
 	int					devnum;
 	struct cdev			        cdev;
