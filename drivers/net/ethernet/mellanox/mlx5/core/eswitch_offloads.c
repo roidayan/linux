@@ -66,13 +66,18 @@ mlx5_eswitch_add_offloaded_rule(struct mlx5_eswitch *esw,
 
 	flow_act.action = attr->action;
 	/* if per flow vlan pop/push is emulated, don't set that into the firmware */
-	if (!mlx5_eswitch_vlan_actions_supported(esw->dev))
+	if (!mlx5_eswitch_vlan_actions_supported(esw->dev, 1))
 		flow_act.action &= ~(MLX5_FLOW_CONTEXT_ACTION_VLAN_PUSH |
 				     MLX5_FLOW_CONTEXT_ACTION_VLAN_POP);
 	else if (flow_act.action & MLX5_FLOW_CONTEXT_ACTION_VLAN_PUSH) {
-		flow_act.vlan.ethtype = ntohs(attr->vlan_proto);
-		flow_act.vlan.vid = attr->vlan_vid;
-		flow_act.vlan.prio = attr->vlan_prio;
+		flow_act.vlan[0].ethtype = ntohs(attr->vlan_proto[0]);
+		flow_act.vlan[0].vid = attr->vlan_vid[0];
+		flow_act.vlan[0].prio = attr->vlan_prio[0];
+		if (flow_act.action & MLX5_FLOW_CONTEXT_ACTION_VLAN_PUSH_2) {
+			flow_act.vlan[1].ethtype = ntohs(attr->vlan_proto[1]);
+			flow_act.vlan[1].vid = attr->vlan_vid[1];
+			flow_act.vlan[1].prio = attr->vlan_prio[1];
+		}
 	}
 
 	if (flow_act.action & MLX5_FLOW_CONTEXT_ACTION_FWD_DEST) {
@@ -122,8 +127,8 @@ mlx5_eswitch_add_offloaded_rule(struct mlx5_eswitch *esw,
 	if (flow_act.action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR)
 		flow_act.modify_id = attr->mod_hdr_id;
 
-	if (flow_act.action & MLX5_FLOW_CONTEXT_ACTION_ENCAP)
-		flow_act.encap_id = attr->encap_id;
+	if (flow_act.action & MLX5_FLOW_CONTEXT_ACTION_PACKET_REFORMAT)
+		flow_act.reformat_id = attr->encap_id;
 
 	rule = mlx5_add_flow_rules(ft, spec, &flow_act, dest, i);
 	if (IS_ERR(rule))
@@ -266,7 +271,7 @@ static int esw_add_vlan_action_check(struct mlx5_esw_flow_attr *attr,
 	/* protects against (1) setting rules with different vlans to push and
 	 * (2) setting rules w.o vlans (attr->vlan = 0) && w. vlans to push (!= 0)
 	 */
-	if (push && in_rep->vlan_refcount && (in_rep->vlan != attr->vlan_vid))
+	if (push && in_rep->vlan_refcount && (in_rep->vlan != attr->vlan_vid[0]))
 		goto out_notsupp;
 
 	return 0;
@@ -284,7 +289,7 @@ int mlx5_eswitch_add_vlan_action(struct mlx5_eswitch *esw,
 	int err = 0;
 
 	/* nop if we're on the vlan push/pop non emulation mode */
-	if (mlx5_eswitch_vlan_actions_supported(esw->dev))
+	if (mlx5_eswitch_vlan_actions_supported(esw->dev, 1))
 		return 0;
 
 	push = !!(attr->action & MLX5_FLOW_CONTEXT_ACTION_VLAN_PUSH);
@@ -324,11 +329,11 @@ int mlx5_eswitch_add_vlan_action(struct mlx5_eswitch *esw,
 		if (vport->vlan_refcount)
 			goto skip_set_push;
 
-		err = __mlx5_eswitch_set_vport_vlan(esw, vport->vport, attr->vlan_vid, 0,
+		err = __mlx5_eswitch_set_vport_vlan(esw, vport->vport, attr->vlan_vid[0], 0,
 						    SET_VLAN_INSERT | SET_VLAN_STRIP);
 		if (err)
 			goto out;
-		vport->vlan = attr->vlan_vid;
+		vport->vlan = attr->vlan_vid[0];
 skip_set_push:
 		vport->vlan_refcount++;
 	}
@@ -347,7 +352,7 @@ int mlx5_eswitch_del_vlan_action(struct mlx5_eswitch *esw,
 	int err = 0;
 
 	/* nop if we're on the vlan push/pop non emulation mode */
-	if (mlx5_eswitch_vlan_actions_supported(esw->dev))
+	if (mlx5_eswitch_vlan_actions_supported(esw->dev, 1))
 		return 0;
 
 	if (!attr->vlan_handled)
@@ -524,7 +529,8 @@ static int esw_create_offloads_fast_fdb_table(struct mlx5_eswitch *esw)
 		esw_size >>= 1;
 
 	if (esw->offloads.encap != DEVLINK_ESWITCH_ENCAP_MODE_NONE)
-		flags |= MLX5_FLOW_TABLE_TUNNEL_EN;
+		flags |= (MLX5_FLOW_TABLE_TUNNEL_EN_REFORMAT |
+			  MLX5_FLOW_TABLE_TUNNEL_EN_DECAP);
 
 	fdb = mlx5_create_auto_grouped_flow_table(root_ns, FDB_FAST_PATH,
 						  esw_size,
@@ -1239,7 +1245,7 @@ int mlx5_devlink_eswitch_encap_mode_set(struct devlink *devlink, u8 encap)
 		return err;
 
 	if (encap != DEVLINK_ESWITCH_ENCAP_MODE_NONE &&
-	    (!MLX5_CAP_ESW_FLOWTABLE_FDB(dev, encap) ||
+	    (!MLX5_CAP_ESW_FLOWTABLE_FDB(dev, reformat) ||
 	     !MLX5_CAP_ESW_FLOWTABLE_FDB(dev, decap)))
 		return -EOPNOTSUPP;
 

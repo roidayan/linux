@@ -91,8 +91,8 @@ void ib_device_unregister_sysfs(struct ib_device *device);
 typedef void (*roce_netdev_callback)(struct ib_device *device, u8 port,
 	      struct net_device *idev, void *cookie);
 
-typedef int (*roce_netdev_filter)(struct ib_device *device, u8 port,
-	     struct net_device *idev, void *cookie);
+typedef bool (*roce_netdev_filter)(struct ib_device *device, u8 port,
+				   struct net_device *idev, void *cookie);
 
 void ib_enum_roce_netdev(struct ib_device *ib_dev,
 			 roce_netdev_filter filter,
@@ -340,5 +340,7 @@ int rdma_addr_find_l2_eth_by_grh(const union ib_gid *sgid,
 				 const union ib_gid *dgid,
 				 u8 *dmac, const struct net_device *ndev,
 				 int *hoplimit);
+void rdma_copy_src_l2_addr(struct rdma_dev_addr *dev_addr,
+			   const struct net_device *dev);
 
 #endif /* _CORE_PRIV_H */
