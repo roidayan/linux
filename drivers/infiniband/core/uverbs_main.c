@@ -902,14 +902,14 @@ static int ib_uverbs_close(struct inode *inode, struct file *filp)
 {
 	struct ib_uverbs_file *file = filp->private_data;
 
-	uverbs_destroy_ufile_hw(file, RDMA_REMOVE_CLOSE);
-
 	mutex_lock(&file->device->lists_mutex);
 	if (!file->is_closed) {
 		list_del(&file->list);
 		file->is_closed = 1;
 	}
 	mutex_unlock(&file->device->lists_mutex);
+
+	uverbs_destroy_ufile_hw(file, RDMA_REMOVE_CLOSE);
 
 	if (file->async_file)
 		kref_put(&file->async_file->ref,
