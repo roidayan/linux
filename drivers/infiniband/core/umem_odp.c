@@ -157,16 +157,14 @@ static void ib_ucontext_notifier_end_account(struct ib_ucontext *context)
 }
 
 static int ib_umem_notifier_release_trampoline(struct ib_umem *item, u64 start,
-					       u64 end, void *cookie) {
+					       u64 end, void *cookie)
+{
 	/*
 	 * Increase the number of notifiers running, to
 	 * prevent any further fault handling on this MR.
 	 */
 	ib_umem_notifier_start_account(item);
-	item->odp_data->dying = 1;
-	/* Make sure that the fact the umem is dying is out before we release
-	 * all pending page faults. */
-	smp_wmb();
+	WRITE_ONCE(item->odp_data->dying, 1);
 	complete_all(&item->odp_data->notifier_completion);
 	item->context->invalidate_range(item, ib_umem_start(item),
 					ib_umem_end(item));
