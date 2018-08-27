@@ -1781,6 +1781,9 @@ static int create_qp_common(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 			return -EFAULT;
 		}
 
+		if (MLX5_QP_CREATE_FLAGS_SUPPORTED(ucmd.flags))
+			return -EINVAL;
+
 		err = get_qp_user_index(to_mucontext(pd->uobject->context),
 					&ucmd, udata->inlen, &uidx);
 		if (err)

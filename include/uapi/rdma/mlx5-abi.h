@@ -49,6 +49,15 @@ enum {
 	MLX5_QP_FLAG_TIR_ALLOW_SELF_LB_MC = 1 << 7,
 };
 
+#define MLX5_QP_CREATE_FLAGS_SUPPORTED(flags)     \
+	 ((flags) & ~(                            \
+		MLX5_QP_FLAG_SIGNATURE		| \
+		MLX5_QP_FLAG_SCATTER_CQE	| \
+		MLX5_QP_FLAG_TUNNEL_OFFLOADS	| \
+		MLX5_QP_FLAG_BFREG_INDEX	| \
+		MLX5_QP_FLAG_TYPE_DCT		| \
+		MLX5_QP_FLAG_TYPE_DCI))           \
+
 enum {
 	MLX5_SRQ_FLAG_SIGNATURE		= 1 << 0,
 };
