@@ -182,19 +182,11 @@ static struct dst_entry *rxe_find_route6(struct net_device *ndev,
 
 #endif
 
-static struct dst_entry *rxe_find_route(struct rxe_dev *rxe,
+static struct dst_entry *rxe_find_route(struct net_device *ndev,
 					struct rxe_qp *qp,
 					struct rxe_av *av)
 {
-	const struct ib_gid_attr *attr;
 	struct dst_entry *dst = NULL;
-	struct net_device *ndev;
-
-	attr = rdma_get_gid_attr(&rxe->ib_dev, qp->attr.port_num,
-				 av->grh.sgid_index);
-	if (IS_ERR(attr))
-		return NULL;
-	ndev = attr->ndev;
 
 	if (qp_type(qp) == IB_QPT_RC)
 		dst = sk_dst_get(qp->sk->sk);
@@ -229,7 +221,6 @@ static struct dst_entry *rxe_find_route(struct rxe_dev *rxe,
 			sk_dst_set(qp->sk->sk, dst);
 		}
 	}
-	rdma_put_gid_attr(attr);
 	return dst;
 }
 
@@ -387,7 +378,7 @@ static int prepare4(struct rxe_dev *rxe, struct rxe_pkt_info *pkt,
 	struct in_addr *saddr = &av->sgid_addr._sockaddr_in.sin_addr;
 	struct in_addr *daddr = &av->dgid_addr._sockaddr_in.sin_addr;
 
-	dst = rxe_find_route(rxe, qp, av);
+	dst = rxe_find_route(skb->dev, qp, av);
 	if (!dst) {
 		pr_err("Host not reachable\n");
 		return -EHOSTUNREACH;
@@ -414,7 +405,7 @@ static int prepare6(struct rxe_dev *rxe, struct rxe_pkt_info *pkt,
 	struct in6_addr *saddr = &av->sgid_addr._sockaddr_in6.sin6_addr;
 	struct in6_addr *daddr = &av->dgid_addr._sockaddr_in6.sin6_addr;
 
-	dst = rxe_find_route(rxe, qp, av);
+	dst = rxe_find_route(skb->dev, qp, av);
 	if (!dst) {
 		pr_err("Host not reachable\n");
 		return -EHOSTUNREACH;
