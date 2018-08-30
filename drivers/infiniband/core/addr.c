@@ -219,18 +219,54 @@ int rdma_addr_size_kss(struct __kernel_sockaddr_storage *addr)
 }
 EXPORT_SYMBOL(rdma_addr_size_kss);
 
-void rdma_copy_addr(struct rdma_dev_addr *dev_addr,
-		    const struct net_device *dev,
-		    const unsigned char *dst_dev_addr)
+/**
+ * rdma_copy_src_l2_addr - Copy netdevice source addresses
+ * @dev_addr:	Destination address pointer where to copy the addresses
+ * @dev:	Netdevice whose source addresses to copy
+ *
+ * rdma_copy_src_l2_addr() copies source addresses from the specified netdevice.
+ * This includes unicast address, broadcast address, device type and
+ * interface index.
+ */
+void rdma_copy_src_l2_addr(struct rdma_dev_addr *dev_addr,
+			   const struct net_device *dev)
 {
 	dev_addr->dev_type = dev->type;
 	memcpy(dev_addr->src_dev_addr, dev->dev_addr, MAX_ADDR_LEN);
 	memcpy(dev_addr->broadcast, dev->broadcast, MAX_ADDR_LEN);
-	if (dst_dev_addr)
-		memcpy(dev_addr->dst_dev_addr, dst_dev_addr, MAX_ADDR_LEN);
 	dev_addr->bound_dev_if = dev->ifindex;
 }
-EXPORT_SYMBOL(rdma_copy_addr);
+EXPORT_SYMBOL(rdma_copy_src_l2_addr);
+
+static struct net_device *
+rdma_find_ndev_for_src_ip_rcu(struct net *net, const struct sockaddr *src_in)
+{
+	struct net_device *dev = NULL;
+	int ret = -EADDRNOTAVAIL;
+
+	switch (src_in->sa_family) {
+	case AF_INET:
+		dev = __ip_dev_find(net,
+				    ((const struct sockaddr_in *)src_in)->sin_addr.s_addr,
+				    false);
+		if (dev)
+			ret = 0;
+		break;
+#if IS_ENABLED(CONFIG_IPV6)
+	case AF_INET6:
+		for_each_netdev_rcu(net, dev) {
+			if (ipv6_chk_addr(net,
+					  &((const struct sockaddr_in6 *)src_in)->sin6_addr,
+					  dev, 1)) {
+				ret = 0;
+				break;
+			}
+		}
+		break;
+#endif
+	}
+	return ret ? ERR_PTR(ret) : dev;
+}
 
 int rdma_translate_ip(const struct sockaddr *addr,
 		      struct rdma_dev_addr *dev_addr)
@@ -241,38 +277,17 @@ int rdma_translate_ip(const struct sockaddr *addr,
 		dev = dev_get_by_index(dev_addr->net, dev_addr->bound_dev_if);
 		if (!dev)
 			return -ENODEV;
-		rdma_copy_addr(dev_addr, dev, NULL);
+		rdma_copy_src_l2_addr(dev_addr, dev);
 		dev_put(dev);
 		return 0;
 	}
 
-	switch (addr->sa_family) {
-	case AF_INET:
-		dev = ip_dev_find(dev_addr->net,
-			((const struct sockaddr_in *)addr)->sin_addr.s_addr);
-
-		if (!dev)
-			return -EADDRNOTAVAIL;
-
-		rdma_copy_addr(dev_addr, dev, NULL);
-		dev_put(dev);
-		break;
-#if IS_ENABLED(CONFIG_IPV6)
-	case AF_INET6:
-		rcu_read_lock();
-		for_each_netdev_rcu(dev_addr->net, dev) {
-			if (ipv6_chk_addr(dev_addr->net,
-					  &((const struct sockaddr_in6 *)addr)->sin6_addr,
-					  dev, 1)) {
-				rdma_copy_addr(dev_addr, dev, NULL);
-				break;
-			}
-		}
-		rcu_read_unlock();
-		break;
-#endif
-	}
-	return 0;
+	rcu_read_lock();
+	dev = rdma_find_ndev_for_src_ip_rcu(dev_addr->net, addr);
+	if (!IS_ERR(dev))
+		rdma_copy_src_l2_addr(dev_addr, dev);
+	rcu_read_unlock();
+	return PTR_ERR_OR_ZERO(dev);
 }
 EXPORT_SYMBOL(rdma_translate_ip);
 
@@ -295,15 +310,12 @@ static void queue_req(struct addr_req *req)
 	spin_unlock_bh(&lock);
 }
 
-static int ib_nl_fetch_ha(const struct dst_entry *dst,
-			  struct rdma_dev_addr *dev_addr,
+static int ib_nl_fetch_ha(struct rdma_dev_addr *dev_addr,
 			  const void *daddr, u32 seq, u16 family)
 {
 	if (rdma_nl_chk_listeners(RDMA_NL_GROUP_LS))
 		return -EADDRNOTAVAIL;
 
-	/* We fill in what we can, the response will fill the rest */
-	rdma_copy_addr(dev_addr, dst->dev, NULL);
 	return ib_nl_ip_send_msg(dev_addr, daddr, seq, family);
 }
 
@@ -322,7 +334,7 @@ static int dst_fetch_ha(const struct dst_entry *dst,
 		neigh_event_send(n, NULL);
 		ret = -ENODATA;
 	} else {
-		rdma_copy_addr(dev_addr, dst->dev, n->ha);
+		memcpy(dev_addr->dst_dev_addr, n->ha, MAX_ADDR_LEN);
 	}
 
 	neigh_release(n);
@@ -356,18 +368,22 @@ static int fetch_ha(const struct dst_entry *dst, struct rdma_dev_addr *dev_addr,
 		(const void *)&dst_in6->sin6_addr;
 	sa_family_t family = dst_in->sa_family;
 
-	/* Gateway + ARPHRD_INFINIBAND -> IB router */
-	if (has_gateway(dst, family) && dst->dev->type == ARPHRD_INFINIBAND)
-		return ib_nl_fetch_ha(dst, dev_addr, daddr, seq, family);
+	/* If we have a gateway in IB mode then it must be an IB network */
+	if (has_gateway(dst, family) && dev_addr->network == RDMA_NETWORK_IB)
+		return ib_nl_fetch_ha(dev_addr, daddr, seq, family);
 	else
 		return dst_fetch_ha(dst, dev_addr, daddr);
 }
 
-static int addr4_resolve(struct sockaddr_in *src_in,
-			 const struct sockaddr_in *dst_in,
+static int addr4_resolve(struct sockaddr *src_sock,
+			 const struct sockaddr *dst_sock,
 			 struct rdma_dev_addr *addr,
 			 struct rtable **prt)
 {
+	struct sockaddr_in *src_in = (struct sockaddr_in *)src_sock;
+	const struct sockaddr_in *dst_in =
+			(const struct sockaddr_in *)dst_sock;
+
 	__be32 src_ip = src_in->sin_addr.s_addr;
 	__be32 dst_ip = dst_in->sin_addr.s_addr;
 	struct rtable *rt;
@@ -383,15 +399,7 @@ static int addr4_resolve(struct sockaddr_in *src_in,
 	if (ret)
 		return ret;
 
-	src_in->sin_family = AF_INET;
 	src_in->sin_addr.s_addr = fl4.saddr;
-
-	/* If there's a gateway and type of device not ARPHRD_INFINIBAND, we're
-	 * definitely in RoCE v2 (as RoCE v1 isn't routable) set the network
-	 * type accordingly.
-	 */
-	if (rt->rt_uses_gateway && rt->dst.dev->type != ARPHRD_INFINIBAND)
-		addr->network = RDMA_NETWORK_IPV4;
 
 	addr->hoplimit = ip4_dst_hoplimit(&rt->dst);
 
@@ -400,14 +408,16 @@ static int addr4_resolve(struct sockaddr_in *src_in,
 }
 
 #if IS_ENABLED(CONFIG_IPV6)
-static int addr6_resolve(struct sockaddr_in6 *src_in,
-			 const struct sockaddr_in6 *dst_in,
+static int addr6_resolve(struct sockaddr *src_sock,
+			 const struct sockaddr *dst_sock,
 			 struct rdma_dev_addr *addr,
 			 struct dst_entry **pdst)
 {
+	struct sockaddr_in6 *src_in = (struct sockaddr_in6 *)src_sock;
+	const struct sockaddr_in6 *dst_in =
+				(const struct sockaddr_in6 *)dst_sock;
 	struct flowi6 fl6;
 	struct dst_entry *dst;
-	struct rt6_info *rt;
 	int ret;
 
 	memset(&fl6, 0, sizeof fl6);
@@ -419,19 +429,8 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
 	if (ret < 0)
 		return ret;
 
-	rt = (struct rt6_info *)dst;
-	if (ipv6_addr_any(&src_in->sin6_addr)) {
-		src_in->sin6_family = AF_INET6;
+	if (ipv6_addr_any(&src_in->sin6_addr))
 		src_in->sin6_addr = fl6.saddr;
-	}
-
-	/* If there's a gateway and type of device not ARPHRD_INFINIBAND, we're
-	 * definitely in RoCE v2 (as RoCE v1 isn't routable) set the network
-	 * type accordingly.
-	 */
-	if (rt->rt6i_flags & RTF_GATEWAY &&
-	    ip6_dst_idev(dst)->dev->type != ARPHRD_INFINIBAND)
-		addr->network = RDMA_NETWORK_IPV6;
 
 	addr->hoplimit = ip6_dst_hoplimit(dst);
 
@@ -439,8 +438,8 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
 	return 0;
 }
 #else
-static int addr6_resolve(struct sockaddr_in6 *src_in,
-			 const struct sockaddr_in6 *dst_in,
+static int addr6_resolve(struct sockaddr *src_sock,
+			 const struct sockaddr *dst_sock,
 			 struct rdma_dev_addr *addr,
 			 struct dst_entry **pdst)
 {
@@ -451,25 +450,72 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
 static int addr_resolve_neigh(const struct dst_entry *dst,
 			      const struct sockaddr *dst_in,
 			      struct rdma_dev_addr *addr,
+			      unsigned int ndev_flags,
 			      u32 seq)
 {
-	if (dst->dev->flags & IFF_LOOPBACK) {
-		int ret;
+	int ret = 0;
 
-		ret = rdma_translate_ip(dst_in, addr);
-		if (!ret)
-			memcpy(addr->dst_dev_addr, addr->src_dev_addr,
-			       MAX_ADDR_LEN);
+	if (ndev_flags & IFF_LOOPBACK) {
+		memcpy(addr->dst_dev_addr, addr->src_dev_addr, MAX_ADDR_LEN);
+	} else {
+		if (!(ndev_flags & IFF_NOARP)) {
+			/* If the device doesn't do ARP internally */
+			ret = fetch_ha(dst, addr, dst_in, seq);
+		}
+	}
+	return ret;
+}
 
-		return ret;
+static void copy_src_l2_addr(struct rdma_dev_addr *dev_addr,
+			     const struct sockaddr *dst_in,
+			     const struct dst_entry *dst,
+			     const struct net_device *ndev)
+{
+	int ret = 0;
+
+	if (dst->dev->flags & IFF_LOOPBACK)
+		ret = rdma_translate_ip(dst_in, dev_addr);
+	else
+		rdma_copy_src_l2_addr(dev_addr, dst->dev);
+
+	/*
+	 * If there's a gateway and type of device not ARPHRD_INFINIBAND,
+	 * we're definitely in RoCE v2 (as RoCE v1 isn't routable) set the
+	 * network type accordingly.
+	 */
+	if (has_gateway(dst, dst_in->sa_family) &&
+	    ndev->type != ARPHRD_INFINIBAND)
+		dev_addr->network = dst_in->sa_family == AF_INET ?
+						RDMA_NETWORK_IPV4 :
+						RDMA_NETWORK_IPV6;
+	else
+		dev_addr->network = RDMA_NETWORK_IB;
+}
+
+static int
+rdma_set_src_addr_rcu(struct rdma_dev_addr *dev_addr,
+		      unsigned int *ndev_flags,
+		      const struct sockaddr *dst_in,
+		      const struct dst_entry *dst)
+{
+	struct net_device *ndev = READ_ONCE(dst->dev);
+
+	*ndev_flags = ndev->flags;
+	/* A physical device must be the RDMA device to use */
+	if (ndev->flags & IFF_LOOPBACK) {
+		/*
+		 * RDMA (IB/RoCE, iWarp) doesn't run on lo interface or
+		 * loopback IP address. So if route is resolved to loopback
+		 * interface, translate that to a real ndev based on non
+		 * loopback IP address. Returns a referenced pointer to
+		 * netdevice or appropriate error code.
+		 */
+		ndev = rdma_find_ndev_for_src_ip_rcu(dev_net(ndev), dst_in);
+		if (!ndev)
+			return -ENODEV;
 	}
 
-	/* If the device doesn't do ARP internally */
-	if (!(dst->dev->flags & IFF_NOARP))
-		return fetch_ha(dst, addr, dst_in, seq);
-
-	rdma_copy_addr(addr, dst->dev, NULL);
-
+	copy_src_l2_addr(dev_addr, dst_in, dst, ndev);
 	return 0;
 }
 
@@ -479,8 +525,9 @@ static int addr_resolve(struct sockaddr *src_in,
 			bool resolve_neigh,
 			u32 seq)
 {
-	struct net_device *ndev;
-	struct dst_entry *dst;
+	struct dst_entry *dst = NULL;
+	unsigned int ndev_flags = 0;
+	struct rtable *rt = NULL;
 	int ret;
 
 	if (!addr->net) {
@@ -488,58 +535,31 @@ static int addr_resolve(struct sockaddr *src_in,
 		return -EINVAL;
 	}
 
+	rcu_read_lock();
 	if (src_in->sa_family == AF_INET) {
-		struct rtable *rt = NULL;
-		const struct sockaddr_in *dst_in4 =
-			(const struct sockaddr_in *)dst_in;
-
-		ret = addr4_resolve((struct sockaddr_in *)src_in,
-				    dst_in4, addr, &rt);
-		if (ret)
-			return ret;
-
-		if (resolve_neigh)
-			ret = addr_resolve_neigh(&rt->dst, dst_in, addr, seq);
-
-		if (addr->bound_dev_if) {
-			ndev = dev_get_by_index(addr->net, addr->bound_dev_if);
-		} else {
-			ndev = rt->dst.dev;
-			dev_hold(ndev);
-		}
-
-		ip_rt_put(rt);
+		ret = addr4_resolve(src_in, dst_in, addr, &rt);
+		dst = &rt->dst;
 	} else {
-		const struct sockaddr_in6 *dst_in6 =
-			(const struct sockaddr_in6 *)dst_in;
+		ret = addr6_resolve(src_in, dst_in, addr, &dst);
+	}
+	if (ret) {
+		rcu_read_unlock();
+		return ret;
+	}
+	ret = rdma_set_src_addr_rcu(addr, &ndev_flags, dst_in, dst);
+	rcu_read_unlock();
 
-		ret = addr6_resolve((struct sockaddr_in6 *)src_in,
-				    dst_in6, addr,
-				    &dst);
-		if (ret)
-			return ret;
+	/*
+	 * Resolve neighbor destination address if requested and
+	 * only if src addr translation didn't fail.
+	 */
+	if (!ret && resolve_neigh)
+		ret = addr_resolve_neigh(dst, dst_in, addr, ndev_flags, seq);
 
-		if (resolve_neigh)
-			ret = addr_resolve_neigh(dst, dst_in, addr, seq);
-
-		if (addr->bound_dev_if) {
-			ndev = dev_get_by_index(addr->net, addr->bound_dev_if);
-		} else {
-			ndev = dst->dev;
-			dev_hold(ndev);
-		}
-
+	if (src_in->sa_family == AF_INET)
+		ip_rt_put(rt);
+	else
 		dst_release(dst);
-	}
-
-	if (ndev) {
-		if (ndev->flags & IFF_LOOPBACK)
-			ret = rdma_translate_ip(dst_in, addr);
-		else
-			addr->bound_dev_if = ndev->ifindex;
-		dev_put(ndev);
-	}
-
 	return ret;
 }
 
@@ -660,6 +680,13 @@ int rdma_resolve_ip_route(struct sockaddr *src_addr,
 	return addr_resolve(src_in, dst_addr, addr, false, 0);
 }
 
+/**
+ * rdma_addr_cancel - Cancel resolve ip request
+ * @addr:	Pointer to address structure given previously
+ *		during rdma_resolve_ip().
+ * rdma_addr_cancel() is synchronous function which cancels any pending
+ * request if there is any.
+ */
 void rdma_addr_cancel(struct rdma_dev_addr *addr)
 {
 	struct addr_req *req, *temp_req;
@@ -687,11 +714,6 @@ void rdma_addr_cancel(struct rdma_dev_addr *addr)
 	 * guarentees no work is running and none will be started.
 	 */
 	cancel_delayed_work_sync(&found->work);
-
-	if (found->callback)
-		found->callback(-ECANCELED, (struct sockaddr *)&found->src_addr,
-			      found->addr, found->context);
-
 	kfree(found);
 }
 EXPORT_SYMBOL(rdma_addr_cancel);
