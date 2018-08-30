@@ -71,6 +71,7 @@
 
 extern struct workqueue_struct *ib_wq;
 extern struct workqueue_struct *ib_comp_wq;
+extern struct workqueue_struct *ib_comp_unbound_wq;
 
 union ib_gid {
 	u8	raw[16];
@@ -1485,7 +1486,7 @@ struct ib_ucontext {
 	 * it is set when we are closing the file descriptor and indicates
 	 * that mm_sem may be locked.
 	 */
-	int			closing;
+	bool			closing;
 
 	bool cleanup_retryable;
 
@@ -1570,9 +1571,10 @@ struct ib_ah {
 typedef void (*ib_comp_handler)(struct ib_cq *cq, void *cq_context);
 
 enum ib_poll_context {
-	IB_POLL_DIRECT,		/* caller context, no hw completions */
-	IB_POLL_SOFTIRQ,	/* poll from softirq context */
-	IB_POLL_WORKQUEUE,	/* poll from workqueue */
+	IB_POLL_DIRECT,		   /* caller context, no hw completions */
+	IB_POLL_SOFTIRQ,	   /* poll from softirq context */
+	IB_POLL_WORKQUEUE,	   /* poll from workqueue */
+	IB_POLL_UNBOUND_WORKQUEUE, /* poll from unbound workqueue */
 };
 
 struct ib_cq {
@@ -1589,6 +1591,7 @@ struct ib_cq {
 		struct irq_poll		iop;
 		struct work_struct	work;
 	};
+	struct workqueue_struct *comp_wq;
 	/*
 	 * Implementation details of the RDMA core, don't use in drivers:
 	 */
@@ -2223,6 +2226,16 @@ struct rdma_netdev {
 			    union ib_gid *gid, u16 mlid);
 };
 
+struct rdma_netdev_alloc_params {
+	size_t sizeof_priv;
+	unsigned int txqs;
+	unsigned int rxqs;
+	void *param;
+
+	int (*initialize_rdma_netdev)(struct ib_device *device, u8 port_num,
+				      struct net_device *netdev, void *param);
+};
+
 struct ib_port_pkey_list {
 	/* Lock to hold while modifying the list. */
 	spinlock_t                    list_lock;
@@ -2253,10 +2266,11 @@ struct ib_device {
 	struct list_head              event_handler_list;
 	spinlock_t                    event_handler_lock;
 
-	spinlock_t                    client_data_lock;
+	rwlock_t			client_data_lock;
 	struct list_head              core_list;
 	/* Access to the client_data_list is protected by the client_data_lock
-	 * spinlock and the lists_rwsem read-write semaphore */
+	 * rwlock and the lists_rwsem read-write semaphore
+	 */
 	struct list_head              client_data_list;
 
 	struct ib_cache               cache;
@@ -2523,8 +2537,8 @@ struct ib_device {
 	/**
 	 * rdma netdev operation
 	 *
-	 * Driver implementing alloc_rdma_netdev must return -EOPNOTSUPP if it
-	 * doesn't support the specified rdma netdev type.
+	 * Driver implementing alloc_rdma_netdev or rdma_netdev_get_params
+	 * must return -EOPNOTSUPP if it doesn't support the specified type.
 	 */
 	struct net_device *(*alloc_rdma_netdev)(
 					struct ib_device *device,
@@ -2534,8 +2548,15 @@ struct ib_device {
 					unsigned char name_assign_type,
 					void (*setup)(struct net_device *));
 
+	int (*rdma_netdev_get_params)(struct ib_device *device, u8 port_num,
+				      enum rdma_netdev_t type,
+				      struct rdma_netdev_alloc_params *params);
+
 	struct module               *owner;
 	struct device                dev;
+	/* First group for device attributes, NULL terminated array */
+	const struct attribute_group	*groups[2];
+
 	struct kobject               *ports_parent;
 	struct list_head             port_list;
 
@@ -4153,20 +4174,6 @@ ib_get_vector_affinity(struct ib_device *device, int comp_vector)
 
 }
 
-static inline void ib_set_flow(struct ib_uobject *uobj, struct ib_flow *ibflow,
-			       struct ib_qp *qp, struct ib_device *device)
-{
-	uobj->object = ibflow;
-	ibflow->uobject = uobj;
-
-	if (qp) {
-		atomic_inc(&qp->usecnt);
-		ibflow->qp = qp;
-	}
-
-	ibflow->device = device;
-}
-
 /**
  * rdma_roce_rescan_device - Rescan all of the network devices in the system
  * and add their gids, as needed, to the relevant RoCE devices.
@@ -4179,4 +4186,16 @@ struct ib_ucontext *ib_uverbs_get_ucontext(struct ib_uverbs_file *ufile);
 
 int uverbs_destroy_def_handler(struct ib_uverbs_file *file,
 			       struct uverbs_attr_bundle *attrs);
+
+struct net_device *rdma_alloc_netdev(struct ib_device *device, u8 port_num,
+				     enum rdma_netdev_t type, const char *name,
+				     unsigned char name_assign_type,
+				     void (*setup)(struct net_device *));
+
+int rdma_init_netdev(struct ib_device *device, u8 port_num,
+		     enum rdma_netdev_t type, const char *name,
+		     unsigned char name_assign_type,
+		     void (*setup)(struct net_device *),
+		     struct net_device *netdev);
+
 #endif /* IB_VERBS_H */
