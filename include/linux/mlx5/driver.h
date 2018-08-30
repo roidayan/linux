@@ -583,10 +583,11 @@ struct mlx5_irq_info {
 };
 
 struct mlx5_fc_stats {
-	struct rb_root counters;
-	struct list_head addlist;
-	/* protect addlist add/splice operations */
-	spinlock_t addlist_lock;
+	spinlock_t counters_idr_lock; /* protects counters_idr */
+	struct idr counters_idr;
+	struct list_head counters;
+	struct llist_head addlist;
+	struct llist_head dellist;
 
 	struct workqueue_struct *wq;
 	struct delayed_work work;
@@ -804,7 +805,7 @@ struct mlx5_pps {
 };
 
 struct mlx5_clock {
-	rwlock_t                   lock;
+	seqlock_t                  lock;
 	struct cyclecounter        cycles;
 	struct timecounter         tc;
 	struct hwtstamp_config     hwtstamp_config;
@@ -1052,7 +1053,7 @@ int mlx5_cmd_free_uar(struct mlx5_core_dev *dev, u32 uarn);
 void mlx5_health_cleanup(struct mlx5_core_dev *dev);
 int mlx5_health_init(struct mlx5_core_dev *dev);
 void mlx5_start_health_poll(struct mlx5_core_dev *dev);
-void mlx5_stop_health_poll(struct mlx5_core_dev *dev);
+void mlx5_stop_health_poll(struct mlx5_core_dev *dev, bool disable_health);
 void mlx5_drain_health_wq(struct mlx5_core_dev *dev);
 void mlx5_trigger_health_work(struct mlx5_core_dev *dev);
 void mlx5_drain_health_recovery(struct mlx5_core_dev *dev);
