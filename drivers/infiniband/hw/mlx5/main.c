@@ -1884,6 +1884,16 @@ out_ctx:
 	return ERR_PTR(err);
 }
 
+#if IS_ENABLED(CONFIG_INFINIBAND_ON_DEMAND_PAGING)
+static void mlx5_ib_free_ucontext_delayed(struct rcu_head *rcu)
+{
+	struct mlx5_ib_ucontext *context =
+		container_of(rcu, struct mlx5_ib_ucontext, rcu);
+
+	kfree(context);
+}
+#endif
+
 static int mlx5_ib_dealloc_ucontext(struct ib_ucontext *ibcontext)
 {
 	struct mlx5_ib_ucontext *context = to_mucontext(ibcontext);
@@ -1899,7 +1909,11 @@ static int mlx5_ib_dealloc_ucontext(struct ib_ucontext *ibcontext)
 	deallocate_uars(dev, context);
 	kfree(bfregi->sys_pages);
 	kfree(bfregi->count);
-	kfree(context);
+	if (IS_ENABLED(CONFIG_INFINIBAND_ON_DEMAND_PAGING))
+		mmu_notifier_call_srcu(&context->rcu,
+				       &mlx5_ib_free_ucontext_delayed);
+	else
+		kfree(context);
 
 	return 0;
 }

@@ -511,7 +511,7 @@ void ib_umem_odp_release(struct ib_umem *umem)
 			 * removed already.
 			 */
 			goto out_put_task;
-		mmu_notifier_unregister(&context->mn, owning_mm);
+		mmu_notifier_unregister_no_release(&context->mn, owning_mm);
 
 		mmput(owning_mm);
 
