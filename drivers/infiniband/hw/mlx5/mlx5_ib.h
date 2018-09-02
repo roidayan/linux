@@ -143,6 +143,10 @@ struct mlx5_ib_ucontext {
 	u16			devx_uid;
 	/* For RoCE LAG TX affinity */
 	atomic_t		tx_port_affinity;
+#if IS_ENABLED(CONFIG_INFINIBAND_ON_DEMAND_PAGING)
+	/* Need for delayed kfree of mlx5_ib_ucontext for mmu_notifier */
+	struct rcu_head		rcu;
+#endif
 };
 
 static inline struct mlx5_ib_ucontext *to_mucontext(struct ib_ucontext *ibucontext)
