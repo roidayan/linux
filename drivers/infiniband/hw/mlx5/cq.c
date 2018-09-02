@@ -778,7 +778,7 @@ static int create_cq_user(struct mlx5_ib_dev *dev, struct ib_udata *udata,
 			  int entries, u32 **cqb,
 			  int *cqe_size, int *index, int *inlen)
 {
-	struct mlx5_ib_create_cq ucmd = {};
+	struct mlx5_ib_create_cq *ucmd;
 	size_t ucmdlen;
 	int page_shift;
 	__be64 *pas;
@@ -787,41 +787,48 @@ static int create_cq_user(struct mlx5_ib_dev *dev, struct ib_udata *udata,
 	void *cqc;
 	int err;
 
-	ucmdlen = udata->inlen < sizeof(ucmd) ?
-		  (sizeof(ucmd) - sizeof(ucmd.flags)) : sizeof(ucmd);
+	ucmd = kvzalloc(sizeof(*ucmd), GFP_KERNEL);
+	if (!ucmd)
+		return -ENOMEM;
 
-	if (ib_copy_from_udata(&ucmd, udata, ucmdlen))
+	ucmdlen = udata->inlen < sizeof(*ucmd) ?
+		  (sizeof(*ucmd) - sizeof(ucmd->flags)) : sizeof(*ucmd);
+
+	if (ib_copy_from_udata(ucmd, udata, ucmdlen))
 		return -EFAULT;
 
-	if (ucmdlen == sizeof(ucmd) &&
-	    (ucmd.flags & ~(MLX5_IB_CREATE_CQ_FLAGS_CQE_128B_PAD)))
+	if (ucmdlen == sizeof(*ucmd) &&
+	    (ucmd->flags & ~(MLX5_IB_CREATE_CQ_FLAGS_CQE_128B_PAD)))
 		return -EINVAL;
 
-	if (ucmd.cqe_size != 64 && ucmd.cqe_size != 128)
+	if (ucmd->cqe_size != 64 && ucmd->cqe_size != 128)
 		return -EINVAL;
 
-	*cqe_size = ucmd.cqe_size;
+	*cqe_size = ucmd->cqe_size;
 
-	cq->buf.umem = ib_umem_get(context, ucmd.buf_addr,
-				   entries * ucmd.cqe_size,
+	cq->buf.umem = ib_umem_get(context, ucmd->buf_addr,
+				   entries * ucmd->cqe_size,
 				   IB_ACCESS_LOCAL_WRITE, 1);
 	if (IS_ERR(cq->buf.umem)) {
 		err = PTR_ERR(cq->buf.umem);
 		return err;
 	}
 
-	err = mlx5_ib_db_map_user(to_mucontext(context), ucmd.db_addr,
+	err = mlx5_ib_db_map_user(to_mucontext(context), ucmd->db_addr,
 				  &cq->db);
 	if (err)
 		goto err_umem;
 
-	mlx5_ib_cont_pages(cq->buf.umem, ucmd.buf_addr, 0, &npages, &page_shift,
-			   &ncont, NULL);
-	mlx5_ib_dbg(dev, "addr 0x%llx, size %u, npages %d, page_shift %d, ncont %d\n",
-		    ucmd.buf_addr, entries * ucmd.cqe_size, npages, page_shift, ncont);
-
+	mlx5_ib_cont_pages(cq->buf.umem, ucmd->buf_addr, 0, &npages,
+			   &page_shift, &ncont, NULL);
+	mlx5_ib_dbg(
+		dev,
+		"addr 0x%llx, size %u, npages %d, page_shift %d, ncont %d\n",
+		ucmd->buf_addr, entries * ucmd->cqe_size, npages, page_shift,
+		ncont);
 	*inlen = MLX5_ST_SZ_BYTES(create_cq_in) +
 		 MLX5_FLD_SZ_BYTES(create_cq_in, pas[0]) * ncont;
+
 	*cqb = kvzalloc(*inlen, GFP_KERNEL);
 	if (!*cqb) {
 		err = -ENOMEM;
@@ -837,7 +844,7 @@ static int create_cq_user(struct mlx5_ib_dev *dev, struct ib_udata *udata,
 
 	*index = to_mucontext(context)->bfregi.sys_pages[0];
 
-	if (ucmd.cqe_comp_en == 1) {
+	if (ucmd->cqe_comp_en == 1) {
 		int mini_cqe_format;
 
 		if (!((*cqe_size == 128 &&
@@ -852,11 +859,11 @@ static int create_cq_user(struct mlx5_ib_dev *dev, struct ib_udata *udata,
 
 		mini_cqe_format =
 			mini_cqe_res_format_to_hw(dev,
-						  ucmd.cqe_comp_res_format);
+						  ucmd->cqe_comp_res_format);
 		if (mini_cqe_format < 0) {
 			err = mini_cqe_format;
 			mlx5_ib_dbg(dev, "CQE compression res format %d error: %d\n",
-				    ucmd.cqe_comp_res_format, err);
+				    ucmd->cqe_comp_res_format, err);
 			goto err_cqb;
 		}
 
@@ -864,7 +871,7 @@ static int create_cq_user(struct mlx5_ib_dev *dev, struct ib_udata *udata,
 		MLX5_SET(cqc, cqc, mini_cqe_res_format, mini_cqe_format);
 	}
 
-	if (ucmd.flags & MLX5_IB_CREATE_CQ_FLAGS_CQE_128B_PAD) {
+	if (ucmd->flags & MLX5_IB_CREATE_CQ_FLAGS_CQE_128B_PAD) {
 		if (*cqe_size != 128 ||
 		    !MLX5_CAP_GEN(dev->mdev, cqe_128_always)) {
 			err = -EOPNOTSUPP;
@@ -877,6 +884,7 @@ static int create_cq_user(struct mlx5_ib_dev *dev, struct ib_udata *udata,
 		cq->private_flags |= MLX5_IB_CQ_PR_FLAGS_CQE_128_PAD;
 	}
 
+	kvfree(ucmd);
 	return 0;
 
 err_cqb:
@@ -887,6 +895,7 @@ err_db:
 
 err_umem:
 	ib_umem_release(cq->buf.umem);
+	kvfree(ucmd);
 	return err;
 }
 

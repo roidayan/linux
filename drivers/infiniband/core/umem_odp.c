@@ -157,16 +157,14 @@ static void ib_ucontext_notifier_end_account(struct ib_ucontext *context)
 }
 
 static int ib_umem_notifier_release_trampoline(struct ib_umem *item, u64 start,
-					       u64 end, void *cookie) {
+					       u64 end, void *cookie)
+{
 	/*
 	 * Increase the number of notifiers running, to
 	 * prevent any further fault handling on this MR.
 	 */
 	ib_umem_notifier_start_account(item);
-	item->odp_data->dying = 1;
-	/* Make sure that the fact the umem is dying is out before we release
-	 * all pending page faults. */
-	smp_wmb();
+	WRITE_ONCE(item->odp_data->dying, 1);
 	complete_all(&item->odp_data->notifier_completion);
 	item->context->invalidate_range(item, ib_umem_start(item),
 					ib_umem_end(item));
@@ -431,13 +429,7 @@ int ib_umem_odp_get(struct ib_ucontext *context, struct ib_umem *umem,
 		atomic_set(&context->notifier_count, 0);
 		INIT_HLIST_NODE(&context->mn.hlist);
 		context->mn.ops = &ib_umem_notifiers;
-		/*
-		 * Lock-dep detects a false positive for mmap_sem vs.
-		 * umem_rwsem, due to not grasping downgrade_write correctly.
-		 */
-		lockdep_off();
 		ret_val = mmu_notifier_register(&context->mn, mm);
-		lockdep_on();
 		if (ret_val) {
 			pr_err("Failed to register mmu_notifier %d\n", ret_val);
 			ret_val = -EBUSY;
@@ -519,7 +511,7 @@ void ib_umem_odp_release(struct ib_umem *umem)
 			 * removed already.
 			 */
 			goto out_put_task;
-		mmu_notifier_unregister(&context->mn, owning_mm);
+		mmu_notifier_unregister_no_release(&context->mn, owning_mm);
 
 		mmput(owning_mm);
 
