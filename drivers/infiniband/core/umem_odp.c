@@ -431,13 +431,7 @@ int ib_umem_odp_get(struct ib_ucontext *context, struct ib_umem *umem,
 		atomic_set(&context->notifier_count, 0);
 		INIT_HLIST_NODE(&context->mn.hlist);
 		context->mn.ops = &ib_umem_notifiers;
-		/*
-		 * Lock-dep detects a false positive for mmap_sem vs.
-		 * umem_rwsem, due to not grasping downgrade_write correctly.
-		 */
-		lockdep_off();
 		ret_val = mmu_notifier_register(&context->mn, mm);
-		lockdep_on();
 		if (ret_val) {
 			pr_err("Failed to register mmu_notifier %d\n", ret_val);
 			ret_val = -EBUSY;
@@ -519,7 +513,7 @@ void ib_umem_odp_release(struct ib_umem *umem)
 			 * removed already.
 			 */
 			goto out_put_task;
-		mmu_notifier_unregister(&context->mn, owning_mm);
+		mmu_notifier_unregister_no_release(&context->mn, owning_mm);
 
 		mmput(owning_mm);
 
