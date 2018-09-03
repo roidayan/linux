@@ -1088,7 +1088,7 @@ static void destroy_flow_rule_vport_sq(struct mlx5_ib_dev *dev,
 
 static int create_raw_packet_qp_sq(struct mlx5_ib_dev *dev,
 				   struct mlx5_ib_sq *sq, void *qpin,
-				   struct ib_pd *pd)
+				   struct ib_pd *pd, u16 uid)
 {
 	struct mlx5_ib_ubuffer *ubuffer = &sq->ubuffer;
 	__be64 *pas;
@@ -1116,6 +1116,7 @@ static int create_raw_packet_qp_sq(struct mlx5_ib_dev *dev,
 		goto err_umem;
 	}
 
+	MLX5_SET(create_sq_in, in, uid, uid);
 	sqc = MLX5_ADDR_OF(create_sq_in, in, ctx);
 	MLX5_SET(sqc, sqc, flush_in_error_en, 1);
 	if (MLX5_CAP_ETH(dev->mdev, multi_pkt_send_wqe))
@@ -1336,7 +1337,7 @@ static int create_raw_packet_qp(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
 		if (err)
 			return err;
 
-		err = create_raw_packet_qp_sq(dev, sq, in, pd);
+		err = create_raw_packet_qp_sq(dev, sq, in, pd, uid);
 		if (err)
 			goto err_destroy_tis;
 
@@ -2875,7 +2876,8 @@ out:
 static int modify_raw_packet_qp_sq(struct mlx5_core_dev *dev,
 				   struct mlx5_ib_sq *sq,
 				   int new_state,
-				   const struct mlx5_modify_raw_qp_param *raw_qp_param)
+				   const struct mlx5_modify_raw_qp_param *raw_qp_param,
+				   u16 uid)
 {
 	struct mlx5_ib_qp *ibqp = sq->base.container_mibqp;
 	struct mlx5_rate_limit old_rl = ibqp->rl;
@@ -2892,6 +2894,7 @@ static int modify_raw_packet_qp_sq(struct mlx5_core_dev *dev,
 	if (!in)
 		return -ENOMEM;
 
+	MLX5_SET(modify_sq_in, in, uid, uid);
 	MLX5_SET(modify_sq_in, in, sq_state, sq->state);
 
 	sqc = MLX5_ADDR_OF(modify_sq_in, in, ctx);
@@ -3009,7 +3012,8 @@ static int modify_raw_packet_qp(struct mlx5_ib_dev *dev, struct mlx5_ib_qp *qp,
 				return err;
 		}
 
-		return modify_raw_packet_qp_sq(dev->mdev, sq, sq_state, raw_qp_param);
+		return modify_raw_packet_qp_sq(dev->mdev, sq, sq_state,
+					       raw_qp_param, uid);
 	}
 
 	return 0;
