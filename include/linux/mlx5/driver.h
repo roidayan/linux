@@ -443,6 +443,7 @@ struct mlx5_core_mkey {
 	u32			key;
 	u32			pd;
 	u32			type;
+	u16			uid;
 };
 
 #define MLX5_24BIT_MASK		((1 << 24) - 1)
