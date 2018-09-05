@@ -204,7 +204,7 @@ static struct tty_driver *hvc_console_device(struct console *c, int *index)
 }
 
 static int hvc_console_setup(struct console *co, char *options)
-{	
+{
 	if (co->index < 0 || co->index >= MAX_NR_HVC_CONSOLES)
 		return -ENODEV;
 
@@ -522,6 +522,8 @@ static int hvc_write(struct tty_struct *tty, const unsigned char *buf, int count
 		return -EIO;
 
 	while (count > 0) {
+		int ret = 0;
+
 		spin_lock_irqsave(&hp->lock, flags);
 
 		rsize = hp->outbuf_size - hp->n_outbuf;
@@ -537,9 +539,12 @@ static int hvc_write(struct tty_struct *tty, const unsigned char *buf, int count
 		}
 
 		if (hp->n_outbuf > 0)
-			hvc_push(hp);
+			ret = hvc_push(hp);
 
 		spin_unlock_irqrestore(&hp->lock, flags);
+
+		if (!ret)
+			break;
 
 		if (count) {
 			if (hp->n_outbuf > 0)
