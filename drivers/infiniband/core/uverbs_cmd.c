@@ -120,7 +120,7 @@ ssize_t ib_uverbs_get_context(struct ib_uverbs_file *file,
 	rcu_read_lock();
 	ucontext->tgid = get_task_pid(current->group_leader, PIDTYPE_PID);
 	rcu_read_unlock();
-	ucontext->closing = 0;
+	ucontext->closing = false;
 	ucontext->cleanup_retryable = false;
 
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
@@ -2747,16 +2747,7 @@ out_put:
 	return ret ? ret : in_len;
 }
 
-struct ib_uflow_resources {
-	size_t			max;
-	size_t			num;
-	size_t			collection_num;
-	size_t			counters_num;
-	struct ib_counters	**counters;
-	struct ib_flow_action	**collection;
-};
-
-static struct ib_uflow_resources *flow_resources_alloc(size_t num_specs)
+struct ib_uflow_resources *flow_resources_alloc(size_t num_specs)
 {
 	struct ib_uflow_resources *resources;
 
@@ -2786,6 +2777,7 @@ err:
 
 	return NULL;
 }
+EXPORT_SYMBOL(flow_resources_alloc);
 
 void ib_uverbs_flow_resources_free(struct ib_uflow_resources *uflow_res)
 {
@@ -2804,10 +2796,11 @@ void ib_uverbs_flow_resources_free(struct ib_uflow_resources *uflow_res)
 	kfree(uflow_res->counters);
 	kfree(uflow_res);
 }
+EXPORT_SYMBOL(ib_uverbs_flow_resources_free);
 
-static void flow_resources_add(struct ib_uflow_resources *uflow_res,
-			       enum ib_flow_spec_type type,
-			       void *ibobj)
+void flow_resources_add(struct ib_uflow_resources *uflow_res,
+			enum ib_flow_spec_type type,
+			void *ibobj)
 {
 	WARN_ON(uflow_res->num >= uflow_res->max);
 
@@ -2828,6 +2821,7 @@ static void flow_resources_add(struct ib_uflow_resources *uflow_res,
 
 	uflow_res->num++;
 }
+EXPORT_SYMBOL(flow_resources_add);
 
 static int kern_spec_to_ib_spec_action(struct ib_uverbs_file *ufile,
 				       struct ib_uverbs_flow_spec *kern_spec,
@@ -3462,7 +3456,6 @@ int ib_uverbs_ex_create_flow(struct ib_uverbs_file *file,
 	struct ib_uverbs_create_flow	  cmd;
 	struct ib_uverbs_create_flow_resp resp;
 	struct ib_uobject		  *uobj;
-	struct ib_uflow_object		  *uflow;
 	struct ib_flow			  *flow_id;
 	struct ib_uverbs_flow_attr	  *kern_flow_attr;
 	struct ib_flow_attr		  *flow_attr;
@@ -3601,13 +3594,8 @@ int ib_uverbs_ex_create_flow(struct ib_uverbs_file *file,
 		err = PTR_ERR(flow_id);
 		goto err_free;
 	}
-	atomic_inc(&qp->usecnt);
-	flow_id->qp = qp;
-	flow_id->device = qp->device;
-	flow_id->uobject = uobj;
-	uobj->object = flow_id;
-	uflow = container_of(uobj, typeof(*uflow), uobject);
-	uflow->resources = uflow_res;
+
+	ib_set_flow(uobj, flow_id, qp, qp->device, uflow_res);
 
 	memset(&resp, 0, sizeof(resp));
 	resp.flow_handle = uobj->id;
