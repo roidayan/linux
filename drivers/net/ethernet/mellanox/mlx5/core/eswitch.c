@@ -1919,24 +1919,21 @@ int __mlx5_eswitch_set_vport_vlan(struct mlx5_eswitch *esw,
 	if (!LEGAL_VPORT(esw, vport) || (vlan > 4095) || (qos > 7))
 		return -EINVAL;
 
-	mutex_lock(&esw->state_lock);
 	evport = &esw->vports[vport];
 
 	err = modify_esw_vport_cvlan(esw->dev, vport, vlan, qos, set_flags);
 	if (err)
-		goto unlock;
+		return err;
 
 	evport->info.vlan = vlan;
 	evport->info.qos = qos;
 	if (evport->enabled && esw->mode == SRIOV_LEGACY) {
 		err = esw_vport_ingress_config(esw, evport);
 		if (err)
-			goto unlock;
+			return err;
 		err = esw_vport_egress_config(esw, evport);
 	}
 
-unlock:
-	mutex_unlock(&esw->state_lock);
 	return err;
 }
 
@@ -1944,11 +1941,16 @@ int mlx5_eswitch_set_vport_vlan(struct mlx5_eswitch *esw,
 				int vport, u16 vlan, u8 qos)
 {
 	u8 set_flags = 0;
+	int err;
 
 	if (vlan || qos)
 		set_flags = SET_VLAN_STRIP | SET_VLAN_INSERT;
 
-	return __mlx5_eswitch_set_vport_vlan(esw, vport, vlan, qos, set_flags);
+	mutex_lock(&esw->state_lock);
+	err = __mlx5_eswitch_set_vport_vlan(esw, vport, vlan, qos, set_flags);
+	mutex_unlock(&esw->state_lock);
+
+	return err;
 }
 
 int mlx5_eswitch_set_vport_spoofchk(struct mlx5_eswitch *esw,
