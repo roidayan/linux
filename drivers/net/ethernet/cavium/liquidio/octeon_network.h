@@ -35,12 +35,6 @@
 #define   LIO_IFSTATE_RX_TIMESTAMP_ENABLED 0x08
 #define   LIO_IFSTATE_RESETTING		   0x10
 
-struct liquidio_if_cfg_context {
-	u32 octeon_id;
-	wait_queue_head_t wc;
-	int cond;
-};
-
 struct liquidio_if_cfg_resp {
 	u64 rh;
 	struct liquidio_if_cfg_info cfg_info;
@@ -48,6 +42,7 @@ struct liquidio_if_cfg_resp {
 };
 
 #define LIO_IFCFG_WAIT_TIME    3000 /* In milli seconds */
+#define LIQUIDIO_NDEV_STATS_POLL_TIME_MS 200
 
 /* Structure of a node in list of gather components maintained by
  * NIC driver for each network device.
@@ -76,6 +71,12 @@ struct oct_nic_stats_resp {
 	u64     status;
 };
 
+struct oct_nic_vf_stats_resp {
+	u64     rh;
+	u64	spoofmac_cnt;
+	u64     status;
+};
+
 struct oct_nic_stats_ctrl {
 	struct completion complete;
 	struct net_device *netdev;
@@ -85,12 +86,6 @@ struct oct_nic_seapi_resp {
 	u64 rh;
 	u32 speed;
 	u64 status;
-};
-
-struct liquidio_nic_seapi_ctl_context {
-	int octeon_id;
-	u32 status;
-	struct completion complete;
 };
 
 /** LiquidIO per-interface network private data */
@@ -178,7 +173,7 @@ struct lio {
 	struct cavium_wq	txq_status_wq;
 
 	/* work queue for  rxq oom status */
-	struct cavium_wq	rxq_status_wq;
+	struct cavium_wq rxq_status_wq[MAX_POSSIBLE_OCTEON_OUTPUT_QUEUES];
 
 	/* work queue for  link status */
 	struct cavium_wq	link_status_wq;
@@ -187,6 +182,7 @@ struct lio {
 	struct cavium_wq	sync_octeon_time_wq;
 
 	int netdev_uc_count;
+	struct cavium_wk stats_wk;
 };
 
 #define LIO_SIZE         (sizeof(struct lio))
@@ -225,7 +221,7 @@ irqreturn_t liquidio_msix_intr_handler(int irq __attribute__((unused)),
 
 int octeon_setup_interrupt(struct octeon_device *oct, u32 num_ioqs);
 
-int octnet_get_link_stats(struct net_device *netdev);
+void lio_fetch_stats(struct work_struct *work);
 
 int lio_wait_for_clean_oq(struct octeon_device *oct);
 /**
@@ -233,10 +229,6 @@ int lio_wait_for_clean_oq(struct octeon_device *oct);
  * @param netdev    pointer to network device
  */
 void liquidio_set_ethtool_ops(struct net_device *netdev);
-
-void lio_if_cfg_callback(struct octeon_device *oct,
-			 u32 status __attribute__((unused)),
-			 void *buf);
 
 void lio_delete_glists(struct lio *lio);
 
