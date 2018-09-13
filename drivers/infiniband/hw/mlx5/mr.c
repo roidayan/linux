@@ -98,7 +98,7 @@ static bool use_umr_mtt_update(struct mlx5_ib_mr *mr, u64 start, u64 length)
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
 static void update_odp_mr(struct mlx5_ib_mr *mr)
 {
-	if (mr->umem->odp_data) {
+	if (mr->umem->is_odp) {
 		/*
 		 * This barrier prevents the compiler from moving the
 		 * setting of umem->odp_data->private to point to our
@@ -107,7 +107,7 @@ static void update_odp_mr(struct mlx5_ib_mr *mr)
 		 * handle invalidations.
 		 */
 		smp_wmb();
-		mr->umem->odp_data->private = mr;
+		to_ib_umem_odp(mr->umem)->private = mr;
 		/*
 		 * Make sure we will see the new
 		 * umem->odp_data->private value in the invalidation
@@ -1126,7 +1126,7 @@ static struct mlx5_ib_mr *reg_create(struct ib_mr *ibmr, struct ib_pd *pd,
 				     u64 virt_addr, u64 length,
 				     struct ib_umem *umem, int npages,
 				     int page_shift, int access_flags,
-				     bool populate)
+				     bool populate, u16 uid)
 {
 	struct mlx5_ib_dev *dev = to_mdev(pd->device);
 	struct mlx5_ib_mr *mr;
@@ -1160,6 +1160,7 @@ static struct mlx5_ib_mr *reg_create(struct ib_mr *ibmr, struct ib_pd *pd,
 	/* The pg_access bit allows setting the access flags
 	 * in the page list submitted with the command. */
 	MLX5_SET(create_mkey_in, in, pg_access, !!(pg_cap));
+	MLX5_SET(create_mkey_in, in, uid, uid);
 
 	mkc = MLX5_ADDR_OF(create_mkey_in, in, memory_key_mkey_entry);
 	MLX5_SET(mkc, mkc, free, !populate);
@@ -1229,6 +1230,7 @@ static struct ib_mr *mlx5_ib_get_memic_mr(struct ib_pd *pd, u64 memic_addr,
 	void *mkc;
 	u32 *in;
 	int err;
+	u16 uid;
 
 	mr = kzalloc(sizeof(*mr), GFP_KERNEL);
 	if (!mr)
@@ -1240,6 +1242,8 @@ static struct ib_mr *mlx5_ib_get_memic_mr(struct ib_pd *pd, u64 memic_addr,
 		goto err_free;
 	}
 
+	uid = to_mucontext(pd->uobject->context)->devx_uid;
+	MLX5_SET(create_mkey_in, in, uid, uid);
 	mkc = MLX5_ADDR_OF(create_mkey_in, in, memory_key_mkey_entry);
 
 	MLX5_SET(mkc, mkc, access_mode_1_0, MLX5_MKC_ACCESS_MODE_MEMIC & 0x3);
@@ -1306,6 +1310,7 @@ struct ib_mr *mlx5_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 	int ncont;
 	int order;
 	int err;
+	u16 uid;
 
 	if (!IS_ENABLED(CONFIG_INFINIBAND_USER_MEM))
 		return ERR_PTR(-EOPNOTSUPP);
@@ -1332,7 +1337,10 @@ struct ib_mr *mlx5_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 	if (err < 0)
 		return ERR_PTR(err);
 
-	if (use_umr(dev, order)) {
+	uid = to_mucontext(pd->uobject->context)->devx_uid;
+	if (uid) {
+		populate_mtts = true;
+	} else if (use_umr(dev, order)) {
 		mr = alloc_mr_from_cache(pd, umem, virt_addr, length, ncont,
 					 page_shift, order, access_flags);
 		if (PTR_ERR(mr) == -EAGAIN) {
@@ -1354,7 +1362,7 @@ struct ib_mr *mlx5_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 			populate_mtts = true;
 		mutex_lock(&dev->slow_path_mutex);
 		mr = reg_create(NULL, pd, virt_addr, length, umem, ncont,
-				page_shift, access_flags, populate_mtts);
+				page_shift, access_flags, populate_mtts, uid);
 		mutex_unlock(&dev->slow_path_mutex);
 	}
 
@@ -1452,6 +1460,7 @@ int mlx5_ib_rereg_user_mr(struct ib_mr *ib_mr, int flags, u64 start,
 	int order = 0;
 	u64 addr, len;
 	int err;
+	u16 uid;
 
 	mlx5_ib_dbg(dev, "start 0x%llx, virt_addr 0x%llx, length 0x%llx, access_flags 0x%x\n",
 		    start, virt_addr, length, access_flags);
@@ -1483,7 +1492,8 @@ int mlx5_ib_rereg_user_mr(struct ib_mr *ib_mr, int flags, u64 start,
 			goto err;
 	}
 
-	if (flags & IB_MR_REREG_TRANS && !use_umr_mtt_update(mr, addr, len)) {
+	uid = to_mucontext(pd->uobject->context)->devx_uid;
+	if (uid || (flags & IB_MR_REREG_TRANS && !use_umr_mtt_update(mr, addr, len))) {
 		/*
 		 * UMR can't be used - MKey needs to be replaced.
 		 */
@@ -1495,7 +1505,7 @@ int mlx5_ib_rereg_user_mr(struct ib_mr *ib_mr, int flags, u64 start,
 			goto err;
 
 		mr = reg_create(ib_mr, pd, addr, len, mr->umem, ncont,
-				page_shift, access_flags, true);
+				page_shift, access_flags, true, uid);
 
 		if (IS_ERR(mr)) {
 			err = PTR_ERR(mr);
@@ -1624,14 +1634,16 @@ static void dereg_mr(struct mlx5_ib_dev *dev, struct mlx5_ib_mr *mr)
 	struct ib_umem *umem = mr->umem;
 
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
-	if (umem && umem->odp_data) {
+	if (umem && umem->is_odp) {
+		struct ib_umem_odp *umem_odp = to_ib_umem_odp(umem);
+
 		/* Prevent new page faults from succeeding */
 		mr->live = 0;
 		/* Wait for all running page-fault handlers to finish. */
 		synchronize_srcu(&dev->mr_srcu);
 		/* Destroy all page mappings */
-		if (umem->odp_data->page_list)
-			mlx5_ib_invalidate_range(umem, ib_umem_start(umem),
+		if (umem_odp->page_list)
+			mlx5_ib_invalidate_range(umem_odp, ib_umem_start(umem),
 						 ib_umem_end(umem));
 		else
 			mlx5_ib_free_implicit_mr(mr);
@@ -1798,6 +1810,7 @@ struct ib_mw *mlx5_ib_alloc_mw(struct ib_pd *pd, enum ib_mw_type type,
 		__u32	comp_mask;
 		__u32	response_length;
 	} resp = {};
+	u16 uid;
 
 	err = ib_copy_from_udata(&req, udata, min(udata->inlen, sizeof(req)));
 	if (err)
@@ -1819,6 +1832,9 @@ struct ib_mw *mlx5_ib_alloc_mw(struct ib_pd *pd, enum ib_mw_type type,
 		err = -ENOMEM;
 		goto free;
 	}
+
+	uid = to_mucontext(pd->uobject->context)->devx_uid;
+	MLX5_SET(create_mkey_in, in, uid, uid);
 
 	mkc = MLX5_ADDR_OF(create_mkey_in, in, memory_key_mkey_entry);
 
