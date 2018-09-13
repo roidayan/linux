@@ -68,6 +68,7 @@ int mlx5_core_create_mkey_cb(struct mlx5_core_dev *dev,
 	mkc = MLX5_ADDR_OF(create_mkey_in, in, memory_key_mkey_entry);
 
 	MLX5_SET(create_mkey_in, in, opcode, MLX5_CMD_OP_CREATE_MKEY);
+	mkey->uid = MLX5_GET(create_mkey_in, in, uid);
 	MLX5_SET(mkc, mkc, mkey_7_0, key);
 
 	if (callback)
@@ -130,6 +131,7 @@ int mlx5_core_destroy_mkey(struct mlx5_core_dev *dev,
 
 	MLX5_SET(destroy_mkey_in, in, opcode, MLX5_CMD_OP_DESTROY_MKEY);
 	MLX5_SET(destroy_mkey_in, in, mkey_index, mlx5_mkey_to_idx(mkey->key));
+	MLX5_SET(destroy_mkey_in, in, uid, mkey->uid);
 	return mlx5_cmd_exec(dev, in, sizeof(in), out, sizeof(out));
 }
 EXPORT_SYMBOL(mlx5_core_destroy_mkey);
