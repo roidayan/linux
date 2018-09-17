@@ -10,6 +10,8 @@ enum {
 };
 
 struct mlx5e_tc_table {
+	/* protects flow table */
+	struct mutex			t_lock;
 	struct mlx5_flow_table		*t;
 
 	spinlock_t			ht_lock; /* protects ht */
