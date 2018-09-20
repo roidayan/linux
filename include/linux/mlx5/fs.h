@@ -155,19 +155,26 @@ struct mlx5_fs_vlan {
 
 #define MLX5_FS_VLAN_DEPTH	2
 
+enum {
+	FLOW_ACT_HAS_TAG   = BIT(0),
+	FLOW_ACT_NO_APPEND = BIT(1),
+};
+
 struct mlx5_flow_act {
 	u32 action;
-	bool has_flow_tag;
 	u32 flow_tag;
 	u32 encap_id;
 	u32 modify_id;
 	uintptr_t esp_id;
 	struct mlx5_fs_vlan vlan[MLX5_FS_VLAN_DEPTH];
+	u32 flags;
 };
 
 #define MLX5_DECLARE_FLOW_ACT(name) \
-	struct mlx5_flow_act name = {MLX5_FLOW_CONTEXT_ACTION_FWD_DEST,\
-				     MLX5_FS_DEFAULT_FLOW_TAG, 0, 0}
+	struct mlx5_flow_act name = { .action = MLX5_FLOW_CONTEXT_ACTION_FWD_DEST,\
+				      .flow_tag = MLX5_FS_DEFAULT_FLOW_TAG, \
+				      .modify_id = 0, \
+				      .flags =  0, }
 
 /* Single destination per rule.
  * Group ID is implied by the match criteria.
