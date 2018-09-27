@@ -777,6 +777,9 @@ int mlx5_lag_activate_multipath(struct mlx5_core_dev *dev)
 	if (!MLX5_CAP_GEN(dev2, vport_group_manager))
 		return -EOPNOTSUPP;
 
+	if (mlx5_lag_is_multipath(dev))
+		return 0;
+
 	mlx5_core_info(dev, "Activate multipath\n");
 
 	mutex_lock(&lag_mutex);
@@ -848,4 +851,85 @@ bool mlx5_lag_is_multipath_ready(struct mlx5_core_dev *dev)
 	struct mlx5_lag *ldev = mlx5_lag_dev_get(dev);
 
 	return ldev ? !!(ldev->flags & MLX5_LAG_FLAG_MULTIPATH_READY) : false;
+}
+
+/**
+ * Set lag affinity
+ * @affinity:
+ *     0 - set normal affinity.
+ *     1 - set affinity to port 1.
+ *     2 - set affinity to port 2.
+ *
+ **/
+static int mlx5_lag_set_port_affinity(struct mlx5_core_dev *dev, int affinity)
+{
+	struct mlx5_lag *ldev = mlx5_lag_dev_get(dev);
+	struct lag_tracker tracker;
+
+	if (!ldev)
+		return -EOPNOTSUPP;
+
+	if (!mlx5_lag_is_multipath(dev))
+		return -EOPNOTSUPP;
+
+	switch (affinity) {
+	case 0:
+		tracker.netdev_state[0].tx_enabled = true;
+		tracker.netdev_state[1].tx_enabled = true;
+		tracker.netdev_state[0].link_up = true;
+		tracker.netdev_state[1].link_up = true;
+		break;
+	case 1:
+		tracker.netdev_state[0].tx_enabled = true;
+		tracker.netdev_state[0].link_up = true;
+		tracker.netdev_state[1].tx_enabled = false;
+		tracker.netdev_state[1].link_up = false;
+		break;
+	case 2:
+		tracker.netdev_state[0].tx_enabled = false;
+		tracker.netdev_state[0].link_up = false;
+		tracker.netdev_state[1].tx_enabled = true;
+		tracker.netdev_state[1].link_up = true;
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	if (tracker.netdev_state[0].tx_enabled)
+		mlx5e_restore_rules(ldev->pf[0].netdev);
+	if (tracker.netdev_state[1].tx_enabled)
+		mlx5e_restore_rules(ldev->pf[1].netdev);
+
+	mlx5_modify_lag(ldev, &tracker);
+
+	return 0;
+}
+
+void mlx5_lag_set_affinity(struct net_device *netdev, int affinity)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+	struct mlx5_core_dev *dev = priv->mdev;
+	struct mlx5_lag *ldev = mlx5_lag_dev_get(dev);
+	int port_affinity = 0;
+
+	if (!ldev)
+		return;
+
+	port_affinity = ldev->pf[0].netdev == netdev ? 0 : 1;
+	port_affinity++;
+
+	switch (affinity) {
+	case  MLX5_LAG_AFFINITY_DEFAULT:
+		mlx5_lag_set_port_affinity(dev, 0);
+		break;
+	case MLX5_LAG_AFFINITY_ME:
+		mlx5_lag_set_port_affinity(dev, port_affinity);
+		break;
+	case MLX5_LAG_AFFINITY_PEER:
+		port_affinity = port_affinity == 1 ? 2 : 1;
+		mlx5_lag_set_port_affinity(dev, port_affinity);
+		break;
+	default:
+		mlx5_core_err(dev, "Invalid affinity %d\n", affinity);
+	};
 }

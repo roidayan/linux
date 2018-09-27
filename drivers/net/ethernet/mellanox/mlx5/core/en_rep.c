@@ -377,6 +377,182 @@ static struct mlx5e_neigh_hash_entry *
 mlx5e_rep_neigh_entry_lookup(struct mlx5e_priv *priv,
 			     struct mlx5e_neigh *m_neigh);
 
+struct mlx5e_fib_event_work {
+	struct work_struct work;
+	struct mlx5e_rep_priv *rpriv;
+	unsigned long event;
+	union {
+		struct fib_entry_notifier_info fen_info;
+		struct fib_nh_notifier_info fnh_info;
+	};
+};
+
+static void mlx5e_rep_fib_update(struct work_struct *work)
+{
+	struct mlx5e_fib_event_work *fib_work =
+		container_of(work, struct mlx5e_fib_event_work, work);
+	struct mlx5e_rep_priv *rpriv = fib_work->rpriv;
+	struct net_device *netdev = rpriv->netdev;
+	struct net_device *peer_netdev;
+	struct mlx5_core_dev *mdev;
+	struct mlx5e_priv *priv;
+	struct fib_entry_notifier_info *fen_info;
+	struct fib_info *fi;
+	struct fib_nh *fib_nh;
+	// TODO tracking route info and dst.
+	// should be per HCA. save in ldev struct ? other hca wide struct?
+	static struct fib_info *mfi;
+	static u32 dst;
+
+	priv = netdev_priv(netdev);
+	mdev = priv->mdev;
+	peer_netdev = mlx5_lag_get_peer_netdev(mdev);
+
+	/* Protect internal structures from changes */
+	rtnl_lock();
+	switch (fib_work->event) {
+	/*case FIB_EVENT_ENTRY_APPEND*/
+	case FIB_EVENT_ENTRY_ADD:
+	case FIB_EVENT_ENTRY_REPLACE:
+	case FIB_EVENT_ENTRY_DEL:
+		fen_info = &fib_work->fen_info;
+		fi = fen_info->fi;
+
+		if (fi->fib_dev != netdev)
+			goto skip_ent;
+
+		/* Handle delete event */
+		if (fib_work->event == FIB_EVENT_ENTRY_DEL) {
+			if (fen_info->dst == dst) {
+				/* stop track */
+				mfi = NULL;
+				dst = 0;
+			}
+
+			goto skip_ent;
+		}
+
+		/* Handle add/replace event */
+		if (fi->fib_nhs == 1) {
+			/* If multipath enabled then set default
+			 * affinity
+			 */
+			if (fib_work->event == FIB_EVENT_ENTRY_REPLACE && mfi)
+				mlx5_lag_set_affinity(netdev,
+						      MLX5_LAG_AFFINITY_ME);
+			goto skip_ent;
+		}
+
+		if (fi->fib_nhs != 2)
+			goto skip_ent;
+
+		/* Verify next hops are ports of the same hca */
+		if (!(fi->fib_nh[0].nh_dev == netdev &&
+		      fi->fib_nh[1].nh_dev == peer_netdev) &&
+		    !(fi->fib_nh[0].nh_dev == peer_netdev &&
+		      fi->fib_nh[1].nh_dev == netdev)) {
+			mlx5_core_warn(priv->mdev, "Multipath offload require two ports of the same HCA\n");
+			goto skip_ent;
+		}
+
+		if (!mfi)
+			/* First time we see multipath route */
+			mlx5_lag_activate_multipath(mdev);
+
+		mlx5_lag_set_affinity(netdev, MLX5_LAG_AFFINITY_DEFAULT);
+		mfi = fi;
+		dst = fen_info->dst;
+skip_ent:
+		fib_info_put(fib_work->fen_info.fi);
+		break;
+	case FIB_EVENT_NH_ADD:
+	case FIB_EVENT_NH_DEL:
+		fib_nh = fib_work->fnh_info.fib_nh;
+		fi = fib_nh->nh_parent;
+
+		if (fib_nh->nh_dev != netdev || !fib_nh->nh_gw)
+			goto skip_nh_ent;
+
+		/* Check the nh event is related to the route */
+		if (!mfi || mfi != fi)
+			goto skip_nh_ent;
+
+		/* nh added/removed */
+		if (fib_work->event == FIB_EVENT_NH_DEL)
+			mlx5_lag_set_affinity(netdev,
+					      MLX5_LAG_AFFINITY_PEER);
+		else if (fib_work->event == FIB_EVENT_NH_ADD &&
+			 fi->fib_nhs == 2)
+			mlx5_lag_set_affinity(netdev,
+					      MLX5_LAG_AFFINITY_DEFAULT);
+
+skip_nh_ent:
+		fib_info_put(fib_work->fnh_info.fib_nh->nh_parent);
+		break;
+	}
+	rtnl_unlock();
+	kfree(fib_work);
+}
+
+/* Called with rcu_read_lock() */
+static int mlx5e_rep_fib_event(struct notifier_block *nb,
+			       unsigned long event,
+			       void *ptr)
+{
+	struct mlx5e_rep_priv *rpriv = container_of(nb, struct mlx5e_rep_priv,
+						    fib_nb);
+	struct net_device *netdev = rpriv->netdev;
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+	struct fib_notifier_info *info = ptr;
+	struct mlx5e_fib_event_work *fib_work;
+
+	if (info->family != AF_INET)
+		return NOTIFY_DONE;
+
+	fib_work = kzalloc(sizeof(*fib_work), GFP_ATOMIC);
+	if (WARN_ON(!fib_work))
+		return NOTIFY_BAD;
+
+	INIT_WORK(&fib_work->work, mlx5e_rep_fib_update);
+	fib_work->rpriv = rpriv;
+	fib_work->event = event;
+
+	switch (event) {
+	/*case FIB_EVENT_ENTRY_APPEND:*/
+	case FIB_EVENT_ENTRY_ADD: /* fall through */
+	case FIB_EVENT_ENTRY_REPLACE:
+	case FIB_EVENT_ENTRY_DEL:
+		memcpy(&fib_work->fen_info, ptr, sizeof(fib_work->fen_info));
+		/* Take referece on fib_info to prevent it from being
+		 * freed while work is queued. Release it afterwards.
+		 */
+		fib_info_hold(fib_work->fen_info.fi);
+		break;
+	case FIB_EVENT_NH_ADD:
+	case FIB_EVENT_NH_DEL:
+		memcpy(&fib_work->fnh_info, ptr, sizeof(fib_work->fnh_info));
+		fib_info_hold(fib_work->fnh_info.fib_nh->nh_parent);
+		break;
+	default:
+		kfree(fib_work);
+		return NOTIFY_DONE;
+	}
+
+	queue_work(priv->wq, &fib_work->work);
+
+	return NOTIFY_DONE;
+}
+
+static void mlx5e_rep_fib_event_flush(struct notifier_block *nb)
+{
+	struct mlx5e_rep_priv *rpriv = container_of(nb, struct mlx5e_rep_priv,
+						    fib_nb);
+	struct net_device *netdev = rpriv->netdev;
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+
+	flush_workqueue(priv->wq);
+}
+
 static int mlx5e_rep_netevent_event(struct notifier_block *nb,
 				    unsigned long event, void *ptr)
 {
@@ -390,7 +566,6 @@ static int mlx5e_rep_netevent_event(struct notifier_block *nb,
 	struct neigh_parms *p;
 	struct neighbour *n;
 	bool found = false;
-
 	switch (event) {
 	case NETEVENT_NEIGH_UPDATE:
 		n = ptr;
@@ -1042,9 +1217,17 @@ mlx5e_nic_rep_load(struct mlx5_eswitch *esw, struct mlx5_eswitch_rep *rep)
 			return err;
 	}
 
+	rpriv->fib_nb.notifier_call = mlx5e_rep_fib_event;
+	err = register_fib_notifier(&rpriv->fib_nb, mlx5e_rep_fib_event_flush);
+	if (err) {
+		mlx5_core_warn(priv->mdev,
+			       "Failed to initialize fib events handling\n");
+		goto err_remove_sqs;
+	}
+
 	err = mlx5e_rep_neigh_init(rpriv);
 	if (err)
-		goto err_remove_sqs;
+		goto err_unregister_fib;
 
 	/* init shared tc flow table */
 	err = mlx5e_tc_esw_init(&rpriv->tc_ht);
@@ -1053,6 +1236,8 @@ mlx5e_nic_rep_load(struct mlx5_eswitch *esw, struct mlx5_eswitch_rep *rep)
 
 	return 0;
 
+err_unregister_fib:
+	unregister_fib_notifier(&rpriv->fib_nb);
 err_neigh_cleanup:
 	mlx5e_rep_neigh_cleanup(rpriv);
 err_remove_sqs:
@@ -1074,6 +1259,8 @@ mlx5e_nic_rep_unload(struct mlx5_eswitch *esw, struct mlx5_eswitch_rep *rep)
 
 	mlx5e_clean_peer_rules(rep->netdev);
 	mlx5e_rep_neigh_cleanup(rpriv);
+	/* mlx5e_rep_neigh_cleanup above flushes our fib workqueue */
+	unregister_fib_notifier(&rpriv->fib_nb);
 }
 
 static int

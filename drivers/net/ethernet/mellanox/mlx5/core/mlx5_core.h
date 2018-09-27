@@ -194,4 +194,12 @@ void mlx5_lag_set_multipath_ready(struct mlx5_core_dev *dev);
 void mlx5_lag_unset_multipath_ready(struct mlx5_core_dev *dev);
 bool mlx5_lag_is_multipath_ready(struct mlx5_core_dev *dev);
 
+enum {
+	MLX5_LAG_AFFINITY_DEFAULT,
+	MLX5_LAG_AFFINITY_ME,
+	MLX5_LAG_AFFINITY_PEER,
+};
+
+void mlx5_lag_set_affinity(struct net_device *netdev, int affinity);
+
 #endif /* __MLX5_CORE_H__ */
