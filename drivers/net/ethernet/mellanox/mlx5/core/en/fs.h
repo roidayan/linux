@@ -12,6 +12,7 @@ enum {
 struct mlx5e_tc_table {
 	struct mlx5_flow_table		*t;
 
+	spinlock_t			ht_lock; /* protects ht */
 	struct rhashtable               ht;
 
 	DECLARE_HASHTABLE(mod_hdr_tbl, 8);
