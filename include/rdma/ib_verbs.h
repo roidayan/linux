@@ -1888,6 +1888,37 @@ struct ib_port_immutable {
 	u32                           max_mad_size;
 };
 
+/* rdma netdev type - specifies protocol type */
+enum rdma_netdev_t {
+        RDMA_NETDEV_OPA_VNIC,
+        RDMA_NETDEV_IPOIB,
+};
+
+/**
+ * struct rdma_netdev - rdma netdev
+ * For cases where netstack interfacing is required.
+ */
+struct rdma_netdev {
+	void              *clnt_priv;
+	struct ib_device  *hca;
+	u8                 port_num;
+
+	/* cleanup function must be specified */
+	void (*free_rdma_netdev)(struct net_device *netdev);
+
+	/* control functions */
+	void (*set_id)(struct net_device *netdev, int id);
+	/* send packet */
+	int (*send)(struct net_device *dev, struct sk_buff *skb,
+		    struct ib_ah *address, u32 dqpn);
+	/* multicast */
+	int (*attach_mcast)(struct net_device *dev, struct ib_device *hca,
+			    union ib_gid *gid, u16 mlid,
+			    int set_qkey, u32 qkey);
+	int (*detach_mcast)(struct net_device *dev, struct ib_device *hca,
+			    union ib_gid *gid, u16 mlid);
+};
+
 struct ib_device {
 	struct device                *dma_device;
 
