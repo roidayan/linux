@@ -36,6 +36,7 @@
 #include <net/pkt_cls.h>
 #include <net/netevent.h>
 #include <net/arp.h>
+#include <net/addrconf.h>
 
 #include "eswitch.h"
 #include "en.h"
@@ -666,14 +667,6 @@ mlx5e_rep_setup_tc_cls_flower(struct net_device *dev,
 	if (!is_classid_clsact_ingress(cls_flower->common.classid) ||
 	    cls_flower->common.chain_index)
 		return -EOPNOTSUPP;
-
-	if (cls_flower->egress_dev) {
-		struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
-
-		dev = mlx5_eswitch_get_uplink_netdev(esw);
-		return __rh_call_ndo_setup_tc(dev, TC_SETUP_CLSFLOWER,
-					      cls_flower);
-	}
 
 	switch (cls_flower->command) {
 	case TC_CLSFLOWER_REPLACE:
