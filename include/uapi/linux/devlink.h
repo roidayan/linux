@@ -109,6 +109,11 @@ enum devlink_eswitch_inline_mode {
 	DEVLINK_ESWITCH_INLINE_MODE_TRANSPORT,
 };
 
+enum devlink_eswitch_encap_mode {
+	DEVLINK_ESWITCH_ENCAP_MODE_NONE,
+	DEVLINK_ESWITCH_ENCAP_MODE_BASIC,
+};
+
 enum devlink_attr {
 	/* don't change the order or add anything between, this is ABI! */
 	DEVLINK_ATTR_UNSPEC,
