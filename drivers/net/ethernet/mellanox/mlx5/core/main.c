@@ -319,6 +319,8 @@ static int mlx5_alloc_irq_vectors(struct mlx5_core_dev *dev)
 	struct mlx5_eq_table *table = &priv->eq_table;
 	int num_eqs = 1 << MLX5_CAP_GEN(dev, log_max_eq);
 	int nvec;
+	int err;
+	int i;
 
 	nvec = MLX5_CAP_GEN(dev, num_ports) * num_online_cpus() +
 	       MLX5_EQ_VEC_COMP_BASE;
@@ -328,19 +330,29 @@ static int mlx5_alloc_irq_vectors(struct mlx5_core_dev *dev)
 
 	priv->irq_info = kcalloc(nvec, sizeof(*priv->irq_info), GFP_KERNEL);
 	if (!priv->irq_info)
-		goto err_free_msix;
+		goto err_free_irq_info;
 
-	nvec = pci_alloc_irq_vectors(dev->pdev,
-			MLX5_EQ_VEC_COMP_BASE + 1, nvec,
-			PCI_IRQ_MSIX);
-	if (nvec < 0)
-		return nvec;
+	priv->msix_arr = kcalloc(nvec, sizeof(*priv->msix_arr), GFP_KERNEL);
+	if (!priv->msix_arr || !priv->irq_info) {
+		err = -ENOMEM;
+		goto err_free_irq_info;
+	}
+
+	for (i = 0; i < nvec; i++)
+		 priv->msix_arr[i].entry = i;
+
+	nvec = pci_enable_msix_range(dev->pdev, priv->msix_arr,
+				     MLX5_EQ_VEC_COMP_BASE + 1, nvec);
+	if (nvec < 0) {
+		err = nvec;
+		goto err_free_irq_info;
+	}
 
 	table->num_comp_vectors = nvec - MLX5_EQ_VEC_COMP_BASE;
 
 	return 0;
 
-err_free_msix:
+err_free_irq_info:
 	kfree(priv->irq_info);
 	return -ENOMEM;
 }
@@ -349,7 +361,8 @@ static void mlx5_free_irq_vectors(struct mlx5_core_dev *dev)
 {
 	struct mlx5_priv *priv = &dev->priv;
 
-	pci_free_irq_vectors(dev->pdev);
+	pci_disable_msix(dev->pdev);
+	kfree(priv->msix_arr);
 	kfree(priv->irq_info);
 }
 
@@ -621,7 +634,8 @@ u64 mlx5_read_internal_timer(struct mlx5_core_dev *dev)
 static int mlx5_irq_set_affinity_hint(struct mlx5_core_dev *mdev, int i)
 {
 	struct mlx5_priv *priv  = &mdev->priv;
-	int irq = pci_irq_vector(mdev->pdev, MLX5_EQ_VEC_COMP_BASE + i);
+	struct msix_entry *msix	= priv->msix_arr;
+	int irq			= msix[i + MLX5_EQ_VEC_COMP_BASE].vector;
 
 	if (!zalloc_cpumask_var(&priv->irq_info[i].mask, GFP_KERNEL)) {
 		mlx5_core_warn(mdev, "zalloc_cpumask_var failed");
@@ -641,7 +655,8 @@ static int mlx5_irq_set_affinity_hint(struct mlx5_core_dev *mdev, int i)
 static void mlx5_irq_clear_affinity_hint(struct mlx5_core_dev *mdev, int i)
 {
 	struct mlx5_priv *priv  = &mdev->priv;
-	int irq = pci_irq_vector(mdev->pdev, MLX5_EQ_VEC_COMP_BASE + i);
+	struct msix_entry *msix	= priv->msix_arr;
+	int irq			= msix[i + MLX5_EQ_VEC_COMP_BASE].vector;
 
 	irq_set_affinity_hint(irq, NULL);
 	free_cpumask_var(priv->irq_info[i].mask);
@@ -764,8 +779,8 @@ static int alloc_comp_eqs(struct mlx5_core_dev *dev)
 		}
 
 #ifdef CONFIG_RFS_ACCEL
-		irq_cpu_rmap_add(dev->rmap, pci_irq_vector(dev->pdev,
-				 MLX5_EQ_VEC_COMP_BASE + i));
+		irq_cpu_rmap_add(dev->rmap,
+				 dev->priv.msix_arr[i + MLX5_EQ_VEC_COMP_BASE].vector);
 #endif
 		snprintf(name, MLX5_MAX_IRQ_NAME, "mlx5_comp%d", i);
 		err = mlx5_create_map_eq(dev, eq,
