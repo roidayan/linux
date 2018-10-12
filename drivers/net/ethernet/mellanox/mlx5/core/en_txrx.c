@@ -71,8 +71,7 @@ int mlx5e_napi_poll(struct napi_struct *napi, int budget)
 			work_done--;
 	}
 
-	if (unlikely(!napi_complete_done(napi, work_done)))
-		return work_done;
+	napi_complete_done(napi, work_done);
 
 	for (i = 0; i < c->num_tc; i++)
 		mlx5e_cq_arm(&c->sq[i].cq);
