@@ -22,6 +22,8 @@
 #include <linux/resource.h>
 #include <linux/err.h>
 #include <linux/page_ref.h>
+#include <linux/vmalloc.h>
+#include <linux/slab.h>
 
 struct mempolicy;
 struct anon_vma;
@@ -2284,6 +2286,16 @@ void __init setup_nr_node_ids(void);
 #else
 static inline void setup_nr_node_ids(void) {}
 #endif
+
+static inline void *kvzalloc(unsigned long size,...)
+{
+	void *rtn;
+
+	rtn = kzalloc(size, GFP_KERNEL | __GFP_NOWARN);
+	if (!rtn)
+		rtn = vzalloc(size);
+	return rtn;
+}
 
 #endif /* __KERNEL__ */
 #endif /* _LINUX_MM_H */
