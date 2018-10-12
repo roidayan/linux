@@ -2033,4 +2033,10 @@ static inline bool pci_ari_enabled(struct pci_bus *bus)
 {
 	return bus->self && bus->self->ari_enabled;
 }
+
+static inline const struct cpumask *pci_irq_get_affinity(struct pci_dev *pdev,
+							 int vec)
+{
+	return cpu_possible_mask;
+}
 #endif /* LINUX_PCI_H */
