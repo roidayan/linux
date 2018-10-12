@@ -31,6 +31,7 @@
  */
 
 #include <linux/mlx5/fs.h>
+#include <linux/nospec.h>
 #include "en.h"
 
 struct mlx5e_ethtool_rule {
