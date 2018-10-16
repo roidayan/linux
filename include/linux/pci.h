@@ -2039,4 +2039,35 @@ static inline const struct cpumask *pci_irq_get_affinity(struct pci_dev *pdev,
 {
 	return cpu_possible_mask;
 }
+
+u32 pcie_bandwidth_available(struct pci_dev *dev, struct pci_dev **limiting_dev,
+			     enum pci_bus_speed *speed,
+			     enum pcie_link_width *width);
+void pcie_print_link_status(struct pci_dev *dev);
+enum pci_bus_speed pcie_get_speed_cap(struct pci_dev *dev);
+
+/* PCIe speed to Mb/s reduced by encoding overhead */
+#define PCIE_SPEED2MBS_ENC(speed) \
+	((speed) == PCIE_SPEED_16_0GT ? 16000*128/130 : \
+	 (speed) == PCIE_SPEED_8_0GT  ?  8000*128/130 : \
+	 (speed) == PCIE_SPEED_5_0GT  ?  5000*8/10 : \
+	 (speed) == PCIE_SPEED_2_5GT  ?  2500*8/10 : \
+	 0)
+
+#define PCIE_SPEED2STR(speed) \
+	((speed) == PCIE_SPEED_16_0GT ? "16 GT/s" : \
+	 (speed) == PCIE_SPEED_8_0GT ? "8 GT/s" : \
+	 (speed) == PCIE_SPEED_5_0GT ? "5 GT/s" : \
+	 (speed) == PCIE_SPEED_2_5GT ? "2.5 GT/s" : \
+	 "Unknown speed")
+
+#define	PCI_EXP_LNKCAP_SLS_2_5GB	0x00000001 /* LNKCAP2 SLS Vector bit 0 */
+#define	PCI_EXP_LNKCAP_SLS_5_0GB	0x00000002 /* LNKCAP2 SLS Vector bit 1 */
+#define	PCI_EXP_LNKCAP_SLS_8_0GB	0x00000003 /* LNKCAP2 SLS Vector bit 2 */
+#define	PCI_EXP_LNKCAP2_SLS_16_0GB	0x00000010 /* Supported Speed 16GT/s */
+#define	PCIE_SPEED_16_0GT		0x17
+#define	PCI_EXP_LNKCAP_SLS_16_0GB	0x00000004 /* LNKCAP2 SLS Vector bit 3 */
+
+#define	pci_info(pdev, fmt, arg...)	dev_info(&(pdev)->dev, fmt, ##arg)
+
 #endif /* LINUX_PCI_H */
