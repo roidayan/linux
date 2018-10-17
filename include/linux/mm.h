@@ -2297,5 +2297,27 @@ static inline void *kvzalloc(unsigned long size,...)
 	return rtn;
 }
 
+static inline void *kvmalloc_node(size_t size, gfp_t flags, int node) {
+	void *rtn;
+
+	rtn = kmalloc_node(size, GFP_KERNEL | __GFP_NOWARN, node);
+	if (!rtn)
+		rtn = vmalloc(size);
+	return rtn;
+}
+
+static inline void *kvmalloc(size_t size, gfp_t flags)
+{
+	return kvmalloc_node(size, flags, NUMA_NO_NODE);
+}
+
+static inline void *kvzalloc_node(size_t size, gfp_t flags, int node)
+{
+	void *p = kvmalloc_node(size, flags, node);
+	if (p)
+		memset(p, 0, size);
+	return p;
+}
+
 #endif /* __KERNEL__ */
 #endif /* _LINUX_MM_H */
