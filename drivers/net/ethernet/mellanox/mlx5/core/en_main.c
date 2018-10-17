@@ -89,6 +89,22 @@ bool mlx5e_check_fragmented_striding_rq_cap(struct mlx5_core_dev *mdev)
 	return true;
 }
 
+static u32 mlx5e_rx_get_linear_frag_sz(struct mlx5e_params *params)
+{
+	u16 hw_mtu = MLX5E_SW2HW_MTU(params, params->sw_mtu);
+	u16 linear_rq_headroom = MLX5_RX_HEADROOM;
+	u32 frag_sz;
+
+	linear_rq_headroom += NET_IP_ALIGN;
+
+	frag_sz = MLX5_SKB_FRAG_SZ(linear_rq_headroom + hw_mtu);
+
+	if (params->xdp_prog && frag_sz < PAGE_SIZE)
+		frag_sz = PAGE_SIZE;
+
+	return frag_sz;
+}
+
 static u32 mlx5e_mpwqe_get_linear_frag_sz(struct mlx5e_params *params)
 {
 	if (!params->xdp_prog) {
@@ -99,6 +115,14 @@ static u32 mlx5e_mpwqe_get_linear_frag_sz(struct mlx5e_params *params)
 	}
 
 	return PAGE_SIZE;
+}
+
+static bool mlx5e_rx_is_linear_skb(struct mlx5_core_dev *mdev,
+				   struct mlx5e_params *params)
+{
+	u32 frag_sz = mlx5e_rx_get_linear_frag_sz(params);
+
+	return !params->lro_en && frag_sz <= PAGE_SIZE;
 }
 
 static u8 mlx5e_mpwqe_log_pkts_per_wqe(struct mlx5e_params *params)
