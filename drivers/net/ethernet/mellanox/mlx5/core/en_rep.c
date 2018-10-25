@@ -1314,7 +1314,6 @@ mlx5e_nic_rep_load(struct mlx5_core_dev *dev, struct mlx5_eswitch_rep *rep)
 {
 	struct mlx5e_rep_priv *rpriv = mlx5e_rep_to_rep_priv(rep);
 	struct mlx5e_priv *priv = netdev_priv(rpriv->netdev);
-
 	int err;
 
 	if (test_bit(MLX5E_STATE_OPENED, &priv->state)) {
