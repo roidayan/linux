@@ -1053,6 +1053,13 @@ static void mlx5_cleanup_once(struct mlx5_core_dev *dev)
 	mlx5_eq_cleanup(dev);
 }
 
+char *jd_version = "1.0";
+/*
+ * 1.0
+ * branch jd-1
+ * commit: 543f4c59876ca8cc132241ab9b00a29c7bbccbcb
+ */
+
 static int mlx5_load_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv,
 			 bool boot)
 {
@@ -1068,6 +1075,7 @@ static int mlx5_load_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv,
 
 	dev_info(&pdev->dev, "firmware version: %d.%d.%d\n", fw_rev_maj(dev),
 		 fw_rev_min(dev), fw_rev_sub(dev));
+	dev_info(&pdev->dev, "jd version: %s\n", jd_version);
 
 	/* Only PFs hold the relevant PCIe information for this query */
 	if (mlx5_core_is_pf(dev))
