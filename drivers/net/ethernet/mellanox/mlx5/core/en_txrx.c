@@ -101,7 +101,8 @@ int mlx5e_napi_poll(struct napi_struct *napi, int budget)
 			work_done--;
 	}
 
-	napi_complete_done(napi, work_done);
+	if (unlikely(!napi_complete_done(napi, work_done)))
+		return work_done;
 
 	ch_stats->arm++;
 
