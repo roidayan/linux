@@ -1053,10 +1053,10 @@ static void mlx5_cleanup_once(struct mlx5_core_dev *dev)
 	mlx5_eq_cleanup(dev);
 }
 
-char *jd_version = "1.1";
+char *jd_version = "1.2";
 /*
  * branch jd-1
- * commit: 6c6917c2e9cf915779d0a01fc7c2c6271db8d6e4
+ * commit: 5f36d8eb9734867a48f0a47dd20c8608e6ecd19e
  */
 
 static int mlx5_load_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv,
