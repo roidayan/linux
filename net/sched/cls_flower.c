@@ -305,6 +305,7 @@ static int fl_hw_replace_filter(struct tcf_proto *tp,
 	cls_flower.key = &f->mkey;
 	cls_flower.exts = &f->exts;
 	cls_flower.classid = f->res.classid;
+	cls_flower.common.handle = f->handle;
 
 	err = tc_setup_cb_call(block, &f->exts, TC_SETUP_CLSFLOWER,
 			       &cls_flower, skip_sw);
@@ -992,6 +993,10 @@ static int fl_change(struct net *net, struct sk_buff *in_skb,
 	if (!fnew) {
 		err = -ENOBUFS;
 		goto errout_tb;
+	}
+
+	if (fold && handle && fold->handle == handle) {
+		fnew->handle = handle;
 	}
 
 	err = tcf_exts_init(&fnew->exts, TCA_FLOWER_ACT, 0);
