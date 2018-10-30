@@ -83,6 +83,7 @@ struct mlx5_flow_spec {
 	u8   match_criteria_enable;
 	u32  match_criteria[MLX5_ST_SZ_DW(fte_match_param)];
 	u32  match_value[MLX5_ST_SZ_DW(fte_match_param)];
+	u32  handle;
 };
 
 struct mlx5_flow_destination {

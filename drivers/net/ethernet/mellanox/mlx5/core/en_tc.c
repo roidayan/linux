@@ -2845,6 +2845,7 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv,
 	flow->cookie = f->cookie;
 	flow->flags = flow_flags;
 	flow->priv = priv;
+	parse_attr->spec.handle = f->common.handle;
 
 	err = parse_cls_flower(priv, flow, &parse_attr->spec, f);
 	if (err < 0)
