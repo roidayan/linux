@@ -392,7 +392,7 @@ static void mlx5e_rep_fib_update(struct work_struct *work)
 	struct mlx5e_fib_event_work *fib_work =
 		container_of(work, struct mlx5e_fib_event_work, work);
 	struct mlx5e_rep_priv *rpriv = fib_work->rpriv;
-	struct net_device *netdev = rpriv->netdev;
+	struct net_device *netdev = rpriv->rep->netdev;
 	struct net_device *peer_netdev;
 	struct mlx5_core_dev *mdev;
 	struct mlx5e_priv *priv;
@@ -501,7 +501,7 @@ static int mlx5e_rep_fib_event(struct notifier_block *nb,
 {
 	struct mlx5e_rep_priv *rpriv = container_of(nb, struct mlx5e_rep_priv,
 						    fib_nb);
-	struct net_device *netdev = rpriv->netdev;
+	struct net_device *netdev = rpriv->rep->netdev;
 	struct mlx5e_priv *priv = netdev_priv(netdev);
 	struct fib_notifier_info *info = ptr;
 	struct mlx5e_fib_event_work *fib_work;
@@ -547,7 +547,7 @@ static void mlx5e_rep_fib_event_flush(struct notifier_block *nb)
 {
 	struct mlx5e_rep_priv *rpriv = container_of(nb, struct mlx5e_rep_priv,
 						    fib_nb);
-	struct net_device *netdev = rpriv->netdev;
+	struct net_device *netdev = rpriv->rep->netdev;
 	struct mlx5e_priv *priv = netdev_priv(netdev);
 
 	flush_workqueue(priv->wq);
