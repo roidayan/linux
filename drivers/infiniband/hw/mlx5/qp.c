@@ -35,6 +35,7 @@
 #include <rdma/ib_cache.h>
 #include <rdma/ib_user_verbs.h>
 #include <linux/mlx5/fs.h>
+#include <linux/mlx5/eswitch.h>
 #include "mlx5_ib.h"
 
 /* not supported currently */
@@ -190,6 +191,34 @@ int mlx5_ib_read_user_wqe(struct mlx5_ib_qp *qp, int send, int wqe_index,
 	return wqe_length;
 }
 
+#ifdef CONFIG_MLX5_ESWITCH
+static int mlx5_ib_create_flow_rule_vport_sq(struct mlx5_ib_dev *dev,
+					     struct mlx5_ib_sq *sq)
+{
+#define FDB_UPLINK_VPORT 0xffff
+	struct mlx5_flow_handle *flow_rule;
+	struct mlx5_eswitch *esw = dev->mdev->priv.eswitch;
+
+	if (!mlx5_core_is_pf(dev->mdev) ||
+	    mlx5_eswitch_mode(esw) != SRIOV_OFFLOADS)
+		return 0;
+
+	flow_rule =
+		mlx5_eswitch_add_send_to_vport_rule(esw,
+						    FDB_UPLINK_VPORT,
+						    sq->base.mqp.qpn);
+	if (IS_ERR(flow_rule))
+		return PTR_ERR(flow_rule);
+	sq->flow_rule = flow_rule;
+	return 0;
+}
+#else /* CONFIG_MLX5_ESWITCH */
+static inline int mlx5_ib_create_flow_rule_vport_sq(struct mlx5_ib_dev *dev,
+						    struct mlx5_ib_sq *sq)
+{
+	return 0;
+}
+#endif
 static void mlx5_ib_qp_event(struct mlx5_core_qp *qp, int type)
 {
 	struct ib_qp *ibqp = &to_mibqp(qp)->ibqp;
@@ -1051,6 +1080,13 @@ static void destroy_raw_packet_qp_tis(struct mlx5_ib_dev *dev,
 	mlx5_core_destroy_tis(dev->mdev, sq->tisn);
 }
 
+static void destroy_flow_rule_vport_sq(struct mlx5_ib_dev *dev,
+				       struct mlx5_ib_sq *sq)
+{
+	if (sq->flow_rule)
+		mlx5_del_flow_rules(sq->flow_rule);
+}
+
 static int create_raw_packet_qp_sq(struct mlx5_ib_dev *dev,
 				   struct mlx5_ib_sq *sq, void *qpin,
 				   struct ib_pd *pd)
@@ -1114,7 +1150,14 @@ static int create_raw_packet_qp_sq(struct mlx5_ib_dev *dev,
 	if (err)
 		goto err_umem;
 
+	err = mlx5_ib_create_flow_rule_vport_sq(dev, sq);
+	if (err)
+		goto err_flow;
+
 	return 0;
+
+err_flow:
+	mlx5_core_destroy_sq_tracked(dev->mdev, &sq->base.mqp);
 
 err_umem:
 	ib_umem_release(sq->ubuffer.umem);
@@ -1126,6 +1169,7 @@ err_umem:
 static void destroy_raw_packet_qp_sq(struct mlx5_ib_dev *dev,
 				     struct mlx5_ib_sq *sq)
 {
+	destroy_flow_rule_vport_sq(dev, sq);
 	mlx5_core_destroy_sq_tracked(dev->mdev, &sq->base.mqp);
 	ib_umem_release(sq->ubuffer.umem);
 }
