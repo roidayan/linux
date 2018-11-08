@@ -634,6 +634,7 @@ struct mlx5e_priv {
 #ifdef CONFIG_MLX5_EN_IPSEC
 	struct mlx5e_ipsec        *ipsec;
 #endif
+	bool is_rep;
 };
 
 struct mlx5e_profile {

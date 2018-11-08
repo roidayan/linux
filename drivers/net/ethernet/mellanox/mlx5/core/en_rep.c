@@ -1145,6 +1145,7 @@ mlx5e_vport_rep_load(struct mlx5_core_dev *dev, struct mlx5_eswitch_rep *rep)
 	struct mlx5e_rep_priv *rpriv;
 	struct net_device *netdev;
 	struct mlx5e_priv *upriv;
+	struct mlx5e_priv *priv;
 	int err;
 
 	rpriv = kzalloc(sizeof(*rpriv), GFP_KERNEL);
@@ -1191,6 +1192,9 @@ mlx5e_vport_rep_load(struct mlx5_core_dev *dev, struct mlx5_eswitch_rep *rep)
 			rep->vport);
 		goto err_egdev_cleanup;
 	}
+
+	priv = netdev_priv(netdev);
+	priv->is_rep = true;
 
 	return 0;
 
