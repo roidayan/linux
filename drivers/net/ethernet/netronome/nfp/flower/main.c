@@ -568,6 +568,8 @@ static int nfp_flower_init(struct nfp_app *app)
 		goto err_cleanup_metadata;
 	}
 
+	INIT_LIST_HEAD(&app_priv->indr_block_cb_priv);
+
 	return 0;
 
 err_cleanup_metadata:
@@ -676,6 +678,10 @@ static void nfp_flower_stop(struct nfp_app *app)
 
 	if (app_priv->flower_ext_feats & NFP_FL_FEATS_LAG)
 		unregister_netdevice_notifier(&app_priv->nfp_lag.lag_nb);
+
+	ret = nfp_flower_reg_indir_block_handler(app, netdev, event);
+	if (ret & NOTIFY_STOP_MASK)
+		return ret;
 
 	nfp_tunnel_config_stop(app);
 }
