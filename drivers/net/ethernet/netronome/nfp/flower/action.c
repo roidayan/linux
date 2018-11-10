@@ -2,7 +2,6 @@
 /* Copyright (C) 2017-2018 Netronome Systems, Inc. */
 
 #include <linux/bitfield.h>
-#include <net/geneve.h>
 #include <net/pkt_cls.h>
 #include <net/switchdev.h>
 #include <net/tc_act/tc_csum.h>
@@ -89,21 +88,6 @@ nfp_fl_pre_lag(struct nfp_app *app, const struct tc_action *action,
 	nfp_flow->meta.shortcut = cpu_to_be32(NFP_FL_SC_ACT_NULL);
 
 	return act_size;
-}
-
-static bool nfp_fl_netdev_is_tunnel_type(struct net_device *out_dev,
-					 enum nfp_flower_tun_type tun_type)
-{
-	if (!out_dev->rtnl_link_ops)
-		return false;
-
-	if (!strcmp(out_dev->rtnl_link_ops->kind, "vxlan"))
-		return tun_type == NFP_FL_TUNNEL_VXLAN;
-
-	if (!strcmp(out_dev->rtnl_link_ops->kind, "geneve"))
-		return tun_type == NFP_FL_TUNNEL_GENEVE;
-
-	return false;
 }
 
 static int
