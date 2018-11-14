@@ -61,6 +61,13 @@ static struct kmem_cache *nic_flow_cache   __read_mostly;
 static struct kmem_cache *fdb_flow_cache   __read_mostly;
 static struct kmem_cache *parse_attr_cache   __read_mostly;
 
+enum {
+	MLX5E_TC_TUNNEL_TYPE_UNKNOWN,
+	MLX5E_TC_TUNNEL_TYPE_VXLAN
+};
+
+static int mlx5e_get_tunnel_type(struct net_device *tunnel_dev);
+
 #define MLX5E_TC_TABLE_NUM_GROUPS 4
 #define MLX5E_TC_TABLE_MAX_GROUP_SIZE BIT(16)
 
@@ -870,6 +877,14 @@ static void mlx5e_hairpin_flow_del(struct mlx5e_priv *priv,
 	flow->hpe = NULL;
 }
 
+static const char *mlx5e_netdev_kind(struct net_device *dev)
+{
+	if (dev->rtnl_link_ops)
+		return dev->rtnl_link_ops->kind;
+	else
+		return "";
+}
+
 static int
 mlx5e_tc_add_nic_flow(struct mlx5e_priv *priv,
 		      struct mlx5e_tc_flow_parse_attr *parse_attr,
@@ -1231,7 +1246,8 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 	u32 encap_id;
 	int err;
 
-	err = mlx5_packet_reformat_alloc(priv->mdev, e->tunnel_type,
+	err = mlx5_packet_reformat_alloc(priv->mdev,
+					 e->reformat_type,
 					 e->encap_size, e->encap_header,
 					 MLX5_FLOW_NAMESPACE_FDB,
 					 &encap_id);
@@ -1625,7 +1641,8 @@ static int parse_tunnel_vxlan_attr(struct mlx5e_priv *priv,
 
 static int parse_tunnel_attr(struct mlx5e_priv *priv,
 			     struct mlx5_flow_spec *spec,
-			     struct tc_cls_flower_offload *f, u8 *match_level)
+			     struct tc_cls_flower_offload *f, u8 *match_level,
+			     struct net_device *filter_dev)
 {
 	struct netlink_ext_ack *extack = f->common.extack;
 	void *headers_c = MLX5_ADDR_OF(fte_match_param, spec->match_criteria,
@@ -1637,22 +1654,29 @@ static int parse_tunnel_attr(struct mlx5e_priv *priv,
 		skb_flow_dissector_target(f->dissector,
 					  FLOW_DISSECTOR_KEY_ENC_CONTROL,
 					  f->key);
+	int tunnel_type;
+	int err = 0;
 
-	if (dissector_uses_key(f->dissector, FLOW_DISSECTOR_KEY_ENC_PORTS)) {
-		int err = 0;
-
+	tunnel_type = mlx5e_get_tunnel_type(filter_dev);
+	if (tunnel_type == MLX5E_TC_TUNNEL_TYPE_VXLAN) {
 		err = parse_tunnel_vxlan_attr(priv, spec, f,
 					      headers_c, headers_v);
-		if (err)
-			goto vxlan_match_offload_err;
-
 		*match_level = MLX5_MATCH_L4;
-	} else { /* udp dst port must be given */
-vxlan_match_offload_err:
+	} else {
 		NL_SET_ERR_MSG_MOD(extack,
-				   "IP tunnel decap offload supported only for vxlan, must set UDP dport");
+				   "decapsulation offload is not supported");
 		netdev_warn(priv->netdev,
-			    "IP tunnel decap offload supported only for vxlan, must set UDP dport\n");
+			    "decapsulation offload is not supported for %s net device (%d)\n",
+			    mlx5e_netdev_kind(filter_dev), tunnel_type);
+		return -EOPNOTSUPP;
+	}
+
+	if (err) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "failed to parse tunnel attributes");
+		netdev_warn(priv->netdev,
+			    "failed to parse %s tunnel attributes (%d)\n",
+			    mlx5e_netdev_kind(filter_dev), tunnel_type);
 		return -EOPNOTSUPP;
 	}
 
@@ -1757,6 +1781,7 @@ vxlan_match_offload_err:
 static int __parse_cls_flower(struct mlx5e_priv *priv,
 			      struct mlx5_flow_spec *spec,
 			      struct tc_cls_flower_offload *f,
+			      struct net_device *filter_dev,
 			      u8 *match_level, u8 *tunnel_match_level)
 {
 	struct netlink_ext_ack *extack = f->common.extack;
@@ -1808,7 +1833,7 @@ static int __parse_cls_flower(struct mlx5e_priv *priv,
 		switch (key->addr_type) {
 		case FLOW_DISSECTOR_KEY_IPV4_ADDRS:
 		case FLOW_DISSECTOR_KEY_IPV6_ADDRS:
-			if (parse_tunnel_attr(priv, spec, f, tunnel_match_level))
+			if (parse_tunnel_attr(priv, spec, f, tunnel_match_level, filter_dev))
 				return -EOPNOTSUPP;
 			break;
 		default:
@@ -2168,7 +2193,8 @@ static bool is_valid_ct_state(struct mlx5e_priv *priv,
 static int parse_cls_flower(struct mlx5e_priv *priv,
 			    struct mlx5e_tc_flow *flow,
 			    struct mlx5_flow_spec *spec,
-			    struct tc_cls_flower_offload *f)
+			    struct tc_cls_flower_offload *f,
+			    struct net_device *filter_dev)
 {
 	struct netlink_ext_ack *extack = f->common.extack;
 	struct mlx5_core_dev *dev = priv->mdev;
@@ -2182,7 +2208,7 @@ static int parse_cls_flower(struct mlx5e_priv *priv,
 	if (!is_valid_ct_state(priv, f))
 		return -EOPNOTSUPP;
 
-	err = __parse_cls_flower(priv, spec, f, &match_level, &tunnel_match_level);
+	err = __parse_cls_flower(priv, spec, f, filter_dev, &match_level, &tunnel_match_level);
 
 	is_eswitch_flow = mlx5e_is_eswitch_flow(flow);
 	if (!err && is_eswitch_flow) {
@@ -2840,10 +2866,21 @@ static int mlx5e_gen_vxlan_header(char buf[], struct ip_tunnel_key *tun_key)
 }
 
 static int mlx5e_gen_ip_tunnel_header(char buf[], __u8 *ip_proto,
-				      struct ip_tunnel_key *tun_key)
+				      struct mlx5e_encap_entry *e)
 {
-	*ip_proto = IPPROTO_UDP;
-	return mlx5e_gen_vxlan_header(buf, tun_key);
+	int err = 0;
+	struct ip_tunnel_key *key = &e->tun_info.key;
+
+	if (e->tunnel_type == MLX5E_TC_TUNNEL_TYPE_VXLAN) {
+		*ip_proto = IPPROTO_UDP;
+		err = mlx5e_gen_vxlan_header(buf, key);
+	} else {
+		pr_warn("mlx5: Cannot generate tunnel header for tunnel type (%d)\n"
+			, e->tunnel_type);
+		err = -EOPNOTSUPP;
+	}
+
+	return err;
 }
 
 static int mlx5e_encap_entry_attach_update(struct mlx5e_priv *priv,
@@ -2883,7 +2920,7 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 	int max_encap_size = MLX5_CAP_ESW(priv->mdev, max_encap_header_size);
 	int ipv4_encap_size = ETH_HLEN +
 			      sizeof(struct iphdr) +
-			      VXLAN_HLEN;
+			      e->tunnel_hlen;
 	struct ip_tunnel_key *tun_key = &e->tun_info.key;
 	struct net_device *out_dev;
 	struct neighbour *n = NULL;
@@ -2947,7 +2984,7 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 
 	/* add tunneling protocol header */
 	err = mlx5e_gen_ip_tunnel_header((char *)ip + sizeof(struct iphdr),
-					 &ip->protocol, tun_key);
+					  &ip->protocol, e);
 	if (err)
 		goto out;
 
@@ -2964,7 +3001,8 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 		goto out;
 	}
 
-	err = mlx5_packet_reformat_alloc(priv->mdev, e->tunnel_type,
+	err = mlx5_packet_reformat_alloc(priv->mdev,
+					 e->reformat_type,
 					 ipv4_encap_size, encap_header,
 					 MLX5_FLOW_NAMESPACE_FDB,
 					 &e->encap_id);
@@ -3000,7 +3038,7 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 	int max_encap_size = MLX5_CAP_ESW(priv->mdev, max_encap_header_size);
 	int ipv6_encap_size = ETH_HLEN +
 			      sizeof(struct ipv6hdr) +
-			      VXLAN_HLEN;
+			      e->tunnel_hlen;
 	struct ip_tunnel_key *tun_key = &e->tun_info.key;
 	struct net_device *out_dev;
 	struct neighbour *n = NULL;
@@ -3063,7 +3101,7 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 
 	/* add tunneling protocol header */
 	err = mlx5e_gen_ip_tunnel_header((char *)ip6h + sizeof(struct ipv6hdr),
-					 &ip6h->nexthdr, tun_key);
+					 &ip6h->nexthdr, e);
 	if (err)
 		goto out;
 
@@ -3081,7 +3119,8 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 		goto out;
 	}
 
-	err = mlx5_packet_reformat_alloc(priv->mdev, e->tunnel_type,
+	err = mlx5_packet_reformat_alloc(priv->mdev,
+					 e->reformat_type,
 					 ipv6_encap_size, encap_header,
 					 MLX5_FLOW_NAMESPACE_FDB,
 					 &e->encap_id);
@@ -3142,7 +3181,7 @@ mlx5e_encap_get(struct mlx5e_priv *priv, struct ip_tunnel_key *key,
 
 static struct mlx5e_encap_entry *
 mlx5e_encap_get_create(struct mlx5e_priv *priv, struct ip_tunnel_info *tun_info,
-		       struct net_device *mirred_dev, int tunnel_type)
+		       struct net_device *mirred_dev)
 {
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 	unsigned short family = ip_tunnel_info_af(tun_info);
@@ -3163,7 +3202,7 @@ mlx5e_encap_get_create(struct mlx5e_priv *priv, struct ip_tunnel_info *tun_info,
 
 	mutex_init(&e->encap_entry_lock);
 	e->tun_info = *tun_info;
-	e->tunnel_type = tunnel_type;
+	//e->tunnel_type = tunnel_type;
 	INIT_LIST_HEAD(&e->flows);
 	INIT_LIST_HEAD(&e->neigh_update_list);
 	refcount_set(&e->refcnt, 1);
@@ -3195,14 +3234,52 @@ err_out:
 	return ERR_PTR(err);
 }
 
+static int mlx5e_get_tunnel_type(struct net_device *tunnel_dev)
+{
+	if (netif_is_vxlan(tunnel_dev))
+		return MLX5E_TC_TUNNEL_TYPE_VXLAN;
+	else
+		return MLX5E_TC_TUNNEL_TYPE_UNKNOWN;
+}
+
 bool mlx5e_tc_tun_device_to_offload(struct mlx5e_priv *priv,
 				    struct net_device *netdev)
 {
-	if (netif_is_vxlan(netdev) &&
+	int tunnel_type = mlx5e_get_tunnel_type(netdev);
+
+	if (tunnel_type == MLX5E_TC_TUNNEL_TYPE_VXLAN &&
 	    MLX5_CAP_ESW(priv->mdev, vxlan_encap_decap))
 		return true;
+	else
+		return false;
+}
 
-	return false;
+static int mlx5e_init_tunnel_attr(struct net_device *tunnel_dev,
+				  struct mlx5e_priv *priv,
+				  struct mlx5e_encap_entry *e,
+				  struct netlink_ext_ack *extack)
+{
+	e->tunnel_type = mlx5e_get_tunnel_type(tunnel_dev);
+
+	if (e->tunnel_type == MLX5E_TC_TUNNEL_TYPE_VXLAN) {
+		int dst_port =  be16_to_cpu(e->tun_info.key.tp_dst);
+
+		if (!mlx5_vxlan_lookup_port(priv->mdev->vxlan, dst_port)) {
+			NL_SET_ERR_MSG_MOD(extack,
+					   "vxlan udp dport was not registered with the HW");
+			netdev_warn(priv->netdev,
+				    "%d isn't an offloaded vxlan udp dport\n",
+				    dst_port);
+			return -EOPNOTSUPP;
+		}
+		e->reformat_type = MLX5_REFORMAT_TYPE_L2_TO_VXLAN;
+		e->tunnel_hlen = VXLAN_HLEN;
+	} else {
+		e->reformat_type = -1;
+		e->tunnel_hlen = -1;
+		return -EOPNOTSUPP;
+	}
+	return 0;
 }
 
 static int mlx5e_attach_encap(struct mlx5e_priv *priv,
@@ -3213,34 +3290,18 @@ static int mlx5e_attach_encap(struct mlx5e_priv *priv,
 			      struct netlink_ext_ack *extack)
 {
 	struct mlx5_esw_flow_attr *attr = flow->esw_attr;
-	struct ip_tunnel_key *key = &tun_info->key;
 	struct mlx5e_encap_entry *e;
-	int tunnel_type, err = 0;
+	int err = 0;
 
-	if (!MLX5_CAP_ESW(priv->mdev, vxlan_encap_decap)) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "vxlan HW offloading is not supported");
-		netdev_warn(priv->netdev,
-			    "vxlan HW offloading is not supported\n");
-		return -EOPNOTSUPP;
-	}
-
-	if (mlx5_vxlan_lookup_port(priv->mdev->vxlan, be16_to_cpu(key->tp_dst)) &&
-	    MLX5_CAP_ESW(priv->mdev, vxlan_encap_decap)) {
-		tunnel_type = MLX5_REFORMAT_TYPE_L2_TO_VXLAN;
-	} else {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "port isn't an offloaded vxlan udp dport");
-		netdev_warn(priv->netdev,
-			    "%d isn't an offloaded vxlan udp dport\n", be16_to_cpu(key->tp_dst));
-		return -EOPNOTSUPP;
-	}
-
-	e = mlx5e_encap_get_create(priv, tun_info, mirred_dev, tunnel_type);
+	e = mlx5e_encap_get_create(priv, tun_info, mirred_dev);
 
 	/* must verify if encap is valid or not */
 	if (IS_ERR(e))
 		return PTR_ERR(e);
+
+	err = mlx5e_init_tunnel_attr(mirred_dev, priv, e, extack);
+	if (err)
+		return err;
 
 	flow->e = e;
 	mutex_lock(&e->encap_entry_lock);
@@ -3625,11 +3686,12 @@ mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 		goto out;
 	parse_attr->filter_dev = filter_dev;
 	flow->esw_attr->parse_attr = parse_attr;
-	err = parse_cls_flower(flow->priv, flow, &parse_attr->spec, f);
+	err = parse_cls_flower(flow->priv, flow, &parse_attr->spec,
+			       f, filter_dev);
 	if (err)
 		goto err_free;
 
-	err = parse_cls_flower(priv, flow, &parse_attr->spec, f);
+	err = parse_cls_flower(priv, flow, &parse_attr->spec, f, filter_dev);
 	if (err)
 		goto err_parse_flow;
 
@@ -3687,7 +3749,8 @@ mlx5e_add_nic_flow(struct mlx5e_priv *priv,
 		goto out;
 
 	parse_attr->filter_dev = filter_dev;
-	err = parse_cls_flower(flow->priv, flow, &parse_attr->spec, f);
+	err = parse_cls_flower(flow->priv, flow, &parse_attr->spec,
+			       f, filter_dev);
 	if (err)
 		goto err_free;
 
