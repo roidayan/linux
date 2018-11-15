@@ -180,7 +180,14 @@ static bool mlx5e_is_eswitch_flow(struct mlx5e_tc_flow *flow)
 
 static bool mlx5e_is_offloaded_flow(struct mlx5e_tc_flow *flow)
 {
-	return !!(atomic_read(&flow->flags) & MLX5E_TC_FLOW_OFFLOADED);
+	return !!(atomic_read_acquire(&flow->flags) & MLX5E_TC_FLOW_OFFLOADED);
+}
+
+static void mlx5e_set_flow_flag_mb_before(struct mlx5e_tc_flow *flow, int flag)
+{
+	/* Complete all memory stores before setting bit. */
+	smp_mb__before_atomic();
+	atomic_or(flag, &flow->flags);
 }
 
 static inline u32 hash_mod_hdr_info(struct mod_hdr_key *key)
@@ -863,7 +870,6 @@ mlx5e_tc_offload_fdb_rules(struct mlx5_eswitch *esw,
 		}
 	}
 
-	atomic_or(MLX5E_TC_FLOW_OFFLOADED, &flow->flags);
 	return rule;
 }
 
@@ -1068,9 +1074,9 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 		}
 
 		mlx5e_tc_unoffload_from_slow_path(esw, flow, &slow_attr);
-		/* was unset when slow path rule removed */
-		atomic_or(MLX5E_TC_FLOW_OFFLOADED, &flow->flags);
 		flow->rule[0] = rule;
+		/* was unset when slow path rule removed */
+		mlx5e_set_flow_flag_mb_before(flow, MLX5E_TC_FLOW_OFFLOADED);
 
 loop_cont:
 		mlx5e_flow_put(priv, flow);
@@ -1104,9 +1110,9 @@ void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
 		}
 
 		mlx5e_tc_unoffload_fdb_rules(esw, flow, flow->esw_attr);
-		/* was unset when fast path rule removed */
-		atomic_or(MLX5E_TC_FLOW_OFFLOADED, &flow->flags);
 		flow->rule[0] = rule;
+		/* was unset when fast path rule removed */
+		mlx5e_set_flow_flag_mb_before(flow, MLX5E_TC_FLOW_OFFLOADED);
 
 loop_cont:
 		mlx5e_flow_put(priv, flow);
@@ -3169,6 +3175,7 @@ mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 		flow->esw_attr->parse_attr = NULL;
 	}
 
+	mlx5e_set_flow_flag_mb_before(flow, MLX5E_TC_FLOW_OFFLOADED);
 	*__flow = flow;
 
 	return 0;
@@ -3209,7 +3216,7 @@ mlx5e_add_nic_flow(struct mlx5e_priv *priv,
 	if (err)
 		goto err_free;
 
-	atomic_or(MLX5E_TC_FLOW_OFFLOADED, &flow->flags);
+	mlx5e_set_flow_flag_mb_before(flow, MLX5E_TC_FLOW_OFFLOADED);
 	kfree(parse_attr->mod_hdr_actions);
 	kvfree(parse_attr);
 	*__flow = flow;
