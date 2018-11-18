@@ -1741,6 +1741,7 @@ int mlx5_eswitch_init(struct mlx5_core_dev *dev)
 	esw->enabled_vports = 0;
 	esw->mode = SRIOV_NONE;
 	esw->offloads.inline_mode = MLX5_INLINE_MODE_NONE;
+	atomic64_set(&esw->offloads.num_flows, 0);
 	if (MLX5_CAP_ESW_FLOWTABLE_FDB(dev, reformat) &&
 	    MLX5_CAP_ESW_FLOWTABLE_FDB(dev, decap))
 		esw->offloads.encap = DEVLINK_ESWITCH_ENCAP_MODE_BASIC;

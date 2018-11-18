@@ -35,6 +35,7 @@
 
 #include <linux/if_ether.h>
 #include <linux/if_link.h>
+#include <linux/atomic.h>
 #include <net/devlink.h>
 #include <linux/mlx5/device.h>
 #include <linux/mlx5/eswitch.h>
@@ -170,7 +171,7 @@ struct mlx5_esw_offload {
 	spinlock_t mod_hdr_tbl_lock; /* protects mod_hdr_tbl */
 	DECLARE_HASHTABLE(mod_hdr_tbl, 8);
 	u8 inline_mode;
-	u64 num_flows;
+	atomic64_t num_flows;
 	u8 encap;
 };
 
