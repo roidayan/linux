@@ -45,6 +45,7 @@
 #include "lib/vxlan.h"
 #include "lib/clock.h"
 #include "en/port.h"
+#include "lib/eq.h"
 
 struct mlx5e_rq_param {
 	u32			rqc[MLX5_ST_SZ_DW(rqc)];
@@ -1580,11 +1581,6 @@ static void mlx5e_close_cq(struct mlx5e_cq *cq)
 	mlx5e_free_cq(cq);
 }
 
-static int mlx5e_get_cpu(struct mlx5e_priv *priv, int ix)
-{
-	return cpumask_first(priv->mdev->priv.eq_table.irq_info[ix + MLX5_EQ_VEC_COMP_BASE].mask);
-}
-
 static int mlx5e_open_tx_cqs(struct mlx5e_channel *c,
 			     struct mlx5e_params *params,
 			     struct mlx5e_channel_param *cparam)
@@ -1735,9 +1731,9 @@ static int mlx5e_open_channel(struct mlx5e_priv *priv, int ix,
 			      struct mlx5e_channel_param *cparam,
 			      struct mlx5e_channel **cp)
 {
+	int cpu = cpumask_first(mlx5_comp_irq_get_affinity_mask(priv->mdev, ix));
 	struct net_dim_cq_moder icocq_moder = {0, 0};
 	struct net_device *netdev = priv->netdev;
-	int cpu = mlx5e_get_cpu(priv, ix);
 	struct mlx5e_channel *c;
 	unsigned int irq;
 	int err;
@@ -4616,7 +4612,7 @@ struct net_device *mlx5e_create_netdev(struct mlx5_core_dev *mdev,
 	}
 
 #ifdef CONFIG_MLX5_EN_ARFS
-	netdev->rx_cpu_rmap = mdev->priv.eq_table.rmap;
+	netdev->rx_cpu_rmap =  mlx5_eq_table_get_rmap(mdev);
 #endif
 
 	profile->init(mdev, netdev, profile, ppriv);

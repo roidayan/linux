@@ -54,6 +54,7 @@
 #include <net/devlink.h>
 #include "mlx5_core.h"
 #include "fs_core.h"
+#include "lib/eq.h"
 #include "lib/mpfs.h"
 #include "eswitch.h"
 #include "lib/mlx5.h"
@@ -727,7 +728,7 @@ static int mlx5_init_once(struct mlx5_core_dev *dev, struct mlx5_priv *priv)
 		goto out;
 	}
 
-	err = mlx5_eq_init(dev);
+	err = mlx5_eq_table_init(dev);
 	if (err) {
 		dev_err(&pdev->dev, "failed to initialize eq\n");
 		goto out;
@@ -801,7 +802,7 @@ err_tables_cleanup:
 	mlx5_cq_debugfs_cleanup(dev);
 
 err_eq_cleanup:
-	mlx5_eq_cleanup(dev);
+	mlx5_eq_table_cleanup(dev);
 
 out:
 	return err;
@@ -822,7 +823,7 @@ static void mlx5_cleanup_once(struct mlx5_core_dev *dev)
 	mlx5_cleanup_srq_table(dev);
 	mlx5_cleanup_qp_table(dev);
 	mlx5_cq_debugfs_cleanup(dev);
-	mlx5_eq_cleanup(dev);
+	mlx5_eq_table_cleanup(dev);
 }
 
 char *jd_version = "1.5.4";	/* branch jd-1-mlx5 */
