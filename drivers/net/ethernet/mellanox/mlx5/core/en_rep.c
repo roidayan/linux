@@ -47,6 +47,7 @@
 
 #define MLX5E_REP_PARAMS_LOG_SQ_SIZE \
 	max(0x6, MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE)
+#define MLX5E_REP_PARAMS_DEF_NUM_CHANNELS 1
 
 static const char mlx5e_rep_driver_name[] = "mlx5e_rep";
 
@@ -1259,7 +1260,7 @@ static void mlx5e_init_rep(struct mlx5_core_dev *mdev,
 
 	INIT_DELAYED_WORK(&priv->update_stats_work, mlx5e_update_stats_work);
 
-	priv->channels.params.num_channels = 1;
+	priv->channels.params.num_channels = MLX5E_REP_PARAMS_DEF_NUM_CHANNELS;
 
 	mlx5e_build_rep_params(mdev, &priv->channels.params, netdev->mtu);
 	mlx5e_build_rep_netdev(netdev);
