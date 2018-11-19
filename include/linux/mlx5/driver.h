@@ -211,14 +211,6 @@ enum mlx5_port_status {
 	MLX5_PORT_DOWN      = 2,
 };
 
-enum mlx5_eq_type {
-	MLX5_EQ_TYPE_COMP,
-	MLX5_EQ_TYPE_ASYNC,
-#ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
-	MLX5_EQ_TYPE_PF,
-#endif
-};
-
 struct mlx5_bfreg_info {
 	u32		       *sys_pages;
 	int			num_low_latency_bfregs;
@@ -700,7 +692,7 @@ struct mlx5_pagefault {
 		} rdma;
 	};
 
-	struct mlx5_eq	       *eq;
+	struct mlx5_eq_pagefault *eq;
 	struct work_struct	work;
 };
 
