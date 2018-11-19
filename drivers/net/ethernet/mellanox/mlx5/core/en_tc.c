@@ -1957,11 +1957,11 @@ static bool modify_header_match_supported(struct mlx5_flow_spec *spec,
 	}
 
 	ip_proto = MLX5_GET(fte_match_set_lyr_2_4, headers_v, ip_protocol);
-	if (modify_ip_header && ip_proto != IPPROTO_TCP &&
-	    ip_proto != IPPROTO_UDP && ip_proto != IPPROTO_ICMP) {
-		pr_info("can't offload re-write of ip proto %d\n", ip_proto);
-		return false;
-	}
+	//if (modify_ip_header && ip_proto != IPPROTO_TCP &&
+	//    ip_proto != IPPROTO_UDP && ip_proto != IPPROTO_ICMP) {
+	//	pr_info("can't offload re-write of ip proto %d\n", ip_proto);
+	//	return false;
+	//}
 
 out_ok:
 	return true;
