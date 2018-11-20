@@ -1560,7 +1560,7 @@ static void parse_vxlan_attr(struct mlx5_flow_spec *spec,
 
 static int parse_tunnel_attr(struct mlx5e_priv *priv,
 			     struct mlx5_flow_spec *spec,
-			     struct tc_cls_flower_offload *f)
+			     struct tc_cls_flower_offload *f, u8 *match_level)
 {
 	struct netlink_ext_ack *extack = f->common.extack;
 	void *headers_c = MLX5_ADDR_OF(fte_match_param, spec->match_criteria,
@@ -1598,6 +1598,7 @@ static int parse_tunnel_attr(struct mlx5e_priv *priv,
 			return -EOPNOTSUPP;
 		}
 
+		*match_level = MLX5_MATCH_L4;
 		MLX5_SET(fte_match_set_lyr_2_4, headers_c,
 			 udp_dport, ntohs(mask->dst));
 		MLX5_SET(fte_match_set_lyr_2_4, headers_v,
@@ -1717,7 +1718,7 @@ vxlan_match_offload_err:
 static int __parse_cls_flower(struct mlx5e_priv *priv,
 			      struct mlx5_flow_spec *spec,
 			      struct tc_cls_flower_offload *f,
-			      u8 *match_level)
+			      u8 *match_level, u8 *tunnel_match_level)
 {
 	struct netlink_ext_ack *extack = f->common.extack;
 	void *headers_c = MLX5_ADDR_OF(fte_match_param, spec->match_criteria,
@@ -1768,7 +1769,7 @@ static int __parse_cls_flower(struct mlx5e_priv *priv,
 		switch (key->addr_type) {
 		case FLOW_DISSECTOR_KEY_IPV4_ADDRS:
 		case FLOW_DISSECTOR_KEY_IPV6_ADDRS:
-			if (parse_tunnel_attr(priv, spec, f))
+			if (parse_tunnel_attr(priv, spec, f, tunnel_match_level))
 				return -EOPNOTSUPP;
 			break;
 		default:
@@ -2116,12 +2117,12 @@ static int parse_cls_flower(struct mlx5e_priv *priv,
 	struct mlx5_core_dev *dev = priv->mdev;
 	struct mlx5_eswitch *esw = dev->priv.eswitch;
 	struct mlx5e_rep_priv *rpriv = priv->ppriv;
+	u8 match_level, tunnel_match_level = MLX5_MATCH_NONE;
 	struct mlx5_eswitch_rep *rep;
 	bool is_eswitch_flow;
-	u8 match_level;
 	int err;
 
-	err = __parse_cls_flower(priv, spec, f, &match_level);
+	err = __parse_cls_flower(priv, spec, f, &match_level, &tunnel_match_level);
 
 	is_eswitch_flow = mlx5e_is_eswitch_flow(flow);
 	if (!err && is_eswitch_flow) {
@@ -2138,10 +2139,12 @@ static int parse_cls_flower(struct mlx5e_priv *priv,
 		}
 	}
 
-	if (is_eswitch_flow)
+	if (is_eswitch_flow) {
 		flow->esw_attr->match_level = match_level;
-	else
+		flow->esw_attr->tunnel_match_level = tunnel_match_level;
+	} else {
 		flow->nic_attr->match_level = match_level;
+	}
 
 	return err;
 }
