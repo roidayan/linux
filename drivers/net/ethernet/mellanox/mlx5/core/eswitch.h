@@ -286,6 +286,7 @@ struct mlx5_esw_flow_attr {
 	u32	encap_id;
 	u32	mod_hdr_id;
 	u8	match_level;
+	u8	tunnel_match_level;
 	struct mlx5_fc *counter;
 	struct mlx5e_tc_flow_parse_attr *parse_attr;
 };
