@@ -2288,16 +2288,6 @@ void __init setup_nr_node_ids(void);
 static inline void setup_nr_node_ids(void) {}
 #endif
 
-static inline void *kvzalloc(unsigned long size,...)
-{
-	void *rtn;
-
-	rtn = kzalloc(size, GFP_KERNEL | __GFP_NOWARN);
-	if (!rtn)
-		rtn = vzalloc(size);
-	return rtn;
-}
-
 static inline void *kvmalloc_node(size_t size, gfp_t flags, int node) {
 	void *rtn;
 
@@ -2319,6 +2309,17 @@ static inline void *kvzalloc_node(size_t size, gfp_t flags, int node)
 		memset(p, 0, size);
 	return p;
 }
+
+static inline void *kvzalloc(size_t size, gfp_t flags)
+{
+	void *rtn;
+
+	rtn = kzalloc(size, flags | __GFP_NOWARN);
+	if (!rtn)
+		rtn = vzalloc(size);
+	return rtn;
+}
+
 
 #endif /* __KERNEL__ */
 #endif /* _LINUX_MM_H */
