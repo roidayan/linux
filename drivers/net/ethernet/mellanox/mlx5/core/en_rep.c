@@ -45,8 +45,8 @@
 #include "en_tc.h"
 #include "fs_core.h"
 
-#define MLX5E_REP_PARAMS_LOG_SQ_SIZE \
-	max(0x6, MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE)
+#define MLX5E_REP_PARAMS_DEF_LOG_SQ_SIZE \
+	max(0x7, MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE)
 #define MLX5E_REP_PARAMS_DEF_NUM_CHANNELS 1
 
 static const char mlx5e_rep_driver_name[] = "mlx5e_rep";
@@ -1193,7 +1193,7 @@ static void mlx5e_build_rep_params(struct mlx5_core_dev *mdev,
 
 	params->hard_mtu    = MLX5E_ETH_HARD_MTU;
 	params->sw_mtu      = mtu;
-	params->log_sq_size = MLX5E_REP_PARAMS_LOG_SQ_SIZE;
+	params->log_sq_size = MLX5E_REP_PARAMS_DEF_LOG_SQ_SIZE;
 
 	/* RQ */
 	mlx5e_build_rq_params(mdev, params);
