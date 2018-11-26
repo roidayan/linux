@@ -1083,16 +1083,19 @@ void nft_gen_flow_offload_dep_ops_unregister(struct flow_offload_dep_ops * ops)
 {
     struct nf_gen_flow_offload_table *flowtable;
 
-    rcu_assign_pointer(flow_dep_ops, NULL);
-
-    synchronize_rcu();
-
     rcu_read_lock();
     flowtable = rcu_dereference(_flowtable);
 
     /* cleanup all connections, for dep list member, drv assures no need to free explicitly */
     nf_gen_flow_offload_table_iterate(flowtable, nf_gen_flow_offload_table_do_cleanup, flowtable);
     rcu_read_unlock();
+
+    synchronize_rcu();
+
+    cancel_delayed_work_sync(&flowtable->gc_work.work);
+    nf_gen_flow_offload_gc_step(&flowtable->gc_work, INT_MAX);
+    rcu_assign_pointer(flow_dep_ops, NULL);
+    queue_delayed_work(flowtable->flow_wq, &flowtable->gc_work.work, HZ);
 }
 
 EXPORT_SYMBOL_GPL(nft_gen_flow_offload_dep_ops_unregister);
