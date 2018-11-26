@@ -128,6 +128,8 @@ struct mlx5e_tc_flow {
 	/* Don't add any fields here */
 };
 
+/* TODO: current_microflow is global and probelmatic when we'll support
+ * multiple HCAs. move it into mdev? */
 DEFINE_PER_CPU(struct mlx5e_microflow *, current_microflow) = NULL;
 
 static DEFINE_SPINLOCK(microflow_lock);
@@ -4788,8 +4790,10 @@ void mlx5e_tc_esw_cleanup(struct mlx5e_priv *priv)
 
 	mlx5_fc_list_cleanup(priv->mdev, &fc_list);
 
-	for_each_possible_cpu(cpu)
+	for_each_possible_cpu(cpu) {
 		microflow_free(per_cpu(current_microflow, cpu));
+		per_cpu(current_microflow, cpu) = NULL;
+	}
 	kmem_cache_destroy(microflow_cache);
 	microflow_cache_allocated = 0;
 }
