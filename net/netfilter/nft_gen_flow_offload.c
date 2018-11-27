@@ -576,26 +576,27 @@ static inline int _get_bucket_id_of_flow(struct flow_gc_work *gc_work,
     int tgt_bucket;
     u64 curt_bucket_start = gc_work->buckets[gc_work->curt_bucket].start;
 
-    if (flow->timeout > curt_bucket_start) {
-        tgt_bucket = (flow->timeout - curt_bucket_start) 
-                     / gc_work->bkt_interval;
-        
-        if (tgt_bucket >= gc_work->bucket_num) 
-            tgt_bucket = gc_work->bucket_num - 1;
-    } else {
-        /* abnormal, add into temp */
-        tgt_bucket = 0;
-    }
+    /* this flow got stats and not expired,
+       flow->timeout > jiffie > curt_bucket_start*/
+    tgt_bucket = (flow->timeout - curt_bucket_start) 
+                 / gc_work->bkt_interval;
+    
+    if (tgt_bucket >= gc_work->bucket_num) 
+        tgt_bucket = gc_work->bucket_num - 1;
 
+    /* this flow is going to expired, put it into next bucket
+       to avoid frequently geting stats */
+    if (tgt_bucket == 0)
+        tgt_bucket = 1;
+
+    /* randomize value in [0- 1/2 tgt_bucket], adjusted tgt in [1/2 tgt_bucket, tgt_bucket]
+       avoid to set tgt_bucket as 0, so minimal tgt_bucket is 4*/
     if (tgt_bucket > 3) {
-        /* randomize value in [0- 1/2 tgt_bucket], adjusted tgt in [1/2 tgt_bucket, tgt_bucket]
-           avoid to set tgt_bucket as 0, so minimal tgt_bucket is 4*/
         u32 r;
         get_random_bytes(&r, sizeof(r));
         
         /* put randomization here */
         tgt_bucket = tgt_bucket - (r%(tgt_bucket/2));
-
     } 
 
     /* get real bucket index */ 
@@ -1109,7 +1110,7 @@ int nft_gen_flow_offload_add(const struct net *net,
     const struct nf_conntrack_tuple_hash *thash;
     struct nf_gen_flow_offload_tuple_rhash *fhash;
     enum nf_gen_flow_offload_tuple_dir dir;
-    struct nf_gen_flow_offload *flow;
+    struct nf_gen_flow_offload *flow = NULL;
     struct nf_gen_flow_offload_entry *entry;
     struct nf_conn *ct;
     int ret = 0;
