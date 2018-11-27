@@ -2522,6 +2522,17 @@ static inline int hash_encap_info(struct ip_tunnel_key *key)
 	return jhash(key, sizeof(*key), 0);
 }
 
+static bool mlx5e_same_eswitch_devs(struct mlx5e_priv *priv,
+				    struct net_device *peer_netdev)
+{
+	if (switchdev_port_same_parent_id(priv->netdev, peer_netdev) &&
+	    (peer_netdev->netdev_ops == &mlx5e_netdev_ops_rep ||
+	    peer_netdev->netdev_ops == &mlx5e_netdev_ops))
+		return true;
+
+	return false;
+}
+
 static int mlx5e_route_lookup_ipv4(struct mlx5e_priv *priv,
 				   struct net_device *mirred_dev,
 				   struct net_device **out_dev,
@@ -3184,8 +3195,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 				return -EOPNOTSUPP;
 			}
 
-			if (switchdev_port_same_parent_id(priv->netdev,
-							  out_dev) ||
+			if (mlx5e_same_eswitch_devs(priv, out_dev) ||
 			    is_merged_eswitch_dev(priv, out_dev)) {
 				action |= MLX5_FLOW_CONTEXT_ACTION_FWD_DEST |
 					  MLX5_FLOW_CONTEXT_ACTION_COUNT;
