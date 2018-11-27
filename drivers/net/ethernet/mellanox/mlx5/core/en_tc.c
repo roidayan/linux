@@ -323,7 +323,8 @@ struct mlx5_fc *mlx5_fc_alloc(struct mlx5_core_dev *dev, bool aging)
 
 void mlx5_fc_free(struct mlx5_core_dev *dev, struct mlx5_fc *counter)
 {
-	llist_add(&counter->freelist, &fc_list);
+	if (counter)
+		llist_add(&counter->freelist, &fc_list);
 }
 
 void mlx5_fc_list_cleanup(struct mlx5_core_dev *dev, struct llist_head *fc_list)
