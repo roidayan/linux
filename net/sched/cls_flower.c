@@ -220,13 +220,15 @@ static u8 fl_ct_get_state(enum ip_conntrack_info ctinfo)
 static void fl_notify_underlying_device(struct sk_buff *skb, const struct tcf_proto *tp,
 					struct cls_fl_filter *f)
 {
-	struct tc_microflow_offload mf = { skb, (unsigned long) f, 0 };
 	struct tcf_block *block = tp->chain->block;
 	struct tc_action **actions = f->exts.actions;
 	int nr_actions = f->exts.nr_actions;
+	struct tc_microflow_offload mf;
 
-	/* TODO: can we do it in the driver? need RCU support */
-	atrace(nr_actions > 0);
+	WARN_ON(nr_actions < 1);
+
+	mf.skb = skb;
+	mf.cookie = tc_in_hw(f->flags) ? (unsigned long) f : 0;
 	mf.last_flow = !is_tcf_gact_goto_chain(actions[nr_actions-1]);
 	mf.chain_index = tp->chain->index;
 

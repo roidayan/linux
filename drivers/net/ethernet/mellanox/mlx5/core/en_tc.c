@@ -4312,6 +4312,8 @@ static int microflow_merge_work(struct mlx5e_microflow *microflow)
 	return -1;
 }
 
+/* TODO: bug: ct_flow is not stored in tc_ht, memory leak on cleanup if any is still offloaded */
+/* It is quite tough to handle this ct_flow properly */
 int mlx5e_configure_ct(struct mlx5e_priv *priv,
 		       struct tc_ct_offload *cto)
 {
@@ -4445,10 +4447,8 @@ err:
 int mlx5e_configure_microflow(struct mlx5e_priv *priv,
 			      struct tc_microflow_offload *mf)
 {
-	struct rhashtable *tc_ht = get_tc_ht(priv);
 	struct rhashtable *mf_ht = get_mf_ht(priv);
 	struct sk_buff *skb = mf->skb;
-	struct mlx5e_tc_flow *flow;
 	struct mlx5e_microflow *microflow = NULL;
 	int err;
 
@@ -4475,8 +4475,7 @@ int mlx5e_configure_microflow(struct mlx5e_priv *priv,
 	if (unlikely(microflow->nr_flows == MICROFLOW_MAX_FLOWS))
 		goto err;
 
-	flow = rhashtable_lookup_fast(tc_ht, &mf->cookie, tc_ht_params);
-	if (!flow)
+	if (!mf->cookie)
 		goto err;
 
 	if (microflow->nr_flows == 0) {
