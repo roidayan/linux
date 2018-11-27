@@ -145,6 +145,7 @@ struct mlx5_fc {
 	struct list_head list;
 	struct llist_node addlist;
 	struct llist_node dellist;
+	struct llist_node freelist;
 
 	/* last{packets,bytes} members are used when calculating the delta since
 	 * last reading

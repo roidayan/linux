@@ -304,6 +304,43 @@ static inline int cmp_mod_hdr_info(struct mod_hdr_key *a,
 	return memcmp(a->actions, b->actions, a->num_actions * MLX5_MH_ACT_SZ);
 }
 
+static DEFINE_SPINLOCK(fc_lock);
+static LLIST_HEAD(fc_list);
+
+struct mlx5_fc *mlx5_fc_alloc(struct mlx5_core_dev *dev, bool aging)
+{
+	struct llist_node *node;
+
+	spin_lock(&fc_lock);
+	node = llist_del_first(&fc_list);
+	spin_unlock(&fc_lock);
+
+	if (!node)
+		return mlx5_fc_create(dev, aging);
+
+	return llist_entry(node, struct mlx5_fc, freelist);
+}
+
+void mlx5_fc_free(struct mlx5_core_dev *dev, struct mlx5_fc *counter)
+{
+	llist_add(&counter->freelist, &fc_list);
+}
+
+void mlx5_fc_list_cleanup(struct mlx5_core_dev *dev, struct llist_head *fc_list)
+{
+	struct mlx5_fc *counter, *tmp;
+	struct llist_node *head;
+	int i = 0; /* TODO: DEBUG */
+
+	head = llist_del_all(fc_list);
+	llist_for_each_entry_safe(counter, tmp, head, freelist) {
+		mlx5_fc_destroy(dev, counter);
+		i++;
+	}
+
+	trace("Cleaned %d HW counters", i);
+}
+
 static struct mlx5e_mod_hdr_entry *
 mlx5e_mod_hdr_get(struct mlx5e_priv *priv, int namespace,
 		  struct mod_hdr_key *key, u32 hash_key)
@@ -1134,7 +1171,7 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	}
 
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_COUNT) {
-		counter = mlx5_fc_create(esw->dev, true);
+		counter = mlx5_fc_alloc(esw->dev, true);
 		if (IS_ERR(counter)) {
 			rule = ERR_CAST(counter);
 			goto err_out;
@@ -1306,7 +1343,7 @@ static void mlx5e_tc_del_fdb_flow_simple(struct mlx5e_priv *priv,
 		mlx5e_detach_mod_hdr(priv, flow);
 
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_COUNT)
-		mlx5_fc_destroy(esw->dev, attr->counter);
+		mlx5_fc_free(esw->dev, attr->counter);
 }
 
 static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
@@ -4738,6 +4775,8 @@ void mlx5e_tc_esw_cleanup(struct mlx5e_priv *priv)
 
 	rhashtable_free_and_destroy(tc_ht, _mlx5e_tc_del_flow, NULL);
 	rhashtable_free_and_destroy(mf_ht, NULL, NULL);
+
+	mlx5_fc_list_cleanup(priv->mdev, &fc_list);
 
 	for_each_possible_cpu(cpu)
 		microflow_free(per_cpu(current_microflow, cpu));
