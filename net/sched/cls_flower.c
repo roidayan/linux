@@ -232,8 +232,10 @@ static void fl_notify_underlying_device(struct sk_buff *skb, const struct tcf_pr
 	mf.last_flow = !is_tcf_gact_goto_chain(actions[nr_actions-1]);
 	mf.chain_index = tp->chain->index;
 
+	trace("calling notify_underlying_device with mf.cookie (f): %px", (void *) mf.cookie);
+
 	/* TODO: should be replaced by something else TBD */
-	tc_setup_cb_call(block, NULL, TC_SETUP_MICROFLOW, &mf, false);
+	tc_setup_cb_call(block, &f->exts, TC_SETUP_MICROFLOW, &mf, false);
 }
 
 static int fl_classify(struct sk_buff *skb, const struct tcf_proto *tp,
@@ -273,7 +275,6 @@ static int fl_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 
 		f = fl_lookup(mask, &skb_mkey);
 		if (f && !tc_skip_sw(f->flags)) {
-			trace("calling notify_underlying_device with f: %px", f);
 			fl_notify_underlying_device(skb, tp, f);
 			*res = f->res;
 			return tcf_exts_exec(skb, &f->exts, res);
