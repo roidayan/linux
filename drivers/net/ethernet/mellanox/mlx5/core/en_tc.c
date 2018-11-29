@@ -88,6 +88,7 @@ enum {
 	MLX5E_TC_FLOW_HAIRPIN_RSS = BIT(MLX5E_TC_FLOW_BASE + 4),
 	MLX5E_TC_FLOW_INIT_DONE	= BIT(MLX5E_TC_FLOW_BASE + 5),
 	MLX5E_TC_FLOW_SIMPLE    = BIT(MLX5E_TC_FLOW_BASE + 6),
+	MLX5E_TC_FLOW_CT	= BIT(MLX5E_TC_FLOW_BASE + 7),
 };
 
 struct mlx5e_microflow;
@@ -1316,8 +1317,10 @@ static void mlx5e_del_microflow_list(struct mlx5e_tc_flow *flow)
 	}
 	spin_unlock(&microflow_lock);
 
-	if (i > 1)
-		mtrace("microflow_list size: %d", i);
+	if (i > 1) {
+		mtrace("microflow_list size: %d (ct flow: %d)", i,
+			!!(atomic_read(&flow->flags) & MLX5E_TC_FLOW_CT));
+	}
 }
 
 static void mlx5e_tc_del_fdb_flow_simple(struct mlx5e_priv *priv,
@@ -4398,7 +4401,7 @@ int mlx5e_configure_ct(struct mlx5e_priv *priv,
 	ct_tuple->tuple = *cto->tuple;
 
 	attr_size = sizeof(struct mlx5_esw_flow_attr);
-	err = mlx5e_alloc_flow(priv, attr_size, cookie, 0 /* handle */, MLX5E_TC_FLOW_ESWITCH,
+	err = mlx5e_alloc_flow(priv, attr_size, cookie, 0 /* handle */, MLX5E_TC_FLOW_ESWITCH | MLX5E_TC_FLOW_CT,
 			       GFP_ATOMIC, &parse_attr, &flow);
 	if (err)
 		goto err_free;
