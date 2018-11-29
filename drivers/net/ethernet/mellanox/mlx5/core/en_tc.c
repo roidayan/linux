@@ -4541,7 +4541,7 @@ int mlx5e_configure_microflow(struct mlx5e_priv *priv,
 
 	err = rhashtable_lookup_insert_fast(mf_ht, &microflow->node, mf_ht_params);
 	if (err) {
-		ntrace("rhashtable_lookup_insert_fast: error: %d (prevent duplicated microflows)", err);
+		trace("rhashtable_lookup_insert_fast: error: %d (prevent duplicated microflows)", err);
 		goto err;
 	}
 
