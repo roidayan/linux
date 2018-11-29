@@ -202,7 +202,7 @@ int tc_setup_cb_egdev_all_register(const struct net_device *dev,
 				   tc_setup_cb_t *cb, void *cb_priv);
 void tc_setup_cb_egdev_all_unregister(const struct net_device *dev,
 				      tc_setup_cb_t *cb, void *cb_priv);
-int tc_setup_cb_egdev_all_call(enum tc_setup_type type, void *type_data);
+int tc_setup_cb_egdev_all_call_fast(enum tc_setup_type type, void *type_data);
 #else
 static inline
 int tc_setup_cb_egdev_register(const struct net_device *dev,
@@ -236,8 +236,7 @@ static inline void tc_setup_cb_egdev_all_unregister(const struct net_device *dev
 {
 }
 
-static inline
-int tc_setup_cb_egdev_all_call(enum tc_setup_type type, void *type_data)
+int tc_setup_cb_egdev_all_call_fast(enum tc_setup_type type, void *type_data)
 {
 	return 0;
 }

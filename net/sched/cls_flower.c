@@ -235,7 +235,7 @@ static void fl_notify_underlying_device(struct sk_buff *skb, const struct tcf_pr
 	trace("calling notify_underlying_device with mf.cookie (f): %px", (void *) mf.cookie);
 
 	/* TODO: should be replaced by something else TBD */
-	tc_setup_cb_call(block, &f->exts, TC_SETUP_MICROFLOW, &mf, false);
+	tc_setup_cb_call_all(block, TC_SETUP_MICROFLOW, &mf);
 }
 
 static int fl_classify(struct sk_buff *skb, const struct tcf_proto *tp,

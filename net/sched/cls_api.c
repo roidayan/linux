@@ -2114,10 +2114,6 @@ int tc_setup_cb_call(struct tcf_block *block, struct tcf_exts *exts,
 	int ok_count;
 	int ret;
 
-	/* TODO: temporary workaround */
-	if (!block)
-		goto egdev_all;
-
 	ret = tcf_block_cb_call(block, type, type_data, err_stop);
 	if (ret < 0)
 		return ret;
@@ -2133,10 +2129,27 @@ int tc_setup_cb_call(struct tcf_block *block, struct tcf_exts *exts,
 	if (ok_count)
 		return ok_count;
 
-egdev_all:
-	return tc_setup_cb_egdev_all_call(type, type_data);
+	return tc_setup_cb_egdev_all_call_fast(type, type_data);
 }
 EXPORT_SYMBOL(tc_setup_cb_call);
+
+int tc_setup_cb_call_all(struct tcf_block *block, enum tc_setup_type type, void *type_data)
+{
+	struct tcf_block_cb *block_cb;
+	int err;
+
+	if (block) {
+		/* Assumption: this list has only one element (rep) */
+		list_for_each_entry(block_cb, &block->cb_list, list) {
+			err = block_cb->cb(type, type_data,
+					   block_cb->cb_priv);
+			return err;
+		}
+	}
+
+	return tc_setup_cb_egdev_all_call_fast(type, type_data);
+}
+EXPORT_SYMBOL(tc_setup_cb_call_all);
 
 static __net_init int tcf_net_init(struct net *net)
 {
