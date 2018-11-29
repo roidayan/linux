@@ -2548,7 +2548,8 @@ static int offload_pedit_fields(struct pedit_headers *masks,
 
 static int alloc_mod_hdr_actions(struct mlx5e_priv *priv,
 				 int nkeys, int namespace,
-				 struct mlx5e_tc_flow_parse_attr *parse_attr)
+				 struct mlx5e_tc_flow_parse_attr *parse_attr,
+				 gfp_t flags)
 {
 	int action_size, max_actions;
 
@@ -2562,7 +2563,7 @@ static int alloc_mod_hdr_actions(struct mlx5e_priv *priv,
 	/* can get up to crazingly 16 HW actions in 32 bits pedit SW key */
 	max_actions = nkeys ? min(max_actions, nkeys * 16) : max_actions;
 
-	parse_attr->mod_hdr_actions = kcalloc(max_actions, action_size, GFP_KERNEL);
+	parse_attr->mod_hdr_actions = kcalloc(max_actions, action_size, flags);
 	if (!parse_attr->mod_hdr_actions)
 		return -ENOMEM;
 
@@ -2610,7 +2611,7 @@ static int parse_tc_pedit_action(struct mlx5e_priv *priv,
 			goto out_err;
 	}
 
-	err = alloc_mod_hdr_actions(priv, nkeys, namespace, parse_attr);
+	err = alloc_mod_hdr_actions(priv, nkeys, namespace, parse_attr, GFP_KERNEL);
 	if (err)
 		goto out_err;
 
@@ -3945,7 +3946,7 @@ static int microflow_merge_hdr(struct mlx5e_priv *priv,
 
 	dst_parse_attr = mflow->esw_attr->parse_attr;
 	if (!dst_parse_attr->mod_hdr_actions) {
-		err = alloc_mod_hdr_actions(priv, 0 /* maximum */, MLX5_FLOW_NAMESPACE_FDB, dst_parse_attr);
+		err = alloc_mod_hdr_actions(priv, 0 /* maximum */, MLX5_FLOW_NAMESPACE_FDB, dst_parse_attr, GFP_ATOMIC);
 		if (err) {
 			etrace("alloc_mod_hdr_actions failed");
 			return -ENOMEM;
@@ -4261,13 +4262,14 @@ static int __microflow_merge(struct mlx5e_microflow *microflow)
 	int attr_size, i;
 	int err;
 
+	rcu_read_lock();
 	err = microflow_resolve_path_flows(microflow);
 	if (err)
 		goto err_flow;
 
 	attr_size = sizeof(struct mlx5_esw_flow_attr);
 	err = mlx5e_alloc_flow(priv, attr_size, 0 /* cookie */, 0 /* handle */,
-			       flags, GFP_KERNEL, &mparse_attr, &mflow);
+			       flags, GFP_ATOMIC, &mparse_attr, &mflow);
 	if (err)
 		goto err_flow;
 
@@ -4301,6 +4303,7 @@ static int __microflow_merge(struct mlx5e_microflow *microflow)
 			goto err;
 		dummy_counters[i] = flow->dummy_counter;
 	}
+	rcu_read_unlock();
 
 	atomic_set(&mflow->flags, flags);
 
@@ -4314,6 +4317,9 @@ static int __microflow_merge(struct mlx5e_microflow *microflow)
 	if (err && err != -EAGAIN)
 		goto err;
 
+	rcu_read_lock();
+	/* We should verify again that all parent flows are still alive */
+
 	microflow_link_dummy_counters(microflow->flow,
 				      dummy_counters,
 				      microflow->nr_flows);
@@ -4325,8 +4331,11 @@ static int __microflow_merge(struct mlx5e_microflow *microflow)
 	if (err) {
 		etrace("microflow_register_ct_flow failed");
 		mlx5e_del_microflow(microflow);
+		rcu_read_unlock();
 		return -1;
 	}
+
+	rcu_read_unlock();
 
 	trace("microflow_merge: mflow: %px, flows: %d", mflow, microflow->nr_flows);
 
@@ -4347,9 +4356,7 @@ void microflow_merge_work(struct work_struct *work)
 {
 	struct mlx5e_microflow *microflow = container_of(work, struct mlx5e_microflow, work);
 
-	rcu_read_lock();
 	__microflow_merge(microflow);
-	rcu_read_unlock();
 }
 
 static int microflow_merge(struct mlx5e_microflow *microflow)
