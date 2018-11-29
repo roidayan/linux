@@ -4341,7 +4341,7 @@ err_flow:
 	return -1;
 }
 
-void microflow_merge(struct work_struct *work)
+void microflow_merge_work(struct work_struct *work)
 {
 	struct mlx5e_microflow *microflow = container_of(work, struct mlx5e_microflow, work);
 
@@ -4350,9 +4350,9 @@ void microflow_merge(struct work_struct *work)
 	rcu_read_unlock();
 }
 
-static int microflow_merge_work(struct mlx5e_microflow *microflow)
+static int microflow_merge(struct mlx5e_microflow *microflow)
 {
-	INIT_WORK(&microflow->work, microflow_merge);
+	INIT_WORK(&microflow->work, microflow_merge_work);
 	if (queue_work(microflow_wq, &microflow->work))
 		return 0;
 
@@ -4545,7 +4545,7 @@ int mlx5e_configure_microflow(struct mlx5e_priv *priv,
 		goto err;
 	}
 
-	err = microflow_merge_work(microflow);
+	err = microflow_merge(microflow);
 	if (err)
 		goto err_work;
 
