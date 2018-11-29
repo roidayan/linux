@@ -4754,7 +4754,7 @@ int mlx5e_tc_esw_init(struct mlx5e_priv *priv)
 	if (err)
 		goto err_mf_ht;
 
-	microflow_wq = alloc_workqueue("microflow", WQ_MEM_RECLAIM, 16);
+	microflow_wq = alloc_workqueue("microflow", WQ_MEM_RECLAIM | WQ_UNBOUND | WQ_HIGHPRI, 16);
 	if (!microflow_wq)
 		goto err_wq;
 
