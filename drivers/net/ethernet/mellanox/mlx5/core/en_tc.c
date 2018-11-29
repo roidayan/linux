@@ -339,7 +339,7 @@ void mlx5_fc_list_cleanup(struct mlx5_core_dev *dev, struct llist_head *fc_list)
 		i++;
 	}
 
-	trace("Cleaned %d HW counters", i);
+	mtrace("Cleaned %d HW counters", i);
 }
 
 static struct mlx5e_mod_hdr_entry *
