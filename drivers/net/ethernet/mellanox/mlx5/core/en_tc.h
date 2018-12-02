@@ -166,8 +166,6 @@ int alloc_mod_hdr_actions(struct mlx5e_priv *priv,
 int mlx5e_tc_update_and_init_done_fdb_flow(struct mlx5e_priv *priv,
 					   struct mlx5e_tc_flow *flow);
 
-bool mlx5e_tc_tun_device_to_offload(struct mlx5e_priv *priv,
-				    struct net_device *netdev);
 
 #else /* CONFIG_MLX5_ESWITCH */
 static inline int  mlx5e_tc_nic_init(struct mlx5e_priv *priv) { return 0; }
