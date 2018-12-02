@@ -1364,19 +1364,12 @@ static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
 	} else {
 		mlx5e_del_microflow_list(flow);
 
-		/* TODO: make sense, right? */
-		//if (attr->action & MLX5_FLOW_CONTEXT_ACTION_COUNT)
-		mlx5_fc_destroy(priv->mdev, flow->dummy_counter);
+		if (attr->action & MLX5_FLOW_CONTEXT_ACTION_COUNT)
+			mlx5_fc_destroy(priv->mdev, flow->dummy_counter);
 
-		/* TODO: merge change: that IF is needed in 4.20 */
-		//if (!attr->parse_attr) {
-		//	etrace("attr->parse_attr == NULL !!!");
-		//	return;
-		//}
+		if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR)
+			kfree(attr->parse_attr->mod_hdr_actions);
 
-		/* TODO: ?? */
-		// if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR)
-		kfree(attr->parse_attr->mod_hdr_actions);
 		kvfree(attr->parse_attr);
 	}
 }
