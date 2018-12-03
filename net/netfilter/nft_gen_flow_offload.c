@@ -266,10 +266,12 @@ static void nf_gen_flow_offload_fixup_ct_state(struct nf_conn *ct)
     unsigned int timeout;
     int l4num;
 
+    rcu_read_lock();
+	
     l4num = nf_ct_protonum(ct);
     l4proto = __nf_ct_l4proto_find(nf_ct_l3num(ct), l4num);
     if (!l4proto)
-        return;
+        goto __fixup_exit;
 
     timeouts = l4proto->get_timeouts(net);
     if (!timeouts)
@@ -282,7 +284,7 @@ static void nf_gen_flow_offload_fixup_ct_state(struct nf_conn *ct)
     else if (l4num == IPPROTO_UDP)
         timeout = timeouts[UDP_CT_REPLIED];
     else
-        return;
+        goto __fixup_exit;
 
 #if LINUX_VERSION_CODE <= KERNEL_VERSION(4,0,0)
     {
@@ -297,6 +299,8 @@ static void nf_gen_flow_offload_fixup_ct_state(struct nf_conn *ct)
 #else
     ct->timeout = (u32)jiffies + timeout;
 #endif
+__fixup_exit:
+    rcu_read_unlock();	
 }
 
 void nf_gen_flow_offload_free(struct nf_gen_flow_offload *flow)
@@ -629,7 +633,7 @@ static void _reschedule_flow_aging(struct flow_gc_work *gc_work,
 
         _put_into_bucket(&flowtable->gc_work, tgt_bucket, &flow->bkt_node, true);
     }
-    
+
     spin_unlock(&gc_work->lock); 
 }
 
@@ -879,9 +883,9 @@ int nf_gen_flow_offload_table_init(struct nf_gen_flow_offload_table *flowtable)
     if (err < 0)
         return err;
 
-	flowtable->flow_wq = alloc_ordered_workqueue("gen_flow_offload_wq", 0);
-	if (!flowtable->flow_wq)
-		goto _flow_wq_alloc_err;
+    flowtable->flow_wq = alloc_ordered_workqueue("gen_flow_offload_wq", 0);
+    if (!flowtable->flow_wq)
+        goto _flow_wq_alloc_err;
 
     err = rhashtable_init(&flowtable->rhashtable,
                   &nf_gen_flow_offload_rhash_params);
@@ -1012,7 +1016,6 @@ _flowtable_lookup(const struct net *net,
 
     return tuplehash;
 }
-
 
 /* retrieve stats by callbacks */
 static int nft_gen_flow_offload_stats(struct nf_gen_flow_offload *flow)
@@ -1416,7 +1419,7 @@ static void __exit nft_gen_flow_offload_module_exit(void)
 
     nft_gen_flow_offload_proc_exit();
 
-    flowtable = rcu_dereference(_flowtable);
+    flowtable = rcu_access_pointer(_flowtable);
     if (flowtable != NULL) {
         rcu_assign_pointer(_flowtable, NULL);
 
