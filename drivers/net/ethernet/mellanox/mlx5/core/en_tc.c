@@ -66,6 +66,21 @@
 static int enable_ct_ageing = 1; /* On by default */
 module_param(enable_ct_ageing, int, 0644);
 
+static int nr_total_workqueue_elm = 0;
+module_param(nr_total_workqueue_elm, int, 0644);
+
+static int nr_concurrent_workqueue_elm = 0;
+module_param(nr_concurrent_workqueue_elm, int, 0644);
+
+static int nr_workqueue_elm = 0;
+module_param(nr_workqueue_elm, int, 0644);
+
+static int nr_mf_err = 0;
+module_param(nr_mf_err, int, 0644);
+
+static int nr_mf_succ = 0;
+module_param(nr_mf_succ, int, 0644);
+
 struct mlx5_nic_flow_attr {
 	u32 action;
 	u32 flow_tag;
@@ -1277,6 +1292,8 @@ static void mlx5e_del_miniflow(struct mlx5e_miniflow *miniflow)
 
 	/* mlx5e_flow_put(miniflow->priv, miniflow->flow); */
 	mlx5e_tc_del_fdb_flow(flow->priv, flow);
+	atomic_dec((atomic_t *)&nr_mf_succ);
+
 	kfree(flow);
 
 	rhashtable_remove_fast(mf_ht, &miniflow->node, mf_ht_params);
@@ -1287,7 +1304,10 @@ static void mlx5e_del_miniflow_work(struct work_struct *work)
 {
 	struct mlx5e_miniflow *miniflow = container_of(work, struct mlx5e_miniflow, work);
 
+	atomic_dec((atomic_t *)&nr_workqueue_elm);
+	atomic_inc((atomic_t *)&nr_concurrent_workqueue_elm);
 	mlx5e_del_miniflow(miniflow);
+	atomic_dec((atomic_t *)&nr_concurrent_workqueue_elm);
 }
 
 static void mlx5e_del_miniflow_list(struct mlx5e_tc_flow *flow)
@@ -1301,6 +1321,9 @@ static void mlx5e_del_miniflow_list(struct mlx5e_tc_flow *flow)
 
 		miniflow_unlink_dummy_counters(miniflow->flow);
 		miniflow_detach(miniflow);
+
+		atomic_inc((atomic_t *)&nr_total_workqueue_elm);
+		atomic_inc((atomic_t *)&nr_workqueue_elm);
 
 		INIT_WORK(&miniflow->work, mlx5e_del_miniflow_work);
 		queue_work(miniflow_wq, &miniflow->work);
@@ -4363,6 +4386,8 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 				      miniflow->nr_flows);
 	miniflow_attach(miniflow);
 
+	atomic_inc((atomic_t *)&nr_mf_succ);
+
 	err = miniflow_register_ct_flow(miniflow);
 	trace("miniflow_register_ct_flow: err: %d", err);
 	if (err) {
@@ -4378,6 +4403,7 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	return 0;
 
 err:
+	atomic_inc((atomic_t *)&nr_mf_err);
 	kfree(mparse_attr->mod_hdr_actions);
 	kvfree(mparse_attr);
 	kfree(mflow);
@@ -4394,11 +4420,17 @@ void miniflow_merge_work(struct work_struct *work)
 {
 	struct mlx5e_miniflow *miniflow = container_of(work, struct mlx5e_miniflow, work);
 
+	atomic_dec((atomic_t *)&nr_workqueue_elm);
+	atomic_inc((atomic_t *)&nr_concurrent_workqueue_elm);
 	__miniflow_merge(miniflow);
+	atomic_dec((atomic_t *)&nr_concurrent_workqueue_elm);
 }
 
 static int miniflow_merge(struct mlx5e_miniflow *miniflow)
 {
+	atomic_inc((atomic_t *)&nr_total_workqueue_elm);
+	atomic_inc((atomic_t *)&nr_workqueue_elm);
+
 	INIT_WORK(&miniflow->work, miniflow_merge_work);
 	if (queue_work(miniflow_wq, &miniflow->work))
 		return 0;

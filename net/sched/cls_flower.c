@@ -35,6 +35,15 @@
 
 #include <linux/yktrace.h>
 
+static int enable_miniflow = 1;
+module_param(enable_miniflow, int, 0644);
+
+int get_enable_miniflow(void)
+{
+	return enable_miniflow;
+}
+EXPORT_SYMBOL(get_enable_miniflow);
+
 struct fl_flow_key {
 	int	indev_ifindex;
 	u8	ct_state;
@@ -275,7 +284,8 @@ static int fl_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 
 		f = fl_lookup(mask, &skb_mkey);
 		if (f && !tc_skip_sw(f->flags)) {
-			fl_notify_underlying_device(skb, tp, f);
+			if (enable_miniflow)
+				fl_notify_underlying_device(skb, tp, f);
 			*res = f->res;
 			return tcf_exts_exec(skb, &f->exts, res);
 		}

@@ -36,10 +36,16 @@
 static unsigned int conntrack_net_id;
 static struct tc_action_ops act_conntrack_ops;
 
+int get_enable_miniflow(void);
+
 static void ct_notify_underlying_device(struct sk_buff *skb, struct nf_conn *ct,
                                         enum ip_conntrack_info ctinfo, struct net *net)
 {
 	struct tc_ct_offload cto = { skb, net, NULL, NULL };
+
+	if (!get_enable_miniflow())
+		return;
+
 	if (ct) {
 		cto.zone = (struct nf_conntrack_zone *)nf_ct_zone(ct);
 		cto.tuple = nf_ct_tuple(ct, CTINFO2DIR(ctinfo));
