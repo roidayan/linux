@@ -4300,14 +4300,14 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	int attr_size, i;
 	int err;
 
-	rcu_read_lock();
-	err = miniflow_resolve_path_flows(miniflow);
-	if (err)
-		goto err_rcu;
-
 	attr_size = sizeof(struct mlx5_esw_flow_attr);
 	err = mlx5e_alloc_flow(priv, attr_size, 0 /* cookie */, 0 /* handle */,
-			       flags, GFP_ATOMIC, &mparse_attr, &mflow);
+			       flags, GFP_KERNEL, &mparse_attr, &mflow);
+	if (err)
+		return -1;
+
+	rcu_read_lock();
+	err = miniflow_resolve_path_flows(miniflow);
 	if (err)
 		goto err_rcu;
 
@@ -4329,16 +4329,16 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 		miniflow_merge_action(mflow, flow);
 		err = miniflow_merge_mirred(mflow, flow);
 		if (err)
-			goto err_free_rcu;
+			goto err_rcu;
 		err = miniflow_merge_hdr(priv, mflow, flow);
 		if (err)
-			goto err_free_rcu;
+			goto err_rcu;
 		miniflow_merge_vxlan(mflow, flow);
 		/* TODO: vlan is not supported yet */
 
 		err = miniflow_attach_dummy_counter(flow);
 		if (err)
-			goto err_free_rcu;
+			goto err_rcu;
 		dummy_counters[i] = flow->dummy_counter;
 	}
 	rcu_read_unlock();
@@ -4351,12 +4351,12 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	err = __mlx5e_tc_add_fdb_flow(priv, mparse_attr, mflow);
 	trace("__mlx5e_tc_add_fdb_flow: err: %d", err);
 	if (err && err != -EAGAIN)
-		goto err_free;
+		goto err;
 
 	rcu_read_lock();
 	err = miniflow_verify_path_flows(miniflow);
 	if (err)
-		goto err_free_rcu;
+		goto err_rcu;
 
 	miniflow_link_dummy_counters(miniflow->flow,
 				      dummy_counters,
@@ -4367,25 +4367,24 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	trace("miniflow_register_ct_flow: err: %d", err);
 	if (err) {
 		etrace("miniflow_register_ct_flow failed");
-		goto err_rcu;
+		rcu_read_unlock();
+		rhashtable_remove_fast(mf_ht, &miniflow->node, mf_ht_params);
+		miniflow_cleanup(miniflow);
+		return -1;
 	}
 
 	rcu_read_unlock();
 	trace("miniflow_merge: mflow: %px, flows: %d", mflow, miniflow->nr_flows);
 	return 0;
 
-err_free:
+err:
 	kfree(mparse_attr->mod_hdr_actions);
 	kvfree(mparse_attr);
 	kfree(mflow);
-err:
 	rhashtable_remove_fast(mf_ht, &miniflow->node, mf_ht_params);
 	miniflow_cleanup(miniflow);
 	miniflow_free(miniflow);
 	return -1;
-err_free_rcu:
-	rcu_read_unlock();
-	goto err_free;
 err_rcu:
 	rcu_read_unlock();
 	goto err;
