@@ -4485,6 +4485,8 @@ int mlx5e_configure_ct(struct mlx5e_priv *priv,
 	ct_tuple->zone = *cto->zone;
 	ct_tuple->tuple = *cto->tuple;
 
+	ct_tuple->flow = NULL;
+
 	miniflow_path_append_cookie(miniflow, cookie, MFC_CT_FLOW);
 	return 0;
 
