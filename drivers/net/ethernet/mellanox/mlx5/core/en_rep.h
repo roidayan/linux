@@ -178,6 +178,7 @@ int mlx5e_rep_encap_entry_attach(struct mlx5e_priv *priv,
 void mlx5e_rep_encap_entry_detach(struct mlx5e_priv *priv,
 				  struct mlx5e_encap_entry *e);
 
+bool mlx5e_rep_neigh_entry_hold(struct mlx5e_neigh_hash_entry *nhe);
 void mlx5e_rep_queue_neigh_stats_work(struct mlx5e_priv *priv);
 bool mlx5e_rep_queue_neigh_update_work(struct mlx5e_priv *priv,
 				       struct mlx5e_neigh_hash_entry *nhe,

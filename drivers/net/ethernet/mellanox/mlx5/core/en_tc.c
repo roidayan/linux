@@ -2716,8 +2716,10 @@ static int mlx5e_encap_entry_attach_update(struct mlx5e_priv *priv,
 	/* Neigh state changed before encap was attached to nhe.
 	 * Schedule update work.
 	 */
-	if (n_updated != n_updated_new)
+	if (n_updated != n_updated_new) {
+		mlx5e_rep_neigh_entry_hold(e->nhe);
 		mlx5e_rep_queue_neigh_update_work(priv, e->nhe, n);
+	}
 
 	return 0;
 }
