@@ -1286,16 +1286,11 @@ static void miniflow_free(struct mlx5e_miniflow *miniflow);
 static void mlx5e_del_miniflow(struct mlx5e_miniflow *miniflow)
 {
 	struct rhashtable *mf_ht = get_mf_ht(miniflow->priv);
-	struct mlx5e_tc_flow *flow = miniflow->flow;
 
 	trace("mlx5e_del_miniflow: miniflow->nr_flows: %d", miniflow->nr_flows);
-
-	/* mlx5e_flow_put(miniflow->priv, miniflow->flow); */
-	mlx5e_tc_del_fdb_flow(flow->priv, flow);
 	atomic_dec((atomic_t *)&nr_mf_succ);
 
-	kfree(flow);
-
+	mlx5e_flow_put(miniflow->priv, miniflow->flow);
 	rhashtable_remove_fast(mf_ht, &miniflow->node, mf_ht_params);
 	miniflow_free(miniflow);
 }
