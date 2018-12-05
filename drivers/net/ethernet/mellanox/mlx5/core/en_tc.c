@@ -3171,7 +3171,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 			struct net_device *out_dev;
 
 			rcu_read_lock();
-			out_dev = tcf_mirred_dev_rcu(a);
+			out_dev = tcf_mirred_dev(a);
 			if (out_dev)
 				dev_hold(out_dev);
 			rcu_read_unlock();
@@ -3217,7 +3217,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 			struct ip_tunnel_info *info_ptr;
 
 			rcu_read_lock();
-			info_ptr = tcf_tunnel_info_rcu(a);
+			info_ptr = tcf_tunnel_info(a);
 			if (info_ptr) {
 				encap = true;
 				info = *info_ptr;
