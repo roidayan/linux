@@ -4243,7 +4243,7 @@ static int miniflow_register_ct_flow(struct mlx5e_miniflow *miniflow)
 }
 
 static struct mlx5e_tc_flow *miniflow_ct_flow_alloc(struct mlx5e_priv *priv,
-						     struct mlx5_ct_tuple *ct_tuple)
+						    struct mlx5e_ct_tuple *ct_tuple)
 {
 	struct mlx5e_tc_flow_parse_attr *parse_attr;
 	struct mlx5e_tc_flow *flow;
@@ -4376,18 +4376,22 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 
 	rcu_read_lock();
 	err = miniflow_verify_path_flows(miniflow);
-	if (err)
-		goto err_rcu;
+	if (err) {
+		/* TODO: refactor this function and the error handling */
+		ntrace("miniflow_verify_path_flows failed, interesting :)");
+		rcu_read_unlock();
+		mlx5e_flow_put(priv, mflow);
+		goto err_verify;
+	}
 
 	miniflow_link_dummy_counters(miniflow->flow,
-				      dummy_counters,
-				      miniflow->nr_flows);
+				     dummy_counters,
+				     miniflow->nr_flows);
 	miniflow_attach(miniflow);
 
 	atomic_inc((atomic_t *)&nr_mf_succ);
 
 	err = miniflow_register_ct_flow(miniflow);
-	trace("miniflow_register_ct_flow: err: %d", err);
 	if (err) {
 		etrace("miniflow_register_ct_flow failed");
 		rcu_read_unlock();
@@ -4405,6 +4409,7 @@ err:
 	kfree(mparse_attr->mod_hdr_actions);
 	kvfree(mparse_attr);
 	kfree(mflow);
+err_verify:
 	rhashtable_remove_fast(mf_ht, &miniflow->node, mf_ht_params);
 	miniflow_cleanup(miniflow);
 	miniflow_free(miniflow);
