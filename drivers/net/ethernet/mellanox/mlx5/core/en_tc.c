@@ -4151,12 +4151,10 @@ static void miniflow_init(struct mlx5e_miniflow *miniflow,
 			   struct mlx5e_priv *priv,
 			   struct sk_buff *skb)
 {
+	memset(miniflow, 0, sizeof(*miniflow));
+
 	miniflow->cookie = (u64) skb;
 	miniflow->priv = priv;
-	miniflow->nr_flows = 0;
-	miniflow->nr_ct_tuples = 0;
-	/* TODO: can we remove this and set the key size to be related to nr_flows? */
-	memset(miniflow->path.cookies, 0, sizeof(miniflow->path.cookies));
 }
 
 #define MFC_INFOMASK	7UL
