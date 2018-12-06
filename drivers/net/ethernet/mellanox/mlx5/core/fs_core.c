@@ -436,6 +436,9 @@ static void del_sw_hw_rule(struct fs_node *node)
 		update_fte = true;
 	}
 out:
+	if (rule->skip_ste && fte->handle)
+		goto free_rule;
+
 	root = find_root(&ft->node);
 	if (update_fte && fte->dests_size) {
 		err = root->cmds->update_fte(dev, ft, fg->id, modify_mask, fte);
@@ -444,6 +447,8 @@ out:
 				       "%s can't del rule fg id=%d fte_index=%d\n",
 				       __func__, fg->id, fte->index);
 	}
+
+free_rule:
 	kmem_cache_free(steering->rule_cache, rule);
 }
 
@@ -1245,6 +1250,13 @@ add_rule_fte(struct fs_fte *fte,
 	if (err)
 		goto free_handle;
 
+	if (fte->status & FS_FTE_STATUS_EXISTING) {
+		struct mlx5_eswitch *esw = root->dev->priv.eswitch;
+
+		if (mlx5_eswitch_mode(esw) == SRIOV_OFFLOADS && fte->handle)
+			WARN(1, "The assumption made in 28929b1a5f48 patch might not be valid any more");
+	}
+
 	fte->node.active = true;
 	fte->status |= FS_FTE_STATUS_EXISTING;
 	atomic_inc(&fte->node.version);
@@ -1846,8 +1858,12 @@ void mlx5_del_flow_rules(struct mlx5_flow_handle *handle)
 	struct mlx5_flow_steering *steering = get_steering(&handle->rule[0]->node);
 	int i;
 
-	for (i = handle->num_rules - 1; i >= 0; i--)
-		tree_remove_node(&handle->rule[i]->node);
+	for (i = handle->num_rules - 1; i >= 0; i--) {
+		struct mlx5_flow_rule *rule = handle->rule[i];
+		rule->skip_ste = true;
+
+		tree_remove_node(&rule->node);
+	}
 	kmem_cache_free(steering->handle_cache, handle);
 }
 EXPORT_SYMBOL(mlx5_del_flow_rules);
