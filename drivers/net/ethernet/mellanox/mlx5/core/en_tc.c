@@ -151,7 +151,12 @@ static DEFINE_SPINLOCK(miniflow_lock);
 /* we should have a miniflow init/cleanup functions */
 static int miniflow_cache_allocated;
 static struct kmem_cache *miniflow_cache; // __ro_after_init; crashes??
+
+/* Derived from current insertion rate (flows/s) */
+#define MINIFLOW_WORKQUEUE_MAX_SIZE 20000
+
 struct workqueue_struct *miniflow_wq;
+static atomic_t miniflow_wq_size = ATOMIC_INIT(0);
 
 struct mlx5e_miniflow_node {
 	struct list_head node;
@@ -4420,6 +4425,7 @@ void miniflow_merge_work(struct work_struct *work)
 
 	atomic_dec((atomic_t *)&nr_workqueue_elm);
 	atomic_inc((atomic_t *)&nr_concurrent_workqueue_elm);
+	atomic_dec(&miniflow_wq_size);
 	__miniflow_merge(miniflow);
 	atomic_dec((atomic_t *)&nr_concurrent_workqueue_elm);
 }
@@ -4429,6 +4435,7 @@ static int miniflow_merge(struct mlx5e_miniflow *miniflow)
 	atomic_inc((atomic_t *)&nr_total_workqueue_elm);
 	atomic_inc((atomic_t *)&nr_workqueue_elm);
 
+	atomic_inc(&miniflow_wq_size);
 	INIT_WORK(&miniflow->work, miniflow_merge_work);
 	if (queue_work(miniflow_wq, &miniflow->work))
 		return 0;
@@ -4606,6 +4613,9 @@ int mlx5e_configure_miniflow(struct mlx5e_priv *priv,
 	trace("last_flow: %d", mf->last_flow);
 	if (!mf->last_flow)
 		return 0;
+
+	if (atomic_read(&miniflow_wq_size) > MINIFLOW_WORKQUEUE_MAX_SIZE)
+		goto err;
 
 	err = rhashtable_lookup_insert_fast(mf_ht, &miniflow->node, mf_ht_params);
 	if (err) {
