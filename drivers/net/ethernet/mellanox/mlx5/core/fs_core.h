@@ -103,6 +103,7 @@ struct mlx5_flow_rule {
 	 */
 	struct list_head			next_ft;
 	u32					sw_action;
+	bool					skip_ste;
 };
 
 struct mlx5_flow_handle {
