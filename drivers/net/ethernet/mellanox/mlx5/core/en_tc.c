@@ -81,6 +81,9 @@ module_param(nr_mf_err, int, 0644);
 static int nr_mf_succ = 0;
 module_param(nr_mf_succ, int, 0644);
 
+static int max_nr_mf = 1024*1024;
+module_param(max_nr_mf, int, 0644);
+
 struct mlx5_nic_flow_attr {
 	u32 action;
 	u32 flow_tag;
@@ -4615,6 +4618,11 @@ int mlx5e_configure_miniflow(struct mlx5e_priv *priv,
 		return 0;
 
 	if (atomic_read(&miniflow_wq_size) > MINIFLOW_WORKQUEUE_MAX_SIZE)
+		goto err;
+
+	/* If rules in HW + rules in queue exceed the max value, then igore new one.
+	 * Note the rules in queue could be the to_be_deleted rules. */
+	if ((atomic_read((atomic_t *)&nr_mf_succ) + atomic_read((atomic_t *)&nr_workqueue_elm))> atomic_read((atomic_t *)&max_nr_mf))
 		goto err;
 
 	err = rhashtable_lookup_insert_fast(mf_ht, &miniflow->node, mf_ht_params);
