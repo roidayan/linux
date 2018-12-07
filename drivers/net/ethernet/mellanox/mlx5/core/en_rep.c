@@ -571,8 +571,7 @@ static void mlx5e_rep_neigh_update(struct work_struct *work)
 					      nhe);
 
 	rtnl_unlock();
-	if (!resched_update)
-		neigh_release(n);
+	neigh_release(n);
 }
 
 bool mlx5e_rep_queue_neigh_update_work(struct mlx5e_priv *priv,
