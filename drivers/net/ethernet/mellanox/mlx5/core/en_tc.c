@@ -4332,8 +4332,10 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 
 	rcu_read_lock();
 	err = miniflow_resolve_path_flows(miniflow);
-	if (err)
+	if (err) {
+		ntrace("miniflow_resolve_path_flows failed");
 		goto err_rcu;
+	}
 
 	miniflow->flow = mflow;
 
