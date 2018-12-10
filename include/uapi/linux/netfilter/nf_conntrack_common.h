@@ -28,6 +28,8 @@ enum ip_conntrack_info {
 	/* only for userspace compatibility */
 #ifndef __KERNEL__
 	IP_CT_NEW_REPLY = IP_CT_NUMBER,
+#else
+	IP_CT_UNTRACKED = 7,
 #endif
 };
 
