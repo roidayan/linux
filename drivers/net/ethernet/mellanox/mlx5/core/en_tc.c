@@ -3313,32 +3313,15 @@ static struct rhashtable *get_tc_ht(struct mlx5e_priv *priv)
 		return &priv->fs.tc.ht;
 }
 
-int mlx5e_configure_flower(struct mlx5e_priv *priv,
-			   struct tc_cls_flower_offload *f, int flags)
+static int
+mlx5e_alloc_flow(struct mlx5e_priv *priv, int attr_size,
+		 struct tc_cls_flower_offload *f, u8 flow_flags,
+		 struct mlx5e_tc_flow_parse_attr **__parse_attr,
+		 struct mlx5e_tc_flow **__flow)
 {
-	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 	struct mlx5e_tc_flow_parse_attr *parse_attr;
-	struct rhashtable *tc_ht = get_tc_ht(priv);
 	struct mlx5e_tc_flow *flow;
-	int attr_size, err = 0;
-	bool is_eswitch_flow;
-	int flow_flags = 0;
-
-	get_flags(flags, &flow_flags);
-
-	flow = rhashtable_lookup_fast(tc_ht, &f->cookie, tc_ht_params);
-	if (flow) {
-		netdev_warn_once(priv->netdev, "flow cookie %lx already exists, ignoring\n", f->cookie);
-		return 0;
-	}
-
-	if (esw && esw->mode == SRIOV_OFFLOADS) {
-		flow_flags |= MLX5E_TC_FLOW_ESWITCH;
-		attr_size  = sizeof(struct mlx5_esw_flow_attr);
-	} else {
-		flow_flags |= MLX5E_TC_FLOW_NIC;
-		attr_size  = sizeof(struct mlx5_nic_flow_attr);
-	}
+	int err;
 
 	flow = kzalloc(sizeof(*flow) + attr_size, GFP_KERNEL);
 	parse_attr = kvzalloc(sizeof(*parse_attr), GFP_KERNEL);
@@ -3356,34 +3339,54 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv,
 	INIT_LIST_HEAD(&flow->hairpin);
 	spin_lock_init(&flow->rule_lock);
 	refcount_set(&flow->refcnt, 1);
-	is_eswitch_flow = mlx5e_is_eswitch_flow(flow);
+
+	err = parse_cls_flower(priv, flow, &parse_attr->spec, f);
+	if (err)
+		goto err_free;
+
+	*__flow = flow;
+	*__parse_attr = parse_attr;
+
+	return 0;
+
+err_free:
+	kfree(flow);
+	kvfree(parse_attr);
+	return err;
+}
+
+static int
+mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
+		   struct tc_cls_flower_offload *f,
+		   u8 flow_flags,
+		   struct mlx5e_tc_flow **__flow)
+{
+	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
+	struct mlx5e_tc_flow_parse_attr *parse_attr;
+	struct mlx5e_tc_flow *flow;
+	int attr_size, err;
+
+	flow_flags |= MLX5E_TC_FLOW_ESWITCH;
+	attr_size  = sizeof(struct mlx5_esw_flow_attr);
+	err = mlx5e_alloc_flow(priv, attr_size, f, flow_flags,
+			       &parse_attr, &flow);
+	if (err)
+		goto out;
 
 	/* Temporary increment num_flows to prevent concurrent mode change
 	 * during flow creation.
 	 */
-	if (is_eswitch_flow)
-		mlx5_eswitch_inc_num_flows(esw);
-
-	err = parse_cls_flower(priv, flow, &parse_attr->spec, f);
-	if (err < 0)
-		goto err_flow;
+	mlx5_eswitch_inc_num_flows(esw);
 
 	/* At this point concurrent access to flow->rule is not possible because
 	 * neither offloaded nor init done flags were set, so no need to take
 	 * rule_lock.
 	 */
-	if (is_eswitch_flow) {
-		err = parse_tc_fdb_actions(priv, f->exts, parse_attr, flow);
-		if (err < 0)
-			goto err_flow;
-		flow->rule[0] = mlx5e_tc_add_fdb_flow(priv, parse_attr, flow);
-	} else {
-		err = parse_tc_nic_actions(priv, f->exts, parse_attr, flow);
-		if (err < 0)
-			goto err_flow;
-		flow->rule[0] = mlx5e_tc_add_nic_flow(priv, parse_attr, flow);
-	}
+	err = parse_tc_fdb_actions(priv, f->exts, parse_attr, flow);
+	if (err < 0)
+		goto err_flow;
 
+	flow->rule[0] = mlx5e_tc_add_fdb_flow(priv, parse_attr, flow);
 	if (IS_ERR(flow->rule[0])) {
 		err = PTR_ERR(flow->rule[0]);
 		if (err != -EAGAIN)
@@ -3393,13 +3396,109 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv,
 	if (err != -EAGAIN)
 		atomic_or(MLX5E_TC_FLOW_OFFLOADED, &flow->flags);
 
-	if (!mlx5e_is_eswitch_flow(flow) ||
-	    !(flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP))
+	if (!(flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP))
 		kvfree(parse_attr);
+
+	/* Release temporary num_flows taken at the beginning of this
+	 * function.
+	 */
+	mlx5_eswitch_dec_num_flows(esw);
+	*__flow = flow;
+
+	return 0;
+
+err_flow:
+	/* Release temporary num_flows taken at the beginning of this
+	 * function.
+	 */	
+	mlx5_eswitch_dec_num_flows(esw);
+	mlx5e_flow_put(priv, flow);
+out:
+	return err;
+}
+
+static int
+mlx5e_add_nic_flow(struct mlx5e_priv *priv,
+		   struct tc_cls_flower_offload *f,
+		   u8 flow_flags,
+		   struct mlx5e_tc_flow **__flow)
+{
+	struct mlx5e_tc_flow_parse_attr *parse_attr;
+	struct mlx5e_tc_flow *flow;
+	int attr_size, err;
+
+	flow_flags |= MLX5E_TC_FLOW_NIC;
+	attr_size  = sizeof(struct mlx5_nic_flow_attr);
+	err = mlx5e_alloc_flow(priv, attr_size, f, flow_flags,
+			       &parse_attr, &flow);
+	if (err)
+		goto out;
+
+	err = parse_tc_nic_actions(priv, f->exts, parse_attr, flow);
+	if (err < 0)
+		goto err_flow;
+
+	flow->rule[0] = mlx5e_tc_add_nic_flow(priv, parse_attr, flow);
+	if (IS_ERR(flow->rule[0])) {
+		err = PTR_ERR(flow->rule[0]);
+		if (err != -EAGAIN)
+			goto err_flow;
+	}
+
+	if (err != -EAGAIN)
+		atomic_or(MLX5E_TC_FLOW_OFFLOADED, &flow->flags);
+
+	kvfree(parse_attr);
+	*__flow = flow;
+
+	return 0;
+
+err_flow:
+	mlx5e_flow_put(priv, flow);
+out:
+	return err;
+}
+
+static int
+mlx5e_tc_add_flow(struct mlx5e_priv *priv,
+		  struct tc_cls_flower_offload *f,
+		  int flags,
+		  struct mlx5e_tc_flow **flow)
+{
+	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
+	int flow_flags;
+	int err;
+
+	get_flags(flags, &flow_flags);
+
+	if (esw && esw->mode == SRIOV_OFFLOADS)
+		err = mlx5e_add_fdb_flow(priv, f, flow_flags, flow);
+	else
+		err = mlx5e_add_nic_flow(priv, f, flow_flags, flow);
+
+	return err;
+}
+
+int mlx5e_configure_flower(struct mlx5e_priv *priv,
+			   struct tc_cls_flower_offload *f, int flags)
+{
+	struct rhashtable *tc_ht = get_tc_ht(priv);
+	struct mlx5e_tc_flow *flow;
+	int err = 0;
+
+	flow = rhashtable_lookup_fast(tc_ht, &f->cookie, tc_ht_params);
+	if (flow) {
+		netdev_warn_once(priv->netdev, "flow cookie %lx already exists, ignoring\n", f->cookie);
+		goto out;
+	}
+
+	err = mlx5e_tc_add_flow(priv, f, flags, &flow);
+	if (err)
+		goto out;
 
 	err = rhashtable_insert_fast(tc_ht, &flow->node, tc_ht_params);
 	if (err)
-		goto err_flow;
+		goto err_free;
 
 	/* Ensure that flow->rule[] pointers are updated before flow is marked
 	 * as initialized.
@@ -3407,21 +3506,11 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv,
 	wmb();
 	atomic_or(MLX5E_TC_FLOW_INIT_DONE, &flow->flags);
 
-	/* Release temporary num_flows taken at the beginning of this
-	 * function.
-	 */
-	if (is_eswitch_flow)
-		mlx5_eswitch_dec_num_flows(esw);
+	return 0;
 
-	return err;
-err_flow:
-	/* Release temporary num_flows taken at the beginning of this
-	 * function.
-	 */
-	if (is_eswitch_flow)
-		mlx5_eswitch_dec_num_flows(esw);
 err_free:
 	mlx5e_flow_put(priv, flow);
+out:
 	return err;
 }
 
