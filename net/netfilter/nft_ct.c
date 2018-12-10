@@ -130,11 +130,11 @@ static void nft_ct_get_eval(const struct nft_expr *expr,
 #endif
 	case NFT_CT_BYTES: /* fallthrough */
 	case NFT_CT_PKTS: {
-		const struct nf_conn_counter *counter = nf_conn_acct_find(ct);
+		const struct nf_conn_acct *acct = nf_conn_acct_find(ct);
 		u64 count = 0;
 
-		if (counter)
-			count = nft_ct_get_eval_counter(counter,
+		if (acct)
+			count = nft_ct_get_eval_counter(acct->counter,
 							priv->key, priv->dir);
 		memcpy(dest, &count, sizeof(count));
 		return;
