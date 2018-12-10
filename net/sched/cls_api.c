@@ -775,12 +775,8 @@ void tcf_block_put(struct tcf_block *block)
 EXPORT_SYMBOL(tcf_block_put);
 
 struct tcf_block_cb {
-	int flags;
 	struct list_head list;
-	union {
-		tc_setup_cb_t *cb;
-		tc_setup_cb_unlocked_t *cb_unlocked;
-	};
+	tc_setup_cb_t *cb;
 	void *cb_ident;
 	void *cb_priv;
 	unsigned int refcnt;
@@ -792,29 +788,14 @@ void *tcf_block_cb_priv(struct tcf_block_cb *block_cb)
 }
 EXPORT_SYMBOL(tcf_block_cb_priv);
 
-static struct tcf_block_cb *__tcf_block_cb_lookup(struct tcf_block *block,
-						  void *cb,
-						  void *cb_ident)
-{
-	struct tcf_block_cb *block_cb;
-
-	list_for_each_entry(block_cb, &block->cb_list, list)
-		if (block_cb->flags & TCF_BLOCK_CB_DOIT_UNLOCKED) {
-			if (block_cb->cb_unlocked == cb &&
-			    block_cb->cb_ident == cb_ident)
-				return block_cb;
-		} else {
-			if (block_cb->cb == cb &&
-			    block_cb->cb_ident == cb_ident)
-				return block_cb;
-		}
-	return NULL;
-}
-
 struct tcf_block_cb *tcf_block_cb_lookup(struct tcf_block *block,
 					 tc_setup_cb_t *cb, void *cb_ident)
-{
-	return __tcf_block_cb_lookup(block, cb, cb_ident);
+{	struct tcf_block_cb *block_cb;
+
+	list_for_each_entry(block_cb, &block->cb_list, list)
+		if (block_cb->cb == cb && block_cb->cb_ident == cb_ident)
+			return block_cb;
+	return NULL;
 }
 EXPORT_SYMBOL(tcf_block_cb_lookup);
 
@@ -859,10 +840,9 @@ err_playback_remove:
 	return err;
 }
 
-static struct tcf_block_cb *tcf_block_cb_create(struct tcf_block *block,
-						void *cb, void *cb_ident,
-						void *cb_priv,
-						enum tcf_block_cb_flags flags)
+struct tcf_block_cb *__tcf_block_cb_register(struct tcf_block *block,
+					     tc_setup_cb_t *cb, void *cb_ident,
+					     void *cb_priv)
 {
 	struct tcf_block_cb *block_cb;
 	int err;
@@ -876,22 +856,11 @@ static struct tcf_block_cb *tcf_block_cb_create(struct tcf_block *block,
 	block_cb = kzalloc(sizeof(*block_cb), GFP_KERNEL);
 	if (!block_cb)
 		return ERR_PTR(-ENOMEM);
-	block_cb->flags = flags;
-	if (flags & TCF_BLOCK_CB_DOIT_UNLOCKED)
-		block_cb->cb_unlocked = cb;
-	else
-		block_cb->cb = cb;
+	block_cb->cb = cb;
 	block_cb->cb_ident = cb_ident;
 	block_cb->cb_priv = cb_priv;
 	list_add(&block_cb->list, &block->cb_list);
 	return block_cb;
-}
-
-struct tcf_block_cb *__tcf_block_cb_register(struct tcf_block *block,
-					     tc_setup_cb_t *cb, void *cb_ident,
-					     void *cb_priv)
-{
-	return tcf_block_cb_create(block, cb, cb_ident, cb_priv, 0);
 }
 EXPORT_SYMBOL(__tcf_block_cb_register);
 
@@ -906,18 +875,6 @@ int tcf_block_cb_register(struct tcf_block *block,
 }
 EXPORT_SYMBOL(tcf_block_cb_register);
 
-int tcf_block_cb_register_unlocked(struct tcf_block *block,
-				   tc_setup_cb_unlocked_t *cb,
-				   void *cb_ident, void *cb_priv)
-{
-	struct tcf_block_cb *block_cb;
-
-	block_cb = tcf_block_cb_create(block, cb, cb_ident,
-				       cb_priv, TCF_BLOCK_CB_DOIT_UNLOCKED);
-	return block_cb ? 0 : -ENOMEM;
-}
-EXPORT_SYMBOL(tcf_block_cb_register_unlocked);
-
 void __tcf_block_cb_unregister(struct tcf_block *block,
 			       struct tcf_block_cb *block_cb)
 {
@@ -928,31 +885,17 @@ void __tcf_block_cb_unregister(struct tcf_block *block,
 }
 EXPORT_SYMBOL(__tcf_block_cb_unregister);
 
-static void tcf_block_cb_delete(struct tcf_block *block,
-				void *cb, void *cb_ident)
+void tcf_block_cb_unregister(struct tcf_block *block,
+			     tc_setup_cb_t *cb, void *cb_ident)
 {
 	struct tcf_block_cb *block_cb;
 
-	block_cb = __tcf_block_cb_lookup(block, cb, cb_ident);
+	block_cb = tcf_block_cb_lookup(block, cb, cb_ident);
 	if (!block_cb)
 		return;
 	__tcf_block_cb_unregister(block, block_cb);
 }
-
-void tcf_block_cb_unregister(struct tcf_block *block,
-			     tc_setup_cb_t *cb, void *cb_ident)
-{
-	tcf_block_cb_delete(block, cb, cb_ident);
-}
 EXPORT_SYMBOL(tcf_block_cb_unregister);
-
-void tcf_block_cb_unregister_unlocked(struct tcf_block *block,
-				      tc_setup_cb_unlocked_t *cb,
-				      void *cb_ident)
-{
-	tcf_block_cb_delete(block, cb, cb_ident);
-}
-EXPORT_SYMBOL(tcf_block_cb_unregister_unlocked);
 
 static int tcf_block_cb_call(struct tcf_block *block, enum tc_setup_type type,
 			     void *type_data, bool err_stop)
@@ -966,10 +909,7 @@ static int tcf_block_cb_call(struct tcf_block *block, enum tc_setup_type type,
 		return -EOPNOTSUPP;
 
 	list_for_each_entry(block_cb, &block->cb_list, list) {
-		err = (block_cb->flags & TCF_BLOCK_CB_DOIT_UNLOCKED) ?
-			block_cb->cb_unlocked(type, type_data,
-					      block_cb->cb_priv, true) :
-			block_cb->cb(type, type_data, block_cb->cb_priv);
+		err = block_cb->cb(type, type_data, block_cb->cb_priv);
 		if (err) {
 			if (err_stop)
 				return err;
