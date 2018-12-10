@@ -494,6 +494,7 @@ static void mlx5e_rep_neigh_stats_work(struct work_struct *work)
 	struct mlx5e_priv *priv = netdev_priv(netdev);
 	struct mlx5e_neigh_hash_entry *nhe = NULL;
 
+	/* TODO: Do we still need RTNL lock? */
 	rtnl_lock();
 
 	rcu_read_lock();
