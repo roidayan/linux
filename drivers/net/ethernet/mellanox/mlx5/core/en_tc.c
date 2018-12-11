@@ -1068,7 +1068,7 @@ mlx5e_tc_add_nic_flow(struct mlx5e_priv *priv,
 		kfree(parse_attr->mod_hdr_actions);
 		if (err) {
 			rule = ERR_PTR(err);
-			goto err_out_cleanup;
+			goto err_out;
 		}
 	}
 
@@ -1109,14 +1109,12 @@ mlx5e_tc_add_nic_flow(struct mlx5e_priv *priv,
 	mutex_unlock(&priv->fs.tc.t_lock);
 
 	if (IS_ERR(rule))
-		goto err_out_cleanup;
+		goto err_out;
 
 	return rule;
 
 err_out_cleanup_unlock:
 	mutex_unlock(&priv->fs.tc.t_lock);
-err_out_cleanup:
-	mlx5_fc_destroy(dev, counter);
 err_out:
 	return rule;
 }
@@ -1217,7 +1215,7 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	if (rule != ERR_PTR(-EAGAIN)) {
 		rule = mlx5_eswitch_add_offloaded_rule(esw, &parse_attr->spec, attr);
 		if (IS_ERR(rule))
-			goto err_add_rule;
+			goto err_out;
 
 		if (attr->mirror_count) {
 			flow->rule[1] = mlx5_eswitch_add_fwd_rule(esw, &parse_attr->spec, attr);
@@ -1236,8 +1234,6 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 err_fwd_rule:
 	mlx5_eswitch_del_offloaded_rule(esw, rule, attr);
 	rule = flow->rule[1];
-err_add_rule:
-	mlx5_fc_destroy(esw->dev, counter);
 err_out:
 	return rule;
 }
