@@ -3174,8 +3174,8 @@ static int mlx5e_setup_tc_block_cb(enum tc_setup_type type, void *type_data,
 		//}
 
 		return mlx5e_setup_tc_cls_flower(priv, type_data, MLX5E_TC_INGRESS);
-	case TC_SETUP_MICROFLOW:
-		return mlx5e_configure_microflow(priv, type_data);
+	case TC_SETUP_MINIFLOW:
+		return mlx5e_configure_miniflow(priv, type_data);
 	case TC_SETUP_CT:
 		return mlx5e_configure_ct(priv, type_data);
 	default:

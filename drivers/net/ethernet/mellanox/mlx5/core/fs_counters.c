@@ -314,7 +314,7 @@ EXPORT_SYMBOL(mlx5_fc_id);
 void mlx5_fc_link_dummies(struct mlx5_fc *counter, struct mlx5_fc **dummies, int nr_dummies)
 {
 	/* TODO: fix this */
-	BUG_ON(nr_dummies > MICROFLOW_MAX_FLOWS);
+	BUG_ON(nr_dummies > MINIFLOW_MAX_FLOWS);
 	memcpy(counter->dummies, dummies, sizeof(*dummies) * nr_dummies);
 	atomic_set(&counter->nr_dummies, nr_dummies);
 }

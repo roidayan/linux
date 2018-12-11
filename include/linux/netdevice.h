@@ -814,11 +814,11 @@ enum tc_setup_type {
 	TC_SETUP_CLSMATCHALL,
 	TC_SETUP_CLSBPF,
 	TC_SETUP_BLOCK,
-	TC_SETUP_MICROFLOW,
+	TC_SETUP_MINIFLOW,
 	TC_SETUP_CT,
 };
 
-struct tc_microflow_offload {
+struct tc_miniflow_offload {
 	struct sk_buff *skb;
 	unsigned long cookie;
 	bool last_flow;

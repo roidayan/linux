@@ -139,7 +139,7 @@ struct mlx5_fc_cache {
 };
 
 /* TODO: fix this */
-#define MICROFLOW_MAX_FLOWS 8
+#define MINIFLOW_MAX_FLOWS 8
 
 struct mlx5_fc {
 	struct list_head list;
@@ -158,7 +158,7 @@ struct mlx5_fc {
 	bool dummy;
 
 	atomic_t nr_dummies;
-	struct mlx5_fc *dummies[MICROFLOW_MAX_FLOWS];
+	struct mlx5_fc *dummies[MINIFLOW_MAX_FLOWS];
 
 	struct mlx5_fc_cache cache ____cacheline_aligned_in_smp;
 };

@@ -223,7 +223,7 @@ static void fl_notify_underlying_device(struct sk_buff *skb, const struct tcf_pr
 	struct tcf_block *block = tp->chain->block;
 	struct tc_action **actions = f->exts.actions;
 	int nr_actions = f->exts.nr_actions;
-	struct tc_microflow_offload mf;
+	struct tc_miniflow_offload mf;
 
 	WARN_ON(nr_actions < 1);
 
@@ -235,7 +235,7 @@ static void fl_notify_underlying_device(struct sk_buff *skb, const struct tcf_pr
 	trace("calling notify_underlying_device with mf.cookie (f): %px", (void *) mf.cookie);
 
 	/* TODO: should be replaced by something else TBD */
-	tc_setup_cb_call_all(block, TC_SETUP_MICROFLOW, &mf);
+	tc_setup_cb_call_all(block, TC_SETUP_MINIFLOW, &mf);
 }
 
 static int fl_classify(struct sk_buff *skb, const struct tcf_proto *tp,
