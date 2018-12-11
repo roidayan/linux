@@ -3140,7 +3140,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 {
 	struct mlx5_esw_flow_attr *attr = flow->esw_attr;
 	struct mlx5e_rep_priv *rpriv = priv->ppriv;
-	struct ip_tunnel_info info;
+	struct ip_tunnel_info *info = NULL;
 	const struct tc_action *a;
 	LIST_HEAD(actions);
 	bool encap = false;
@@ -3201,7 +3201,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 				attr->out_mdev[attr->out_count++] = out_priv->mdev;
 			} else if (encap) {
 				parse_attr->mirred_ifindex = out_dev->ifindex;
-				parse_attr->tun_info = info;
+				parse_attr->tun_info = *info;
 				attr->parse_attr = parse_attr;
 				action |= MLX5_FLOW_CONTEXT_ACTION_ENCAP |
 					  MLX5_FLOW_CONTEXT_ACTION_FWD_DEST |
@@ -3216,18 +3216,11 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 		}
 
 		if (is_tcf_tunnel_set(a)) {
-			struct ip_tunnel_info *info_ptr;
-
-			rcu_read_lock();
-			info_ptr = tcf_tunnel_info(a);
-			if (info_ptr) {
+			info = tcf_tunnel_info(a);
+			if (info)
 				encap = true;
-				info = *info_ptr;
-			} else {
-				rcu_read_unlock();
+			else
 				return -EOPNOTSUPP;
-			}
-			rcu_read_unlock();
 			attr->mirror_count = attr->out_count;
 			continue;
 		}
