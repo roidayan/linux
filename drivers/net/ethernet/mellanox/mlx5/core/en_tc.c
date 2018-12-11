@@ -3719,7 +3719,7 @@ err:
 static int
 mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 		   struct tc_cls_flower_offload *f,
-		   u8 flow_flags,
+		   int flow_flags,
 		   struct mlx5e_tc_flow **__flow)
 {
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
@@ -3784,7 +3784,7 @@ out:
 static int
 mlx5e_add_nic_flow(struct mlx5e_priv *priv,
 		   struct tc_cls_flower_offload *f,
-		   u8 flow_flags,
+		   int flow_flags,
 		   struct mlx5e_tc_flow **__flow)
 {
 	struct mlx5e_tc_flow_parse_attr *parse_attr;
