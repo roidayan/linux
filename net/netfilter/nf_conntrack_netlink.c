@@ -1114,6 +1114,11 @@ ctnetlink_del_conntrack(struct sock *ctnl, struct sk_buff *skb,
 
 	ct = nf_ct_tuplehash_to_ctrack(h);
 
+	if (test_bit(IPS_OFFLOAD_BIT, &ct->status)) {
+		nf_ct_put(ct);
+		return -EBUSY;
+	}
+
 	if (cda[CTA_ID]) {
 		u_int32_t id = ntohl(nla_get_be32(cda[CTA_ID]));
 		if (id != (u32)(unsigned long)ct) {

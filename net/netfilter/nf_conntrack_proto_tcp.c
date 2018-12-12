@@ -315,6 +315,10 @@ static int tcp_print_conntrack(struct seq_file *s, struct nf_conn *ct)
 {
 	enum tcp_conntrack state;
 
+    /* return 0 to make print continue */
+	if (test_bit(IPS_OFFLOAD_BIT, &ct->status))
+		return 0;
+
 	spin_lock_bh(&ct->lock);
 	state = ct->proto.tcp.state;
 	spin_unlock_bh(&ct->lock);

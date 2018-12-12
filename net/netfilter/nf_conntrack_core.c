@@ -505,8 +505,19 @@ bool nf_ct_delete(struct nf_conn *ct, u32 portid, int report)
 }
 EXPORT_SYMBOL_GPL(nf_ct_delete);
 
+#define	DAY	(86400 * HZ)
+
 static void death_by_timeout(unsigned long ul_conntrack)
 {
+    struct nf_conn *tmp = (struct nf_conn *)ul_conntrack;
+
+    if (test_bit(IPS_OFFLOAD_BIT, &tmp->status)) {
+        /* give 5 days to offloaded entry, need to 
+           restore corrent timeout value when offload is unset*/
+        mod_timer(&tmp->timeout, jiffies + 5*DAY);
+        return;
+    }
+
 	nf_ct_delete((struct nf_conn *)ul_conntrack, 0, 0);
 }
 
@@ -910,6 +921,7 @@ restart:
 					 hnnode) {
 			tmp = nf_ct_tuplehash_to_ctrack(h);
 			if (!test_bit(IPS_ASSURED_BIT, &tmp->status) &&
+                !test_bit(IPS_OFFLOAD_BIT, &tmp->status) &&
 			    !nf_ct_is_dying(tmp) &&
 			    atomic_inc_not_zero(&tmp->ct_general.use)) {
 				ct = tmp;
@@ -1557,6 +1569,9 @@ EXPORT_SYMBOL_GPL(nf_ct_iterate_cleanup);
 
 static int kill_all(struct nf_conn *i, void *data)
 {
+	if (test_bit(IPS_OFFLOAD_BIT, &i->status))
+		return 0;
+
 	return 1;
 }
 

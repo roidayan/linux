@@ -253,10 +253,14 @@ static int ct_seq_show(struct seq_file *s, void *v)
 	if (seq_print_acct(s, ct, IP_CT_DIR_REPLY))
 		goto release;
 
-	if (test_bit(IPS_ASSURED_BIT, &ct->status))
-		if (seq_printf(s, "[ASSURED] "))
+	if (test_bit(IPS_OFFLOAD_BIT, &ct->status)) {
+		if (seq_printf(s, "[OFFLOAD] "))
 			goto release;
-
+    } else {
+		if (test_bit(IPS_ASSURED_BIT, &ct->status))
+			if (seq_printf(s, "[ASSURED] "))
+				goto release;
+    }
 #if defined(CONFIG_NF_CONNTRACK_MARK)
 	if (seq_printf(s, "mark=%u ", ct->mark))
 		goto release;
