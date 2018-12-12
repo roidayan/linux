@@ -1239,6 +1239,13 @@ add_rule_fte(struct fs_fte *fte,
 	if (err)
 		goto free_handle;
 
+	if (fte->status & FS_FTE_STATUS_EXISTING) {
+		struct mlx5_eswitch *esw = root->dev->priv.eswitch;
+
+		if (mlx5_eswitch_mode(esw) == SRIOV_OFFLOADS)
+			WARN(1, "The assumption made in 28929b1a5f48 patch might not be valid any more");
+	}
+
 	fte->node.active = true;
 	fte->status |= FS_FTE_STATUS_EXISTING;
 	atomic_inc(&fte->node.version);
