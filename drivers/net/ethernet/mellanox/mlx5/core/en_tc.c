@@ -4703,7 +4703,7 @@ int mlx5e_stats_flower(struct mlx5e_priv *priv,
 	}
 
 	spin_lock(&flow->rule_lock);
-	if (!mlx5e_is_offloaded_flow(flow))
+	if (mlx5e_is_offloaded_flow(flow))
 		counter = mlx5e_tc_get_counter(flow);
 	else
 		counter = flow->dummy_counter;
