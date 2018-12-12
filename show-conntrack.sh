@@ -24,7 +24,7 @@ function get_nr_mf_succ {
 
 function enable_miniflow {
         enable=$1
-        sudo sh -c "echo $enable > /sys/module/cls_flower/parameters/enable_miniflow"
+        sudo sh -c "echo $enable > /sys/module/act_ct/parameters/enable_miniflow"
 }
 
 function conntrack_num {
@@ -40,7 +40,7 @@ nr_mf_succ1=$(get_nr_mf_succ)
 
 ct_num1=$(conntrack_num)
 
-enable_mf=$(cat /sys/module/cls_flower/parameters/enable_miniflow)
+enable_mf=$(cat /sys/module/act_ct/parameters/enable_miniflow)
 
 while (true); do
         read -rsn1 -t 1 input

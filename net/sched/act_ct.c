@@ -36,7 +36,14 @@
 static unsigned int conntrack_net_id;
 static struct tc_action_ops act_conntrack_ops;
 
-int get_enable_miniflow(void);
+static int enable_miniflow = 1;
+module_param(enable_miniflow, int, 0644);
+
+int get_enable_miniflow(void)
+{
+	return enable_miniflow;
+}
+EXPORT_SYMBOL(get_enable_miniflow);
 
 static void ct_notify_underlying_device(struct sk_buff *skb, struct nf_conn *ct,
                                         enum ip_conntrack_info ctinfo, struct net *net)
