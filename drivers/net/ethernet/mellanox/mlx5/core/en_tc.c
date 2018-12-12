@@ -3572,17 +3572,21 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 		}
 
 		if (is_tcf_ct(a)) {
+			#if TRACE_ENABLED
 			struct tcf_conntrack_info *info = tcf_ct_info(a);
 
 			trace("offloading CT action, ignoring (info->commit: %d, info->mark: %d)", info->commit, info->mark);
+			#endif
 			action |= MLX5_FLOW_CONTEXT_ACTION_CT;
 			continue;
 		}
 
 		if (is_tcf_gact_goto_chain(a)) {
+			#if TRACE_ENABLED
 			int chain = tcf_gact_goto_chain_index(a);
 
 			trace("offloading chain, ignoring (goto_chain: chain: %d)", chain);
+			#endif
 			/* TODO: we removed tunnel_release from OVS, let's reconsider */
 			if (atomic_read(&flow->flags) & MLX5E_TC_FLOW_EGRESS) {
 				trace("goto chain, adding decap action");
