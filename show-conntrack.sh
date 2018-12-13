@@ -56,7 +56,7 @@ while (true); do
 	nr_cwq2=$(get_nr_con_queue)
 	nr_mf_me2=$(get_nr_mf_err)
 	nr_mf_succ2=$(get_nr_mf_succ)
-
+	ct_num2=$(conntrack_num)
 
 	ct_num_d=$((ct_num2-ct_num1))
 	ct_d=$((ct2-ct1))
@@ -64,7 +64,6 @@ while (true); do
 	twq_d=$((nr_twq2-nr_twq1))
 	me_d=$((nr_mf_me2-nr_mf_me1))
 	succ_d=$((nr_mf_succ2-nr_mf_succ1))
-	ct_num2=$(conntrack_num)
 
 	# swct: nr of software connections
 	# ct: nr of offloaded connections (report by /proc/net/nf_conntrack_offload
