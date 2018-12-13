@@ -3572,7 +3572,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 		}
 
 		if (is_tcf_ct(a)) {
-			#if TRACE_ENABLED
+			#if TRACE_ENABLED && TRACE_LEVEL == TRACE_LEVEL_ALL
 			struct tcf_conntrack_info *info = tcf_ct_info(a);
 
 			trace("offloading CT action, ignoring (info->commit: %d, info->mark: %d)", info->commit, info->mark);
@@ -3582,7 +3582,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 		}
 
 		if (is_tcf_gact_goto_chain(a)) {
-			#if TRACE_ENABLED
+			#if TRACE_ENABLED && TRACE_LEVEL == TRACE_LEVEL_ALL
 			int chain = tcf_gact_goto_chain_index(a);
 
 			trace("offloading chain, ignoring (goto_chain: chain: %d)", chain);
