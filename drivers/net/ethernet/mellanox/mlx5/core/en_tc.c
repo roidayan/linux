@@ -85,6 +85,7 @@ static int max_nr_mf = 1024*1024;
 module_param(max_nr_mf, int, 0644);
 
 static struct kmem_cache *flow_cache;
+static struct kmem_cache *parse_attr_cache;
 
 struct mlx5_nic_flow_attr {
 	u32 action;
@@ -1355,7 +1356,7 @@ static void mlx5e_tc_del_fdb_flow_simple(struct mlx5e_priv *priv,
 
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP) {
 		mlx5e_detach_encap(priv, flow);
-		kvfree(attr->parse_attr);
+		kmem_cache_free(parse_attr_cache, attr->parse_attr);
 	}
 
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR)
@@ -1383,7 +1384,7 @@ static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
 		if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR)
 			kfree(attr->parse_attr->mod_hdr_actions);
 
-		kvfree(attr->parse_attr);
+		kmem_cache_free(parse_attr_cache, attr->parse_attr);
 	}
 }
 
@@ -3657,7 +3658,7 @@ mlx5e_alloc_flow(struct mlx5e_priv *priv, u64 cookie, u32 handle,
 	int err;
 
 	flow = kmem_cache_zalloc(flow_cache, flags);
-	parse_attr = kvzalloc(sizeof(*parse_attr), flags);
+	parse_attr = kmem_cache_zalloc(parse_attr_cache, flags);
 	if (!parse_attr || !flow) {
 		err = -ENOMEM;
 		goto err_free;
@@ -3681,7 +3682,7 @@ mlx5e_alloc_flow(struct mlx5e_priv *priv, u64 cookie, u32 handle,
 
 err_free:
 	kmem_cache_free(flow_cache, flow);
-	kvfree(parse_attr);
+	kmem_cache_free(parse_attr_cache, parse_attr);
 	return err;
 }
 
@@ -3716,7 +3717,7 @@ __mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 		atomic_or(MLX5E_TC_FLOW_OFFLOADED, &flow->flags);
 
 	if (!(flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP))
-		kvfree(parse_attr);
+		kmem_cache_free(parse_attr_cache, parse_attr);
 
 err:
 	return err;
@@ -3820,7 +3821,7 @@ mlx5e_add_nic_flow(struct mlx5e_priv *priv,
 	if (err != -EAGAIN)
 		atomic_or(MLX5E_TC_FLOW_OFFLOADED, &flow->flags);
 
-	kvfree(parse_attr);
+	kmem_cache_free(parse_attr_cache, parse_attr);
 	*__flow = flow;
 
 	return 0;
@@ -4409,7 +4410,7 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 err:
 	atomic_inc((atomic_t *)&nr_mf_err);
 	kfree(mparse_attr->mod_hdr_actions);
-	kvfree(mparse_attr);
+	kmem_cache_free(parse_attr_cache, mparse_attr);
 	kmem_cache_free(flow_cache, mflow);
 err_verify:
 	rhashtable_remove_fast(mf_ht, &miniflow->node, mf_ht_params);
@@ -4721,7 +4722,9 @@ errout:
 int mlx5e_tc_nic_init(struct mlx5e_priv *priv)
 {
 	struct mlx5e_tc_table *tc = &priv->fs.tc;
-	int err;
+	int err = -ENOMEM;
+
+	mtrace("mlx5e_tc_nic_init");
 
 	mutex_init(&tc->t_lock);
 	spin_lock_init(&tc->mod_hdr_tbl_lock);
@@ -4736,6 +4739,12 @@ int mlx5e_tc_nic_init(struct mlx5e_priv *priv)
 	if (!flow_cache)
 		return -ENOMEM;
 
+	parse_attr_cache = kmem_cache_create("parse_attr_cache",
+					     sizeof(struct mlx5e_tc_flow_parse_attr),
+					     0, SLAB_HWCACHE_ALIGN, NULL);
+	if (!parse_attr_cache)
+		goto err_pa_cache;
+
 	err = rhashtable_init(&tc->ht, &tc_ht_params);
 	if (err)
 		goto err_tc_ht;
@@ -4743,6 +4752,8 @@ int mlx5e_tc_nic_init(struct mlx5e_priv *priv)
 	return 0;
 
 err_tc_ht:
+	kmem_cache_destroy(parse_attr_cache);
+err_pa_cache:
 	kmem_cache_destroy(flow_cache);
 	return err;
 }
@@ -4832,6 +4843,8 @@ int mlx5e_tc_esw_init(struct mlx5e_priv *priv)
 	struct rhashtable *mf_ht = get_mf_ht(priv);
 	int err = -ENOMEM;
 
+	mtrace("mlx5e_tc_esw_init");
+
 	if (miniflow_cache_allocated)
 		return -EOPNOTSUPP;
 
@@ -4841,6 +4854,12 @@ int mlx5e_tc_esw_init(struct mlx5e_priv *priv)
 				       0, SLAB_HWCACHE_ALIGN, NULL);
 	if (!flow_cache)
 		return -ENOMEM;
+
+	parse_attr_cache = kmem_cache_create("parse_attr_cache",
+					     sizeof(struct mlx5e_tc_flow_parse_attr),
+					     0, SLAB_HWCACHE_ALIGN, NULL);
+	if (!parse_attr_cache)
+		goto err_pa_cache;
 
 	miniflow_cache = kmem_cache_create("miniflow_cache",
 					   sizeof(struct mlx5e_miniflow),
@@ -4874,6 +4893,8 @@ err_mf_ht:
 err_tc_ht:
 	kmem_cache_destroy(miniflow_cache);
 err_mf_cache:
+	kmem_cache_destroy(parse_attr_cache);
+err_pa_cache:
 	kmem_cache_destroy(flow_cache);
 	miniflow_cache_allocated = 0;
 	return err;
@@ -4893,6 +4914,7 @@ void mlx5e_tc_esw_cleanup(struct mlx5e_priv *priv)
 	rhashtable_free_and_destroy(tc_ht, _mlx5e_tc_del_flow, NULL);
 	rhashtable_free_and_destroy(mf_ht, NULL, NULL);
 
+	/* TODO: use the workqueue to speed it up? */
 	mlx5_fc_list_cleanup(priv->mdev, &fc_list);
 
 	for_each_possible_cpu(cpu) {
