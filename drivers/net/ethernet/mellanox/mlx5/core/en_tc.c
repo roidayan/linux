@@ -87,6 +87,10 @@ module_param(nr_mf_succ, int, 0644);
 static int max_nr_mf = 1024*1024;
 module_param(max_nr_mf, int, 0644);
 
+static struct kmem_cache *nic_flow_cache   __read_mostly;
+static struct kmem_cache *fdb_flow_cache   __read_mostly;
+static struct kmem_cache *parse_attr_cache   __read_mostly;
+
 struct mlx5_nic_flow_attr {
 	u32 action;
 	u32 flow_tag;
@@ -156,7 +160,7 @@ static DEFINE_SPINLOCK(miniflow_lock);
 /* TOOD: we should init this variable only once, rather than per PF? */
 /* we should have a miniflow init/cleanup functions */
 static int miniflow_cache_allocated;
-static struct kmem_cache *miniflow_cache; // __ro_after_init; crashes??
+static struct kmem_cache *miniflow_cache  __read_mostly;
 
 /* Derived from current insertion rate (flows/s) */
 #define MINIFLOW_WORKQUEUE_MAX_SIZE 20000
@@ -291,6 +295,24 @@ struct mlx5e_mod_hdr_entry {
 static void mlx5e_tc_del_flow(struct mlx5e_priv *priv,
 			      struct mlx5e_tc_flow *flow);
 
+static struct kmem_cache *flow_cache(int flow_flags)
+{
+	if (flow_flags & MLX5E_TC_FLOW_ESWITCH)
+		return fdb_flow_cache;
+	else
+		return nic_flow_cache;
+}
+
+static struct mlx5e_tc_flow *flow_cache_alloc(int flow_flags, gfp_t flags)
+{
+	return kmem_cache_zalloc(flow_cache(flow_flags), flags);
+}
+
+static void flow_cache_free(struct mlx5e_tc_flow *flow)
+{
+	kmem_cache_free(flow_cache(atomic_read(&flow->flags)), flow);
+}
+
 static struct mlx5e_tc_flow *mlx5e_flow_get(struct mlx5e_tc_flow *flow)
 {
 	if (!flow || !refcount_inc_not_zero(&flow->refcnt))
@@ -303,7 +325,7 @@ static void mlx5e_flow_put(struct mlx5e_priv *priv,
 {
 	if (refcount_dec_and_test(&flow->refcnt)) {
 		mlx5e_tc_del_flow(priv, flow);
-		kfree(flow);
+		flow_cache_free(flow);
 	}
 }
 
@@ -1356,7 +1378,7 @@ static void mlx5e_tc_del_fdb_flow_simple(struct mlx5e_priv *priv,
 
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP) {
 		mlx5e_detach_encap(priv, flow);
-		kvfree(attr->parse_attr);
+		kmem_cache_free(parse_attr_cache, attr->parse_attr);
 	}
 
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR)
@@ -1384,7 +1406,7 @@ static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
 		if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR)
 			kfree(attr->parse_attr->mod_hdr_actions);
 
-		kvfree(attr->parse_attr);
+		kmem_cache_free(parse_attr_cache, attr->parse_attr);
 	}
 }
 
@@ -3652,8 +3674,8 @@ static struct rhashtable *get_tc_ht(struct mlx5e_priv *priv)
 }
 
 static int
-mlx5e_alloc_flow(struct mlx5e_priv *priv, int attr_size,
-		 u64 cookie, u32  handle, int flow_flags, gfp_t flags,
+mlx5e_alloc_flow(struct mlx5e_priv *priv, u64 cookie, u32 handle,
+		 int flow_flags, gfp_t flags,
 		 struct mlx5e_tc_flow_parse_attr **__parse_attr,
 		 struct mlx5e_tc_flow **__flow)
 {
@@ -3661,8 +3683,8 @@ mlx5e_alloc_flow(struct mlx5e_priv *priv, int attr_size,
 	struct mlx5e_tc_flow *flow;
 	int err;
 
-	flow = kzalloc(sizeof(*flow) + attr_size, flags);
-	parse_attr = kvzalloc(sizeof(*parse_attr), flags);
+	flow = flow_cache_alloc(flow_flags, flags);
+	parse_attr = kmem_cache_zalloc(parse_attr_cache, flags);
 	if (!parse_attr || !flow) {
 		err = -ENOMEM;
 		goto err_free;
@@ -3685,8 +3707,8 @@ mlx5e_alloc_flow(struct mlx5e_priv *priv, int attr_size,
 	return 0;
 
 err_free:
-	kfree(flow);
-	kvfree(parse_attr);
+	flow_cache_free(flow);
+	kmem_cache_free(parse_attr_cache, parse_attr);
 	return err;
 }
 
@@ -3719,7 +3741,7 @@ __mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 		atomic_or(MLX5E_TC_FLOW_OFFLOADED, &flow->flags);
 
 	if (!(flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP))
-		kvfree(parse_attr);
+		kmem_cache_free(parse_attr_cache, parse_attr);
 
 err:
 	return err;
@@ -3734,12 +3756,11 @@ mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 	struct mlx5e_tc_flow_parse_attr *parse_attr;
 	struct mlx5e_tc_flow *flow;
-	int attr_size, err;
+	int err;
 
 	flow_flags |= MLX5E_TC_FLOW_SIMPLE | MLX5E_TC_FLOW_ESWITCH;
 
-	attr_size  = sizeof(struct mlx5_esw_flow_attr);
-	err = mlx5e_alloc_flow(priv, attr_size, f->cookie, f->common.handle,
+	err = mlx5e_alloc_flow(priv, f->cookie, f->common.handle,
 			       flow_flags, GFP_KERNEL, &parse_attr, &flow);
 	if (err)
 		goto out;
@@ -3798,11 +3819,10 @@ mlx5e_add_nic_flow(struct mlx5e_priv *priv,
 {
 	struct mlx5e_tc_flow_parse_attr *parse_attr;
 	struct mlx5e_tc_flow *flow;
-	int attr_size, err;
+	int err;
 
 	flow_flags |= MLX5E_TC_FLOW_NIC;
-	attr_size  = sizeof(struct mlx5_nic_flow_attr);
-	err = mlx5e_alloc_flow(priv, attr_size, f->cookie, f->common.handle,
+	err = mlx5e_alloc_flow(priv, f->cookie, f->common.handle,
 			       flow_flags, GFP_KERNEL, &parse_attr, &flow);
 	if (err)
 		goto out;
@@ -3825,7 +3845,7 @@ mlx5e_add_nic_flow(struct mlx5e_priv *priv,
 	if (err != -EAGAIN)
 		atomic_or(MLX5E_TC_FLOW_OFFLOADED, &flow->flags);
 
-	kvfree(parse_attr);
+	kmem_cache_free(parse_attr_cache, parse_attr);
 	*__flow = flow;
 
 	return 0;
@@ -4254,11 +4274,9 @@ static struct mlx5e_tc_flow *miniflow_ct_flow_alloc(struct mlx5e_priv *priv,
 {
 	struct mlx5e_tc_flow_parse_attr *parse_attr;
 	struct mlx5e_tc_flow *flow;
-	int attr_size;
 	int err;
 
-	attr_size = sizeof(struct mlx5_esw_flow_attr);
-	err = mlx5e_alloc_flow(priv, attr_size, 0 /* cookie */, 0 /* handle */,
+	err = mlx5e_alloc_flow(priv, 0 /* cookie */, 0 /* handle */,
 			       MLX5E_TC_FLOW_ESWITCH | MLX5E_TC_FLOW_CT,
 			       GFP_ATOMIC, &parse_attr, &flow);
 	if (err)
@@ -4325,11 +4343,10 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	struct mlx5e_rep_priv *rpriv = priv->ppriv;
 	struct mlx5e_tc_flow *mflow, *flow;
 	int flags = MLX5E_TC_FLOW_SIMPLE | MLX5E_TC_FLOW_ESWITCH;
-	int attr_size, i;
+	int i;
 	int err;
 
-	attr_size = sizeof(struct mlx5_esw_flow_attr);
-	err = mlx5e_alloc_flow(priv, attr_size, 0 /* cookie */, 0 /* handle */,
+	err = mlx5e_alloc_flow(priv, 0 /* cookie */, 0 /* handle */,
 			       flags, GFP_KERNEL, &mparse_attr, &mflow);
 	if (err)
 		return -1;
@@ -4419,8 +4436,8 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 err:
 	atomic_inc((atomic_t *)&nr_mf_err);
 	kfree(mparse_attr->mod_hdr_actions);
-	kvfree(mparse_attr);
-	kfree(mflow);
+	kmem_cache_free(parse_attr_cache, mparse_attr);
+	flow_cache_free(mflow);
 err_verify:
 	rhashtable_remove_fast(mf_ht, &miniflow->node, mf_ht_params);
 	miniflow_cleanup(miniflow);
@@ -4756,7 +4773,7 @@ static void _mlx5e_tc_del_flow(void *ptr, void *arg)
 	struct mlx5e_priv *priv = flow->priv;
 
 	mlx5e_tc_del_flow(priv, flow);
-	kfree(flow);
+	flow_cache_free(flow);
 }
 
 void mlx5e_tc_nic_cleanup(struct mlx5e_priv *priv)
@@ -4805,7 +4822,7 @@ void ct_flow_offload_get_stats(struct nf_gen_flow_ct_stat *ct_stat, struct list_
 void ct_flow_offload_del_flow(struct mlx5e_tc_flow *flow)
 {
 	mlx5e_tc_del_fdb_flow(flow->priv, flow);
-	kfree(flow);
+	flow_cache_free(flow);
 }
 
 /* notify user that this connection is dying */
@@ -4850,11 +4867,11 @@ int mlx5e_tc_esw_init(struct mlx5e_priv *priv)
 		return -EOPNOTSUPP;
 
 	miniflow_cache = kmem_cache_create("miniflow_cache",
-					    sizeof(struct mlx5e_miniflow),
-					    0, SLAB_HWCACHE_ALIGN,
-					    NULL);
+					   sizeof(struct mlx5e_miniflow),
+					   0, SLAB_HWCACHE_ALIGN, NULL);
 	if (!miniflow_cache)
 		return -ENOMEM;
+
 	miniflow_cache_allocated = 1;
 
 	err = rhashtable_init(tc_ht, &tc_ht_params);
@@ -4914,4 +4931,43 @@ int mlx5e_tc_num_filters(struct mlx5e_priv *priv)
 	struct rhashtable *tc_ht = get_tc_ht(priv);
 
 	return atomic_read(&tc_ht->nelems);
+}
+
+int mlx5e_tc_init(void)
+{
+	nic_flow_cache = kmem_cache_create("nic_flow_cache",
+					   sizeof(struct mlx5e_tc_flow) +
+					   sizeof(struct mlx5_nic_flow_attr),
+					   0, SLAB_HWCACHE_ALIGN, NULL);
+	if (!nic_flow_cache)
+		goto err;
+
+	fdb_flow_cache = kmem_cache_create("fdb_flow_cache",
+					   sizeof(struct mlx5e_tc_flow) +
+					   sizeof(struct mlx5_esw_flow_attr),
+					   0, SLAB_HWCACHE_ALIGN, NULL);
+	if (!fdb_flow_cache)
+		goto err_free_nic;
+
+	parse_attr_cache = kmem_cache_create("parse_attr_cache",
+					     sizeof(struct mlx5e_tc_flow_parse_attr),
+					     0, SLAB_HWCACHE_ALIGN, NULL);
+	if (!parse_attr_cache)
+		goto err_free_fdb;
+
+	return 0;
+
+err_free_fdb:
+	kmem_cache_destroy(fdb_flow_cache);
+err_free_nic:
+	kmem_cache_destroy(nic_flow_cache);
+err:
+	return -ENOMEM;
+}
+
+void mlx5e_tc_cleanup(void)
+{
+	kmem_cache_destroy(parse_attr_cache);
+	kmem_cache_destroy(fdb_flow_cache);
+	kmem_cache_destroy(nic_flow_cache);
 }

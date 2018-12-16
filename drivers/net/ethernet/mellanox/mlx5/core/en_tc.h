@@ -45,6 +45,9 @@ enum {
 	MLX5E_TC_LAST_EXPORTED_BIT = 1,
 };
 
+int mlx5e_tc_init(void);
+void mlx5e_tc_cleanup(void);
+
 int mlx5e_tc_nic_init(struct mlx5e_priv *priv);
 void mlx5e_tc_nic_cleanup(struct mlx5e_priv *priv);
 

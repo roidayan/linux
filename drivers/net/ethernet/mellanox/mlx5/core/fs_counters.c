@@ -32,7 +32,6 @@
 
 #include <linux/mlx5/driver.h>
 #include <linux/mlx5/fs.h>
-#include <linux/rbtree.h>
 #include "mlx5_core.h"
 #include "fs_core.h"
 #include "fs_cmd.h"
