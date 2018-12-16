@@ -187,7 +187,7 @@ int mlx5_set_mtppse(struct mlx5_core_dev *mdev, u8 pin, u8 arm, u8 mode);
 
 int mlx5_firmware_flash(struct mlx5_core_dev *dev, const struct firmware *fw);
 
-void mlx5e_init(void);
+int mlx5e_init(void);
 void mlx5e_cleanup(void);
 
 static inline int mlx5_lag_is_lacp_owner(struct mlx5_core_dev *dev)

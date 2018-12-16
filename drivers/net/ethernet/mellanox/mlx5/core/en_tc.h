@@ -114,6 +114,8 @@ struct mlx5e_tc_flow_parse_attr {
 };
 
 #define MLX5_MH_ACT_SZ MLX5_UN_SZ_BYTES(set_action_in_add_action_in_auto)
+int mlx5e_tc_init(void);
+void mlx5e_tc_cleanup(void);
 
 int mlx5e_tc_nic_init(struct mlx5e_priv *priv);
 void mlx5e_tc_nic_cleanup(struct mlx5e_priv *priv);
@@ -151,7 +153,7 @@ int mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 			  struct mlx5e_tc_flow_parse_attr *parse_attr,
 			  struct mlx5e_tc_flow *flow,
 			  struct netlink_ext_ack *extack);
-int mlx5e_alloc_flow(struct mlx5e_priv *priv, int attr_size,
+int mlx5e_alloc_flow(struct mlx5e_priv *priv,
 		     u64 cookie, int flow_flags, gfp_t flags,
 		     struct mlx5e_tc_flow_parse_attr **__parse_attr,
 		     struct mlx5e_tc_flow **__flow);

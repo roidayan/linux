@@ -5217,14 +5217,22 @@ static struct mlx5_interface mlx5e_interface = {
 	.get_dev   = mlx5e_get_netdev,
 };
 
-void mlx5e_init(void)
+int mlx5e_init(void)
 {
+	int err;
+
+	err = mlx5e_tc_init();
+	if (err)
+		return err;
 	mlx5e_ipsec_build_inverse_table();
 	mlx5e_build_ptys2ethtool_map();
 	mlx5_register_interface(&mlx5e_interface);
+
+	return 0;
 }
 
 void mlx5e_cleanup(void)
 {
 	mlx5_unregister_interface(&mlx5e_interface);
+	mlx5e_tc_cleanup();
 }

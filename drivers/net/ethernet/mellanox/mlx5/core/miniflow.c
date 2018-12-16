@@ -376,11 +376,9 @@ miniflow_ct_flow_alloc(struct mlx5e_priv *priv,
 {
 	struct mlx5e_tc_flow_parse_attr *parse_attr;
 	struct mlx5e_tc_flow *flow;
-	int attr_size;
 	int err;
 
-	attr_size = sizeof(struct mlx5_esw_flow_attr);
-	err = mlx5e_alloc_flow(priv, attr_size, 0 /* cookie */,
+	err = mlx5e_alloc_flow(priv, 0 /* cookie */,
 			       MLX5E_TC_FLOW_ESWITCH | MLX5E_TC_FLOW_CT,
 			       GFP_ATOMIC, &parse_attr, &flow);
 	if (err)
@@ -517,11 +515,10 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	struct mlx5e_rep_priv *rpriv = priv->ppriv;
 	struct mlx5e_tc_flow *mflow, *flow;
 	int flags = MLX5E_TC_FLOW_SIMPLE | MLX5E_TC_FLOW_ESWITCH;
-	int attr_size, i;
+	int i;
 	int err;
 
-	attr_size = sizeof(struct mlx5_esw_flow_attr);
-	err = mlx5e_alloc_flow(priv, attr_size, 0 /* cookie */, flags,
+	err = mlx5e_alloc_flow(priv, 0 /* cookie */, flags,
 			       GFP_KERNEL, &mparse_attr, &mflow);
 	if (err)
 		return -1;

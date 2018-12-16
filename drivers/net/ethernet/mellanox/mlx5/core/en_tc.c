@@ -57,6 +57,10 @@
 #include "fs_core.h"
 #include "en/port.h"
 
+static struct kmem_cache *nic_flow_cache   __read_mostly;
+static struct kmem_cache *fdb_flow_cache   __read_mostly;
+static struct kmem_cache *parse_attr_cache   __read_mostly;
+
 #define MLX5E_TC_TABLE_NUM_GROUPS 4
 #define MLX5E_TC_TABLE_MAX_GROUP_SIZE BIT(16)
 
@@ -115,6 +119,24 @@ struct mlx5e_mod_hdr_entry {
 static void mlx5e_tc_del_flow(struct mlx5e_priv *priv,
 			      struct mlx5e_tc_flow *flow);
 
+static struct kmem_cache *flow_cache(int flow_flags)
+{
+	if (flow_flags & MLX5E_TC_FLOW_ESWITCH)
+		return fdb_flow_cache;
+	else
+		return nic_flow_cache;
+}
+
+static struct mlx5e_tc_flow *flow_cache_alloc(int flow_flags, gfp_t flags)
+{
+	return kmem_cache_zalloc(flow_cache(flow_flags), flags);
+}
+
+static void flow_cache_free(struct mlx5e_tc_flow *flow)
+{
+	kmem_cache_free(flow_cache(atomic_read(&flow->flags)), flow);
+}
+
 static struct mlx5e_tc_flow *mlx5e_flow_get(struct mlx5e_tc_flow *flow)
 {
 	if (!flow ||
@@ -129,7 +151,7 @@ void mlx5e_flow_put(struct mlx5e_priv *priv,
 {
 	if (refcount_dec_and_test(&flow->refcnt)) {
 		mlx5e_tc_del_flow(priv, flow);
-		kfree_rcu(flow, rcu_head);
+		flow_cache_free(flow);
 	}
 }
 
@@ -1132,7 +1154,7 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 
 	if (!(flow->esw_attr->action &
 	      MLX5_FLOW_CONTEXT_ACTION_PACKET_REFORMAT)) {
-		kvfree(parse_attr);
+		kmem_cache_free(parse_attr_cache, parse_attr);
 		flow->esw_attr->parse_attr = NULL;
 	}
 
@@ -1163,7 +1185,6 @@ static void mlx5e_tc_del_fdb_flow_simple(struct mlx5e_priv *priv,
 
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_COUNT)
 		mlx5e_fc_free(esw->dev, attr->counter);
-
 }
 
 static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
@@ -1182,7 +1203,7 @@ static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
 
 	if (attr->parse_attr) {
 		kfree(attr->parse_attr->mod_hdr_actions);
-		kvfree(attr->parse_attr);
+		kmem_cache_free(parse_attr_cache, attr->parse_attr);
 	}
 }
 
@@ -3547,20 +3568,22 @@ void *mlx5e_lookup_tc_ht(struct mlx5e_priv *priv, unsigned long *cookie)
 }
 
 int
-mlx5e_alloc_flow(struct mlx5e_priv *priv, int attr_size,
+mlx5e_alloc_flow(struct mlx5e_priv *priv,
 		 u64 cookie, int flow_flags, gfp_t flags,
 		 struct mlx5e_tc_flow_parse_attr **__parse_attr,
 		 struct mlx5e_tc_flow **__flow)
 {
 	struct mlx5e_tc_flow_parse_attr *parse_attr;
 	struct mlx5e_tc_flow *flow;
-	int err;
 
-	flow = kzalloc(sizeof(*flow) + attr_size, flags);
-	parse_attr = kvzalloc(sizeof(*parse_attr), flags);
-	if (!parse_attr || !flow) {
-		err = -ENOMEM;
-		goto err_free;
+	flow = flow_cache_alloc(flow_flags, flags);
+	if (!flow)
+		return -ENOMEM;
+
+	parse_attr = kmem_cache_zalloc(parse_attr_cache, flags);
+	if (!parse_attr) {
+		flow_cache_free(flow);
+		return -ENOMEM;
 	}
 
 	flow->cookie = cookie;
@@ -3577,11 +3600,6 @@ mlx5e_alloc_flow(struct mlx5e_priv *priv, int attr_size,
 	*__parse_attr = parse_attr;
 
 	return 0;
-
-err_free:
-	kfree(flow);
-	kvfree(parse_attr);
-	return err;
 }
 
 static bool is_flow_simple(struct mlx5e_tc_flow *flow)
@@ -3606,11 +3624,10 @@ mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 	struct netlink_ext_ack *extack = f->common.extack;
 	struct mlx5e_tc_flow_parse_attr *parse_attr;
 	struct mlx5e_tc_flow *flow;
-	int attr_size, err;
+	int err;
 
 	flow_flags |= MLX5E_TC_FLOW_SIMPLE | MLX5E_TC_FLOW_ESWITCH;
-	attr_size  = sizeof(struct mlx5_esw_flow_attr);
-	err = mlx5e_alloc_flow(priv, attr_size, f->cookie, flow_flags, GFP_KERNEL,
+	err = mlx5e_alloc_flow(priv, f->cookie, flow_flags, GFP_KERNEL,
 			       &parse_attr, &flow);
 	if (err)
 		goto out;
@@ -3659,15 +3676,14 @@ mlx5e_add_nic_flow(struct mlx5e_priv *priv,
 	struct netlink_ext_ack *extack = f->common.extack;
 	struct mlx5e_tc_flow_parse_attr *parse_attr;
 	struct mlx5e_tc_flow *flow;
-	int attr_size, err;
+	int err;
 
 	/* multi-chain not supported for NIC rules */
 	if (!tc_cls_can_offload_and_chain0(priv->netdev, &f->common))
 		return -EOPNOTSUPP;
 
 	flow_flags |= MLX5E_TC_FLOW_SIMPLE | MLX5E_TC_FLOW_NIC;
-	attr_size  = sizeof(struct mlx5_nic_flow_attr);
-	err = mlx5e_alloc_flow(priv, attr_size, f->cookie, flow_flags, GFP_KERNEL,
+	err = mlx5e_alloc_flow(priv, f->cookie, flow_flags, GFP_KERNEL,
 			       &parse_attr, &flow);
 	if (err)
 		goto out;
@@ -3686,16 +3702,14 @@ mlx5e_add_nic_flow(struct mlx5e_priv *priv,
 
 	mlx5e_set_flow_flag_mb_before(flow, MLX5E_TC_FLOW_OFFLOADED |
 				      MLX5E_TC_FLOW_INIT_DONE);
-	kfree(parse_attr->mod_hdr_actions);
-	kvfree(parse_attr);
+	kmem_cache_free(parse_attr_cache, parse_attr);
 	*__flow = flow;
 
 	return 0;
 
 err_free:
 	mlx5e_flow_put(priv, flow);
-	kfree(parse_attr->mod_hdr_actions);
-	kvfree(parse_attr);
+	kmem_cache_free(parse_attr_cache, parse_attr);
 out:
 	return err;
 }
@@ -3918,7 +3932,7 @@ static void _mlx5e_tc_del_flow(void *ptr, void *arg)
 	struct mlx5e_priv *priv = flow->priv;
 
 	mlx5e_tc_del_flow(priv, flow);
-	kfree(flow);
+	flow_cache_free(flow);
 }
 
 void mlx5e_tc_nic_cleanup(struct mlx5e_priv *priv)
@@ -3972,4 +3986,43 @@ int mlx5e_tc_num_filters(struct mlx5e_priv *priv)
 	struct rhashtable *tc_ht = get_tc_ht(priv);
 
 	return atomic_read(&tc_ht->nelems);
+}
+
+int mlx5e_tc_init(void)
+{
+	nic_flow_cache = kmem_cache_create("mlx5_nic_flow_cache",
+					   sizeof(struct mlx5e_tc_flow) +
+					   sizeof(struct mlx5_nic_flow_attr),
+					   0, SLAB_HWCACHE_ALIGN, NULL);
+	if (!nic_flow_cache)
+		goto err;
+
+	fdb_flow_cache = kmem_cache_create("mlx5_fdb_flow_cache",
+					   sizeof(struct mlx5e_tc_flow) +
+					   sizeof(struct mlx5_esw_flow_attr),
+					   0, SLAB_HWCACHE_ALIGN, NULL);
+	if (!fdb_flow_cache)
+		goto err_free_nic;
+
+	parse_attr_cache = kmem_cache_create("mlx5_parse_attr_cache",
+					     sizeof(struct mlx5e_tc_flow_parse_attr),
+					     0, SLAB_HWCACHE_ALIGN, NULL);
+	if (!parse_attr_cache)
+		goto err_free_fdb;
+
+	return 0;
+
+err_free_fdb:
+	kmem_cache_destroy(fdb_flow_cache);
+err_free_nic:
+	kmem_cache_destroy(nic_flow_cache);
+err:
+	return -ENOMEM;
+}
+
+void mlx5e_tc_cleanup(void)
+{
+	kmem_cache_destroy(parse_attr_cache);
+	kmem_cache_destroy(fdb_flow_cache);
+	kmem_cache_destroy(nic_flow_cache);
 }
