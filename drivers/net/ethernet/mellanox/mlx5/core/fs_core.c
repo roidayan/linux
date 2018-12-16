@@ -107,6 +107,8 @@
 #define LAG_NUM_PRIOS 1
 #define LAG_MIN_LEVEL (OFFLOADS_MIN_LEVEL + 1)
 
+#define MLX5_FS_MAX_RULES_PER_HANDLE 8
+
 struct node_caps {
 	size_t	arr_sz;
 	long	*caps;
@@ -397,6 +399,7 @@ static void del_sw_flow_table(struct fs_node *node)
 
 static void del_sw_hw_rule(struct fs_node *node)
 {
+	struct mlx5_flow_steering *steering = get_steering(node);
 	struct mlx5_flow_root_namespace *root;
 	struct mlx5_flow_rule *rule;
 	struct mlx5_flow_table *ft;
@@ -446,7 +449,7 @@ out:
 	}
 
 free_rule:
-	kfree(rule);
+	kmem_cache_free(steering->rule_cache, rule);
 }
 
 static void del_hw_fte(struct fs_node *node)
@@ -1111,11 +1114,12 @@ struct mlx5_flow_group *mlx5_create_flow_group(struct mlx5_flow_table *ft,
 	return fg;
 }
 
-static struct mlx5_flow_rule *alloc_rule(struct mlx5_flow_destination *dest)
+static struct mlx5_flow_rule *alloc_rule(struct mlx5_flow_steering *steering,
+					 struct mlx5_flow_destination *dest)
 {
 	struct mlx5_flow_rule *rule;
 
-	rule = kzalloc(sizeof(*rule), GFP_KERNEL);
+	rule = kmem_cache_zalloc(steering->rule_cache, GFP_KERNEL);
 	if (!rule)
 		return NULL;
 
@@ -1127,11 +1131,15 @@ static struct mlx5_flow_rule *alloc_rule(struct mlx5_flow_destination *dest)
 	return rule;
 }
 
-static struct mlx5_flow_handle *alloc_handle(int num_rules)
+static struct mlx5_flow_handle *alloc_handle(struct mlx5_flow_steering *steering,
+					     int num_rules)
 {
 	struct mlx5_flow_handle *handle;
 
-	handle = kzalloc(struct_size(handle, rule, num_rules), GFP_KERNEL);
+	if (num_rules > MLX5_FS_MAX_RULES_PER_HANDLE)
+		return NULL;
+
+	handle = kmem_cache_zalloc(steering->handle_cache, GFP_KERNEL);
 	if (!handle)
 		return NULL;
 
@@ -1145,14 +1153,16 @@ static void destroy_flow_handle(struct fs_fte *fte,
 				struct mlx5_flow_destination *dest,
 				int i)
 {
+	struct mlx5_flow_steering *steering = get_steering(&fte->node);
+
 	for (; --i >= 0;) {
 		if (refcount_dec_and_test(&handle->rule[i]->node.refcount)) {
 			fte->dests_size--;
 			list_del(&handle->rule[i]->node.list);
-			kfree(handle->rule[i]);
+			kmem_cache_free(steering->rule_cache, handle->rule[i]);
 		}
 	}
-	kfree(handle);
+	kmem_cache_free(steering->handle_cache, handle);
 }
 
 static struct mlx5_flow_handle *
@@ -1162,6 +1172,7 @@ create_flow_handle(struct fs_fte *fte,
 		   int *modify_mask,
 		   bool *new_rule)
 {
+	struct mlx5_flow_steering *steering = get_steering(&fte->node);
 	struct mlx5_flow_handle *handle;
 	struct mlx5_flow_rule *rule = NULL;
 	static int count = BIT(MLX5_SET_FTE_MODIFY_ENABLE_MASK_FLOW_COUNTERS);
@@ -1169,13 +1180,13 @@ create_flow_handle(struct fs_fte *fte,
 	int type;
 	int i = 0;
 
-	handle = alloc_handle((dest_num) ? dest_num : 1);
+	handle = alloc_handle(steering, (dest_num) ? dest_num : 1);
 	if (!handle)
 		return ERR_PTR(-ENOMEM);
 
 	do {
 		*new_rule = true;
-		rule = alloc_rule(dest + i);
+		rule = alloc_rule(steering, dest + i);
 		if (!rule)
 			goto free_rules;
 
@@ -1844,6 +1855,7 @@ EXPORT_SYMBOL(mlx5_add_flow_rules);
 
 void mlx5_del_flow_rules(struct mlx5_flow_handle *handle)
 {
+	struct mlx5_flow_steering *steering = get_steering(&handle->rule[0]->node);
 	int i;
 
 	for (i = handle->num_rules - 1; i >= 0; i--) {
@@ -1852,7 +1864,7 @@ void mlx5_del_flow_rules(struct mlx5_flow_handle *handle)
 
 		tree_remove_node(&rule->node);
 	}
-	kfree(handle);
+	kmem_cache_free(steering->handle_cache, handle);
 }
 EXPORT_SYMBOL(mlx5_del_flow_rules);
 
@@ -2388,6 +2400,8 @@ void mlx5_cleanup_fs(struct mlx5_core_dev *dev)
 	mlx5_cleanup_fc_stats(dev);
 	kmem_cache_destroy(steering->ftes_cache);
 	kmem_cache_destroy(steering->fgs_cache);
+	kmem_cache_destroy(steering->handle_cache);
+	kmem_cache_destroy(steering->rule_cache);
 	kfree(steering);
 }
 
@@ -2564,7 +2578,17 @@ int mlx5_init_fs(struct mlx5_core_dev *dev)
 						0, NULL);
 	steering->ftes_cache = kmem_cache_create("mlx5_fs_ftes", sizeof(struct fs_fte), 0,
 						 0, NULL);
-	if (!steering->ftes_cache || !steering->fgs_cache) {
+	steering->handle_cache = kmem_cache_create("mlx5_fs_handle_cache",
+						   struct_size((struct mlx5_flow_handle *)0,
+							       rule,
+							       MLX5_FS_MAX_RULES_PER_HANDLE),
+						   0, 0, NULL);
+	steering->rule_cache = kmem_cache_create("mlx5_fs_rule_cache",
+						 sizeof(struct mlx5_flow_rule),
+						 0, 0, NULL);
+
+	if (!steering->ftes_cache || !steering->fgs_cache ||
+	    !steering->handle_cache || !steering->rule_cache) {
 		err = -ENOMEM;
 		goto err;
 	}

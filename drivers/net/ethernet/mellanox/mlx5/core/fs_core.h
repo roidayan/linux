@@ -71,6 +71,8 @@ struct mlx5_flow_steering {
 	struct mlx5_core_dev *dev;
 	struct kmem_cache               *fgs_cache;
 	struct kmem_cache               *ftes_cache;
+	struct kmem_cache               *handle_cache;
+	struct kmem_cache               *rule_cache;
 	struct mlx5_flow_root_namespace *root_ns;
 	struct mlx5_flow_root_namespace *fdb_root_ns;
 	struct mlx5_flow_root_namespace **esw_egress_root_ns;
