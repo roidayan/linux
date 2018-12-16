@@ -4090,12 +4090,11 @@ static void miniflow_merge_tuple(struct mlx5e_tc_flow *mflow,
 	}
 }
 
-/* TODO: refactor mlx5_fc_create() and reuse */
 static struct mlx5_fc *miniflow_alloc_dummy_counter(void)
 {
 	struct mlx5_fc *counter;
 
-	counter = kzalloc(sizeof(*counter), GFP_ATOMIC);
+	counter = mlx5_fc_alloc(GFP_ATOMIC);
 	if (!counter)
 		return NULL;
 

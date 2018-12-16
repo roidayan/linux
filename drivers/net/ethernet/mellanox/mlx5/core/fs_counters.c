@@ -37,6 +37,8 @@
 #include "fs_core.h"
 #include "fs_cmd.h"
 
+static struct kmem_cache *fc_cache;
+
 #define MLX5_FC_STATS_PERIOD msecs_to_jiffies(1000)
 /* Max number of counters to query in bulk read is 32K */
 #define MLX5_SW_MAX_COUNTERS_BULK BIT(15)
@@ -207,7 +209,7 @@ static void mlx5_free_fc(struct mlx5_core_dev *dev,
 			 struct mlx5_fc *counter)
 {
 	mlx5_cmd_fc_free(dev, counter->id);
-	kfree(counter);
+	kmem_cache_free(fc_cache, counter);
 }
 
 static void mlx5_fc_stats_work(struct work_struct *work)
@@ -233,7 +235,7 @@ static void mlx5_fc_stats_work(struct work_struct *work)
 	llist_for_each_entry_safe(counter, tmp, dellist, dellist) {
 		/* TODO: merge change */
 		if (counter->dummy) {
-			kfree(counter);
+			kmem_cache_free(fc_cache, counter);
 			continue;
 		}
 
@@ -254,16 +256,27 @@ static void mlx5_fc_stats_work(struct work_struct *work)
 	fc_stats->next_query = now + fc_stats->sampling_interval;
 }
 
+struct mlx5_fc *mlx5_fc_alloc(gfp_t flags)
+{
+	struct mlx5_fc *counter;
+
+	counter = kmem_cache_zalloc(fc_cache, flags);
+	if (!counter)
+		return NULL;
+	INIT_LIST_HEAD(&counter->list);
+
+	return counter;
+}
+
 struct mlx5_fc *mlx5_fc_create(struct mlx5_core_dev *dev, bool aging)
 {
 	struct mlx5_fc_stats *fc_stats = &dev->priv.fc_stats;
 	struct mlx5_fc *counter;
 	int err;
 
-	counter = kzalloc(sizeof(*counter), GFP_KERNEL);
+	counter = mlx5_fc_alloc(GFP_KERNEL);
 	if (!counter)
 		return ERR_PTR(-ENOMEM);
-	INIT_LIST_HEAD(&counter->list);
 
 	err = mlx5_cmd_fc_alloc(dev, &counter->id);
 	if (err)
@@ -299,7 +312,7 @@ struct mlx5_fc *mlx5_fc_create(struct mlx5_core_dev *dev, bool aging)
 err_out_alloc:
 	mlx5_cmd_fc_free(dev, counter->id);
 err_out:
-	kfree(counter);
+	kmem_cache_free(fc_cache, counter);
 
 	return ERR_PTR(err);
 }
@@ -351,14 +364,23 @@ int mlx5_init_fc_stats(struct mlx5_core_dev *dev)
 	init_llist_head(&fc_stats->addlist);
 	init_llist_head(&fc_stats->dellist);
 
+	fc_cache = kmem_cache_create("fc_cache", sizeof(struct mlx5_fc),
+				     0, SLAB_HWCACHE_ALIGN, NULL);
+	if (!fc_cache)
+		return -ENOMEM;
+
 	fc_stats->wq = create_singlethread_workqueue("mlx5_fc");
 	if (!fc_stats->wq)
-		return -ENOMEM;
+		goto err_free;
 
 	fc_stats->sampling_interval = MLX5_FC_STATS_PERIOD;
 	INIT_DELAYED_WORK(&fc_stats->work, mlx5_fc_stats_work);
 
 	return 0;
+
+err_free:
+	kmem_cache_destroy(fc_cache);
+	return -ENOMEM;
 }
 
 void mlx5_cleanup_fc_stats(struct mlx5_core_dev *dev)
@@ -380,6 +402,8 @@ void mlx5_cleanup_fc_stats(struct mlx5_core_dev *dev)
 
 	list_for_each_entry_safe(counter, tmp, &fc_stats->counters, list)
 		mlx5_free_fc(dev, counter);
+
+	kmem_cache_destroy(fc_cache);
 }
 
 int mlx5_fc_query(struct mlx5_core_dev *dev, struct mlx5_fc *counter,

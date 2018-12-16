@@ -192,6 +192,7 @@ int mlx5_modify_rule_destination(struct mlx5_flow_handle *handler,
 				 struct mlx5_flow_destination *new_dest,
 				 struct mlx5_flow_destination *old_dest);
 
+struct mlx5_fc *mlx5_fc_alloc(gfp_t flags);
 struct mlx5_fc *mlx5_fc_create(struct mlx5_core_dev *dev, bool aging);
 void mlx5_fc_link_dummies(struct mlx5_fc *counter, struct mlx5_fc **dummies, int nr_dummies);
 void mlx5_fc_unlink_dummies(struct mlx5_fc *counter);
