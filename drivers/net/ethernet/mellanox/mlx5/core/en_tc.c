@@ -340,7 +340,7 @@ static inline int cmp_mod_hdr_info(struct mod_hdr_key *a,
 static DEFINE_SPINLOCK(fc_lock);
 static LLIST_HEAD(fc_list);
 
-struct mlx5_fc *mlx5_fc_alloc(struct mlx5_core_dev *dev, bool aging)
+struct mlx5_fc *mlx5e_fc_alloc(struct mlx5_core_dev *dev, bool aging)
 {
 	struct llist_node *node;
 
@@ -354,13 +354,13 @@ struct mlx5_fc *mlx5_fc_alloc(struct mlx5_core_dev *dev, bool aging)
 	return llist_entry(node, struct mlx5_fc, freelist);
 }
 
-void mlx5_fc_free(struct mlx5_core_dev *dev, struct mlx5_fc *counter)
+void mlx5e_fc_free(struct mlx5_core_dev *dev, struct mlx5_fc *counter)
 {
 	if (counter)
 		llist_add(&counter->freelist, &fc_list);
 }
 
-void mlx5_fc_list_cleanup(struct mlx5_core_dev *dev, struct llist_head *fc_list)
+void mlx5e_fc_list_cleanup(struct mlx5_core_dev *dev, struct llist_head *fc_list)
 {
 	struct mlx5_fc *counter, *tmp;
 	struct llist_node *head;
@@ -1203,7 +1203,7 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	}
 
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_COUNT) {
-		counter = mlx5_fc_alloc(esw->dev, true);
+		counter = mlx5e_fc_alloc(esw->dev, true);
 		if (IS_ERR(counter)) {
 			rule = ERR_CAST(counter);
 			goto err_out;
@@ -1363,7 +1363,7 @@ static void mlx5e_tc_del_fdb_flow_simple(struct mlx5e_priv *priv,
 		mlx5e_detach_mod_hdr(priv, flow);
 
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_COUNT)
-		mlx5_fc_free(esw->dev, attr->counter);
+		mlx5e_fc_free(esw->dev, attr->counter);
 }
 
 static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
@@ -4915,7 +4915,7 @@ void mlx5e_tc_esw_cleanup(struct mlx5e_priv *priv)
 	rhashtable_free_and_destroy(mf_ht, NULL, NULL);
 
 	/* TODO: use the workqueue to speed it up? */
-	mlx5_fc_list_cleanup(priv->mdev, &fc_list);
+	mlx5e_fc_list_cleanup(priv->mdev, &fc_list);
 
 	for_each_possible_cpu(cpu) {
 		miniflow_free(per_cpu(current_miniflow, cpu));
