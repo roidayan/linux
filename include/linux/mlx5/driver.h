@@ -496,6 +496,7 @@ struct mlx5_core_sriov {
 	int			num_vfs;
 	int			enabled_vfs;
 	struct kobject		*config;
+	struct kobject		*groups_config;
 	struct kobject		node_guid_kobj;
 	struct mlx5_sriov_vf	*vfs;
 };

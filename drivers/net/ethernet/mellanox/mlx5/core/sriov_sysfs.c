@@ -74,6 +74,67 @@ static ssize_t vf_attr_store(struct kobject *kobj,
 	return ga->store(g, ga, buf, size);
 }
 
+struct vf_group_attributes {
+	struct attribute attr;
+	ssize_t (*show)(struct mlx5_vgroup *, struct vf_group_attributes *,
+			char *buf);
+	ssize_t (*store)(struct mlx5_vgroup *, struct vf_group_attributes *,
+			 const char *buf, size_t count);
+};
+
+static ssize_t vf_group_attr_show(struct kobject *kobj,
+				  struct attribute *attr, char *buf)
+{
+	struct vf_group_attributes *ga =
+		container_of(attr, struct vf_group_attributes, attr);
+	struct mlx5_vgroup *g = container_of(kobj, struct mlx5_vgroup, kobj);
+
+	if (!ga->show)
+		return -EIO;
+
+	return ga->show(g, ga, buf);
+}
+
+static ssize_t vf_group_attr_store(struct kobject *kobj,
+				   struct attribute *attr,
+				   const char *buf, size_t size)
+{
+	struct vf_group_attributes *ga =
+		container_of(attr, struct vf_group_attributes, attr);
+	struct mlx5_vgroup *g = container_of(kobj, struct mlx5_vgroup, kobj);
+
+	if (!ga->store)
+		return -EIO;
+
+	return ga->store(g, ga, buf, size);
+}
+
+static ssize_t max_tx_rate_group_show(struct mlx5_vgroup *g,
+				      struct vf_group_attributes *oa,
+				      char *buf)
+{
+	return sprintf(buf,
+		       "usage: write <Rate (Mbit/s)> to set VF group max rate\n");
+}
+
+static ssize_t max_tx_rate_group_store(struct mlx5_vgroup *g,
+				       struct vf_group_attributes *oa,
+				       const char *buf, size_t count)
+{
+	struct mlx5_core_dev *dev = g->dev;
+	struct mlx5_eswitch *esw = dev->priv.eswitch;
+	u32 max_rate;
+	int err;
+
+	err = sscanf(buf, "%u", &max_rate);
+	if (err != 1)
+		return -EINVAL;
+
+	err = mlx5_eswitch_set_vgroup_rate(esw, g->group_id, max_rate);
+
+	return err ? err : count;
+}
+
 static ssize_t port_show(struct mlx5_sriov_vf *g, struct vf_attributes *oa,
 			 char *buf)
 {
@@ -504,6 +565,35 @@ static ssize_t max_tx_rate_store(struct mlx5_sriov_vf *g,
 	return err ? err : count;
 }
 
+static ssize_t group_show(struct mlx5_sriov_vf *g,
+			  struct vf_attributes *oa,
+			  char *buf)
+{
+	return sprintf(buf,
+		       "usage: write <Group 0-255> to set VF vport group\n");
+}
+
+static ssize_t group_store(struct mlx5_sriov_vf *g,
+			   struct vf_attributes *oa,
+			   const char *buf, size_t count)
+{
+	struct mlx5_core_dev *dev = g->dev;
+	struct mlx5_eswitch *esw = dev->priv.eswitch;
+	u32 group_id;
+	int err;
+
+	err = sscanf(buf, "%u", &group_id);
+	if (err != 1)
+		return -EINVAL;
+
+	if (group_id > 255)
+		return -EINVAL;
+
+	err = mlx5_eswitch_vport_update_group(esw, g->vf + 1, group_id);
+
+	return err ? err : count;
+}
+
 static ssize_t min_tx_rate_show(struct mlx5_sriov_vf *g,
 				struct vf_attributes *oa,
 				char *buf)
@@ -611,6 +701,7 @@ static ssize_t config_show(struct mlx5_sriov_vf *g, struct vf_attributes *oa,
 	p += _sprintf(p, buf, "LinkState  : %s",   policy_str(ivi->link_state));
 	p += _sprintf(p, buf, "MinTxRate  : %d\n", ivi->min_rate);
 	p += _sprintf(p, buf, "MaxTxRate  : %d\n", ivi->max_rate);
+	p += _sprintf(p, buf, "RateGroup  : %d\n", ivi->group);
 	mutex_unlock(&esw->state_lock);
 
 	return (ssize_t)(p - buf);
@@ -619,6 +710,33 @@ static ssize_t config_show(struct mlx5_sriov_vf *g, struct vf_attributes *oa,
 static ssize_t config_store(struct mlx5_sriov_vf *g,
 			    struct vf_attributes *oa,
 			    const char *buf, size_t count)
+{
+	return -ENOTSUPP;
+}
+
+static ssize_t config_group_show(struct mlx5_vgroup *g,
+				 struct vf_group_attributes *oa,
+				 char *buf)
+{
+	struct mlx5_core_dev *dev = g->dev;
+	struct mlx5_eswitch *esw = dev->priv.eswitch;
+	char *p = buf;
+
+	if (!esw && MLX5_CAP_GEN(esw->dev, vport_group_manager) &&
+	    mlx5_core_is_pf(esw->dev))
+		return -EPERM;
+
+	mutex_lock(&esw->state_lock);
+	p += _sprintf(p, buf, "Num VFs    : %d\n", g->num_vports);
+	p += _sprintf(p, buf, "MaxRate    : %d\n", g->max_rate);
+	mutex_unlock(&esw->state_lock);
+
+	return (ssize_t)(p - buf);
+}
+
+static ssize_t config_group_store(struct mlx5_vgroup *g,
+				  struct vf_group_attributes *oa,
+				  const char *buf, size_t count)
 {
 	return -ENOTSUPP;
 }
@@ -708,6 +826,13 @@ static const struct sysfs_ops vf_sysfs_ops = {
 	.store = vf_attr_store,
 };
 
+static const struct sysfs_ops vf_group_sysfs_ops = {
+	.show = vf_group_attr_show,
+	.store = vf_group_attr_store,
+};
+
+#define VF_RATE_GROUP_ATTR(_name) struct vf_group_attributes vf_group_attr_##_name = \
+	__ATTR(_name, 0644, _name##_group_show, _name##_group_store)
 #define VF_ATTR(_name) struct vf_attributes vf_attr_##_name = \
 	__ATTR(_name, 0644, _name##_show, _name##_store)
 
@@ -725,6 +850,9 @@ VF_ATTR(max_tx_rate);
 VF_ATTR(min_tx_rate);
 VF_ATTR(config);
 VF_ATTR(stats);
+VF_ATTR(group);
+VF_RATE_GROUP_ATTR(max_tx_rate);
+VF_RATE_GROUP_ATTR(config);
 
 static struct attribute *vf_eth_attrs[] = {
 	&vf_attr_node.attr,
@@ -737,12 +865,24 @@ static struct attribute *vf_eth_attrs[] = {
 	&vf_attr_min_tx_rate.attr,
 	&vf_attr_config.attr,
 	&vf_attr_stats.attr,
+	&vf_attr_group.attr,
+	NULL
+};
+
+static struct attribute *vf_group_attrs[] = {
+	&vf_group_attr_max_tx_rate.attr,
+	&vf_group_attr_config.attr,
 	NULL
 };
 
 static struct kobj_type vf_type_eth = {
 	.sysfs_ops     = &vf_sysfs_ops,
 	.default_attrs = vf_eth_attrs
+};
+
+static struct kobj_type vf_group = {
+	.sysfs_ops     = &vf_group_sysfs_ops,
+	.default_attrs = vf_group_attrs
 };
 
 static struct vf_attributes pf_attr_min_pf_tx_rate = \
@@ -790,6 +930,17 @@ int mlx5_sriov_sysfs_init(struct mlx5_core_dev *dev)
 	if (!sriov->config)
 		return -ENOMEM;
 
+#ifdef CONFIG_MLX5_ESWITCH
+	if (MLX5_CAP_QOS(dev, log_esw_max_sched_depth)) {
+		sriov->groups_config = kobject_create_and_add("groups",
+							      sriov->config);
+		if (!sriov->groups_config) {
+			err = -ENOMEM;
+			goto err_groups;
+		}
+	}
+#endif
+
 	for (i = 0; i < ARRAY_SIZE(mlx5_class_attributes); i++) {
 		err = device_create_file(device, mlx5_class_attributes[i]);
 		if (err)
@@ -799,6 +950,12 @@ int mlx5_sriov_sysfs_init(struct mlx5_core_dev *dev)
 	return 0;
 
 err_attr:
+	if (sriov->groups_config) {
+		kobject_put(sriov->groups_config);
+		sriov->groups_config = NULL;
+	}
+
+err_groups:
 	kobject_put(sriov->config);
 	sriov->config = NULL;
 	return err;
@@ -813,8 +970,36 @@ void mlx5_sriov_sysfs_cleanup(struct mlx5_core_dev *dev)
 	for (i = 0; i < ARRAY_SIZE(mlx5_class_attributes); i++)
 		device_remove_file(device, mlx5_class_attributes[i]);
 
+	if (MLX5_CAP_QOS(dev, log_esw_max_sched_depth))
+		kobject_put(sriov->groups_config);
 	kobject_put(sriov->config);
 	sriov->config = NULL;
+}
+
+int mlx5_create_vf_group_sysfs(struct mlx5_core_dev *dev,
+			       u32 group_id, struct kobject *group_kobj)
+{
+	struct mlx5_core_sriov *sriov = &dev->priv.sriov;
+	int err;
+
+#ifdef CONFIG_MLX5_ESWITCH
+	err = kobject_init_and_add(group_kobj, &vf_group, sriov->groups_config,
+				   "%d", group_id);
+	if (err)
+		return err;
+
+	kobject_uevent(group_kobj, KOBJ_ADD);
+#endif
+
+	return 0;
+}
+
+void mlx5_destroy_vf_group_sysfs(struct mlx5_core_dev *dev,
+				 struct kobject *group_kobj)
+{
+#ifdef CONFIG_MLX5_ESWITCH
+	kobject_put(group_kobj);
+#endif
 }
 
 int mlx5_create_vfs_sysfs(struct mlx5_core_dev *dev, int num_vfs)
