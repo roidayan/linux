@@ -4731,30 +4731,11 @@ int mlx5e_tc_nic_init(struct mlx5e_priv *priv)
 	spin_lock_init(&tc->hairpin_tbl_lock);
 	hash_init(tc->hairpin_tbl);
 
-	flow_cache = kmem_cache_create("flow_cache",
-				       sizeof(struct mlx5e_tc_flow) +
-				       sizeof(struct mlx5_nic_flow_attr),
-				       0, SLAB_HWCACHE_ALIGN, NULL);
-	if (!flow_cache)
-		return -ENOMEM;
-
-	parse_attr_cache = kmem_cache_create("parse_attr_cache",
-					     sizeof(struct mlx5e_tc_flow_parse_attr),
-					     0, SLAB_HWCACHE_ALIGN, NULL);
-	if (!parse_attr_cache)
-		goto err_pa_cache;
-
 	err = rhashtable_init(&tc->ht, &tc_ht_params);
 	if (err)
-		goto err_tc_ht;
+		return err;
 
 	return 0;
-
-err_tc_ht:
-	kmem_cache_destroy(parse_attr_cache);
-err_pa_cache:
-	kmem_cache_destroy(flow_cache);
-	return err;
 }
 
 static void _mlx5e_tc_del_flow(void *ptr, void *arg)
