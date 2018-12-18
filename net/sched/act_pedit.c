@@ -264,6 +264,7 @@ static bool offset_valid(struct sk_buff *skb, int offset)
 static int pedit_skb_hdr_offset(struct sk_buff *skb,
 				enum pedit_header_type htype, int *hoffset)
 {
+	struct flow_keys keys;
 	int ret = -EINVAL;
 
 	switch (htype) {
@@ -281,8 +282,8 @@ static int pedit_skb_hdr_offset(struct sk_buff *skb,
 		break;
 	case TCA_PEDIT_KEY_EX_HDR_TYPE_TCP:
 	case TCA_PEDIT_KEY_EX_HDR_TYPE_UDP:
-		if (skb_transport_header_was_set(skb)) {
-			*hoffset = skb_transport_offset(skb);
+		if (skb_flow_dissect_flow_keys(skb, &keys, 0)) {
+			*hoffset = keys.control.thoff;
 			ret = 0;
 		}
 		break;
