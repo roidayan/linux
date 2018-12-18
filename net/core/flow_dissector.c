@@ -323,8 +323,8 @@ ip:
 			key_ip = skb_flow_dissector_target(flow_dissector,
 									 FLOW_DISSECTOR_KEY_IP,
 									 target_container);
-			key_ip->ttl = iph.ttl;
-			key_ip->tos = iph.tos;
+			key_ip->ttl = iph->ttl;
+			key_ip->tos = iph->tos;
 		}
 
 		if (ip_is_fragment(iph)) {
