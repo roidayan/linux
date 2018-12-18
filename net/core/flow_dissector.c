@@ -250,6 +250,7 @@ bool __skb_flow_dissect(const struct sk_buff *skb,
 	struct flow_dissector_key_control *key_control;
 	struct flow_dissector_key_basic *key_basic;
 	struct flow_dissector_key_addrs *key_addrs;
+	struct flow_dissector_key_ip *key_ip;
 	struct flow_dissector_key_arp *key_arp;
 	struct flow_dissector_key_ports *key_ports;
 	struct flow_dissector_key_icmp *key_icmp;
@@ -315,6 +316,15 @@ ip:
 			memcpy(&key_addrs->v4addrs, &iph->saddr,
 			       sizeof(key_addrs->v4addrs));
 			key_control->addr_type = FLOW_DISSECTOR_KEY_IPV4_ADDRS;
+		}
+
+		if (dissector_uses_key(flow_dissector,
+					  FLOW_DISSECTOR_KEY_IP)) {
+			key_ip = skb_flow_dissector_target(flow_dissector,
+									 FLOW_DISSECTOR_KEY_IP,
+									 target_container);
+			key_ip->ttl = iph.ttl;
+			key_ip->tos = iph.tos;
 		}
 
 		if (ip_is_fragment(iph)) {
