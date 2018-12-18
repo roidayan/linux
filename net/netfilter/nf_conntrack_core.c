@@ -1278,6 +1278,7 @@ nf_conntrack_in(struct net *net, u_int8_t pf, unsigned int hooknum,
 	if (l4proto->error != NULL) {
 		ret = l4proto->error(net, tmpl, skb, dataoff, pf, hooknum);
 		if (ret <= 0) {
+			pr_debug("l4proto %s error\n", l4proto->name);
 			NF_CT_STAT_INC_ATOMIC(net, error);
 			NF_CT_STAT_INC_ATOMIC(net, invalid);
 			ret = -ret;
@@ -1291,6 +1292,7 @@ repeat:
 	ct = resolve_normal_ct(net, tmpl, skb, dataoff, pf, protonum,
 			       l3proto, l4proto, &set_reply, &ctinfo);
 	if (!ct) {
+		pr_debug("resolve ct failed\n");
 		/* Not valid part of a connection */
 		NF_CT_STAT_INC_ATOMIC(net, invalid);
 		ret = NF_ACCEPT;
