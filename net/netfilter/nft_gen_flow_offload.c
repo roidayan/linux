@@ -275,7 +275,7 @@ static void nf_gen_flow_offload_fixup_ct_state(struct nf_conn *ct)
 
     timeouts = l4proto->get_timeouts(net);
     if (!timeouts)
-        return;
+        goto __fixup_exit;
 
     /* FIXME, This is not safe way, since tcp state may be changed during this update */
     if (l4num == IPPROTO_TCP) {
@@ -924,6 +924,20 @@ void nf_gen_flow_offload_table_free(struct nf_gen_flow_offload_table *flowtable)
 
 static struct flow_offload_dep_ops __rcu *flow_dep_ops = NULL;
 
+#define FLOW_OFFLOAD_DUMP(prefix_str, zone, tuple) \
+    if (tuple->src.l3num == AF_INET) {\
+        pr_debug(prefix_str": Tuple(%pI4, %pI4, %d, %d, %d) zone id %d\n",\
+                &tuple->src.u3.in, &tuple->dst.u3.in,\
+                ntohs(tuple->src.u.all), ntohs(tuple->dst.u.all),\
+                tuple->dst.protonum, zone->id);\
+    } else {\
+        pr_debug(prefix_str": Tuple(%pI6, %pI6, %d, %d, %d) zone id %d\n",\
+                &tuple->src.u3.in6, &tuple->dst.u3.in6,\
+                ntohs(tuple->src.u.all), ntohs(tuple->dst.u.all),\
+                tuple->dst.protonum, zone->id);\
+    }
+
+
 static inline void _flow_offload_debug_op(const struct nf_conntrack_zone *zone,
             const struct nf_conntrack_tuple * tuple, char * op)
 {
@@ -950,6 +964,7 @@ static int _flowtable_add_entry(const struct net *net, int zone_id,
     flow = nf_gen_flow_offload_alloc(ct, zone_id);
     if (IS_ERR(flow)) {
         ret = PTR_ERR(flow);
+        pr_debug("flow_alloc failed(%d)", ret);
         goto err_flow_alloc;
     }
     
@@ -971,6 +986,7 @@ static int _flowtable_add_entry(const struct net *net, int zone_id,
     }
 
 err_flow_add:
+    pr_debug("flow_add failed(%d)", ret);
     rcu_read_unlock();
     nf_gen_flow_offload_free(flow);
 err_flow_alloc:
@@ -1139,6 +1155,7 @@ int nft_gen_flow_offload_add(const struct net *net,
         /* create new flow */
         thash = nf_conntrack_find_get((struct net *)net, zone, tuple);
         if (!thash) {
+            pr_debug("No CT found");
             ret = -EINVAL;
             goto _flow_add_exit;
         }
@@ -1173,6 +1190,7 @@ int nft_gen_flow_offload_add(const struct net *net,
                                     FLOW_OFFLOAD_DYING)) {
             spin_unlock(&entry->dep_lock);
             rcu_read_unlock();
+            pr_debug("flow in destroy, try again");
             ret = -EAGAIN;
             goto _flow_add_exit;
         }
@@ -1181,6 +1199,7 @@ int nft_gen_flow_offload_add(const struct net *net,
         if (ret && (list_empty_careful(&entry->deps))) {
             teardown = true;
 
+            pr_debug("dep add failed %d", ret);
             spin_unlock(&entry->dep_lock);
             rcu_read_unlock();
             goto _flow_add_exit;
@@ -1208,10 +1227,12 @@ _flow_add_exit:
     flowtable = rcu_dereference(_flowtable);
     if (flowtable) {
         tstat_added_inc(flowtable);
-        if (ret < 0)
+        if (ret < 0) {
+            FLOW_OFFLOAD_DUMP("offloaded flow add failed", zone, tuple);
             tstat_add_failed_inc(flowtable);
-        if (ret == -EAGAIN)
-            tstat_add_racing_inc(flowtable);
+            if (ret == -EAGAIN)
+                tstat_add_racing_inc(flowtable);
+        }
 
         if (teardown)
             nf_gen_flow_offload_teardown(flowtable, &entry->flow);
