@@ -2735,7 +2735,7 @@ int mlx5e_open_locked(struct net_device *netdev)
 	if (err)
 		goto err_clear_state_opened_flag;
 
-	mlx5e_refresh_tirs(priv, false);
+	//mlx5e_refresh_tirs(priv, false);
 	mlx5e_activate_priv_channels(priv);
 	if (priv->profile->update_carrier)
 		priv->profile->update_carrier(priv);
