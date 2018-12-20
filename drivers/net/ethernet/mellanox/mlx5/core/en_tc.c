@@ -3932,18 +3932,21 @@ out:
 }
 
 static void miniflow_merge_match(struct mlx5e_tc_flow *mflow,
-				  struct mlx5e_tc_flow *flow)
+				  struct mlx5e_tc_flow *flow,
+				  u32 *merge_mask)
 {
+	struct mlx5_flow_spec tmp_spec_mask;
 	u32 *dst = (u32 *) &mflow->esw_attr->parse_attr->spec;
 	u32 *src = (u32 *) &flow->esw_attr->parse_attr->spec;
+	u32 *mask= (u32 *) &tmp_spec_mask;
 	int i;
 
-	trace("merging match mflow");
+	memset(&tmp_spec_mask, 0, sizeof(tmp_spec_mask));
+	memcpy(&tmp_spec_mask.match_criteria, merge_mask, sizeof(tmp_spec_mask.match_criteria));
+	memcpy(&tmp_spec_mask.match_value, merge_mask, sizeof(tmp_spec_mask.match_value));
 
-	BUILD_BUG_ON((sizeof(struct mlx5_flow_spec) % sizeof(u32)) != 0);
-
-	for (i = 0; i < sizeof(struct mlx5_flow_spec) / sizeof(u32); i++)
-		*dst++ |= *src++;
+    for (i = 0; i < sizeof(struct mlx5_flow_spec) / sizeof(u32); i++)
+		*dst++ |= (*src++ & (~*mask++));
 
 	mflow->esw_attr->match_level = max(flow->esw_attr->match_level,
 					   mflow->esw_attr->match_level);
@@ -3984,9 +3987,87 @@ static int miniflow_merge_mirred(struct mlx5e_tc_flow *mflow,
 	return 0;
 }
 
+struct mlx5_field2match {
+	u8  bitsize;
+	u32 dwoff;
+	u32 dwbitoff;
+	u32 dwmask;
+	u32 vmask;
+};
+
+#define FIELD2MATCH(fw_field, match_field) \
+	[MLX5_ACTION_IN_FIELD_OUT_ ## fw_field] = { __mlx5_bit_sz(fte_match_set_lyr_2_4, match_field),\
+												__mlx5_dw_off(fte_match_set_lyr_2_4, match_field),\
+												__mlx5_dw_bit_off(fte_match_set_lyr_2_4, match_field), \
+												__mlx5_dw_mask(fte_match_set_lyr_2_4, match_field),\
+												__mlx5_mask(fte_match_set_lyr_2_4,match_field)}
+
+static struct mlx5_field2match field2match[] = {
+	FIELD2MATCH(DMAC_47_16, dmac_47_16),
+	FIELD2MATCH(DMAC_15_0,  dmac_15_0),
+	FIELD2MATCH(SMAC_47_16, smac_47_16),
+	FIELD2MATCH(SMAC_15_0,  smac_15_0),
+	FIELD2MATCH(ETHERTYPE,  ethertype),
+
+	FIELD2MATCH(IP_TTL, ttl_hoplimit),
+	FIELD2MATCH(SIPV4,  src_ipv4_src_ipv6.ipv4_layout.ipv4),
+	FIELD2MATCH(DIPV4,  dst_ipv4_dst_ipv6.ipv4_layout.ipv4),
+
+	FIELD2MATCH(SIPV6_127_96, src_ipv4_src_ipv6.ipv6_layout.ipv6[0][0]),
+	FIELD2MATCH(SIPV6_95_64,  src_ipv4_src_ipv6.ipv6_layout.ipv6[4][0]),
+	FIELD2MATCH(SIPV6_63_32,  src_ipv4_src_ipv6.ipv6_layout.ipv6[8][0]),
+	FIELD2MATCH(SIPV6_31_0,   src_ipv4_src_ipv6.ipv6_layout.ipv6[12][0]),
+	FIELD2MATCH(DIPV6_127_96, dst_ipv4_dst_ipv6.ipv6_layout.ipv6[0][0]),
+	FIELD2MATCH(DIPV6_95_64,  dst_ipv4_dst_ipv6.ipv6_layout.ipv6[4][0]),
+	FIELD2MATCH(DIPV6_63_32,  dst_ipv4_dst_ipv6.ipv6_layout.ipv6[8][0]),
+	FIELD2MATCH(DIPV6_31_0,   dst_ipv4_dst_ipv6.ipv6_layout.ipv6[12][0]),
+
+	FIELD2MATCH(IPV6_HOPLIMIT, ttl_hoplimit),
+
+	FIELD2MATCH(TCP_SPORT, tcp_sport),
+	FIELD2MATCH(TCP_DPORT, tcp_dport),
+	FIELD2MATCH(TCP_FLAGS, tcp_flags),
+
+	FIELD2MATCH(UDP_SPORT, udp_sport),
+	FIELD2MATCH(UDP_DPORT, udp_dport),
+};
+
+/*     authoer: gaozengmo@jd.com
+   description: calculate the anti-mask useing in merge match*/
+static void
+miniflow_merge_calculate_mask(struct mlx5e_tc_flow_parse_attr * src_parse_attr, __be32 *tmp_mask)
+{
+	void    *action;
+	uint    action_num;
+	uint    loop;
+	uint    action_size = MLX5_MH_ACT_SZ;
+
+	action = src_parse_attr->mod_hdr_actions;
+	action_num=src_parse_attr->num_mod_hdr_actions;
+
+	for (loop = 0;loop < action_num; ++loop)
+	{
+		uint8_t  field;
+
+		/* just zero all the field in match, not be precise in bit.
+			so if set fied has mask, it will do no effective */
+		field  = MLX5_GET(set_action_in, action, field);
+		if (((field <= MLX5_ACTION_IN_FIELD_OUT_DIPV4) || (field == MLX5_ACTION_IN_FIELD_OUT_IPV6_HOPLIMIT)) &&
+			(field != MLX5_ACTION_IN_FIELD_OUT_IP_DSCP))
+		{
+			struct mlx5_field2match *tmpf2m = &field2match[field];
+			*((tmp_mask) + tmpf2m->dwoff) = cpu_to_be32(be32_to_cpu(*((tmp_mask) + tmpf2m->dwoff)) | tmpf2m->dwmask);
+		}
+		action += action_size;
+	}
+
+	return;
+}
+
 static int miniflow_merge_hdr(struct mlx5e_priv *priv,
 			       struct mlx5e_tc_flow *mflow,
-			       struct mlx5e_tc_flow *flow)
+			       struct mlx5e_tc_flow *flow,
+			       u32 *tmp_mask)
 {
 	struct mlx5e_tc_flow_parse_attr *dst_parse_attr;
 	struct mlx5e_tc_flow_parse_attr *src_parse_attr;
@@ -4027,6 +4108,8 @@ static int miniflow_merge_hdr(struct mlx5e_priv *priv,
 	       src_parse_attr->num_mod_hdr_actions * action_size);
 
 	dst_parse_attr->num_mod_hdr_actions += src_parse_attr->num_mod_hdr_actions;
+
+	miniflow_merge_calculate_mask(src_parse_attr, tmp_mask);
 
 	return 0;
 }
@@ -4403,17 +4486,19 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	mflow->esw_attr->in_mdev = priv->mdev;
 
 	/* Main merge loop */
+	u32 tmp_mask[MLX5_ST_SZ_DW(fte_match_param)];
+	memset(tmp_mask, 0, sizeof(tmp_mask));
 	for (i=0; i<miniflow->nr_flows; i++) {
 		flow = miniflow->path.flows[i];
 
 		flags |= atomic_read(&flow->flags);
 
-		miniflow_merge_match(mflow, flow);
+		miniflow_merge_match(mflow, flow, tmp_mask);
 		miniflow_merge_action(mflow, flow);
 		err = miniflow_merge_mirred(mflow, flow);
 		if (err)
 			goto err_rcu;
-		err = miniflow_merge_hdr(priv, mflow, flow);
+		err = miniflow_merge_hdr(priv, mflow, flow, tmp_mask);
 		if (err)
 			goto err_rcu;
 		miniflow_merge_vxlan(mflow, flow);
