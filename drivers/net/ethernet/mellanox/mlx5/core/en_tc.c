@@ -3480,10 +3480,6 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 		if (is_tcf_gact_shot(a)) {
 			action |= MLX5_FLOW_CONTEXT_ACTION_DROP |
 				  MLX5_FLOW_CONTEXT_ACTION_COUNT;
-			if (atomic_read(&flow->flags) & MLX5E_TC_FLOW_EGRESS) {
-				trace("shot endpoint, adding decap action");
-				action |= MLX5_FLOW_CONTEXT_ACTION_DECAP;
-			}
 			continue;
 		}
 
