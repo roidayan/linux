@@ -822,6 +822,7 @@ struct tc_miniflow_offload {
 	struct sk_buff *skb;
 	unsigned long cookie;
 	bool last_flow;
+	bool is_drop;
 	uint32_t chain_index;
 };
 

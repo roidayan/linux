@@ -232,6 +232,7 @@ static void fl_notify_underlying_device(struct sk_buff *skb, const struct tcf_pr
 	mf.skb = skb;
 	mf.cookie = tc_in_hw(f->flags) ? (unsigned long) f : 0;
 	mf.last_flow = !is_tcf_gact_goto_chain(actions[nr_actions-1]);
+	mf.is_drop = is_tcf_gact_shot(actions[nr_actions-1]);
 	mf.chain_index = tp->chain->index;
 
 	trace("calling notify_underlying_device with mf.cookie (f): %px", (void *) mf.cookie);
