@@ -3462,7 +3462,8 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 			if (atomic_read(&flow->flags) & MLX5E_TC_FLOW_EGRESS) {
 				action |= MLX5_FLOW_CONTEXT_ACTION_DECAP;
 			}
-			action |= MLX5_FLOW_CONTEXT_ACTION_COUNT;
+			action |= MLX5_FLOW_CONTEXT_ACTION_GOTO |
+				  MLX5_FLOW_CONTEXT_ACTION_COUNT;
 			continue;
 		}
 
@@ -3595,12 +3596,10 @@ static bool is_flow_simple(struct mlx5e_tc_flow *flow)
 	if (flow->esw_attr->chain)
 		return false;
 
-	if (flow->esw_attr->action &
-		(MLX5_FLOW_CONTEXT_ACTION_FWD_DEST |
-		 MLX5_FLOW_CONTEXT_ACTION_DROP))
-		return true;
+	if (flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_GOTO)
+		return false;
 
-	return false;
+	return true;
 }
 
 static int

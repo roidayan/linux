@@ -563,7 +563,8 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	atomic_set(&mflow->flags, flags);
 	miniflow_merge_tuple(mflow, &miniflow->tuple);
 	/* TODO: Workaround: crashes otherwise, should fix */
-	mflow->esw_attr->action &= ~MLX5_FLOW_CONTEXT_ACTION_CT;
+	mflow->esw_attr->action &= ~(MLX5_FLOW_CONTEXT_ACTION_CT |
+				     MLX5_FLOW_CONTEXT_ACTION_GOTO);
 
 	err = mlx5e_tc_add_fdb_flow(priv, mparse_attr, mflow, NULL);
 	if (err)
