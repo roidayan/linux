@@ -935,9 +935,6 @@ int tcf_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 	int limit = 0;
 
 reclassify:
-	/* TODO: can we do better? */
-	if (tp && tp->chain)
-		skb->recirc_id = tp->chain->index;
 #endif
 	for (; tp; tp = rcu_dereference_bh(tp->next)) {
 		int err;
@@ -952,6 +949,7 @@ reclassify:
 			first_tp = orig_tp;
 			goto reset;
 		} else if (unlikely(TC_ACT_EXT_CMP(err, TC_ACT_GOTO_CHAIN))) {
+			skb->recirc_id = err & (TC_ACT_EXT_VAL_MASK);
 			first_tp = res->goto_tp;
 			goto reset;
 		}
