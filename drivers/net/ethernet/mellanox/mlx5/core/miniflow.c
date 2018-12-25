@@ -865,6 +865,15 @@ int miniflow_configure(struct mlx5e_priv *priv,
 	if (miniflow->nr_flows == -1)
 		goto err;
 
+	/**
+	 * In some conditions merged rule could have another action with drop.
+	 * i.e. header rewrite + drop.
+	 * Such rule doesn't make sense and also not supported.
+	 * For simplicty we will not offload drop rules that are merged rules.
+	 */
+	if (mf->is_drop)
+		goto err;
+
 	/* "Simple" rules should be handled by the normal routines */
 	if (miniflow->nr_flows == 0 && mf->last_flow)
 		goto err;
