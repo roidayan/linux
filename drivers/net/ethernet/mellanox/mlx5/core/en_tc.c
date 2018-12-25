@@ -3599,6 +3599,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 				action |= MLX5_FLOW_CONTEXT_ACTION_DECAP;
 			}
 			action |= MLX5_FLOW_CONTEXT_ACTION_COUNT;
+			action |= MLX5_FLOW_CONTEXT_ACTION_GOTO;
 			continue;
 		}
 
@@ -3694,12 +3695,10 @@ static bool is_flow_simple(struct mlx5e_tc_flow *flow, int chain_index)
 	if (chain_index)
 		return false;
 
-	if (flow->esw_attr->action &
-		(MLX5_FLOW_CONTEXT_ACTION_FWD_DEST |
-		 MLX5_FLOW_CONTEXT_ACTION_DROP))
-		return true;
+	if (flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_GOTO)
+		return false;
 
-	return false;
+	return true;
 }
 
 static int
@@ -4378,6 +4377,7 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	miniflow_merge_tuple(mflow, &miniflow->tuple);
 	/* TODO: Workaround: crashes otherwise, should fix */
 	mflow->esw_attr->action = mflow->esw_attr->action & ~MLX5_FLOW_CONTEXT_ACTION_CT;
+	mflow->esw_attr->action &= ~MLX5_FLOW_CONTEXT_ACTION_GOTO;
 
 	err = __mlx5e_tc_add_fdb_flow(priv, mparse_attr, mflow);
 	trace("__mlx5e_tc_add_fdb_flow: err: %d", err);
