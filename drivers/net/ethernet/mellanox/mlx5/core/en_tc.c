@@ -4277,7 +4277,7 @@ static struct mlx5e_tc_flow *miniflow_ct_flow_alloc(struct mlx5e_priv *priv,
 	struct mlx5e_tc_flow *flow;
 	int err;
 
-	err = mlx5e_alloc_flow(priv, 0 /* cookie */, 0 /* handle */,
+	err = mlx5e_alloc_flow(priv, 0 /* cookie */, U32_MAX /* handle */,
 			       MLX5E_TC_FLOW_ESWITCH | MLX5E_TC_FLOW_CT,
 			       GFP_ATOMIC, &parse_attr, &flow);
 	if (err)
@@ -4347,7 +4347,7 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	int i;
 	int err;
 
-	err = mlx5e_alloc_flow(priv, 0 /* cookie */, 0 /* handle */,
+	err = mlx5e_alloc_flow(priv, 0 /* cookie */, U32_MAX /* handle */,
 			       flags, GFP_KERNEL, &mparse_attr, &mflow);
 	if (err)
 		return -1;
