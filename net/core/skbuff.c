@@ -678,6 +678,7 @@ static void skb_release_head_state(struct sk_buff *skb)
 	skb->tc_index = 0;
 #ifdef CONFIG_NET_CLS_ACT
 	skb->tc_verd = 0;
+	skb->recirc_id = 0;
 #endif
 #endif
 }
@@ -913,6 +914,7 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 	CHECK_SKB_FIELD(tc_index);
 #ifdef CONFIG_NET_CLS_ACT
 	CHECK_SKB_FIELD(tc_verd);
+	CHECK_SKB_FIELD(recirc_id);
 #endif
 #endif
 

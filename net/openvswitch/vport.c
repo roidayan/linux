@@ -445,8 +445,8 @@ int ovs_vport_receive(struct vport *vport, struct sk_buff *skb,
 	struct sw_flow_key key;
 	int error;
 
-	trace("TC_CB(skb)->recirc_id: %d", TC_CB(skb)->recirc_id);
-	OVS_CB(skb)->recirc_id = TC_CB(skb)->recirc_id;
+	trace("skb->recirc_id: %d", skb->recirc_id);
+	OVS_CB(skb)->recirc_id = skb->recirc_id;
 	OVS_CB(skb)->input_vport = vport;
 	OVS_CB(skb)->mru = 0;
 	if (unlikely(dev_net(skb->dev) != ovs_dp_get_net(vport->dp))) {

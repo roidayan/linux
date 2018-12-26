@@ -628,6 +628,7 @@ static inline u32 skb_mstamp_us_delta(const struct skb_mstamp *t1,
  *	@skb_iif: ifindex of device we arrived on
  *	@tc_index: Traffic control index
  *	@tc_verd: traffic control verdict
+ *	@recirc_id: classifier chain id
  *	@hash: the packet hash
  *	@queue_mapping: Queue mapping for multiqueue devices
  *	@ndisc_nodetype: router type (from link layer)
@@ -741,6 +742,7 @@ struct sk_buff {
 	__u16			tc_index;	/* traffic control index */
 #ifdef CONFIG_NET_CLS_ACT
 	__u16			tc_verd;	/* traffic control verdict */
+	__u32			recirc_id;	/* classifier chain id */
 #endif
 #endif
 

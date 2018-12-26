@@ -937,7 +937,7 @@ int tcf_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 reclassify:
 	/* TODO: can we do better? */
 	if (tp && tp->chain)
-		TC_CB(skb)->recirc_id = tp->chain->index;
+		skb->recirc_id = tp->chain->index;
 #endif
 	for (; tp; tp = rcu_dereference_bh(tp->next)) {
 		int err;
