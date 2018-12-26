@@ -3626,6 +3626,12 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 		return -EOPNOTSUPP;
 	}
 
+	if (action & MLX5_FLOW_CONTEXT_ACTION_CT &&
+	    action & MLX5_FLOW_CONTEXT_ACTION_FWD_DEST) {
+		etrace("CT action with MIRRED is not supported");
+		return -EOPNOTSUPP;
+	}
+
 	attr->action = action;
 	attr->parse_attr = parse_attr;
 	if (!actions_match_supported(priv, exts, parse_attr, flow))
