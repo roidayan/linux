@@ -3458,6 +3458,13 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 		}
 
 		if (is_tcf_gact_goto_chain(a)) {
+			int chain_index = tcf_gact_goto_chain_index(a);
+
+			if (chain_index == 0) {
+				netdev_warn(priv->netdev, "Loop to chain 0 is not supported");
+				return -EOPNOTSUPP;
+			}
+
 			/* TODO: we removed tunnel_release from OVS, let's reconsider */
 			if (atomic_read(&flow->flags) & MLX5E_TC_FLOW_EGRESS) {
 				action |= MLX5_FLOW_CONTEXT_ACTION_DECAP;
