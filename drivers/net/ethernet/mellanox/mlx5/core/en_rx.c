@@ -1082,6 +1082,12 @@ mlx5e_skb_from_cqe_mpwrq_linear(struct mlx5e_rq *rq, struct mlx5e_mpw_info *wi,
 	prefetchw(va); /* xdp_frame data area */
 	prefetch(data);
 
+	if (head_offset + cqe_bcnt > PAGE_SIZE) {
+		pr_info("%s: %d, %d, %d, %d\n", __func__,
+			page_idx, frag_size, cqe_bcnt, head_offset);
+		return NULL;
+	}
+
 	skb = mlx5e_build_linear_skb(rq, va, frag_size, rx_headroom, cqe_bcnt32);
 	if (unlikely(!skb))
 		return NULL;
