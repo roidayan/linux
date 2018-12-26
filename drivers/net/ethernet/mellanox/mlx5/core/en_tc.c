@@ -3600,11 +3600,8 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 		}
 
 		if (is_tcf_ct(a)) {
-			#if TRACE_ENABLED && TRACE_LEVEL == TRACE_LEVEL_ALL
-			struct tcf_conntrack_info *info = tcf_ct_info(a);
-
-			trace("offloading CT action, ignoring (info->commit: %d, info->mark: %d)", info->commit, info->mark);
-			#endif
+			trace("offloading CT action, ignoring (info->commit: %d, info->mark: %d)",
+			      tcf_ct_info(a)->commit, tcf_ct_info(a)->mark);
 			action |= MLX5_FLOW_CONTEXT_ACTION_CT;
 			continue;
 		}
