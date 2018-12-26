@@ -935,9 +935,6 @@ int tcf_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 	int limit = 0;
 
 reclassify:
-	/* TODO: can we do better? */
-	if (tp && tp->chain)
-		skb->recirc_id = tp->chain->index;
 #endif
 	for (; tp; tp = rcu_dereference_bh(tp->next)) {
 		int err;
@@ -960,6 +957,8 @@ reclassify:
 			return err;
 	}
 
+	/* Let OVS continue from where TC left off */
+	skb->recirc_id = tp->chain->index;
 	return TC_ACT_UNSPEC; /* signal: continue lookup */
 #ifdef CONFIG_NET_CLS_ACT
 reset:
