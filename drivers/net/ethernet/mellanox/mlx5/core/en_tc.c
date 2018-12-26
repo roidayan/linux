@@ -190,8 +190,6 @@ struct mlx5e_miniflow {
 	struct mlx5e_priv *priv;
 	struct mlx5e_tc_flow *flow;
 
-	u64 cookie;
-
 	struct nf_conntrack_tuple tuple;
 
 	int nr_flows;
@@ -3607,18 +3605,21 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 		}
 
 		if (is_tcf_gact_goto_chain(a)) {
-			#if TRACE_ENABLED && TRACE_LEVEL == TRACE_LEVEL_ALL
-			int chain = tcf_gact_goto_chain_index(a);
+			int chain_index = tcf_gact_goto_chain_index(a);
 
-			trace("offloading chain, ignoring (goto_chain: chain: %d)", chain);
-			#endif
+			trace("offloading chain, ignoring (goto_chain: chain: %d)", chain_index);
+			if (chain_index == 0) {
+				etrace("Loop to chain 0 is not supported");
+				return -EOPNOTSUPP;
+			}
+
 			/* TODO: we removed tunnel_release from OVS, let's reconsider */
 			if (atomic_read(&flow->flags) & MLX5E_TC_FLOW_EGRESS) {
 				trace("goto chain, adding decap action");
 				action |= MLX5_FLOW_CONTEXT_ACTION_DECAP;
 			}
-			action |= MLX5_FLOW_CONTEXT_ACTION_COUNT;
-			action |= MLX5_FLOW_CONTEXT_ACTION_GOTO;
+			action |= MLX5_FLOW_CONTEXT_ACTION_GOTO |
+				  MLX5_FLOW_CONTEXT_ACTION_COUNT;
 			continue;
 		}
 
@@ -4150,7 +4151,6 @@ static struct mlx5e_miniflow *miniflow_alloc(void)
 	if (!miniflow)
 		return NULL;
 
-	miniflow->cookie = 0;
 	return miniflow;
 }
 
@@ -4172,12 +4172,10 @@ static void miniflow_write(struct mlx5e_miniflow *miniflow)
 }
 
 static void miniflow_init(struct mlx5e_miniflow *miniflow,
-			   struct mlx5e_priv *priv,
-			   struct sk_buff *skb)
+			  struct mlx5e_priv *priv)
 {
 	memset(miniflow, 0, sizeof(*miniflow));
 
-	miniflow->cookie = (u64) skb;
 	miniflow->priv = priv;
 }
 
@@ -4390,8 +4388,8 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	atomic_set(&mflow->flags, flags);
 	miniflow_merge_tuple(mflow, &miniflow->tuple);
 	/* TODO: Workaround: crashes otherwise, should fix */
-	mflow->esw_attr->action = mflow->esw_attr->action & ~MLX5_FLOW_CONTEXT_ACTION_CT;
-	mflow->esw_attr->action &= ~MLX5_FLOW_CONTEXT_ACTION_GOTO;
+	mflow->esw_attr->action &= ~(MLX5_FLOW_CONTEXT_ACTION_CT |
+				     MLX5_FLOW_CONTEXT_ACTION_GOTO);
 
 	err = __mlx5e_tc_add_fdb_flow(priv, mparse_attr, mflow);
 	trace("__mlx5e_tc_add_fdb_flow: err: %d", err);
@@ -4484,7 +4482,6 @@ int mlx5e_configure_ct(struct mlx5e_priv *priv,
 		       struct tc_ct_offload *cto)
 {
 	struct mlx5e_miniflow *miniflow;
-	struct sk_buff *skb = cto->skb;
 	struct mlx5e_ct_tuple *ct_tuple;
 	unsigned long cookie;
 
@@ -4497,9 +4494,6 @@ int mlx5e_configure_ct(struct mlx5e_priv *priv,
 		return -1;
 
 	if (miniflow->nr_flows == -1)
-		goto err;
-
-	if (unlikely(miniflow->cookie != (u64) skb))
 		goto err;
 
 	if (unlikely(miniflow->nr_flows == MINIFLOW_MAX_FLOWS))
@@ -4595,11 +4589,11 @@ err:
 }
 
 int mlx5e_configure_miniflow(struct mlx5e_priv *priv,
-			      struct tc_miniflow_offload *mf)
+			     struct tc_miniflow_offload *mf)
 {
 	struct rhashtable *mf_ht = get_mf_ht(priv);
+	struct mlx5e_miniflow *miniflow;
 	struct sk_buff *skb = mf->skb;
-	struct mlx5e_miniflow *miniflow = NULL;
 	int err;
 
 	trace("mlx5e_configure_miniflow: mf->last: %d, miniflow_read(): %px", mf->last_flow, miniflow_read());
@@ -4612,8 +4606,8 @@ int mlx5e_configure_miniflow(struct mlx5e_priv *priv,
 		miniflow_write(miniflow);
 	}
 
-	if ((miniflow->cookie != (u64) skb)||(0 == mf->chain_index))
-		miniflow_init(miniflow, priv, skb);
+	if (mf->chain_index == 0)
+		miniflow_init(miniflow, priv);
 
 	if (miniflow->nr_flows == -1)
 		goto err;
