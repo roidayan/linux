@@ -163,7 +163,7 @@ static int miniflow_cache_allocated;
 static struct kmem_cache *miniflow_cache  __read_mostly;
 
 /* Derived from current insertion rate (flows/s) */
-#define MINIFLOW_WORKQUEUE_MAX_SIZE 20000
+#define MINIFLOW_WORKQUEUE_MAX_SIZE 40 * 1000
 
 struct workqueue_struct *miniflow_wq;
 static atomic_t miniflow_wq_size = ATOMIC_INIT(0);
