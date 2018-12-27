@@ -4863,7 +4863,7 @@ int mlx5e_tc_esw_init(struct mlx5e_priv *priv)
 	if (miniflow_cache_allocated)
 		return -EOPNOTSUPP;
 
-	miniflow_cache = kmem_cache_create("miniflow_cache",
+	miniflow_cache = kmem_cache_create("mlx5_miniflow_cache",
 					   sizeof(struct mlx5e_miniflow),
 					   0, SLAB_HWCACHE_ALIGN, NULL);
 	if (!miniflow_cache)
@@ -4932,21 +4932,21 @@ int mlx5e_tc_num_filters(struct mlx5e_priv *priv)
 
 int mlx5e_tc_init(void)
 {
-	nic_flow_cache = kmem_cache_create("nic_flow_cache",
+	nic_flow_cache = kmem_cache_create("mlx5_nic_flow_cache",
 					   sizeof(struct mlx5e_tc_flow) +
 					   sizeof(struct mlx5_nic_flow_attr),
 					   0, SLAB_HWCACHE_ALIGN, NULL);
 	if (!nic_flow_cache)
 		goto err;
 
-	fdb_flow_cache = kmem_cache_create("fdb_flow_cache",
+	fdb_flow_cache = kmem_cache_create("mlx5_fdb_flow_cache",
 					   sizeof(struct mlx5e_tc_flow) +
 					   sizeof(struct mlx5_esw_flow_attr),
 					   0, SLAB_HWCACHE_ALIGN, NULL);
 	if (!fdb_flow_cache)
 		goto err_free_nic;
 
-	parse_attr_cache = kmem_cache_create("parse_attr_cache",
+	parse_attr_cache = kmem_cache_create("mlx5_parse_attr_cache",
 					     sizeof(struct mlx5e_tc_flow_parse_attr),
 					     0, SLAB_HWCACHE_ALIGN, NULL);
 	if (!parse_attr_cache)
