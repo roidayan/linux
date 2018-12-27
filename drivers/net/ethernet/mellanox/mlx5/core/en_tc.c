@@ -3931,6 +3931,9 @@ static void miniflow_merge_match(struct mlx5e_tc_flow *mflow,
 
 	mflow->esw_attr->match_level = max(flow->esw_attr->match_level,
 					   mflow->esw_attr->match_level);
+	mflow->esw_attr->tunnel_match_level =
+		max(flow->esw_attr->tunnel_match_level,
+		    mflow->esw_attr->tunnel_match_level);
 }
 
 static void miniflow_merge_action(struct mlx5e_tc_flow *mflow,
