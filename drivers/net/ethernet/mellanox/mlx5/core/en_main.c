@@ -3210,7 +3210,7 @@ static int mlx5e_setup_tc(struct net_device *dev, enum tc_setup_type type,
 	case TC_SETUP_BLOCK:
 		return mlx5e_setup_tc_block(dev, type_data);
 #endif
-	case TC_SETUP_QDISC_MQPRIO:
+	case TC_SETUP_MQPRIO:
 		return mlx5e_setup_tc_mqprio(dev, type_data);
 	default:
 		return -EOPNOTSUPP;

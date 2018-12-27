@@ -624,8 +624,6 @@ enum {
 	__TC_MQPRIO_HW_OFFLOAD_MAX
 };
 
-#define TC_MQPRIO_HW_OFFLOAD_MAX (__TC_MQPRIO_HW_OFFLOAD_MAX - 1)
-
 struct tc_mqprio_qopt {
 	__u8	num_tc;
 	__u8	prio_tc_map[TC_QOPT_BITMASK + 1];
