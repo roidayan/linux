@@ -62,6 +62,34 @@ static void ct_notify_underlying_device(struct sk_buff *skb, struct nf_conn *ct,
 	tc_setup_cb_call_all(NULL, TC_SETUP_CT, &cto);
 }
 
+/* Trim the skb to the length specified by the IP/IPv6 header,
+ * removing any trailing lower-layer padding. This prepares the skb
+ * for higher-layer processing that assumes skb->len excludes padding
+ * (such as nf_ip_checksum). The caller needs to pull the skb to the
+ * network header, and ensure ip_hdr/ipv6_hdr points to valid data.
+ */
+static int tcf_skb_network_trim(struct sk_buff *skb)
+{
+	unsigned int len;
+	int err;
+
+	switch (skb->protocol) {
+	case htons(ETH_P_IP):
+		len = ntohs(ip_hdr(skb)->tot_len);
+		break;
+	case htons(ETH_P_IPV6):
+		len = sizeof(struct ipv6hdr)
+			+ ntohs(ipv6_hdr(skb)->payload_len);
+		break;
+	default:
+		len = skb->len;
+	}
+
+	err = pskb_trim_rcsum(skb, len);
+
+	return err;
+}
+
 static int tcf_conntrack(struct sk_buff *skb, const struct tc_action *a,
 			 struct tcf_result *res)
 {
@@ -77,6 +105,10 @@ static int tcf_conntrack(struct sk_buff *skb, const struct tc_action *a,
 	/* The conntrack module expects to be working at L3. */
 	nh_ofs = skb_network_offset(skb);
 	skb_pull_rcsum(skb, nh_ofs);
+
+	err = tcf_skb_network_trim(skb);
+	if (err)
+		return TC_ACT_SHOT;
 
 	spin_lock(&ca->tcf_lock);
 	tcf_lastuse_update(&ca->tcf_tm);
