@@ -1,7 +1,8 @@
 #ifndef _TRACE_H
 #define _TRACE_H
 
-#define TRACE_ENABLED 0
+#define TRACE_ENABLED 1
+#define TRACE_LEVEL          TRACE_LEVEL_ERRORS
 #define TRACE_DEBUG          (TRACE_ENABLED && 1)
 
 #if !TRACE_ENABLED
