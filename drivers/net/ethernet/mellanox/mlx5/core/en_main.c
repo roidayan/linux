@@ -2710,7 +2710,7 @@ void mlx5e_switch_priv_channels(struct mlx5e_priv *priv,
 	if (hw_modify)
 		hw_modify(priv);
 
-	mlx5e_refresh_tirs(priv, false);
+//	mlx5e_refresh_tirs(priv, false);
 	mlx5e_activate_priv_channels(priv);
 
 	/* return carrier back if needed */
