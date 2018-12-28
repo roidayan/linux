@@ -4121,11 +4121,11 @@ static void miniflow_merge_tuple(struct mlx5e_tc_flow *mflow,
 	}
 }
 
-static struct mlx5_fc *miniflow_alloc_dummy_counter(void)
+static struct mlx5_fc *miniflow_alloc_dummy_counter(struct mlx5_core_dev *dev)
 {
 	struct mlx5_fc *counter;
 
-	counter = mlx5_fc_alloc(GFP_ATOMIC);
+	counter = mlx5_fc_alloc(dev, GFP_ATOMIC);
 	if (!counter)
 		return NULL;
 
@@ -4143,7 +4143,7 @@ static int miniflow_attach_dummy_counter(struct mlx5e_tc_flow *flow)
 		return 0;
 
 	if (flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_COUNT) {
-		counter = miniflow_alloc_dummy_counter();
+		counter = miniflow_alloc_dummy_counter(flow->priv->mdev);
 		if (!counter)
 			return -1;
 
