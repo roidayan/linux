@@ -4135,6 +4135,11 @@ static struct mlx5_fc *miniflow_alloc_dummy_counter(struct mlx5_core_dev *dev)
 	return counter;
 }
 
+void miniflow_free_dummy_counter(struct mlx5_core_dev *dev, struct mlx5_fc *counter)
+{
+	mlx5_fc_dealloc(dev, counter);
+}
+
 static int miniflow_attach_dummy_counter(struct mlx5e_tc_flow *flow)
 {
 	struct mlx5_fc *counter;
@@ -4147,7 +4152,13 @@ static int miniflow_attach_dummy_counter(struct mlx5e_tc_flow *flow)
 		if (!counter)
 			return -1;
 
-		flow->dummy_counter = counter;
+		/* TODO: refactor the rule_lock to flow_lock ?? */
+		spin_lock(&flow->rule_lock);
+		if (flow->dummy_counter)
+			miniflow_free_dummy_counter(flow->priv->mdev, counter);
+		else
+			flow->dummy_counter = counter;
+		spin_unlock(&flow->rule_lock);
 	}
 
 	return 0;

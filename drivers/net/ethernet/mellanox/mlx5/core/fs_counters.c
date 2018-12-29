@@ -273,6 +273,12 @@ struct mlx5_fc *mlx5_fc_alloc(struct mlx5_core_dev *dev, gfp_t flags)
 	return counter;
 }
 
+void mlx5_fc_dealloc(struct mlx5_core_dev *dev, struct mlx5_fc *counter)
+{
+	if (dev->priv.fc_stats.fc_cache)
+		kmem_cache_free(dev->priv.fc_stats.fc_cache, counter);
+}
+
 struct mlx5_fc *mlx5_fc_create(struct mlx5_core_dev *dev, bool aging)
 {
 	struct mlx5_fc_stats *fc_stats = &dev->priv.fc_stats;
