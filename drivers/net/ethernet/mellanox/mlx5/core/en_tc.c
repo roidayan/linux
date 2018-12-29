@@ -4366,6 +4366,8 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	if (err)
 		goto err;
 
+	mflow->esw_attr->parse_attr = mparse_attr;
+
 	rcu_read_lock();
 	err = miniflow_resolve_path_flows(miniflow);
 	if (err) {
@@ -4375,7 +4377,6 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 
 	miniflow->flow = mflow;
 
-	mflow->esw_attr->parse_attr = mparse_attr;
 	mflow->miniflow = miniflow;
 
 	mflow->esw_attr->in_rep = rpriv->rep;
