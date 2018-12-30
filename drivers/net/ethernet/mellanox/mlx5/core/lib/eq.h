@@ -32,6 +32,7 @@ struct mlx5_eq {
 	u8                      eqn;
 	int                     nent;
 	struct mlx5_rsc_debug   *dbg;
+	unsigned int            eq_idx;
 };
 
 struct mlx5_eq_comp {

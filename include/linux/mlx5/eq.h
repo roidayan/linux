@@ -14,7 +14,13 @@ enum {
 	MLX5_EQ_PFAULT_IDX         = 3,
 	MLX5_EQ_MAX_ASYNC_EQS,
 	/* completion eqs vector indices start here */
-	MLX5_EQ_VEC_COMP_BASE = MLX5_EQ_MAX_ASYNC_EQS,
+	MLX5_EQ_VEC_COMP_BASE_PF = MLX5_EQ_MAX_ASYNC_EQS,
+};
+
+enum {
+	MLX5_VF_EQ_CTRL_VEC = 0,
+	MLX5_VF_EQ_MAX_ASYNC_EQS,
+	MLX5_EQ_VEC_COMP_BASE_VF = MLX5_VF_EQ_MAX_ASYNC_EQS,
 };
 
 #define MLX5_NUM_CMD_EQE   (32)
@@ -29,6 +35,7 @@ struct mlx5_eq_param {
 	u64            mask;
 	void          *context;
 	irq_handler_t  handler;
+	bool	       is_shared;
 };
 
 struct mlx5_eq *
@@ -56,5 +63,8 @@ static inline u32 mlx5_eq_update_cc(struct mlx5_eq *eq, u32 cc)
 	}
 	return cc;
 }
+
+#define MLX5_EQ_VEC_COMP_BASE(dev) \
+	(mlx5_core_is_pf(dev) ? MLX5_EQ_VEC_COMP_BASE_PF : MLX5_EQ_VEC_COMP_BASE_VF)
 
 #endif /* MLX5_CORE_EQ_H */
