@@ -375,7 +375,7 @@ int mlx5_init_fc_stats(struct mlx5_core_dev *dev)
 	init_llist_head(&fc_stats->addlist);
 	init_llist_head(&fc_stats->dellist);
 
-	fc_stats->fc_cache = kmem_cache_create("fc_cache", sizeof(struct mlx5_fc),
+	fc_stats->fc_cache = kmem_cache_create("mlx5_fc_cache", sizeof(struct mlx5_fc),
 				     0, SLAB_HWCACHE_ALIGN, NULL);
 	if (!fc_stats->fc_cache)
 		return -ENOMEM;
