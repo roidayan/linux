@@ -4466,9 +4466,9 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 
 err_rcu:
 	rcu_read_unlock();
+	kfree(mparse_attr->mod_hdr_actions);
 err:
 	atomic_inc((atomic_t *)&nr_mf_err);
-	kfree(mparse_attr->mod_hdr_actions);
 	kmem_cache_free(parse_attr_cache, mparse_attr);
 	flow_cache_free(mflow);
 err_verify:
