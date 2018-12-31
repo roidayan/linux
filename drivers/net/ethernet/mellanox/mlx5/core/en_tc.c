@@ -3785,7 +3785,7 @@ mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 
 	err = parse_cls_flower(priv, flow, &parse_attr->spec, f);
 	if (err)
-		goto err_flow;
+		goto err_parse;
 
 	/* At this point concurrent access to flow->rule is not possible because
 	 * neither offloaded nor init done flags were set, so no need to take
@@ -3793,7 +3793,7 @@ mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 	 */
 	err = parse_tc_fdb_actions(priv, f->exts, parse_attr, flow);
 	if (err < 0)
-		goto err_flow;
+		goto err_parse;
 
 	if (is_flow_simple(flow, f->common.chain_index)) {
 		trace("flow %px is simple", flow);
@@ -3814,6 +3814,9 @@ mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 
 	return 0;
 
+err_parse:
+	if (flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR)
+		kfree(parse_attr->mod_hdr_actions);
 err_flow:
 	/* Release temporary num_flows taken at the beginning of this
 	 * function.
