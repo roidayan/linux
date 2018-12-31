@@ -4364,7 +4364,7 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	err = mlx5e_alloc_flow(priv, 0 /* cookie */, U32_MAX /* handle */,
 			       flags, GFP_KERNEL, &mparse_attr, &mflow);
 	if (err)
-		goto err;
+		return -1;
 
 	mflow->esw_attr->parse_attr = mparse_attr;
 
@@ -4425,7 +4425,8 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 		/* TODO: refactor this function and the error handling */
 		ntrace("miniflow_verify_path_flows failed, interesting :)");
 		rcu_read_unlock();
-		goto err;
+		mlx5e_flow_put(priv, mflow);
+		goto err_verify;
 	}
 
 	miniflow_link_dummy_counters(miniflow->flow,
@@ -4450,7 +4451,10 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 
 err:
 	atomic_inc((atomic_t *)&nr_mf_err);
-	mlx5e_flow_put(priv, mflow);
+	kfree(mparse_attr->mod_hdr_actions);
+	kmem_cache_free(parse_attr_cache, mparse_attr);
+	flow_cache_free(mflow);
+err_verify:
 	rhashtable_remove_fast(mf_ht, &miniflow->node, mf_ht_params);
 	miniflow_cleanup(miniflow);
 	miniflow_free(miniflow);
