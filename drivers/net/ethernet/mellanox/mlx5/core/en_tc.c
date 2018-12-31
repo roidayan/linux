@@ -1375,10 +1375,8 @@ static void mlx5e_tc_del_fdb_flow_simple(struct mlx5e_priv *priv,
 	mlx5_eswitch_del_vlan_action(esw, attr);
 
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR){
-		if (NULL != attr->parse_attr->mod_hdr_actions){
+		if (NULL != attr->parse_attr->mod_hdr_actions)
 			kfree(attr->parse_attr->mod_hdr_actions);
-			attr->parse_attr->mod_hdr_actions=NULL;
-		}
 		mlx5e_detach_mod_hdr(priv, flow);
 	}
 
@@ -3749,8 +3747,8 @@ __mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	if (err != -EAGAIN)
 		atomic_or(MLX5E_TC_FLOW_OFFLOADED, &flow->flags);
 
-	//if (!(flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP))
-	//	kmem_cache_free(parse_attr_cache, parse_attr);
+	if (!(flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP))
+		kmem_cache_free(parse_attr_cache, parse_attr);
 
 err:
 	return err;
