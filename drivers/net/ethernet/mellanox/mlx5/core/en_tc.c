@@ -4001,6 +4001,7 @@ static int miniflow_merge_hdr(struct mlx5e_priv *priv,
 
 	if (dst_parse_attr->num_mod_hdr_actions + src_parse_attr->num_mod_hdr_actions >= max_actions) {
 		etrace("max num of actions reached");
+		kfree(dst_parse_attr->mod_hdr_actions);
 		return -E2BIG;
 	}
 
