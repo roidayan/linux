@@ -4464,6 +4464,8 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	trace("miniflow_merge: mflow: %px, flows: %d", mflow, miniflow->nr_flows);
 	return 0;
 
+err_rcu:
+	rcu_read_unlock();
 err:
 	atomic_inc((atomic_t *)&nr_mf_err);
 	kfree(mparse_attr->mod_hdr_actions);
@@ -4474,9 +4476,6 @@ err_verify:
 	miniflow_cleanup(miniflow);
 	miniflow_free(miniflow);
 	return -1;
-err_rcu:
-	rcu_read_unlock();
-	goto err;
 }
 
 void miniflow_merge_work(struct work_struct *work)
