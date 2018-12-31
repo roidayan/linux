@@ -62,9 +62,6 @@
 #include <linux/yktrace.h>
 
 /* TODO: there is a circular dep between mlx5_core and nft_gen_flow_offload ??? */
-static int skip_ct_destroy = 1;
-module_param(skip_ct_destroy, int, 0644);
-
 
 static int enable_ct_ageing = 1; /* On by default */
 module_param(enable_ct_ageing, int, 0644);
@@ -4843,17 +4840,6 @@ int ct_flow_offload_destroy(struct list_head *head)
 	struct mlx5e_tc_flow *flow, *n;
 
 	trace("ct_flow_offload_destroy");
-
-	if (skip_ct_destroy) {
-		int i = 0;
-
-		list_for_each_entry_safe(flow, n, head, nft_node)
-			i++;
-
-		mtrace("skipping flow %d (%d)", skip_ct_destroy, i);
-		--skip_ct_destroy;
-		return 0;
-	}
 
 	list_for_each_entry_safe(flow, n, head, nft_node) {
 		list_del(&flow->nft_node);
