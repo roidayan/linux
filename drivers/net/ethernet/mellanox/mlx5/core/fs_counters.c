@@ -235,8 +235,8 @@ static void mlx5_fc_stats_work(struct work_struct *work)
 	llist_for_each_entry_safe(counter, tmp, dellist, dellist) {
 		/* TODO: merge change */
 		if (counter->dummy) {
-		    if (dev->priv.fc_stats.fc_cache)
-			    kmem_cache_free(dev->priv.fc_stats.fc_cache, counter);
+			if (dev->priv.fc_stats.fc_cache)
+				kmem_cache_free(dev->priv.fc_stats.fc_cache, counter);
 			continue;
 		}
 
@@ -261,10 +261,10 @@ struct mlx5_fc *mlx5_fc_alloc(struct mlx5_core_dev *dev, gfp_t flags)
 {
 	struct mlx5_fc *counter;
 
-    if (dev->priv.fc_stats.fc_cache == NULL) {
-        return NULL;
-    }
-    
+	if (dev->priv.fc_stats.fc_cache == NULL) {
+		return NULL;
+	}
+
 	counter = kmem_cache_zalloc(dev->priv.fc_stats.fc_cache, flags);
 	if (!counter)
 		return NULL;
@@ -415,8 +415,8 @@ void mlx5_cleanup_fc_stats(struct mlx5_core_dev *dev)
 	list_for_each_entry_safe(counter, tmp, &fc_stats->counters, list)
 		mlx5_free_fc(dev, counter);
 
-    if (dev->priv.fc_stats.fc_cache)
-	    kmem_cache_destroy(dev->priv.fc_stats.fc_cache);
+	if (dev->priv.fc_stats.fc_cache)
+		kmem_cache_destroy(dev->priv.fc_stats.fc_cache);
 }
 
 int mlx5_fc_query(struct mlx5_core_dev *dev, struct mlx5_fc *counter,
