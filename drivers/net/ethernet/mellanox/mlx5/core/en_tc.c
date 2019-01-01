@@ -1212,7 +1212,6 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR) {
 		err = mlx5e_attach_mod_hdr(priv, flow, parse_attr);
-		kfree(parse_attr->mod_hdr_actions);
 		if (err) {
 			rule = ERR_PTR(err);
 			goto err_mod_hdr;
@@ -1248,6 +1247,9 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	//if (!(flow->esw_attr->action &
 	//      MLX5_FLOW_CONTEXT_ACTION_PACKET_REFORMAT))
 	//	kvfree(parse_attr);
+
+	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR)
+		kfree(parse_attr->mod_hdr_actions);
 
 	return rule;
 
