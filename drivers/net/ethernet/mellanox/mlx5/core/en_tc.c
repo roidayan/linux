@@ -65,6 +65,25 @@
 
 static atomic64_t global_version;
 
+static int fault_inject = 0;
+module_param(fault_inject, int, 0644);
+#define FAULT_INJECT_LOG pr_err("%s: %d: FAULT_INJECTION\n", __func__, __LINE__)
+#define FAULT_INJECT(c, y)					\
+	{ \
+	static int j = 0;\
+	j++;\
+	if ((fault_inject == __LINE__) ||	\
+	    (fault_inject > 0 && j % fault_inject == 0)){	\
+			FAULT_INJECT_LOG; c; y;			\
+			j=0;\
+	} \
+	}
+#define FAULT_INJECT_GOTO(c, y) FAULT_INJECT(c, goto y)
+#define FAULT_INJECT_ADD(c, y) FAULT_INJECT_GOTO(c, y)
+#define FAULT_INJECT_RULE(y) FAULT_INJECT_ADD(rule=ERR_PTR(-1), y)
+#define FAULT_INJECT_MINI(y) FAULT_INJECT_GOTO(err=-1, y)
+#define FAULT_INJECT_RETURN(y) FAULT_INJECT(return -1, )
+
 #if CT_DEBUG_COUNTERS
 static atomic64_t  nr_of_total_mf_succ =  ATOMIC64_INIT(0);
 static atomic64_t  nr_of_total_merge_mf_succ =  ATOMIC64_INIT(0);
@@ -1285,6 +1304,7 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	struct mlx5e_priv *out_priv;
 	int err;
 
+	FAULT_INJECT_ADD(rule=ERR_PTR(-1), err_out);
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP) {
 		out_dev = __dev_get_by_index(dev_net(priv->netdev),
 					     attr->parse_attr->mirred_ifindex);
@@ -1301,12 +1321,14 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 		attr->out_mdev[attr->out_count++] = out_priv->mdev;
 	}
 
+	FAULT_INJECT_ADD(rule=ERR_PTR(-1), err_out);
 	err = mlx5_eswitch_add_vlan_action(esw, attr);
 	if (err) {
 		rule = ERR_PTR(err);
 		goto err_out;
 	}
 
+	FAULT_INJECT_ADD(rule=ERR_PTR(-1), err_out);
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR) {
 		err = mlx5e_attach_mod_hdr(priv, flow, parse_attr);
 		kfree(parse_attr->mod_hdr_actions);
@@ -1317,6 +1339,7 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 		}
 	}
 
+	FAULT_INJECT_ADD(rule=ERR_PTR(-1), err_out);
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_COUNT) {
 		counter = mlx5e_fc_alloc(esw->dev, true);
 		if (IS_ERR(counter)) {
@@ -1327,6 +1350,7 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 		attr->counter = counter;
 	}
 
+	FAULT_INJECT_ADD(rule=ERR_PTR(-1), err_out);
 	/* we get here if (1) there's no error (rule being null) or when
 	 * (2) there's an encap action and we're on -EAGAIN (no valid neigh)
 	 */
@@ -1335,6 +1359,7 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 		if (IS_ERR(rule))
 			goto err_out;
 
+		FAULT_INJECT_ADD(flow->rule[1]=ERR_PTR(-1), err_fwd_rule);
 		if (attr->mirror_count) {
 			flow->rule[1] = mlx5_eswitch_add_fwd_rule(esw, &parse_attr->spec, attr);
 			if (IS_ERR(flow->rule[1]))
@@ -3199,6 +3224,7 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 	if (!encap_header)
 		return -ENOMEM;
 
+	FAULT_INJECT_MINI(free_encap);
 	switch (e->tunnel_type) {
 	case MLX5_HEADER_TYPE_VXLAN:
 		fl4.flowi4_proto = IPPROTO_UDP;
@@ -3216,6 +3242,7 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 	fl4.daddr = tun_key->u.ipv4.dst;
 	fl4.saddr = tun_key->u.ipv4.src;
 
+	FAULT_INJECT_MINI(free_encap);
 	err = mlx5e_route_lookup_ipv4(priv, mirred_dev, &out_dev,
 				      &fl4, &n, &ttl);
 	if (err)
@@ -3242,6 +3269,7 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 	n_updated = n->updated;
 	read_unlock_bh(&n->lock);
 
+	FAULT_INJECT_MINI(free_encap);
 	switch (e->tunnel_type) {
 	case MLX5_HEADER_TYPE_VXLAN:
 		gen_vxlan_header_ipv4(out_dev, encap_header,
@@ -3257,6 +3285,7 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 	e->encap_size = ipv4_encap_size;
 	e->encap_header = encap_header;
 
+	FAULT_INJECT_MINI(free_encap);
 	if (!(nud_state & NUD_VALID)) {
 		err = mlx5e_encap_entry_attach_update(priv, out_dev, e, n,
 						      n_updated);
@@ -3267,6 +3296,7 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 		goto out;
 	}
 
+	FAULT_INJECT_MINI(free_encap);
 	err = mlx5_encap_alloc(priv->mdev, e->tunnel_type,
 			       ipv4_encap_size, encap_header, &e->encap_id);
 	if (err)
@@ -3274,6 +3304,7 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 
 	e->flags |= MLX5_ENCAP_ENTRY_VALID;
 
+	FAULT_INJECT_MINI(dealloc_encap);
 	err = mlx5e_encap_entry_attach_update(priv, out_dev, e, n, n_updated);
 	if (err)
 		goto dealloc_encap;
@@ -4461,6 +4492,8 @@ static int miniflow_register_ct_flow(struct mlx5e_miniflow *miniflow)
 	int j;
 	int err;
 
+	FAULT_INJECT_RETURN();
+
 	if (!enable_ct_ageing)
 		return 0;
 
@@ -4555,6 +4588,8 @@ static int miniflow_verify_path_flows(struct mlx5e_miniflow *miniflow)
 	unsigned long cookie;
 	int i;
 
+	FAULT_INJECT_RETURN();
+
 	for (i = 0; i < miniflow->nr_flows; i++) {
 		cookie = miniflow->path.cookies[i];
 		if (miniflow_cookie_flags(cookie) & MFC_CT_FLOW)
@@ -4600,6 +4635,7 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	mflow->esw_attr->parse_attr = mparse_attr;
 
 	rcu_read_lock();
+	FAULT_INJECT_MINI(err_rcu);
 	err = miniflow_resolve_path_flows(miniflow);
 	if (err) {
 		ntrace("miniflow_resolve_path_flows failed");
@@ -4646,6 +4682,7 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 		}
 		dummy_counters[i] = flow->dummy_counter;
 	}
+	FAULT_INJECT_MINI(err_rcu);
 	rcu_read_unlock();
 
 	flags &= ~MLX5E_TC_FLOW_INIT_DONE;
@@ -4655,6 +4692,7 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	mflow->esw_attr->action &= ~(MLX5_FLOW_CONTEXT_ACTION_CT |
 				     MLX5_FLOW_CONTEXT_ACTION_GOTO);
 
+	FAULT_INJECT_MINI(err);
 	err = __mlx5e_tc_add_fdb_flow(priv, mparse_attr, mflow);
 	trace("__mlx5e_tc_add_fdb_flow: err: %d", err);
 	if (err && err != -EAGAIN) {
