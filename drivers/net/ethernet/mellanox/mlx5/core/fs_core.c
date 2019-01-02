@@ -1724,17 +1724,18 @@ search_again_locked:
 
 	/* Collect all fgs which has a matching match_criteria */
 	err = build_match_list(&match_head, ft, spec);
-	if (err) {
-		if (take_write)
-			up_write_ref_node(&ft->node);
-		else
-			up_read_ref_node(&ft->node);
-		return ERR_PTR(err);
+	if (!take_write){
+		up_read_ref_node(&ft->node);
+	}
+	else{
+		up_write_ref_node(&ft->node);
+		take_write = false;
 	}
 
-	if (!take_write)
-		up_read_ref_node(&ft->node);
-
+	if (err) {		
+		return ERR_PTR(err);
+	}
+	
 	rule = try_add_to_existing_fg(ft, &match_head.list, spec, flow_act, dest,
 				      dest_num, version);
 	free_match_list(&match_head);
