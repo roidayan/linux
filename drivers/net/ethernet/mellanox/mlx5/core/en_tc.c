@@ -4381,8 +4381,8 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	err = mlx5e_alloc_flow(priv, 0 /* cookie */, U32_MAX /* handle */,
 			       flags, GFP_KERNEL, &mparse_attr, &mflow);
 	if (err) {
-		miniflow_free(miniflow);
 		rhashtable_remove_fast(mf_ht, &miniflow->node, mf_ht_params);
+		miniflow_free(miniflow);
 		return -1;
 	}
 
