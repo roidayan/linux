@@ -120,8 +120,6 @@ static int tcf_conntrack(struct sk_buff *skb, const struct tc_action *a,
 	struct tcf_conntrack_info *ca = to_conntrack(a);
 	struct net *net = dev_net(skb->dev);
 	enum ip_conntrack_info ctinfo;
-	struct nf_conntrack_zone zone;
-	struct nf_conn *tmpl;
 	struct nf_conn *ct;
 	int nh_ofs;
 	int err, ret = 0;
@@ -143,19 +141,17 @@ static int tcf_conntrack(struct sk_buff *skb, const struct tc_action *a,
 
 	cached = skb_nfct_cached(net, skb, ca->zone);
 	if (!cached) {
-		nf_ct_zone_init(&zone, ca->zone,
-				NF_CT_DEFAULT_ZONE_DIR, 0);
-		tmpl = nf_ct_tmpl_alloc(net, &zone, GFP_ATOMIC);
 		/* TODO: check for error and many other stuff :) */
+		
+		if (ca->tmpl) {
+			nf_conntrack_get(&ca->tmpl->ct_general);            
 
-		if (skb_nfct(skb))
-			nf_conntrack_put(skb_nfct(skb));
+			if (skb_nfct(skb))
+				nf_conntrack_put(skb_nfct(skb));
 
-		nf_conntrack_get(&tmpl->ct_general);	
-		nf_ct_set(skb, tmpl, IP_CT_NEW);
-
-		__set_bit(IPS_CONFIRMED_BIT, &tmpl->status);
-
+			nf_ct_set(skb, ca->tmpl, IP_CT_NEW);
+		}
+        
 		err = nf_conntrack_in(net, PF_INET,
 				      NF_INET_PRE_ROUTING, skb);
 		if (err != NF_ACCEPT) {
@@ -280,6 +276,8 @@ static int tcf_conntrack_init(struct net *net, struct nlattr *nla,
 	struct tcf_conntrack_info *ci;
 	struct tc_conntrack *parm;
 	int ret = 0;
+	struct nf_conntrack_zone zone;
+	struct nf_conn *tmpl = NULL;
 
 	if (!nla)
 		return -EINVAL;
@@ -307,6 +305,21 @@ static int tcf_conntrack_init(struct net *net, struct nlattr *nla,
 		ci->net = net;
 		ci->commit = parm->commit;
 		ci->zone = parm->zone;
+ 		if (parm->zone != NF_CT_DEFAULT_ZONE_ID) {
+			nf_ct_zone_init(&zone, parm->zone,
+							NF_CT_DEFAULT_ZONE_DIR, 0);
+
+			tmpl = nf_ct_tmpl_alloc(net, &zone, GFP_ATOMIC);
+			if (!tmpl) {
+				pr_debug("Failed to allocate conntrack template");
+				tcf_idr_cleanup(tn, parm->index);
+				return -ENOMEM;
+			}
+			__set_bit(IPS_CONFIRMED_BIT, &tmpl->status);
+			nf_conntrack_get(&tmpl->ct_general);
+		}
+
+		ci->tmpl = tmpl;        
 		ci->mark = parm->mark;
 		ci->mark_mask = parm->mark_mask;
 		memcpy(ci->labels, parm->labels, sizeof(parm->labels));
@@ -323,15 +336,50 @@ static int tcf_conntrack_init(struct net *net, struct nlattr *nla,
 			tcf_idr_release(*a, bind);
 			return -EEXIST;
 		}
+
+		if (parm->zone != NF_CT_DEFAULT_ZONE_ID) {
+			nf_ct_zone_init(&zone, parm->zone,
+							NF_CT_DEFAULT_ZONE_DIR, 0);
+
+			tmpl = nf_ct_tmpl_alloc(net, &zone, GFP_ATOMIC);
+			if (!tmpl) {
+				pr_debug("Failed to allocate conntrack template");
+				return -ENOMEM;
+			}	
+		} 
+    	
 		/* replacing action and zone */
 		spin_lock_bh(&ci->tcf_lock);
 		ci->tcf_action = parm->action;
 		ci->zone = parm->zone;
+
+		swap(ci->tmpl, tmpl);
+		
 		spin_unlock_bh(&ci->tcf_lock);
+
+		if (tmpl) {
+			nf_conntrack_put(&tmpl->ct_general);
+		}
 		ret = 0;
 	}
 
 	return ret;
+}
+
+static void tcf_conntrack_release(struct tc_action *a)
+{
+	struct tcf_conntrack_info *ci = to_conntrack(a);
+	struct nf_conn *tmpl = NULL;
+
+	spin_lock_bh(&ci->tcf_lock);
+	if (ci->tmpl) {
+		swap(ci->tmpl, tmpl);
+	}
+	spin_unlock_bh(&ci->tcf_lock);
+
+	if (tmpl) {
+		nf_conntrack_put(&tmpl->ct_general);
+	}    
 }
 
 static inline int tcf_conntrack_dump(struct sk_buff *skb, struct tc_action *a,
@@ -396,6 +444,7 @@ static struct tc_action_ops act_conntrack_ops = {
 	.act		=	tcf_conntrack,
 	.dump		=	tcf_conntrack_dump,
 	.init		=	tcf_conntrack_init,
+	.cleanup	=	tcf_conntrack_release,
 	.walk		=	tcf_conntrack_walker,
 	.lookup		=	tcf_conntrack_search,
 	.size		=	sizeof(struct tcf_conntrack_info),

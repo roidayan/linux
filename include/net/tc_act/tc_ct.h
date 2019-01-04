@@ -9,6 +9,7 @@ struct tcf_conntrack_info {
 	struct tc_action common;
 	struct net *net;
 	u16 zone;
+	struct nf_conn *tmpl;
 	u32 labels[4];
 	u32 labels_mask[4];
 	u32 mark;
