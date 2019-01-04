@@ -39,6 +39,12 @@ static struct tc_action_ops act_conntrack_ops;
 static int enable_miniflow = 1;
 module_param(enable_miniflow, int, 0644);
 
+static int nr_nf_ct_get_failure = 0;
+module_param(nr_nf_ct_get_failure, int, 0644);
+
+static int nr_nf_conntrack_in_failure = 0;
+module_param(nr_nf_conntrack_in_failure, int, 0644);
+
 int get_enable_miniflow(void)
 {
 	return enable_miniflow;
@@ -153,7 +159,8 @@ static int tcf_conntrack(struct sk_buff *skb, const struct tc_action *a,
 		err = nf_conntrack_in(net, PF_INET,
 				      NF_INET_PRE_ROUTING, skb);
 		if (err != NF_ACCEPT) {
-			etrace("tcf_conntrack: nf_conntrack_in failed: %d", err);
+			mtrace("tcf_conntrack: nf_conntrack_in failed: %d", err);
+			nr_nf_conntrack_in_failure++;
 			ret = -1;
 			goto out;
 		}
@@ -163,7 +170,8 @@ static int tcf_conntrack(struct sk_buff *skb, const struct tc_action *a,
 
 	ct = nf_ct_get(skb, &ctinfo);
 	if (!ct) {
-		etrace("tcf_conntrack: nf_ct_get failed");
+		mtrace("tcf_conntrack: nf_ct_get failed");
+		nr_nf_ct_get_failure++;
 		ret = -1;
 		goto out;
 	}
