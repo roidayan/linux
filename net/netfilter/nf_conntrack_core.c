@@ -1421,7 +1421,9 @@ bool __nf_ct_kill_acct(struct nf_conn *ct,
 		nf_ct_acct_update(ct, ctinfo, skb->len);
 
 	if (del_timer(&ct->timeout)) {
-		ct->timeout.function((unsigned long)ct);
+		//ct->timeout.function((unsigned long)ct);
+		/* call delete direclty */
+		nf_ct_delete(ct, 0, 0);
 		return true;
 	}
 	return false;
