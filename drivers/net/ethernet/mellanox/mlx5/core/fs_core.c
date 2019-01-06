@@ -1377,23 +1377,44 @@ static bool mlx5_flow_dests_cmp(struct mlx5_flow_destination *d1,
 	return false;
 }
 
-static bool check_conflicting_actions(u32 action1, u32 action2)
+static bool check_conflicting_actions(const struct mlx5_flow_act *action1,
+				      const struct mlx5_flow_act *action2)
 {
-	u32 xored_actions = action1 ^ action2;
+	u32 xored_actions = action1->action ^ action2->action;
 
 	/* if one rule only wants to count, it's ok */
-	if (action1 == MLX5_FLOW_CONTEXT_ACTION_COUNT ||
-	    action2 == MLX5_FLOW_CONTEXT_ACTION_COUNT)
+	if (action1->action == MLX5_FLOW_CONTEXT_ACTION_COUNT ||
+	    action2->action == MLX5_FLOW_CONTEXT_ACTION_COUNT)
 		return false;
 
+	if ((action1->action & action2->action &
+	     MLX5_FLOW_CONTEXT_ACTION_MOD_HDR) &&
+	    action1->modify_id != action2->modify_id)
+		return true;
+
+	if ((action1->action & action2->action &
+	     MLX5_FLOW_CONTEXT_ACTION_ENCAP) &&
+	    action1->encap_id != action2->encap_id)
+		return true;
+
+	if ((action1->action & action2->action &
+	     MLX5_FLOW_CONTEXT_ACTION_VLAN_PUSH) &&
+	    ((action1->vlan[0].ethtype != action2->vlan[0].ethtype) ||
+	     (action1->vlan[0].vid != action2->vlan[0].vid) ||
+	     (action1->vlan[0].prio != action2->vlan[0].prio)))
+		return true;
+
+	if ((action1->action & action2->action &
+	     MLX5_FLOW_CONTEXT_ACTION_VLAN_PUSH_2) &&
+	    ((action1->vlan[1].ethtype != action2->vlan[1].ethtype) ||
+	     (action1->vlan[1].vid != action2->vlan[1].vid) ||
+	     (action1->vlan[1].prio != action2->vlan[1].prio)))
+		return true;
+
 	if (xored_actions & (MLX5_FLOW_CONTEXT_ACTION_DROP  |
-			     MLX5_FLOW_CONTEXT_ACTION_ENCAP |
 			     MLX5_FLOW_CONTEXT_ACTION_DECAP |
-			     MLX5_FLOW_CONTEXT_ACTION_MOD_HDR  |
 			     MLX5_FLOW_CONTEXT_ACTION_VLAN_POP |
-			     MLX5_FLOW_CONTEXT_ACTION_VLAN_PUSH |
-			     MLX5_FLOW_CONTEXT_ACTION_VLAN_POP_2 |
-			     MLX5_FLOW_CONTEXT_ACTION_VLAN_PUSH_2))
+			     MLX5_FLOW_CONTEXT_ACTION_VLAN_POP_2))
 		return true;
 
 	return false;
@@ -1401,7 +1422,7 @@ static bool check_conflicting_actions(u32 action1, u32 action2)
 
 static int check_conflicting_ftes(struct fs_fte *fte, const struct mlx5_flow_act *flow_act)
 {
-	if (check_conflicting_actions(flow_act->action, fte->action.action)) {
+	if (check_conflicting_actions(flow_act, &fte->action)) {
 		mlx5_core_warn(get_dev(&fte->node),
 			       "Found two FTEs with conflicting actions\n");
 		return -EEXIST;
