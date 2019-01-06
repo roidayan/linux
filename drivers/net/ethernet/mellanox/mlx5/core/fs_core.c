@@ -397,6 +397,35 @@ static void del_sw_flow_table(struct fs_node *node)
 	kfree(ft);
 }
 
+static void del_hw_fte(struct fs_node *node)
+{
+	struct mlx5_flow_root_namespace *root;
+	struct mlx5_flow_table *ft;
+	struct mlx5_flow_group *fg;
+	struct mlx5_core_dev *dev;
+	struct fs_fte *fte;
+	int err;
+
+	fs_get_obj(fte, node);
+	fs_get_obj(fg, fte->node.parent);
+	fs_get_obj(ft, fg->node.parent);
+
+	if (!(fte->status & FS_FTE_STATUS_EXISTING))
+		return;
+
+	trace_mlx5_fs_del_fte(fte);
+	dev = get_dev(&ft->node);
+	root = find_root(&ft->node);
+	if (node->active) {
+		err = root->cmds->delete_fte(dev, ft, fte);
+		if (err)
+			mlx5_core_warn(dev,
+				       "flow steering can't delete fte in index %d of flow group id %d\n",
+				       fte->index, fg->id);
+	}
+	fte->status &= ~FS_FTE_STATUS_EXISTING;
+}
+
 static void del_sw_hw_rule(struct fs_node *node)
 {
 	struct mlx5_flow_steering *steering = get_steering(node);
@@ -437,7 +466,7 @@ static void del_sw_hw_rule(struct fs_node *node)
 	}
 out:
 	if (rule->skip_ste && fte->handle)
-		goto free_rule;
+		update_fte = false;
 
 	root = find_root(&ft->node);
 	if (update_fte && fte->dests_size) {
@@ -446,35 +475,11 @@ out:
 			mlx5_core_warn(dev,
 				       "%s can't del rule fg id=%d fte_index=%d\n",
 				       __func__, fg->id, fte->index);
+	} else if (!fte->dests_size) {
+		del_hw_fte(&fte->node);
 	}
 
-free_rule:
 	kmem_cache_free(steering->rule_cache, rule);
-}
-
-static void del_hw_fte(struct fs_node *node)
-{
-	struct mlx5_flow_root_namespace *root;
-	struct mlx5_flow_table *ft;
-	struct mlx5_flow_group *fg;
-	struct mlx5_core_dev *dev;
-	struct fs_fte *fte;
-	int err;
-
-	fs_get_obj(fte, node);
-	fs_get_obj(fg, fte->node.parent);
-	fs_get_obj(ft, fg->node.parent);
-
-	trace_mlx5_fs_del_fte(fte);
-	dev = get_dev(&ft->node);
-	root = find_root(&ft->node);
-	if (node->active) {
-		err = root->cmds->delete_fte(dev, ft, fte);
-		if (err)
-			mlx5_core_warn(dev,
-				       "flow steering can't delete fte in index %d of flow group id %d\n",
-				       fte->index, fg->id);
-	}
 }
 
 static void del_sw_fte(struct fs_node *node)
