@@ -117,7 +117,8 @@ static int tcf_skb_network_trim(struct sk_buff *skb)
 static int tcf_conntrack(struct sk_buff *skb, const struct tc_action *a,
 			 struct tcf_result *res)
 {
-	struct tcf_conntrack_info *ca = to_conntrack(a);
+	struct tcf_conntrack_info *orig_ca = to_conntrack(a);
+	struct tcf_conntrack_info tmp_ca, *ca;
 	struct net *net = dev_net(skb->dev);
 	enum ip_conntrack_info ctinfo;
 	struct nf_conn *ct;
@@ -133,10 +134,13 @@ static int tcf_conntrack(struct sk_buff *skb, const struct tc_action *a,
 	if (err)
 		return TC_ACT_SHOT;
 
-	spin_lock(&ca->tcf_lock);
-	tcf_lastuse_update(&ca->tcf_tm);
-	bstats_update(&ca->tcf_bstats, skb);
+	spin_lock(&orig_ca->tcf_lock);
+	tcf_lastuse_update(&orig_ca->tcf_tm);
+	bstats_update(&orig_ca->tcf_bstats, skb);
+	memcpy(&tmp_ca, orig_ca, sizeof(tmp_ca));
+	spin_unlock(&orig_ca->tcf_lock);
 
+	ca = &tmp_ca;
 	trace("ca->commit: %d, ca->zone: %d, ca->mark: %d", ca->commit, ca->zone, ca->mark);
 
 	cached = skb_nfct_cached(net, skb, ca->zone);
@@ -259,7 +263,6 @@ out:
 	skb_push(skb, nh_ofs);
 	skb_postpush_rcsum(skb, skb->data, nh_ofs);
 
-	spin_unlock(&ca->tcf_lock);
 	return ca->tcf_action;
 }
 
