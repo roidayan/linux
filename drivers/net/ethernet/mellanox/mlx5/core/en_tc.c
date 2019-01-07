@@ -84,6 +84,9 @@ module_param(nr_mf_succ, int, 0644);
 static int max_nr_mf = 1024*1024;
 module_param(max_nr_mf, int, 0644);
 
+static int merger_probability = 0;
+module_param(merger_probability, int, 0644);
+
 static struct kmem_cache *nic_flow_cache   __read_mostly;
 static struct kmem_cache *fdb_flow_cache   __read_mostly;
 static struct kmem_cache *parse_attr_cache   __read_mostly;
@@ -4713,6 +4716,22 @@ err:
 	return -1;
 }
 
+int microflow_merge_rand_check(void)
+{
+	unsigned int rand;
+
+	if (merger_probability == 0)
+		return 0;
+
+	get_random_bytes(&rand, sizeof(unsigned int));
+
+	if (rand < UINT_MAX/merger_probability)
+	{
+		return 0;
+	}
+	return -1;
+}
+
 int mlx5e_configure_miniflow(struct mlx5e_priv *priv,
 			     struct tc_miniflow_offload *mf)
 {
@@ -4767,6 +4786,12 @@ int mlx5e_configure_miniflow(struct mlx5e_priv *priv,
 	trace("last_flow: %d", mf->last_flow);
 	if (!mf->last_flow)
 		return 0;
+
+	err = microflow_merge_rand_check();
+	if (err) {
+		trace("low propability: no need to merge");
+		goto err;
+	}
 
 	if (atomic_read(&miniflow_wq_size) > MINIFLOW_WORKQUEUE_MAX_SIZE)
 		goto err;
