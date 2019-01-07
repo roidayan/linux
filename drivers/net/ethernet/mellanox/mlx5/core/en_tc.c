@@ -4460,6 +4460,7 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	struct rhashtable *mf_ht = get_mf_ht(priv);
 	struct mlx5e_rep_priv *rpriv = priv->ppriv;
 	struct mlx5e_tc_flow *mflow, *flow;
+	u32 tmp_mask[MLX5_ST_SZ_DW(fte_match_param)];
 	int flags = MLX5E_TC_FLOW_SIMPLE | MLX5E_TC_FLOW_ESWITCH;
 	int i;
 	int err;
@@ -4489,7 +4490,6 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	mflow->esw_attr->in_mdev = priv->mdev;
 
 	/* Main merge loop */
-	u32 tmp_mask[MLX5_ST_SZ_DW(fte_match_param)];
 	memset(tmp_mask, 0, sizeof(tmp_mask));
 	for (i=0; i<miniflow->nr_flows; i++) {
 		flow = miniflow->path.flows[i];
