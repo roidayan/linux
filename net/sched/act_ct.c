@@ -220,9 +220,12 @@ static int tcf_conntrack(struct sk_buff *skb, const struct tc_action *a,
 			if (!cl)
 				goto out;
 
-			/* Inherit the master's labels, if any. */
+			/* Inherit the master's labels, if any.  Must use memcpy for backport
+			 * as struct assignment only copies the length field in older
+			 * kernels.
+	 		*/
 			if (master_cl)
-				*cl = *master_cl;
+				memcpy(cl->bits, master_cl->bits, NF_CT_LABELS_MAX_SIZE);
 
 			if (have_mask) {
 				u32 *dst = (u32 *)cl->bits;
