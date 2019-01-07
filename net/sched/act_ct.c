@@ -62,6 +62,24 @@ static void ct_notify_underlying_device(struct sk_buff *skb, struct nf_conn *ct,
 	tc_setup_cb_call_all(NULL, TC_SETUP_CT, &cto);
 }
 
+static bool skb_nfct_cached(struct net *net, struct sk_buff *skb, u16 zone_id)
+{
+	enum ip_conntrack_info ctinfo;
+	struct nf_conn *ct;
+
+	ct = nf_ct_get(skb, &ctinfo);
+	if (!ct)
+		return false;
+
+	trace("net is %p, old is %p, read_pnet %p", net, ct->ct_net, read_pnet(&ct->ct_net));
+	trace("zone is %d, new is %d", nf_ct_zone(ct)->id, zone_id);
+	if (!net_eq(net, read_pnet(&ct->ct_net)))
+		return false;
+	if (nf_ct_zone(ct)->id != zone_id)
+		return false;
+	return true;
+}
+
 /* Trim the skb to the length specified by the IP/IPv6 header,
  * removing any trailing lower-layer padding. This prepares the skb
  * for higher-layer processing that assumes skb->len excludes padding
@@ -101,6 +119,7 @@ static int tcf_conntrack(struct sk_buff *skb, const struct tc_action *a,
 	struct nf_conn *ct;
 	int nh_ofs;
 	int err, ret = 0;
+	bool cached;
 
 	/* The conntrack module expects to be working at L3. */
 	nh_ofs = skb_network_offset(skb);
@@ -116,25 +135,30 @@ static int tcf_conntrack(struct sk_buff *skb, const struct tc_action *a,
 
 	trace("ca->commit: %d, ca->zone: %d, ca->mark: %d", ca->commit, ca->zone, ca->mark);
 
-	nf_ct_zone_init(&zone, ca->zone,
-			NF_CT_DEFAULT_ZONE_DIR, 0);
-	tmpl = nf_ct_tmpl_alloc(net, &zone, GFP_ATOMIC);
-	/* TODO: check for error and many other stuff :) */
+	cached = skb_nfct_cached(net, skb, ca->zone);
+	if (!cached) {
+		nf_ct_zone_init(&zone, ca->zone,
+				NF_CT_DEFAULT_ZONE_DIR, 0);
+		tmpl = nf_ct_tmpl_alloc(net, &zone, GFP_ATOMIC);
+		/* TODO: check for error and many other stuff :) */
 
-	if (skb_nfct(skb))
-		nf_conntrack_put(skb_nfct(skb));
+		if (skb_nfct(skb))
+			nf_conntrack_put(skb_nfct(skb));
 
-	nf_conntrack_get(&tmpl->ct_general);	
-	nf_ct_set(skb, tmpl, IP_CT_NEW);
+		nf_conntrack_get(&tmpl->ct_general);	
+		nf_ct_set(skb, tmpl, IP_CT_NEW);
 
-	__set_bit(IPS_CONFIRMED_BIT, &tmpl->status);
+		__set_bit(IPS_CONFIRMED_BIT, &tmpl->status);
 
-	err = nf_conntrack_in(net, PF_INET,
-			      NF_INET_PRE_ROUTING, skb);
-	if (err != NF_ACCEPT) {
-		etrace("tcf_conntrack: nf_conntrack_in failed: %d", err);
-		ret = -1;
-		goto out;
+		err = nf_conntrack_in(net, PF_INET,
+				      NF_INET_PRE_ROUTING, skb);
+		if (err != NF_ACCEPT) {
+			etrace("tcf_conntrack: nf_conntrack_in failed: %d", err);
+			ret = -1;
+			goto out;
+		}
+	} else {
+		trace("cached connection");
 	}
 
 	ct = nf_ct_get(skb, &ctinfo);
@@ -146,7 +170,8 @@ static int tcf_conntrack(struct sk_buff *skb, const struct tc_action *a,
 
 	if (ctinfo == IP_CT_ESTABLISHED ||
 	    ctinfo == IP_CT_ESTABLISHED_REPLY) {
-		ct_notify_underlying_device(skb, ct, ctinfo, net);
+		if (!cached)
+			ct_notify_underlying_device(skb, ct, ctinfo, net);
 	}
 
 	/* TODO: must check this code very carefully; move to another function */
