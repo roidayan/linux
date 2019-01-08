@@ -143,6 +143,7 @@ struct mlx5e_tc_flow {
 	struct list_head        miniflow_list;
 
 	struct list_head        nft_node;
+	struct rcu_head		rcu;
 
 	union {
 		struct mlx5_esw_flow_attr esw_attr[0];
@@ -4834,6 +4835,13 @@ static bool same_flow_direction(struct mlx5e_tc_flow *flow, int flags)
 	return false;
 }
 
+static void mlx5e_flow_defered_put(struct rcu_head *head)
+{
+	struct mlx5e_tc_flow *flow = container_of(head, struct mlx5e_tc_flow, rcu);
+
+	mlx5e_flow_put(flow->priv, flow);
+}
+
 int mlx5e_delete_flower(struct mlx5e_priv *priv,
 			struct tc_cls_flower_offload *f, int flags)
 {
@@ -4847,10 +4855,12 @@ int mlx5e_delete_flower(struct mlx5e_priv *priv,
 	rhashtable_remove_fast(tc_ht, &flow->node, tc_ht_params);
 
 	/* Protect __miniflow_merge() */
-	if (!mlx5e_is_simple_flow(flow))
-		synchronize_rcu();
-
-	mlx5e_flow_put(priv, flow);
+	if (!mlx5e_is_simple_flow(flow)) {
+		//synchronize_rcu();
+		call_rcu(&flow->rcu, mlx5e_flow_defered_put);
+	} else {
+		mlx5e_flow_put(priv, flow);
+	}
 
 	return 0;
 }
