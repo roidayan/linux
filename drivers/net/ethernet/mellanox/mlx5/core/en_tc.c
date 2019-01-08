@@ -62,6 +62,8 @@
 #include <linux/yktrace.h>
 
 /* TODO: there is a circular dep between mlx5_core and nft_gen_flow_offload ??? */
+static int merger_probability = 0;
+module_param(merger_probability, int, 0644);
 
 static int enable_ct_ageing = 1; /* On by default */
 module_param(enable_ct_ageing, int, 0644);
@@ -83,9 +85,6 @@ module_param(nr_mf_succ, int, 0644);
 
 static int max_nr_mf = 1024*1024;
 module_param(max_nr_mf, int, 0644);
-
-static int merger_probability = 0;
-module_param(merger_probability, int, 0644);
 
 static struct kmem_cache *nic_flow_cache   __read_mostly;
 static struct kmem_cache *fdb_flow_cache   __read_mostly;
@@ -4721,12 +4720,13 @@ int microflow_merge_rand_check(void)
 {
 	unsigned int rand;
 
-	if (merger_probability == 0)
+	unsigned int probability = atomic_read((atomic_t *)&merger_probability);
+	if (probability == 0)
 		return 0;
 
 	get_random_bytes(&rand, sizeof(unsigned int));
 
-	if (rand < UINT_MAX/merger_probability)
+	if (rand < UINT_MAX/probability)
 	{
 		return 0;
 	}
