@@ -15,7 +15,7 @@
 #define TRACE_LEVEL_ALL      4
 
 #ifndef TRACE_LEVEL
-#define TRACE_LEVEL          TRACE_LEVEL_ALL
+#define TRACE_LEVEL          TRACE_LEVEL_ERRORS
 #endif
 
 #define SUPPRESS_UNUSED      __attribute__ ((unused))

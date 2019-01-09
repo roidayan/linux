@@ -3580,7 +3580,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 					  MLX5_FLOW_CONTEXT_ACTION_COUNT;
 				/* attr->out_rep is resolved when we handle encap */
 			} else {
-				pr_err("devices %s %s not on same switch HW, can't offload forwarding\n",
+				pr_debug("devices %s %s not on same switch HW, can't offload forwarding\n",
 				       priv->netdev->name, out_dev->name);
 				return -EINVAL;
 			}
