@@ -1352,7 +1352,7 @@ static void mlx5e_del_miniflow_list(struct mlx5e_tc_flow *flow)
 	struct mlx5e_miniflow_node *mnode, *n;
 	int i = 0; /* TODO: DEBUG */
 
-	spin_lock(&miniflow_lock);
+	spin_lock_bh(&miniflow_lock);
 	list_for_each_entry_safe(mnode, n, &flow->miniflow_list, node) {
 		struct mlx5e_miniflow *miniflow = mnode->miniflow;
 
@@ -1366,7 +1366,7 @@ static void mlx5e_del_miniflow_list(struct mlx5e_tc_flow *flow)
 		queue_work(miniflow_wq, &miniflow->work);
 		i++;
 	}
-	spin_unlock(&miniflow_lock);
+	spin_unlock_bh(&miniflow_lock);
 
 	if (i > 1) {
 		mtrace("miniflow_list size: %d (ct flow: %d)", i,
