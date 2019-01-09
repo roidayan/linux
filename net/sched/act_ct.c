@@ -114,6 +114,25 @@ static int tcf_skb_network_trim(struct sk_buff *skb)
 	return err;
 }
 
+static u_int8_t tcf_skb_family(struct sk_buff *skb)
+{
+	u_int8_t family = PF_UNSPEC;
+
+	switch (skb->protocol) {
+	case htons(ETH_P_IP):
+		family = PF_INET;
+		break;
+	case htons(ETH_P_IPV6):
+		family = PF_INET6;
+		break;
+	default:
+        break;
+	}
+
+	return family;
+}
+
+
 static int tcf_conntrack(struct sk_buff *skb, const struct tc_action *a,
 			 struct tcf_result *res)
 {
@@ -121,10 +140,12 @@ static int tcf_conntrack(struct sk_buff *skb, const struct tc_action *a,
 	struct tcf_conntrack_info tmp_ca, *ca;
 	struct net *net = dev_net(skb->dev);
 	enum ip_conntrack_info ctinfo;
+	struct nf_conn *tmpl = NULL;	
 	struct nf_conn *ct;
 	int nh_ofs;
 	int err, ret = 0;
 	bool cached;
+	u_int8_t family;
 
 	/* The conntrack module expects to be working at L3. */
 	nh_ofs = skb_network_offset(skb);
@@ -134,10 +155,20 @@ static int tcf_conntrack(struct sk_buff *skb, const struct tc_action *a,
 	if (err)
 		return TC_ACT_SHOT;
 
+	family = tcf_skb_family(skb);
+	if (family == PF_UNSPEC) {
+		return TC_ACT_SHOT;
+	}
+	
 	spin_lock(&orig_ca->tcf_lock);
 	tcf_lastuse_update(&orig_ca->tcf_tm);
 	bstats_update(&orig_ca->tcf_bstats, skb);
 	memcpy(&tmp_ca, orig_ca, sizeof(tmp_ca));
+	
+	if (orig_ca->tmpl) {
+		nf_conntrack_get(&orig_ca->tmpl->ct_general);
+		tmpl = orig_ca->tmpl;
+	}
 	spin_unlock(&orig_ca->tcf_lock);
 
 	ca = &tmp_ca;
@@ -146,18 +177,13 @@ static int tcf_conntrack(struct sk_buff *skb, const struct tc_action *a,
 	cached = skb_nfct_cached(net, skb, ca->zone);
 	if (!cached) {
 		/* TODO: check for error and many other stuff :) */
-		
-		if (ca->tmpl) {
-			nf_conntrack_get(&ca->tmpl->ct_general);            
-
+		if (tmpl) {
 			if (skb_nfct(skb))
 				nf_conntrack_put(skb_nfct(skb));
-
-			nf_ct_set(skb, ca->tmpl, IP_CT_NEW);
+			nf_ct_set(skb, tmpl, IP_CT_NEW);
 		}
-        
-		err = nf_conntrack_in(net, PF_INET,
-				      NF_INET_PRE_ROUTING, skb);
+
+		err = nf_conntrack_in(net, family, NF_INET_PRE_ROUTING, skb);
 		if (err != NF_ACCEPT) {
 			mtrace("tcf_conntrack: nf_conntrack_in failed: %d", err);
 			nr_nf_conntrack_in_failure++;
@@ -166,6 +192,9 @@ static int tcf_conntrack(struct sk_buff *skb, const struct tc_action *a,
 		}
 	} else {
 		trace("cached connection");
+		if (tmpl) {
+			nf_conntrack_put(&tmpl->ct_general);
+		}
 	}
 
 	ct = nf_ct_get(skb, &ctinfo);
