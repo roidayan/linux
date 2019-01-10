@@ -404,7 +404,7 @@ mlx5e_mod_hdr_get(struct mlx5e_priv *priv, int namespace,
 	bool found = false;
 
 	rcu_read_lock();
-	if (namespace == MLX5E_TC_FLOW_ESWITCH) {
+	if (namespace == MLX5_FLOW_NAMESPACE_FDB) {
 		hash_for_each_possible_rcu(esw->offloads.mod_hdr_tbl, mh,
 					   mod_hdr_hlist, hash_key) {
 			if (!cmp_mod_hdr_info(&mh->key, key) &&
