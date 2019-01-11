@@ -35,6 +35,8 @@ static atomic_t offloaded_flow_cnt;
 static unsigned int offloaded_ct_timeout = 30*HZ;
 module_param(offloaded_ct_timeout, uint, 0644);
 
+static unsigned int gc_max_cont_time = HZ;
+module_param(gc_max_cont_time, uint, 0644);
 
 static unsigned int aging_bucket_num = 32;
 module_param(aging_bucket_num, uint, 0644);
@@ -762,6 +764,7 @@ static int nf_gen_flow_offload_gc_step(struct flow_gc_work *gc_work, int target_
     int next_run, proced_flows;
     u64 stats_data[3];
 
+    /* 0 - total, 1 - stats, 2 - processed flow per run */
     stats_data[0] = jiffies;
     stats_data[1] = (u32)-1;
     stats_data[2] = (u32)-1;
@@ -771,6 +774,10 @@ static int nf_gen_flow_offload_gc_step(struct flow_gc_work *gc_work, int target_
 //    pr_debug("gc_in exp %d bkt_num %d interval %d", gc_work->expiration, gc_work->bucket_num, gc_work->bkt_interval);    
     
     while (proced_flows < target_flows) {
+
+        if ((stats_data[0] + gc_max_cont_time) >= jiffies)
+            cond_resched();
+
         /* process teardown list first */
         flow = _get_one_from_teardowns(gc_work);
         if (flow) {
@@ -883,7 +890,9 @@ int nf_gen_flow_offload_table_init(struct nf_gen_flow_offload_table *flowtable)
     if (err < 0)
         return err;
 
-    flowtable->flow_wq = alloc_ordered_workqueue("gen_flow_offload_wq", 0);
+    flowtable->flow_wq = alloc_workqueue("flow_offload", 
+                                        WQ_MEM_RECLAIM| WQ_UNBOUND | WQ_SYSFS,
+                                        1);
     if (!flowtable->flow_wq)
         goto _flow_wq_alloc_err;
 
@@ -1109,6 +1118,7 @@ void nft_gen_flow_offload_dep_ops_unregister(struct flow_offload_dep_ops * ops)
     /* cleanup all connections, for dep list member, drv assures no need to free explicitly */
     nf_gen_flow_offload_table_iterate(flowtable, nf_gen_flow_offload_table_do_cleanup, flowtable);
     rcu_read_unlock();
+
 
     synchronize_rcu();
 
