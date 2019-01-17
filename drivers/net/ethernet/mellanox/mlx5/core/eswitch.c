@@ -2224,6 +2224,7 @@ int mlx5_eswitch_set_vport_rate(struct mlx5_eswitch *esw, int vport,
 	bool max_rate_supported = MLX5_CAP_QOS(esw->dev, esw_rate_limit);
 	struct mlx5_vport *evport;
 	u32 previous_min_rate;
+	u32 act_max_rate = max_rate;
 	u32 divider;
 	int err = 0;
 
@@ -2253,7 +2254,13 @@ set_max_rate:
 	if (max_rate == evport->info.max_rate)
 		goto unlock;
 
-	err = esw_vport_qos_config(esw, vport, max_rate, evport->qos.bw_share);
+	/* If parent group has rate limit need to set to group
+	 * value when new max_rate is 0.
+	 */
+	if (evport->qos.group && !max_rate)
+		act_max_rate = (evport->qos.group)->max_rate;
+
+	err = esw_vport_qos_config(esw, vport, act_max_rate, evport->qos.bw_share);
 	if (!err)
 		evport->info.max_rate = max_rate;
 
@@ -2349,13 +2356,22 @@ int mlx5_eswitch_vport_update_group(struct mlx5_eswitch *esw, int vport_num,
 	}
 
 	vport->qos.group = new_group;
+
+	/* If vport is unlimited, we set the group's value.
+	 * Therefore, if the group is limited it will apply to
+	 * the vport as well and if not, vport will remain unlimited.
+	 */
 	err = esw_vport_create_sched_element(esw, vport_num,
-					     vport->info.max_rate,
+					     vport->info.max_rate ?
+					     vport->info.max_rate :
+					     new_group->max_rate,
 					     vport->qos.bw_share);
 	if (err) {
 		vport->qos.group = curr_group;
 		if (esw_vport_create_sched_element(esw, vport_num,
-						   vport->info.max_rate,
+						   vport->info.max_rate ?
+						   vport->info.max_rate :
+						   curr_group->max_rate,
 						   vport->qos.bw_share))
 			esw_warn(esw->dev, "E-Switch vport group set failed. Can't restore prev configuration (vport=%d)\n",
 				 vport_num);
@@ -2365,14 +2381,6 @@ int mlx5_eswitch_vport_update_group(struct mlx5_eswitch *esw, int vport_num,
 		mutex_unlock(&esw->state_lock);
 
 		return err;
-	}
-
-	if (!vport->info.max_rate && new_group->max_rate) {
-		err = esw_vport_qos_config(esw, vport_num,
-					   new_group->max_rate,
-					   vport->qos.bw_share);
-		if (!err)
-			vport->info.max_rate = new_group->max_rate;
 	}
 
 	vport->info.group = group_id;
@@ -2420,13 +2428,17 @@ int mlx5_eswitch_set_vgroup_rate(struct mlx5_eswitch *esw, int group_id,
 
 	group->max_rate = max_rate;
 
+	/* Any unlimited vports in the group should be set
+	 * with the value of the group.
+	 */
 	for (i = 0; i < esw->enabled_vports; i++) {
 		if (esw->vports[i].info.group == group_id &&
 		    !esw->vports[i].info.max_rate) {
 			err = esw_vport_qos_config(esw, i, max_rate,
 						   esw->vports[i].qos.bw_share);
-			if (!err)
-				esw->vports[i].info.max_rate = max_rate;
+			if (err)
+				esw_warn(esw->dev, "E-Switch vport implicit rate limit setting failed (vport=%d)\n",
+					 i);
 		}
 	}
 
