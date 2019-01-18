@@ -94,8 +94,8 @@ static int nr_of_mfe_in_queue = 0;
 static int currently_in_hw = 0;
 
 /* TODO: there is a circular dep between mlx5_core and nft_gen_flow_offload ??? */
-static int merger_probability = 0;
-module_param(merger_probability, int, 0644);
+static uint merger_probability = 0;
+module_param(merger_probability, uint, 0644);
 
 static int enable_ct_ageing = 1; /* On by default */
 module_param(enable_ct_ageing, int, 0644);
