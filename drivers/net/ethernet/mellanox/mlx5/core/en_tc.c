@@ -62,6 +62,9 @@
 #include <linux/yktrace.h>
 
 #define CT_DEBUG_COUNTERS 1
+
+static atomic64_t global_version;
+
 #if CT_DEBUG_COUNTERS
 static int nr_of_total_mf_succ = 0;
 static int nr_of_total_merge_mf_succ = 0;
@@ -96,6 +99,9 @@ static int currently_in_hw = 0;
 /* TODO: there is a circular dep between mlx5_core and nft_gen_flow_offload ??? */
 static uint merger_probability = 0;
 module_param(merger_probability, uint, 0644);
+
+static int invert_cnt = 0;
+module_param(invert_cnt, int, 0644);
 
 static int enable_ct_ageing = 1; /* On by default */
 module_param(enable_ct_ageing, int, 0644);
@@ -194,6 +200,7 @@ struct mlx5e_tc_flow {
 	struct rhash_head	node;
 	struct mlx5e_priv	*priv;
 	u64			cookie;
+	u64			version;
 	atomic_t		flags;
 	spinlock_t		rule_lock; /* protects rule array */
 	struct mlx5_flow_handle *rule[MLX5E_TC_MAX_SPLITS + 1];
@@ -262,6 +269,7 @@ struct mlx5e_miniflow {
 	struct nf_conntrack_tuple tuple;
 
 	int nr_flows;
+	u64 version;
 	struct {
 		unsigned long        cookies[MINIFLOW_MAX_FLOWS];
 		struct mlx5e_tc_flow *flows[MINIFLOW_MAX_FLOWS];
@@ -4041,6 +4049,7 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv,
 	if (err)
 		goto out;
 
+	flow->version = atomic64_inc_return(&global_version);
 	err = rhashtable_insert_fast(tc_ht, &flow->node, tc_ht_params);
 	if (err)
 		goto err_free;
@@ -4380,7 +4389,7 @@ static int miniflow_attach_dummy_counter(struct mlx5e_tc_flow *flow)
 		if (!counter)
 			return -1;
 
-		/* TODO: refactor the rule_lock to flow_lock ?? */
+		/* TODO: refactor the rule_lock to flow_lock ??*/
 		spin_lock(&flow->rule_lock);
 		if (flow->dummy_counter)
 			miniflow_free_dummy_counter(flow->priv->mdev, counter);
@@ -4547,9 +4556,16 @@ static int miniflow_resolve_path_flows(struct mlx5e_miniflow *miniflow)
 			flow = miniflow_ct_flow_alloc(priv, &miniflow->ct_tuples[j++]);
 		else
 			flow = rhashtable_lookup_fast(tc_ht, &cookie, tc_ht_params);
+
 		if (!flow)
 			return -1;
 
+		if (miniflow->version < flow->version)
+		{
+			atomic_inc((atomic_t *)&invert_cnt);
+			return -1;
+		}
+		
 		miniflow->path.flows[i] = flow;
 	}
 
@@ -4572,6 +4588,13 @@ static int miniflow_verify_path_flows(struct mlx5e_miniflow *miniflow)
 		flow = rhashtable_lookup_fast(tc_ht, &cookie, tc_ht_params);
 		if (!flow)
 			return -1;
+
+		if (miniflow->version < flow->version)
+		{
+			atomic_inc((atomic_t *)&invert_cnt);
+			return -1;
+		}
+
 	}
 
 	return 0;
@@ -4762,6 +4785,7 @@ static int miniflow_merge(struct mlx5e_miniflow *miniflow)
 	atomic_inc((atomic_t *)&nr_of_total_mf_work_requests);
 	atomic_inc((atomic_t *)&nr_of_total_merge_mf_work_requests);
 #endif /*CT_DEBUG_COUNTERS*/
+	miniflow->version = atomic64_inc_return(&global_version);
 	INIT_WORK(&miniflow->work, miniflow_merge_work);
 	if (queue_work(miniflow_wq, &miniflow->work))
 		return 0;
@@ -5249,6 +5273,7 @@ int mlx5e_tc_num_filters(struct mlx5e_priv *priv)
 
 int mlx5e_tc_init(void)
 {
+	atomic64_set(&global_version, 0);
 	nic_flow_cache = kmem_cache_create("mlx5_nic_flow_cache",
 					   sizeof(struct mlx5e_tc_flow) +
 					   sizeof(struct mlx5_nic_flow_attr),
