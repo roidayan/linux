@@ -66,35 +66,35 @@
 static atomic64_t global_version;
 
 #if CT_DEBUG_COUNTERS
-static int nr_of_total_mf_succ = 0;
-static int nr_of_total_merge_mf_succ = 0;
-static int nr_of_total_del_mf_succ = 0;
+static atomic_t  nr_of_total_mf_succ =  ATOMIC_INIT(0);
+static atomic_t  nr_of_total_merge_mf_succ =  ATOMIC_INIT(0);
+static atomic_t  nr_of_total_del_mf_succ =  ATOMIC_INIT(0);
 
-static int nr_of_total_mf_work_requests = 0;
-static int nr_of_total_merge_mf_work_requests = 0;
-static int nr_of_total_del_mf_work_requests = 0;
+static atomic_t  nr_of_total_mf_work_requests =  ATOMIC_INIT(0);
+static atomic_t  nr_of_total_merge_mf_work_requests =  ATOMIC_INIT(0);
+static atomic_t  nr_of_total_del_mf_work_requests =  ATOMIC_INIT(0);
 
-static int nr_of_total_mf_err = 0;
-static int nr_of_total_mf_err_alloc_flow = 0;
-static int nr_of_total_mf_err_resolve_path_flows = 0;
-static int nr_of_total_mf_err_merge_mirred = 0;
-static int nr_of_total_mf_err_merge_hdr = 0;
-static int nr_of_total_mf_err_attach_dummy_counter = 0;
-static int nr_of_total_mf_err_fdb_add = 0;
-static int nr_of_total_mf_err_verify_path = 0;
-static int nr_of_total_mf_err_register = 0;
+static atomic_t  nr_of_total_mf_err =  ATOMIC_INIT(0);
+static atomic_t  nr_of_total_mf_err_alloc_flow =  ATOMIC_INIT(0);
+static atomic_t  nr_of_total_mf_err_resolve_path_flows =  ATOMIC_INIT(0);
+static atomic_t  nr_of_total_mf_err_merge_mirred =  ATOMIC_INIT(0);
+static atomic_t  nr_of_total_mf_err_merge_hdr =  ATOMIC_INIT(0);
+static atomic_t  nr_of_total_mf_err_attach_dummy_counter =  ATOMIC_INIT(0);
+static atomic_t  nr_of_total_mf_err_fdb_add =  ATOMIC_INIT(0);
+static atomic_t  nr_of_total_mf_err_verify_path =  ATOMIC_INIT(0);
+static atomic_t  nr_of_total_mf_err_register =  ATOMIC_INIT(0);
 
-static int nr_of_merge_mfe_in_queue = 0;
-static int nr_of_del_mfe_in_queue = 0;
+static atomic_t  nr_of_merge_mfe_in_queue =  ATOMIC_INIT(0);
+static atomic_t  nr_of_del_mfe_in_queue =  ATOMIC_INIT(0);
 
 //inflight = currently on work (can be more them 1 in parallel)
-static int nr_of_inflight_mfe = 0;
-static int nr_of_inflight_merge_mfe = 0;
-static int nr_of_inflight_del_mfe = 0;
+static atomic_t  nr_of_inflight_mfe =  ATOMIC_INIT(0);
+static atomic_t  nr_of_inflight_merge_mfe =  ATOMIC_INIT(0);
+static atomic_t  nr_of_inflight_del_mfe =  ATOMIC_INIT(0);
 
 #endif /*CT_DEBUG_COUNTERS*/
-static int nr_of_mfe_in_queue = 0;
-static int currently_in_hw = 0;
+static atomic_t  nr_of_mfe_in_queue =  ATOMIC_INIT(0);
+static atomic_t  currently_in_hw =  ATOMIC_INIT(0);
 
 /* TODO: there is a circular dep between mlx5_core and nft_gen_flow_offload ??? */
 static uint merger_probability = 0;
@@ -109,6 +109,16 @@ module_param(enable_ct_ageing, int, 0644);
 static int max_nr_mf = 1024*1024;
 module_param(max_nr_mf, int, 0644);
 
+#if CT_DEBUG_COUNTERS
+	#define inc_debug_counter(counter_name) \
+		atomic_inc(counter_name);
+	#define dec_debug_counter(counter_name) \
+		atomic_dec(counter_name);
+#else
+	#define inc_debug_counter(counter_name)
+	#define dec_debug_counter(counter_name)
+#endif
+
 /* TODO: there is a circular dep between mlx5_core and nft_gen_flow_offload ??? */
 
 #define _sprintf(p, buf, format, arg...)				\
@@ -118,42 +128,42 @@ module_param(max_nr_mf, int, 0644);
 ssize_t mlx5_show_counters_ct(char *buf)
 {
 	char *p = buf;
-#if CT_DEBUG_COUNTERS
 
-	p += _sprintf(p, buf, "nr_of_total_mf_work_requests            : %d\n", nr_of_total_mf_work_requests);
-	p += _sprintf(p, buf, "nr_of_total_merge_mf_work_requests      : %d\n", nr_of_total_merge_mf_work_requests);
-	p += _sprintf(p, buf, "nr_of_total_del_mf_work_requests        : %d\n", nr_of_total_del_mf_work_requests);
+#if CT_DEBUG_COUNTERS
+	p += _sprintf(p, buf, "nr_of_total_mf_work_requests            : %d\n", atomic_read(&nr_of_total_mf_work_requests));
+	p += _sprintf(p, buf, "nr_of_total_merge_mf_work_requests      : %d\n", atomic_read(&nr_of_total_merge_mf_work_requests));
+	p += _sprintf(p, buf, "nr_of_total_del_mf_work_requests        : %d\n", atomic_read(&nr_of_total_del_mf_work_requests));
 	p += _sprintf(p, buf, "\n");
-	p += _sprintf(p, buf, "nr_of_mfe_in_queue                      : %d\n", nr_of_mfe_in_queue);
-	p += _sprintf(p, buf, "nr_of_merge_mfe_in_queue                : %d\n", nr_of_merge_mfe_in_queue);
-	p += _sprintf(p, buf, "nr_of_del_mfe_in_queue                  : %d\n", nr_of_del_mfe_in_queue);
+	p += _sprintf(p, buf, "nr_of_mfe_in_queue                      : %d\n", atomic_read(&nr_of_mfe_in_queue));
+	p += _sprintf(p, buf, "nr_of_merge_mfe_in_queue                : %d\n", atomic_read(&nr_of_merge_mfe_in_queue));
+	p += _sprintf(p, buf, "nr_of_del_mfe_in_queue                  : %d\n", atomic_read(&nr_of_del_mfe_in_queue));
 	p += _sprintf(p, buf, "\n");
-	p += _sprintf(p, buf, "nr_of_inflight_mfe                      : %d\n", nr_of_inflight_mfe);
-	p += _sprintf(p, buf, "nr_of_inflight_merge_mfe                : %d\n", nr_of_inflight_merge_mfe);
-	p += _sprintf(p, buf, "nr_of_inflight_del_mfe                  : %d\n", nr_of_inflight_del_mfe);
+	p += _sprintf(p, buf, "nr_of_inflight_mfe                      : %d\n", atomic_read(&nr_of_inflight_mfe));
+	p += _sprintf(p, buf, "nr_of_inflight_merge_mfe                : %d\n", atomic_read(&nr_of_inflight_merge_mfe));
+	p += _sprintf(p, buf, "nr_of_inflight_del_mfe                  : %d\n", atomic_read(&nr_of_inflight_del_mfe));
 	p += _sprintf(p, buf, "\n");
-	p += _sprintf(p, buf, "nr_of_total_mf_succ                     : %d\n", nr_of_total_mf_succ);
-	p += _sprintf(p, buf, "nr_of_total_merge_mf_succ               : %d\n", nr_of_total_merge_mf_succ);
-	p += _sprintf(p, buf, "nr_of_total_del_mf_succ                 : %d\n", nr_of_total_del_mf_succ);
+	p += _sprintf(p, buf, "nr_of_total_mf_succ                     : %d\n", atomic_read(&nr_of_total_mf_succ));
+	p += _sprintf(p, buf, "nr_of_total_merge_mf_succ               : %d\n", atomic_read(&nr_of_total_merge_mf_succ));
+	p += _sprintf(p, buf, "nr_of_total_del_mf_succ                 : %d\n", atomic_read(&nr_of_total_del_mf_succ));
 	p += _sprintf(p, buf, "\n");
-	p += _sprintf(p, buf, "currently_in_hw                         : %d\n", currently_in_hw);
+	p += _sprintf(p, buf, "currently_in_hw                         : %d\n", atomic_read(&currently_in_hw));
 	p += _sprintf(p, buf, "\n");
-	p += _sprintf(p, buf, "nr_of_total_mf_err                      : %d\n", nr_of_total_mf_err);
-	p += _sprintf(p, buf, "nr_of_total_mf_err_alloc_flow           : %d\n", nr_of_total_mf_err_alloc_flow);
-	p += _sprintf(p, buf, "nr_of_total_mf_err_resolve_path_flows   : %d\n", nr_of_total_mf_err_resolve_path_flows);
-	p += _sprintf(p, buf, "nr_of_total_mf_err_merge_mirred         : %d\n", nr_of_total_mf_err_merge_mirred);
-	p += _sprintf(p, buf, "nr_of_total_mf_err_merge_hdr            : %d\n", nr_of_total_mf_err_merge_hdr);
-	p += _sprintf(p, buf, "nr_of_total_mf_err_attach_dummy_counter : %d\n", nr_of_total_mf_err_attach_dummy_counter);
-	p += _sprintf(p, buf, "nr_of_total_mf_err_fdb_add              : %d\n", nr_of_total_mf_err_fdb_add);
-	p += _sprintf(p, buf, "nr_of_total_mf_err_verify_path          : %d\n", nr_of_total_mf_err_verify_path);
-	p += _sprintf(p, buf, "nr_of_total_mf_err_register             : %d\n", nr_of_total_mf_err_register);
+	p += _sprintf(p, buf, "nr_of_total_mf_err                      : %d\n", atomic_read(&nr_of_total_mf_err));
+	p += _sprintf(p, buf, "nr_of_total_mf_err_alloc_flow           : %d\n", atomic_read(&nr_of_total_mf_err_alloc_flow));
+	p += _sprintf(p, buf, "nr_of_total_mf_err_resolve_path_flows   : %d\n", atomic_read(&nr_of_total_mf_err_resolve_path_flows));
+	p += _sprintf(p, buf, "nr_of_total_mf_err_merge_mirred         : %d\n", atomic_read(&nr_of_total_mf_err_merge_mirred));
+	p += _sprintf(p, buf, "nr_of_total_mf_err_merge_hdr            : %d\n", atomic_read(&nr_of_total_mf_err_merge_hdr));
+	p += _sprintf(p, buf, "nr_of_total_mf_err_attach_dummy_counter : %d\n", atomic_read(&nr_of_total_mf_err_attach_dummy_counter));
+	p += _sprintf(p, buf, "nr_of_total_mf_err_fdb_add              : %d\n", atomic_read(&nr_of_total_mf_err_fdb_add));
+	p += _sprintf(p, buf, "nr_of_total_mf_err_verify_path          : %d\n", atomic_read(&nr_of_total_mf_err_verify_path));
+	p += _sprintf(p, buf, "nr_of_total_mf_err_register             : %d\n", atomic_read(&nr_of_total_mf_err_register));
 	p += _sprintf(p, buf, "\n");
 	p += _sprintf(p, buf, "enable_ct_ageing                        : %d\n", enable_ct_ageing);
 	p += _sprintf(p, buf, "max_nr_mf                               : %d\n", max_nr_mf);
 #else
 	p += _sprintf(p, buf, "CT_DEBUG_COUNTERS is off\n");
-	p += _sprintf(p, buf, "currently_in_hw                         : %d\n", currently_in_hw);
-	p += _sprintf(p, buf, "nr_of_mfe_in_queue                      : %d\n", nr_of_mfe_in_queue);
+	p += _sprintf(p, buf, "currently_in_hw                         : %d\n", atomic_read(&currently_in_hw));
+	p += _sprintf(p, buf, "nr_of_mfe_in_queue                      : %d\n", atomic_read(&nr_of_mfe_in_queue));
 	p += _sprintf(p, buf, "\n");
 	p += _sprintf(p, buf, "enable_ct_ageing                        : %d\n", enable_ct_ageing);
 	p += _sprintf(p, buf, "max_nr_mf                               : %d\n", max_nr_mf);
@@ -1416,35 +1426,30 @@ static void mlx5e_del_miniflow(struct mlx5e_miniflow *miniflow)
 	struct rhashtable *mf_ht = get_mf_ht(miniflow->priv);
 
 	trace("mlx5e_del_miniflow: miniflow->nr_flows: %d", miniflow->nr_flows);
-	atomic_dec((atomic_t *)&currently_in_hw);
+	atomic_dec(&currently_in_hw);
 
 	mlx5e_flow_put(miniflow->priv, miniflow->flow);
 	rhashtable_remove_fast(mf_ht, &miniflow->node, mf_ht_params);
 	miniflow_free(miniflow);
 
-#if CT_DEBUG_COUNTERS
-	atomic_inc((atomic_t *)&nr_of_total_del_mf_succ);
-	atomic_inc((atomic_t *)&nr_of_total_mf_succ);
-#endif /*CT_DEBUG_COUNTERS*/
+	inc_debug_counter(&nr_of_total_del_mf_succ);
+	inc_debug_counter(&nr_of_total_mf_succ);
 }
 
 static void mlx5e_del_miniflow_work(struct work_struct *work)
 {
 	struct mlx5e_miniflow *miniflow = container_of(work, struct mlx5e_miniflow, work);
 
-	atomic_dec((atomic_t *)&nr_of_mfe_in_queue);
-#if CT_DEBUG_COUNTERS
-	atomic_inc((atomic_t *)&nr_of_inflight_mfe);
-	atomic_dec((atomic_t *)&nr_of_del_mfe_in_queue);
-	atomic_inc((atomic_t *)&nr_of_inflight_del_mfe);
-#endif /*CT_DEBUG_COUNTERS*/
+	atomic_dec(&nr_of_mfe_in_queue);
+
+	inc_debug_counter(&nr_of_inflight_mfe);
+	dec_debug_counter(&nr_of_del_mfe_in_queue);
+	inc_debug_counter(&nr_of_inflight_del_mfe);
 
 	mlx5e_del_miniflow(miniflow);
 
-#if CT_DEBUG_COUNTERS
-	atomic_dec((atomic_t *)&nr_of_inflight_del_mfe);
-	atomic_dec((atomic_t *)&nr_of_inflight_mfe);
-#endif /*CT_DEBUG_COUNTERS*/
+	dec_debug_counter(&nr_of_inflight_del_mfe);
+	dec_debug_counter(&nr_of_inflight_mfe);
 }
 
 static void mlx5e_del_miniflow_list(struct mlx5e_tc_flow *flow)
@@ -1459,13 +1464,10 @@ static void mlx5e_del_miniflow_list(struct mlx5e_tc_flow *flow)
 		miniflow_unlink_dummy_counters(miniflow->flow);
 		miniflow_detach(miniflow);
 
-		atomic_inc((atomic_t *)&nr_of_mfe_in_queue);
-#if CT_DEBUG_COUNTERS
-		atomic_inc((atomic_t *)&nr_of_del_mfe_in_queue);
-
-		atomic_inc((atomic_t *)&nr_of_total_mf_work_requests);
-		atomic_inc((atomic_t *)&nr_of_total_del_mf_work_requests);
-#endif /*CT_DEBUG_COUNTERS*/
+		atomic_inc(&nr_of_mfe_in_queue);
+		inc_debug_counter(&nr_of_del_mfe_in_queue);
+		inc_debug_counter(&nr_of_total_mf_work_requests);
+		inc_debug_counter(&nr_of_total_del_mf_work_requests);
 
 		INIT_WORK(&miniflow->work, mlx5e_del_miniflow_work);
 		queue_work(miniflow_wq, &miniflow->work);
@@ -4565,7 +4567,7 @@ static int miniflow_resolve_path_flows(struct mlx5e_miniflow *miniflow)
 			atomic_inc((atomic_t *)&invert_cnt);
 			return -1;
 		}
-		
+
 		miniflow->path.flows[i] = flow;
 	}
 
@@ -4618,10 +4620,7 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	if (err) {
 		rhashtable_remove_fast(mf_ht, &miniflow->node, mf_ht_params);
 		miniflow_free(miniflow);
-#if CT_DEBUG_COUNTERS
-       		atomic_inc((atomic_t *)&nr_of_total_mf_err_alloc_flow);
-#endif /*CT_DEBUG_COUNTERS*/
-
+		inc_debug_counter(&nr_of_total_mf_err_alloc_flow);
 		return -1;
 	}
 
@@ -4631,9 +4630,7 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	err = miniflow_resolve_path_flows(miniflow);
 	if (err) {
 		ntrace("miniflow_resolve_path_flows failed");
-#if CT_DEBUG_COUNTERS
-		atomic_inc((atomic_t *)&nr_of_total_mf_err_resolve_path_flows);
-#endif /*CT_DEBUG_COUNTERS*/
+		inc_debug_counter(&nr_of_total_mf_err_resolve_path_flows);
 		goto err_rcu;
 	}
 
@@ -4656,17 +4653,13 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 
 		err = miniflow_merge_mirred(mflow, flow);
 		if (err) {
-#if CT_DEBUG_COUNTERS
-			atomic_inc((atomic_t *)&nr_of_total_mf_err_merge_mirred);
-#endif
+			inc_debug_counter(&nr_of_total_mf_err_merge_mirred);
 			goto err_rcu;
 		}
 
 		err = miniflow_merge_hdr(priv, mflow, flow, tmp_mask);
 		if (err) {
-#if CT_DEBUG_COUNTERS
-			atomic_inc((atomic_t *)&nr_of_total_mf_err_merge_hdr);
-#endif
+			inc_debug_counter(&nr_of_total_mf_err_merge_hdr);
 			goto err_rcu;
 		}
 
@@ -4675,9 +4668,7 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 
 		err = miniflow_attach_dummy_counter(flow);
 		if (err) {
-#if CT_DEBUG_COUNTERS
-			atomic_inc((atomic_t *)&nr_of_total_mf_err_attach_dummy_counter);
-#endif /*CT_DEBUG_COUNTERS*/
+			inc_debug_counter(&nr_of_total_mf_err_attach_dummy_counter);
 			goto err_rcu;
 		}
 		dummy_counters[i] = flow->dummy_counter;
@@ -4694,9 +4685,7 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	trace("__mlx5e_tc_add_fdb_flow: err: %d", err);
 	if (err && err != -EAGAIN) {
 		etrace("__mlx5e_tc_add_fdb_flow failed with err: %d", err);
-#if CT_DEBUG_COUNTERS
-		atomic_inc((atomic_t *)&nr_of_total_mf_err_fdb_add);
-#endif /*CT_DEBUG_COUNTERS*/
+		inc_debug_counter(&nr_of_total_mf_err_fdb_add);
 		goto err;
 	}
 
@@ -4707,9 +4696,7 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 		ntrace("miniflow_verify_path_flows failed, interesting :)");
 		rcu_read_unlock();
 		mlx5e_flow_put(priv, mflow);
-#if CT_DEBUG_COUNTERS
-		atomic_inc((atomic_t *)&nr_of_total_mf_err_verify_path);
-#endif /*CT_DEBUG_COUNTERS*/
+		inc_debug_counter(&nr_of_total_mf_err_verify_path);
 		goto err_verify;
 	}
 
@@ -4717,7 +4704,7 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 				     dummy_counters,
 				     miniflow->nr_flows);
 	miniflow_attach(miniflow);
-	atomic_inc((atomic_t *)&currently_in_hw);
+	atomic_inc(&currently_in_hw);
 
 	err = miniflow_register_ct_flow(miniflow);
 	if (err) {
@@ -4725,19 +4712,15 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 		rcu_read_unlock();
 		rhashtable_remove_fast(mf_ht, &miniflow->node, mf_ht_params);
 		miniflow_cleanup(miniflow);
-#if CT_DEBUG_COUNTERS
-		atomic_inc((atomic_t *)&nr_of_total_mf_err_register);
-		atomic_inc((atomic_t *)&nr_of_total_mf_err);
-#endif /*CT_DEBUG_COUNTERS*/
+		inc_debug_counter(&nr_of_total_mf_err_register);
+		inc_debug_counter(&nr_of_total_mf_err);
 		return -1;
 	}
 
 	rcu_read_unlock();
 	trace("miniflow_merge: mflow: %px, flows: %d", mflow, miniflow->nr_flows);
-#if CT_DEBUG_COUNTERS
-	atomic_inc((atomic_t *)&nr_of_total_mf_succ);
-	atomic_inc((atomic_t *)&nr_of_total_merge_mf_succ);
-#endif /*CT_DEBUG_COUNTERS*/
+	inc_debug_counter(&nr_of_total_mf_succ);
+	inc_debug_counter(&nr_of_total_merge_mf_succ);
 	return 0;
 
 err_rcu:
@@ -4751,40 +4734,35 @@ err_verify:
 	rhashtable_remove_fast(mf_ht, &miniflow->node, mf_ht_params);
 	miniflow_cleanup(miniflow);
 	miniflow_free(miniflow);
-#if CT_DEBUG_COUNTERS
-	atomic_inc((atomic_t *)&nr_of_total_mf_err);
-#endif /*CT_DEBUG_COUNTERS*/
+	inc_debug_counter(&nr_of_total_mf_err);
 	return -1;
 }
 
 void miniflow_merge_work(struct work_struct *work)
 {
 	struct mlx5e_miniflow *miniflow = container_of(work, struct mlx5e_miniflow, work);
-	atomic_dec((atomic_t *)&nr_of_mfe_in_queue);
-#if CT_DEBUG_COUNTERS
-	atomic_inc((atomic_t *)&nr_of_inflight_mfe);
-	atomic_dec(&miniflow_wq_size);
+	atomic_dec(&nr_of_mfe_in_queue);
 
-	atomic_dec((atomic_t *)&nr_of_merge_mfe_in_queue);
-	atomic_inc((atomic_t *)&nr_of_inflight_merge_mfe);
-#endif /*CT_DEBUG_COUNTERS*/
+	inc_debug_counter(&nr_of_inflight_mfe);
+	dec_debug_counter(&miniflow_wq_size);
+	dec_debug_counter(&nr_of_merge_mfe_in_queue);
+	inc_debug_counter(&nr_of_inflight_merge_mfe);
+
 	__miniflow_merge(miniflow);
-#if CT_DEBUG_COUNTERS
-	atomic_dec((atomic_t *)&nr_of_inflight_mfe);
-	atomic_dec((atomic_t *)&nr_of_inflight_merge_mfe);
-#endif /*CT_DEBUG_COUNTERS*/
+
+	dec_debug_counter(&nr_of_inflight_mfe);
+	dec_debug_counter(&nr_of_inflight_merge_mfe);
 }
 
 static int miniflow_merge(struct mlx5e_miniflow *miniflow)
 {
-	atomic_inc((atomic_t *)&nr_of_mfe_in_queue);
-#if CT_DEBUG_COUNTERS
-	atomic_inc(&miniflow_wq_size);
-	atomic_inc((atomic_t *)&nr_of_merge_mfe_in_queue);
+	atomic_inc(&nr_of_mfe_in_queue);
 
-	atomic_inc((atomic_t *)&nr_of_total_mf_work_requests);
-	atomic_inc((atomic_t *)&nr_of_total_merge_mf_work_requests);
-#endif /*CT_DEBUG_COUNTERS*/
+	inc_debug_counter(&miniflow_wq_size);
+	inc_debug_counter(&nr_of_merge_mfe_in_queue);
+	inc_debug_counter(&nr_of_total_mf_work_requests);
+	inc_debug_counter(&nr_of_total_merge_mf_work_requests);
+
 	miniflow->version = atomic64_inc_return(&global_version);
 	INIT_WORK(&miniflow->work, miniflow_merge_work);
 	if (queue_work(miniflow_wq, &miniflow->work))
@@ -4997,7 +4975,7 @@ int mlx5e_configure_miniflow(struct mlx5e_priv *priv,
 
 	/* If rules in HW + rules in queue exceed the max value, then igore new one.
 	 * Note the rules in queue could be the to_be_deleted rules. */
-	if ((atomic_read((atomic_t *)&currently_in_hw) + atomic_read((atomic_t *)&nr_of_mfe_in_queue))> atomic_read((atomic_t *)&max_nr_mf))
+	if ((atomic_read(&currently_in_hw) + atomic_read(&nr_of_mfe_in_queue))> atomic_read((atomic_t *)&max_nr_mf))
 		goto err;
 
 	err = rhashtable_lookup_insert_fast(mf_ht, &miniflow->node, mf_ht_params);
