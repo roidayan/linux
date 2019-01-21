@@ -762,10 +762,11 @@ static int nf_gen_flow_offload_gc_step(struct flow_gc_work *gc_work, int target_
                                                   gc_work);   
     struct nf_gen_flow_offload *flow;
     int next_run, proced_flows;
-    u64 stats_data[3];
+    u64 stats_data[3], tstamp;
 
     /* 0 - total, 1 - stats, 2 - processed flow per run */
-    stats_data[0] = jiffies;
+    tstamp        = jiffies;
+    stats_data[0] = tstamp;
     stats_data[1] = (u32)-1;
     stats_data[2] = (u32)-1;
 
@@ -775,9 +776,10 @@ static int nf_gen_flow_offload_gc_step(struct flow_gc_work *gc_work, int target_
     
     while (proced_flows < target_flows) {
 
-        if ((stats_data[0] + gc_max_cont_time) >= jiffies)
+        if (jiffies >= (tstamp + gc_max_cont_time)) {
             cond_resched();
-
+            tstamp = jiffies;
+        }
         /* process teardown list first */
         flow = _get_one_from_teardowns(gc_work);
         if (flow) {
@@ -1009,8 +1011,10 @@ static int _check_ct_status(struct nf_conn *ct)
     if (test_bit(IPS_HELPER_BIT, &ct->status))
         goto err_ct;
 
-    if (test_and_set_bit(IPS_OFFLOAD_BIT, &ct->status))
+    if (test_and_set_bit(IPS_OFFLOAD_BIT, &ct->status)) {
+        pr_debug("%s: offloaded already set", __FUNCTION__);
         return -EEXIST;
+    }
 
     return 0;
 err_ct:
