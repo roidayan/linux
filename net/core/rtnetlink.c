@@ -1489,7 +1489,7 @@ static int rtnl_dump_ifinfo(struct sk_buff *skb, struct netlink_callback *cb)
 			/* If we ran out of room on the first message,
 			 * we're in trouble
 			 */
-			WARN_ON((err == -EMSGSIZE) && (skb->len == 0));
+			//WARN_ON((err == -EMSGSIZE) && (skb->len == 0));
 
 			if (err < 0)
 				goto out;
