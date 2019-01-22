@@ -1633,7 +1633,24 @@ try_add_to_existing_fg(struct mlx5_flow_table *ft,
 search_again_locked:
 	version = matched_fgs_get_version(match_head);
 	if (flow_act->flags & FLOW_ACT_NO_APPEND)
-		goto skip_search;
+		list_for_each_entry(iter, match_head, list) {
+			struct fs_fte *fte_tmp;
+
+			g = iter->g;
+			fte_tmp = lookup_fte_locked(g, spec->match_value, take_write);
+			if (!fte_tmp)
+				continue;
+			if (fte_tmp->handle != spec->handle) {
+				up_write_ref_node(&fte_tmp->node);
+				tree_put_node(&fte_tmp->node);
+				kmem_cache_free(steering->ftes_cache, fte);
+				return ERR_PTR(-EEXIST);
+			}
+			up_write_ref_node(&fte_tmp->node);
+			tree_put_node(&fte_tmp->node);
+			goto skip_search;
+		}
+
 	/* Try to find a fg that already contains a matching fte */
 	list_for_each_entry(iter, match_head, list) {
 		struct fs_fte *fte_tmp;
