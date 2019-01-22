@@ -1161,7 +1161,7 @@ static int fl_change(struct net *net, struct sk_buff *in_skb,
 	if (!tc_skip_hw(fnew->flags)) {
 		err = fl_hw_replace_filter(tp, fnew);
 		if (err)
-			goto errout_mask;
+			goto errout_remove;
 	}
 
 	if (!tc_in_hw(fnew->flags))
@@ -1192,6 +1192,10 @@ static int fl_change(struct net *net, struct sk_buff *in_skb,
 	kfree(tb);
 	return 0;
 
+errout_remove:
+	rhashtable_remove_fast(&fnew->mask->ht,
+			       &fnew->ht_node,
+			       fnew->mask->filter_ht_params);
 errout_mask:
 	fl_mask_put(head, fnew->mask, false);
 errout_idr:
