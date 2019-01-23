@@ -1549,7 +1549,7 @@ static void mlx5e_del_offloaded_flow_rules(struct mlx5e_priv *priv,
 }
 
 void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
-			      struct mlx5e_encap_entry *e, bool *resched_update)
+			      struct mlx5e_encap_entry *e)
 {
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 	struct mlx5_esw_flow_attr *esw_attr;
@@ -1574,18 +1574,6 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 	list_for_each_entry_safe(flow, tmp, &e->waiting_flows, encap) {
 		if (IS_ERR(mlx5e_flow_get(flow)))
 			continue;
-
-		/* Can't offload encap when flow is being initialized
-		 * concurrently without encap_id set. Schedule another neigh
-		 * update for later.
-		 */
-		if (!(atomic_read(&flow->flags) & MLX5E_TC_FLOW_INIT_DONE)) {
-			*resched_update = true;
-			goto loop_cont;
-		}
-		WARN_ON(mlx5e_is_offloaded_flow(flow));
-		WARN_ON(!IS_ERR_OR_NULL(flow->rule[0]));
-
 		esw_attr = flow->esw_attr;
 		esw_attr->encap_id = e->encap_id;
 		/* At this point concurrent access to flow->rule is not possible
@@ -1627,11 +1615,9 @@ loop_cont:
 }
 
 void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
-			      struct mlx5e_encap_entry *e,
-			      bool *resched_update)
+			      struct mlx5e_encap_entry *e)
 {
 	struct mlx5e_tc_flow *flow, *tmp;
-	bool can_dealloc = true;
 
 	/* Caller holds rtnl and reference to encap entry, so it is not possible
 	 * for flags to be changed concurrently.
@@ -1649,28 +1635,19 @@ void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
 		if (IS_ERR(mlx5e_flow_get(flow)))
 			continue;
 
-		/* Can't delete encap when flow is being initialized
-		 * concurrently with encap_id set. Schedule another neigh update
-		 * for later.
-		 */
-		if (!(atomic_read(&flow->flags) & MLX5E_TC_FLOW_INIT_DONE)) {
-			can_dealloc = false;
-			goto put_flow;
-		}
-
 		mlx5e_del_offloaded_flow_rules(priv, flow);
+
 		/* Move flow to list of flows waiting for neigh to become
 		 * valid.
 		 */
 		list_move(&flow->encap, &e->waiting_flows);
-put_flow:
 		mlx5e_flow_put(priv, flow);
 	}
 
 	/* Caller holds rtnl and reference to encap entry, so it is not possible
 	 * for flags to be changed concurrently.
 	 */
-	if (can_dealloc && (e->flags & MLX5_ENCAP_ENTRY_OFFLOADED)) {
+	if (e->flags & MLX5_ENCAP_ENTRY_OFFLOADED) {
 		spin_lock(&e->encap_entry_lock);
 		e->flags &= ~MLX5_ENCAP_ENTRY_OFFLOADED;
 		spin_unlock(&e->encap_entry_lock);
@@ -1680,9 +1657,6 @@ put_flow:
 		 */
 		mlx5_encap_dealloc(priv->mdev, e->encap_id);
 	}
-
-	/* Schedule another update if encap wasn't deallocated. */
-	*resched_update = *resched_update || !can_dealloc;
 }
 
 static struct mlx5e_tc_flow *
