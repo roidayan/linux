@@ -1663,9 +1663,7 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 		 */
 		atomic_or(MLX5E_TC_FLOW_OFFLOADED, &flow->flags);
 flow_move:
-		spin_lock(&e->encap_entry_lock);
 		list_move(&flow->encap, &e->offloaded_flows);
-		spin_unlock(&e->encap_entry_lock);
 flow_put:
 		mlx5e_flow_put(priv, flow);
 	}
@@ -1692,9 +1690,7 @@ void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
 		/* Move flow to list of flows waiting for neigh to become
 		 * valid.
 		 */
-		spin_lock(&e->encap_entry_lock);
 		list_move(&flow->encap, &e->waiting_flows);
-		spin_unlock(&e->encap_entry_lock);
 put_flow:
 		mlx5e_flow_put(priv, flow);
 	}
