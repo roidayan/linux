@@ -518,82 +518,17 @@ static void mlx5e_rep_update_flows(struct mlx5e_priv *priv,
 
 	ASSERT_RTNL();
 
-	if (e->flags & MLX5_ENCAP_ENTRY_DEL_PENDING) {
-		spin_lock(&e->encap_entry_lock);
-		e->flags &= ~MLX5_ENCAP_ENTRY_DEL_PENDING;
-		spin_unlock(&e->encap_entry_lock);
-
+	if ((!neigh_connected && (e->flags & MLX5_ENCAP_ENTRY_VALID)) ||
+	    !ether_addr_equal(e->h_dest, ha) ||
+	    !list_empty(&e->offloaded_flows))
 		mlx5e_tc_encap_flows_del(priv, e, resched_update);
-	} else if (e->flags & MLX5_ENCAP_ENTRY_CREATE_PENDING) {
+
+	if ((neigh_connected && !(e->flags & MLX5_ENCAP_ENTRY_VALID)) ||
+	    !list_empty(&e->waiting_flows)) {
 		ether_addr_copy(e->h_dest, ha);
 		ether_addr_copy(eth->h_dest, ha);
 
-		spin_lock(&e->encap_entry_lock);
-		e->flags &= ~MLX5_ENCAP_ENTRY_CREATE_PENDING;
-		spin_unlock(&e->encap_entry_lock);
-
 		mlx5e_tc_encap_flows_add(priv, e, resched_update);
-	}
-}
-
-static void mlx5e_rep_update_take_flows(struct mlx5e_encap_entry *e,
-					bool neigh_connected,
-					unsigned char ha[ETH_ALEN],
-					bool *resched_update)
-{
-	if (e->flags & MLX5_ENCAP_ENTRY_VALID) {
-		/* First check for neigh hw address change. If that is the case,
-		 * all offloaded flows must be removed first.
-		 */
-		if (!ether_addr_equal(e->h_dest, ha)) {
-			mlx5e_tc_encap_flows_get_offloaded(e);
-			/* Can't both delete and add flows in single pass when
-			 * dest addr changes. Neigh update takes references to
-			 * list of offloaded flows, which can't be concurrently
-			 * modified by flower insert path, because encap valid
-			 * flag is cleared. After deleting offloaded flows from
-			 * hw, they are inserted to waiting list, which can also
-			 * be modified if new flow is created concurrently. When
-			 * traversing waiting list, there is no way to
-			 * distinguish newly created flows from flows that neigh
-			 * update holds reference to, so another update must be
-			 * scheduled.
-			 */
-			*resched_update = true;
-		} else if (!list_empty(&e->waiting_flows)) {
-			/* There are pending waiting flows that couldn't be
-			 * offloaded when entry changed state to valid. (because
-			 * their initialization was still in progress)
-			 */
-			mlx5e_tc_encap_flows_get_waiting(e);
-			/* There is no way to distinguish between real neigh
-			 * state change and reschedule due to some flows that
-			 * couldn't be offloaded at the time, so always schedule
-			 * another neigh update when dealing with pending flows.
-			 */
-			*resched_update = true;
-		} else if (!neigh_connected) {
-			/* just a regular neigh state change */
-			mlx5e_tc_encap_flows_get_offloaded(e);
-		}
-	} else {
-		/* First check if there are pending offloaded flows that
-		 * couldn't be deleted from hw when entry changed state to
-		 * invalid. (because their initialization was still in progress)
-		 */
-		if (!list_empty(&e->offloaded_flows)) {
-			mlx5e_tc_encap_flows_get_offloaded(e);
-			/* There is no way to distinguish between real neigh
-			 * state change and reschedule due to some flows that
-			 * couldn't be deleted from hw at the time, so always
-			 * schedule another neigh update when dealing with
-			 * pending flows.
-			 */
-			*resched_update = true;
-		} else if (neigh_connected) {
-			/* just a regular neigh state change */
-			mlx5e_tc_encap_flows_get_waiting(e);
-		}
 	}
 }
 
@@ -602,12 +537,11 @@ static void mlx5e_rep_neigh_update(struct work_struct *work)
 	struct mlx5e_neigh_hash_entry *nhe =
 		container_of(work, struct mlx5e_neigh_hash_entry, neigh_update_work);
 	struct neighbour *n = nhe->n;
-	struct mlx5e_encap_entry *e, *tmp;
+	struct mlx5e_encap_entry *e;
 	unsigned char ha[ETH_ALEN];
 	struct mlx5e_priv *priv;
 	bool neigh_connected;
 	bool resched_update = false;
-	LIST_HEAD(update_list);
 	u8 nud_state, dead;
 
 	rtnl_lock();
@@ -625,41 +559,16 @@ static void mlx5e_rep_neigh_update(struct work_struct *work)
 
 	neigh_connected = (nud_state & NUD_VALID) && !dead;
 
-	spin_lock(&nhe->encap_list_lock);
-	/* First pass over encap entries takes references to encaps and flows.
-	 * Creating and deleting offloaded flows is blocking operation and can't
-	 * be performed while holding spin lock.
-	 */
 	list_for_each_entry(e, &nhe->encap_list, encap_list) {
 		if (!mlx5e_encap_take(e))
 			continue;
 
-		priv = netdev_priv(e->out_dev);
-		mlx5e_rep_update_take_flows(e, neigh_connected, ha,
-					    &resched_update);
-		list_add(&e->neigh_update_list, &update_list);
-	}
-	spin_unlock(&nhe->encap_list_lock);
-
-	/* Wait for any possible concurrent flow deletes to finish. */
-	synchronize_rcu();
-
-	/* At this point we hold references to all encaps and flows that are
-	 * about to be updated, so it is safe to traverse them without any locks
-	 * and call sleeping functions.
-	 */
-	list_for_each_entry_safe(e, tmp, &update_list, neigh_update_list) {
 		priv = netdev_priv(e->out_dev);
 		mlx5e_rep_update_flows(priv, e, neigh_connected, ha,
 				       &resched_update);
 		mlx5e_encap_put(priv, e);
 	}
 
-	/* Scheduling another neigh update might be required for various
-	 * reasons: some flows state couldn't be changed because they are being
-	 * initialized concurrently, deleting and re-creating offloaded flows is
-	 * required on same encap due to neigh hw address change, etc.
-	 */
 	if (resched_update)
 		mlx5e_rep_queue_neigh_update_work(netdev_priv(nhe->m_neigh.dev),
 						  nhe, n);
