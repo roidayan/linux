@@ -1567,7 +1567,7 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 	}
 	spin_lock(&e->encap_entry_lock);
 	e->encap_id = encap_id;
-	e->flags |= MLX5_ENCAP_ENTRY_VALID | MLX5_ENCAP_ENTRY_OFFLOADED;
+	e->flags |= MLX5_ENCAP_ENTRY_VALID;
 	spin_unlock(&e->encap_entry_lock);
 	mlx5e_rep_queue_neigh_stats_work(priv);
 
@@ -1619,18 +1619,6 @@ void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
 {
 	struct mlx5e_tc_flow *flow, *tmp;
 
-	/* Caller holds rtnl and reference to encap entry, so it is not possible
-	 * for flags to be changed concurrently.
-	 */
-	if (e->flags & MLX5_ENCAP_ENTRY_VALID) {
-		/* Reset VALID flag so that any concurrently created flows will
-		 * be inserted to waiting list.
-		 */
-		spin_lock(&e->encap_entry_lock);
-		e->flags &= ~MLX5_ENCAP_ENTRY_VALID;
-		spin_unlock(&e->encap_entry_lock);
-	}
-
 	list_for_each_entry_safe(flow, tmp, &e->offloaded_flows, encap) {
 		if (IS_ERR(mlx5e_flow_get(flow)))
 			continue;
@@ -1647,14 +1635,11 @@ void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
 	/* Caller holds rtnl and reference to encap entry, so it is not possible
 	 * for flags to be changed concurrently.
 	 */
-	if (e->flags & MLX5_ENCAP_ENTRY_OFFLOADED) {
+	if (e->flags & MLX5_ENCAP_ENTRY_VALID) {
 		spin_lock(&e->encap_entry_lock);
-		e->flags &= ~MLX5_ENCAP_ENTRY_OFFLOADED;
+		e->flags &= ~MLX5_ENCAP_ENTRY_VALID;
 		spin_unlock(&e->encap_entry_lock);
 
-		/* All offloads were deleted from HW so encapsulation can be
-		 * deallocated.
-		 */
 		mlx5_encap_dealloc(priv->mdev, e->encap_id);
 	}
 }
