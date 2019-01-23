@@ -3979,7 +3979,7 @@ mlx5e_add_nic_flow(struct mlx5e_priv *priv,
 	struct mlx5e_tc_flow *flow;
 	int err;
 
-	flow_flags |= MLX5E_TC_FLOW_NIC;
+	flow_flags |= MLX5E_TC_FLOW_NIC | MLX5E_TC_FLOW_SIMPLE;
 	err = mlx5e_alloc_flow(priv, f->cookie, f->common.handle,
 			       flow_flags, GFP_KERNEL, &parse_attr, &flow);
 	if (err)
