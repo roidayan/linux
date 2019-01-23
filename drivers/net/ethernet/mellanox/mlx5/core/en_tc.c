@@ -3400,6 +3400,7 @@ mlx5e_encap_get_create(struct mlx5e_priv *priv, struct ip_tunnel_info *tun_info,
 	e->tun_info = *tun_info;
 	e->tunnel_type = tunnel_type;
 	INIT_LIST_HEAD(&e->flows);
+	INIT_LIST_HEAD(&e->neigh_update_list);
 	refcount_set(&e->refcnt, 1);
 
 	if (family == AF_INET)

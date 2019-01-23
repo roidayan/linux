@@ -128,6 +128,8 @@ struct mlx5e_encap_entry {
 
 	/* neigh hash entry list of encaps sharing the same neigh */
 	struct list_head encap_list;
+	/* neigh hash entry temporary list of encaps that need update */
+	struct list_head neigh_update_list;
 	struct mlx5e_neigh m_neigh;
 	/* a node of the eswitch encap hash table which keeping all the encap
 	 * entries

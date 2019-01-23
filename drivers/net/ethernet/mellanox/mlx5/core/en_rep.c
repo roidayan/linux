@@ -533,10 +533,11 @@ static void mlx5e_rep_neigh_update(struct work_struct *work)
 {
 	struct mlx5e_neigh_hash_entry *nhe =
 		container_of(work, struct mlx5e_neigh_hash_entry, neigh_update_work);
+	struct mlx5e_encap_entry *e, *tmp;
 	struct neighbour *n = nhe->n;
-	struct mlx5e_encap_entry *e;
 	unsigned char ha[ETH_ALEN];
 	struct mlx5e_priv *priv;
+	LIST_HEAD(update_list);
 	bool neigh_connected;
 	bool encap_connected;
 	u8 nud_state, dead;
@@ -556,10 +557,23 @@ static void mlx5e_rep_neigh_update(struct work_struct *work)
 
 	neigh_connected = (nud_state & NUD_VALID) && !dead;
 
+	spin_lock(&nhe->encap_list_lock);
+	/* First pass over encap entries takes references to encaps. Creating
+	 * and deleting offloaded flows is blocking operation and can't be
+	 * performed while holding spin lock.
+	 */
 	list_for_each_entry(e, &nhe->encap_list, encap_list) {
 		if (!mlx5e_encap_take(e))
 			continue;
+		list_add(&e->neigh_update_list, &update_list);
+	}
+	spin_unlock(&nhe->encap_list_lock);
 
+	/* At this point we hold references to all encaps and flows that are
+	 * about to be updated, so it is safe to traverse them without any locks
+	 * and call sleeping functions.
+	 */
+	list_for_each_entry_safe(e, tmp, &update_list, neigh_update_list) {
 		encap_connected = !!(e->flags & MLX5_ENCAP_ENTRY_VALID);
 		priv = netdev_priv(e->out_dev);
 
@@ -568,7 +582,9 @@ static void mlx5e_rep_neigh_update(struct work_struct *work)
 			mlx5e_rep_update_flows(priv, e, neigh_connected, ha);
 		mlx5e_encap_put(priv, e);
 	}
+
 	mlx5e_rep_neigh_entry_release(netdev_priv(nhe->m_neigh.dev), nhe);
+
 	rtnl_unlock();
 	neigh_release(n);
 }
