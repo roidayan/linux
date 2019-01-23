@@ -133,8 +133,7 @@ struct mlx5e_encap_entry {
 	 * entries
 	 */
 	struct hlist_node encap_hlist;
-	struct list_head offloaded_flows;
-	struct list_head waiting_flows;
+	struct list_head flows;
 	u32 encap_id;
 	struct ip_tunnel_info tun_info;
 	unsigned char h_dest[ETH_ALEN];	/* destination eth addr	*/

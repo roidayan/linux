@@ -1571,7 +1571,7 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 	spin_unlock(&e->encap_entry_lock);
 	mlx5e_rep_queue_neigh_stats_work(priv);
 
-	list_for_each_entry_safe(flow, tmp, &e->waiting_flows, encap) {
+	list_for_each_entry_safe(flow, tmp, &e->flows, encap) {
 		if (IS_ERR(mlx5e_flow_get(flow)))
 			continue;
 		esw_attr = flow->esw_attr;
@@ -1608,7 +1608,6 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 		 * offloaded flows list.
 		 */
 		atomic_or(MLX5E_TC_FLOW_OFFLOADED, &flow->flags);
-		list_move(&flow->encap, &e->offloaded_flows);
 loop_cont:
 		mlx5e_flow_put(priv, flow);
 	}
@@ -1619,16 +1618,11 @@ void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
 {
 	struct mlx5e_tc_flow *flow, *tmp;
 
-	list_for_each_entry_safe(flow, tmp, &e->offloaded_flows, encap) {
+	list_for_each_entry_safe(flow, tmp, &e->flows, encap) {
 		if (IS_ERR(mlx5e_flow_get(flow)))
 			continue;
 
 		mlx5e_del_offloaded_flow_rules(priv, flow);
-
-		/* Move flow to list of flows waiting for neigh to become
-		 * valid.
-		 */
-		list_move(&flow->encap, &e->waiting_flows);
 		mlx5e_flow_put(priv, flow);
 	}
 
@@ -1655,13 +1649,13 @@ mlx5e_get_next_encap_flow(struct mlx5e_encap_entry *e,
 
 	if (flow) {
 		next = flow;
-		list_for_each_entry_continue(next, &e->offloaded_flows, encap)
+		list_for_each_entry_continue(next, &e->flows, encap)
 			if (!IS_ERR(mlx5e_flow_get(next))) {
 				found = true;
 				break;
 			}
 	} else {
-		list_for_each_entry(next, &e->offloaded_flows, encap)
+		list_for_each_entry(next, &e->flows, encap)
 			if (!IS_ERR(mlx5e_flow_get(next))) {
 				found = true;
 				break;
@@ -1781,8 +1775,7 @@ void mlx5e_encap_put(struct mlx5e_priv *priv, struct mlx5e_encap_entry *e)
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 
 	if (refcount_dec_and_test(&e->refcnt)) {
-		WARN_ON(!list_empty(&e->offloaded_flows));
-		WARN_ON(!list_empty(&e->waiting_flows));
+		WARN_ON(!list_empty(&e->flows));
 		/* encap can be deleted before attachment to dev if error
 		 * happens during encap initialization
 		 */
@@ -3406,8 +3399,7 @@ mlx5e_encap_get_create(struct mlx5e_priv *priv, struct ip_tunnel_info *tun_info,
 	spin_lock_init(&e->encap_entry_lock);
 	e->tun_info = *tun_info;
 	e->tunnel_type = tunnel_type;
-	INIT_LIST_HEAD(&e->offloaded_flows);
-	INIT_LIST_HEAD(&e->waiting_flows);
+	INIT_LIST_HEAD(&e->flows);
 	refcount_set(&e->refcnt, 1);
 
 	if (family == AF_INET)
@@ -3477,14 +3469,12 @@ vxlan_encap_offload_err:
 
 	flow->e = e;
 	spin_lock(&e->encap_entry_lock);
+	list_add(&flow->encap, &e->flows);
 	*encap_dev = e->out_dev;
-	if (e->flags & MLX5_ENCAP_ENTRY_VALID) {
-		list_add(&flow->encap, &e->offloaded_flows);
+	if (e->flags & MLX5_ENCAP_ENTRY_VALID)
 		attr->encap_id = e->encap_id;
-	} else {
-		list_add(&flow->encap, &e->waiting_flows);
+	else
 		err = -EAGAIN;
-	}
 	spin_unlock(&e->encap_entry_lock);
 
 	return err;

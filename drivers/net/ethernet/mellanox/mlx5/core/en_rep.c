@@ -518,12 +518,10 @@ static void mlx5e_rep_update_flows(struct mlx5e_priv *priv,
 	ASSERT_RTNL();
 
 	if ((!neigh_connected && (e->flags & MLX5_ENCAP_ENTRY_VALID)) ||
-	    !ether_addr_equal(e->h_dest, ha) ||
-	    !list_empty(&e->offloaded_flows))
+	    !ether_addr_equal(e->h_dest, ha))
 		mlx5e_tc_encap_flows_del(priv, e);
 
-	if ((neigh_connected && !(e->flags & MLX5_ENCAP_ENTRY_VALID)) ||
-	    !list_empty(&e->waiting_flows)) {
+	if (neigh_connected && !(e->flags & MLX5_ENCAP_ENTRY_VALID)) {
 		ether_addr_copy(e->h_dest, ha);
 		ether_addr_copy(eth->h_dest, ha);
 
@@ -540,6 +538,7 @@ static void mlx5e_rep_neigh_update(struct work_struct *work)
 	unsigned char ha[ETH_ALEN];
 	struct mlx5e_priv *priv;
 	bool neigh_connected;
+	bool encap_connected;
 	u8 nud_state, dead;
 
 	rtnl_lock();
@@ -561,8 +560,12 @@ static void mlx5e_rep_neigh_update(struct work_struct *work)
 		if (!mlx5e_encap_take(e))
 			continue;
 
+		encap_connected = !!(e->flags & MLX5_ENCAP_ENTRY_VALID);
 		priv = netdev_priv(e->out_dev);
-		mlx5e_rep_update_flows(priv, e, neigh_connected, ha);
+
+		if (encap_connected != neigh_connected ||
+		    !ether_addr_equal(e->h_dest, ha))
+			mlx5e_rep_update_flows(priv, e, neigh_connected, ha);
 		mlx5e_encap_put(priv, e);
 	}
 	mlx5e_rep_neigh_entry_release(netdev_priv(nhe->m_neigh.dev), nhe);
