@@ -1267,12 +1267,6 @@ static int mlx5e_attach_encap(struct mlx5e_priv *priv,
 			      struct net_device **encap_dev,
 			      struct mlx5e_tc_flow *flow);
 
-static void __mlx5e_detach_encap(struct mlx5e_priv *priv,
-			       struct mlx5e_tc_flow *flow);
-
-static void mlx5e_add_flow_to_encap_list(struct mlx5e_priv *priv,
-                               struct mlx5e_tc_flow *flow);
-
 static struct mlx5_flow_handle *
 mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 		      struct mlx5e_tc_flow_parse_attr *parse_attr,
@@ -1350,9 +1344,6 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR)
 		kfree(parse_attr->mod_hdr_actions);
 
-        if (attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP)
-		mlx5e_add_flow_to_encap_list(priv, flow);
-
 	return rule;
 
 err_fwd_rule:
@@ -1368,7 +1359,7 @@ err_mod_hdr:
         mlx5_eswitch_del_vlan_action(esw, attr);
 err_add_vlan:
         if (attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP)
-                __mlx5e_detach_encap(priv, flow);
+                mlx5e_detach_encap(priv, flow);
 err_attach_encap:
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR)
 		kfree(attr->parse_attr->mod_hdr_actions);
@@ -1883,36 +1874,6 @@ void mlx5e_encap_put(struct mlx5e_priv *priv, struct mlx5e_encap_entry *e)
 	}
 }
 
-static void mlx5e_add_flow_to_encap_list(struct mlx5e_priv *priv,
-                               struct mlx5e_tc_flow *flow)
-{
-	struct mlx5e_encap_entry *e = flow->e;
-
-	/* flow wasn't fully initialized */
-	if (!e)
-		return;
-
-	spin_lock(&e->encap_entry_lock);
-	if (e->flags & MLX5_ENCAP_ENTRY_VALID) {
-		list_add(&flow->encap, &e->offloaded_flows);
-	} else {
-		list_add(&flow->encap, &e->waiting_flows);
-	}
-	spin_unlock(&e->encap_entry_lock);
-}
-
-static void __mlx5e_detach_encap(struct mlx5e_priv *priv,
-			       struct mlx5e_tc_flow *flow)
-{
-	struct mlx5e_encap_entry *e = flow->e;
-
-	/* flow wasn't fully initialized */
-	if (!e)
-		return;
-
-	mlx5e_encap_put(priv, e);
-	flow->e = NULL;
-}
 static void mlx5e_detach_encap(struct mlx5e_priv *priv,
 			       struct mlx5e_tc_flow *flow)
 {
@@ -3591,8 +3552,10 @@ vxlan_encap_offload_err:
 	spin_lock(&e->encap_entry_lock);
 	*encap_dev = e->out_dev;
 	if (e->flags & MLX5_ENCAP_ENTRY_VALID) {
+		list_add(&flow->encap, &e->offloaded_flows);
 		attr->encap_id = e->encap_id;
 	} else {
+		list_add(&flow->encap, &e->waiting_flows);
 		err = -EAGAIN;
 	}
 	spin_unlock(&e->encap_entry_lock);
