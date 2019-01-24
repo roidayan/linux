@@ -1180,6 +1180,7 @@ mlx5e_tc_add_nic_flow(struct mlx5e_priv *priv,
 		err = mlx5e_attach_mod_hdr(priv, flow, parse_attr);
 		flow_act.modify_id = attr->mod_hdr_id;
 		kfree(parse_attr->mod_hdr_actions);
+		parse_attr->mod_hdr_actions = NULL;
 		if (err) {
 			rule = ERR_PTR(err);
 			goto err_out;
@@ -1307,6 +1308,7 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR) {
 		err = mlx5e_attach_mod_hdr(priv, flow, parse_attr);
 		kfree(parse_attr->mod_hdr_actions);
+		parse_attr->mod_hdr_actions = NULL;
 		if (err) {
 			rule = ERR_PTR(err);
 			goto err_out;
@@ -1476,10 +1478,8 @@ static void mlx5e_tc_del_fdb_flow_simple(struct mlx5e_priv *priv,
 
 	mlx5_eswitch_del_vlan_action(esw, attr);
 
-	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP) {
+	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP)
 		mlx5e_detach_encap(priv, flow);
-		kmem_cache_free(parse_attr_cache, attr->parse_attr);
-	}
 
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR)
 		mlx5e_detach_mod_hdr(priv, flow);
@@ -1502,10 +1502,11 @@ static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
 
 		if (attr->action & MLX5_FLOW_CONTEXT_ACTION_COUNT)
 			mlx5_fc_destroy(priv->mdev, flow->dummy_counter);
+	}
 
-		if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR)
+	if (attr->parse_attr) {
+		if (attr->parse_attr->mod_hdr_actions)
 			kfree(attr->parse_attr->mod_hdr_actions);
-
 		kmem_cache_free(parse_attr_cache, attr->parse_attr);
 	}
 }
@@ -2711,6 +2712,7 @@ static int parse_tc_pedit_action(struct mlx5e_priv *priv,
 
 out_dealloc_parsed_actions:
 	kfree(parse_attr->mod_hdr_actions);
+	parse_attr->mod_hdr_actions = NULL;
 out_err:
 	return err;
 }
@@ -3551,6 +3553,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 	u32 action = 0;
 	int err, i;
 
+	attr->parse_attr = parse_attr;
 	if (!tcf_exts_has_actions(exts))
 		return -EINVAL;
 
@@ -3688,7 +3691,6 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 	}
 
 	attr->action = action;
-	attr->parse_attr = parse_attr;
 	if (!actions_match_supported(priv, exts, parse_attr, flow))
 		return -EOPNOTSUPP;
 
@@ -3740,13 +3742,15 @@ mlx5e_alloc_flow(struct mlx5e_priv *priv, u64 cookie, u32 handle,
 {
 	struct mlx5e_tc_flow_parse_attr *parse_attr;
 	struct mlx5e_tc_flow *flow;
-	int err;
 
 	flow = flow_cache_alloc(flow_flags, flags);
+	if (!flow)
+		return -ENOMEM;
+
 	parse_attr = kmem_cache_zalloc(parse_attr_cache, flags);
-	if (!parse_attr || !flow) {
-		err = -ENOMEM;
-		goto err_free;
+	if (!parse_attr) {
+		flow_cache_free(flow);
+		return -ENOMEM;
 	}
 
 	flow->cookie = cookie;
@@ -3765,11 +3769,6 @@ mlx5e_alloc_flow(struct mlx5e_priv *priv, u64 cookie, u32 handle,
 	*__parse_attr = parse_attr;
 
 	return 0;
-
-err_free:
-	flow_cache_free(flow);
-	kmem_cache_free(parse_attr_cache, parse_attr);
-	return err;
 }
 
 static bool is_flow_simple(struct mlx5e_tc_flow *flow, int chain_index)
@@ -3800,8 +3799,10 @@ __mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	if (err != -EAGAIN)
 		atomic_or(MLX5E_TC_FLOW_OFFLOADED, &flow->flags);
 
-	if (!(flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP))
+	if (!(flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP)) {
 		kmem_cache_free(parse_attr_cache, parse_attr);
+		flow->esw_attr->parse_attr = NULL;
+	}
 
 err:
 	return err;
@@ -3832,7 +3833,7 @@ mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 
 	err = parse_cls_flower(priv, flow, &parse_attr->spec, f);
 	if (err)
-		goto err_flow;
+		goto err_parse_flow;
 
 	/* At this point concurrent access to flow->rule is not possible because
 	 * neither offloaded nor init done flags were set, so no need to take
@@ -3840,14 +3841,14 @@ mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 	 */
 	err = parse_tc_fdb_actions(priv, f->exts, parse_attr, flow);
 	if (err < 0)
-		goto err_flow;
+		goto err_parse_actions;
 
 	if (is_flow_simple(flow, f->common.chain_index)) {
 		trace("flow %px is simple", flow);
 
 		err = __mlx5e_tc_add_fdb_flow(priv, parse_attr, flow);
 		if (err && err != -EAGAIN)
-			goto err_flow;
+			goto err_add_flow;
 	} else {
 		trace("flow %px is not simple", flow);
 		atomic_and(~MLX5E_TC_FLOW_SIMPLE, &flow->flags);
@@ -3861,7 +3862,12 @@ mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 
 	return 0;
 
-err_flow:
+err_parse_flow:
+	if (parse_attr->mod_hdr_actions)
+		kfree(parse_attr->mod_hdr_actions);
+	kmem_cache_free(parse_attr_cache, parse_attr);
+err_parse_actions:
+err_add_flow:
 	/* Release temporary num_flows taken at the beginning of this
 	 * function.
 	 */
@@ -3912,6 +3918,7 @@ mlx5e_add_nic_flow(struct mlx5e_priv *priv,
 
 err_flow:
 	mlx5e_flow_put(priv, flow);
+	kmem_cache_free(parse_attr_cache, parse_attr);
 out:
 	return err;
 }
@@ -4628,8 +4635,10 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 err_rcu:
 	rcu_read_unlock();
 	kfree(mparse_attr->mod_hdr_actions);
+	mparse_attr->mod_hdr_actions = NULL;
 err:
-
+	if (mparse_attr->mod_hdr_actions)
+		kfree(mparse_attr->mod_hdr_actions);
 	kmem_cache_free(parse_attr_cache, mparse_attr);
 	flow_cache_free(mflow);
 err_verify:
