@@ -219,6 +219,7 @@ struct mlx5e_tc_flow {
 	struct mlx5_flow_handle *rule[MLX5E_TC_MAX_SPLITS + 1];
 	struct mlx5e_encap_entry *e; /* attached encap instance */
 	struct list_head	encap;   /* flows sharing the same encap ID */
+	unsigned long		updated; /* encap updated */
 	struct mlx5e_mod_hdr_entry *mh; /* attached mod header instance */
 	struct list_head	mod_hdr; /* flows sharing the same mod hdr ID */
 	struct mlx5e_hairpin_entry *hpe; /* attached hairpin instance */
@@ -1546,11 +1547,56 @@ static void mlx5e_put_flow_list(struct mlx5e_priv *priv,
 	}
 }
 
-void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
-			      struct mlx5e_encap_entry *e)
+static int mlx5e_tc_encap_flow_add(struct mlx5e_priv *priv,
+				   struct mlx5e_tc_flow *flow,
+				   struct mlx5e_encap_entry *e)
 {
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 	struct mlx5_esw_flow_attr *esw_attr;
+	int err = 0;
+
+	esw_attr = flow->esw_attr;
+	esw_attr->encap_id = e->encap_id;
+	/* At this point concurrent access to flow->rule is not possible
+	 * because offloaded flag is not set, so no need to take
+	 * rule_lock.
+	 */
+	flow->rule[0] = mlx5_eswitch_add_offloaded_rule(esw, &esw_attr->parse_attr->spec, esw_attr);
+	if (IS_ERR(flow->rule[0])) {
+		err = PTR_ERR(flow->rule[0]);
+		mlx5_core_warn(priv->mdev, "Failed to update cached encapsulation flow, %d\n",
+			       err);
+		return err;
+	}
+
+	if (esw_attr->mirror_count) {
+		WARN_ON(!IS_ERR_OR_NULL(flow->rule[1]));
+		flow->rule[1] = mlx5_eswitch_add_fwd_rule(esw, &esw_attr->parse_attr->spec, esw_attr);
+		if (IS_ERR(flow->rule[1])) {
+			mlx5_eswitch_del_offloaded_rule(esw, flow->rule[0], esw_attr);
+			err = PTR_ERR(flow->rule[1]);
+			mlx5_core_warn(priv->mdev, "Failed to update cached mirror flow, %d\n",
+				       err);
+			return err;
+		}
+	}
+
+	/* Ensure that flow->rule[] pointers are updated before flow is
+	 * marked as offloaded.
+	 */
+	wmb();
+	/* Flow was successfully offloaded. Set flag and move it to
+	 * offloaded flows list.
+	 */
+	atomic_or(MLX5E_TC_FLOW_OFFLOADED, &flow->flags);
+
+	return err;
+}
+
+void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
+			      struct mlx5e_encap_entry *e,
+			      unsigned long n_updated)
+{
 	struct mlx5e_tc_flow *flow, *tmp;
 	LIST_HEAD(added_flows);
 	u32 encap_id;
@@ -1569,6 +1615,7 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 	mutex_lock(&e->encap_entry_lock);
 	e->encap_id = encap_id;
 	e->flags |= MLX5_ENCAP_ENTRY_VALID;
+	e->updated = n_updated;
 
 	list_for_each_entry_safe(flow, tmp, &e->flows, encap) {
 		if (!(atomic_read(&flow->flags) & MLX5E_TC_FLOW_INIT_DONE) ||
@@ -1577,40 +1624,7 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 
 		list_add(&flow->tmp_list, &added_flows);
 
-		esw_attr = flow->esw_attr;
-		esw_attr->encap_id = e->encap_id;
-		/* At this point concurrent access to flow->rule is not possible
-		 * because offloaded flag is not set, so no need to take
-		 * rule_lock.
-		 */
-		flow->rule[0] = mlx5_eswitch_add_offloaded_rule(esw, &esw_attr->parse_attr->spec, esw_attr);
-		if (IS_ERR(flow->rule[0])) {
-			err = PTR_ERR(flow->rule[0]);
-			mlx5_core_warn(priv->mdev, "Failed to update cached encapsulation flow, %d\n",
-				       err);
-			continue;
-		}
-
-		if (esw_attr->mirror_count) {
-			WARN_ON(!IS_ERR_OR_NULL(flow->rule[1]));
-			flow->rule[1] = mlx5_eswitch_add_fwd_rule(esw, &esw_attr->parse_attr->spec, esw_attr);
-			if (IS_ERR(flow->rule[1])) {
-				mlx5_eswitch_del_offloaded_rule(esw, flow->rule[0], esw_attr);
-				err = PTR_ERR(flow->rule[1]);
-				mlx5_core_warn(priv->mdev, "Failed to update cached mirror flow, %d\n",
-					       err);
-				continue;
-			}
-		}
-
-		/* Ensure that flow->rule[] pointers are updated before flow is
-		 * marked as offloaded.
-		 */
-		wmb();
-		/* Flow was successfully offloaded. Set flag and move it to
-		 * offloaded flows list.
-		 */
-		atomic_or(MLX5E_TC_FLOW_OFFLOADED, &flow->flags);
+		mlx5e_tc_encap_flow_add(priv, flow, e);
 	}
 
 	mutex_unlock(&e->encap_entry_lock);
@@ -1619,7 +1633,8 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 }
 
 void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
-			      struct mlx5e_encap_entry *e)
+			      struct mlx5e_encap_entry *e,
+			      unsigned long n_updated)
 {
 	struct mlx5e_tc_flow *flow, *tmp;
 	LIST_HEAD(deleted_flows);
@@ -1636,6 +1651,7 @@ void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
 		mlx5e_del_offloaded_flow_rules(priv, flow);
 	}
 
+	e->updated = n_updated;
 	if (e->flags & MLX5_ENCAP_ENTRY_VALID) {
 		e->flags &= ~MLX5_ENCAP_ENTRY_VALID;
 		mlx5_encap_dealloc(priv->mdev, e->encap_id);
@@ -1643,6 +1659,40 @@ void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
 	mutex_unlock(&e->encap_entry_lock);
 
 	mlx5e_put_flow_list(priv, &deleted_flows);
+}
+
+static int mlx5e_tc_update_and_init_done_fdb_flow(struct mlx5e_priv *priv,
+						  struct mlx5e_tc_flow *flow)
+{
+	int err = 0;
+
+	if ((flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP) &&
+	    flow->e){
+		struct mlx5e_encap_entry *e = flow->e;
+
+		mutex_lock(&e->encap_entry_lock);
+		if (flow->updated != e->updated) {
+			/* recreate */
+			mlx5e_del_offloaded_flow_rules(priv, flow);
+			if (e->flags & MLX5_ENCAP_ENTRY_VALID) {
+				err = mlx5e_tc_encap_flow_add(priv, flow, e);
+				if (err)
+					return err;
+			}
+		}
+
+		/* Ensure that flow->rule[] pointers are updated before flow is
+		 * marked as initialized.
+		 */
+		wmb();
+		atomic_or(MLX5E_TC_FLOW_INIT_DONE, &flow->flags);
+		mutex_unlock(&e->encap_entry_lock);
+	} else {
+		wmb();
+		atomic_or(MLX5E_TC_FLOW_INIT_DONE, &flow->flags);
+	}
+
+	return 0;
 }
 
 static struct mlx5e_tc_flow *
@@ -3115,6 +3165,8 @@ static int mlx5e_encap_entry_attach_update(struct mlx5e_priv *priv,
 		mlx5e_rep_queue_neigh_update_work(priv, e->nhe, n);
 	}
 
+	e->updated = n_updated_new;
+
 	return 0;
 }
 
@@ -3485,6 +3537,7 @@ vxlan_encap_offload_err:
 		attr->encap_id = e->encap_id;
 	else
 		err = -EAGAIN;
+	flow->updated = e->updated;
 	mutex_unlock(&e->encap_entry_lock);
 
 	return err;
@@ -3965,11 +4018,9 @@ int mlx5e_configure_flower(struct mlx5e_priv *priv,
 	if (err)
 		goto err_free;
 
-	/* Ensure that flow->rule[] pointers are updated before flow is marked
-	 * as initialized.
-	 */
-	wmb();
-	atomic_or(MLX5E_TC_FLOW_INIT_DONE, &flow->flags);
+	err = mlx5e_tc_update_and_init_done_fdb_flow(priv, flow);
+	if (err)
+		goto err_free;
 
 	return 0;
 

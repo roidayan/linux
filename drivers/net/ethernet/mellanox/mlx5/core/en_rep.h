@@ -139,6 +139,7 @@ struct mlx5e_encap_entry {
 	u32 encap_id;
 	struct ip_tunnel_info tun_info;
 	unsigned char h_dest[ETH_ALEN];	/* destination eth addr	*/
+	unsigned long updated;
 
 	struct net_device *out_dev;
 	int tunnel_type;

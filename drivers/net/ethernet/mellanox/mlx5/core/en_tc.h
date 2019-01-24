@@ -69,9 +69,11 @@ int mlx5e_configure_ct(struct mlx5e_priv *priv,
 
 struct mlx5e_encap_entry;
 void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
-			      struct mlx5e_encap_entry *e);
+			      struct mlx5e_encap_entry *e,
+			      unsigned long n_updated);
 void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
-			      struct mlx5e_encap_entry *e);
+			      struct mlx5e_encap_entry *e,
+			      unsigned long n_updated);
 bool mlx5e_encap_take(struct mlx5e_encap_entry *e);
 void mlx5e_encap_put(struct mlx5e_priv *priv, struct mlx5e_encap_entry *e);
 
