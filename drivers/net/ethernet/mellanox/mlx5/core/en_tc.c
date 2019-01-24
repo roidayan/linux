@@ -1290,7 +1290,7 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 		if (err) {
 			rule = ERR_PTR(err);
 			if (err != -EAGAIN)
-				goto err_attach_encap;
+				goto err_out;
 		}
 		out_priv = netdev_priv(encap_dev);
 		rpriv = out_priv->ppriv;
@@ -1301,7 +1301,7 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	err = mlx5_eswitch_add_vlan_action(esw, attr);
 	if (err) {
 		rule = ERR_PTR(err);
-		goto err_add_vlan;
+		goto err_out;
 	}
 
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR) {
@@ -1309,7 +1309,7 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 		kfree(parse_attr->mod_hdr_actions);
 		if (err) {
 			rule = ERR_PTR(err);
-			goto err_mod_hdr;
+			goto err_out;
 		}
 	}
 
@@ -1317,7 +1317,7 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 		counter = mlx5e_fc_alloc(esw->dev, true);
 		if (IS_ERR(counter)) {
 			rule = ERR_CAST(counter);
-			goto err_counter;
+			goto err_out;
 		}
 
 		attr->counter = counter;
@@ -1329,7 +1329,7 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	if (rule != ERR_PTR(-EAGAIN)) {
 		rule = mlx5_eswitch_add_offloaded_rule(esw, &parse_attr->spec, attr);
 		if (IS_ERR(rule))
-			goto err_add_rule;
+			goto err_out;
 
 		if (attr->mirror_count) {
 			flow->rule[1] = mlx5_eswitch_add_fwd_rule(esw, &parse_attr->spec, attr);
@@ -1346,21 +1346,9 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	return rule;
 
 err_fwd_rule:
-        mlx5_eswitch_del_offloaded_rule(esw, flow->rule[0], attr);
-err_add_rule:
-	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_COUNT)
-		mlx5e_fc_free(esw->dev, counter);
-err_counter:
-        if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR)
-                mlx5e_detach_mod_hdr(priv, flow);
-err_mod_hdr:
-        mlx5_eswitch_del_vlan_action(esw, attr);
-err_add_vlan:
-        if (attr->action & MLX5_FLOW_CONTEXT_ACTION_ENCAP)
-                mlx5e_detach_encap(priv, flow);
-err_attach_encap:
-	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR)
-		kfree(attr->parse_attr->mod_hdr_actions);
+	mlx5_eswitch_del_offloaded_rule(esw, rule, attr);
+	rule = flow->rule[1];
+err_out:
 	return rule;
 }
 
