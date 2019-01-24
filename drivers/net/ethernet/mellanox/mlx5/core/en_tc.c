@@ -3881,8 +3881,7 @@ err_flow:
 	 * function.
 	 */
 	mlx5_eswitch_dec_num_flows(esw);
-	kmem_cache_free(parse_attr_cache, parse_attr);
-	flow_cache_free(flow);
+	mlx5e_flow_put(priv, flow);
 out:
 	return err;
 }
