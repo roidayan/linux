@@ -1347,7 +1347,6 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 
 err_fwd_rule:
         mlx5_eswitch_del_offloaded_rule(esw, flow->rule[0], attr);
-	rule = flow->rule[1];
 err_add_rule:
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_COUNT)
 		mlx5e_fc_free(esw->dev, counter);
