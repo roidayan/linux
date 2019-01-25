@@ -109,6 +109,9 @@ module_param(enable_ct_ageing, int, 0644);
 static int max_nr_mf = 1024*1024;
 module_param(max_nr_mf, int, 0644);
 
+static char out_ifname[IFNAMSIZ] = "";
+module_param_string(out_ifname, out_ifname, sizeof(out_ifname), S_IRUGO|S_IWUSR);
+
 #if CT_DEBUG_COUNTERS
 	#define inc_debug_counter(counter_name) \
 		atomic_inc(counter_name);
@@ -3272,6 +3275,13 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 	if (err)
 		goto free_encap;
 
+	if (sysfs_streq("", out_ifname) == false) {
+		if (sysfs_streq(out_ifname, out_dev->name) == false) {
+			err = -ENETUNREACH;
+			goto free_encap;
+		}
+	}
+
 	/* used by mlx5e_detach_encap to lookup a neigh hash table
 	 * entry in the neigh hash table when a user deletes a rule
 	 */
@@ -3381,6 +3391,13 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 				      &fl6, &n, &ttl);
 	if (err)
 		goto free_encap;
+
+	if (sysfs_streq("", out_ifname) == false) {
+		if (sysfs_streq(out_ifname, out_dev->name) == false) {
+			err = -ENETUNREACH;
+			goto free_encap;
+		}
+	}
 
 	/* used by mlx5e_detach_encap to lookup a neigh hash table
 	 * entry in the neigh hash table when a user deletes a rule
