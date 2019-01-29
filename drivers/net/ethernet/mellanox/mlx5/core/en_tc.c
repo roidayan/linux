@@ -4657,7 +4657,6 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 		/* TODO: refactor this function and the error handling */
 		ntrace("miniflow_verify_path_flows failed, interesting :)");
 		rcu_read_unlock();
-		mlx5e_flow_put(priv, mflow);
 		inc_debug_counter(&nr_of_total_mf_err_verify_path);
 		goto err_verify;
 	}
@@ -4687,14 +4686,9 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 
 err_rcu:
 	rcu_read_unlock();
-	kfree(mparse_attr->mod_hdr_actions);
-	mparse_attr->mod_hdr_actions = NULL;
 err:
-	if (mparse_attr->mod_hdr_actions)
-		kfree(mparse_attr->mod_hdr_actions);
-	kmem_cache_free(parse_attr_cache, mparse_attr);
-	flow_cache_free(mflow);
 err_verify:
+	mlx5e_flow_put(priv, mflow);
 	rhashtable_remove_fast(mf_ht, &miniflow->node, mf_ht_params);
 	miniflow_cleanup(miniflow);
 	miniflow_free(miniflow);
