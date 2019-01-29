@@ -4687,13 +4687,13 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 
 err_rcu:
 	rcu_read_unlock();
+	kfree(mparse_attr->mod_hdr_actions);
+	mparse_attr->mod_hdr_actions = NULL;
 err:
-	if (mparse_attr->mod_hdr_actions) {
+	if (mparse_attr->mod_hdr_actions)
 		kfree(mparse_attr->mod_hdr_actions);
-		mparse_attr->mod_hdr_actions = NULL;
-	}
 	kmem_cache_free(parse_attr_cache, mparse_attr);
-	mlx5e_flow_put(priv, mflow);
+	flow_cache_free(mflow);
 err_verify:
 	rhashtable_remove_fast(mf_ht, &miniflow->node, mf_ht_params);
 	miniflow_cleanup(miniflow);
