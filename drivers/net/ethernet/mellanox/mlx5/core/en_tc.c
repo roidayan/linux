@@ -1676,8 +1676,10 @@ static int mlx5e_tc_update_and_init_done_fdb_flow(struct mlx5e_priv *priv,
 			mlx5e_del_offloaded_flow_rules(priv, flow);
 			if (e->flags & MLX5_ENCAP_ENTRY_VALID) {
 				err = mlx5e_tc_encap_flow_add(priv, flow, e);
-				if (err)
+				if (err) {
+					mutex_unlock(&e->encap_entry_lock);
 					return err;
+				}
 			}
 		}
 
