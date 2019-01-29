@@ -4421,7 +4421,7 @@ static void miniflow_attach(struct mlx5e_miniflow *miniflow)
 	struct mlx5e_tc_flow *flow;
 	int i;
 
-	spin_lock(&miniflow_lock);
+	spin_lock_bh(&miniflow_lock);
 	/* Attach to all parent flows */
 	for (i=0; i<miniflow->nr_flows; i++) {
 		flow = miniflow->path.flows[i];
@@ -4429,7 +4429,7 @@ static void miniflow_attach(struct mlx5e_miniflow *miniflow)
 		miniflow->mnodes[i].miniflow = miniflow;
 		list_add(&miniflow->mnodes[i].node, &flow->miniflow_list);
 	}
-	spin_unlock(&miniflow_lock);
+	spin_unlock_bh(&miniflow_lock);
 }
 
 static void miniflow_abort(struct mlx5e_miniflow *miniflow)
