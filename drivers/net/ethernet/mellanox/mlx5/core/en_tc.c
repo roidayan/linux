@@ -995,7 +995,7 @@ static void mlx5e_detach_encap(struct mlx5e_priv *priv,
 			       struct mlx5e_tc_flow *flow);
 
 static int mlx5e_attach_encap(struct mlx5e_priv *priv,
-			      struct ip_tunnel_info *tun_info,
+			      const struct ip_tunnel_info *tun_info,
 			      struct net_device *mirred_dev,
 			      struct net_device **encap_dev,
 			      struct mlx5e_tc_flow *flow,
@@ -1102,7 +1102,7 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_PACKET_REFORMAT) {
 		out_dev = __dev_get_by_index(dev_net(priv->netdev),
 					     attr->parse_attr->mirred_ifindex);
-		encap_err = mlx5e_attach_encap(priv, &parse_attr->tun_info,
+		encap_err = mlx5e_attach_encap(priv, parse_attr->tun_info,
 					       out_dev, &encap_dev, flow,
 					       extack);
 		if (encap_err && encap_err != -EAGAIN)
@@ -2662,13 +2662,13 @@ static int parse_tc_nic_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 	return 0;
 }
 
-static inline int cmp_encap_info(struct ip_tunnel_key *a,
-				 struct ip_tunnel_key *b)
+static inline int cmp_encap_info(const struct ip_tunnel_key *a,
+				 const struct ip_tunnel_key *b)
 {
 	return memcmp(a, b, sizeof(*a));
 }
 
-static inline int hash_encap_info(struct ip_tunnel_key *key)
+static inline int hash_encap_info(const struct ip_tunnel_key *key)
 {
 	return jhash(key, sizeof(*key), 0);
 }
@@ -2694,7 +2694,7 @@ bool mlx5e_encap_take(struct mlx5e_encap_entry *e)
 }
 
 static struct mlx5e_encap_entry *
-mlx5e_encap_get(struct mlx5e_priv *priv, struct ip_tunnel_key *key,
+mlx5e_encap_get(struct mlx5e_priv *priv, const struct ip_tunnel_key *key,
 		uintptr_t hash_key)
 {
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
@@ -2704,7 +2704,7 @@ mlx5e_encap_get(struct mlx5e_priv *priv, struct ip_tunnel_key *key,
 	rcu_read_lock();
 	hash_for_each_possible_rcu(esw->offloads.encap_tbl, e,
 				   encap_hlist, hash_key) {
-		if (!cmp_encap_info(&e->tun_info.key, key) &&
+		if (!cmp_encap_info(&e->tun_info->key, key) &&
 		    mlx5e_encap_take(e)) {
 			found = true;
 			break;
@@ -2718,13 +2718,13 @@ mlx5e_encap_get(struct mlx5e_priv *priv, struct ip_tunnel_key *key,
 }
 
 static struct mlx5e_encap_entry *
-mlx5e_encap_get_create(struct mlx5e_priv *priv, struct ip_tunnel_info *tun_info,
+mlx5e_encap_get_create(struct mlx5e_priv *priv, const struct ip_tunnel_info *tun_info,
 		       struct net_device *mirred_dev,
 		       struct netlink_ext_ack *extack)
 {
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 	unsigned short family = ip_tunnel_info_af(tun_info);
-	struct ip_tunnel_key *key = &tun_info->key;
+	const struct ip_tunnel_key *key = &tun_info->key;
 	struct mlx5e_encap_entry *e, *e_dup = NULL;
 	int err = 0;
 	uintptr_t hash_key = hash_encap_info(key);
@@ -2740,7 +2740,12 @@ mlx5e_encap_get_create(struct mlx5e_priv *priv, struct ip_tunnel_info *tun_info,
 		return ERR_PTR(-ENOMEM);
 
 	mutex_init(&e->encap_entry_lock);
-	e->tun_info = *tun_info;
+	e->tun_info = tun_info;
+	//e->tunnel_type = tunnel_type;
+	//err = mlx5e_tc_tun_init_encap_attr(mirred_dev, priv, e, extack);
+	//if (err)
+	//	goto out_err;
+
 	INIT_LIST_HEAD(&e->flows);
 	INIT_LIST_HEAD(&e->neigh_update_list);
 	refcount_set(&e->refcnt, 1);
@@ -2778,7 +2783,7 @@ err_out:
 
 
 static int mlx5e_attach_encap(struct mlx5e_priv *priv,
-			      struct ip_tunnel_info *tun_info,
+			      const struct ip_tunnel_info *tun_info,
 			      struct net_device *mirred_dev,
 			      struct net_device **encap_dev,
 			      struct mlx5e_tc_flow *flow,
@@ -2947,7 +2952,8 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 				attr->out_mdev[attr->out_count++] = out_priv->mdev;
 			} else if (encap) {
 				parse_attr->mirred_ifindex = out_dev->ifindex;
-				parse_attr->tun_info = *info;
+				parse_attr->tun_info = info;
+				attr->parse_attr = parse_attr;
 				action |= MLX5_FLOW_CONTEXT_ACTION_PACKET_REFORMAT |
 					  MLX5_FLOW_CONTEXT_ACTION_FWD_DEST |
 					  MLX5_FLOW_CONTEXT_ACTION_COUNT;
