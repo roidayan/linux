@@ -3283,6 +3283,8 @@ dealloc_encap:
 	mlx5_encap_dealloc(priv->mdev, e->encap_id);
 free_encap:
 	kfree(encap_header);
+	if (err == -EAGAIN)
+		err = -EINVAL;
 out:
 	if (n)
 		neigh_release(n);
@@ -3403,6 +3405,8 @@ dealloc_encap:
 	mlx5_encap_dealloc(priv->mdev, e->encap_id);
 free_encap:
 	kfree(encap_header);
+	if (err == -EAGAIN)
+		err = -EINVAL;
 out:
 	if (n)
 		neigh_release(n);
