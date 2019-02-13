@@ -41,6 +41,10 @@ module_param(gc_max_cont_time, uint, 0644);
 static unsigned int aging_bucket_num = 32;
 module_param(aging_bucket_num, uint, 0644);
 
+static unsigned int flush_stats = 0;
+module_param(flush_stats, uint, 0200);
+
+
 #define MAX_FLOWS_PER_GC_RUN          10000
 #define MAX_GC_RUNS_INTERVAL          (HZ / 1)
 #define MIN_GC_RUNS_INTERVAL          (HZ / 10)
@@ -82,9 +86,21 @@ static inline void show_stats_summary(struct seq_file *m,
                                             const char *prefix, 
                                             struct stats_summary * summary)
 {
-    seq_printf(m, "%s(avg:%u, max:%u, min:%u)\n", prefix, 
-                 summary->avg, summary->max, summary->min);
+    if (summary->min == (u32)-1)
+        seq_printf(m, "%s(avg:%u, max:%u, min: INV)\n", prefix, 
+                     summary->avg, summary->max);
+    else
+        seq_printf(m, "%s(avg:%u, max:%u, min: %u)\n", prefix, 
+                     summary->avg, summary->max, summary->min);        
 }
+
+static inline void clear_stats_summary(struct stats_summary * summary)
+{
+    summary->min = (u32)-1;
+    summary->max = 0;
+    summary->avg = 0;
+}
+
 
 struct flow_gc_work {
     struct spinlock          lock; 
@@ -203,6 +219,17 @@ static inline u32 tstat_aged_get(struct nf_gen_flow_offload_table *tbl)
 {
     return tbl->stats.aged;
 }
+
+static inline void tstat_clear_all(struct nf_gen_flow_offload_table *tbl)
+{
+    spin_lock(&tbl->stats.lock);
+    tbl->stats.added = 0;
+    tbl->stats.add_failed = 0;
+    tbl->stats.add_racing = 0;
+    tbl->stats.aged = 0;
+    spin_unlock(&tbl->stats.lock);
+}
+
 
 static inline void tstat_init(struct nf_gen_flow_offload_table *tbl)
 {
@@ -763,6 +790,16 @@ static int nf_gen_flow_offload_gc_step(struct flow_gc_work *gc_work, int target_
     struct nf_gen_flow_offload *flow;
     int next_run, proced_flows;
     u64 stats_data[3], tstamp;
+
+    if (flush_stats == 1) {
+        tstat_clear_all(flowtable);
+        clear_stats_summary(&gc_work->delta);
+        clear_stats_summary(&gc_work->total);
+        clear_stats_summary(&gc_work->stat_op);
+        clear_stats_summary(&gc_work->destroy_op);
+        clear_stats_summary(&gc_work->flows_per_run);
+        flush_stats = 0;
+    }
 
     /* 0 - total, 1 - stats, 2 - processed flow per run */
     tstamp        = jiffies;
