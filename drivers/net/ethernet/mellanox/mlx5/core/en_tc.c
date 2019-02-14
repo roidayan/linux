@@ -4657,6 +4657,10 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 		goto err;
 	}
 
+	err = mlx5e_tc_update_and_init_done_fdb_flow(priv, mflow);
+	if (err)
+		goto err_verify;
+
 	rcu_read_lock();
 	err = miniflow_verify_path_flows(miniflow);
 	if (err) {
