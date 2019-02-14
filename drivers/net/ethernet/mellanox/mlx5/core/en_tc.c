@@ -4642,7 +4642,7 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	}
 	rcu_read_unlock();
 
-	flags &= MLX5E_TC_FLOW_INIT_DONE;
+	flags &= ~MLX5E_TC_FLOW_INIT_DONE;
 	atomic_set(&mflow->flags, flags);
 	miniflow_merge_tuple(mflow, &miniflow->tuple);
 	/* TODO: Workaround: crashes otherwise, should fix */
