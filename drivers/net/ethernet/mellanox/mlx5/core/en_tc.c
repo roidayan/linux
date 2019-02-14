@@ -1794,7 +1794,8 @@ void mlx5e_tc_update_neigh_used_value(struct mlx5e_neigh_hash_entry *nhe)
 		while ((flow = mlx5e_get_next_encap_flow(e, flow)) != NULL) {
 			spin_lock(&flow->rule_lock);
 
-			if (mlx5e_is_offloaded_flow(flow)) {
+			if ((atomic_read(&flow->flags) & MLX5E_TC_FLOW_INIT_DONE) &&
+			    mlx5e_is_offloaded_flow(flow)) {
 				counter = mlx5e_tc_get_counter(flow);
 				mlx5_fc_query_cached(counter, &bytes, &packets, &lastuse);
 				if (time_after((unsigned long)lastuse, nhe->reported_lastuse)) {
