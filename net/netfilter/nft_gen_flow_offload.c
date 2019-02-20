@@ -44,6 +44,9 @@ module_param(aging_bucket_num, uint, 0644);
 static unsigned int flush_stats = 0;
 module_param(flush_stats, uint, 0200);
 
+static unsigned int target_zone_id = 0;
+module_param(target_zone_id, uint, 0644);
+
 
 #define MAX_FLOWS_PER_GC_RUN          10000
 #define MAX_GC_RUNS_INTERVAL          (HZ / 1)
@@ -711,7 +714,7 @@ static inline void nf_gen_flow_offload_set_aging(struct nf_gen_flow_offload_tabl
 
     if (!(flow->flags & FLOW_OFFLOAD_TEARDOWN)) {
         /* not in teardown */
-        flow->timeout = jiffies + flowtable->gc_work.expiration;
+        flow->timeout = jiffies + offloaded_ct_timeout;
 
         if (!(flow->flags & FLOW_OFFLOAD_AGING)) {
             /* no in aging, otherwise, aging process can schedule this entry */
@@ -1391,7 +1394,7 @@ nft_gen_flow_offload_init(const struct net *net)
     return 0;
 }
 
-static int _flow_proc_show(struct seq_file *m, void *v)
+static int offloaded_flow_summary_show(struct seq_file *m, void *v)
 {
     int flow_cnt;
     struct nf_gen_flow_offload_table * flowtable;
@@ -1437,28 +1440,241 @@ static int _flow_proc_show(struct seq_file *m, void *v)
 }
 
 
-static int _flow_proc_open(struct inode *inode, struct file *file)
+static int offloaded_flow_summary_open(struct inode *inode, struct file *file)
 {
-    return single_open(file, _flow_proc_show, PDE_DATA(inode));
+    return single_open(file, offloaded_flow_summary_show, PDE_DATA(inode));
 }
 
-static const struct file_operations _flow_proc_fops = {
-    .open	= _flow_proc_open,
+static const struct file_operations offloaded_flow_summary_fops = {
+    .open	= offloaded_flow_summary_open,
     .read	= seq_read,
     .llseek	= seq_lseek,
     .release	= single_release,
 };
 
+
+struct offloaded_flow_iter_state {
+	struct seq_net_private p;
+    struct nf_gen_flow_offload_table *flowtable;
+	struct rhashtable_iter iter;
+    int zone;
+};
+
+struct nf_gen_flow_offload_tuple_rhash *offloaded_flow_get_next(struct net *net,
+					       struct rhashtable_iter *iter, 
+					       struct offloaded_flow_iter_state *st)
+{
+	struct nf_gen_flow_offload_tuple_rhash *t;
+
+	t = rhashtable_walk_next(iter);
+	for (; t; t = rhashtable_walk_next(iter)) {
+		if (IS_ERR(t)) {
+			if (PTR_ERR(t) == -EAGAIN)
+				continue;
+			break;
+		}
+
+		if (t->zone.id == st->zone)
+			break;
+	}
+
+	return t;
+}
+
+struct nf_gen_flow_offload_tuple_rhash *offloaded_flow_get_idx(struct net *net,
+					      struct rhashtable_iter *iter,
+					      int pos, struct offloaded_flow_iter_state *st)
+{
+	void *obj = SEQ_START_TOKEN;
+
+	while (pos && (obj = offloaded_flow_get_next(net, iter, st)) &&
+	       !IS_ERR(obj))
+		pos--;
+
+	return obj;
+}
+
+
+static void *offloaded_flow_seq_start(struct seq_file *seq, loff_t *pos)
+	__acquires(RCU)
+{
+	struct offloaded_flow_iter_state *st = seq->private;
+
+    rcu_read_lock();
+
+    st->flowtable = rcu_dereference(_flowtable);
+    if (st->flowtable == NULL) 
+        return NULL;
+        
+    st->zone = target_zone_id;
+    	
+	rhashtable_walk_enter(&st->flowtable->rhashtable, &st->iter);
+    rhashtable_walk_start(&st->iter);
+
+	return offloaded_flow_get_idx(seq_file_net(seq), &st->iter, *pos, st);
+}
+
+static void *offloaded_flow_seq_next(struct seq_file *seq, void *v, loff_t *pos)
+{
+	struct offloaded_flow_iter_state *st = seq->private;
+
+	++*pos;
+
+	return offloaded_flow_get_next(seq_file_net(seq), &st->iter, st);
+}
+
+static void offloaded_flow_seq_stop(struct seq_file *seq, void *v)
+	__releases(RCU)
+{
+	struct offloaded_flow_iter_state *st = seq->private;
+
+    rhashtable_walk_stop(&st->iter);
+    rhashtable_walk_exit(&st->iter);
+
+	rcu_read_unlock();
+}
+
+static const char* l3proto_name(u16 proto)
+{
+	switch (proto) {
+	case AF_INET: return "ipv4";
+	case AF_INET6: return "ipv6";
+	}
+
+	return "unknown";
+}
+
+static const char* l4proto_name(u16 proto)
+{
+	switch (proto) {
+	case IPPROTO_ICMP: return "icmp";
+	case IPPROTO_TCP: return "tcp";
+	case IPPROTO_UDP: return "udp";
+	case IPPROTO_DCCP: return "dccp";
+	case IPPROTO_GRE: return "gre";
+	case IPPROTO_SCTP: return "sctp";
+	case IPPROTO_UDPLITE: return "udplite";
+	}
+
+	return "unknown";
+}
+
+static int offloaded_flow_seq_show(struct seq_file *s, void *v)
+{
+	struct nf_gen_flow_offload_tuple_rhash *thash = v;
+    enum nf_gen_flow_offload_tuple_dir dir;
+    struct nf_gen_flow_offload_entry *entry = NULL;
+	struct nf_conn *ct = NULL;
+	const struct nf_conntrack_l3proto *l3proto;
+	const struct nf_conntrack_l4proto *l4proto;
+	struct net *net = seq_file_net(s);
+
+	if (v == SEQ_START_TOKEN)
+	    return 0;
+
+    dir = thash->tuple.dst.dir;
+    entry = container_of(thash, struct nf_gen_flow_offload_entry, flow.tuplehash[dir]);
+	ct = entry->ct;
+
+	WARN_ON(!ct);
+	if (unlikely(!atomic_inc_not_zero(&ct->ct_general.use)))
+		return 0;
+
+	/* we only want to print DIR_ORIGINAL */
+	if (dir != FLOW_OFFLOAD_DIR_ORIGINAL)
+		return 0;
+
+	if (!net_eq(nf_ct_net(ct), net))
+		return 0;
+
+	l3proto = __nf_ct_l3proto_find(nf_ct_l3num(ct));
+	WARN_ON(!l3proto);
+	l4proto = __nf_ct_l4proto_find(nf_ct_l3num(ct), nf_ct_protonum(ct));
+	WARN_ON(!l4proto);
+
+	seq_printf(s, "%-8s %u %-8s %u ",
+		   l3proto_name(l3proto->l3proto), nf_ct_l3num(ct),
+		   l4proto_name(l4proto->l4proto), nf_ct_protonum(ct));
+
+	switch (l3proto->l3proto) {
+	case NFPROTO_IPV4:
+		seq_printf(s, "src=%pI4 dst=%pI4 ",
+			   &thash->tuple.src.u3.ip, &thash->tuple.dst.u3.ip);
+		break;
+	case NFPROTO_IPV6:
+		seq_printf(s, "src=%pI6 dst=%pI6 ",
+			   thash->tuple.src.u3.ip6, thash->tuple.dst.u3.ip6);
+		break;
+	default:
+		break;
+	}
+
+	switch (l4proto->l4proto) {
+	case IPPROTO_TCP:
+		seq_printf(s, "sport=%hu dport=%hu ",
+			   ntohs(thash->tuple.src.u.tcp.port),
+			   ntohs(thash->tuple.dst.u.tcp.port));
+		break;
+	case IPPROTO_UDPLITE: /* fallthrough */
+	case IPPROTO_UDP:
+		seq_printf(s, "sport=%hu dport=%hu ",
+			   ntohs(thash->tuple.src.u.udp.port),
+			   ntohs(thash->tuple.dst.u.udp.port));
+	default:
+		break;
+	}
+
+    seq_printf(s, "zone=%u ", thash->zone.id);
+
+ 	seq_printf(s, "packets=%llu bytes=%llu lastused=%llu\n",
+ 		   (unsigned long long)entry->stats.packets,
+ 		   (unsigned long long)entry->stats.bytes,
+ 		   (unsigned long long)entry->stats.last_used);
+
+	return 0;
+}
+
+
+static const struct seq_operations offloaded_flow_seq_ops = {
+	.start = offloaded_flow_seq_start,
+	.next  = offloaded_flow_seq_next,
+	.stop  = offloaded_flow_seq_stop,
+	.show  = offloaded_flow_seq_show
+};
+
+static int offloaded_flow_open(struct inode *inode, struct file *file)
+{
+	return seq_open_net(inode, file, &offloaded_flow_seq_ops,
+			    sizeof(struct offloaded_flow_iter_state));
+}
+
+static const struct file_operations offloaded_flow_fops = {
+	.owner   = THIS_MODULE,
+	.open    = offloaded_flow_open,
+	.read    = seq_read,
+	.llseek  = seq_lseek,
+	.release = seq_release_net,
+};
+
+
 int __init nft_gen_flow_offload_proc_init(void)
 {
-    struct proc_dir_entry *p;
+    struct proc_dir_entry *p, *pflow;
     int rc = -ENOMEM;
 
     p = proc_create_data("nf_conntrack_offloaded", 0444, 
                                 init_net.proc_net,
-                                &_flow_proc_fops, NULL);
+                                &offloaded_flow_summary_fops, NULL);
     if (!p) {
         pr_debug("can't make nf_conntrack_offloaded proc_entry");
+        return rc;
+    }
+
+	pflow = proc_create("nf_ct_offloaded_flows", 0440, 
+	                            init_net.proc_net, 
+	                            &offloaded_flow_fops);
+    if (!pflow) {
+        pr_debug("can't make nf_ct_offloaded_flows proc_entry");
         return rc;
     }
 
@@ -1468,6 +1684,7 @@ int __init nft_gen_flow_offload_proc_init(void)
 void __exit nft_gen_flow_offload_proc_exit(void)
 {
     remove_proc_entry("nf_conntrack_offloaded", init_net.proc_net);
+    remove_proc_entry("nf_ct_offloaded_flows", init_net.proc_net);
 }
 
 static int __init nft_gen_flow_offload_module_init(void)
