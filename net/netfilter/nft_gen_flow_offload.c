@@ -299,7 +299,7 @@ static void nf_gen_flow_offload_fixup_ct_state(struct nf_conn *ct)
     int l4num;
 
     rcu_read_lock();
-	
+
     l4num = nf_ct_protonum(ct);
     l4proto = __nf_ct_l4proto_find(nf_ct_l3num(ct), l4num);
     if (!l4proto)
@@ -332,7 +332,7 @@ static void nf_gen_flow_offload_fixup_ct_state(struct nf_conn *ct)
     ct->timeout = (u32)jiffies + timeout;
 #endif
 __fixup_exit:
-    rcu_read_unlock();	
+    rcu_read_unlock();
 }
 
 void nf_gen_flow_offload_free(struct nf_gen_flow_offload *flow)
@@ -950,7 +950,7 @@ int nf_gen_flow_offload_table_init(struct nf_gen_flow_offload_table *flowtable)
     return 0;
 
 _table_init_err:    
-	destroy_workqueue(flowtable->flow_wq);    
+    destroy_workqueue(flowtable->flow_wq);    
 _flow_wq_alloc_err:
     nf_gen_flow_offload_free_buckets(&flowtable->gc_work);
 
@@ -967,7 +967,7 @@ void nf_gen_flow_offload_table_free(struct nf_gen_flow_offload_table *flowtable)
 {
     nf_gen_flow_offload_table_iterate(flowtable, nf_gen_flow_offload_table_do_cleanup, flowtable);
     nf_gen_flow_offload_free_buckets(&flowtable->gc_work);
-	destroy_workqueue(flowtable->flow_wq); 
+    destroy_workqueue(flowtable->flow_wq); 
     rhashtable_destroy(&flowtable->rhashtable);
 }
 
@@ -1446,59 +1446,59 @@ static int offloaded_flow_summary_open(struct inode *inode, struct file *file)
 }
 
 static const struct file_operations offloaded_flow_summary_fops = {
-    .open	= offloaded_flow_summary_open,
-    .read	= seq_read,
-    .llseek	= seq_lseek,
-    .release	= single_release,
+    .open       = offloaded_flow_summary_open,
+    .read       = seq_read,
+    .llseek     = seq_lseek,
+    .release    = single_release,
 };
 
 
 struct offloaded_flow_iter_state {
-	struct seq_net_private p;
+    struct seq_net_private p;
     struct nf_gen_flow_offload_table *flowtable;
-	struct rhashtable_iter iter;
+    struct rhashtable_iter iter;
     int zone;
 };
 
 struct nf_gen_flow_offload_tuple_rhash *offloaded_flow_get_next(struct net *net,
-					       struct rhashtable_iter *iter, 
-					       struct offloaded_flow_iter_state *st)
+                           struct rhashtable_iter *iter, 
+                           struct offloaded_flow_iter_state *st)
 {
-	struct nf_gen_flow_offload_tuple_rhash *t;
+    struct nf_gen_flow_offload_tuple_rhash *t;
 
-	t = rhashtable_walk_next(iter);
-	for (; t; t = rhashtable_walk_next(iter)) {
-		if (IS_ERR(t)) {
-			if (PTR_ERR(t) == -EAGAIN)
-				continue;
-			break;
-		}
+    t = rhashtable_walk_next(iter);
+    for (; t; t = rhashtable_walk_next(iter)) {
+        if (IS_ERR(t)) {
+            if (PTR_ERR(t) == -EAGAIN)
+                continue;
+            break;
+        }
 
-		if (t->zone.id == st->zone)
-			break;
-	}
+        if (t->zone.id == st->zone)
+            break;
+    }
 
-	return t;
+    return t;
 }
 
 struct nf_gen_flow_offload_tuple_rhash *offloaded_flow_get_idx(struct net *net,
-					      struct rhashtable_iter *iter,
-					      int pos, struct offloaded_flow_iter_state *st)
+                          struct rhashtable_iter *iter,
+                          int pos, struct offloaded_flow_iter_state *st)
 {
-	void *obj = SEQ_START_TOKEN;
+    void *obj = SEQ_START_TOKEN;
 
-	while (pos && (obj = offloaded_flow_get_next(net, iter, st)) &&
-	       !IS_ERR(obj))
-		pos--;
+    while (pos && (obj = offloaded_flow_get_next(net, iter, st)) &&
+           !IS_ERR(obj))
+        pos--;
 
-	return obj;
+    return obj;
 }
 
 
 static void *offloaded_flow_seq_start(struct seq_file *seq, loff_t *pos)
-	__acquires(RCU)
+    __acquires(RCU)
 {
-	struct offloaded_flow_iter_state *st = seq->private;
+    struct offloaded_flow_iter_state *st = seq->private;
 
     rcu_read_lock();
 
@@ -1507,153 +1507,151 @@ static void *offloaded_flow_seq_start(struct seq_file *seq, loff_t *pos)
         return NULL;
         
     st->zone = target_zone_id;
-    	
-	rhashtable_walk_enter(&st->flowtable->rhashtable, &st->iter);
+        
+    rhashtable_walk_enter(&st->flowtable->rhashtable, &st->iter);
     rhashtable_walk_start(&st->iter);
 
-	return offloaded_flow_get_idx(seq_file_net(seq), &st->iter, *pos, st);
+    return offloaded_flow_get_idx(seq_file_net(seq), &st->iter, *pos, st);
 }
 
 static void *offloaded_flow_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 {
-	struct offloaded_flow_iter_state *st = seq->private;
+    struct offloaded_flow_iter_state *st = seq->private;
 
-	++*pos;
+    ++*pos;
 
-	return offloaded_flow_get_next(seq_file_net(seq), &st->iter, st);
+    return offloaded_flow_get_next(seq_file_net(seq), &st->iter, st);
 }
 
 static void offloaded_flow_seq_stop(struct seq_file *seq, void *v)
-	__releases(RCU)
+    __releases(RCU)
 {
-	struct offloaded_flow_iter_state *st = seq->private;
+    struct offloaded_flow_iter_state *st = seq->private;
 
     rhashtable_walk_stop(&st->iter);
     rhashtable_walk_exit(&st->iter);
 
-	rcu_read_unlock();
+    rcu_read_unlock();
 }
 
 static const char* l3proto_name(u16 proto)
 {
-	switch (proto) {
-	case AF_INET: return "ipv4";
-	case AF_INET6: return "ipv6";
-	}
+    switch (proto) {
+    case AF_INET: return "ipv4";
+    case AF_INET6: return "ipv6";
+    }
 
-	return "unknown";
+    return "unknown";
 }
 
 static const char* l4proto_name(u16 proto)
 {
-	switch (proto) {
-	case IPPROTO_ICMP: return "icmp";
-	case IPPROTO_TCP: return "tcp";
-	case IPPROTO_UDP: return "udp";
-	case IPPROTO_DCCP: return "dccp";
-	case IPPROTO_GRE: return "gre";
-	case IPPROTO_SCTP: return "sctp";
-	case IPPROTO_UDPLITE: return "udplite";
-	}
+    switch (proto) {
+    case IPPROTO_ICMP: return "icmp";
+    case IPPROTO_TCP: return "tcp";
+    case IPPROTO_UDP: return "udp";
+    case IPPROTO_DCCP: return "dccp";
+    case IPPROTO_GRE: return "gre";
+    case IPPROTO_SCTP: return "sctp";
+    case IPPROTO_UDPLITE: return "udplite";
+    }
 
-	return "unknown";
+    return "unknown";
 }
 
 static int offloaded_flow_seq_show(struct seq_file *s, void *v)
 {
-	struct nf_gen_flow_offload_tuple_rhash *thash = v;
+    struct nf_gen_flow_offload_tuple_rhash *thash = v;
     enum nf_gen_flow_offload_tuple_dir dir;
     struct nf_gen_flow_offload_entry *entry = NULL;
-	struct nf_conn *ct = NULL;
-	const struct nf_conntrack_l3proto *l3proto;
-	const struct nf_conntrack_l4proto *l4proto;
-	struct net *net = seq_file_net(s);
+    struct nf_conn *ct = NULL;
+    const struct nf_conntrack_l3proto *l3proto;
+    const struct nf_conntrack_l4proto *l4proto;
+    struct net *net = seq_file_net(s);
 
-	if (v == SEQ_START_TOKEN)
-	    return 0;
+    if (v == SEQ_START_TOKEN)
+        return 0;
 
     dir = thash->tuple.dst.dir;
     entry = container_of(thash, struct nf_gen_flow_offload_entry, flow.tuplehash[dir]);
-	ct = entry->ct;
+    ct = entry->ct;
 
-	WARN_ON(!ct);
-	if (unlikely(!atomic_inc_not_zero(&ct->ct_general.use)))
-		return 0;
+    WARN_ON(!ct);
 
-	/* we only want to print DIR_ORIGINAL */
-	if (dir != FLOW_OFFLOAD_DIR_ORIGINAL)
-		return 0;
+    /* we only want to print DIR_ORIGINAL */
+    if (dir != FLOW_OFFLOAD_DIR_ORIGINAL)
+        return 0;
 
-	if (!net_eq(nf_ct_net(ct), net))
-		return 0;
+    if (!net_eq(nf_ct_net(ct), net))
+        return 0;
 
-	l3proto = __nf_ct_l3proto_find(nf_ct_l3num(ct));
-	WARN_ON(!l3proto);
-	l4proto = __nf_ct_l4proto_find(nf_ct_l3num(ct), nf_ct_protonum(ct));
-	WARN_ON(!l4proto);
+    l3proto = __nf_ct_l3proto_find(nf_ct_l3num(ct));
+    WARN_ON(!l3proto);
+    l4proto = __nf_ct_l4proto_find(nf_ct_l3num(ct), nf_ct_protonum(ct));
+    WARN_ON(!l4proto);
 
-	seq_printf(s, "%-8s %u %-8s %u ",
-		   l3proto_name(l3proto->l3proto), nf_ct_l3num(ct),
-		   l4proto_name(l4proto->l4proto), nf_ct_protonum(ct));
+    seq_printf(s, "%-8s %u %-8s %u ",
+           l3proto_name(l3proto->l3proto), nf_ct_l3num(ct),
+           l4proto_name(l4proto->l4proto), nf_ct_protonum(ct));
 
-	switch (l3proto->l3proto) {
-	case NFPROTO_IPV4:
-		seq_printf(s, "src=%pI4 dst=%pI4 ",
-			   &thash->tuple.src.u3.ip, &thash->tuple.dst.u3.ip);
-		break;
-	case NFPROTO_IPV6:
-		seq_printf(s, "src=%pI6 dst=%pI6 ",
-			   thash->tuple.src.u3.ip6, thash->tuple.dst.u3.ip6);
-		break;
-	default:
-		break;
-	}
+    switch (l3proto->l3proto) {
+    case NFPROTO_IPV4:
+        seq_printf(s, "src=%pI4 dst=%pI4 ",
+               &thash->tuple.src.u3.ip, &thash->tuple.dst.u3.ip);
+        break;
+    case NFPROTO_IPV6:
+        seq_printf(s, "src=%pI6 dst=%pI6 ",
+               thash->tuple.src.u3.ip6, thash->tuple.dst.u3.ip6);
+        break;
+    default:
+        break;
+    }
 
-	switch (l4proto->l4proto) {
-	case IPPROTO_TCP:
-		seq_printf(s, "sport=%hu dport=%hu ",
-			   ntohs(thash->tuple.src.u.tcp.port),
-			   ntohs(thash->tuple.dst.u.tcp.port));
-		break;
-	case IPPROTO_UDPLITE: /* fallthrough */
-	case IPPROTO_UDP:
-		seq_printf(s, "sport=%hu dport=%hu ",
-			   ntohs(thash->tuple.src.u.udp.port),
-			   ntohs(thash->tuple.dst.u.udp.port));
-	default:
-		break;
-	}
+    switch (l4proto->l4proto) {
+    case IPPROTO_TCP:
+        seq_printf(s, "sport=%hu dport=%hu ",
+               ntohs(thash->tuple.src.u.tcp.port),
+               ntohs(thash->tuple.dst.u.tcp.port));
+        break;
+    case IPPROTO_UDPLITE: /* fallthrough */
+    case IPPROTO_UDP:
+        seq_printf(s, "sport=%hu dport=%hu ",
+               ntohs(thash->tuple.src.u.udp.port),
+               ntohs(thash->tuple.dst.u.udp.port));
+    default:
+        break;
+    }
 
     seq_printf(s, "zone=%u ", thash->zone.id);
 
- 	seq_printf(s, "packets=%llu bytes=%llu lastused=%llu\n",
- 		   (unsigned long long)entry->stats.packets,
- 		   (unsigned long long)entry->stats.bytes,
- 		   (unsigned long long)entry->stats.last_used);
+     seq_printf(s, "packets=%llu bytes=%llu lastused=%llu\n",
+            (unsigned long long)entry->stats.packets,
+            (unsigned long long)entry->stats.bytes,
+            (unsigned long long)entry->stats.last_used);
 
-	return 0;
+    return 0;
 }
 
 
 static const struct seq_operations offloaded_flow_seq_ops = {
-	.start = offloaded_flow_seq_start,
-	.next  = offloaded_flow_seq_next,
-	.stop  = offloaded_flow_seq_stop,
-	.show  = offloaded_flow_seq_show
+    .start = offloaded_flow_seq_start,
+    .next  = offloaded_flow_seq_next,
+    .stop  = offloaded_flow_seq_stop,
+    .show  = offloaded_flow_seq_show
 };
 
 static int offloaded_flow_open(struct inode *inode, struct file *file)
 {
-	return seq_open_net(inode, file, &offloaded_flow_seq_ops,
-			    sizeof(struct offloaded_flow_iter_state));
+    return seq_open_net(inode, file, &offloaded_flow_seq_ops,
+                sizeof(struct offloaded_flow_iter_state));
 }
 
 static const struct file_operations offloaded_flow_fops = {
-	.owner   = THIS_MODULE,
-	.open    = offloaded_flow_open,
-	.read    = seq_read,
-	.llseek  = seq_lseek,
-	.release = seq_release_net,
+    .owner   = THIS_MODULE,
+    .open    = offloaded_flow_open,
+    .read    = seq_read,
+    .llseek  = seq_lseek,
+    .release = seq_release_net,
 };
 
 
@@ -1670,9 +1668,9 @@ int __init nft_gen_flow_offload_proc_init(void)
         return rc;
     }
 
-	pflow = proc_create("nf_ct_offloaded_flows", 0440, 
-	                            init_net.proc_net, 
-	                            &offloaded_flow_fops);
+    pflow = proc_create("nf_ct_offloaded_flows", 0440, 
+                                init_net.proc_net, 
+                                &offloaded_flow_fops);
     if (!pflow) {
         pr_debug("can't make nf_ct_offloaded_flows proc_entry");
         return rc;
