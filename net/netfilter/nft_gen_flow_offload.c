@@ -172,7 +172,7 @@ struct nf_gen_flow_offload_entry {
     struct rcu_head             rcu_head;
     struct spinlock             dep_lock; // FIXME, narrow down spin_lock, don't call user callback with locked.
     struct list_head            deps;
-    struct nf_gen_flow_ct_stat  stats;
+    struct nf_gen_flow_ct_stat stats[FLOW_OFFLOAD_DIR_MAX];
 };
 
 static inline void tstat_added_inc(struct nf_gen_flow_offload_table *tbl)
@@ -1090,7 +1090,7 @@ _flowtable_lookup(const struct net *net,
 static int nft_gen_flow_offload_stats(struct nf_gen_flow_offload *flow)
 {
     struct nf_gen_flow_offload_entry *e;
-    u64 last_used;
+    u64 last_used_0, last_used_1;
     struct flow_offload_dep_ops * ops;
 
     e = container_of(flow, struct nf_gen_flow_offload_entry, flow);
@@ -1100,16 +1100,18 @@ static int nft_gen_flow_offload_stats(struct nf_gen_flow_offload *flow)
     if (ops && ops->get_stats) {
         /* retrieve stats by callbacks */
         spin_lock(&e->dep_lock);
-        last_used = e->stats.last_used;
-        ops->get_stats(&e->stats, &e->deps);
+        last_used_0 = max(e->stats[FLOW_OFFLOAD_DIR_ORIGINAL].last_used, 
+                          e->stats[FLOW_OFFLOAD_DIR_REPLY].last_used);
+        flow_dep_ops->get_stats(e->stats, &e->deps);
         spin_unlock(&e->dep_lock);
 
         /* update timeout with new last_used value, last_used is set as jiffies in drv;
            When TCP is disconnected by FIN, conntrack conneciton may be held by IPS_OFFLOAD
            until it is unset */
-
-        if (e->stats.last_used > last_used)
-            flow->timeout = e->stats.last_used + offloaded_ct_timeout;
+        last_used_1 = max(e->stats[FLOW_OFFLOAD_DIR_ORIGINAL].last_used, 
+                          e->stats[FLOW_OFFLOAD_DIR_REPLY].last_used);
+        if (last_used_1 > last_used_0)
+            flow->timeout = last_used_1 + offloaded_ct_timeout;
         pr_debug("get_stats: new timeout %llu", flow->timeout);
     }
     rcu_read_unlock();
@@ -1559,6 +1561,49 @@ static const char* l4proto_name(u16 proto)
     return "unknown";
 }
 
+static void
+_print_tuple(struct seq_file *s, const struct nf_conntrack_tuple *tuple,
+            const struct nf_conntrack_l3proto *l3proto,
+            const struct nf_conntrack_l4proto *l4proto)
+{
+    switch (l3proto->l3proto) {
+    case NFPROTO_IPV4:
+        seq_printf(s, "src=%pI4 dst=%pI4 ",
+               &tuple->src.u3.ip, &tuple->dst.u3.ip);
+        break;
+    case NFPROTO_IPV6:
+        seq_printf(s, "src=%pI6 dst=%pI6 ",
+               tuple->src.u3.ip6, tuple->dst.u3.ip6);
+        break;
+    default:
+        break;
+    }
+
+    switch (l4proto->l4proto) {
+    case IPPROTO_TCP:
+        seq_printf(s, "sport=%hu dport=%hu ",
+               ntohs(tuple->src.u.tcp.port),
+               ntohs(tuple->dst.u.tcp.port));
+        break;
+    case IPPROTO_UDPLITE: /* fallthrough */
+    case IPPROTO_UDP:
+        seq_printf(s, "sport=%hu dport=%hu ",
+               ntohs(tuple->src.u.udp.port),
+               ntohs(tuple->dst.u.udp.port));
+    default:
+        break;
+    }
+}
+
+static void
+_print_stats(struct seq_file *s, struct nf_gen_flow_ct_stat * stats)
+{
+    seq_printf(s, "packets=%llu bytes=%llu lastused=%llu\n",
+        (unsigned long long)stats->packets,
+        (unsigned long long)stats->bytes,
+        (unsigned long long)stats->last_used);
+}
+
 static int offloaded_flow_seq_show(struct seq_file *s, void *v)
 {
     struct nf_gen_flow_offload_tuple_rhash *thash = v;
@@ -1594,40 +1639,15 @@ static int offloaded_flow_seq_show(struct seq_file *s, void *v)
            l3proto_name(l3proto->l3proto), nf_ct_l3num(ct),
            l4proto_name(l4proto->l4proto), nf_ct_protonum(ct));
 
-    switch (l3proto->l3proto) {
-    case NFPROTO_IPV4:
-        seq_printf(s, "src=%pI4 dst=%pI4 ",
-               &thash->tuple.src.u3.ip, &thash->tuple.dst.u3.ip);
-        break;
-    case NFPROTO_IPV6:
-        seq_printf(s, "src=%pI6 dst=%pI6 ",
-               thash->tuple.src.u3.ip6, thash->tuple.dst.u3.ip6);
-        break;
-    default:
-        break;
-    }
-
-    switch (l4proto->l4proto) {
-    case IPPROTO_TCP:
-        seq_printf(s, "sport=%hu dport=%hu ",
-               ntohs(thash->tuple.src.u.tcp.port),
-               ntohs(thash->tuple.dst.u.tcp.port));
-        break;
-    case IPPROTO_UDPLITE: /* fallthrough */
-    case IPPROTO_UDP:
-        seq_printf(s, "sport=%hu dport=%hu ",
-               ntohs(thash->tuple.src.u.udp.port),
-               ntohs(thash->tuple.dst.u.udp.port));
-    default:
-        break;
-    }
+    _print_tuple(s, &entry->flow.tuplehash[FLOW_OFFLOAD_DIR_ORIGINAL].tuple,
+                 l3proto, l4proto);
+    _print_stats(s, &entry->stats[FLOW_OFFLOAD_DIR_ORIGINAL]);
 
     seq_printf(s, "zone=%u ", thash->zone.id);
 
-     seq_printf(s, "packets=%llu bytes=%llu lastused=%llu\n",
-            (unsigned long long)entry->stats.packets,
-            (unsigned long long)entry->stats.bytes,
-            (unsigned long long)entry->stats.last_used);
+    _print_tuple(s, &entry->flow.tuplehash[FLOW_OFFLOAD_DIR_REPLY].tuple,
+                 l3proto, l4proto);
+    _print_stats(s, &entry->stats[FLOW_OFFLOAD_DIR_REPLY]);
 
     return 0;
 }

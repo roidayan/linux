@@ -201,6 +201,7 @@ enum {
 	MLX5E_TC_FLOW_INIT_DONE	= BIT(MLX5E_TC_FLOW_BASE + 5),
 	MLX5E_TC_FLOW_SIMPLE    = BIT(MLX5E_TC_FLOW_BASE + 6),
 	MLX5E_TC_FLOW_CT	= BIT(MLX5E_TC_FLOW_BASE + 7),
+	MLX5E_TC_FLOW_CT_ORIG   = BIT(MLX5E_TC_FLOW_BASE + 8)
 };
 
 struct mlx5e_miniflow;
@@ -4496,9 +4497,14 @@ static struct mlx5e_tc_flow *miniflow_ct_flow_alloc(struct mlx5e_priv *priv,
 	struct mlx5e_tc_flow_parse_attr *parse_attr;
 	struct mlx5e_tc_flow *flow;
 	int err;
+	int flow_flag = MLX5E_TC_FLOW_ESWITCH | MLX5E_TC_FLOW_CT;
+
+	if (ct_tuple->tuple.dst.dir == IP_CT_DIR_ORIGINAL) {
+        flow_flag |= MLX5E_TC_FLOW_CT_ORIG;
+	}
 
 	err = mlx5e_alloc_flow(priv, 0 /* cookie */, U32_MAX /* handle */,
-			       MLX5E_TC_FLOW_ESWITCH | MLX5E_TC_FLOW_CT,
+			       flow_flag,
 			       GFP_ATOMIC, &parse_attr, &flow);
 	if (err)
 		return NULL;
@@ -5099,19 +5105,22 @@ void ct_flow_offload_get_stats(struct nf_gen_flow_ct_stat *ct_stat, struct list_
 {
 	struct mlx5e_tc_flow *flow;
 	u64 bytes, packets, lastuse;
+	int dir;
 
 	trace("ct_flow_offload_get_stats");
 
 	list_for_each_entry(flow, head, nft_node) {
 		struct mlx5_fc *counter = flow->dummy_counter;
 
+		dir = !(atomic_read(&flow->flags) & MLX5E_TC_FLOW_CT_ORIG);
+        
 		mlx5_fc_query_cached(counter, &bytes, &packets, &lastuse);
-		ct_stat->bytes += bytes;
-		ct_stat->packets += packets;
-		ct_stat->last_used = max(ct_stat->last_used, lastuse);
+		ct_stat[dir].bytes += bytes;
+		ct_stat[dir].packets += packets;
+		ct_stat[dir].last_used = max(ct_stat[dir].last_used, lastuse);
 	}
 
-	trace("bytes: %llu, packets: %llu, lastuse: %llu", ct_stat->bytes, ct_stat->packets, ct_stat->last_used);
+//	trace("bytes: %llu, packets: %llu, lastuse: %llu", ct_stat->bytes, ct_stat->packets, ct_stat->last_used);
 }
 
 void ct_flow_offload_del_flow(struct mlx5e_tc_flow *flow)
