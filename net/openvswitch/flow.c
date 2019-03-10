@@ -861,7 +861,7 @@ int ovs_flow_key_extract(const struct ip_tunnel_info *tun_info,
 	if (res < 0)
 		return res;
 	key->mac_proto = res;
-	key->recirc_id = 0;
+	key->recirc_id = OVS_CB(skb)->recirc_id;
 
 	err = key_extract(skb, key);
 	if (!err)
