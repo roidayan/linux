@@ -154,6 +154,41 @@ static bool mlx5e_is_simple_flow(struct mlx5e_tc_flow *flow)
 	return !!(atomic_read(&flow->flags) & MLX5E_TC_FLOW_SIMPLE);
 }
 
+static DEFINE_SPINLOCK(fc_lock);
+static LLIST_HEAD(fc_list);
+
+static struct mlx5_fc *mlx5e_fc_alloc(struct mlx5_core_dev *dev, bool aging)
+{
+	struct llist_node *node;
+
+	spin_lock(&fc_lock);
+	node = llist_del_first(&fc_list);
+	spin_unlock(&fc_lock);
+
+	if (!node)
+		return mlx5_fc_create(dev, aging);
+
+	return llist_entry(node, struct mlx5_fc, freelist);
+}
+
+static void mlx5e_fc_free(struct mlx5_core_dev *dev, struct mlx5_fc *counter)
+{
+	if (counter)
+		llist_add(&counter->freelist, &fc_list);
+}
+
+static void mlx5e_fc_list_cleanup(struct mlx5_core_dev *dev,
+				  struct llist_head *fc_list)
+{
+	struct mlx5_fc *counter, *tmp;
+	struct llist_node *head;
+
+	head = llist_del_all(fc_list);
+	llist_for_each_entry_safe(counter, tmp, head, freelist) {
+		mlx5_fc_destroy(dev, counter);
+	}
+}
+
 static inline u32 hash_mod_hdr_info(struct mod_hdr_key *key)
 {
 	return jhash(key->actions,
@@ -1070,7 +1105,7 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	}
 
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_COUNT) {
-		counter = mlx5_fc_create(esw->dev, true);
+		counter = mlx5e_fc_alloc(esw->dev, true);
 		if (IS_ERR(counter))
 			return PTR_ERR(counter);
 
@@ -1126,7 +1161,7 @@ static void mlx5e_tc_del_fdb_flow_simple(struct mlx5e_priv *priv,
 		mlx5e_detach_mod_hdr(priv, flow);
 
 	if (attr->action & MLX5_FLOW_CONTEXT_ACTION_COUNT)
-		mlx5_fc_destroy(esw->dev, attr->counter);
+		mlx5e_fc_free(esw->dev, attr->counter);
 
 }
 
@@ -3916,6 +3951,8 @@ void mlx5e_tc_esw_cleanup(struct mlx5e_priv *priv)
 	struct rhashtable *tc_ht = get_tc_ht(priv);
 
 	rhashtable_free_and_destroy(tc_ht, _mlx5e_tc_del_flow, NULL);
+	/* TODO: use the workqueue to speed it up? */
+	mlx5e_fc_list_cleanup(priv->mdev, &fc_list);
 	miniflow_cache_destroy(priv);
 }
 
