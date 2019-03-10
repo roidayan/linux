@@ -45,6 +45,7 @@
 #include <net/tc_act/tc_tunnel_key.h>
 #include <net/tc_act/tc_pedit.h>
 #include <net/tc_act/tc_csum.h>
+#include <net/tc_act/tc_ct.h>
 #include <net/vxlan.h>
 #include <net/arp.h>
 #include "en.h"
@@ -3430,6 +3431,11 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 
 		if (is_tcf_tunnel_release(a)) {
 			action |= MLX5_FLOW_CONTEXT_ACTION_DECAP;
+			continue;
+		}
+
+		if (is_tcf_ct(a)) {
+			action |= MLX5_FLOW_CONTEXT_ACTION_CT;
 			continue;
 		}
 
