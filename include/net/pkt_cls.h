@@ -730,6 +730,10 @@ struct tc_cls_flower_offload {
 	struct fl_flow_key *key;
 	struct tcf_exts *exts;
 	u32 classid;
+
+	/* FIXME: ugly */
+	u8 ct_state_key;
+	u8 ct_state_mask;
 };
 
 enum tc_matchall_command {
