@@ -93,6 +93,7 @@ struct mlx5e_tc_flow {
 	struct mlx5e_hairpin_entry *hpe; /* attached hairpin instance */
 	struct list_head	hairpin; /* flows sharing the same hairpin */
 	refcount_t		refcnt;
+	struct list_head        tmp_list;
 	struct rcu_head		rcu_head;
 	union {
 		struct mlx5_esw_flow_attr esw_attr[0];
@@ -1169,6 +1170,17 @@ static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
 	}
 }
 
+static void mlx5e_put_flow_list(struct mlx5e_priv *priv,
+				struct list_head *flow_list)
+{
+	struct mlx5e_tc_flow *flow, *tmp;
+
+ 	list_for_each_entry_safe(flow, tmp, flow_list, tmp_list) {
+		list_del(&flow->tmp_list);
+		mlx5e_flow_put(priv, flow);
+	}
+}
+
 void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 			      struct mlx5e_encap_entry *e)
 {
@@ -1177,6 +1189,7 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 	struct mlx5e_tc_flow *flow, *tmp;
 	struct mlx5_flow_handle *rule;
 	struct mlx5_flow_spec *spec;
+	LIST_HEAD(added_flows);
 	u32 encap_id;
 	int err;
 
@@ -1189,16 +1202,17 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 			       err);
 		return;
 	}
-	spin_lock(&e->encap_entry_lock);
+
+	mlx5e_rep_queue_neigh_stats_work(priv);
+	mutex_lock(&e->encap_entry_lock);
 	e->encap_id = encap_id;
 	e->flags |= MLX5_ENCAP_ENTRY_VALID;
-	spin_unlock(&e->encap_entry_lock);
-	mlx5e_rep_queue_neigh_stats_work(priv);
 
 	list_for_each_entry_safe(flow, tmp, &e->flows, encap) {
 		if (IS_ERR(mlx5e_flow_get(flow)))
 			continue;
 
+		list_add(&flow->tmp_list, &added_flows);
 		esw_attr = flow->esw_attr;
 		esw_attr->encap_id = e->encap_id;
 		spec = &esw_attr->parse_attr->spec;
@@ -1209,17 +1223,17 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 			err = PTR_ERR(rule);
 			mlx5_core_warn(priv->mdev, "Failed to update cached encapsulation flow, %d\n",
 				       err);
-			goto loop_cont;
+			continue;
 		}
 
 		mlx5e_tc_unoffload_from_slow_path(esw, flow, &slow_attr);
 		flow->rule[0] = rule;
 		/* was unset when slow path rule removed */
 		mlx5e_set_flow_flag_mb_before(flow, MLX5E_TC_FLOW_OFFLOADED);
-
-loop_cont:
-		mlx5e_flow_put(priv, flow);
 	}
+
+	mutex_unlock(&e->encap_entry_lock);
+	mlx5e_put_flow_list(priv, &added_flows);
 }
 
 void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
@@ -1230,12 +1244,15 @@ void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
 	struct mlx5e_tc_flow *flow, *tmp;
 	struct mlx5_flow_handle *rule;
 	struct mlx5_flow_spec *spec;
+	LIST_HEAD(deleted_flows);
 	int err;
 
+	mutex_lock(&e->encap_entry_lock);
 	list_for_each_entry_safe(flow, tmp, &e->flows, encap) {
 		if (IS_ERR(mlx5e_flow_get(flow)))
 			continue;
 
+		list_add(&flow->tmp_list, &deleted_flows);
 		spec = &flow->esw_attr->parse_attr->spec;
 
 		/* update from encap rule to slow path rule */
@@ -1245,24 +1262,21 @@ void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
 			err = PTR_ERR(rule);
 			mlx5_core_warn(priv->mdev, "Failed to update slow path (encap) flow, %d\n",
 				       err);
-			goto loop_cont;
+			continue;
 		}
 
 		mlx5e_tc_unoffload_fdb_rules(esw, flow, flow->esw_attr);
 		flow->rule[0] = rule;
 		/* was unset when fast path rule removed */
 		mlx5e_set_flow_flag_mb_before(flow, MLX5E_TC_FLOW_OFFLOADED);
-
-loop_cont:
-		mlx5e_flow_put(priv, flow);
 	}
 
 	/* we know that the encap is valid */
-	spin_lock(&e->encap_entry_lock);
 	e->flags &= ~MLX5_ENCAP_ENTRY_VALID;
-	spin_unlock(&e->encap_entry_lock);
-
 	mlx5_packet_reformat_dealloc(priv->mdev, e->encap_id);
+	mutex_unlock(&e->encap_entry_lock);
+
+	mlx5e_put_flow_list(priv, &deleted_flows);
 }
 
 static struct mlx5_fc *mlx5e_tc_get_counter(struct mlx5e_tc_flow *flow)
@@ -1280,7 +1294,7 @@ mlx5e_get_next_encap_flow(struct mlx5e_encap_entry *e,
 	struct mlx5e_tc_flow *next = NULL;
 	bool found = false;
 
-	spin_lock(&e->encap_entry_lock);
+	mutex_lock(&e->encap_entry_lock);
 
 	if (flow) {
 		next = flow;
@@ -1297,7 +1311,7 @@ mlx5e_get_next_encap_flow(struct mlx5e_encap_entry *e,
 			}
 	}
 
-	spin_unlock(&e->encap_entry_lock);
+	mutex_unlock(&e->encap_entry_lock);
 
 	if (flow)
 		mlx5e_flow_put(netdev_priv(e->out_dev), flow);
@@ -1408,6 +1422,7 @@ void mlx5e_encap_put(struct mlx5e_priv *priv, struct mlx5e_encap_entry *e)
 		if (e->flags & MLX5_ENCAP_ENTRY_VALID)
 			mlx5_packet_reformat_dealloc(priv->mdev, e->encap_id);
 
+		mutex_destroy(&e->encap_entry_lock);
 		spin_lock(&esw->offloads.encap_tbl_lock);
 		hash_del_rcu(&e->encap_hlist);
 		spin_unlock(&esw->offloads.encap_tbl_lock);
@@ -1425,9 +1440,9 @@ static void mlx5e_detach_encap(struct mlx5e_priv *priv,
 	if (!e)
 		return;
 
-	spin_lock(&e->encap_entry_lock);
+	mutex_lock(&e->encap_entry_lock);
 	list_del(&flow->encap);
-	spin_unlock(&e->encap_entry_lock);
+	mutex_unlock(&e->encap_entry_lock);
 
 	mlx5e_encap_put(priv, e);
 	flow->e = NULL;
@@ -3048,7 +3063,7 @@ mlx5e_encap_get_create(struct mlx5e_priv *priv, struct ip_tunnel_info *tun_info,
 	if (!e)
 		return ERR_PTR(-ENOMEM);
 
-	spin_lock_init(&e->encap_entry_lock);
+	mutex_init(&e->encap_entry_lock);
 	e->tun_info = *tun_info;
 	e->tunnel_type = tunnel_type;
 	INIT_LIST_HEAD(&e->flows);
@@ -3126,14 +3141,14 @@ vxlan_encap_offload_err:
 		return PTR_ERR(e);
 
 	flow->e = e;
-	spin_lock(&e->encap_entry_lock);
+	mutex_lock(&e->encap_entry_lock);
 	list_add(&flow->encap, &e->flows);
 	*encap_dev = e->out_dev;
 	if (e->flags & MLX5_ENCAP_ENTRY_VALID)
 		attr->encap_id = e->encap_id;
 	else
 		err = -EAGAIN;
-	spin_unlock(&e->encap_entry_lock);
+	mutex_unlock(&e->encap_entry_lock);
 
 	return err;
 }
@@ -3426,6 +3441,7 @@ mlx5e_alloc_flow(struct mlx5e_priv *priv, int attr_size,
 	INIT_LIST_HEAD(&flow->encap);
 	INIT_LIST_HEAD(&flow->mod_hdr);
 	INIT_LIST_HEAD(&flow->hairpin);
+	INIT_LIST_HEAD(&flow->tmp_list);
 	refcount_set(&flow->refcnt, 1);
 
 	err = parse_cls_flower(priv, flow, &parse_attr->spec, f);

@@ -35,6 +35,7 @@
 
 #include <net/ip_tunnels.h>
 #include <linux/rhashtable.h>
+#include <linux/mutex.h>
 #include "eswitch.h"
 #include "en.h"
 
@@ -121,7 +122,7 @@ enum {
 
 struct mlx5e_encap_entry {
 	/* protects encap entry state */
-	spinlock_t encap_entry_lock;
+	struct mutex encap_entry_lock;
 
 	/* attached neigh hash entry */
 	struct mlx5e_neigh_hash_entry *nhe;
