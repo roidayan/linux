@@ -76,6 +76,7 @@ enum {
 	MLX5E_TC_FLOW_HAIRPIN	= BIT(MLX5E_TC_FLOW_BASE + 3),
 	MLX5E_TC_FLOW_HAIRPIN_RSS = BIT(MLX5E_TC_FLOW_BASE + 4),
 	MLX5E_TC_FLOW_SLOW	  = BIT(MLX5E_TC_FLOW_BASE + 5),
+	MLX5E_TC_FLOW_INIT_DONE	  = BIT(MLX5E_TC_FLOW_BASE + 6),
 };
 
 #define MLX5E_TC_MAX_SPLITS 1
@@ -172,7 +173,9 @@ static void mlx5e_tc_del_flow(struct mlx5e_priv *priv,
 
 static struct mlx5e_tc_flow *mlx5e_flow_get(struct mlx5e_tc_flow *flow)
 {
-	if (!flow || !refcount_inc_not_zero(&flow->refcnt))
+	if (!flow ||
+	    !(atomic_read_acquire(&flow->flags) & MLX5E_TC_FLOW_INIT_DONE) ||
+	    !refcount_inc_not_zero(&flow->refcnt))
 		return ERR_PTR(-EINVAL);
 	return flow;
 }
@@ -3493,7 +3496,8 @@ mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 		flow->esw_attr->parse_attr = NULL;
 	}
 
-	mlx5e_set_flow_flag_mb_before(flow, MLX5E_TC_FLOW_OFFLOADED);
+	mlx5e_set_flow_flag_mb_before(flow, MLX5E_TC_FLOW_OFFLOADED |
+				      MLX5E_TC_FLOW_INIT_DONE);
 	*__flow = flow;
 
 	return 0;
@@ -3534,7 +3538,8 @@ mlx5e_add_nic_flow(struct mlx5e_priv *priv,
 	if (err)
 		goto err_free;
 
-	mlx5e_set_flow_flag_mb_before(flow, MLX5E_TC_FLOW_OFFLOADED);
+	mlx5e_set_flow_flag_mb_before(flow, MLX5E_TC_FLOW_OFFLOADED |
+				      MLX5E_TC_FLOW_INIT_DONE);
 	kfree(parse_attr->mod_hdr_actions);
 	kvfree(parse_attr);
 	*__flow = flow;
