@@ -502,7 +502,8 @@ static void mlx5e_rep_neigh_stats_work(struct work_struct *work)
 static void mlx5e_rep_update_flows(struct mlx5e_priv *priv,
 				   struct mlx5e_encap_entry *e,
 				   bool neigh_connected,
-				   unsigned char ha[ETH_ALEN])
+				   unsigned char ha[ETH_ALEN],
+				   unsigned long n_updated)
 {
 	struct ethhdr *eth = (struct ethhdr *)e->encap_header;
 
@@ -510,13 +511,13 @@ static void mlx5e_rep_update_flows(struct mlx5e_priv *priv,
 
 	if ((e->flags & MLX5_ENCAP_ENTRY_VALID) &&
 	    (!neigh_connected || !ether_addr_equal(e->h_dest, ha)))
-		mlx5e_tc_encap_flows_del(priv, e);
+		mlx5e_tc_encap_flows_del(priv, e, n_updated);
 
 	if (neigh_connected && !(e->flags & MLX5_ENCAP_ENTRY_VALID)) {
 		ether_addr_copy(e->h_dest, ha);
 		ether_addr_copy(eth->h_dest, ha);
 
-		mlx5e_tc_encap_flows_add(priv, e);
+		mlx5e_tc_encap_flows_add(priv, e, n_updated);
 	}
 }
 
@@ -528,6 +529,7 @@ static void mlx5e_rep_neigh_update(struct work_struct *work)
 	struct neighbour *n = nhe->n;
 	unsigned char ha[ETH_ALEN];
 	struct mlx5e_priv *priv;
+	unsigned long n_updated;
 	LIST_HEAD(update_list);
 	bool neigh_connected;
 	bool encap_connected;
@@ -544,6 +546,7 @@ static void mlx5e_rep_neigh_update(struct work_struct *work)
 	memcpy(ha, n->ha, ETH_ALEN);
 	nud_state = n->nud_state;
 	dead = n->dead;
+	n_updated = n->updated;
 	read_unlock_bh(&n->lock);
 
 	neigh_connected = (nud_state & NUD_VALID) && !dead;
@@ -570,7 +573,8 @@ static void mlx5e_rep_neigh_update(struct work_struct *work)
 
 		if (encap_connected != neigh_connected ||
 		    !ether_addr_equal(e->h_dest, ha))
-			mlx5e_rep_update_flows(priv, e, neigh_connected, ha);
+			mlx5e_rep_update_flows(priv, e, neigh_connected, ha,
+					       n_updated);
 		mlx5e_encap_put(priv, e);
 	}
 

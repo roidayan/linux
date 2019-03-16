@@ -89,6 +89,7 @@ struct mlx5e_tc_flow {
 	struct mlx5_flow_handle *rule[MLX5E_TC_MAX_SPLITS + 1];
 	struct mlx5e_encap_entry *e; /* attached encap instance */
 	struct list_head	encap;   /* flows sharing the same encap ID */
+	unsigned long encap_init_jiffies;
 	struct mlx5e_mod_hdr_entry *mh; /* attached mod header instance */
 	struct list_head	mod_hdr; /* flows sharing the same mod hdr ID */
 	struct mlx5e_hairpin_entry *hpe; /* attached hairpin instance */
@@ -1185,7 +1186,8 @@ static void mlx5e_put_flow_list(struct mlx5e_priv *priv,
 }
 
 void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
-			      struct mlx5e_encap_entry *e)
+			      struct mlx5e_encap_entry *e,
+			      unsigned long n_updated)
 {
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 	struct mlx5_esw_flow_attr slow_attr, *esw_attr;
@@ -1210,6 +1212,7 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 	mutex_lock(&e->encap_entry_lock);
 	e->encap_id = encap_id;
 	e->flags |= MLX5_ENCAP_ENTRY_VALID;
+	e->updated = n_updated;
 
 	list_for_each_entry_safe(flow, tmp, &e->flows, encap) {
 		if (IS_ERR(mlx5e_flow_get(flow)))
@@ -1240,7 +1243,8 @@ void mlx5e_tc_encap_flows_add(struct mlx5e_priv *priv,
 }
 
 void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
-			      struct mlx5e_encap_entry *e)
+			      struct mlx5e_encap_entry *e,
+			      unsigned long n_updated)
 {
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 	struct mlx5_esw_flow_attr slow_attr;
@@ -1274,6 +1278,7 @@ void mlx5e_tc_encap_flows_del(struct mlx5e_priv *priv,
 		mlx5e_set_flow_flag_mb_before(flow, MLX5E_TC_FLOW_OFFLOADED);
 	}
 
+	e->updated = n_updated;
 	/* we know that the encap is valid */
 	e->flags &= ~MLX5_ENCAP_ENTRY_VALID;
 	mlx5_packet_reformat_dealloc(priv->mdev, e->encap_id);
@@ -1449,6 +1454,63 @@ static void mlx5e_detach_encap(struct mlx5e_priv *priv,
 
 	mlx5e_encap_put(priv, e);
 	flow->e = NULL;
+}
+
+static int mlx5e_reoffload_uninit_flow(struct mlx5e_priv *priv,
+				       struct mlx5e_tc_flow *flow,
+				       struct mlx5e_encap_entry *e)
+{
+	struct mlx5_esw_flow_attr *esw_attr = flow->esw_attr;
+	struct mlx5_flow_spec *spec = &esw_attr->parse_attr->spec;
+	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
+	struct mlx5_esw_flow_attr slow_attr;
+	struct mlx5_flow_handle *rule;
+	int err = 0;
+
+	if (atomic_read(&flow->flags) & MLX5E_TC_FLOW_SLOW)
+		mlx5e_tc_unoffload_from_slow_path(esw, flow, &slow_attr);
+	else
+		mlx5e_tc_unoffload_fdb_rules(esw, flow, flow->esw_attr);
+
+	rule = e->flags & MLX5_ENCAP_ENTRY_VALID ?
+		mlx5e_tc_offload_fdb_rules(esw, flow, spec, esw_attr) :
+		mlx5e_tc_offload_to_slow_path(esw, flow, spec, &slow_attr);
+
+	if (IS_ERR(rule))
+		err = PTR_ERR(rule);
+	else
+		flow->rule[0] = rule;
+
+	return err;
+}
+
+static int mlx5e_tc_update_and_init_done_fdb_flow(struct mlx5e_priv *priv,
+						  struct mlx5e_tc_flow *flow)
+{
+	int err = 0;
+
+	if ((flow->esw_attr->action &
+	     MLX5_FLOW_CONTEXT_ACTION_PACKET_REFORMAT) &&
+	    flow->e) {
+		struct mlx5e_encap_entry *e = flow->e;
+
+		mutex_lock(&e->encap_entry_lock);
+
+		/* Encap neighbor was concurrently updated during flow init. */
+		if (flow->encap_init_jiffies != e->updated)
+			err = mlx5e_reoffload_uninit_flow(priv, flow, e);
+
+		if (!err)
+			mlx5e_set_flow_flag_mb_before(flow,
+						      MLX5E_TC_FLOW_OFFLOADED |
+						      MLX5E_TC_FLOW_INIT_DONE);
+		mutex_unlock(&e->encap_entry_lock);
+	} else {
+		mlx5e_set_flow_flag_mb_before(flow, MLX5E_TC_FLOW_OFFLOADED |
+					      MLX5E_TC_FLOW_INIT_DONE);
+	}
+
+	return err;
 }
 
 static void mlx5e_tc_del_flow(struct mlx5e_priv *priv,
@@ -2786,6 +2848,8 @@ static int mlx5e_encap_entry_attach_update(struct mlx5e_priv *priv,
 		mlx5e_rep_queue_neigh_update_work(priv, e->nhe, n);
 	}
 
+	e->updated = n_updated_new;
+
 	return 0;
 }
 
@@ -3151,6 +3215,7 @@ vxlan_encap_offload_err:
 		attr->encap_id = e->encap_id;
 	else
 		err = -EAGAIN;
+	flow->encap_init_jiffies = e->updated;
 	mutex_unlock(&e->encap_entry_lock);
 
 	return err;
@@ -3496,8 +3561,10 @@ mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 		flow->esw_attr->parse_attr = NULL;
 	}
 
-	mlx5e_set_flow_flag_mb_before(flow, MLX5E_TC_FLOW_OFFLOADED |
-				      MLX5E_TC_FLOW_INIT_DONE);
+	err = mlx5e_tc_update_and_init_done_fdb_flow(priv, flow);
+	if (err)
+		goto err_free;
+
 	*__flow = flow;
 
 	return 0;

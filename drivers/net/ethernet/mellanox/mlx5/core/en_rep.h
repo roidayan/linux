@@ -146,6 +146,7 @@ struct mlx5e_encap_entry {
 	u8 flags;
 	char *encap_header;
 	int encap_size;
+	unsigned long updated;
 	refcount_t refcnt;
 	struct rcu_head rcu;
 };
