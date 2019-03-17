@@ -3335,7 +3335,6 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 				struct mlx5e_tc_flow *flow,
 				struct netlink_ext_ack *extack)
 {
-	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 	struct mlx5_esw_flow_attr *attr = flow->esw_attr;
 	struct mlx5e_rep_priv *rpriv = priv->ppriv;
 	struct ip_tunnel_info *info = NULL;
@@ -3459,20 +3458,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 		}
 
 		if (is_tcf_gact_goto_chain(a)) {
-			u32 dest_chain = tcf_gact_goto_chain_index(a);
-			u32 max_chain = mlx5_eswitch_get_chain_range(esw);
-
-			if (dest_chain <= attr->chain) {
-				NL_SET_ERR_MSG(extack, "Goto earlier chain isn't supported");
-				return -EOPNOTSUPP;
-			}
-			if (dest_chain > max_chain) {
-				NL_SET_ERR_MSG(extack, "Requested destination chain is out of supported range");
-				return -EOPNOTSUPP;
-			}
 			action |= MLX5_FLOW_CONTEXT_ACTION_COUNT;
-			attr->dest_chain = dest_chain;
-
 			continue;
 		}
 
