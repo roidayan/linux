@@ -1324,6 +1324,12 @@ mlx5e_nic_rep_load(struct mlx5_core_dev *dev, struct mlx5_eswitch_rep *rep)
 	if (err)
 		goto  err_neigh_cleanup;
 
+	err = tc_setup_cb_egdev_all_register(rpriv->netdev,
+					     mlx5e_rep_setup_tc_cb_egdev,
+					     priv);
+	if (err)
+		goto err_neigh_cleanup;
+
 	return 0;
 
 err_neigh_cleanup:
@@ -1341,6 +1347,10 @@ mlx5e_nic_rep_unload(struct mlx5_eswitch_rep *rep)
 
 	if (test_bit(MLX5E_STATE_OPENED, &priv->state))
 		mlx5e_remove_sqs_fwd_rules(priv);
+
+	tc_setup_cb_egdev_all_unregister(rpriv->netdev,
+					 mlx5e_rep_setup_tc_cb_egdev,
+					 priv);
 
 	/* clean uplink offloaded TC rules, delete shared tc flow table */
 	mlx5e_tc_esw_cleanup(&rpriv->tc_ht);
