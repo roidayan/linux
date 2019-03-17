@@ -195,7 +195,7 @@ static struct cls_fl_filter *fl_lookup(struct fl_flow_mask *mask,
 				      mask->filter_ht_params);
 }
 
-static u8 fl_ct_get_state(enum ip_conntrack_info ctinfo)
+static u8 fl_ct_get_state(struct nf_conn *ct, enum ip_conntrack_info ctinfo)
 {
 	u8 ct_state = TCA_FLOWER_KEY_CT_FLAGS_TRACKED;
 
@@ -214,6 +214,18 @@ static u8 fl_ct_get_state(enum ip_conntrack_info ctinfo)
 	default:
 		break;
 	}
+
+	if (ct->master)
+		ct_state |= TCA_FLOWER_KEY_CT_FLAGS_RELATED;
+
+	if (ct->status & IPS_SRC_NAT)
+		ct_state |= ct_state & TCA_FLOWER_KEY_CT_FLAGS_REPLY_DIR ?
+				       TCA_FLOWER_KEY_CT_FLAGS_DST_NAT :
+				       TCA_FLOWER_KEY_CT_FLAGS_SRC_NAT;
+	if (ct->status & IPS_DST_NAT)
+		ct_state |= ct_state & TCA_FLOWER_KEY_CT_FLAGS_REPLY_DIR ?
+				       TCA_FLOWER_KEY_CT_FLAGS_SRC_NAT :
+				       TCA_FLOWER_KEY_CT_FLAGS_DST_NAT;
 
 	return ct_state;
 }
@@ -256,7 +268,7 @@ static int fl_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 		skb_key.indev_ifindex = skb->skb_iif;
 		ct = nf_ct_get(skb, &ctinfo);
 		if (ct) {
-			skb_key.ct_state = fl_ct_get_state(ctinfo);
+			skb_key.ct_state = fl_ct_get_state(ct, ctinfo);
 			skb_key.ct_zone = ct->zone.id;
 			skb_key.ct_mark = ct->mark;
 
