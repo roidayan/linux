@@ -925,6 +925,8 @@ static int mlx5e_rep_setup_tc_cb_egdev(enum tc_setup_type type, void *type_data,
 		return mlx5e_rep_setup_tc_cls_flower(priv, type_data, MLX5E_TC_EGRESS);
 	case TC_SETUP_MINIFLOW:
 		return miniflow_configure(priv, type_data);
+	case TC_SETUP_CT:
+		return miniflow_configure_ct(priv, type_data);
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -940,6 +942,8 @@ static int mlx5e_rep_setup_tc_cb(enum tc_setup_type type, void *type_data,
 		return mlx5e_rep_setup_tc_cls_flower(priv, type_data, MLX5E_TC_INGRESS);
 	case TC_SETUP_MINIFLOW:
 		return miniflow_configure(priv, type_data);
+	case TC_SETUP_CT:
+		return miniflow_configure_ct(priv, type_data);
 	default:
 		return -EOPNOTSUPP;
 	}
