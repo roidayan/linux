@@ -55,7 +55,9 @@ esw_put_prio_table(struct mlx5_eswitch *esw, u32 chain, u16 prio, int level);
 
 bool mlx5_eswitch_prios_supported(struct mlx5_eswitch *esw)
 {
-	return (!!(esw->fdb_table.flags & ESW_FDB_CHAINS_AND_PRIOS_SUPPORTED));
+	return false;
+	/* TODO: merge change */
+	/* return (!!(esw->fdb_table.flags & ESW_FDB_CHAINS_AND_PRIOS_SUPPORTED)); */
 }
 
 u32 mlx5_eswitch_get_chain_range(struct mlx5_eswitch *esw)
