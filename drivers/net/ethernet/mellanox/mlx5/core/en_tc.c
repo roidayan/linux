@@ -3341,6 +3341,11 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 		}
 
 		if (is_tcf_pedit(a)) {
+			if (action & MLX5_FLOW_CONTEXT_ACTION_CT) {
+				pr_err("CT action before HDR is not allowed");
+				return -EOPNOTSUPP;
+			}
+
 			err = parse_tc_pedit_action(priv, a, MLX5_FLOW_NAMESPACE_FDB,
 						    parse_attr, extack);
 			if (err)
