@@ -49,6 +49,7 @@
 #include "lib/clock.h"
 #include "en/port.h"
 #include "en/xdp.h"
+#include "miniflow.h"
 
 struct mlx5e_rq_param {
 	u32			rqc[MLX5_ST_SZ_DW(rqc)];
@@ -3411,6 +3412,8 @@ static int mlx5e_setup_tc_block_cb(enum tc_setup_type type, void *type_data,
 	switch (type) {
 	case TC_SETUP_CLSFLOWER:
 		return mlx5e_setup_tc_cls_flower(priv, type_data, MLX5E_TC_INGRESS);
+	case TC_SETUP_MINIFLOW:
+		return miniflow_configure(priv, type_data);
 	default:
 		return -EOPNOTSUPP;
 	}
