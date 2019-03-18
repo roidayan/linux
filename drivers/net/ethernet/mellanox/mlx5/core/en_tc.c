@@ -55,63 +55,6 @@
 #include "fs_core.h"
 #include "en/port.h"
 
-struct mlx5_nic_flow_attr {
-	u32 action;
-	u32 flow_tag;
-	u32 mod_hdr_id;
-	u32 hairpin_tirn;
-	u8 match_level;
-	struct mlx5_flow_table	*hairpin_ft;
-	struct mlx5_fc		*counter;
-};
-
-#define MLX5E_TC_FLOW_BASE (MLX5E_TC_LAST_EXPORTED_BIT + 1)
-
-enum {
-	MLX5E_TC_FLOW_INGRESS	= MLX5E_TC_INGRESS,
-	MLX5E_TC_FLOW_EGRESS	= MLX5E_TC_EGRESS,
-	MLX5E_TC_FLOW_ESWITCH	= BIT(MLX5E_TC_FLOW_BASE),
-	MLX5E_TC_FLOW_NIC	= BIT(MLX5E_TC_FLOW_BASE + 1),
-	MLX5E_TC_FLOW_OFFLOADED	= BIT(MLX5E_TC_FLOW_BASE + 2),
-	MLX5E_TC_FLOW_HAIRPIN	= BIT(MLX5E_TC_FLOW_BASE + 3),
-	MLX5E_TC_FLOW_HAIRPIN_RSS = BIT(MLX5E_TC_FLOW_BASE + 4),
-	MLX5E_TC_FLOW_SLOW	  = BIT(MLX5E_TC_FLOW_BASE + 5),
-	MLX5E_TC_FLOW_INIT_DONE	  = BIT(MLX5E_TC_FLOW_BASE + 6),
-};
-
-#define MLX5E_TC_MAX_SPLITS 1
-
-struct mlx5e_tc_flow {
-	struct rhash_head	node;
-	struct mlx5e_priv	*priv;
-	u64			cookie;
-	atomic_t		flags;
-	struct mlx5_flow_handle *rule[MLX5E_TC_MAX_SPLITS + 1];
-	struct mlx5e_encap_entry *e; /* attached encap instance */
-	struct list_head	encap;   /* flows sharing the same encap ID */
-	unsigned long encap_init_jiffies;
-	struct mlx5e_mod_hdr_entry *mh; /* attached mod header instance */
-	struct list_head	mod_hdr; /* flows sharing the same mod hdr ID */
-	struct mlx5e_hairpin_entry *hpe; /* attached hairpin instance */
-	struct list_head	hairpin; /* flows sharing the same hairpin */
-	refcount_t		refcnt;
-	struct list_head        tmp_list;
-	struct rcu_head		rcu_head;
-	union {
-		struct mlx5_esw_flow_attr esw_attr[0];
-		struct mlx5_nic_flow_attr nic_attr[0];
-	};
-};
-
-struct mlx5e_tc_flow_parse_attr {
-	struct ip_tunnel_info tun_info;
-	struct mlx5_flow_spec spec;
-	int num_mod_hdr_actions;
-	int max_mod_hdr_actions;
-	void *mod_hdr_actions;
-	int mirred_ifindex;
-};
-
 #define MLX5E_TC_TABLE_NUM_GROUPS 4
 #define MLX5E_TC_TABLE_MAX_GROUP_SIZE BIT(16)
 
@@ -166,8 +109,6 @@ struct mlx5e_mod_hdr_entry {
 	refcount_t refcnt;
 	struct rcu_head rcu;
 };
-
-#define MLX5_MH_ACT_SZ MLX5_UN_SZ_BYTES(set_action_in_add_action_in_auto)
 
 static void mlx5e_tc_del_flow(struct mlx5e_priv *priv,
 			      struct mlx5e_tc_flow *flow);
