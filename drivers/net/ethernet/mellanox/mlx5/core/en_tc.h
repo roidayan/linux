@@ -60,6 +60,7 @@ enum {
 	MLX5E_TC_FLOW_SLOW	  = BIT(MLX5E_TC_FLOW_BASE + 5),
 	MLX5E_TC_FLOW_INIT_DONE	  = BIT(MLX5E_TC_FLOW_BASE + 6),
 	MLX5E_TC_FLOW_SIMPLE      = BIT(MLX5E_TC_FLOW_BASE + 7),
+	MLX5E_TC_FLOW_CT          = BIT(MLX5E_TC_FLOW_BASE + 8),
 };
 
 #define MLX5E_TC_MAX_SPLITS 1
@@ -90,6 +91,12 @@ struct mlx5e_tc_flow {
 	refcount_t		refcnt;
 	struct list_head        tmp_list;
 	struct rcu_head		rcu_head;
+
+	struct mlx5e_miniflow   *miniflow;
+	struct mlx5_fc          *dummy_counter;
+	struct list_head        miniflow_list;
+	struct rcu_head		rcu;
+
 	union {
 		struct mlx5_esw_flow_attr esw_attr[0];
 		struct mlx5_nic_flow_attr nic_attr[0];
@@ -139,7 +146,7 @@ int mlx5e_tc_num_filters(struct mlx5e_priv *priv);
 
 void *mlx5e_lookup_tc_ht(struct mlx5e_priv *priv, unsigned long *cookie);
 void mlx5e_flow_put(struct mlx5e_priv *priv,
-		    struct mlx5e_tc_flow *flow);
+                   struct mlx5e_tc_flow *flow);
 int mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 			  struct mlx5e_tc_flow_parse_attr *parse_attr,
 			  struct mlx5e_tc_flow *flow,

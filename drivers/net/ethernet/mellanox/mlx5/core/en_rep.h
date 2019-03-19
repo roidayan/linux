@@ -62,6 +62,7 @@ struct mlx5e_rep_priv {
 	struct list_head       vport_sqs_list;
 	spinlock_t	       tc_ht_lock; /* protects tc_ht */
 	struct rhashtable      tc_ht; /* valid for uplink rep */
+	struct rhashtable      mf_ht;
 };
 
 static inline

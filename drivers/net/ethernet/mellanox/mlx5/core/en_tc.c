@@ -51,6 +51,7 @@
 #include "en_rep.h"
 #include "en_tc.h"
 #include "eswitch.h"
+#include "miniflow.h"
 #include "lib/vxlan.h"
 #include "fs_core.h"
 #include "en/port.h"
@@ -1136,6 +1137,11 @@ static void mlx5e_tc_del_fdb_flow(struct mlx5e_priv *priv,
 
 	if (mlx5e_is_simple_flow(flow)) {
 		mlx5e_tc_del_fdb_flow_simple(priv, flow);
+	} else {
+		mlx5e_del_miniflow_list(flow);
+
+		if (attr->action & MLX5_FLOW_CONTEXT_ACTION_COUNT)
+			mlx5_fc_destroy(priv->mdev, flow->dummy_counter);
 	}
 
 	if (attr->parse_attr) {
@@ -3495,6 +3501,7 @@ mlx5e_alloc_flow(struct mlx5e_priv *priv, int attr_size,
 	INIT_LIST_HEAD(&flow->hairpin);
 	INIT_LIST_HEAD(&flow->tmp_list);
 	refcount_set(&flow->refcnt, 1);
+	INIT_LIST_HEAD(&flow->miniflow_list);
 
 	*__flow = flow;
 	*__parse_attr = parse_attr;
@@ -3692,6 +3699,13 @@ static bool same_flow_direction(struct mlx5e_tc_flow *flow, int flags)
 	return false;
 }
 
+static void mlx5e_flow_defered_put(struct rcu_head *head)
+{
+	struct mlx5e_tc_flow *flow = container_of(head, struct mlx5e_tc_flow, rcu);
+
+	mlx5e_flow_put(flow->priv, flow);
+}
+
 int mlx5e_delete_flower(struct mlx5e_priv *priv,
 			struct tc_cls_flower_offload *f, int flags)
 {
@@ -3709,7 +3723,11 @@ int mlx5e_delete_flower(struct mlx5e_priv *priv,
 	rhashtable_remove_fast(tc_ht, &flow->node, tc_ht_params);
 	mlx5e_unlock_tc_ht(priv);
 
-	mlx5e_flow_put(priv, flow);
+	/* Protect __miniflow_merge() */
+	if (!mlx5e_is_simple_flow(flow))
+		call_rcu(&flow->rcu, mlx5e_flow_defered_put);
+	else
+		mlx5e_flow_put(priv, flow);
 
 	return 0;
 }
@@ -3736,10 +3754,11 @@ int mlx5e_stats_flower(struct mlx5e_priv *priv,
 		goto errout;
 	}
 
-	if (!mlx5e_is_offloaded_flow(flow))
-		goto errout;
+	if (mlx5e_is_offloaded_flow(flow))
+		counter = mlx5e_tc_get_counter(flow);
+	else
+		counter = flow->dummy_counter;
 
-	counter = mlx5e_tc_get_counter(flow);
 	if (!counter)
 		goto errout;
 

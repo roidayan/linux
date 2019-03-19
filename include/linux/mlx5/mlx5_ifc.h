@@ -2422,6 +2422,11 @@ enum {
 	MLX5_FLOW_CONTEXT_ACTION_VLAN_PUSH = 0x100,
 	MLX5_FLOW_CONTEXT_ACTION_VLAN_POP_2  = 0x400,
 	MLX5_FLOW_CONTEXT_ACTION_VLAN_PUSH_2 = 0x800,
+	/**
+	 * XXX: following actions are not supported in hw
+	 * and being removed from flow before offloading it.
+	 */
+	MLX5_FLOW_CONTEXT_ACTION_CT	   = 0x1000,
 };
 
 struct mlx5_ifc_vlan_bits {
