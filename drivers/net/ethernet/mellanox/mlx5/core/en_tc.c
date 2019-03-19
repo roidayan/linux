@@ -3888,14 +3888,32 @@ void mlx5e_tc_nic_cleanup(struct mlx5e_priv *priv)
 	mutex_destroy(&tc->t_lock);
 }
 
-int mlx5e_tc_esw_init(struct rhashtable *tc_ht)
+int mlx5e_tc_esw_init(struct mlx5e_priv *priv)
 {
-	return rhashtable_init(tc_ht, &tc_ht_params);
+	struct rhashtable *tc_ht = get_tc_ht(priv);
+	int err;
+
+	err = miniflow_cache_init(priv);
+	if (err)
+		return err;
+
+	err = rhashtable_init(tc_ht, &tc_ht_params);
+	if (err)
+		goto err_tc_ht;
+
+	return 0;
+
+err_tc_ht:
+	miniflow_cache_destroy(priv);
+	return err;
 }
 
-void mlx5e_tc_esw_cleanup(struct rhashtable *tc_ht)
+void mlx5e_tc_esw_cleanup(struct mlx5e_priv *priv)
 {
+	struct rhashtable *tc_ht = get_tc_ht(priv);
+
 	rhashtable_free_and_destroy(tc_ht, _mlx5e_tc_del_flow, NULL);
+	miniflow_cache_destroy(priv);
 }
 
 int mlx5e_tc_num_filters(struct mlx5e_priv *priv)

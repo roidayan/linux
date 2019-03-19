@@ -1320,7 +1320,7 @@ mlx5e_nic_rep_load(struct mlx5_core_dev *dev, struct mlx5_eswitch_rep *rep)
 
 	/* init shared tc flow table */
 	spin_lock_init(&rpriv->tc_ht_lock);
-	err = mlx5e_tc_esw_init(&rpriv->tc_ht);
+	err = mlx5e_tc_esw_init(priv);
 	if (err)
 		goto  err_neigh_cleanup;
 
@@ -1353,7 +1353,7 @@ mlx5e_nic_rep_unload(struct mlx5_eswitch_rep *rep)
 					 priv);
 
 	/* clean uplink offloaded TC rules, delete shared tc flow table */
-	mlx5e_tc_esw_cleanup(&rpriv->tc_ht);
+	mlx5e_tc_esw_cleanup(priv);
 
 	mlx5e_rep_neigh_cleanup(rpriv);
 }
