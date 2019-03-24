@@ -3465,7 +3465,7 @@ static void mlx5e_unlock_tc_ht(struct mlx5e_priv *priv)
 
 int
 mlx5e_alloc_flow(struct mlx5e_priv *priv, int attr_size,
-		 struct tc_cls_flower_offload *f, int flow_flags,
+		 u64 cookie, int flow_flags,
 		 struct mlx5e_tc_flow_parse_attr **__parse_attr,
 		 struct mlx5e_tc_flow **__flow)
 {
@@ -3480,7 +3480,7 @@ mlx5e_alloc_flow(struct mlx5e_priv *priv, int attr_size,
 		goto err_free;
 	}
 
-	flow->cookie = f->cookie;
+	flow->cookie = cookie;
 	atomic_set(&flow->flags, flow_flags);
 	flow->priv = priv;
 	INIT_LIST_HEAD(&flow->encap);
@@ -3488,10 +3488,6 @@ mlx5e_alloc_flow(struct mlx5e_priv *priv, int attr_size,
 	INIT_LIST_HEAD(&flow->hairpin);
 	INIT_LIST_HEAD(&flow->tmp_list);
 	refcount_set(&flow->refcnt, 1);
-
-	err = parse_cls_flower(priv, flow, &parse_attr->spec, f);
-	if (err)
-		goto err_free;
 
 	*__flow = flow;
 	*__parse_attr = parse_attr;
@@ -3530,10 +3526,14 @@ mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 
 	flow_flags |= MLX5E_TC_FLOW_SIMPLE | MLX5E_TC_FLOW_ESWITCH;
 	attr_size  = sizeof(struct mlx5_esw_flow_attr);
-	err = mlx5e_alloc_flow(priv, attr_size, f, flow_flags,
+	err = mlx5e_alloc_flow(priv, attr_size, f->cookie, flow_flags,
 			       &parse_attr, &flow);
 	if (err)
 		goto out;
+
+	err = parse_cls_flower(priv, flow, &parse_attr->spec, f);
+	if (err)
+		goto err_parse_flow;
 
 	flow->esw_attr->chain = f->common.chain_index;
 	flow->esw_attr->prio = TC_H_MAJ(f->common.prio) >> 16;
@@ -3557,6 +3557,9 @@ mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 
 	return 0;
 
+err_parse_flow:
+	kfree(parse_attr->mod_hdr_actions);
+	kvfree(parse_attr);
 err_free:
 	mlx5e_flow_put(priv, flow);
 out:
@@ -3580,10 +3583,14 @@ mlx5e_add_nic_flow(struct mlx5e_priv *priv,
 
 	flow_flags |= MLX5E_TC_FLOW_SIMPLE | MLX5E_TC_FLOW_NIC;
 	attr_size  = sizeof(struct mlx5_nic_flow_attr);
-	err = mlx5e_alloc_flow(priv, attr_size, f, flow_flags,
+	err = mlx5e_alloc_flow(priv, attr_size, f->cookie, flow_flags,
 			       &parse_attr, &flow);
 	if (err)
 		goto out;
+
+	err = parse_cls_flower(priv, flow, &parse_attr->spec, f);
+	if (err)
+		goto err_free;
 
 	err = parse_tc_nic_actions(priv, f->exts, parse_attr, flow, extack);
 	if (err)

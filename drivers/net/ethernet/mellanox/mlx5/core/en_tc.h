@@ -144,7 +144,7 @@ int mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 			  struct mlx5e_tc_flow *flow,
 			  struct netlink_ext_ack *extack);
 int mlx5e_alloc_flow(struct mlx5e_priv *priv, int attr_size,
-		     struct tc_cls_flower_offload *f, int flow_flags,
+		     u64 cookie, int flow_flags,
 		     struct mlx5e_tc_flow_parse_attr **__parse_attr,
 		     struct mlx5e_tc_flow **__flow);
 int alloc_mod_hdr_actions(struct mlx5e_priv *priv,
