@@ -3463,6 +3463,13 @@ static void mlx5e_unlock_tc_ht(struct mlx5e_priv *priv)
 	}
 }
 
+void *mlx5e_lookup_tc_ht(struct mlx5e_priv *priv, unsigned long *cookie)
+{
+	struct rhashtable *tc_ht = get_tc_ht(priv);
+
+	return rhashtable_lookup_fast(tc_ht, cookie, tc_ht_params);
+}
+
 int
 mlx5e_alloc_flow(struct mlx5e_priv *priv, int attr_size,
 		 u64 cookie, int flow_flags, gfp_t flags,

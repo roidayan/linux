@@ -137,6 +137,7 @@ void mlx5e_tc_update_neigh_used_value(struct mlx5e_neigh_hash_entry *nhe);
 
 int mlx5e_tc_num_filters(struct mlx5e_priv *priv);
 
+void *mlx5e_lookup_tc_ht(struct mlx5e_priv *priv, unsigned long *cookie);
 void mlx5e_flow_put(struct mlx5e_priv *priv,
 		    struct mlx5e_tc_flow *flow);
 int mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
