@@ -2077,6 +2077,24 @@ static int __parse_cls_flower(struct mlx5e_priv *priv,
 	return 0;
 }
 
+static bool is_valid_ct_state(struct mlx5e_priv *priv,
+			      struct tc_cls_flower_offload *f)
+{
+	u8 ct_state = (f->ct_state_key & f->ct_state_mask);
+
+	/* Allow only -trk and +trk+est only */
+	if (!(ct_state == 0 ||
+	      ct_state == (TCA_FLOWER_KEY_CT_FLAGS_TRACKED |
+			   TCA_FLOWER_KEY_CT_FLAGS_ESTABLISHED))) {
+		netdev_dbg(priv->netdev,
+			   "Unsupported ct_state used: key/mask: %x/%x\n",
+			   f->ct_state_key, f->ct_state_mask);
+		return false;
+	}
+
+	return true;
+}
+
 static int parse_cls_flower(struct mlx5e_priv *priv,
 			    struct mlx5e_tc_flow *flow,
 			    struct mlx5_flow_spec *spec,
@@ -2090,6 +2108,9 @@ static int parse_cls_flower(struct mlx5e_priv *priv,
 	struct mlx5_eswitch_rep *rep;
 	bool is_eswitch_flow;
 	int err;
+
+	if (!is_valid_ct_state(priv, f))
+		return -EOPNOTSUPP;
 
 	err = __parse_cls_flower(priv, spec, f, &match_level, &tunnel_match_level);
 
