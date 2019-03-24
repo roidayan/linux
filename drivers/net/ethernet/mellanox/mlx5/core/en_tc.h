@@ -136,6 +136,22 @@ void mlx5e_tc_update_neigh_used_value(struct mlx5e_neigh_hash_entry *nhe);
 
 int mlx5e_tc_num_filters(struct mlx5e_priv *priv);
 
+void mlx5e_flow_put(struct mlx5e_priv *priv,
+		    struct mlx5e_tc_flow *flow);
+int mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
+			  struct mlx5e_tc_flow_parse_attr *parse_attr,
+			  struct mlx5e_tc_flow *flow,
+			  struct netlink_ext_ack *extack);
+int mlx5e_alloc_flow(struct mlx5e_priv *priv, int attr_size,
+		     struct tc_cls_flower_offload *f, int flow_flags,
+		     struct mlx5e_tc_flow_parse_attr **__parse_attr,
+		     struct mlx5e_tc_flow **__flow);
+int alloc_mod_hdr_actions(struct mlx5e_priv *priv,
+			  const struct tc_action *a, int namespace,
+			  struct mlx5e_tc_flow_parse_attr *parse_attr);
+int mlx5e_tc_update_and_init_done_fdb_flow(struct mlx5e_priv *priv,
+					   struct mlx5e_tc_flow *flow);
+
 #else /* CONFIG_MLX5_ESWITCH */
 static inline int  mlx5e_tc_nic_init(struct mlx5e_priv *priv) { return 0; }
 static inline void mlx5e_tc_nic_cleanup(struct mlx5e_priv *priv) {}

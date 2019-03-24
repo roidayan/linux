@@ -122,8 +122,8 @@ static struct mlx5e_tc_flow *mlx5e_flow_get(struct mlx5e_tc_flow *flow)
 	return flow;
 }
 
-static void mlx5e_flow_put(struct mlx5e_priv *priv,
-			   struct mlx5e_tc_flow *flow)
+void mlx5e_flow_put(struct mlx5e_priv *priv,
+		    struct mlx5e_tc_flow *flow)
 {
 	if (refcount_dec_and_test(&flow->refcnt)) {
 		mlx5e_tc_del_flow(priv, flow);
@@ -1005,7 +1005,7 @@ mlx5e_tc_unoffload_from_slow_path(struct mlx5_eswitch *esw,
 	atomic_and(~MLX5E_TC_FLOW_SLOW, &flow->flags);
 }
 
-static int
+int
 mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 		      struct mlx5e_tc_flow_parse_attr *parse_attr,
 		      struct mlx5e_tc_flow *flow,
@@ -1432,8 +1432,8 @@ static int mlx5e_reoffload_uninit_flow(struct mlx5e_priv *priv,
 	return err;
 }
 
-static int mlx5e_tc_update_and_init_done_fdb_flow(struct mlx5e_priv *priv,
-						  struct mlx5e_tc_flow *flow)
+int mlx5e_tc_update_and_init_done_fdb_flow(struct mlx5e_priv *priv,
+					   struct mlx5e_tc_flow *flow)
 {
 	int err = 0;
 
@@ -2290,9 +2290,9 @@ static int offload_pedit_fields(struct pedit_headers *masks,
 	return 0;
 }
 
-static int alloc_mod_hdr_actions(struct mlx5e_priv *priv,
-				 const struct tc_action *a, int namespace,
-				 struct mlx5e_tc_flow_parse_attr *parse_attr)
+int alloc_mod_hdr_actions(struct mlx5e_priv *priv,
+			  const struct tc_action *a, int namespace,
+			  struct mlx5e_tc_flow_parse_attr *parse_attr)
 {
 	int nkeys, action_size, max_actions;
 
@@ -3441,7 +3441,7 @@ static void mlx5e_unlock_tc_ht(struct mlx5e_priv *priv)
 	}
 }
 
-static int
+int
 mlx5e_alloc_flow(struct mlx5e_priv *priv, int attr_size,
 		 struct tc_cls_flower_offload *f, int flow_flags,
 		 struct mlx5e_tc_flow_parse_attr **__parse_attr,
