@@ -2313,12 +2313,11 @@ static int offload_pedit_fields(struct pedit_headers *masks,
 }
 
 int alloc_mod_hdr_actions(struct mlx5e_priv *priv,
-			  const struct tc_action *a, int namespace,
+			  int nkeys, int namespace,
 			  struct mlx5e_tc_flow_parse_attr *parse_attr)
 {
-	int nkeys, action_size, max_actions;
+	int action_size, max_actions;
 
-	nkeys = tcf_pedit_nkeys(a);
 	action_size = MLX5_UN_SZ_BYTES(set_action_in_add_action_in_auto);
 
 	if (namespace == MLX5_FLOW_NAMESPACE_FDB) /* FDB offloading */
@@ -2327,7 +2326,7 @@ int alloc_mod_hdr_actions(struct mlx5e_priv *priv,
 		max_actions = MLX5_CAP_FLOWTABLE_NIC_RX(priv->mdev, max_modify_header_actions);
 
 	/* can get up to crazingly 16 HW actions in 32 bits pedit SW key */
-	max_actions = min(max_actions, nkeys * 16);
+	max_actions = nkeys ? min(max_actions, nkeys * 16) : max_actions;
 
 	parse_attr->mod_hdr_actions = kcalloc(max_actions, action_size, GFP_KERNEL);
 	if (!parse_attr->mod_hdr_actions)
@@ -2380,7 +2379,7 @@ static int parse_tc_pedit_action(struct mlx5e_priv *priv,
 	}
 
 	if (!parse_attr->mod_hdr_actions) {
-		err = alloc_mod_hdr_actions(priv, a, namespace, parse_attr);
+		err = alloc_mod_hdr_actions(priv, nkeys, namespace, parse_attr);
 		if (err)
 			goto out_err;
 	}
