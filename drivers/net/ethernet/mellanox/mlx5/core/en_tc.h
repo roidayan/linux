@@ -149,7 +149,8 @@ int mlx5e_alloc_flow(struct mlx5e_priv *priv, int attr_size,
 		     struct mlx5e_tc_flow **__flow);
 int alloc_mod_hdr_actions(struct mlx5e_priv *priv,
 			  int nkeys, int namespace,
-			  struct mlx5e_tc_flow_parse_attr *parse_attr);
+			  struct mlx5e_tc_flow_parse_attr *parse_attr,
+			  gfp_t flags);
 int mlx5e_tc_update_and_init_done_fdb_flow(struct mlx5e_priv *priv,
 					   struct mlx5e_tc_flow *flow);
 
