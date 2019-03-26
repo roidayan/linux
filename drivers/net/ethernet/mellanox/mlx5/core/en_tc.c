@@ -2076,10 +2076,10 @@ static bool is_valid_ct_state(struct mlx5e_priv *priv,
 {
 	u8 ct_state = (f->ct_state_key & f->ct_state_mask);
 
-	/* Allow only -trk and +trk+est only */
+	/* We can offload only established connections */
 	if (!(ct_state == 0 ||
-	      ct_state == (TCA_FLOWER_KEY_CT_FLAGS_TRACKED |
-			   TCA_FLOWER_KEY_CT_FLAGS_ESTABLISHED))) {
+	      ct_state & TCA_FLOWER_KEY_CT_FLAGS_ESTABLISHED) ||
+	      ct_state & TCA_FLOWER_KEY_CT_FLAGS_INVALID) {
 		netdev_dbg(priv->netdev,
 			   "Unsupported ct_state used: key/mask: %x/%x\n",
 			   f->ct_state_key, f->ct_state_mask);
