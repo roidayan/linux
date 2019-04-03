@@ -845,6 +845,7 @@ enum tc_setup_type {
 	TC_SETUP_QDISC_PRIO,
 	TC_SETUP_QDISC_MQ,
 	TC_SETUP_QDISC_ETF,
+	TC_SETUP_CT,
 };
 
 struct tc_miniflow_offload {
