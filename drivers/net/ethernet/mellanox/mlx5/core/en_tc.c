@@ -66,31 +66,31 @@
 static atomic64_t global_version;
 
 #if CT_DEBUG_COUNTERS
-static atomic_t  nr_of_total_mf_succ =  ATOMIC_INIT(0);
-static atomic_t  nr_of_total_merge_mf_succ =  ATOMIC_INIT(0);
-static atomic_t  nr_of_total_del_mf_succ =  ATOMIC_INIT(0);
+static atomic64_t  nr_of_total_mf_succ =  ATOMIC64_INIT(0);
+static atomic64_t  nr_of_total_merge_mf_succ =  ATOMIC64_INIT(0);
+static atomic64_t  nr_of_total_del_mf_succ =  ATOMIC64_INIT(0);
 
-static atomic_t  nr_of_total_mf_work_requests =  ATOMIC_INIT(0);
-static atomic_t  nr_of_total_merge_mf_work_requests =  ATOMIC_INIT(0);
-static atomic_t  nr_of_total_del_mf_work_requests =  ATOMIC_INIT(0);
+static atomic64_t  nr_of_total_mf_work_requests =  ATOMIC64_INIT(0);
+static atomic64_t  nr_of_total_merge_mf_work_requests =  ATOMIC64_INIT(0);
+static atomic64_t  nr_of_total_del_mf_work_requests =  ATOMIC64_INIT(0);
 
-static atomic_t  nr_of_total_mf_err =  ATOMIC_INIT(0);
-static atomic_t  nr_of_total_mf_err_alloc_flow =  ATOMIC_INIT(0);
-static atomic_t  nr_of_total_mf_err_resolve_path_flows =  ATOMIC_INIT(0);
-static atomic_t  nr_of_total_mf_err_merge_mirred =  ATOMIC_INIT(0);
-static atomic_t  nr_of_total_mf_err_merge_hdr =  ATOMIC_INIT(0);
-static atomic_t  nr_of_total_mf_err_attach_dummy_counter =  ATOMIC_INIT(0);
-static atomic_t  nr_of_total_mf_err_fdb_add =  ATOMIC_INIT(0);
-static atomic_t  nr_of_total_mf_err_verify_path =  ATOMIC_INIT(0);
-static atomic_t  nr_of_total_mf_err_register =  ATOMIC_INIT(0);
+static atomic64_t  nr_of_total_mf_err =  ATOMIC64_INIT(0);
+static atomic64_t  nr_of_total_mf_err_alloc_flow =  ATOMIC64_INIT(0);
+static atomic64_t  nr_of_total_mf_err_resolve_path_flows =  ATOMIC64_INIT(0);
+static atomic64_t  nr_of_total_mf_err_merge_mirred =  ATOMIC64_INIT(0);
+static atomic64_t  nr_of_total_mf_err_merge_hdr =  ATOMIC64_INIT(0);
+static atomic64_t  nr_of_total_mf_err_attach_dummy_counter =  ATOMIC64_INIT(0);
+static atomic64_t  nr_of_total_mf_err_fdb_add =  ATOMIC64_INIT(0);
+static atomic64_t  nr_of_total_mf_err_verify_path =  ATOMIC64_INIT(0);
+static atomic64_t  nr_of_total_mf_err_register =  ATOMIC64_INIT(0);
 
-static atomic_t  nr_of_merge_mfe_in_queue =  ATOMIC_INIT(0);
-static atomic_t  nr_of_del_mfe_in_queue =  ATOMIC_INIT(0);
+static atomic64_t  nr_of_merge_mfe_in_queue =  ATOMIC64_INIT(0);
+static atomic64_t  nr_of_del_mfe_in_queue =  ATOMIC64_INIT(0);
 
 //inflight = currently on work (can be more them 1 in parallel)
-static atomic_t  nr_of_inflight_mfe =  ATOMIC_INIT(0);
-static atomic_t  nr_of_inflight_merge_mfe =  ATOMIC_INIT(0);
-static atomic_t  nr_of_inflight_del_mfe =  ATOMIC_INIT(0);
+static atomic64_t  nr_of_inflight_mfe =  ATOMIC64_INIT(0);
+static atomic64_t  nr_of_inflight_merge_mfe =  ATOMIC64_INIT(0);
+static atomic64_t  nr_of_inflight_del_mfe =  ATOMIC64_INIT(0);
 
 #endif /*CT_DEBUG_COUNTERS*/
 static atomic_t  nr_of_mfe_in_queue =  ATOMIC_INIT(0);
@@ -114,9 +114,9 @@ module_param_string(out_ifname, out_ifname, sizeof(out_ifname), S_IRUGO|S_IWUSR)
 
 #if CT_DEBUG_COUNTERS
 	#define inc_debug_counter(counter_name) \
-		atomic_inc(counter_name);
+		atomic64_inc(counter_name);
 	#define dec_debug_counter(counter_name) \
-		atomic_dec(counter_name);
+		atomic64_dec(counter_name);
 #else
 	#define inc_debug_counter(counter_name)
 	#define dec_debug_counter(counter_name)
@@ -133,33 +133,33 @@ ssize_t mlx5_show_counters_ct(char *buf)
 	char *p = buf;
 
 #if CT_DEBUG_COUNTERS
-	p += _sprintf(p, buf, "nr_of_total_mf_work_requests            : %d\n", atomic_read(&nr_of_total_mf_work_requests));
-	p += _sprintf(p, buf, "nr_of_total_merge_mf_work_requests      : %d\n", atomic_read(&nr_of_total_merge_mf_work_requests));
-	p += _sprintf(p, buf, "nr_of_total_del_mf_work_requests        : %d\n", atomic_read(&nr_of_total_del_mf_work_requests));
+	p += _sprintf(p, buf, "nr_of_total_mf_work_requests            : %ld\n", atomic64_read(&nr_of_total_mf_work_requests));
+	p += _sprintf(p, buf, "nr_of_total_merge_mf_work_requests      : %ld\n", atomic64_read(&nr_of_total_merge_mf_work_requests));
+	p += _sprintf(p, buf, "nr_of_total_del_mf_work_requests        : %ld\n", atomic64_read(&nr_of_total_del_mf_work_requests));
 	p += _sprintf(p, buf, "\n");
 	p += _sprintf(p, buf, "nr_of_mfe_in_queue                      : %d\n", atomic_read(&nr_of_mfe_in_queue));
-	p += _sprintf(p, buf, "nr_of_merge_mfe_in_queue                : %d\n", atomic_read(&nr_of_merge_mfe_in_queue));
-	p += _sprintf(p, buf, "nr_of_del_mfe_in_queue                  : %d\n", atomic_read(&nr_of_del_mfe_in_queue));
+	p += _sprintf(p, buf, "nr_of_merge_mfe_in_queue                : %ld\n", atomic64_read(&nr_of_merge_mfe_in_queue));
+	p += _sprintf(p, buf, "nr_of_del_mfe_in_queue                  : %ld\n", atomic64_read(&nr_of_del_mfe_in_queue));
 	p += _sprintf(p, buf, "\n");
-	p += _sprintf(p, buf, "nr_of_inflight_mfe                      : %d\n", atomic_read(&nr_of_inflight_mfe));
-	p += _sprintf(p, buf, "nr_of_inflight_merge_mfe                : %d\n", atomic_read(&nr_of_inflight_merge_mfe));
-	p += _sprintf(p, buf, "nr_of_inflight_del_mfe                  : %d\n", atomic_read(&nr_of_inflight_del_mfe));
+	p += _sprintf(p, buf, "nr_of_inflight_mfe                      : %ld\n", atomic64_read(&nr_of_inflight_mfe));
+	p += _sprintf(p, buf, "nr_of_inflight_merge_mfe                : %ld\n", atomic64_read(&nr_of_inflight_merge_mfe));
+	p += _sprintf(p, buf, "nr_of_inflight_del_mfe                  : %ld\n", atomic64_read(&nr_of_inflight_del_mfe));
 	p += _sprintf(p, buf, "\n");
-	p += _sprintf(p, buf, "nr_of_total_mf_succ                     : %d\n", atomic_read(&nr_of_total_mf_succ));
-	p += _sprintf(p, buf, "nr_of_total_merge_mf_succ               : %d\n", atomic_read(&nr_of_total_merge_mf_succ));
-	p += _sprintf(p, buf, "nr_of_total_del_mf_succ                 : %d\n", atomic_read(&nr_of_total_del_mf_succ));
+	p += _sprintf(p, buf, "nr_of_total_mf_succ                     : %ld\n", atomic64_read(&nr_of_total_mf_succ));
+	p += _sprintf(p, buf, "nr_of_total_merge_mf_succ               : %ld\n", atomic64_read(&nr_of_total_merge_mf_succ));
+	p += _sprintf(p, buf, "nr_of_total_del_mf_succ                 : %ld\n", atomic64_read(&nr_of_total_del_mf_succ));
 	p += _sprintf(p, buf, "\n");
 	p += _sprintf(p, buf, "currently_in_hw                         : %d\n", atomic_read(&currently_in_hw));
 	p += _sprintf(p, buf, "\n");
-	p += _sprintf(p, buf, "nr_of_total_mf_err                      : %d\n", atomic_read(&nr_of_total_mf_err));
-	p += _sprintf(p, buf, "nr_of_total_mf_err_alloc_flow           : %d\n", atomic_read(&nr_of_total_mf_err_alloc_flow));
-	p += _sprintf(p, buf, "nr_of_total_mf_err_resolve_path_flows   : %d\n", atomic_read(&nr_of_total_mf_err_resolve_path_flows));
-	p += _sprintf(p, buf, "nr_of_total_mf_err_merge_mirred         : %d\n", atomic_read(&nr_of_total_mf_err_merge_mirred));
-	p += _sprintf(p, buf, "nr_of_total_mf_err_merge_hdr            : %d\n", atomic_read(&nr_of_total_mf_err_merge_hdr));
-	p += _sprintf(p, buf, "nr_of_total_mf_err_attach_dummy_counter : %d\n", atomic_read(&nr_of_total_mf_err_attach_dummy_counter));
-	p += _sprintf(p, buf, "nr_of_total_mf_err_fdb_add              : %d\n", atomic_read(&nr_of_total_mf_err_fdb_add));
-	p += _sprintf(p, buf, "nr_of_total_mf_err_verify_path          : %d\n", atomic_read(&nr_of_total_mf_err_verify_path));
-	p += _sprintf(p, buf, "nr_of_total_mf_err_register             : %d\n", atomic_read(&nr_of_total_mf_err_register));
+	p += _sprintf(p, buf, "nr_of_total_mf_err                      : %ld\n", atomic64_read(&nr_of_total_mf_err));
+	p += _sprintf(p, buf, "nr_of_total_mf_err_alloc_flow           : %ld\n", atomic64_read(&nr_of_total_mf_err_alloc_flow));
+	p += _sprintf(p, buf, "nr_of_total_mf_err_resolve_path_flows   : %ld\n", atomic64_read(&nr_of_total_mf_err_resolve_path_flows));
+	p += _sprintf(p, buf, "nr_of_total_mf_err_merge_mirred         : %ld\n", atomic64_read(&nr_of_total_mf_err_merge_mirred));
+	p += _sprintf(p, buf, "nr_of_total_mf_err_merge_hdr            : %ld\n", atomic64_read(&nr_of_total_mf_err_merge_hdr));
+	p += _sprintf(p, buf, "nr_of_total_mf_err_attach_dummy_counter : %ld\n", atomic64_read(&nr_of_total_mf_err_attach_dummy_counter));
+	p += _sprintf(p, buf, "nr_of_total_mf_err_fdb_add              : %ld\n", atomic64_read(&nr_of_total_mf_err_fdb_add));
+	p += _sprintf(p, buf, "nr_of_total_mf_err_verify_path          : %ld\n", atomic64_read(&nr_of_total_mf_err_verify_path));
+	p += _sprintf(p, buf, "nr_of_total_mf_err_register             : %ld\n", atomic64_read(&nr_of_total_mf_err_register));
 	p += _sprintf(p, buf, "\n");
 	p += _sprintf(p, buf, "enable_ct_ageing                        : %d\n", enable_ct_ageing);
 	p += _sprintf(p, buf, "max_nr_mf                               : %d\n", max_nr_mf);
@@ -4717,7 +4717,7 @@ void miniflow_merge_work(struct work_struct *work)
 	atomic_dec(&nr_of_mfe_in_queue);
 
 	inc_debug_counter(&nr_of_inflight_mfe);
-	dec_debug_counter(&miniflow_wq_size);
+	atomic_dec(&miniflow_wq_size);
 	dec_debug_counter(&nr_of_merge_mfe_in_queue);
 	inc_debug_counter(&nr_of_inflight_merge_mfe);
 
@@ -4731,7 +4731,7 @@ static int miniflow_merge(struct mlx5e_miniflow *miniflow)
 {
 	atomic_inc(&nr_of_mfe_in_queue);
 
-	inc_debug_counter(&miniflow_wq_size);
+	atomic_dec(&miniflow_wq_size);
 	inc_debug_counter(&nr_of_merge_mfe_in_queue);
 	inc_debug_counter(&nr_of_total_mf_work_requests);
 	inc_debug_counter(&nr_of_total_merge_mf_work_requests);
