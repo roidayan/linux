@@ -616,7 +616,6 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	err = miniflow_register_ct_flow(miniflow);
 	if (err) {
 		rcu_read_unlock();
-		rhashtable_remove_fast(mf_ht, &miniflow->node, mf_ht_params);
 		miniflow_cleanup(miniflow);
 		return -1;
 	}
