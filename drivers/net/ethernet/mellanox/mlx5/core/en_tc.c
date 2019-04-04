@@ -4801,8 +4801,9 @@ int miniflow_extract_tuple(struct mlx5e_miniflow *miniflow,
 			    struct sk_buff *skb)
 {
 	struct nf_conntrack_tuple *nf_tuple = &miniflow->tuple;
+	struct udphdr *udph, _udph;
+	struct tcphdr *tcph, _tcph;
 	struct iphdr *iph, _iph;
-	__be16 *ports, _ports[2];
 	int ihl;
 
 	if (skb->protocol != htons(ETH_P_IP) &&
@@ -4835,16 +4836,23 @@ int miniflow_extract_tuple(struct mlx5e_miniflow *miniflow,
 	nf_tuple->src.u3.ip = iph->saddr;
 	nf_tuple->dst.u3.ip = iph->daddr;
 
-	ports = skb_header_pointer(skb, skb_network_offset(skb) + ihl,
-				   sizeof(_ports), _ports);
-	if (ports == NULL)
-		goto err;
-
 	switch (nf_tuple->dst.protonum) {
-	case IPPROTO_UDP:
 	case IPPROTO_TCP:
-		nf_tuple->src.u.all = ports[0];
-		nf_tuple->dst.u.all = ports[1];
+		tcph = skb_header_pointer(skb, skb_network_offset(skb) + ihl,
+					  sizeof(_tcph), &_tcph);
+
+		if (tcph->fin || tcph->syn || tcph->rst)
+			goto err;
+
+		nf_tuple->src.u.all = tcph->source;
+		nf_tuple->dst.u.all = tcph->dest;
+	break;
+	case IPPROTO_UDP:
+		udph = skb_header_pointer(skb, skb_network_offset(skb) + ihl,
+					  sizeof(_udph), &_udph);
+
+		nf_tuple->src.u.all = udph->source;
+		nf_tuple->dst.u.all = udph->dest;
 	break;
 	case IPPROTO_ICMP:
 		ntrace("ICMP is not yet supported");
