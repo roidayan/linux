@@ -55,6 +55,7 @@
 #include "fs_core.h"
 #include "en/port.h"
 #include "en/tc_tun.h"
+#include "lib/geneve.h"
 
 static struct kmem_cache *nic_flow_cache   __read_mostly;
 static struct kmem_cache *fdb_flow_cache   __read_mostly;
@@ -1154,6 +1155,19 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	return 0;
 }
 
+static bool mlx5_flow_has_geneve_opt(struct mlx5e_tc_flow *flow)
+{
+	struct mlx5_flow_spec *spec = &flow->esw_attr->parse_attr->spec;
+	void *headers_v = MLX5_ADDR_OF(fte_match_param,
+				       spec->match_value,
+				       misc_parameters_3);
+	u32 geneve_tlv_opt_0_data = MLX5_GET(fte_match_set_misc3,
+					     headers_v,
+					     geneve_tlv_option_0_data);
+
+	return !!geneve_tlv_opt_0_data;
+}
+
 static void mlx5e_tc_del_fdb_flow_simple(struct mlx5e_priv *priv,
 					 struct mlx5e_tc_flow *flow)
 {
@@ -1167,6 +1181,9 @@ static void mlx5e_tc_del_fdb_flow_simple(struct mlx5e_priv *priv,
 		else
 			mlx5e_tc_unoffload_fdb_rules(esw, flow, attr);
 	}
+
+	if (mlx5_flow_has_geneve_opt(flow))
+		mlx5_geneve_tlv_option_del(priv->mdev->geneve);
 
 	mlx5_eswitch_del_vlan_action(esw, attr);
 
@@ -1707,7 +1724,8 @@ static int __parse_cls_flower(struct mlx5e_priv *priv,
 	      BIT(FLOW_DISSECTOR_KEY_ENC_CONTROL) |
 	      BIT(FLOW_DISSECTOR_KEY_TCP) |
 	      BIT(FLOW_DISSECTOR_KEY_IP)  |
-	      BIT(FLOW_DISSECTOR_KEY_ENC_IP))) {
+	      BIT(FLOW_DISSECTOR_KEY_ENC_IP) |
+	      BIT(FLOW_DISSECTOR_KEY_ENC_OPTS))) {
 		NL_SET_ERR_MSG_MOD(extack, "Unsupported key");
 		netdev_warn(priv->netdev, "Unsupported key used: 0x%x\n",
 			    f->dissector->used_keys);
@@ -1717,7 +1735,8 @@ static int __parse_cls_flower(struct mlx5e_priv *priv,
 	if ((dissector_uses_key(f->dissector,
 				FLOW_DISSECTOR_KEY_ENC_IPV4_ADDRS) ||
 	     dissector_uses_key(f->dissector, FLOW_DISSECTOR_KEY_ENC_KEYID) ||
-	     dissector_uses_key(f->dissector, FLOW_DISSECTOR_KEY_ENC_PORTS)) &&
+	     dissector_uses_key(f->dissector, FLOW_DISSECTOR_KEY_ENC_PORTS) ||
+	     dissector_uses_key(f->dissector, FLOW_DISSECTOR_KEY_ENC_OPTS)) &&
 	    dissector_uses_key(f->dissector, FLOW_DISSECTOR_KEY_ENC_CONTROL)) {
 		struct flow_dissector_key_control *key =
 			skb_flow_dissector_target(f->dissector,
