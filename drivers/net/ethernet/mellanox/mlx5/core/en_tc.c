@@ -4687,7 +4687,6 @@ static int __miniflow_merge(struct mlx5e_miniflow *miniflow)
 	if (err) {
 		mtrace("miniflow_register_ct_flow failed");
 		rcu_read_unlock();
-		rhashtable_remove_fast(mf_ht, &miniflow->node, mf_ht_params);
 		miniflow_cleanup(miniflow);
 		inc_debug_counter(&nr_of_total_mf_err_register);
 		inc_debug_counter(&nr_of_total_mf_err);
