@@ -2962,8 +2962,11 @@ static int mlx5e_create_encap_header_ipv4(struct mlx5e_priv *priv,
 
 dealloc_encap:
 	mlx5_packet_reformat_dealloc(priv->mdev, e->encap_id);
+	e->flags &= ~MLX5_ENCAP_ENTRY_VALID;
 free_encap:
 	kfree(encap_header);
+	e->encap_size = 0;
+	e->encap_header = NULL;
 out:
 	if (n)
 		neigh_release(n);
@@ -3077,8 +3080,11 @@ static int mlx5e_create_encap_header_ipv6(struct mlx5e_priv *priv,
 
 dealloc_encap:
 	mlx5_packet_reformat_dealloc(priv->mdev, e->encap_id);
+	e->flags &= ~MLX5_ENCAP_ENTRY_VALID;
 free_encap:
 	kfree(encap_header);
+	e->encap_size = 0;
+	e->encap_header = NULL;
 out:
 	if (n)
 		neigh_release(n);
