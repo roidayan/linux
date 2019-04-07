@@ -1144,6 +1144,8 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 
 	if (IS_ERR(flow->rule[0]))
 		return PTR_ERR(flow->rule[0]);
+	else
+		mlx5e_set_flow_flag_mb_before(flow, MLX5E_TC_FLOW_OFFLOADED);
 
 	return 0;
 }
@@ -1507,12 +1509,10 @@ static int mlx5e_tc_update_and_init_done_fdb_flow(struct mlx5e_priv *priv,
 
 		if (!err)
 			mlx5e_set_flow_flag_mb_before(flow,
-						      MLX5E_TC_FLOW_OFFLOADED |
 						      MLX5E_TC_FLOW_INIT_DONE);
 		mutex_unlock(&e->encap_entry_lock);
 	} else {
-		mlx5e_set_flow_flag_mb_before(flow, MLX5E_TC_FLOW_OFFLOADED |
-					      MLX5E_TC_FLOW_INIT_DONE);
+		mlx5e_set_flow_flag_mb_before(flow, MLX5E_TC_FLOW_INIT_DONE);
 	}
 
 	return err;
