@@ -834,6 +834,9 @@ int mlx5e_rep_encap_entry_attach(struct mlx5e_priv *priv,
 void mlx5e_rep_encap_entry_detach(struct mlx5e_priv *priv,
 				  struct mlx5e_encap_entry *e)
 {
+	if (!e->nhe)
+		return;
+
 	spin_lock(&e->nhe->encap_list_lock);
 	list_del_rcu(&e->encap_list);
 	spin_unlock(&e->nhe->encap_list_lock);
