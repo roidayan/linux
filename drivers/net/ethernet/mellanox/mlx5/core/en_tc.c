@@ -4841,6 +4841,9 @@ int miniflow_extract_tuple(struct mlx5e_miniflow *miniflow,
 		tcph = skb_header_pointer(skb, skb_network_offset(skb) + ihl,
 					  sizeof(_tcph), &_tcph);
 
+		if (tcph == NULL)
+			goto err;
+
 		if (tcph->fin || tcph->syn || tcph->rst)
 			goto err;
 
@@ -4850,6 +4853,9 @@ int miniflow_extract_tuple(struct mlx5e_miniflow *miniflow,
 	case IPPROTO_UDP:
 		udph = skb_header_pointer(skb, skb_network_offset(skb) + ihl,
 					  sizeof(_udph), &_udph);
+
+		if (udph == NULL)
+			goto err;
 
 		nf_tuple->src.u.all = udph->source;
 		nf_tuple->dst.u.all = udph->dest;
