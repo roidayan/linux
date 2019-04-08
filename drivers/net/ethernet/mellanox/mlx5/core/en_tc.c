@@ -4731,7 +4731,7 @@ static int miniflow_merge(struct mlx5e_miniflow *miniflow)
 {
 	atomic_inc(&nr_of_mfe_in_queue);
 
-	atomic_dec(&miniflow_wq_size);
+	atomic_inc(&miniflow_wq_size);
 	inc_debug_counter(&nr_of_merge_mfe_in_queue);
 	inc_debug_counter(&nr_of_total_mf_work_requests);
 	inc_debug_counter(&nr_of_total_merge_mf_work_requests);
