@@ -1476,7 +1476,7 @@ static int esw_vport_create_sched_element(struct mlx5_eswitch *esw,
 		return err;
 	}
 
-	if (group)
+	if (group && vport_num != MLX5_VPORT_PF)
 		group->num_vports++;
 
 	return 0;
@@ -1525,7 +1525,8 @@ static void esw_vport_disable_qos(struct mlx5_eswitch *esw, int vport_num)
 			 vport_num, err);
 
 	if (group) {
-		if (group->group_id && !--group->num_vports)
+		group->num_vports--;
+		if (group->group_id && !group->num_vports)
 			esw_destroy_vgroup(esw, group);
 	}
 
@@ -2384,8 +2385,9 @@ int mlx5_eswitch_vport_update_group(struct mlx5_eswitch *esw, int vport_num,
 	}
 
 	vport->info.group = group_id;
+	curr_group->num_vports--;
 
-	if (curr_group->group_id && !--curr_group->num_vports)
+	if (curr_group->group_id && !curr_group->num_vports)
 		esw_destroy_vgroup(esw, curr_group);
 	mutex_unlock(&esw->state_lock);
 
