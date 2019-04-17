@@ -57,4 +57,20 @@ int miniflow_configure_ct(struct mlx5e_priv *priv,
 int miniflow_configure(struct mlx5e_priv *priv,
 		       struct tc_miniflow_offload *mf);
 
+int mlx5_ct_flow_offload_table_init(void);
+void mlx5_ct_flow_offload_table_destroy(void);
+
+int mlx5_ct_flow_offload_add(const struct net *net,
+			     const struct nf_conntrack_zone *zone,
+			     const struct nf_conntrack_tuple *tuple,
+			     struct mlx5e_tc_flow *tc_flow);
+
+int mlx5_ct_flow_offload_remove(const struct net *net,
+				const struct nf_conntrack_zone *zone,
+				const struct nf_conntrack_tuple *tuple);
+
+int ct_flow_offload_add(void *arg, struct list_head *head);
+void ct_flow_offload_get_stats(struct list_head *head, u64 *lastuse);
+int ct_flow_offload_destroy(struct list_head *head);
+
 #endif /* __MLX5_MINIFLOW_H__ */

@@ -150,6 +150,8 @@ void mlx5e_flow_put(struct mlx5e_priv *priv,
 		    struct mlx5e_tc_flow *flow)
 {
 	if (refcount_dec_and_test(&flow->refcnt)) {
+		if (!list_empty(&flow->nft_node))
+			list_del_init(&flow->nft_node);
 		mlx5e_tc_del_flow(priv, flow);
 		flow_cache_free(flow);
 	}
@@ -3597,6 +3599,7 @@ mlx5e_alloc_flow(struct mlx5e_priv *priv,
 	INIT_LIST_HEAD(&flow->tmp_list);
 	refcount_set(&flow->refcnt, 1);
 	INIT_LIST_HEAD(&flow->miniflow_list);
+	INIT_LIST_HEAD(&flow->nft_node);
 
 	*__flow = flow;
 	*__parse_attr = parse_attr;

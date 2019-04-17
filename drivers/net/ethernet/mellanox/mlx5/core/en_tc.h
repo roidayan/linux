@@ -96,6 +96,7 @@ struct mlx5e_tc_flow {
 	struct mlx5_fc          *dummy_counter;
 	struct list_head        miniflow_list;
 	struct rcu_head		rcu;
+	struct list_head        nft_node;
 
 	union {
 		struct mlx5_esw_flow_attr esw_attr[0];
