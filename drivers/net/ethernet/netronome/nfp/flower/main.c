@@ -668,9 +668,9 @@ static void nfp_flower_stop(struct nfp_app *app)
 	if (app_priv->flower_ext_feats & NFP_FL_FEATS_LAG)
 		unregister_netdevice_notifier(&app_priv->nfp_lag.lag_nb);
 
-	ret = nfp_flower_reg_indir_block_handler(app, netdev, event);
-	if (ret & NOTIFY_STOP_MASK)
-		return ret;
+	//ret = nfp_flower_reg_indir_block_handler(app, netdev, event);
+	//if (ret & NOTIFY_STOP_MASK)
+	//	return ret;
 
 	nfp_tunnel_config_stop(app);
 }

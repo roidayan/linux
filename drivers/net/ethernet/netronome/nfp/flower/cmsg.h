@@ -482,8 +482,8 @@ nfp_fl_netdev_is_tunnel_type(struct net_device *netdev,
 {
 	if (netif_is_vxlan(netdev))
 		return tun_type == NFP_FL_TUNNEL_VXLAN;
-	if (netif_is_geneve(netdev))
-		return tun_type == NFP_FL_TUNNEL_GENEVE;
+	//if (netif_is_geneve(netdev))
+	//	return tun_type == NFP_FL_TUNNEL_GENEVE;
 
 	return false;
 }
@@ -496,8 +496,8 @@ static inline bool nfp_fl_is_netdev_to_offload(struct net_device *netdev)
 		return true;
 	if (netif_is_vxlan(netdev))
 		return true;
-	if (netif_is_geneve(netdev))
-		return true;
+	//if (netif_is_geneve(netdev))
+	//	return true;
 
 	return false;
 }
