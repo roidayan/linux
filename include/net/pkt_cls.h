@@ -762,6 +762,7 @@ struct tc_cls_flower_offload {
 enum tc_matchall_command {
 	TC_CLSMATCHALL_REPLACE,
 	TC_CLSMATCHALL_DESTROY,
+	TC_CLSMATCHALL_STATS,
 };
 
 struct tc_cls_matchall_offload {
