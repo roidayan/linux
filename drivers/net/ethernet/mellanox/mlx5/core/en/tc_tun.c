@@ -3,8 +3,18 @@
 
 #include <net/vxlan.h>
 #include <net/gre.h>
-#include "lib/vxlan.h"
 #include "en/tc_tun.h"
+
+struct mlx5e_tc_tunnel *mlx5e_get_tc_tun(struct net_device *tunnel_dev)
+{
+	if (netif_is_vxlan(tunnel_dev))
+		return &vxlan_tunnel;
+	else if (netif_is_gretap(tunnel_dev) ||
+		 netif_is_ip6gretap(tunnel_dev))
+		return &gre_tunnel;
+	else
+		return NULL;
+}
 
 static int mlx5e_route_lookup_ipv4(struct mlx5e_priv *priv,
 				   struct net_device *mirred_dev,
@@ -96,64 +106,15 @@ static int mlx5e_route_lookup_ipv6(struct mlx5e_priv *priv,
 	return 0;
 }
 
-static int mlx5e_gen_vxlan_header(char buf[],
-				  const struct ip_tunnel_key *tun_key)
-{
-	__be32 tun_id = tunnel_id_to_key32(tun_key->tun_id);
-	struct udphdr *udp = (struct udphdr *)(buf);
-	struct vxlanhdr *vxh = (struct vxlanhdr *)
-			       ((char *)udp + sizeof(struct udphdr));
-
-	udp->dest = tun_key->tp_dst;
-	vxh->vx_flags = VXLAN_HF_VNI;
-	vxh->vx_vni = vxlan_vni_field(tun_id);
-
-	return 0;
-}
-
-static int mlx5e_gen_gre_header(char buf[], const struct ip_tunnel_key *tun_key)
-{
-	__be32 tun_id = tunnel_id_to_key32(tun_key->tun_id);
-	int hdr_len;
-	struct gre_base_hdr *greh = (struct gre_base_hdr *)(buf);
-
-	/* the HW does not calculate GRE csum or sequences */
-	if (tun_key->tun_flags & (TUNNEL_CSUM | TUNNEL_SEQ))
-		return -EOPNOTSUPP;
-
-	greh->protocol = htons(ETH_P_TEB);
-
-	/* GRE key */
-	hdr_len = gre_calc_hlen(tun_key->tun_flags);
-	greh->flags = gre_tnl_flags_to_gre_flags(tun_key->tun_flags);
-	if (tun_key->tun_flags & TUNNEL_KEY) {
-		__be32 *ptr = (__be32 *)(((u8 *)greh) + hdr_len - 4);
-
-		*ptr = tun_id;
-	}
-
-	return 0;
-}
-
 static int mlx5e_gen_ip_tunnel_header(char buf[], __u8 *ip_proto,
 				      struct mlx5e_encap_entry *e)
 {
-	int err = 0;
-	const struct ip_tunnel_key *key = &e->tun_info->key;
-
-	if (e->tunnel_type == MLX5E_TC_TUNNEL_TYPE_VXLAN) {
-		*ip_proto = IPPROTO_UDP;
-		err = mlx5e_gen_vxlan_header(buf, key);
-	} else if  (e->tunnel_type == MLX5E_TC_TUNNEL_TYPE_GRETAP) {
-		*ip_proto = IPPROTO_GRE;
-		err = mlx5e_gen_gre_header(buf, key);
-	} else {
-		pr_warn("mlx5: Cannot generate tunnel header for tunnel type (%d)\n"
-			, e->tunnel_type);
-		err = -EOPNOTSUPP;
+	if (!e->tunnel) {
+		pr_warn("mlx5: Cannot generate tunnel header for this tunnel\n");
+		return -EOPNOTSUPP;
 	}
 
-	return err;
+	return e->tunnel->generate_ip_tun_hdr(buf, ip_proto, e);
 }
 
 int mlx5e_tc_tun_create_header_ipv4(struct mlx5e_priv *priv,
@@ -163,7 +124,7 @@ int mlx5e_tc_tun_create_header_ipv4(struct mlx5e_priv *priv,
 	int max_encap_size = MLX5_CAP_ESW(priv->mdev, max_encap_header_size);
 	int ipv4_encap_size = ETH_HLEN +
 			      sizeof(struct iphdr) +
-			      e->tunnel_hlen;
+			      e->tunnel->calc_hlen(e);
 	const struct ip_tunnel_key *tun_key = &e->tun_info->key;
 	struct net_device *out_dev;
 	struct neighbour *n = NULL;
@@ -277,7 +238,7 @@ int mlx5e_tc_tun_create_header_ipv6(struct mlx5e_priv *priv,
 	int max_encap_size = MLX5_CAP_ESW(priv->mdev, max_encap_header_size);
 	int ipv6_encap_size = ETH_HLEN +
 			      sizeof(struct ipv6hdr) +
-			      e->tunnel_hlen;
+			      e->tunnel->calc_hlen(e);
 	const struct ip_tunnel_key *tun_key = &e->tun_info->key;
 	struct net_device *out_dev;
 	struct neighbour *n = NULL;
@@ -383,27 +344,11 @@ out:
 	return err;
 }
 
-int mlx5e_tc_tun_get_type(struct net_device *tunnel_dev)
-{
-	if (netif_is_vxlan(tunnel_dev))
-		return MLX5E_TC_TUNNEL_TYPE_VXLAN;
-	else if (netif_is_gretap(tunnel_dev) ||
-		 netif_is_ip6gretap(tunnel_dev))
-		return MLX5E_TC_TUNNEL_TYPE_GRETAP;
-	else
-		return MLX5E_TC_TUNNEL_TYPE_UNKNOWN;
-}
-
 bool mlx5e_tc_tun_device_to_offload(struct mlx5e_priv *priv,
 				    struct net_device *netdev)
 {
-	int tunnel_type = mlx5e_tc_tun_get_type(netdev);
-
-	if (tunnel_type == MLX5E_TC_TUNNEL_TYPE_VXLAN &&
-	    MLX5_CAP_ESW(priv->mdev, vxlan_encap_decap))
-		return true;
-	else if (tunnel_type == MLX5E_TC_TUNNEL_TYPE_GRETAP &&
-		 MLX5_CAP_ESW(priv->mdev, nvgre_encap_decap))
+	struct mlx5e_tc_tunnel *tunnel = mlx5e_get_tc_tun(netdev);
+	if (tunnel && tunnel->can_offload(priv))
 		return true;
 	else
 		return false;
@@ -414,147 +359,14 @@ int mlx5e_tc_tun_init_encap_attr(struct net_device *tunnel_dev,
 				 struct mlx5e_encap_entry *e,
 				 struct netlink_ext_ack *extack)
 {
-	e->tunnel_type = mlx5e_tc_tun_get_type(tunnel_dev);
+	struct mlx5e_tc_tunnel *tunnel = mlx5e_get_tc_tun(tunnel_dev);
 
-	if (e->tunnel_type == MLX5E_TC_TUNNEL_TYPE_VXLAN) {
-		int dst_port = be16_to_cpu(e->tun_info->key.tp_dst);
-
-		if (!mlx5_vxlan_lookup_port(priv->mdev->vxlan, dst_port)) {
-			NL_SET_ERR_MSG_MOD(extack,
-					   "vxlan udp dport was not registered with the HW");
-			netdev_warn(priv->netdev,
-				    "%d isn't an offloaded vxlan udp dport\n",
-				    dst_port);
-			return -EOPNOTSUPP;
-		}
-		e->reformat_type = MLX5_REFORMAT_TYPE_L2_TO_VXLAN;
-		e->tunnel_hlen = VXLAN_HLEN;
-	} else if (e->tunnel_type == MLX5E_TC_TUNNEL_TYPE_GRETAP) {
-		e->reformat_type = MLX5_REFORMAT_TYPE_L2_TO_NVGRE;
-		e->tunnel_hlen = gre_calc_hlen(e->tun_info->key.tun_flags);
-	} else {
+	if (!tunnel) {
 		e->reformat_type = -1;
-		e->tunnel_hlen = -1;
-		return -EOPNOTSUPP;
-	}
-	return 0;
-}
-
-static int mlx5e_tc_tun_parse_vxlan(struct mlx5e_priv *priv,
-				    struct mlx5_flow_spec *spec,
-				    struct tc_cls_flower_offload *f,
-				    void *headers_c,
-				    void *headers_v)
-{
-	struct netlink_ext_ack *extack = f->common.extack;
-	struct flow_dissector_key_ports *key =
-		skb_flow_dissector_target(f->dissector,
-					  FLOW_DISSECTOR_KEY_ENC_PORTS,
-					  f->key);
-	struct flow_dissector_key_ports *mask =
-		skb_flow_dissector_target(f->dissector,
-					  FLOW_DISSECTOR_KEY_ENC_PORTS,
-					  f->mask);
-	void *misc_c = MLX5_ADDR_OF(fte_match_param,
-				    spec->match_criteria,
-				    misc_parameters);
-	void *misc_v = MLX5_ADDR_OF(fte_match_param,
-				    spec->match_value,
-				    misc_parameters);
-
-	/* Full udp dst port must be given */
-	if (!dissector_uses_key(f->dissector, FLOW_DISSECTOR_KEY_ENC_PORTS) ||
-	    memchr_inv(&mask->dst, 0xff, sizeof(mask->dst))) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "VXLAN decap filter must include enc_dst_port condition");
-		netdev_warn(priv->netdev,
-			    "VXLAN decap filter must include enc_dst_port condition\n");
 		return -EOPNOTSUPP;
 	}
 
-	/* udp dst port must be knonwn as a VXLAN port */
-	if (!mlx5_vxlan_lookup_port(priv->mdev->vxlan, be16_to_cpu(key->dst))) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Matched UDP port is not registered as a VXLAN port");
-		netdev_warn(priv->netdev,
-			    "UDP port %d is not registered as a VXLAN port\n",
-			    be16_to_cpu(key->dst));
-		return -EOPNOTSUPP;
-	}
-
-	/* dst UDP port is valid here */
-	MLX5_SET_TO_ONES(fte_match_set_lyr_2_4, headers_c, ip_protocol);
-	MLX5_SET(fte_match_set_lyr_2_4, headers_v, ip_protocol, IPPROTO_UDP);
-
-	MLX5_SET(fte_match_set_lyr_2_4, headers_c, udp_dport, ntohs(mask->dst));
-	MLX5_SET(fte_match_set_lyr_2_4, headers_v, udp_dport, ntohs(key->dst));
-
-	MLX5_SET(fte_match_set_lyr_2_4, headers_c, udp_sport, ntohs(mask->src));
-	MLX5_SET(fte_match_set_lyr_2_4, headers_v, udp_sport, ntohs(key->src));
-
-	/* match on VNI */
-	if (dissector_uses_key(f->dissector, FLOW_DISSECTOR_KEY_ENC_KEYID)) {
-		struct flow_dissector_key_keyid *key =
-			skb_flow_dissector_target(f->dissector,
-						  FLOW_DISSECTOR_KEY_ENC_KEYID,
-						  f->key);
-		struct flow_dissector_key_keyid *mask =
-			skb_flow_dissector_target(f->dissector,
-						  FLOW_DISSECTOR_KEY_ENC_KEYID,
-						  f->mask);
-		MLX5_SET(fte_match_set_misc, misc_c, vxlan_vni,
-			 be32_to_cpu(mask->keyid));
-		MLX5_SET(fte_match_set_misc, misc_v, vxlan_vni,
-			 be32_to_cpu(key->keyid));
-	}
-	return 0;
-}
-
-static int mlx5e_tc_tun_parse_gretap(struct mlx5e_priv *priv,
-				     struct mlx5_flow_spec *spec,
-				     struct tc_cls_flower_offload *f,
-				     void *outer_headers_c,
-				     void *outer_headers_v)
-{
-	void *misc_c = MLX5_ADDR_OF(fte_match_param, spec->match_criteria,
-				    misc_parameters);
-	void *misc_v = MLX5_ADDR_OF(fte_match_param, spec->match_value,
-				    misc_parameters);
-
-	if (!MLX5_CAP_ESW(priv->mdev, nvgre_encap_decap)) {
-		NL_SET_ERR_MSG_MOD(f->common.extack,
-				   "GRE HW offloading is not supported");
-		netdev_warn(priv->netdev, "GRE HW offloading is not supported\n");
-		return -EOPNOTSUPP;
-	}
-
-	MLX5_SET_TO_ONES(fte_match_set_lyr_2_4, outer_headers_c, ip_protocol);
-	MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v,
-		 ip_protocol, IPPROTO_GRE);
-
-	/* gre protocol*/
-	MLX5_SET_TO_ONES(fte_match_set_misc, misc_c, gre_protocol);
-	MLX5_SET(fte_match_set_misc, misc_v, gre_protocol, ETH_P_TEB);
-
-	/* gre key */
-	if (dissector_uses_key(f->dissector, FLOW_DISSECTOR_KEY_ENC_KEYID)) {
-		struct flow_dissector_key_keyid *mask = NULL;
-		struct flow_dissector_key_keyid *key = NULL;
-
-		mask = skb_flow_dissector_target(f->dissector,
-						 FLOW_DISSECTOR_KEY_ENC_KEYID,
-						 f->mask);
-		MLX5_SET(fte_match_set_misc, misc_c,
-			 gre_key.key, be32_to_cpu(mask->keyid));
-
-		key = skb_flow_dissector_target(f->dissector,
-						FLOW_DISSECTOR_KEY_ENC_KEYID,
-						f->key);
-		MLX5_SET(fte_match_set_misc, misc_v,
-			 gre_key.key, be32_to_cpu(key->keyid));
-	}
-
-	return 0;
+	return tunnel->init_encap_attr(tunnel_dev, priv, e, extack);
 }
 
 int mlx5e_tc_tun_parse(struct net_device *filter_dev,
@@ -565,23 +377,77 @@ int mlx5e_tc_tun_parse(struct net_device *filter_dev,
 		       void *headers_v,
 		       u8 *match_level)
 {
-	int tunnel_type;
+	struct mlx5e_tc_tunnel *tunnel = mlx5e_get_tc_tun(filter_dev);
 	int err = 0;
 
-	tunnel_type = mlx5e_tc_tun_get_type(filter_dev);
-	if (tunnel_type == MLX5E_TC_TUNNEL_TYPE_VXLAN) {
-		*match_level = MLX5_MATCH_L4;
-		err = mlx5e_tc_tun_parse_vxlan(priv, spec, f,
-					       headers_c, headers_v);
-	} else if (tunnel_type == MLX5E_TC_TUNNEL_TYPE_GRETAP) {
-		*match_level = MLX5_MATCH_L3;
-		err = mlx5e_tc_tun_parse_gretap(priv, spec, f,
-						headers_c, headers_v);
-	} else {
+	if (!tunnel) {
 		netdev_warn(priv->netdev,
-			    "decapsulation offload is not supported for %s net device (%d)\n",
-			    mlx5e_netdev_kind(filter_dev), tunnel_type);
+			    "decapsulation offload is not supported for %s net device\n",
+			    mlx5e_netdev_kind(filter_dev));
+			    err = -EOPNOTSUPP;
+		goto out;
+	}
+
+	if (tunnel->parse_udp_ports) {
+		err = tunnel->parse_udp_ports(priv, spec, f,
+					      headers_c, headers_v);
+		if (err)
+			goto out;
+	}
+	if (tunnel->parse_tunnel) {
+		err = tunnel->parse_tunnel(priv, spec, f,
+					   headers_c, headers_v);
+		if (err)
+			goto out;
+	}
+
+	*match_level = tunnel->match_level;
+out:
+	return err;
+}
+
+int mlx5e_tc_tun_parse_udp_ports(struct mlx5e_priv *priv,
+				 struct mlx5_flow_spec *spec,
+				 struct tc_cls_flower_offload *f,
+				 void *headers_c,
+				 void *headers_v)
+{
+	struct netlink_ext_ack *extack = f->common.extack;
+	struct flow_dissector_key_ports *key =
+		skb_flow_dissector_target(f->dissector,
+					  FLOW_DISSECTOR_KEY_ENC_PORTS,
+					  f->key);
+	struct flow_dissector_key_ports *mask =
+		skb_flow_dissector_target(f->dissector,
+					  FLOW_DISSECTOR_KEY_ENC_PORTS,
+					  f->mask);
+
+	/* Full udp dst port must be given */
+
+	if (!dissector_uses_key(f->dissector, FLOW_DISSECTOR_KEY_ENC_PORTS) ||
+	    memchr_inv(&mask->dst, 0xff, sizeof(mask->dst))) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "UDP tunnel decap filter must include enc_dst_port condition");
+		netdev_warn(priv->netdev,
+			    "UDP tunnel decap filter must include enc_dst_port condition\n");
 		return -EOPNOTSUPP;
 	}
-	return err;
+
+	/* match on UDP protocol and dst port number */
+
+	MLX5_SET_TO_ONES(fte_match_set_lyr_2_4, headers_c, ip_protocol);
+	MLX5_SET(fte_match_set_lyr_2_4, headers_v, ip_protocol, IPPROTO_UDP);
+
+	MLX5_SET(fte_match_set_lyr_2_4, headers_c, udp_dport, ntohs(mask->dst));
+	MLX5_SET(fte_match_set_lyr_2_4, headers_v, udp_dport, ntohs(key->dst));
+
+	/* UDP src port on outer header is generated by HW,
+	 * so it is probably a bad idea to request matching it.
+	 * Nonetheless, it is allowed.
+	 */
+
+	MLX5_SET(fte_match_set_lyr_2_4, headers_c, udp_sport, ntohs(mask->src));
+	MLX5_SET(fte_match_set_lyr_2_4, headers_v, udp_sport, ntohs(key->src));
+
+	return 0;
 }
