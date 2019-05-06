@@ -12,7 +12,7 @@
 #define MFC_PTRMASK  	~(MFC_INFOMASK)
 #define MFC_CT_FLOW     BIT(0)
 
-#define MINIFLOW_MAX_CT_TUPLES 2
+#define MINIFLOW_MAX_CT_TUPLES 6
 
 struct mlx5e_ct_tuple {
 	struct net *net;

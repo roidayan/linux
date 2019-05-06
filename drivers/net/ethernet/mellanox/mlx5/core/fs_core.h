@@ -151,7 +151,7 @@ struct mlx5_fc_cache {
 	u64 lastuse;
 };
 
-#define MINIFLOW_MAX_FLOWS 8
+#define MINIFLOW_MAX_FLOWS 12
 
 struct mlx5_fc {
 	struct list_head list;
