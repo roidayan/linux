@@ -2361,48 +2361,32 @@ int alloc_mod_hdr_actions(struct mlx5e_priv *priv,
 
 static const struct pedit_headers zero_masks = {};
 
-static int parse_tc_pedit_action(struct mlx5e_priv *priv,
-				 const struct tc_action *a, int namespace,
-				 struct mlx5e_tc_flow_parse_attr *parse_attr,
-				 struct netlink_ext_ack *extack)
+int alloc_mod_hdr_from_keys(struct mlx5e_priv *priv,
+			    struct tc_pedit_entry *keys, int nkeys,
+			    int namespace,
+			    struct mlx5e_tc_flow_parse_attr *parse_attr,
+			    gfp_t flags,
+			    struct netlink_ext_ack *extack)
 {
-	struct pedit_headers masks[__PEDIT_CMD_MAX], vals[__PEDIT_CMD_MAX], *cmd_masks;
-	int nkeys, i, err = -EOPNOTSUPP;
-	u32 mask, val, offset;
-	u8 cmd, htype;
-
-	nkeys = tcf_pedit_nkeys(a);
+	struct pedit_headers masks[__PEDIT_CMD_MAX], vals[__PEDIT_CMD_MAX],
+			     *cmd_masks;
+	int i, err;
+	u8 cmd;
 
 	memset(masks, 0, sizeof(struct pedit_headers) * __PEDIT_CMD_MAX);
 	memset(vals,  0, sizeof(struct pedit_headers) * __PEDIT_CMD_MAX);
 
 	for (i = 0; i < nkeys; i++) {
-		htype = tcf_pedit_htype(a, i);
-		cmd = tcf_pedit_cmd(a, i);
-		err = -EOPNOTSUPP; /* can't be all optimistic */
-
-		if (htype == TCA_PEDIT_KEY_EX_HDR_TYPE_NETWORK) {
-			NL_SET_ERR_MSG_MOD(extack,
-					   "legacy pedit isn't offloaded");
-			goto out_err;
-		}
-
-		if (cmd != TCA_PEDIT_KEY_EX_CMD_SET && cmd != TCA_PEDIT_KEY_EX_CMD_ADD) {
-			NL_SET_ERR_MSG_MOD(extack, "pedit cmd isn't offloaded");
-			goto out_err;
-		}
-
-		mask = tcf_pedit_mask(a, i);
-		val = tcf_pedit_val(a, i);
-		offset = tcf_pedit_offset(a, i);
-
-		err = set_pedit_val(htype, ~mask, val, offset, &masks[cmd], &vals[cmd]);
+		err = set_pedit_val(keys[i].htype, ~keys[i].mask, keys[i].val,
+				    keys[i].offset, &masks[keys[i].cmd],
+				    &vals[keys[i].cmd]);
 		if (err)
 			goto out_err;
 	}
 
 	if (!parse_attr->mod_hdr_actions) {
-		err = alloc_mod_hdr_actions(priv, nkeys, namespace, parse_attr, GFP_KERNEL);
+		err = alloc_mod_hdr_actions(priv, nkeys, namespace, parse_attr,
+					    flags);
 		if (err)
 			goto out_err;
 	}
@@ -2430,6 +2414,47 @@ out_dealloc_parsed_actions:
 	kfree(parse_attr->mod_hdr_actions);
 	parse_attr->mod_hdr_actions = NULL;
 out_err:
+	return err;
+}
+
+static int parse_tc_pedit_action(struct mlx5e_priv *priv,
+				 const struct tc_action *a, int namespace,
+				 struct mlx5e_tc_flow_parse_attr *parse_attr,
+				 struct netlink_ext_ack *extack)
+{
+	int nkeys, i, err = -EOPNOTSUPP;
+	struct tc_pedit_entry *keys;
+
+	nkeys = tcf_pedit_nkeys(a);
+	keys = kcalloc(nkeys, sizeof(*keys), GFP_KERNEL);
+
+	for (i = 0; i < nkeys; i++) {
+		keys[i].htype = tcf_pedit_htype(a, i);
+		keys[i].cmd = tcf_pedit_cmd(a, i);
+		err = -EOPNOTSUPP; /* can't be all optimistic */
+
+		if (keys[i].htype == TCA_PEDIT_KEY_EX_HDR_TYPE_NETWORK) {
+			NL_SET_ERR_MSG_MOD(extack,
+					   "legacy pedit isn't offloaded");
+			goto out_err;
+		}
+
+		if (keys[i].cmd != TCA_PEDIT_KEY_EX_CMD_SET &&
+		    keys[i].cmd != TCA_PEDIT_KEY_EX_CMD_ADD) {
+			NL_SET_ERR_MSG_MOD(extack, "pedit cmd isn't offloaded");
+			goto out_err;
+		}
+
+		keys[i].mask = tcf_pedit_mask(a, i);
+		keys[i].val = tcf_pedit_val(a, i);
+		keys[i].offset = tcf_pedit_offset(a, i);
+	}
+
+	err = alloc_mod_hdr_from_keys(priv, keys, nkeys, namespace,
+				      parse_attr, GFP_KERNEL, extack);
+
+out_err:
+	kfree(keys);
 	return err;
 }
 

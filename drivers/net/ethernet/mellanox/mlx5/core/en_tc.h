@@ -115,6 +115,11 @@ struct mlx5e_tc_flow_parse_attr {
 	int mirred_ifindex;
 };
 
+struct tc_pedit_entry {
+	u8 cmd, htype;
+	u32 mask, val, offset;
+};
+
 #define MLX5_MH_ACT_SZ MLX5_UN_SZ_BYTES(set_action_in_add_action_in_auto)
 int mlx5e_tc_init(void);
 void mlx5e_tc_cleanup(void);
@@ -165,6 +170,12 @@ int alloc_mod_hdr_actions(struct mlx5e_priv *priv,
 			  gfp_t flags);
 int mlx5e_tc_update_and_init_done_fdb_flow(struct mlx5e_priv *priv,
 					   struct mlx5e_tc_flow *flow);
+int alloc_mod_hdr_from_keys(struct mlx5e_priv *priv,
+			    struct tc_pedit_entry *keys, int nkeys,
+			    int namespace,
+			    struct mlx5e_tc_flow_parse_attr *parse_attr,
+			    gfp_t flags,
+			    struct netlink_ext_ack *extack);
 
 
 #else /* CONFIG_MLX5_ESWITCH */
