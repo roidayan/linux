@@ -18,6 +18,10 @@ struct mlx5e_ct_tuple {
 	struct net *net;
 	struct nf_conntrack_tuple tuple;
 	struct nf_conntrack_zone zone;
+	unsigned long nat;
+	__be32 ipv4;
+	__be16 port;
+	__u8 proto;
 
 	struct mlx5e_tc_flow *flow;
 };

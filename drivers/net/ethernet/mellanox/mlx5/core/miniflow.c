@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR Linux-OpenIB
 /* Copyright (c) 2019 Mellanox Technologies. */
 
+#include <net/tc_act/tc_pedit.h>
+
 #include "miniflow.h"
 #include "eswitch.h"
 #include "en_rep.h"
@@ -382,6 +384,63 @@ static int miniflow_register_ct_flow(struct mlx5e_miniflow *miniflow)
 	return err;
 }
 
+static int __miniflow_ct_parse_nat(struct mlx5e_priv *priv,
+				   struct mlx5e_ct_tuple *ct_tuple,
+				   struct mlx5e_tc_flow_parse_attr *parse_attr)
+{
+	struct tc_pedit_entry keys[2];
+
+	/* TOOD: support IPv6 */
+	keys[0].htype = TCA_PEDIT_KEY_EX_HDR_TYPE_IP4;
+	keys[0].cmd = TCA_PEDIT_KEY_EX_CMD_SET;
+	keys[0].mask = 0;
+	keys[0].val = ct_tuple->ipv4;
+
+	keys[0].offset = ct_tuple->nat & IPS_SRC_NAT ?
+			 offsetof(struct iphdr, saddr) :
+			 offsetof(struct iphdr, daddr);
+
+	keys[1].cmd = TCA_PEDIT_KEY_EX_CMD_SET;
+	keys[1].mask = 0xFFFF0000;
+	keys[1].val = ct_tuple->port;
+
+	switch (ct_tuple->proto) {
+	case IPPROTO_UDP:
+		keys[1].htype = TCA_PEDIT_KEY_EX_HDR_TYPE_UDP;
+		keys[1].offset = ct_tuple->nat & IPS_SRC_NAT ?
+				 offsetof(struct udphdr, source) :
+				 offsetof(struct udphdr, dest);
+	break;
+	case IPPROTO_TCP:
+		keys[1].htype = TCA_PEDIT_KEY_EX_HDR_TYPE_TCP;
+		keys[1].offset = ct_tuple->nat & IPS_SRC_NAT ?
+				 offsetof(struct tcphdr, source) :
+				 offsetof(struct tcphdr, dest);
+	break;
+	}
+
+	return alloc_mod_hdr_from_keys(priv, keys, 2, MLX5_FLOW_NAMESPACE_FDB,
+				       parse_attr, GFP_ATOMIC, NULL);
+}
+
+static int miniflow_ct_parse_nat(struct mlx5e_priv *priv,
+				 struct mlx5e_tc_flow *flow,
+				 struct mlx5e_ct_tuple *ct_tuple)
+{
+	int err;
+
+	if (!ct_tuple->nat)
+		return 0;
+
+	err = __miniflow_ct_parse_nat(priv, ct_tuple,
+				      flow->esw_attr->parse_attr);
+	if (err)
+		return err;
+
+	flow->esw_attr->action |= MLX5_FLOW_CONTEXT_ACTION_MOD_HDR;
+	return 0;
+}
+
 static struct mlx5e_ct_tuple *
 miniflow_ct_tuple_alloc(struct mlx5e_miniflow *miniflow)
 {
@@ -411,9 +470,17 @@ miniflow_ct_flow_alloc(struct mlx5e_priv *priv,
 	flow->esw_attr->parse_attr = parse_attr;
 	flow->esw_attr->action = MLX5_FLOW_CONTEXT_ACTION_COUNT;
 
+	err = miniflow_ct_parse_nat(priv, flow, ct_tuple);
+	if (err)
+		goto err_free;
+
 	ct_tuple->flow = flow;
 
 	return flow;
+
+err_free:
+	mlx5e_flow_put(priv, flow);
+	return NULL;
 }
 
 static int miniflow_resolve_path_flows(struct mlx5e_miniflow *miniflow)
@@ -868,6 +935,11 @@ int miniflow_configure_ct(struct mlx5e_priv *priv,
 	ct_tuple->net = cto->net;
 	ct_tuple->zone = *cto->zone;
 	ct_tuple->tuple = *cto->tuple;
+
+	ct_tuple->nat = cto->nat;
+	ct_tuple->ipv4 = cto->ipv4;
+	ct_tuple->port = cto->port;
+	ct_tuple->proto = cto->proto;
 
 	ct_tuple->flow = NULL;
 
