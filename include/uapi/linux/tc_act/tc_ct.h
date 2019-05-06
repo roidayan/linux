@@ -15,6 +15,7 @@ struct tc_conntrack {
 	__u32 mark;
 	__u32 mark_mask;
 	bool commit;
+	bool clear;
 };
 
 enum {
