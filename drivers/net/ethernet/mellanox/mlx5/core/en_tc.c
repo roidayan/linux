@@ -1572,7 +1572,7 @@ static int parse_tunnel_attr(struct mlx5e_priv *priv,
 	int err = 0;
 
 	err = mlx5e_tc_tun_parse(filter_dev, priv, spec, f,
-				 headers_c, headers_v);
+				 headers_c, headers_v, match_level);
 	if (err) {
 		NL_SET_ERR_MSG_MOD(extack,
 				   "failed to parse tunnel attributes");
@@ -2700,7 +2700,8 @@ mlx5e_encap_get(struct mlx5e_priv *priv, struct ip_tunnel_key *key,
 
 static struct mlx5e_encap_entry *
 mlx5e_encap_get_create(struct mlx5e_priv *priv, struct ip_tunnel_info *tun_info,
-		       struct net_device *mirred_dev)
+		       struct net_device *mirred_dev,
+		       struct netlink_ext_ack *extack)
 {
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 	unsigned short family = ip_tunnel_info_af(tun_info);
@@ -2721,10 +2722,13 @@ mlx5e_encap_get_create(struct mlx5e_priv *priv, struct ip_tunnel_info *tun_info,
 
 	mutex_init(&e->encap_entry_lock);
 	e->tun_info = *tun_info;
-	//e->tunnel_type = tunnel_type;
 	INIT_LIST_HEAD(&e->flows);
 	INIT_LIST_HEAD(&e->neigh_update_list);
 	refcount_set(&e->refcnt, 1);
+
+	err = mlx5e_tc_tun_init_encap_attr(mirred_dev, priv, e, extack);
+	if (err)
+		return ERR_PTR(err);
 
 	if (family == AF_INET)
 		err = mlx5e_tc_tun_create_header_ipv4(priv, mirred_dev, e);
@@ -2765,15 +2769,11 @@ static int mlx5e_attach_encap(struct mlx5e_priv *priv,
 	struct mlx5e_encap_entry *e;
 	int err = 0;
 
-	e = mlx5e_encap_get_create(priv, tun_info, mirred_dev);
+	e = mlx5e_encap_get_create(priv, tun_info, mirred_dev, extack);
 
 	/* must verify if encap is valid or not */
 	if (IS_ERR(e))
 		return PTR_ERR(e);
-
-	err = mlx5e_tc_tun_init_encap_attr(mirred_dev, priv, e, extack);
-	if (err)
-		return err;
 
 	flow->e = e;
 	mutex_lock(&e->encap_entry_lock);
