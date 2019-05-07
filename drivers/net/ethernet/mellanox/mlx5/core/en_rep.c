@@ -679,10 +679,15 @@ static int mlx5e_rep_indr_setup_block_cb(enum tc_setup_type type,
 					 void *type_data, void *indr_priv)
 {
 	struct mlx5e_rep_indr_block_priv *priv = indr_priv;
+	struct mlx5e_priv *dev_priv = netdev_priv(priv->rpriv->netdev);
 
 	switch (type) {
 	case TC_SETUP_CLSFLOWER:
 		return mlx5e_rep_indr_offload(priv->netdev, type_data, priv);
+	case TC_SETUP_MINIFLOW:
+		return miniflow_configure(dev_priv, type_data);
+	case TC_SETUP_CT:
+		return miniflow_configure_ct(dev_priv, type_data);
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -1485,6 +1490,21 @@ static const struct mlx5e_profile mlx5e_rep_profile = {
 
 /* e-Switch vport representors */
 
+static int mlx5e_rep_setup_tc_cb_egdev(enum tc_setup_type type, void *type_data,
+                                      void *cb_priv)
+{
+       struct mlx5e_priv *priv = cb_priv;
+
+       switch (type) {
+       case TC_SETUP_MINIFLOW:
+               return miniflow_configure(priv, type_data);
+       case TC_SETUP_CT:
+               return miniflow_configure_ct(priv, type_data);
+       default:
+               return -EOPNOTSUPP;
+       }
+}
+
 static int
 mlx5e_nic_rep_load(struct mlx5_core_dev *dev, struct mlx5_eswitch_rep *rep)
 {
@@ -1509,11 +1529,11 @@ mlx5e_nic_rep_load(struct mlx5_core_dev *dev, struct mlx5_eswitch_rep *rep)
 	if (err)
 		goto  err_neigh_cleanup;
 
-//	err = tc_setup_cb_egdev_all_register(rpriv->netdev,
-//					     mlx5e_rep_setup_tc_cb_egdev,
-//					     priv);
+	err = tc_setup_cb_egdev_all_register(rpriv->netdev,
+					     mlx5e_rep_setup_tc_cb_egdev,
+					     priv);
 	if (err)
-		goto err_neigh_cleanup;
+		goto err_esw_cleanup;
 
 	/* init indirect block notifications */
 	INIT_LIST_HEAD(&uplink_priv->tc_indr_block_priv_list);
@@ -1527,6 +1547,10 @@ mlx5e_nic_rep_load(struct mlx5_core_dev *dev, struct mlx5_eswitch_rep *rep)
 	return 0;
 
 err_indirect_block_cleanup:
+	tc_setup_cb_egdev_all_unregister(rpriv->netdev,
+					 mlx5e_rep_setup_tc_cb_egdev,
+					 priv);
+err_esw_cleanup:
 	mlx5e_tc_esw_cleanup(priv);
 err_neigh_cleanup:
 	mlx5e_rep_neigh_cleanup(rpriv);
@@ -1544,9 +1568,9 @@ mlx5e_nic_rep_unload(struct mlx5_eswitch_rep *rep)
 	if (test_bit(MLX5E_STATE_OPENED, &priv->state))
 		mlx5e_remove_sqs_fwd_rules(priv);
 
-//	tc_setup_cb_egdev_all_unregister(rpriv->netdev,
-//					 mlx5e_rep_setup_tc_cb_egdev,
-//					 priv);
+	tc_setup_cb_egdev_all_unregister(rpriv->netdev,
+					 mlx5e_rep_setup_tc_cb_egdev,
+					 priv);
 
 	/* clean indirect TC block notifications */
 	unregister_netdevice_notifier(&rpriv->uplink_priv.netdevice_nb);

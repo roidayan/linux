@@ -21,6 +21,8 @@
 #include <linux/kmod.h>
 #include <linux/err.h>
 #include <linux/module.h>
+#include <linux/rhashtable.h>
+#include <linux/list.h>
 #include <net/net_namespace.h>
 #include <net/sock.h>
 #include <net/sch_generic.h>
@@ -1520,8 +1522,107 @@ out_module_put:
 	return skb->len;
 }
 
+struct tcf_action_net {
+	struct list_head egdev_list;
+};
+
+static unsigned int tcf_action_net_id;
+
+struct tcf_action_egdev_cb {
+	struct list_head list;
+	tc_setup_cb_t *cb;
+	void *cb_priv;
+};
+
+struct tcf_action_egdev {
+	struct rhash_head ht_node;
+	const struct net_device *dev;
+	unsigned int refcnt;
+	struct list_head cb_list;
+};
+
+int tc_setup_cb_egdev_all_register(const struct net_device *dev,
+				   tc_setup_cb_t *cb, void *cb_priv)
+{
+	struct tcf_action_egdev_cb *egdev_cb;
+	struct tcf_action_net *tan;
+
+	egdev_cb = kzalloc(sizeof(*egdev_cb), GFP_KERNEL);
+	if (!egdev_cb)
+		return -ENOMEM;
+	egdev_cb->cb = cb;
+	egdev_cb->cb_priv = cb_priv;
+
+	rtnl_lock();
+	tan = net_generic(dev_net(dev), tcf_action_net_id);
+	list_add(&egdev_cb->list, &tan->egdev_list);
+	rtnl_unlock();
+	return 0;
+}
+EXPORT_SYMBOL_GPL(tc_setup_cb_egdev_all_register);
+
+void tc_setup_cb_egdev_all_unregister(const struct net_device *dev,
+				      tc_setup_cb_t *cb, void *cb_priv)
+{
+	struct tcf_action_egdev_cb *egdev_cb;
+	struct tcf_action_net *tan;
+
+	rtnl_lock();
+	tan = net_generic(dev_net(dev), tcf_action_net_id);
+	list_for_each_entry(egdev_cb, &tan->egdev_list, list) {
+		if (egdev_cb->cb == cb && egdev_cb->cb_priv == cb_priv) {
+			list_del(&egdev_cb->list);
+			kfree(egdev_cb);
+			break;
+		}
+	}
+	rtnl_unlock();
+}
+EXPORT_SYMBOL_GPL(tc_setup_cb_egdev_all_unregister);
+
+int tc_setup_cb_egdev_all_call_fast(enum tc_setup_type type, void *type_data)
+{
+	struct tcf_action_net *tan = net_generic(&init_net, tcf_action_net_id);
+	struct tcf_action_egdev_cb *egdev_cb;
+	int err;
+
+	list_for_each_entry(egdev_cb, &tan->egdev_list, list) {
+		err = egdev_cb->cb(type, type_data, egdev_cb->cb_priv);
+		if (!err)
+			return 1;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(tc_setup_cb_egdev_all_call_fast);
+
+static __net_init int tcf_action_net_init(struct net *net)
+{
+	struct tcf_action_net *tan = net_generic(net, tcf_action_net_id);
+
+	INIT_LIST_HEAD(&tan->egdev_list);
+	return 0;
+}
+
+static void __net_exit tcf_action_net_exit(struct net *net)
+{
+}
+
+static struct pernet_operations tcf_action_net_ops = {
+	.init = tcf_action_net_init,
+	.exit = tcf_action_net_exit,
+	.id = &tcf_action_net_id,
+	.size = sizeof(struct tcf_action_net),
+};
+
 static int __init tc_action_init(void)
 {
+	int err;
+
+	err = register_pernet_subsys(&tcf_action_net_ops);
+	if (err)
+		return err;
+
 	rtnl_register(PF_UNSPEC, RTM_NEWACTION, tc_ctl_action, NULL, 0);
 	rtnl_register(PF_UNSPEC, RTM_DELACTION, tc_ctl_action, NULL, 0);
 	rtnl_register(PF_UNSPEC, RTM_GETACTION, tc_ctl_action, tc_dump_action,

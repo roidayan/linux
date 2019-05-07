@@ -2524,7 +2524,6 @@ int tc_setup_cb_call(struct tcf_block *block, struct tcf_exts *exts,
 {
 	return tcf_block_cb_call(block, type, type_data, err_stop);
 }
-
 EXPORT_SYMBOL(tc_setup_cb_call);
 
 int tc_setup_cb_call_all(struct tcf_block *block, enum tc_setup_type type, void *type_data)
@@ -2541,8 +2540,7 @@ int tc_setup_cb_call_all(struct tcf_block *block, enum tc_setup_type type, void 
 		}
 	}
 
-	//return tc_setup_cb_egdev_all_call_fast(type, type_data);
-	return 0;
+	return tc_setup_cb_egdev_all_call_fast(type, type_data);
 }
 EXPORT_SYMBOL(tc_setup_cb_call_all);
 
