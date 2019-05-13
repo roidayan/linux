@@ -4,6 +4,7 @@
 
 #include <net/act_api.h>
 #include <uapi/linux/tc_act/tc_ct.h>
+#include <linux/netfilter/nf_nat.h>
 
 struct tcf_conntrack_info {
 	struct tc_action common;
@@ -15,6 +16,9 @@ struct tcf_conntrack_info {
 	u32 mark;
 	u32 mark_mask;
 	bool commit;
+	/* NAT */
+	u8 nat;
+	struct nf_nat_range2 range;
 };
 
 #define to_conntrack(a) ((struct tcf_conntrack_info *)a)
