@@ -1151,12 +1151,6 @@ mlx5e_tc_add_fdb_flow(struct mlx5e_priv *priv,
 	else
 		mlx5e_set_flow_flag_mb_before(flow, MLX5E_TC_FLOW_OFFLOADED);
 
-	if (!(flow->esw_attr->action &
-	      MLX5_FLOW_CONTEXT_ACTION_PACKET_REFORMAT)) {
-		kmem_cache_free(parse_attr_cache, parse_attr);
-		flow->esw_attr->parse_attr = NULL;
-	}
-
 	return 0;
 }
 
