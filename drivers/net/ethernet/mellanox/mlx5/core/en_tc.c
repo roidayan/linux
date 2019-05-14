@@ -3183,14 +3183,10 @@ mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 		goto out;
 	parse_attr->filter_dev = filter_dev;
 	flow->esw_attr->parse_attr = parse_attr;
-	err = parse_cls_flower(flow->priv, flow, &parse_attr->spec,
-			       f, filter_dev);
-	if (err)
-		goto err_free;
 
 	err = parse_cls_flower(priv, flow, &parse_attr->spec, f, filter_dev);
 	if (err)
-		goto err_parse_flow;
+		goto err_free;
 
 	flow->esw_attr->chain = f->common.chain_index;
 	flow->esw_attr->prio = TC_H_MAJ(f->common.prio) >> 16;
@@ -3214,9 +3210,6 @@ mlx5e_add_fdb_flow(struct mlx5e_priv *priv,
 
 	return 0;
 
-err_parse_flow:
-	kfree(parse_attr->mod_hdr_actions);
-	kvfree(parse_attr);
 err_free:
 	mlx5e_flow_put(priv, flow);
 out:
