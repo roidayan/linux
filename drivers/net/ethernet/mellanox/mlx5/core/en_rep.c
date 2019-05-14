@@ -446,14 +446,12 @@ bool mlx5e_rep_neigh_entry_hold(struct mlx5e_neigh_hash_entry *nhe)
 	return refcount_inc_not_zero(&nhe->refcnt);
 }
 
-static void mlx5e_rep_neigh_entry_remove(struct mlx5e_priv *priv,
-					 struct mlx5e_neigh_hash_entry *nhe);
+static void mlx5e_rep_neigh_entry_remove(struct mlx5e_neigh_hash_entry *nhe);
 
-static void mlx5e_rep_neigh_entry_release(struct mlx5e_priv *priv,
-					  struct mlx5e_neigh_hash_entry *nhe)
+static void mlx5e_rep_neigh_entry_release(struct mlx5e_neigh_hash_entry *nhe)
 {
 	if (refcount_dec_and_test(&nhe->refcnt)) {
-		mlx5e_rep_neigh_entry_remove(priv, nhe);
+		mlx5e_rep_neigh_entry_remove(nhe);
 		kfree_rcu(nhe, rcu);
 	}
 }
@@ -462,8 +460,6 @@ static struct mlx5e_neigh_hash_entry *
 mlx5e_get_next_nhe(struct mlx5e_rep_priv *rpriv,
 		   struct mlx5e_neigh_hash_entry *nhe)
 {
-	struct net_device *netdev = rpriv->netdev;
-	struct mlx5e_priv *priv = netdev_priv(netdev);
 	struct mlx5e_neigh_hash_entry *next = NULL;
 
 	rcu_read_lock();
@@ -487,7 +483,7 @@ mlx5e_get_next_nhe(struct mlx5e_rep_priv *rpriv,
 	rcu_read_unlock();
 
 	if (nhe)
-		mlx5e_rep_neigh_entry_release(priv, nhe);
+		mlx5e_rep_neigh_entry_release(nhe);
 
 	return next;
 }
@@ -589,7 +585,7 @@ static void mlx5e_rep_neigh_update(struct work_struct *work)
 		mlx5e_encap_put(priv, e);
 	}
 
-	mlx5e_rep_neigh_entry_release(netdev_priv(nhe->m_neigh.dev), nhe);
+	mlx5e_rep_neigh_entry_release(nhe);
 
 	rtnl_unlock();
 	neigh_release(n);
@@ -611,7 +607,7 @@ bool mlx5e_rep_queue_neigh_update_work(struct mlx5e_priv *priv,
 	nhe->n = n;
 
 	if (!queue_work(priv->wq, &nhe->neigh_update_work)) {
-		mlx5e_rep_neigh_entry_release(priv, nhe);
+		mlx5e_rep_neigh_entry_release(nhe);
 		neigh_release(n);
 		return false;
 	}
@@ -944,10 +940,9 @@ static int mlx5e_rep_neigh_entry_insert(struct mlx5e_priv *priv,
 	return err;
 }
 
-static void mlx5e_rep_neigh_entry_remove(struct mlx5e_priv *priv,
-					 struct mlx5e_neigh_hash_entry *nhe)
+static void mlx5e_rep_neigh_entry_remove(struct mlx5e_neigh_hash_entry *nhe)
 {
-	struct mlx5e_rep_priv *rpriv = priv->ppriv;
+	struct mlx5e_rep_priv *rpriv = nhe->priv->ppriv;
 
 	spin_lock_bh(&rpriv->neigh_update.encap_lock);
 
@@ -985,6 +980,7 @@ static int mlx5e_rep_neigh_entry_create(struct mlx5e_priv *priv,
 	if (!*nhe)
 		return -ENOMEM;
 
+	(*nhe)->priv = priv;
 	memcpy(&(*nhe)->m_neigh, &e->m_neigh, sizeof(e->m_neigh));
 	INIT_WORK(&(*nhe)->neigh_update_work, mlx5e_rep_neigh_update);
 	spin_lock_init(&(*nhe)->encap_list_lock);
@@ -1037,7 +1033,7 @@ void mlx5e_rep_encap_entry_detach(struct mlx5e_priv *priv,
 	list_del_rcu(&e->encap_list);
 	spin_unlock(&e->nhe->encap_list_lock);
 
-	mlx5e_rep_neigh_entry_release(priv, e->nhe);
+	mlx5e_rep_neigh_entry_release(e->nhe);
 	e->nhe = NULL;
 }
 
