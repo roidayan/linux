@@ -563,6 +563,7 @@ static struct mlx5_fc *miniflow_alloc_dummy_counter(struct mlx5_core_dev *dev)
 		return NULL;
 
 	counter->dummy = true;
+	counter->cache.lastuse = jiffies;
 	counter->aging = true;
 
 	return counter;
@@ -1045,6 +1046,7 @@ void ct_flow_offload_get_stats(struct list_head *head, u64 *lastuse)
 {
 	struct mlx5e_tc_flow *flow, *tmp;
 
+	*lastuse = 0;
 	list_for_each_entry_safe(flow, tmp, head, nft_node) {
 		struct mlx5_fc *counter = flow->dummy_counter;
 		u64 bytes, packets, lastuse1;

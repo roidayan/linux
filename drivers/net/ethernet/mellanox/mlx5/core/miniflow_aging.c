@@ -225,13 +225,17 @@ flow_offload_del(struct flow_offload_table *flow_table,
 
 static struct flow_offload_tuple_rhash *
 flow_offload_lookup(struct flow_offload_table *flow_table,
+		    const struct nf_conntrack_zone *zone,
 		    const struct nf_conntrack_tuple *tuple)
 {
-	struct flow_offload_tuple_rhash *res;
+	struct flow_offload_tuple_rhash key, *res;
 	struct flow_offload *flow;
 	int dir;
 
-	res = rhashtable_lookup_fast(&flow_table->rhashtable, &tuple,
+	key.tuple = *tuple;
+	key.zone  = *zone;
+
+	res = rhashtable_lookup_fast(&flow_table->rhashtable, &key.tuple,
 				     rhash_params);
 	if (!res)
 		return NULL;
@@ -403,7 +407,8 @@ err_flow_alloc:
 }
 
 static inline struct flow_offload_tuple_rhash *
-_flowtable_lookup(const struct nf_conntrack_tuple *tuple)
+_flowtable_lookup(const struct nf_conntrack_zone *zone,
+		  const struct nf_conntrack_tuple *tuple)
 {
 	struct flow_offload_table *flowtable;
 	struct flow_offload_tuple_rhash *tuplehash = NULL;
@@ -412,7 +417,7 @@ _flowtable_lookup(const struct nf_conntrack_tuple *tuple)
 
 	flowtable = rcu_dereference(_flowtable);
 	if (flowtable)
-		tuplehash = flow_offload_lookup(flowtable, tuple);
+		tuplehash = flow_offload_lookup(flowtable, zone, tuple);
 
 	rcu_read_unlock();
 
@@ -433,7 +438,7 @@ int mlx5_ct_flow_offload_add(const struct net *net,
 	if (!rcu_access_pointer(_flowtable))
 		return -ENOENT;
 
-	fhash = _flowtable_lookup(tuple);
+	fhash = _flowtable_lookup(zone, tuple);
 	if (fhash) {
 		dir = fhash->tuple.dst.dir;
 		entry = container_of(fhash, struct flow_offload_entry,
@@ -480,7 +485,7 @@ int mlx5_ct_flow_offload_remove(const struct net *net,
 	if (!rcu_access_pointer(_flowtable))
 		return -ENOENT;
 
-	fhash = _flowtable_lookup(tuple);
+	fhash = _flowtable_lookup(zone, tuple);
 	if (!fhash)
 		return -ENOENT;
 
