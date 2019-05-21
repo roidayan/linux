@@ -33,7 +33,7 @@ module_param(max_nr_mf, int, 0644);
 /* Derived from current insertion rate (flows/s) */
 #define MINIFLOW_WORKQUEUE_MAX_SIZE 40 * 1000
 
-struct workqueue_struct *miniflow_wq;
+static struct workqueue_struct *miniflow_wq;
 static atomic_t miniflow_wq_size = ATOMIC_INIT(0);
 
 /* TOOD: we should init this variable only once, rather than per PF? */
@@ -808,7 +808,7 @@ int miniflow_cache_init(struct mlx5e_priv *priv)
 	return 0;
 
 err_wq:
-	rhashtable_free_and_destroy(mf_ht, NULL, NULL);
+	rhashtable_destroy(mf_ht);
 err_mf_ht:
 	kmem_cache_destroy(miniflow_cache);
 	miniflow_cache_allocated = 0;
@@ -824,7 +824,7 @@ void miniflow_cache_destroy(struct mlx5e_priv *priv)
 	/* TODO: it does not make sense to process the remaining miniflows? */
 	flush_workqueue(miniflow_wq);
 	destroy_workqueue(miniflow_wq);
-	rhashtable_free_and_destroy(mf_ht, NULL, NULL);
+	rhashtable_destroy(mf_ht);
 	miniflow_free_current_miniflow();
 	kmem_cache_destroy(miniflow_cache);
 	miniflow_cache_allocated = 0;
