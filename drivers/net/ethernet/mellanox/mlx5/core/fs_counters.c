@@ -187,12 +187,12 @@ static struct mlx5_fc *mlx5_fc_stats_query(struct mlx5_core_dev *dev,
 		if (c->packets == packets)
 			continue;
 
+		dfpackets = packets - c->packets;
+		dfbytes = bytes - c->bytes;
+
 		c->packets = packets;
 		c->bytes = bytes;
 		c->lastuse = jiffies;
-
-		dfpackets = packets - c->packets;
-		dfbytes = bytes - c->bytes;
 
 		fc_dummies_update(counter, dfpackets, dfbytes, jiffies);
 	}
