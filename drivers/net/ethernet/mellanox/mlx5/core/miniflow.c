@@ -350,14 +350,13 @@ static void miniflow_merge_tuple(struct mlx5e_tc_flow *mflow,
 	}
 }
 
-
 static int miniflow_register_ct_tuple(struct mlx5e_ct_tuple *ct_tuple)
 {
 	struct nf_conntrack_tuple *tuple;
 	struct nf_conntrack_zone *zone;
 	struct net *net;
 
-	net = (struct net *) ct_tuple->net;
+	net = (struct net *)ct_tuple->net;
 	zone = &ct_tuple->zone;
 	tuple = &ct_tuple->tuple;
 
@@ -1052,7 +1051,8 @@ void ct_flow_offload_get_stats(struct list_head *head, u64 *lastuse)
 		u64 bytes, packets, lastuse1;
 
 		if (counter) {
-			mlx5_fc_query_cached(counter, &bytes, &packets, &lastuse1);
+			mlx5_fc_query_cached(counter, &bytes, &packets,
+					     &lastuse1);
 			*lastuse = max(*lastuse, lastuse1);
 		}
 	}

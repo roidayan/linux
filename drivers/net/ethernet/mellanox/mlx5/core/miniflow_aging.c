@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0 OR Linux-OpenIB
+/* Copyright (c) 2019 Mellanox Technologies. */
+
 #include <linux/workqueue.h>
 #include <linux/spinlock.h>
 #include <linux/rhashtable.h>
@@ -11,7 +14,7 @@ module_param(offloaded_ct_timeout, int, 0644);
 
 struct flow_offload_table {
 	struct rhashtable        rhashtable;
-	struct spinlock          lock;
+	spinlock_t               lock;
 	struct delayed_work      gc_work;
 	struct workqueue_struct *flow_wq;
 };
@@ -42,7 +45,7 @@ struct flow_offload_entry {
 	struct nf_conn        *ct;
 	struct rcu_head       rcu_head;
 	struct list_head      deps;
-	struct spinlock       dep_lock;
+	spinlock_t            dep_lock;
 };
 
 static struct flow_offload_table __rcu *_flowtable;
@@ -65,7 +68,7 @@ flow_offload_alloc(struct nf_conn *ct, int zone_id)
 	struct flow_offload *flow;
 
 	if (unlikely(nf_ct_is_dying(ct) ||
-	    !atomic_inc_not_zero(&ct->ct_general.use)))
+		     !atomic_inc_not_zero(&ct->ct_general.use)))
 		return ERR_PTR(-EINVAL);
 
 	entry = kzalloc((sizeof(*entry)), GFP_ATOMIC);
@@ -135,71 +138,74 @@ static void flow_offload_free(struct flow_offload *flow)
 
 static u32 _flow_offload_hash(const void *data, u32 len, u32 seed)
 {
-    const struct nf_conntrack_tuple *tuple = data;
-    unsigned int n;
+	const struct nf_conntrack_tuple *tuple = data;
+	unsigned int n;
 
-    n = (sizeof(tuple->src) + sizeof(tuple->dst.u3)) / sizeof(u32);
+	n = (sizeof(tuple->src) + sizeof(tuple->dst.u3)) / sizeof(u32);
 
-    /* reuse nf_conntrack hash method */
-    return jhash2((u32 *)tuple, n, seed ^
-              (((__force __u16)tuple->dst.u.all << 16) |
-              tuple->dst.protonum));
+	/* reuse nf_conntrack hash method */
+	return jhash2((u32 *)tuple, n, seed ^
+			(((__force __u16)tuple->dst.u.all << 16) |
+		   tuple->dst.protonum));
 }
 
 static u32 _flow_offload_hash_obj(const void *data, u32 len, u32 seed)
 {
-    const struct flow_offload_tuple_rhash *tuplehash = data;
-    unsigned int n;
+	const struct flow_offload_tuple_rhash *tuplehash = data;
+	unsigned int n;
 
-    n = (sizeof(tuplehash->tuple.src) + sizeof(tuplehash->tuple.dst.u3)) / sizeof(u32);
+	n = (sizeof(tuplehash->tuple.src) +
+	     sizeof(tuplehash->tuple.dst.u3)) / sizeof(u32);
 
-    return jhash2((u32 *)&tuplehash->tuple, n, seed ^
-              (((__force __u16)tuplehash->tuple.dst.u.all << 16) |
-              tuplehash->tuple.dst.protonum));
+	return jhash2((u32 *)&tuplehash->tuple, n, seed ^
+			(((__force __u16)tuplehash->tuple.dst.u.all << 16) |
+			 tuplehash->tuple.dst.protonum));
 }
 
 static int _flow_offload_hash_cmp(struct rhashtable_compare_arg *arg,
-                    const void *ptr)
+				  const void *ptr)
 {
-    const struct flow_offload_tuple_rhash *x = ptr;
-    struct flow_offload_tuple_rhash *thash;
+	const struct flow_offload_tuple_rhash *x = ptr;
+	struct flow_offload_tuple_rhash *thash;
 
-    thash = container_of(arg->key, struct flow_offload_tuple_rhash, tuple);
+	thash = container_of(arg->key, struct flow_offload_tuple_rhash, tuple);
 
-    if (memcmp(&x->tuple, &thash->tuple, offsetof(struct nf_conntrack_tuple, dst.dir)) ||
-        (x->zone.id != thash->zone.id))
-        return 1;
+	if (memcmp(&x->tuple, &thash->tuple,
+		   offsetof(struct nf_conntrack_tuple, dst.dir)) ||
+	    x->zone.id != thash->zone.id)
+		return 1;
 
-    return 0;
+	return 0;
 }
 
 static const struct rhashtable_params rhash_params = {
-    .head_offset            = offsetof(struct flow_offload_tuple_rhash, node),
-    .hashfn                 = _flow_offload_hash,
-    .obj_hashfn             = _flow_offload_hash_obj,
-    .obj_cmpfn              = _flow_offload_hash_cmp,
-    .automatic_shrinking    = true,
+	.head_offset            = offsetof(struct flow_offload_tuple_rhash,
+					   node),
+	.hashfn                 = _flow_offload_hash,
+	.obj_hashfn             = _flow_offload_hash_obj,
+	.obj_cmpfn              = _flow_offload_hash_cmp,
+	.automatic_shrinking    = true,
 };
 
 static int
 flow_offload_add(struct flow_offload_table *flow_table,
-			struct flow_offload *flow)
+		 struct flow_offload *flow)
 {
 	int ret;
 
 	ret = rhashtable_insert_fast(&flow_table->rhashtable,
-			&flow->tuplehash[FLOW_OFFLOAD_DIR_ORIGINAL].node,
-			rhash_params);
+				     &flow->tuplehash[FLOW_OFFLOAD_DIR_ORIGINAL].node,
+				     rhash_params);
 	if (ret)
 		return ret;
 
 	ret = rhashtable_insert_fast(&flow_table->rhashtable,
-			&flow->tuplehash[FLOW_OFFLOAD_DIR_REPLY].node,
-			rhash_params);
+				     &flow->tuplehash[FLOW_OFFLOAD_DIR_REPLY].node,
+				     rhash_params);
 	if (ret)
 		rhashtable_remove_fast(&flow_table->rhashtable,
-				&flow->tuplehash[FLOW_OFFLOAD_DIR_ORIGINAL].node,
-				rhash_params);
+				       &flow->tuplehash[FLOW_OFFLOAD_DIR_ORIGINAL].node,
+				       rhash_params);
 
 	return ret;
 }
@@ -211,11 +217,11 @@ flow_offload_del(struct flow_offload_table *flow_table,
 	struct flow_offload_entry *e;
 
 	rhashtable_remove_fast(&flow_table->rhashtable,
-			&flow->tuplehash[FLOW_OFFLOAD_DIR_ORIGINAL].node,
-			rhash_params);
+			       &flow->tuplehash[FLOW_OFFLOAD_DIR_ORIGINAL].node,
+			       rhash_params);
 	rhashtable_remove_fast(&flow_table->rhashtable,
-			&flow->tuplehash[FLOW_OFFLOAD_DIR_REPLY].node,
-			rhash_params);
+			       &flow->tuplehash[FLOW_OFFLOAD_DIR_REPLY].node,
+			       rhash_params);
 
 	e = container_of(flow, struct flow_offload_entry, flow);
 	clear_bit(IPS_OFFLOAD_BIT, &e->ct->status);
@@ -272,8 +278,8 @@ flow_offload_table_iterate(struct flow_offload_table *flow_table,
 		if (tuplehash->tuple.dst.dir)
 			continue;
 
-		flow = container_of(tuplehash, struct flow_offload, tuplehash[0]);
-
+		flow = container_of(tuplehash, struct flow_offload,
+				    tuplehash[0]);
 		iter(flow, data);
 	}
 
@@ -305,7 +311,7 @@ static void nf_flow_offload_gc_step(struct flow_offload *flow, void *data)
 {
 	struct flow_offload_table *flow_table = data;
 	struct flow_offload_entry *e;
-	unsigned timeout = offloaded_ct_timeout * HZ;
+	unsigned int timeout = offloaded_ct_timeout * HZ;
 	u64 lastuse;
 
 	e = container_of(flow, struct flow_offload_entry, flow);
@@ -320,11 +326,13 @@ static void nf_flow_offload_gc_step(struct flow_offload *flow, void *data)
 
 static void flow_offload_work_gc(struct work_struct *gc_work)
 {
-    struct flow_offload_table *flow_table;
+	struct flow_offload_table *flow_table;
 
-    flow_table = container_of(gc_work, struct flow_offload_table, gc_work.work);
-    flow_offload_table_iterate(flow_table, nf_flow_offload_gc_step, flow_table);
-    queue_delayed_work(flow_table->flow_wq, &flow_table->gc_work, HZ);
+	flow_table = container_of(gc_work, struct flow_offload_table,
+				  gc_work.work);
+	flow_offload_table_iterate(flow_table, nf_flow_offload_gc_step,
+				   flow_table);
+	queue_delayed_work(flow_table->flow_wq, &flow_table->gc_work, HZ);
 }
 
 static int flow_offload_table_init(struct flow_offload_table *flowtable)
@@ -359,11 +367,13 @@ static void nf_flow_table_do_cleanup(struct flow_offload *flow, void *data)
 
 static void flow_offload_table_free(struct flow_offload_table *flowtable)
 {
-    cancel_delayed_work_sync(&flowtable->gc_work);
-    flow_offload_table_iterate(flowtable, nf_flow_table_do_cleanup, flowtable);
-    flow_offload_table_iterate(flowtable, nf_flow_offload_gc_step, flowtable);
-    destroy_workqueue(flowtable->flow_wq);
-    rhashtable_destroy(&flowtable->rhashtable);
+	cancel_delayed_work_sync(&flowtable->gc_work);
+	flow_offload_table_iterate(flowtable, nf_flow_table_do_cleanup,
+				   flowtable);
+	flow_offload_table_iterate(flowtable, nf_flow_offload_gc_step,
+				   flowtable);
+	destroy_workqueue(flowtable->flow_wq);
+	rhashtable_destroy(&flowtable->rhashtable);
 }
 
 static int _flowtable_add_entry(const struct net *net, int zone_id,
@@ -432,7 +442,7 @@ int mlx5_ct_flow_offload_add(const struct net *net,
 	struct flow_offload_tuple_rhash *fhash;
 	struct flow_offload_entry *entry;
 	enum flow_offload_tuple_dir dir;
-	unsigned timeout = offloaded_ct_timeout * HZ;
+	unsigned int timeout = offloaded_ct_timeout * HZ;
 	int err = 0;
 
 	if (!rcu_access_pointer(_flowtable))
@@ -471,7 +481,7 @@ int mlx5_ct_flow_offload_add(const struct net *net,
 	entry->flow.timeout = jiffies + timeout;
 
 out:
-    return err;
+	return err;
 }
 
 int mlx5_ct_flow_offload_remove(const struct net *net,
