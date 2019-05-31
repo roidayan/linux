@@ -3044,12 +3044,6 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 		return -EINVAL;
 	}
 
-	if ((action & MLX5_FLOW_CONTEXT_ACTION_CT) &&
-	    !(action & MLX5_FLOW_CONTEXT_ACTION_GOTO)) {
-		netdev_warn(priv->netdev, "CT action is not supported without goto");
-		return -EOPNOTSUPP;
-	}
-
 	attr->action = action;
 	if (!actions_match_supported(priv, exts, parse_attr, flow, extack))
 		return -EOPNOTSUPP;
@@ -3178,6 +3172,10 @@ static bool is_flow_simple(struct mlx5e_tc_flow *flow)
 		return false;
 
 	if (flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_GOTO)
+		return false;
+
+	/* TODO: we need to think it through */
+	if (flow->esw_attr->action & MLX5_FLOW_CONTEXT_ACTION_CT)
 		return false;
 
 	return true;
