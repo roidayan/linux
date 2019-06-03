@@ -241,6 +241,14 @@ static int mlx5e_tc_tun_parse_geneve_options(struct mlx5e_priv *priv,
 		return -EOPNOTSUPP;
 	}
 
+	/* TODO: is it right? */
+	/* OVN specify geneve options with a zero mask, a valid case */
+	if (!memchr_inv(option_mask->opt_data, 0, option_mask->length * 4)) {
+		netdev_warn(priv->netdev,
+			    "Matching on GENEVE options: mask is zero, allow\n");
+		return 0;
+	}
+
 	/* data can't be all 0 - fail to offload such rule */
 	if (!memchr_inv(option_key->opt_data, 0, option_key->length * 4)) {
 		NL_SET_ERR_MSG_MOD(extack,
