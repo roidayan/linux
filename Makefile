@@ -1,7 +1,7 @@
 VERSION = 3
 PATCHLEVEL = 10
 SUBLEVEL = 0
-EXTRAVERSION = -unlocked-driver
+EXTRAVERSION = -693.21.3-unlocked-driver
 NAME = Unicycling Gorilla
 RHEL_MAJOR = 7
 RHEL_MINOR = 4
