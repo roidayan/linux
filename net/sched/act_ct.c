@@ -64,8 +64,7 @@ static void ct_notify_underlying_device(struct sk_buff *skb, struct nf_conn *ct,
 		cto.tuple = nf_ct_tuple(ct, CTINFO2DIR(ctinfo));
 	}
 
-	/* TODO: do we want tuple as a cookie? */
-	tc_setup_cb_call_all(NULL, TC_SETUP_CT, &cto);
+	tc_setup_cb_call_all(TC_SETUP_CT, &cto);
 }
 
 static bool skb_nfct_cached(struct net *net, struct sk_buff *skb, u16 zone_id)
