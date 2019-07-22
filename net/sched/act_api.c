@@ -1641,7 +1641,7 @@ int tc_setup_cb_egdev_all_register(const struct net_device *dev,
 
 	rtnl_lock();
 	tan = net_generic(dev_net(dev), tcf_action_net_id);
-	list_add(&egdev_cb->list, &tan->egdev_list);
+	list_add_tail(&egdev_cb->list, &tan->egdev_list);
 	rtnl_unlock();
 	return 0;
 }
@@ -1703,15 +1703,16 @@ int tc_setup_cb_egdev_all_call_fast(enum tc_setup_type type, void *type_data)
 {
 	struct tcf_action_net *tan = net_generic(&init_net, tcf_action_net_id);
 	struct tcf_action_egdev_cb *egdev_cb;
+	int ok_count = 0;
 	int err;
 
 	list_for_each_entry(egdev_cb, &tan->egdev_list, list) {
 		err = egdev_cb->cb(type, type_data, egdev_cb->cb_priv);
 		if (!err)
-			return 1;
+			ok_count++;
 	}
 
-	return 0;
+	return ok_count;
 }
 EXPORT_SYMBOL_GPL(tc_setup_cb_egdev_all_call_fast);
 
