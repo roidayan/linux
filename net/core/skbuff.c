@@ -3946,6 +3946,9 @@ static const u8 skb_ext_type_len[] = {
 #if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 	[SKB_EXT_BRIDGE_NF] = SKB_EXT_CHUNKSIZEOF(struct nf_bridge_info),
 #endif
+#if IS_ENABLED(CONFIG_NET_TC_SKB_EXT)
+	[TC_SKB_EXT] = SKB_EXT_CHUNKSIZEOF(struct tc_skb_ext),
+#endif
 };
 
 static __always_inline unsigned int skb_ext_total_length(void)
@@ -3953,6 +3956,9 @@ static __always_inline unsigned int skb_ext_total_length(void)
 	return SKB_EXT_CHUNKSIZEOF(struct skb_ext) +
 #if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 		skb_ext_type_len[SKB_EXT_BRIDGE_NF] +
+#endif
+#if IS_ENABLED(CONFIG_NET_TC_SKB_EXT)
+		skb_ext_type_len[TC_SKB_EXT] +
 #endif
 		0;
 }

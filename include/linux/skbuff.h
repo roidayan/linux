@@ -283,6 +283,16 @@ struct nf_bridge_info {
 };
 #endif
 
+#if IS_ENABLED(CONFIG_NET_TC_SKB_EXT)
+/* Chain in tc_skb_ext will be used to share the tc chain with
+ * ovs recirc_id. It will be set to the current chain by tc
+ * and read by ovs to recirc_id.
+ */
+struct tc_skb_ext {
+	__u32 chain;
+};
+#endif
+
 struct sk_buff_head {
 	/* These two members must be first. */
 	struct sk_buff	*next;
@@ -3867,6 +3877,9 @@ static inline void nf_conntrack_get(struct nf_conntrack *nfct)
 enum skb_ext_id {
 #if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 	SKB_EXT_BRIDGE_NF,
+#endif
+#if IS_ENABLED(CONFIG_NET_TC_SKB_EXT)
+	TC_SKB_EXT,
 #endif
 	SKB_EXT_NUM, /* must be last */
 };
