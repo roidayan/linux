@@ -93,8 +93,10 @@ void tcf_block_cb_unregister(struct tcf_block *block,
 
 int tcf_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 		 struct tcf_result *res, bool compat_mode);
-int tcf_classify_ingress(struct sk_buff *skb, const struct tcf_proto *tp,
-			 struct tcf_result *res, bool compat_mode);
+int tcf_classify_ingress(struct sk_buff *skb,
+			 const struct tcf_block *ingress_block,
+			 const struct tcf_proto *tp, struct tcf_result *res,
+			 bool compat_mode);
 
 #else
 static inline
@@ -206,6 +208,7 @@ static inline int tcf_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 }
 
 static inline int tcf_classify_ingress(struct sk_buff *skb,
+				       const struct tcf_block *ingress_block,
 				       const struct tcf_proto *tp,
 				       struct tcf_result *res, bool compat_mode)
 {
