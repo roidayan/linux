@@ -25,6 +25,7 @@
 #include <linux/kmod.h>
 #include <linux/slab.h>
 #include <linux/idr.h>
+#include <linux/rculist.h>
 #include <net/net_namespace.h>
 #include <net/sock.h>
 #include <net/netlink.h>
@@ -206,7 +207,7 @@ static struct tcf_chain *tcf_chain_create(struct tcf_block *block,
 	chain = kzalloc(sizeof(*chain), GFP_KERNEL);
 	if (!chain)
 		return NULL;
-	list_add_tail(&chain->list, &block->chain_list);
+	list_add_tail_rcu(&chain->list, &block->chain_list);
 	chain->block = block;
 	chain->index = chain_index;
 	chain->refcnt = 1;
@@ -238,7 +239,7 @@ static void tcf_chain_destroy(struct tcf_chain *chain)
 {
 	struct tcf_block *block = chain->block;
 
-	list_del(&chain->list);
+	list_del_rcu(&chain->list);
 	if (!chain->index)
 		block->chain0.chain = NULL;
 	kfree(chain);
