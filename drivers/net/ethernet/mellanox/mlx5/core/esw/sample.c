@@ -364,7 +364,8 @@ void mlx5_esw_sample_skb(struct sk_buff *skb, struct mlx5_mapped_obj *mapped_obj
 struct mlx5_flow_handle *
 mlx5_esw_sample_offload(struct mlx5_esw_psample *esw_psample,
 			struct mlx5_flow_spec *spec,
-			struct mlx5_flow_attr *attr)
+			struct mlx5_flow_attr *attr,
+			u32 tunnel_id)
 {
 	struct mlx5_esw_flow_attr *esw_attr = attr->esw_attr;
 	struct mlx5_vport_tbl_attr per_vport_tbl_attr;
@@ -437,6 +438,7 @@ mlx5_esw_sample_offload(struct mlx5_esw_psample *esw_psample,
 	restore_obj.sample.group_id = esw_attr->sample->group_num;
 	restore_obj.sample.rate = esw_attr->sample->rate;
 	restore_obj.sample.trunc_size = esw_attr->sample->trunc_size;
+	restore_obj.sample.tunnel_id = tunnel_id;
 	err = mapping_add(esw->offloads.reg_c0_obj_pool, &restore_obj, &obj_id);
 	if (err)
 		goto err_obj_id;
