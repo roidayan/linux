@@ -4988,7 +4988,8 @@ int mlx5e_tc_esw_init(struct rhashtable *tc_ht)
 					       uplink_priv->post_action);
 
 #if IS_ENABLED(CONFIG_MLX5_TC_SAMPLE)
-	uplink_priv->esw_psample = mlx5_esw_sample_init(netdev_priv(priv->netdev));
+	uplink_priv->esw_psample = mlx5_esw_sample_init(netdev_priv(priv->netdev),
+							uplink_priv->post_action);
 #endif
 
 	mapping_id = mlx5_query_nic_system_image_guid(esw->dev);
