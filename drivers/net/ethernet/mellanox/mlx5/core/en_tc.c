@@ -4896,7 +4896,7 @@ int mlx5e_tc_nic_init(struct mlx5e_priv *priv)
 	tc->post_action = mlx5_post_action_init(tc->chains, dev,
 						MLX5_FLOW_NAMESPACE_KERNEL);
 	tc->ct = mlx5_tc_ct_init(priv, tc->chains, &priv->fs.tc.mod_hdr,
-				 MLX5_FLOW_NAMESPACE_KERNEL);
+				 MLX5_FLOW_NAMESPACE_KERNEL, tc->post_action);
 
 	tc->netdevice_nb.notifier_call = mlx5e_tc_netdev_event;
 	err = register_netdevice_notifier_dev_net(priv->netdev,
@@ -4978,7 +4978,8 @@ int mlx5e_tc_esw_init(struct rhashtable *tc_ht)
 	uplink_priv->ct_priv = mlx5_tc_ct_init(netdev_priv(priv->netdev),
 					       esw_chains(esw),
 					       &esw->offloads.mod_hdr,
-					       MLX5_FLOW_NAMESPACE_FDB);
+					       MLX5_FLOW_NAMESPACE_FDB,
+					       uplink_priv->post_action);
 
 #if IS_ENABLED(CONFIG_MLX5_TC_SAMPLE)
 	uplink_priv->esw_psample = mlx5_esw_sample_init(netdev_priv(priv->netdev));
