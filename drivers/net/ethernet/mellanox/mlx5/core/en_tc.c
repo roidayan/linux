@@ -47,6 +47,7 @@
 #include <net/bareudp.h>
 #include <net/bonding.h>
 #include "en.h"
+#include "en/post_action.h"
 #include "en_rep.h"
 #include "en/rep/tc.h"
 #include "en/rep/neigh.h"
@@ -4892,6 +4893,8 @@ int mlx5e_tc_nic_init(struct mlx5e_priv *priv)
 		goto err_chains;
 	}
 
+	tc->post_action = mlx5_post_action_init(tc->chains, dev,
+						MLX5_FLOW_NAMESPACE_KERNEL);
 	tc->ct = mlx5_tc_ct_init(priv, tc->chains, &priv->fs.tc.mod_hdr,
 				 MLX5_FLOW_NAMESPACE_KERNEL);
 
@@ -4909,6 +4912,7 @@ int mlx5e_tc_nic_init(struct mlx5e_priv *priv)
 
 err_reg:
 	mlx5_tc_ct_clean(tc->ct);
+	mlx5_post_action_destroy(tc->post_action);
 	mlx5_chains_destroy(tc->chains);
 err_chains:
 	mapping_destroy(chains_mapping);
@@ -4947,6 +4951,7 @@ void mlx5e_tc_nic_cleanup(struct mlx5e_priv *priv)
 	mutex_destroy(&tc->t_lock);
 
 	mlx5_tc_ct_clean(tc->ct);
+	mlx5_post_action_destroy(tc->post_action);
 	mapping_destroy(tc->mapping);
 	mlx5_chains_destroy(tc->chains);
 }
@@ -4966,6 +4971,9 @@ int mlx5e_tc_esw_init(struct rhashtable *tc_ht)
 	rpriv = container_of(uplink_priv, struct mlx5e_rep_priv, uplink_priv);
 	priv = netdev_priv(rpriv->netdev);
 	esw = priv->mdev->priv.eswitch;
+
+	uplink_priv->post_action = mlx5_post_action_init(esw_chains(esw), esw->dev,
+							 MLX5_FLOW_NAMESPACE_FDB);
 
 	uplink_priv->ct_priv = mlx5_tc_ct_init(netdev_priv(priv->netdev),
 					       esw_chains(esw),
@@ -5024,6 +5032,7 @@ err_tun_mapping:
 	mlx5_tc_ct_clean(uplink_priv->ct_priv);
 	netdev_warn(priv->netdev,
 		    "Failed to initialize tc (eswitch), err: %d", err);
+	mlx5_post_action_destroy(uplink_priv->post_action);
 	return err;
 }
 
@@ -5043,6 +5052,7 @@ void mlx5e_tc_esw_cleanup(struct rhashtable *tc_ht)
 	mlx5_esw_sample_cleanup(uplink_priv->esw_psample);
 #endif
 	mlx5_tc_ct_clean(uplink_priv->ct_priv);
+	mlx5_post_action_destroy(uplink_priv->post_action);
 }
 
 int mlx5e_tc_num_filters(struct mlx5e_priv *priv, unsigned long flags)

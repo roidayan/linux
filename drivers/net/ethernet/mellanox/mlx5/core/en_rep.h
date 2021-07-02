@@ -57,6 +57,7 @@ struct mlx5e_neigh_update_table {
 	unsigned long           min_interval; /* jiffies */
 };
 
+struct mlx5_post_action;
 struct mlx5_tc_ct_priv;
 struct mlx5e_rep_bond;
 struct mlx5e_tc_tun_encap;
@@ -88,6 +89,7 @@ struct mlx5_rep_uplink_priv {
 	/* maps tun_enc_opts to a unique id*/
 	struct mapping_ctx *tunnel_enc_opts_mapping;
 
+	struct mlx5_post_action *post_action;
 	struct mlx5_tc_ct_priv *ct_priv;
 	struct mlx5_esw_psample *esw_psample;
 
