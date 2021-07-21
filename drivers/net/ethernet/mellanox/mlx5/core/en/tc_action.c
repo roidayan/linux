@@ -18,6 +18,8 @@ mlx5e_tc_init_tc_actions(void)
 	tc_actions[FLOW_ACTION_MIRRED] = &mlx5e_tc_action_mirred;
 	tc_actions[FLOW_ACTION_VLAN_PUSH] = &mlx5e_tc_action_vlan;
 	tc_actions[FLOW_ACTION_VLAN_POP] = &mlx5e_tc_action_vlan;
+	tc_actions[FLOW_ACTION_TUNNEL_ENCAP] = &mlx5e_tc_action_tun_encap;
+	tc_actions[FLOW_ACTION_TUNNEL_DECAP] = &mlx5e_tc_action_tun_decap;
 }
 
 struct mlx5e_tc_action *
