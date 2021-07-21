@@ -3209,13 +3209,6 @@ static bool same_hw_devs(struct mlx5e_priv *priv, struct mlx5e_priv *peer_priv)
 	return (fsystem_guid == psystem_guid);
 }
 
-static bool same_vf_reps(struct mlx5e_priv *priv,
-			 struct net_device *out_dev)
-{
-	return mlx5e_eswitch_vf_rep(priv->netdev) &&
-	       priv->netdev == out_dev;
-}
-
 static int add_vlan_rewrite_action(struct mlx5e_priv *priv, int namespace,
 				   const struct flow_action_entry *act,
 				   struct mlx5e_tc_flow_parse_attr *parse_attr,
@@ -3442,28 +3435,6 @@ static bool is_merged_eswitch_vfs(struct mlx5e_priv *priv,
 		same_hw_devs(priv, peer_priv));
 }
 
-static struct net_device *get_fdb_out_dev(struct net_device *uplink_dev,
-					  struct net_device *out_dev)
-{
-	struct net_device *fdb_out_dev = out_dev;
-	struct net_device *uplink_upper;
-
-	rcu_read_lock();
-	uplink_upper = netdev_master_upper_dev_get_rcu(uplink_dev);
-	if (uplink_upper && netif_is_lag_master(uplink_upper) &&
-	    uplink_upper == out_dev) {
-		fdb_out_dev = uplink_dev;
-	} else if (netif_is_lag_master(out_dev)) {
-		fdb_out_dev = bond_option_active_slave_get_rcu(netdev_priv(out_dev));
-		if (fdb_out_dev &&
-		    (!mlx5e_eswitch_rep(fdb_out_dev) ||
-		     !netdev_port_same_parent_id(fdb_out_dev, uplink_dev)))
-			fdb_out_dev = NULL;
-	}
-	rcu_read_unlock();
-	return fdb_out_dev;
-}
-
 static bool same_hw_reps(struct mlx5e_priv *priv,
 			 struct net_device *peer_netdev)
 {
@@ -3495,66 +3466,6 @@ bool mlx5e_is_valid_eswitch_fwd_dev(struct mlx5e_priv *priv,
 
 	return mlx5e_eswitch_rep(out_dev) &&
 	       same_port_devs(priv, netdev_priv(out_dev));
-}
-
-static bool is_duplicated_output_device(struct net_device *dev,
-					struct net_device *out_dev,
-					int *ifindexes, int if_count,
-					struct netlink_ext_ack *extack)
-{
-	int i;
-
-	for (i = 0; i < if_count; i++) {
-		if (ifindexes[i] == out_dev->ifindex) {
-			NL_SET_ERR_MSG_MOD(extack,
-					   "can't duplicate output to same device");
-			netdev_err(dev, "can't duplicate output to same device: %s\n",
-				   out_dev->name);
-			return true;
-		}
-	}
-
-	return false;
-}
-
-static int verify_uplink_forwarding(struct mlx5e_priv *priv,
-				    struct mlx5e_tc_flow *flow,
-				    struct net_device *out_dev,
-				    struct netlink_ext_ack *extack)
-{
-	struct mlx5_esw_flow_attr *attr = flow->attr->esw_attr;
-	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
-	struct mlx5e_rep_priv *rep_priv;
-
-	/* Forwarding non encapsulated traffic between
-	 * uplink ports is allowed only if
-	 * termination_table_raw_traffic cap is set.
-	 *
-	 * Input vport was stored attr->in_rep.
-	 * In LAG case, *priv* is the private data of
-	 * uplink which may be not the input vport.
-	 */
-	rep_priv = mlx5e_rep_to_rep_priv(attr->in_rep);
-
-	if (!(mlx5e_eswitch_uplink_rep(rep_priv->netdev) &&
-	      mlx5e_eswitch_uplink_rep(out_dev)))
-		return 0;
-
-	if (!MLX5_CAP_ESW_FLOWTABLE_FDB(esw->dev,
-					termination_table_raw_traffic)) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "devices are both uplink, can't offload forwarding");
-			pr_err("devices %s %s are both uplink, can't offload forwarding\n",
-			       priv->netdev->name, out_dev->name);
-			return -EOPNOTSUPP;
-	} else if (out_dev != rep_priv->netdev) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "devices are not the same uplink, can't offload forwarding");
-		pr_err("devices %s %s are both uplink but not the same, can't offload forwarding\n",
-		       priv->netdev->name, out_dev->name);
-		return -EOPNOTSUPP;
-	}
-	return 0;
 }
 
 static int parse_tc_fdb_actions(struct mlx5e_priv *priv,
@@ -3739,7 +3650,7 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv,
 						return err;
 				}
 
-				err = verify_uplink_forwarding(priv, flow, out_dev, extack);
+				err = verify_uplink_forwarding(priv, attr, out_dev, extack);
 				if (err)
 					return err;
 

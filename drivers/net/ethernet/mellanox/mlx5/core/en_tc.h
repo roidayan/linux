@@ -212,6 +212,24 @@ struct mlx5e_tc_attr_to_reg_mapping {
 
 extern struct mlx5e_tc_attr_to_reg_mapping mlx5e_tc_attr_to_reg_mappings[];
 
+bool
+same_vf_reps(struct mlx5e_priv *priv, struct net_device *out_dev);
+
+int
+verify_uplink_forwarding(struct mlx5e_priv *priv,
+			 struct mlx5_flow_attr *attr,
+			 struct net_device *out_dev,
+			 struct netlink_ext_ack *extack);
+
+bool
+is_duplicated_output_device(struct net_device *dev,
+			    struct net_device *out_dev,
+			    int *ifindexes, int if_count,
+			    struct netlink_ext_ack *extack);
+
+struct net_device *
+get_fdb_out_dev(struct net_device *uplink_dev, struct net_device *out_dev);
+
 bool mlx5e_is_valid_eswitch_fwd_dev(struct mlx5e_priv *priv,
 				    struct net_device *out_dev);
 
