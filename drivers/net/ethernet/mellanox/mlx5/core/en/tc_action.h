@@ -39,6 +39,8 @@ extern struct mlx5e_tc_action mlx5e_tc_action_vlan;
 extern struct mlx5e_tc_action mlx5e_tc_action_tun_encap;
 extern struct mlx5e_tc_action mlx5e_tc_action_tun_decap;
 extern struct mlx5e_tc_action mlx5e_tc_action_csum;
+extern struct mlx5e_tc_action mlx5e_tc_action_mpls_push;
+extern struct mlx5e_tc_action mlx5e_tc_action_mpls_pop;
 
 void mlx5e_tc_init_tc_actions(void);
 
