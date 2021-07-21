@@ -14,6 +14,8 @@ mlx5e_tc_init_tc_actions(void)
 	tc_actions[FLOW_ACTION_DROP] = &mlx5e_tc_action_drop;
 	tc_actions[FLOW_ACTION_TRAP] = &mlx5e_tc_action_trap;
 	tc_actions[FLOW_ACTION_GOTO] = &mlx5e_tc_action_goto;
+	tc_actions[FLOW_ACTION_VLAN_PUSH] = &mlx5e_tc_action_vlan;
+	tc_actions[FLOW_ACTION_VLAN_POP] = &mlx5e_tc_action_vlan;
 }
 
 struct mlx5e_tc_action *
