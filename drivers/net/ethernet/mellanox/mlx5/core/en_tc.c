@@ -229,7 +229,7 @@ mlx5e_tc_match_to_reg_set_and_get_id(struct mlx5_core_dev *mdev,
 	return err;
 }
 
-static struct mlx5_tc_ct_priv *
+struct mlx5_tc_ct_priv *
 get_ct_priv(struct mlx5e_priv *priv)
 {
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;

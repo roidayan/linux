@@ -273,6 +273,8 @@ int mlx5e_tc_match_to_reg_set_and_get_id(struct mlx5_core_dev *mdev,
 					 enum mlx5e_tc_attr_to_reg type,
 					 u32 data);
 
+struct mlx5_tc_ct_priv *get_ct_priv(struct mlx5e_priv *priv);
+
 int mlx5e_tc_add_flow_mod_hdr(struct mlx5e_priv *priv,
 			      struct mlx5e_tc_flow_parse_attr *parse_attr,
 			      struct mlx5e_tc_flow *flow);

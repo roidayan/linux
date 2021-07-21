@@ -49,7 +49,8 @@ mlx5_core-$(CONFIG_MLX5_CLS_ACT)     += en_tc.o en/rep/tc.o en/rep/neigh.o \
 					en/tc_action.o en/tc_action_drop.o en/tc_action_trap.o \
 					en/tc_action_goto.o en/tc_action_vlan.o \
 					en/tc_action_mirred.o en/tc_action_tun.o \
-					en/tc_action_csum.o en/tc_action_mpls.o
+					en/tc_action_csum.o en/tc_action_mpls.o \
+					en/tc_action_ct.o
 mlx5_core-$(CONFIG_MLX5_TC_CT)	     += en/tc_ct.o
 
 #

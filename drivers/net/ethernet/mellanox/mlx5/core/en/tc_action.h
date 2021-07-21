@@ -41,6 +41,7 @@ extern struct mlx5e_tc_action mlx5e_tc_action_tun_decap;
 extern struct mlx5e_tc_action mlx5e_tc_action_csum;
 extern struct mlx5e_tc_action mlx5e_tc_action_mpls_push;
 extern struct mlx5e_tc_action mlx5e_tc_action_mpls_pop;
+extern struct mlx5e_tc_action mlx5e_tc_action_ct;
 
 void mlx5e_tc_init_tc_actions(void);
 

@@ -23,6 +23,7 @@ mlx5e_tc_init_tc_actions(void)
 	tc_actions[FLOW_ACTION_CSUM] = &mlx5e_tc_action_csum;
 	tc_actions[FLOW_ACTION_MPLS_PUSH] = &mlx5e_tc_action_mpls_push;
 	tc_actions[FLOW_ACTION_MPLS_POP] = &mlx5e_tc_action_mpls_pop;
+	tc_actions[FLOW_ACTION_CT] = &mlx5e_tc_action_ct;
 }
 
 struct mlx5e_tc_action *
