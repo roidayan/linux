@@ -213,6 +213,12 @@ struct mlx5e_tc_attr_to_reg_mapping {
 extern struct mlx5e_tc_attr_to_reg_mapping mlx5e_tc_attr_to_reg_mappings[];
 
 bool
+csum_offload_supported(struct mlx5e_priv *priv,
+		       u32 action,
+		       u32 update_flags,
+		       struct netlink_ext_ack *extack);
+
+bool
 same_vf_reps(struct mlx5e_priv *priv, struct net_device *out_dev);
 
 int
