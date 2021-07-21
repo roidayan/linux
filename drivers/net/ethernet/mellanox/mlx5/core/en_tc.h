@@ -52,6 +52,8 @@
 			    ESW_FLOW_ATTR_SZ :\
 			    NIC_FLOW_ATTR_SZ)
 
+#define nic_chains(priv) ((priv)->fs.tc.chains)
+
 
 int mlx5e_tc_num_filters(struct mlx5e_priv *priv, unsigned long flags);
 
@@ -148,6 +150,7 @@ enum {
 int mlx5e_tc_esw_init(struct rhashtable *tc_ht);
 void mlx5e_tc_esw_cleanup(struct rhashtable *tc_ht);
 bool mlx5e_is_eswitch_flow(struct mlx5e_tc_flow *flow);
+bool mlx5e_is_ft_flow(struct mlx5e_tc_flow *flow);
 
 int mlx5e_configure_flower(struct net_device *dev, struct mlx5e_priv *priv,
 			   struct flow_cls_offload *f, unsigned long flags);
@@ -211,6 +214,13 @@ extern struct mlx5e_tc_attr_to_reg_mapping mlx5e_tc_attr_to_reg_mappings[];
 
 bool mlx5e_is_valid_eswitch_fwd_dev(struct mlx5e_priv *priv,
 				    struct net_device *out_dev);
+
+int
+validate_goto_chain(struct mlx5e_priv *priv,
+		    struct mlx5e_tc_flow *flow,
+		    const struct flow_action_entry *act,
+		    u32 actions,
+		    struct netlink_ext_ack *extack);
 
 int mlx5e_tc_match_to_reg_set(struct mlx5_core_dev *mdev,
 			      struct mlx5e_tc_mod_hdr_acts *mod_hdr_acts,

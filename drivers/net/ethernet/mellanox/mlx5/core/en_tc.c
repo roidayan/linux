@@ -68,7 +68,6 @@
 #include "diag/en_tc_tracepoint.h"
 #include <asm/div64.h>
 
-#define nic_chains(priv) ((priv)->fs.tc.chains)
 #define MLX5_MH_ACT_SZ MLX5_UN_SZ_BYTES(set_add_copy_action_in_auto)
 
 #define MLX5E_TC_TABLE_NUM_GROUPS 4
@@ -386,7 +385,7 @@ bool mlx5e_is_eswitch_flow(struct mlx5e_tc_flow *flow)
 	return flow_flag_test(flow, ESWITCH);
 }
 
-static bool mlx5e_is_ft_flow(struct mlx5e_tc_flow *flow)
+bool mlx5e_is_ft_flow(struct mlx5e_tc_flow *flow)
 {
 	return flow_flag_test(flow, FT);
 }
@@ -3281,57 +3280,6 @@ add_vlan_prio_tag_rewrite_action(struct mlx5e_priv *priv,
 	return add_vlan_rewrite_action(priv, MLX5_FLOW_NAMESPACE_FDB,
 				       &prio_tag_act, parse_attr, hdrs, action,
 				       extack);
-}
-
-static int validate_goto_chain(struct mlx5e_priv *priv,
-			       struct mlx5e_tc_flow *flow,
-			       const struct flow_action_entry *act,
-			       u32 actions,
-			       struct netlink_ext_ack *extack)
-{
-	bool is_esw = mlx5e_is_eswitch_flow(flow);
-	struct mlx5_flow_attr *attr = flow->attr;
-	bool ft_flow = mlx5e_is_ft_flow(flow);
-	u32 dest_chain = act->chain_index;
-	struct mlx5_fs_chains *chains;
-	struct mlx5_eswitch *esw;
-	u32 reformat_and_fwd;
-	u32 max_chain;
-
-	esw = priv->mdev->priv.eswitch;
-	chains = is_esw ? esw_chains(esw) : nic_chains(priv);
-	max_chain = mlx5_chains_get_chain_range(chains);
-	reformat_and_fwd = is_esw ?
-			   MLX5_CAP_ESW_FLOWTABLE_FDB(priv->mdev, reformat_and_fwd_to_table) :
-			   MLX5_CAP_FLOWTABLE_NIC_RX(priv->mdev, reformat_and_fwd_to_table);
-
-	if (ft_flow) {
-		NL_SET_ERR_MSG_MOD(extack, "Goto action is not supported");
-		return -EOPNOTSUPP;
-	}
-
-	if (!mlx5_chains_backwards_supported(chains) &&
-	    dest_chain <= attr->chain) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Goto lower numbered chain isn't supported");
-		return -EOPNOTSUPP;
-	}
-
-	if (dest_chain > max_chain) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Requested destination chain is out of supported range");
-		return -EOPNOTSUPP;
-	}
-
-	if (actions & (MLX5_FLOW_CONTEXT_ACTION_PACKET_REFORMAT |
-		       MLX5_FLOW_CONTEXT_ACTION_DECAP) &&
-	    !reformat_and_fwd) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Goto chain is not allowed if action has reformat or decap");
-		return -EOPNOTSUPP;
-	}
-
-	return 0;
 }
 
 static int parse_tc_nic_actions(struct mlx5e_priv *priv,

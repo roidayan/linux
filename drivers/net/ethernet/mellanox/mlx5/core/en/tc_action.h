@@ -33,6 +33,7 @@ struct mlx5e_tc_action {
 
 extern struct mlx5e_tc_action mlx5e_tc_action_drop;
 extern struct mlx5e_tc_action mlx5e_tc_action_trap;
+extern struct mlx5e_tc_action mlx5e_tc_action_goto;
 
 void mlx5e_tc_init_tc_actions(void);
 
