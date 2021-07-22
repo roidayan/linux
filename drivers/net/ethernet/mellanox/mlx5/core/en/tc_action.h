@@ -4,9 +4,11 @@
 #ifndef __MLX5_TC_ACTION_H__
 #define __MLX5_TC_ACTION_H__
 
+#include <net/tc_act/tc_pedit.h>
 #include <net/flow_offload.h>
 #include <linux/netlink.h>
 #include "eswitch.h"
+#include "tc_action_pedit.h"
 
 struct mlx5e_tc_action_parse_state {
 	unsigned int num_actions;
@@ -19,6 +21,7 @@ struct mlx5e_tc_action_parse_state {
 	struct mlx5e_tc_flow *flow;
 	struct netlink_ext_ack *extack;
 	struct mlx5_sample_attr sample;
+	struct pedit_headers_action hdrs[__PEDIT_CMD_MAX];
 };
 
 struct mlx5e_tc_action {
@@ -44,6 +47,7 @@ extern struct mlx5e_tc_action mlx5e_tc_action_mpls_push;
 extern struct mlx5e_tc_action mlx5e_tc_action_mpls_pop;
 extern struct mlx5e_tc_action mlx5e_tc_action_ct;
 extern struct mlx5e_tc_action mlx5e_tc_action_sample;
+extern struct mlx5e_tc_action mlx5e_tc_action_pedit;
 
 void mlx5e_tc_init_tc_actions(void);
 

@@ -279,6 +279,9 @@ int mlx5e_tc_add_flow_mod_hdr(struct mlx5e_priv *priv,
 			      struct mlx5e_tc_flow_parse_attr *parse_attr,
 			      struct mlx5e_tc_flow *flow);
 
+int mlx5e_flow_namespace_max_modify_action(struct mlx5_core_dev *mdev,
+					   int namespace);
+
 int alloc_mod_hdr_actions(struct mlx5_core_dev *mdev,
 			  int namespace,
 			  struct mlx5e_tc_mod_hdr_acts *mod_hdr_acts);
