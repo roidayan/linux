@@ -18,6 +18,7 @@ struct mlx5e_tc_action_parse_state {
 	const struct ip_tunnel_info *tun_info;
 	struct mlx5e_tc_flow *flow;
 	struct netlink_ext_ack *extack;
+	struct mlx5_sample_attr sample;
 };
 
 struct mlx5e_tc_action {
@@ -42,6 +43,7 @@ extern struct mlx5e_tc_action mlx5e_tc_action_csum;
 extern struct mlx5e_tc_action mlx5e_tc_action_mpls_push;
 extern struct mlx5e_tc_action mlx5e_tc_action_mpls_pop;
 extern struct mlx5e_tc_action mlx5e_tc_action_ct;
+extern struct mlx5e_tc_action mlx5e_tc_action_sample;
 
 void mlx5e_tc_init_tc_actions(void);
 
