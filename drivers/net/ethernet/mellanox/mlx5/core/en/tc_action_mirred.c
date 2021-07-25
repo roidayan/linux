@@ -11,14 +11,14 @@
 #include "en_tc.h"
 #include "en_rep.h"
 
-bool
+static bool
 same_vf_reps(struct mlx5e_priv *priv, struct net_device *out_dev)
 {
 	return mlx5e_eswitch_vf_rep(priv->netdev) &&
 	       priv->netdev == out_dev;
 }
 
-int
+static int
 verify_uplink_forwarding(struct mlx5e_priv *priv,
 			 struct mlx5_flow_attr *attr,
 			 struct net_device *out_dev,
@@ -58,7 +58,7 @@ verify_uplink_forwarding(struct mlx5e_priv *priv,
 	return 0;
 }
 
-bool
+static bool
 is_duplicated_output_device(struct net_device *dev,
 			    struct net_device *out_dev,
 			    int *ifindexes, int if_count,
@@ -78,7 +78,7 @@ is_duplicated_output_device(struct net_device *dev,
 	return false;
 }
 
-struct net_device *
+static struct net_device *
 get_fdb_out_dev(struct net_device *uplink_dev, struct net_device *out_dev)
 {
 	struct net_device *fdb_out_dev = out_dev;

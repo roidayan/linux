@@ -7,7 +7,7 @@
 #include "tc_priv.h"
 #include "en_tc.h"
 
-int
+static int
 parse_tc_vlan_action(struct mlx5e_priv *priv,
 		     const struct flow_action_entry *act,
 		     struct mlx5_esw_flow_attr *attr,
