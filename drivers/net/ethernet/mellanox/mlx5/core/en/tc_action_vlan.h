@@ -7,6 +7,8 @@
 #include <net/flow_offload.h>
 #include "en_tc.h"
 
+struct pedit_headers_action;
+
 int parse_tc_vlan_action(struct mlx5e_priv *priv,
 			 const struct flow_action_entry *act,
 			 struct mlx5_esw_flow_attr *attr,
@@ -22,5 +24,11 @@ int
 mlx5e_tc_add_vlan_pop_action(struct mlx5e_priv *priv,
 			     struct mlx5_flow_attr *attr,
 			     u32 *action);
+int
+mlx5e_tc_add_vlan_rewrite_action(struct mlx5e_priv *priv, int namespace,
+				 const struct flow_action_entry *act,
+				 struct mlx5e_tc_flow_parse_attr *parse_attr,
+				 struct pedit_headers_action *hdrs,
+				 u32 *action, struct netlink_ext_ack *extack);
 
 #endif /* __MLX5_TC_ACTION_VLAN_H__ */

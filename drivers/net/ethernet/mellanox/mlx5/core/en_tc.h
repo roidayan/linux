@@ -282,6 +282,10 @@ int mlx5e_tc_add_flow_mod_hdr(struct mlx5e_priv *priv,
 int mlx5e_flow_namespace_max_modify_action(struct mlx5_core_dev *mdev,
 					   int namespace);
 
+void *get_match_headers_value(u32 flags, struct mlx5_flow_spec *spec);
+
+void *get_match_headers_criteria(u32 flags, struct mlx5_flow_spec *spec);
+
 int alloc_mod_hdr_actions(struct mlx5_core_dev *mdev,
 			  int namespace,
 			  struct mlx5e_tc_mod_hdr_acts *mod_hdr_acts);
