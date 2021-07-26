@@ -11,6 +11,9 @@ tc_action_can_offload_trap(struct mlx5e_tc_action_parse_state *parse_state,
 {
 	struct netlink_ext_ack *extack = parse_state->extack;
 
+	if (!mlx5e_is_eswitch_flow(parse_state->flow))
+		return -EOPNOTSUPP;
+
 	if (parse_state->num_actions != 1) {
 		NL_SET_ERR_MSG_MOD(extack, "action trap is supported as a sole action only");
 		return -EOPNOTSUPP;

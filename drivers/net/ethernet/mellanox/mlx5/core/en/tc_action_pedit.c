@@ -132,21 +132,25 @@ tc_action_parse_pedit(struct mlx5e_tc_action_parse_state *parse_state,
 		      struct mlx5e_priv *priv,
 		      struct mlx5_flow_attr *attr)
 {
-	struct mlx5_esw_flow_attr *esw_attr = attr->esw_attr;
 	struct mlx5e_tc_flow *flow = parse_state->flow;
+	enum mlx5_flow_namespace_type ns_type;
 	int err;
 
-	err = mlx5e_tc_parse_pedit_action(flow->priv, act, MLX5_FLOW_NAMESPACE_FDB,
+	ns_type = mlx5e_tc_get_flow_namespace(flow);
+
+	err = mlx5e_tc_parse_pedit_action(flow->priv, act, ns_type,
 					  flow->attr->parse_attr, parse_state->hdrs,
 					  flow, parse_state->extack);
 	if (err)
 		return err;
 
-	if (!flow_flag_test(flow, L3_TO_L2_DECAP)) {
-		attr->action |= MLX5_FLOW_CONTEXT_ACTION_MOD_HDR;
+	if (mlx5e_is_eswitch_flow(flow) && !flow_flag_test(flow, L3_TO_L2_DECAP)) {
+		struct mlx5_esw_flow_attr *esw_attr = attr->esw_attr;
+
 		esw_attr->split_count = esw_attr->out_count;
 	}
 
+	attr->action |= MLX5_FLOW_CONTEXT_ACTION_MOD_HDR;
 	return 0;
 }
 

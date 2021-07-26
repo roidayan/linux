@@ -397,7 +397,8 @@ bool mlx5e_is_offloaded_flow(struct mlx5e_tc_flow *flow)
 	return flow_flag_test(flow, OFFLOADED);
 }
 
-static int get_flow_name_space(struct mlx5e_tc_flow *flow)
+enum mlx5_flow_namespace_type
+mlx5e_tc_get_flow_namespace(struct mlx5e_tc_flow *flow)
 {
 	return mlx5e_is_eswitch_flow(flow) ?
 		MLX5_FLOW_NAMESPACE_FDB : MLX5_FLOW_NAMESPACE_KERNEL;
@@ -408,7 +409,7 @@ get_mod_hdr_table(struct mlx5e_priv *priv, struct mlx5e_tc_flow *flow)
 {
 	struct mlx5_eswitch *esw = priv->mdev->priv.eswitch;
 
-	return get_flow_name_space(flow) == MLX5_FLOW_NAMESPACE_FDB ?
+	return mlx5e_tc_get_flow_namespace(flow) == MLX5_FLOW_NAMESPACE_FDB ?
 		&esw->offloads.mod_hdr :
 		&priv->fs.tc.mod_hdr;
 }
@@ -421,7 +422,7 @@ static int mlx5e_attach_mod_hdr(struct mlx5e_priv *priv,
 	struct mlx5e_mod_hdr_handle *mh;
 
 	mh = mlx5e_mod_hdr_attach(priv->mdev, get_mod_hdr_table(priv, flow),
-				  get_flow_name_space(flow),
+				  mlx5e_tc_get_flow_namespace(flow),
 				  &parse_attr->mod_hdr_acts);
 	if (IS_ERR(mh))
 		return PTR_ERR(mh);
@@ -1296,7 +1297,19 @@ static void remove_unready_flow(struct mlx5e_tc_flow *flow)
 	mutex_unlock(&uplink_priv->unready_flows_lock);
 }
 
-static bool same_hw_devs(struct mlx5e_priv *priv, struct mlx5e_priv *peer_priv);
+bool same_hw_devs(struct mlx5e_priv *priv, struct mlx5e_priv *peer_priv)
+{
+	struct mlx5_core_dev *fmdev, *pmdev;
+	u64 fsystem_guid, psystem_guid;
+
+	fmdev = priv->mdev;
+	pmdev = peer_priv->mdev;
+
+	fsystem_guid = mlx5_query_nic_system_image_guid(fmdev);
+	psystem_guid = mlx5_query_nic_system_image_guid(pmdev);
+
+	return (fsystem_guid == psystem_guid);
+}
 
 bool mlx5e_tc_is_vf_tunnel(struct net_device *out_dev, struct net_device *route_dev)
 {
@@ -1341,7 +1354,7 @@ int mlx5e_tc_add_flow_mod_hdr(struct mlx5e_priv *priv,
 	struct mlx5_modify_hdr *mod_hdr;
 
 	mod_hdr = mlx5_modify_header_alloc(priv->mdev,
-					   get_flow_name_space(flow),
+					   mlx5e_tc_get_flow_namespace(flow),
 					   mod_hdr_acts->num_actions,
 					   mod_hdr_acts->actions);
 	if (IS_ERR(mod_hdr))
@@ -3039,20 +3052,6 @@ static bool same_port_devs(struct mlx5e_priv *priv, struct mlx5e_priv *peer_priv
 	return priv->mdev == peer_priv->mdev;
 }
 
-static bool same_hw_devs(struct mlx5e_priv *priv, struct mlx5e_priv *peer_priv)
-{
-	struct mlx5_core_dev *fmdev, *pmdev;
-	u64 fsystem_guid, psystem_guid;
-
-	fmdev = priv->mdev;
-	pmdev = peer_priv->mdev;
-
-	fsystem_guid = mlx5_query_nic_system_image_guid(fmdev);
-	psystem_guid = mlx5_query_nic_system_image_guid(pmdev);
-
-	return (fsystem_guid == psystem_guid);
-}
-
 static int
 add_vlan_prio_tag_rewrite_action(struct mlx5e_priv *priv,
 				 struct mlx5e_tc_flow_parse_attr *parse_attr,
@@ -3509,7 +3508,7 @@ mlx5e_alloc_flow(struct mlx5e_priv *priv, int attr_size,
 	flow->cookie = f->cookie;
 	flow->priv = priv;
 
-	attr = mlx5_alloc_flow_attr(get_flow_name_space(flow));
+	attr = mlx5_alloc_flow_attr(mlx5e_tc_get_flow_namespace(flow));
 	if (!attr)
 		goto err_free;
 

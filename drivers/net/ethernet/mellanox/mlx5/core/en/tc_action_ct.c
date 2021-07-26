@@ -28,7 +28,6 @@ tc_action_parse_ct(struct mlx5e_tc_action_parse_state *parse_state,
 		   struct mlx5e_priv *priv,
 		   struct mlx5_flow_attr *attr)
 {
-	struct mlx5_esw_flow_attr *esw_attr = attr->esw_attr;
 	int err;
 
 	err = mlx5_tc_ct_parse_action(get_ct_priv(priv), attr, act, parse_state->extack);
@@ -36,7 +35,12 @@ tc_action_parse_ct(struct mlx5e_tc_action_parse_state *parse_state,
 		return err;
 
 	flow_flag_set(parse_state->flow, CT);
-	esw_attr->split_count = esw_attr->out_count;
+
+	if (mlx5e_is_eswitch_flow(parse_state->flow)) {
+		struct mlx5_esw_flow_attr *esw_attr = attr->esw_attr;
+
+		esw_attr->split_count = esw_attr->out_count;
+	}
 
 	return 0;
 }

@@ -212,11 +212,16 @@ struct mlx5e_tc_attr_to_reg_mapping {
 
 extern struct mlx5e_tc_attr_to_reg_mapping mlx5e_tc_attr_to_reg_mappings[];
 
+enum mlx5_flow_namespace_type
+mlx5e_tc_get_flow_namespace(struct mlx5e_tc_flow *flow);
+
 bool
 csum_offload_supported(struct mlx5e_priv *priv,
 		       u32 action,
 		       u32 update_flags,
 		       struct netlink_ext_ack *extack);
+
+bool same_hw_devs(struct mlx5e_priv *priv, struct mlx5e_priv *peer_priv);
 
 bool mlx5e_is_valid_eswitch_fwd_dev(struct mlx5e_priv *priv,
 				    struct net_device *out_dev);

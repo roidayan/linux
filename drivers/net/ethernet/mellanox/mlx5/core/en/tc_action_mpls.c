@@ -14,6 +14,9 @@ tc_action_can_offload_mpls_push(struct mlx5e_tc_action_parse_state *parse_state,
 	struct netlink_ext_ack *extack = parse_state->extack;
 	struct mlx5e_priv *priv = parse_state->flow->priv;
 
+	if (!mlx5e_is_eswitch_flow(parse_state->flow))
+		return -EOPNOTSUPP;
+
 	if (!MLX5_CAP_ESW_FLOWTABLE_FDB(priv->mdev, reformat_l2_to_l3_tunnel) ||
 	    act->mpls_push.proto != htons(ETH_P_MPLS_UC)) {
 		NL_SET_ERR_MSG_MOD(extack, "mpls push is supported only for mpls_uc protocol");
@@ -42,6 +45,9 @@ tc_action_can_offload_mpls_pop(struct mlx5e_tc_action_parse_state *parse_state,
 	struct netlink_ext_ack *extack = parse_state->extack;
 	struct mlx5e_tc_flow *flow = parse_state->flow;
 	struct net_device *filter_dev;
+
+	if (!mlx5e_is_eswitch_flow(parse_state->flow))
+		return -EOPNOTSUPP;
 
 	filter_dev = flow->attr->parse_attr->filter_dev;
 

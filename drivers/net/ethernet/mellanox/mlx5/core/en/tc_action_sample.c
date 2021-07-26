@@ -13,6 +13,9 @@ tc_action_can_offload_sample(struct mlx5e_tc_action_parse_state *parse_state,
 {
 	struct netlink_ext_ack *extack = parse_state->extack;
 
+	if (!mlx5e_is_eswitch_flow(parse_state->flow))
+		return -EOPNOTSUPP;
+
 	if (flow_flag_test(parse_state->flow, CT)) {
 		NL_SET_ERR_MSG_MOD(extack,
 				   "Sample action with connection tracking is not supported");

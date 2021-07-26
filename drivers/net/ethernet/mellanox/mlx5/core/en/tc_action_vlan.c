@@ -118,6 +118,9 @@ tc_action_can_offload_vlan(struct mlx5e_tc_action_parse_state *parse_state,
 			   const struct flow_action_entry *act,
 			   int act_index)
 {
+	if (!mlx5e_is_eswitch_flow(parse_state->flow))
+		return -EOPNOTSUPP;
+
 	return 0;
 }
 

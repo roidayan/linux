@@ -66,16 +66,23 @@ tc_action_parse_vlan_mangle(struct mlx5e_tc_action_parse_state *parse_state,
 			    struct mlx5e_priv *priv,
 			    struct mlx5_flow_attr *attr)
 {
-	struct mlx5_esw_flow_attr *esw_attr = attr->esw_attr;
+	struct mlx5e_tc_flow *flow = parse_state->flow;
+	enum mlx5_flow_namespace_type ns_type;
 	int err;
 
-	err = mlx5e_tc_add_vlan_rewrite_action(priv, MLX5_FLOW_NAMESPACE_FDB, act,
+	ns_type = mlx5e_tc_get_flow_namespace(flow);
+
+	err = mlx5e_tc_add_vlan_rewrite_action(priv, ns_type, act,
 					       attr->parse_attr, parse_state->hdrs,
 					       &attr->action, parse_state->extack);
 	if (err)
 		return err;
 
-	esw_attr->split_count = esw_attr->out_count;
+	if (mlx5e_is_eswitch_flow(flow)) {
+		struct mlx5_esw_flow_attr *esw_attr = attr->esw_attr;
+
+		esw_attr->split_count = esw_attr->out_count;
+	}
 
 	return 0;
 }

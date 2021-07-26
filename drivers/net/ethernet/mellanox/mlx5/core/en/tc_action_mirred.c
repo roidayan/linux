@@ -101,6 +101,31 @@ get_fdb_out_dev(struct net_device *uplink_dev, struct net_device *out_dev)
 }
 
 static int
+can_offload_redirect_nic_flow(struct mlx5e_tc_flow *flow,
+			      const struct flow_action_entry *act,
+			      struct netlink_ext_ack *extack)
+{
+	struct net_device *out_dev = act->dev;
+	struct mlx5e_priv *priv = flow->priv;
+
+	if (act->id != FLOW_ACTION_REDIRECT)
+		return -EOPNOTSUPP;
+
+	if (priv->netdev->netdev_ops != out_dev->netdev_ops ||
+	    !same_hw_devs(priv, netdev_priv(out_dev))) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "devices are not on same switch HW, can't offload forwarding");
+		netdev_warn(priv->netdev,
+			    "devices %s %s not on same switch HW, can't offload forwarding\n",
+			    netdev_name(priv->netdev),
+			    out_dev->name);
+		return -EOPNOTSUPP;
+	}
+
+	return 0;
+}
+
+static int
 tc_action_can_offload_mirred(struct mlx5e_tc_action_parse_state *parse_state,
 			     const struct flow_action_entry *act,
 			     int act_index)
@@ -111,6 +136,9 @@ tc_action_can_offload_mirred(struct mlx5e_tc_action_parse_state *parse_state,
 	struct net_device *out_dev = act->dev;
 	struct mlx5e_priv *priv = flow->priv;
 	struct mlx5_esw_flow_attr *esw_attr;
+
+	if (!mlx5e_is_eswitch_flow(flow))
+		return can_offload_redirect_nic_flow(flow, act, extack);
 
 	parse_attr = flow->attr->parse_attr;
 	esw_attr = flow->attr->esw_attr;
@@ -262,12 +290,28 @@ parse_mirred(struct mlx5e_tc_action_parse_state *parse_state,
 }
 
 static int
+parse_redirect_nic_flow(struct mlx5e_tc_action_parse_state *parse_state,
+			const struct flow_action_entry *act,
+			struct mlx5_flow_attr *attr)
+{
+	attr->parse_attr->mirred_ifindex[0] = act->dev->ifindex;
+	flow_flag_set(parse_state->flow, HAIRPIN);
+	attr->action |= MLX5_FLOW_CONTEXT_ACTION_FWD_DEST |
+			MLX5_FLOW_CONTEXT_ACTION_COUNT;
+
+	return 0;
+}
+
+static int
 tc_action_parse_mirred(struct mlx5e_tc_action_parse_state *parse_state,
 		       const struct flow_action_entry *act,
 		       struct mlx5e_priv *priv,
 		       struct mlx5_flow_attr *attr)
 {
 	int err;
+
+	if (!mlx5e_is_eswitch_flow(parse_state->flow))
+		return parse_redirect_nic_flow(parse_state, act, attr);
 
 	if (parse_state->encap)
 		err = parse_mirred_encap(parse_state, act, attr);
