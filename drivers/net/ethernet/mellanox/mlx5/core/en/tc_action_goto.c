@@ -6,7 +6,7 @@
 #include "en_tc.h"
 #include "tc_priv.h"
 
-int
+static int
 validate_goto_chain(struct mlx5e_priv *priv,
 		    struct mlx5e_tc_flow *flow,
 		    const struct flow_action_entry *act,

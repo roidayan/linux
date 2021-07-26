@@ -3107,18 +3107,18 @@ parse_tc_actions(struct mlx5e_tc_action_parse_state *parse_state,
 	return 0;
 }
 
-static int parse_tc_nic_actions(struct mlx5e_priv *priv,
-				struct flow_action *flow_action,
-				struct mlx5e_tc_flow *flow,
-				struct netlink_ext_ack *extack)
+static int
+parse_tc_nic_actions(struct mlx5e_priv *priv,
+		     struct flow_action *flow_action,
+		     struct mlx5e_tc_flow *flow,
+		     struct netlink_ext_ack *extack)
 {
+	struct mlx5e_tc_action_parse_state *parse_state;
 	struct mlx5e_tc_flow_parse_attr *parse_attr;
 	struct mlx5_flow_attr *attr = flow->attr;
-	struct pedit_headers_action hdrs[2] = {};
-	const struct flow_action_entry *act;
 	struct mlx5_nic_flow_attr *nic_attr;
-	u32 action = 0;
-	int err, i;
+	struct pedit_headers_action *hdrs;
+	int err;
 
 	if (!flow_action_has_entries(flow_action))
 		return -EINVAL;
@@ -3130,111 +3130,29 @@ static int parse_tc_nic_actions(struct mlx5e_priv *priv,
 	nic_attr = attr->nic_attr;
 	nic_attr->flow_tag = MLX5_FS_DEFAULT_FLOW_TAG;
 	parse_attr = attr->parse_attr;
+	parse_state = &parse_attr->parse_state;
+	mlx5e_tc_action_init_parse_state(parse_state, flow, flow_action, extack);
 
-	flow_action_for_each(i, act, flow_action) {
-		switch (act->id) {
-		case FLOW_ACTION_ACCEPT:
-			action |= MLX5_FLOW_CONTEXT_ACTION_FWD_DEST |
-				  MLX5_FLOW_CONTEXT_ACTION_COUNT;
-			break;
-		case FLOW_ACTION_DROP:
-			action |= MLX5_FLOW_CONTEXT_ACTION_DROP |
-				  MLX5_FLOW_CONTEXT_ACTION_COUNT;
-			break;
-		case FLOW_ACTION_MANGLE:
-		case FLOW_ACTION_ADD:
-			err = mlx5e_tc_parse_pedit_action(priv, act, MLX5_FLOW_NAMESPACE_KERNEL,
-							  parse_attr, hdrs, NULL, extack);
-			if (err)
-				return err;
+	err = parse_tc_actions(parse_state, flow_action);
+	if (err)
+		return err;
 
-			action |= MLX5_FLOW_CONTEXT_ACTION_MOD_HDR;
-			break;
-		case FLOW_ACTION_VLAN_MANGLE:
-			err = mlx5e_tc_add_vlan_rewrite_action(priv,
-							       MLX5_FLOW_NAMESPACE_KERNEL,
-							       act, parse_attr, hdrs,
-							       &action, extack);
-			if (err)
-				return err;
-
-			break;
-		case FLOW_ACTION_CSUM:
-			if (csum_offload_supported(priv, action,
-						   act->csum_flags,
-						   extack))
-				break;
-
-			return -EOPNOTSUPP;
-		case FLOW_ACTION_REDIRECT: {
-			struct net_device *peer_dev = act->dev;
-
-			if (priv->netdev->netdev_ops == peer_dev->netdev_ops &&
-			    same_hw_devs(priv, netdev_priv(peer_dev))) {
-				parse_attr->mirred_ifindex[0] = peer_dev->ifindex;
-				flow_flag_set(flow, HAIRPIN);
-				action |= MLX5_FLOW_CONTEXT_ACTION_FWD_DEST |
-					  MLX5_FLOW_CONTEXT_ACTION_COUNT;
-			} else {
-				NL_SET_ERR_MSG_MOD(extack,
-						   "device is not on same HW, can't offload");
-				netdev_warn(priv->netdev, "device %s not on same HW, can't offload\n",
-					    peer_dev->name);
-				return -EOPNOTSUPP;
-			}
-			}
-			break;
-		case FLOW_ACTION_MARK: {
-			u32 mark = act->mark;
-
-			if (mark & ~MLX5E_TC_FLOW_ID_MASK) {
-				NL_SET_ERR_MSG_MOD(extack,
-						   "Bad flow mark - only 16 bit is supported");
-				return -EOPNOTSUPP;
-			}
-
-			nic_attr->flow_tag = mark;
-			action |= MLX5_FLOW_CONTEXT_ACTION_FWD_DEST;
-			}
-			break;
-		case FLOW_ACTION_GOTO:
-			err = validate_goto_chain(priv, flow, act, action,
-						  extack);
-			if (err)
-				return err;
-
-			action |= MLX5_FLOW_CONTEXT_ACTION_COUNT;
-			attr->dest_chain = act->chain_index;
-			break;
-		case FLOW_ACTION_CT:
-			err = mlx5_tc_ct_parse_action(get_ct_priv(priv), attr, act, extack);
-			if (err)
-				return err;
-
-			flow_flag_set(flow, CT);
-			break;
-		default:
-			NL_SET_ERR_MSG_MOD(extack, "The offload action is not supported");
-			return -EOPNOTSUPP;
-		}
-	}
+	hdrs = parse_state->hdrs;
 
 	if (hdrs[TCA_PEDIT_KEY_EX_CMD_SET].pedits ||
 	    hdrs[TCA_PEDIT_KEY_EX_CMD_ADD].pedits) {
 		err = alloc_tc_pedit_action(priv, MLX5_FLOW_NAMESPACE_KERNEL,
-					    parse_attr, hdrs, &action, extack);
+					    parse_attr, hdrs, &attr->action, extack);
 		if (err)
 			return err;
 		/* in case all pedit actions are skipped, remove the MOD_HDR
 		 * flag.
 		 */
 		if (parse_attr->mod_hdr_acts.num_actions == 0) {
-			action &= ~MLX5_FLOW_CONTEXT_ACTION_MOD_HDR;
+			attr->action &= ~MLX5_FLOW_CONTEXT_ACTION_MOD_HDR;
 			dealloc_mod_hdr_actions(&parse_attr->mod_hdr_acts);
 		}
 	}
-
-	attr->action = action;
 
 	if (attr->dest_chain) {
 		if (attr->action & MLX5_FLOW_CONTEXT_ACTION_FWD_DEST) {
@@ -4224,6 +4142,8 @@ int mlx5e_tc_nic_init(struct mlx5e_priv *priv)
 						MLX5_FLOW_NAMESPACE_KERNEL);
 	tc->ct = mlx5_tc_ct_init(priv, tc->chains, &priv->fs.tc.mod_hdr,
 				 MLX5_FLOW_NAMESPACE_KERNEL, tc->post_action);
+
+	mlx5e_tc_init_tc_actions();
 
 	tc->netdevice_nb.notifier_call = mlx5e_tc_netdev_event;
 	err = register_netdevice_notifier_dev_net(priv->netdev,

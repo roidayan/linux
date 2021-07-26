@@ -5,7 +5,7 @@
 #include "tc_action.h"
 #include "tc_priv.h"
 
-bool
+static bool
 csum_offload_supported(struct mlx5e_priv *priv,
 		       u32 action,
 		       u32 update_flags,
