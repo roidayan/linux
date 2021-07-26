@@ -29,6 +29,7 @@ mlx5e_tc_init_tc_actions(void)
 	tc_actions[FLOW_ACTION_MANGLE] = &mlx5e_tc_action_pedit;
 	tc_actions[FLOW_ACTION_ADD] = &mlx5e_tc_action_pedit;
 	tc_actions[FLOW_ACTION_ACCEPT] = &mlx5e_tc_action_accept;
+	tc_actions[FLOW_ACTION_MARK] = &mlx5e_tc_action_mark;
 }
 
 struct mlx5e_tc_action *
