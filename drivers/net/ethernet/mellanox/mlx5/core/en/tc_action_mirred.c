@@ -254,13 +254,13 @@ parse_mirred(struct mlx5e_tc_action_parse_state *parse_state,
 		return -ENODEV;
 
 	if (is_vlan_dev(out_dev)) {
-		err = mlx5e_tc_add_vlan_push_action(priv, attr, &out_dev, &attr->action);
+		err = mlx5e_tc_add_vlan_push_action(priv, attr, &out_dev);
 		if (err)
 			return err;
 	}
 
 	if (is_vlan_dev(parse_attr->filter_dev)) {
-		err = mlx5e_tc_add_vlan_pop_action(priv, attr, &attr->action);
+		err = mlx5e_tc_add_vlan_pop_action(priv, attr);
 		if (err)
 			return err;
 	}

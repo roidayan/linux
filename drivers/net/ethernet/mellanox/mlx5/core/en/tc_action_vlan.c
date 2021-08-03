@@ -64,8 +64,7 @@ parse_tc_vlan_action(struct mlx5e_priv *priv,
 int
 mlx5e_tc_add_vlan_push_action(struct mlx5e_priv *priv,
 			      struct mlx5_flow_attr *attr,
-			      struct net_device **out_dev,
-			      u32 *action)
+			      struct net_device **out_dev)
 {
 	struct net_device *vlan_dev = *out_dev;
 	struct flow_action_entry vlan_act = {
@@ -76,7 +75,7 @@ mlx5e_tc_add_vlan_push_action(struct mlx5e_priv *priv,
 	};
 	int err;
 
-	err = parse_tc_vlan_action(priv, &vlan_act, attr->esw_attr, action);
+	err = parse_tc_vlan_action(priv, &vlan_act, attr->esw_attr, &attr->action);
 	if (err)
 		return err;
 
@@ -87,15 +86,14 @@ mlx5e_tc_add_vlan_push_action(struct mlx5e_priv *priv,
 		return -ENODEV;
 
 	if (is_vlan_dev(*out_dev))
-		err = mlx5e_tc_add_vlan_push_action(priv, attr, out_dev, action);
+		err = mlx5e_tc_add_vlan_push_action(priv, attr, out_dev);
 
 	return err;
 }
 
 int
 mlx5e_tc_add_vlan_pop_action(struct mlx5e_priv *priv,
-			     struct mlx5_flow_attr *attr,
-			     u32 *action)
+			     struct mlx5_flow_attr *attr)
 {
 	struct flow_action_entry vlan_act = {
 		.id = FLOW_ACTION_VLAN_POP,
@@ -105,7 +103,7 @@ mlx5e_tc_add_vlan_pop_action(struct mlx5e_priv *priv,
 	nest_level = attr->parse_attr->filter_dev->lower_level -
 						priv->netdev->lower_level;
 	while (nest_level--) {
-		err = parse_tc_vlan_action(priv, &vlan_act, attr->esw_attr, action);
+		err = parse_tc_vlan_action(priv, &vlan_act, attr->esw_attr, &attr->action);
 		if (err)
 			return err;
 	}

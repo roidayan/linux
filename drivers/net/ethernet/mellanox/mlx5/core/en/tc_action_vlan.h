@@ -12,13 +12,11 @@ struct pedit_headers_action;
 int
 mlx5e_tc_add_vlan_push_action(struct mlx5e_priv *priv,
 			      struct mlx5_flow_attr *attr,
-			      struct net_device **out_dev,
-			      u32 *action);
+			      struct net_device **out_dev);
 
 int
 mlx5e_tc_add_vlan_pop_action(struct mlx5e_priv *priv,
-			     struct mlx5_flow_attr *attr,
-			     u32 *action);
+			     struct mlx5_flow_attr *attr);
 int
 mlx5e_tc_add_vlan_rewrite_action(struct mlx5e_priv *priv, int namespace,
 				 const struct flow_action_entry *act,
