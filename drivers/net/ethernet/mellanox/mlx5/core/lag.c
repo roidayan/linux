@@ -929,6 +929,10 @@ void mlx5_lag_disable_change(struct mlx5_core_dev *dev)
 	mlx5_dev_list_lock();
 
 	ldev = mlx5_lag_dev(dev);
+	if (!ldev) {
+		mlx5_dev_list_unlock();
+		return;
+	}
 	dev0 = ldev->pf[MLX5_LAG_P1].dev;
 	dev1 = ldev->pf[MLX5_LAG_P2].dev;
 
@@ -947,6 +951,10 @@ void mlx5_lag_enable_change(struct mlx5_core_dev *dev)
 
 	mlx5_dev_list_lock();
 	ldev = mlx5_lag_dev(dev);
+	if (!ldev) {
+		mlx5_dev_list_unlock();
+		return;
+	}
 	ldev->mode_changes_in_progress--;
 	mlx5_dev_list_unlock();
 	mlx5_queue_bond_work(ldev, 0);
